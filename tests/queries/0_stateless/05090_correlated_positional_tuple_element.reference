@@ -8,6 +8,11 @@ a correlated scalar subquery
 the same element on both sides
 1
 2
+the same element also in the outer WHERE
+1
+1
+x
+y
 the IN to join rewrite of a positional element
 x
 y

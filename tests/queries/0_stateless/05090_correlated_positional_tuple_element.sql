@@ -28,6 +28,13 @@ SELECT count() FROM t_correlated_tuple AS o WHERE 1 = (SELECT count() FROM t_cor
 SELECT 'the same element on both sides';
 SELECT o.p.1 FROM t_correlated_tuple AS o WHERE EXISTS (SELECT 1 FROM t_correlated_tuple AS i WHERE i.p.1 = o.p.1) ORDER BY o.p.1;
 
+-- A use of the same element in the outer WHERE lets the second pass rewrite the column inside
+-- WHERE clauses, and the WHERE of the subquery is one of them.
+SELECT 'the same element also in the outer WHERE';
+SELECT count() FROM t_correlated_tuple AS o WHERE o.p.1 = 1 AND EXISTS (SELECT 1 FROM t_correlated_tuple AS i WHERE i.p.a = o.p.1);
+SELECT count() FROM t_correlated_tuple AS o WHERE o.p.1 = 1 AND 1 = (SELECT count() FROM t_correlated_tuple AS i WHERE i.p.1 = o.p.1);
+SELECT o.p.2 FROM t_correlated_tuple AS o WHERE o.p.1 > 0 AND EXISTS (SELECT 1 FROM t_correlated_tuple AS i WHERE i.p.a = o.p.1) ORDER BY o.p.2;
+
 -- The `IN (subquery)` to join rewrite builds such a correlated subquery itself.
 SELECT 'the IN to join rewrite of a positional element';
 SELECT p.2 FROM t_correlated_tuple WHERE p.2 IN (SELECT 'x') SETTINGS rewrite_in_to_join = 1;

@@ -149,6 +149,46 @@ struct IdentifiersToOptimize
     bool empty() const { return everywhere.empty() && filter_only.empty(); }
 };
 
+/// The correlated columns of every subquery on the way down, one entry per query or union level.
+/// A column of an outer query that a subquery lists among its correlated columns must never be
+/// replaced by a subcolumn inside that subquery: the list would keep naming the whole column,
+/// and decorrelation would then look for the subcolumn in a join that carries only the whole
+/// column - the query fails with `NOT_FOUND_COLUMN_IN_BLOCK`. Both passes consult this stack,
+/// because the second pass can rewrite an identifier that the first pass put into `filter_only`
+/// on account of a non-correlated use of the same column elsewhere in the query.
+class CorrelatedColumnsStack
+{
+public:
+    void enter(const ListNode & correlated_columns)
+    {
+        ColumnInSourceSet columns;
+        for (const auto & correlated_column : correlated_columns.getNodes())
+        {
+            const auto * column_node = correlated_column->as<ColumnNode>();
+            if (!column_node)
+                continue;
+
+            columns.insert(makeColumnInSource(column_node->getColumnSource(), column_node->getColumnName()));
+        }
+
+        stack.push_back(std::move(columns));
+    }
+
+    void leave() { stack.pop_back(); }
+
+    bool contains(const ColumnInSource & column_in_source) const
+    {
+        for (const auto & columns : stack)
+            if (columns.contains(column_in_source))
+                return true;
+
+        return false;
+    }
+
+private:
+    std::vector<ColumnInSourceSet> stack;
+};
+
 using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, FunctionNode &, ColumnContext &)>;
 
 using ChainedNodeToSubcolumnTransformer = std::function<void(
@@ -1347,13 +1387,13 @@ public:
             /// Push a placeholder for this query level; needChildVisit will update it
             /// to true when we descend into WHERE or PREWHERE.
             in_where_prewhere_stack.push_back(false);
-            enterCorrelatedColumns(query_node->getCorrelatedColumns());
+            correlated_columns.enter(query_node->getCorrelatedColumns());
             return;
         }
 
         if (const auto * union_node = node->as<UnionNode>())
         {
-            enterCorrelatedColumns(union_node->getCorrelatedColumns());
+            correlated_columns.enter(union_node->getCorrelatedColumns());
             return;
         }
     }
@@ -1366,11 +1406,11 @@ public:
         if (node->as<QueryNode>())
         {
             in_where_prewhere_stack.pop_back();
-            correlated_columns_stack.pop_back();
+            correlated_columns.leave();
         }
         else if (node->as<UnionNode>())
         {
-            correlated_columns_stack.pop_back();
+            correlated_columns.leave();
         }
     }
 
@@ -1464,8 +1504,7 @@ private:
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
 
-    /// The correlated columns of every subquery on the way down, one entry per query or union level.
-    std::vector<ColumnInSourceSet> correlated_columns_stack;
+    CorrelatedColumnsStack correlated_columns;
 
     std::unordered_set<const IQueryTreeNode *> processed_sources;
     bool can_wrap_result_columns_with_nullable = false;
@@ -1475,30 +1514,6 @@ private:
     /// Prevents double-counting in multi-level chains like
     /// tupleElement(tupleElement(arrayElement(col, N), 'b'), 'c').
     std::unordered_set<const IQueryTreeNode *> chained_pattern_inner_nodes;
-
-    void enterCorrelatedColumns(const ListNode & correlated_columns)
-    {
-        ColumnInSourceSet columns;
-        for (const auto & correlated_column : correlated_columns.getNodes())
-        {
-            const auto * column_node = correlated_column->as<ColumnNode>();
-            if (!column_node)
-                continue;
-
-            columns.insert(makeColumnInSource(column_node->getColumnSource(), column_node->getColumnName()));
-        }
-
-        correlated_columns_stack.push_back(std::move(columns));
-    }
-
-    bool isCorrelatedColumn(const ColumnInSource & column_in_source) const
-    {
-        for (const auto & columns : correlated_columns_stack)
-            if (columns.contains(column_in_source))
-                return true;
-
-        return false;
-    }
 
     void enterColumnSource(const QueryTreeNodePtr & column_source)
     {
@@ -1555,7 +1570,7 @@ private:
         /// that list naming a column the subquery no longer reads, and decorrelation would then look
         /// for the subcolumn in a join that carries the whole column - the query fails with
         /// `NOT_FOUND_COLUMN_IN_BLOCK`. Leave every use of such a column alone.
-        if (isCorrelatedColumn(qualified_name))
+        if (correlated_columns.contains(qualified_name))
             return;
 
         auto transformer_key = std::make_pair(column.type->getTypeId(), function_node.getFunctionName());
@@ -1588,7 +1603,7 @@ private:
         /// columns naming a column the subquery no longer reads. Such a rewrite is currently also kept
         /// away by the use counting - the list of correlated columns is itself a use of the whole
         /// column - but that is an accident of the counting, so state the invariant here as well.
-        if (isCorrelatedColumn(qualified_name))
+        if (correlated_columns.contains(qualified_name))
             return;
 
         if (chained_node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
@@ -1615,6 +1630,8 @@ private:
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
+
+    CorrelatedColumnsStack correlated_columns;
 
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
@@ -1648,9 +1665,16 @@ public:
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
-        if (node->as<QueryNode>())
+        if (const auto * query_node = node->as<QueryNode>())
         {
             in_where_prewhere_stack.push_back(false);
+            correlated_columns.enter(query_node->getCorrelatedColumns());
+            return;
+        }
+
+        if (const auto * union_node = node->as<UnionNode>())
+        {
+            correlated_columns.enter(union_node->getCorrelatedColumns());
             return;
         }
 
@@ -1662,6 +1686,11 @@ public:
         {
             auto column = first_argument_column_node->getColumn();
             auto qualified_name = makeColumnInSource(column_source, column.name);
+
+            /// The first pass never counts a correlated use, but the identifier can still be in
+            /// `filter_only` because of a use of the same column in the outer query's WHERE.
+            if (correlated_columns.contains(qualified_name))
+                return;
 
             /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
             /// The permission is intentionally scoped to the whole identifier,
@@ -1696,8 +1725,9 @@ public:
         if (chain_func && chain_col && chain_source)
         {
             auto column = chain_col->getColumn();
+            auto qualified_name = makeColumnInSource(chain_source, column.name);
 
-            if (!identifiers_to_optimize.everywhere.contains(makeColumnInSource(chain_source, column.name)))
+            if (correlated_columns.contains(qualified_name) || !identifiers_to_optimize.everywhere.contains(qualified_name))
                 return;
 
             auto it = chained_node_transformers.find({column.type->getTypeId(), chain_func->getFunctionName()});
@@ -1720,7 +1750,14 @@ public:
             return;
 
         if (node->as<QueryNode>())
+        {
             in_where_prewhere_stack.pop_back();
+            correlated_columns.leave();
+        }
+        else if (node->as<UnionNode>())
+        {
+            correlated_columns.leave();
+        }
     }
 };
 
