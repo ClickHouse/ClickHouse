@@ -24,7 +24,7 @@ def started_cluster():
             "node",
             with_minio=True,
             env_variables={"AWS_ACCESS_KEY_ID": "aws", "AWS_SECRET_ACCESS_KEY": "aws123"},
-            main_configs=["configs/config.d/use_environment_credentials.xml"],
+            main_configs=["configs/config.d/use_environment_credentials.xml", "configs/config.d/text_log.xml"],
             user_configs=["configs/users.d/users.xml", "configs/users.d/enable_writes.xml"],
             stay_alive=True,
         )
@@ -107,9 +107,10 @@ def test_write_after_credentials_rotation(started_cluster):
     node.query(f"CREATE TABLE {path} (id Int32) ENGINE = DeltaLake({table_function(started_cluster, path)[len('deltaLake(') : -1]})")
     node.query(f"INSERT INTO {path} SELECT number FROM numbers(5)")
 
-    # Simulate an STS rotation between the two INSERTs. The write path opens a fresh kernel
-    # transaction per INSERT (no cached snapshot state to rebuild), so the contract is that the
-    # second commit lands with the rotated credentials.
+    # Simulate an STS rotation between the two INSERTs. A write never reuses a cached kernel state:
+    # the write path resolves the latest snapshot afresh for every INSERT, so the kernel engine is
+    # built with the credentials of that INSERT and the "rebuild on fingerprint drift" branch of the
+    # read path has nothing to rebuild. Pin both halves of that contract in `system.text_log`.
     query_id = f"{path}_rotated"
     node.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
     try:
@@ -118,6 +119,13 @@ def test_write_after_credentials_rotation(started_cluster):
         node.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
     assert log_versions(started_cluster, path) == [0, 1, 2]
     assert node.query(f"SELECT count(), uniqExact(id) FROM {path}").strip() == "10\t10"
+    node.query("SYSTEM FLUSH LOGS text_log")
+
+    def text_log_hits(pattern):
+        return int(node.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message ILIKE '%{pattern}%'").strip())
+
+    assert text_log_hits("Initializing snapshot") >= 1, "the second INSERT did not build a fresh kernel snapshot state"
+    assert text_log_hits("Rebuilding kernel snapshot state") == 0, "the write path reused a cached kernel state across the credentials rotation"
     node.query(f"DROP TABLE {path}")
 
 
