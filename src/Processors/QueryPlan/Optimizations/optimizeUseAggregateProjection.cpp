@@ -51,6 +51,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
 }
@@ -1268,9 +1269,9 @@ UseProjectionsResult optimizeUseAggregateProjections(
         if (!parent_reading_select_result || (!parent_reading_select_result->has_exact_ranges && find_exact_ranges))
             parent_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
 
-        const bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+        const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 
-        if (!force_optimize_projection)
+        if (!relax_projection_checks)
         {
             /// Nothing to read. Ignore projections.
             if (parent_reading_select_result->parts_with_ranges.empty())
@@ -1374,7 +1375,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
         auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
 
         /// If there are remaining parts to read, attempt to select the best candidate.
-        if (!parent_reading_select_result->parts_with_ranges.empty() || force_optimize_projection)
+        if (!parent_reading_select_result->parts_with_ranges.empty() || relax_projection_checks)
         {
             for (auto & candidate : candidates.real)
             {
@@ -1428,7 +1429,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 candidate.stat = &stat;
 
                 size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-                if (candidate.sum_marks > parent_reading_marks)
+                if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
                 {
                     stat.description = fmt::format(
                         "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -1647,7 +1648,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
         if (best_candidate->filter_node)
         {
-            const auto & result_name = best_candidate->filter_node->result_name;
+            /// Copy the name: the FilterStep constructor may fold and prune the node it belongs to
+            const String result_name = best_candidate->filter_node->result_name;
             aggregate_projection_node->step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
