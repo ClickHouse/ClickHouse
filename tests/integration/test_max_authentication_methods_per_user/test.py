@@ -7,6 +7,7 @@ cluster = ClickHouseCluster(__file__)
 limited_node = cluster.add_instance(
     "limited_node",
     main_configs=["configs/max_auth_limited.xml"],
+    stay_alive=True,
 )
 
 default_node = cluster.add_instance(
