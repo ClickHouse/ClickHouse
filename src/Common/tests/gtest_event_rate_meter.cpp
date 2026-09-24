@@ -66,3 +66,35 @@ TEST(EventRateMeter, PreciseStart)
         }
     }
 }
+
+TEST(EventRateMeter, NonZeroClockEpoch)
+{
+    double target = 1000.0;
+    double time_step = 0.001;
+
+    // Production meters are fed absolute instants of a clock that counts from boot
+    // (`clock_gettime_ns()`), so the epoch is far from zero. The zero epoch is kept as a
+    // control arm: it is the only shape the tests above cover, and it must not regress.
+    for (double start : {0.0, 3600.0, 1e6})
+    {
+        for (size_t heating : {0UL, 1UL, 4UL})
+        {
+            for (double period : {0.1, 2.0})
+            {
+                DB::EventRateMeter erm(start, period, heating);
+
+                double now = start;
+                int steps = static_cast<int>(period / time_step);
+                for (int i = 1; i <= steps; ++i)
+                {
+                    now += time_step;
+                    erm.add(now, target * time_step);
+                    double measured = erm.rate(now);
+                    ASSERT_LE(std::fabs(measured - target), 1e-3 * target)
+                        << "start=" << start << " heating=" << heating
+                        << " period=" << period << " step=" << i;
+                }
+            }
+        }
+    }
+}

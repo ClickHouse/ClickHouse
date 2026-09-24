@@ -51,8 +51,10 @@ public:
     void reset(double now, size_t data_points_ = 0)
     {
         start = now;
-        events = ExponentiallySmoothedAverage();
-        duration = ExponentiallySmoothedAverage();
+        // `add()` measures elapsed time as `now - duration.time`, so both counters must
+        // carry `now`: the default constructor would leave their reference time at 0.
+        events = ExponentiallySmoothedAverage(0.0, now);
+        duration = ExponentiallySmoothedAverage(0.0, now);
         data_points = data_points_;
     }
 
