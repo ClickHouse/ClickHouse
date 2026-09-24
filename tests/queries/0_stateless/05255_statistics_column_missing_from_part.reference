@@ -1,10 +1,11 @@
 a mutation that carries the columns over
-['id']
+['id','s']
 [99,99,99,99]
 99	99
 4
 0
 0
+1
 a mutation that rewrites every column
 ['_block_number','id']
 4

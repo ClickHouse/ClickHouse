@@ -10,6 +10,9 @@
 
 SET mutations_sync = 2, alter_sync = 2;
 SET use_statistics_for_part_pruning = 1, use_statistics_for_min_max_aggregation = 1;
+-- An insert must not be allowed to supply a statistic that a mutation below is supposed to supply, or
+-- a check on what a mutation wrote would also hold on a server where the mutation did nothing.
+SET materialize_statistics_on_insert = 0;
 -- The min/max shortcut lives in the aggregate-projection pass, so anything that disables that pass
 -- also disables the shortcut and would make the min/max checks pass on a build that has the bug.
 -- The runner randomizes all of these except force_aggregation_in_order and
@@ -26,13 +29,17 @@ DROP TABLE IF EXISTS t_stored;
 -- ones the fixture needs: a wide part is what leaves a late-added column unmaterialized, the block
 -- columns decide which mutation path runs, and the statistics are declared per column so the result
 -- does not depend on the randomized `auto_statistics_types`.
-CREATE TABLE t_carried_over (id UInt64) ENGINE = MergeTree ORDER BY id
+-- `s` is stored by the part and `v` is not, and one mutation materializes the statistics of both, so
+-- the same mutation that must skip `v` has to keep `s`. That makes the two checks below a pair: `s`
+-- having a statistic is only possible if the mutation ran, which is what lets the absence of one for
+-- `v` mean the mutation declined it rather than that nothing happened.
+CREATE TABLE t_carried_over (id UInt64, s UInt32 STATISTICS(basic)) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
          auto_statistics_types = '', enable_block_number_column = 0, enable_block_offset_column = 0;
 
-INSERT INTO t_carried_over SELECT number FROM numbers(4);
+INSERT INTO t_carried_over SELECT number, 10 FROM numbers(4);
 ALTER TABLE t_carried_over ADD COLUMN v UInt32 DEFAULT 7 STATISTICS(basic);
-ALTER TABLE t_carried_over MATERIALIZE STATISTICS v;
+ALTER TABLE t_carried_over MATERIALIZE STATISTICS v, s;
 ALTER TABLE t_carried_over MODIFY COLUMN v UInt32 DEFAULT 99;
 
 SELECT 'a mutation that carries the columns over';
@@ -44,6 +51,8 @@ SELECT max(v), min(v) FROM t_carried_over;
 SELECT count() FROM t_carried_over WHERE v > 50;
 SELECT count() FROM t_carried_over WHERE v < 50;
 SELECT countIf(explain ILIKE '%Statistics%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_carried_over WHERE v > 50);
+SELECT countIf(explain ILIKE '%Statistics%') > 0 AND countIf(explain ILIKE '%Parts: 0/1%') > 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_carried_over WHERE s > 1000);
 
 CREATE TABLE t_rewritten (id UInt64) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
