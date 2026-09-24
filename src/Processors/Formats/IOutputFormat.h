@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <Core/Block_fwd.h>
 #include <IO/Progress.h>
 #include <Processors/Chunk.h>
@@ -71,6 +72,8 @@ public:
 
     virtual bool supportsWritingException() const { return false; }
     virtual void setException(const String & /*exception_message*/) {}
+
+    virtual std::unordered_map<String, size_t> getColumnSizesOnDisk() const { return {}; }
 
     size_t getResultRows() const { return result_rows; }
     size_t getResultBytes() const { return result_bytes; }

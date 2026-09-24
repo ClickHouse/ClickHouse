@@ -83,6 +83,12 @@ void MultipleFileWriter::finalize()
 {
     output_format->flush();
     output_format->finalize();
+
+    auto column_sizes_on_disk = output_format->getColumnSizesOnDisk();
+    if (current_file_stats)
+        current_file_stats->addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+    stats.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+
     buffer->finalize();
     UInt64 file_bytes = buffer->count();
     total_bytes += file_bytes;
