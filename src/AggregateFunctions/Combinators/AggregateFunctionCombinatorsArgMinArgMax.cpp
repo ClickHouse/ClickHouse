@@ -48,6 +48,7 @@ private:
     const size_t key_col;
     const size_t key_offset;
     const DataTypePtr key_type;
+    const bool skip_null_keys;
 
     AggregateFunctionCombinatorArgMinArgMaxData & data(AggregateDataPtr __restrict place) const /// NOLINT
     {
@@ -59,7 +60,7 @@ private:
     }
 
 public:
-    AggregateFunctionCombinatorArgMinArgMax(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
+    AggregateFunctionCombinatorArgMinArgMax(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params, bool skip_null_keys_)
         : IAggregateFunctionHelper<AggregateFunctionCombinatorArgMinArgMax<isMin>>{arguments, params, nested_function_->getResultType()}
         , nested_function{nested_function_}
         , data_type(arguments.back())
@@ -67,6 +68,7 @@ public:
         , key_col{arguments.size() - 1}
         , key_offset{::Memory::alignUp(nested_function->sizeOfData(), alignof(Key))}
         , key_type(arguments[key_col])
+        , skip_null_keys(skip_null_keys_)
     {
         if (!arguments[key_col]->isComparable())
             throw Exception(
@@ -174,6 +176,9 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
+        if (skip_null_keys && columns[key_col]->isNullAt(row_num))
+            return;
+
         if ((isMin && data(place).data().setIfSmaller(*columns[key_col], row_num, arena))
             || (!isMin && data(place).data().setIfGreater(*columns[key_col], row_num, arena)))
         {
@@ -257,11 +262,15 @@ public:
 
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
-        const AggregateFunctionProperties &,
+        const AggregateFunctionProperties & properties,
         const DataTypes & arguments,
         const Array & params) const override
     {
-        return std::make_shared<AggregateFunctionCombinatorArgMinArgMax<isMin>>(nested_function, arguments, params);
+        /// Functions with `is_window_function` bypass the `Null` combinator, so `NULL` keys must be skipped here:
+        /// an unset key accepts any row, and the nested function would aggregate it. `NULL` values are not affected.
+        const bool skip_null_keys = properties.is_window_function && arguments.back()->isNullable();
+        return std::make_shared<AggregateFunctionCombinatorArgMinArgMax<isMin>>(nested_function, arguments, params, skip_null_keys);
+
     }
 };
 

@@ -714,7 +714,9 @@
                 "reference/functions/aggregate-functions/varPopStable",
                 "reference/functions/aggregate-functions/varSamp",
                 "reference/functions/aggregate-functions/varSampStable",
-                "reference/functions/aggregate-functions/welchTTest"
+                "reference/functions/aggregate-functions/welchTTest",
+                "reference/functions/aggregate-functions/histogramExplicit",
+                "reference/functions/aggregate-functions/histogramExplicitOpenClosed"
               ]
             }
           ]
