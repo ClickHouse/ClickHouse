@@ -1520,7 +1520,6 @@ void WindowTransform::computeReadyRows()
             // because current_row might now be past-the-end.
             advanceRowNumber(current_row);
             ++current_row_number;
-            first_not_ready_row = current_row;
             frame_ended = false;
             frame_started = false;
         }
@@ -1612,17 +1611,18 @@ IProcessor::Status WindowTransform::prepare()
         return Status::Finished;
     }
 
-    chassert(first_not_ready_row.block >= first_block_number);
-    // The first_not_ready_row might be past-the-end if we have already
-    // calculated the window functions for all input rows. That's why the
-    // equality is also valid here.
-    chassert(first_not_ready_row.block <= first_block_number + blocks.size());
+    chassert(current_row.block >= first_block_number);
+    // The current_row might be past-the-end if we have already calculated the
+    // window functions for all input rows. That's why the equality is also
+    // valid here.
+    chassert(current_row.block <= first_block_number + blocks.size());
     chassert(next_output_block_number >= first_block_number);
 
-    // Output the ready data prepared by work().
+    // Output the ready data prepared by work(). A block is ready when the
+    // current row has left it, because rows are computed in order.
     // We inspect the calculation state and create the output chunk right here,
     // because this is pretty lightweight.
-    if (next_output_block_number < first_not_ready_row.block)
+    if (next_output_block_number < current_row.block)
     {
         if (output.canPush())
         {
@@ -1653,7 +1653,7 @@ IProcessor::Status WindowTransform::prepare()
         // and we don't have ready output data (checked above). We must be
         // finished.
         chassert(next_output_block_number == first_block_number + blocks.size());
-        chassert(first_not_ready_row == blocksEnd());
+        chassert(current_row == blocksEnd());
 
         // The consumer learns that the data ended only from the closed output port.
         output.finish();

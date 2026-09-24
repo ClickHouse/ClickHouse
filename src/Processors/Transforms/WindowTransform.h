@@ -269,9 +269,6 @@ public:
     UInt64 first_block_number = 0;
     // The next block we are going to pass to the consumer.
     UInt64 next_output_block_number = 0;
-    // The first row for which we still haven't calculated the window functions.
-    // Used to determine which resulting blocks we can pass to the consumer.
-    RowNumber first_not_ready_row;
 
     // Boundaries of the current partition.
     // partition_start doesn't point to a valid block, because we want to drop
