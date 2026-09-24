@@ -61,6 +61,48 @@ struct EmitScratch
     bool ranges_ready = false;
 };
 
+/// Expands a list shaped selection into flat words a batch at a time.
+// A batch boundary can fall inside a key's run, so the iterator into
+/// the word being expanded carries over to the next call.
+class FlatWordCursor
+{
+public:
+    FlatWordCursor(const RefWordSelection & selection, UInt64 * flat_)
+        : word(selection.begin), words_end(selection.end), refs(RowRefList::fromWord(0)), flat(flat_)
+    {
+    }
+
+    const UInt64 * next(size_t batch_size)
+    {
+        size_t count = 0;
+        while (count < batch_size)
+        {
+            if (!refs.ok())
+            {
+                if (word == words_end)
+                    break;
+                const UInt64 next_word = *word++;
+                if (!next_word)
+                {
+                    flat[count++] = 0;
+                    continue;
+                }
+                refs = RowRefList::ForwardIterator(refsOf(next_word));
+            }
+            for (; count < batch_size && refs.ok(); ++refs)
+                flat[count++] = *refs;
+        }
+        chassert(count == batch_size);
+        return flat;
+    }
+
+private:
+    const UInt64 * word;
+    const UInt64 * words_end;
+    RowRefList::ForwardIterator refs;
+    UInt64 * flat;
+};
+
 /// 32 rows of lead cover one source row's memory latency.
 constexpr size_t look_ahead = 32;
 
@@ -1106,14 +1148,22 @@ void gatherJoinOutputColumns(
     if (!row_store_row_length.has_value())
         return;
 
-    const UInt64 * flat = flatWords(selection, /*remap_by_block=*/ nullptr, scratch);
     const size_t batch_rows = rowStoreBatchSize(*row_store_row_length);
 
+    /// The column-major pass above expands the whole selection for any column that is not plain
+    /// fixed width, so reuse its array when it is there and expand a batch at a time when it is not.
+    const bool flatten_per_batch = selection.shape != RefWordShape::Flat && !scratch.flat_ready;
+    if (flatten_per_batch)
+        scratch.flat.resize(std::min(batch_rows, selection.rows));
+
+    const UInt64 * flat = flatten_per_batch ? nullptr : flatWords(selection, /*remap_by_block=*/ nullptr, scratch);
+    FlatWordCursor cursor{selection, scratch.flat.data()};
     for (size_t batch_begin = 0; batch_begin < selection.rows; batch_begin += batch_rows)
     {
         const size_t rows = std::min(batch_rows, selection.rows - batch_begin);
+        const UInt64 * words = flatten_per_batch ? cursor.next(rows) : flat + batch_begin;
         const RefWordSelection batch{
-            .begin = flat + batch_begin, .end = flat + batch_begin + rows, .rows = rows, .shape = RefWordShape::Flat};
+            .begin = words, .end = words + rows, .rows = rows, .shape = RefWordShape::Flat};
 
         EmitScratch batch_scratch;
         for (size_t dst_idx = 0; dst_idx < gather.size(); ++dst_idx)
