@@ -827,7 +827,7 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
             if (overlaps(updated_column, required_column.name))
             {
                 return std::unexpected(PreformattedMessage::create(
-                    "Index {} depends on column `{}` which will be updated on the fly (by update of `{}`)",
+                    "Index {} depends on column `{}` which will be changed on the fly (by a pending mutation of `{}`)",
                     index->index.name, required_column.name, updated_column));
             }
         }
@@ -965,8 +965,11 @@ static bool partHasStaleTopKIndex(
 
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
     /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    /// hasMetadataMutations() covers a pending RENAME COLUMN / DROP COLUMN, which can make the implicit
+    /// minmax index found by name describe another column's data.
     if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations()
+            || mutations_snapshot->hasPatchParts()))
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
 
@@ -976,10 +979,11 @@ static bool partHasStaleTopKIndex(
         if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
             return true;
 
-        /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
-        /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
-        /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+        /// A pending update / patch / MODIFY COLUMN / RENAME COLUMN / DROP COLUMN that touches the
+        /// indexed column makes its minmax stale. Reuse the same overlap check the regular skip-index
+        /// path uses (canUseIndex), so the top-k path is consistent with it. Changes to other columns
+        /// leave the index valid.
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getColumnsWithStaleIndexes()))
             return true;
     }
 
@@ -1264,7 +1268,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     , context->getAccess()->getEnabledMaskingPolicies()
 #endif
                 );
-                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+                const auto & all_updated_columns = alter_conversions->getColumnsWithStaleIndexes();
                 auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
