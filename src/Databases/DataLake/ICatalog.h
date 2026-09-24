@@ -298,8 +298,7 @@ public:
     virtual bool isTransactional() const { return false; }
 
     /// Checks that this table's log may be committed directly, without the catalog mediating the
-    /// commit (the DeltaLake `_delta_log` path). Catalogs that own their tables' data refuse those
-    /// here. Writes the catalog itself commits (transactional Iceberg REST) never reach this check.
+    /// commit (the DeltaLake `_delta_log` path). Catalogs that own their tables' data refuse here.
     virtual void checkDirectCommitIsAllowed(const std::string & /*namespace_name*/, const std::string & /*table_name*/) const {}
 
     virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(

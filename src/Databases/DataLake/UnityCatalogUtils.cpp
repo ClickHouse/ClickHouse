@@ -119,8 +119,8 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
 }
 
 /// The `table_type` values Unity reports for a table whose data the catalog owns, so its log must
-/// not be committed directly. `EXTERNAL_SHALLOW_CLONE` is deliberately absent: like a plain
-/// `EXTERNAL` table, its data does not live in the catalog's own storage.
+/// not be committed directly. `EXTERNAL_SHALLOW_CLONE` is not one of them: like a plain `EXTERNAL`
+/// table, its data does not live in the catalog's own storage.
 static const std::unordered_set<std::string> MANAGED_TABLE_TYPES = {"MANAGED", "MANAGED_SHALLOW_CLONE"};
 
 bool isManagedUnityTable(const Poco::JSON::Object::Ptr & table_json)
