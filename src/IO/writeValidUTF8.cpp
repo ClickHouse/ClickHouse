@@ -5,15 +5,13 @@
 #include <IO/WriteBuffer.h>
 #include <Poco/UTF8Encoding.h>
 
+#include <base/types.h>
+
 #if USE_SIMDUTF
 #    include <simdutf.h>
 #endif
 
 #include <string_view>
-
-#include <base/types.h>
-
-
 
 namespace DB
 {
