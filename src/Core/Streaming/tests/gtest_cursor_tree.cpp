@@ -1,5 +1,7 @@
 #include <Core/Streaming/CursorTree.h>
 
+#include <Common/Exception.h>
+
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -48,4 +50,43 @@ TEST(CursorTree, EmptyMapProducesEmptyTree)
     for (auto it = root->begin(); it != root->end(); ++it)
         ++count;
     ASSERT_EQ(count, 0u);
+}
+
+TEST(CursorTree, BoundsTheDepthOfADottedKey)
+{
+    auto dotted_key = [](size_t components)
+    {
+        String key;
+        for (size_t i = 0; i + 1 < components; ++i)
+            key += "a.";
+        return key + "z";
+    };
+
+    auto depth_of = [](const CursorTreeNode * node)
+    {
+        size_t depth = 1;
+        for (; node->hasSubtree("a"); ++depth)
+            node = node->getSubtree("a").get();
+        return depth;
+    };
+
+    Map at_limit;
+    at_limit.push_back(Tuple{dotted_key(MAX_CURSOR_TREE_DEPTH), Int64(10)});
+    auto root = buildCursorTree(at_limit);
+
+    ASSERT_EQ(depth_of(root.get()), MAX_CURSOR_TREE_DEPTH);
+
+    /// At the limit every recursive consumer must still complete, not only the construction above.
+    ASSERT_EQ(cursorTreeToMap(root).size(), 1u);
+
+    auto cloned = root->clone();
+    ASSERT_EQ(depth_of(cloned.get()), MAX_CURSOR_TREE_DEPTH);
+
+    auto other = buildCursorTree(at_limit);
+    mergeCursors(other, root);
+    ASSERT_EQ(depth_of(other.get()), MAX_CURSOR_TREE_DEPTH);
+
+    Map over_limit;
+    over_limit.push_back(Tuple{dotted_key(MAX_CURSOR_TREE_DEPTH + 1), Int64(10)});
+    ASSERT_THROW((void)buildCursorTree(over_limit), Exception);
 }

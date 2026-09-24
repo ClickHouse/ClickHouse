@@ -1,1 +1,2 @@
 1
+SELECT *\nFROM t\nSTREAM CURSOR {\'a\': {\'b\': {\'c\': 10}}}

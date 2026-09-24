@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_CURSOR_LOOKUP;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace
@@ -181,6 +182,14 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
 
         VectorWithMemoryTracking<String> path;
         boost::split(path, dotted_path, boost::is_any_of("."));
+
+        /// Before the first node of this key exists: a partial chain would be just as deep to destroy.
+        if (path.size() > MAX_CURSOR_TREE_DEPTH)
+            throw Exception(
+                ErrorCodes::TOO_DEEP_RECURSION,
+                "Cursor key is too deep: {} components, maximum: {}",
+                path.size(),
+                MAX_CURSOR_TREE_DEPTH);
 
         CursorTreeNode * node = root.get();
         for (size_t i = 0; i + 1 < path.size(); ++i)
