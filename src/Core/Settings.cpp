@@ -5576,6 +5576,14 @@ Possible values:
 - 1 — The data types in column definitions are set to `Nullable` by default.
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 )", 0) \
+    DECLARE(Bool, cast_fixed_string_to_string_strip_trailing_zeros, false, R"(
+Controls whether the conversion of `FixedString` to `String` (`CAST`, `toString`, and implicit conversions) removes the trailing zero bytes.
+
+Possible values:
+
+- 0 — The bytes of the `FixedString` value are kept as is, including the zero bytes that pad it to its length: `CAST(toFixedString('a', 2) AS String)` is `'a\0'`.
+- 1 — The trailing zero bytes are removed: `CAST(toFixedString('a', 2) AS String)` is `'a'`. This was the behavior before version 26.10.
+)", 0) \
     DECLARE(Bool, cast_keep_nullable, false, R"(
 Enables or disables keeping of the `Nullable` data type in [CAST](/reference/functions/regular-functions/type-conversion-functions#CAST) operations.
 
