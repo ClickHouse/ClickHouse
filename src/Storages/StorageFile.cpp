@@ -717,7 +717,8 @@ String computeFileCacheVersionToken(const struct stat & file_stat)
 /// due to clock skew on a network mount - a consumer that draws a correctness conclusion from the
 /// token must fail close and stay bypassed rather than risk a stale entry. The query condition
 /// cache is such a consumer: it skips whole row groups without reading them. The format metadata
-/// cache is not - it only reuses a parsed footer - and stays keyed on the token unconditionally.
+/// cache only reuses a parsed footer, but it must still keep entries of both kinds apart - see
+/// `fileMetadataCacheEtag`.
 bool isFileCacheVersionSettled(const struct stat & file_stat)
 {
 #if defined(OS_DARWIN)
@@ -727,6 +728,25 @@ bool isFileCacheVersionSettled(const struct stat & file_stat)
 #endif
     static constexpr Int64 file_version_settle_seconds = 3;
     return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+}
+
+/// The "etag" under which the format metadata cache (e.g. the Parquet footer cache) stores the
+/// footer of a local file with the version token `version_token`. A footer parsed while the token
+/// was unsettled may belong to a generation that a later same-token rewrite replaced (see
+/// `isFileCacheVersionSettled`), so it is stored under a separate key and never served to a read
+/// whose token has settled. Such reads are trusted by the query condition cache: its entries
+/// store the digest of the footer the read was driven by, and a whole-file skip applies them
+/// without opening the file, so a stale footer there would turn into a persistent wrong result.
+/// A settled token, in turn, cannot be reused by a later rewrite, so an entry under it always
+/// describes the generation the token names (a footer parsed from bytes rewritten after the
+/// `stat` is stored under a token no later `stat` produces). Reads of a freshly written file
+/// still share their entries with each other; the only cost is one more footer parse when the
+/// file settles.
+String fileMetadataCacheEtag(const String & version_token, bool version_settled)
+{
+    if (version_settled)
+        return version_token;
+    return version_token + "_unsettled";
 }
 
 /// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
@@ -2195,10 +2215,11 @@ Chunk StorageFileSource::generate()
             /// query condition cache above, which draws a stronger conclusion from the token: it
             /// skips whole row groups without reading them, so a token that cannot yet prove a
             /// rewrite must fail close. The format metadata cache only reuses a parsed footer,
-            /// and reusing it for a file whose token has not settled is exactly the behaviour
-            /// master already has and pins in `04207_parquet_metadata_cache_local_file` - a
-            /// freshly written file is the common case, and bypassing the cache for it would
-            /// reparse the footer on every query. See the thread on this gate for the rationale.
+            /// and reusing it for a file whose token has not settled is pinned in
+            /// `04207_parquet_metadata_cache_local_file` - a freshly written file is the common
+            /// case, and bypassing the cache for it would reparse the footer on every query.
+            /// Settledness is part of the key instead (`fileMetadataCacheEtag`), so a footer
+            /// cached before the token settled is never served after it did.
             ///
             /// Gated on `!file_bucket_info` and `!buckets_to_read`: a source whose read is
             /// restricted to a subset of the file's row groups - one bucket of a parallel
@@ -2226,7 +2247,7 @@ Chunk StorageFileSource::generate()
                 ObjectMetadata md;
                 md.size_bytes = *current_file_size;
                 md.last_modified = *current_file_last_modified;
-                md.etag = *current_file_cache_version;
+                md.etag = fileMetadataCacheEtag(*current_file_cache_version, current_file_version_settled);
                 object_with_metadata.emplace(current_path, std::move(md));
             }
 
@@ -2838,10 +2859,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                 /// entry: each parses the footer of the bytes it actually opened, so the
                 /// footer-digest guard (`ParquetFileBucketInfo::footer_digest`) can fail close if
                 /// the assignment computed here - possibly from a stale cached footer under an
-                /// unsettled token - does not match the real file. The etag is
+                /// unsettled token - does not match the real file. The etag is derived from
                 /// `decision_file_version` (sub-second mtime + inode + size) for
-                /// in-place-rewrite safety.
-                const String & cache_etag = decision_file_version;
+                /// in-place-rewrite safety, by the same `fileMetadataCacheEtag` rule.
+                const String cache_etag = fileMetadataCacheEtag(decision_file_version, isFileCacheVersionSettled(file_stat));
 
                 /// Honor `use_parquet_metadata_cache`: when it is disabled we must neither
                 /// make the split decision from a previously cached footer nor populate the
@@ -3101,6 +3122,10 @@ public:
                 /// passes cannot end up on different interpretations of the file. How strong the token
                 /// itself is (sub-second mtime + inode + size) is a property of every local `Parquet`
                 /// read, single-pass ones included, not something lazy materialization changes.
+                /// The key also records whether the token has settled (`fileMetadataCacheEtag`). If it
+                /// settled between the two passes, this pass may parse the footer of the bytes it
+                /// opened instead of the main pass's unsettled entry; the re-stat above has just shown
+                /// the token unchanged, and a settled token names exactly one generation.
                 /// `use_parquet_metadata_cache` gates it exactly as it gates the main pass: with the
                 /// setting off neither pass consults or populates `ParquetMetadataCache`, so the
                 /// meaning of the setting does not depend on whether the plan is lazy.
@@ -3110,7 +3135,7 @@ public:
                     ObjectMetadata md;
                     md.size_bytes = file_stat.st_size;
                     md.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
-                    md.etag = file.file.version_token;
+                    md.etag = fileMetadataCacheEtag(file.file.version_token, isFileCacheVersionSettled(file_stat));
                     object_with_metadata.emplace(path, std::move(md));
                 }
 
