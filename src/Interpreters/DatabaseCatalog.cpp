@@ -622,8 +622,12 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
 bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 {
-    static const char * information_schema_views[] = {"schemata", "tables", "views", "columns"};
-    static const char * information_schema_views_uppercase[] = {"SCHEMATA", "TABLES", "VIEWS", "COLUMNS"};
+    static const char * information_schema_views[] = {
+        "schemata", "tables", "views", "columns", "key_column_usage", "referential_constraints", "statistics",
+        "engines", "character_sets", "collations", "user_privileges", "schema_privileges", "table_privileges", "column_privileges"};
+    static const char * information_schema_views_uppercase[] = {
+        "SCHEMATA", "TABLES", "VIEWS", "COLUMNS", "KEY_COLUMN_USAGE", "REFERENTIAL_CONSTRAINTS", "STATISTICS",
+        "ENGINES", "CHARACTER_SETS", "COLLATIONS", "USER_PRIVILEGES", "SCHEMA_PRIVILEGES", "TABLE_PRIVILEGES", "COLUMN_PRIVILEGES"};
 
     auto check_database_and_table_name = [&](const String & database_name, const String & table_name)
     {
