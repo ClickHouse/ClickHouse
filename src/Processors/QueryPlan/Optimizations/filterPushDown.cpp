@@ -1481,6 +1481,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Whether it reaches them is not decided here: it is decided where the fragment is shipped,
         /// by the rewrite that splices the condition into their query, and the answer is carried on
         /// this step.
+        ///
+        /// One answer for the whole fragment, though the splice works conjunct by conjunct and can
+        /// drop some of them. That is enough because the two lists do not meet: what fixes a column
+        /// is an `equals` against a constant reached through `and`
+        /// (`appendFixedColumnsFromFilterExpression`), and what the splice drops is the
+        /// non-deterministic, the stateful and what it cannot name (`tryBuildAdditionalFilterAST`) -
+        /// a constant is none of those. Teach either side something new - an `in` against a
+        /// one-element set, say - and this has to be revisited; test 05255 pins it.
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
         if (!parallel_replicas_local_plan->replicasGetPushedConditions() && condition && mayFixColumn(condition))
             parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
