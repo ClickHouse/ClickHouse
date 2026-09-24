@@ -127,7 +127,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE
 
 DROP TABLE tab;
 
-SELECT '-- lower preprocessor: applied to the input and the prefix of hasTokenPrefix, hasTokenLike and hasTokenMatch do not use the index';
+SELECT '-- lower preprocessor: the functions see the raw values and do not use the index';
 
 CREATE TABLE tab
 (
@@ -150,6 +150,26 @@ SELECT count() FROM tab WHERE hasTokenLike(msg, 'charg%');
 SELECT count() FROM tab WHERE hasTokenLike(msg, 'Charg%');
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenLike(msg, 'Charg%')) WHERE explain LIKE '%Granules:%';
 SELECT count() FROM tab WHERE hasTokenMatch(msg, '^C');
+
+DROP TABLE tab;
+
+-- The tokenizer of the index is still used.
+CREATE TABLE tab
+(
+    id UInt32,
+    tag String,
+    INDEX idx(tag) TYPE text(tokenizer = array, preprocessor = lower(tag)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab SELECT number, if(number < 8, 'Env:prod-eu', 'env:dev') FROM numbers(64);
+
+SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'Env:prod');
+SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'Env:prod') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'env:prod');
+SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'prod');
 
 DROP TABLE tab;
 
@@ -211,7 +231,7 @@ ORDER BY log_comment;
 
 DROP TABLE tab;
 
-SELECT '-- the result does not depend on settings, only on the index definition';
+SELECT '-- the result does not depend on settings';
 
 CREATE TABLE tab_array
 (
@@ -380,7 +400,7 @@ SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE
 
 DROP TABLE tab_nullable;
 
-SELECT '-- several text indexes on one expression must give the function the same tokenizer and preprocessor';
+SELECT '-- several text indexes on one expression must give the function the same tokenizer';
 
 -- A column has at most one text index.
 CREATE TABLE tab_two (id UInt32, msg String, INDEX idx_a(msg) TYPE text(tokenizer = splitByNonAlpha), INDEX idx_b(msg) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(msg))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
@@ -439,8 +459,8 @@ SELECT 'splitByNonAlpha', count() FROM tab_tokenizers_swapped WHERE hasTokenPref
 DROP TABLE tab_tokenizers;
 DROP TABLE tab_tokenizers_swapped;
 
--- Same tokenizer, but only one index lowercases the input and the prefix of hasTokenPrefix, which the tokenizer argument
--- cannot resolve. hasTokenLike and hasTokenMatch apply no preprocessor, so both indexes agree for them.
+-- Same tokenizer, and only one index has a preprocessor, which the functions never apply: the indexes agree, and the
+-- result is the one on the raw values whichever index serves the function.
 CREATE TABLE tab_preprocessors
 (
     id UInt32,
@@ -466,14 +486,14 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 INSERT INTO tab_preprocessors SELECT number, multiIf(number < 8, 'Charged', number < 16, 'charged', 'other') FROM numbers(64);
 INSERT INTO tab_preprocessors_swapped SELECT * FROM tab_preprocessors;
 
-SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg'); -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
-SELECT countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors; -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg', 'splitByNonAlpha'); -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg'); -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
-SELECT countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors_swapped; -- { serverError BAD_ARGUMENTS }
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg');
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenPrefix', countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors;
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg', 'splitByNonAlpha');
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg');
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix', countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors_swapped;
 
 SELECT 'hasTokenLike', count() FROM tab_preprocessors WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%');
 SELECT 'hasTokenLike', count() FROM tab_preprocessors WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%') SETTINGS use_skip_indexes = 0;

@@ -53,19 +53,22 @@ Granules: 1/8
 Parts: 1 | Granules: 1
 Granules: 8/8
 Granules: 1/8
--- lower preprocessor: applied to the input and the prefix of hasTokenPrefix, hasTokenLike and hasTokenMatch do not use the index
+-- lower preprocessor: the functions see the raw values and do not use the index
 8
-8
-8
-8
-Parts: 1 | Granules: 1
+0
+0
+0
+Parts: 1 | Granules: 8
 Granules: 8/8
-Granules: 1/8
 0
 8
 Parts: 1 | Granules: 8
 Granules: 8/8
 8
+8
+8
+0
+0
 -- without the tokenizer argument, the tokenizer of the index is used (as for hasAnyTokens)
 8
 8
@@ -92,7 +95,7 @@ has_token_pattern_matched_tokens_like	1
 has_token_pattern_matched_tokens_match	1
 has_token_pattern_matched_tokens_prefix	1
 has_token_pattern_matched_tokens_unlimited	0
--- the result does not depend on settings, only on the index definition
+-- the result does not depend on settings
 hasTokenPrefix(tag, \'env:prod\')	8
 hasTokenPrefix(tag, \'env:prod\')	8
 hasTokenPrefix(tag, \'env:prod\')	8
@@ -142,13 +145,13 @@ hasTokenPrefix(msg, \'Charg\')	8
 hasTokenPrefix(msg, \'Charg\')	8
 hasTokenPrefix(msg, \'Charg\')	8
 hasTokenPrefix(msg, \'Charg\')	8
-hasTokenPrefix(msg, \'CHARG\')	8
-hasTokenPrefix(msg, \'CHARG\')	8
-hasTokenPrefix(msg, \'CHARG\')	8
-hasTokenPrefix(msg, \'CHARG\')	8
-hasTokenPrefix(msg, \'CHARG\')	8
-hasTokenPrefix(msg, \'CHARG\')	8
-hasTokenPrefix(msg, \'CHARG\')	8
+hasTokenPrefix(msg, \'CHARG\')	0
+hasTokenPrefix(msg, \'CHARG\')	0
+hasTokenPrefix(msg, \'CHARG\')	0
+hasTokenPrefix(msg, \'CHARG\')	0
+hasTokenPrefix(msg, \'CHARG\')	0
+hasTokenPrefix(msg, \'CHARG\')	0
+hasTokenPrefix(msg, \'CHARG\')	0
 hasTokenLike(msg, \'charg%\')	0
 hasTokenLike(msg, \'charg%\')	0
 hasTokenLike(msg, \'charg%\')	0
@@ -184,13 +187,13 @@ hasTokenPrefix(msg, \'\')	64
 hasTokenPrefix(msg, \'\')	64
 hasTokenPrefix(msg, \'\')	64
 hasTokenPrefix(msg, \'\')	64
-NOT hasTokenPrefix(msg, \'charg\')	56
-NOT hasTokenPrefix(msg, \'charg\')	56
-NOT hasTokenPrefix(msg, \'charg\')	56
-NOT hasTokenPrefix(msg, \'charg\')	56
-NOT hasTokenPrefix(msg, \'charg\')	56
-NOT hasTokenPrefix(msg, \'charg\')	56
-NOT hasTokenPrefix(msg, \'charg\')	56
+NOT hasTokenPrefix(msg, \'charg\')	64
+NOT hasTokenPrefix(msg, \'charg\')	64
+NOT hasTokenPrefix(msg, \'charg\')	64
+NOT hasTokenPrefix(msg, \'charg\')	64
+NOT hasTokenPrefix(msg, \'charg\')	64
+NOT hasTokenPrefix(msg, \'charg\')	64
+NOT hasTokenPrefix(msg, \'charg\')	64
 8	0
 8	0
 hasTokenPrefix(msg, \'charg\')	5
@@ -214,7 +217,7 @@ hasTokenPrefix(msg, \'charg\') IS NULL	22
 hasTokenPrefix(msg, \'charg\') IS NULL	22
 hasTokenPrefix(msg, \'charg\') IS NULL	22
 hasTokenPrefix(msg, \'charg\') IS NULL	22
--- several text indexes on one expression must give the function the same tokenizer and preprocessor
+-- several text indexes on one expression must give the function the same tokenizer
 array	8
 array	8
 array	8
@@ -227,6 +230,14 @@ splitByNonAlpha	8
 splitByNonAlpha	0
 splitByNonAlpha	8
 splitByNonAlpha	0
+hasTokenPrefix	8
+hasTokenPrefix	8
+hasTokenPrefix	8
+hasTokenPrefix	8
+hasTokenPrefix	8
+hasTokenPrefix	8
+hasTokenPrefix	8
+hasTokenPrefix	8
 hasTokenLike	8
 hasTokenLike	8
 hasTokenLike	8

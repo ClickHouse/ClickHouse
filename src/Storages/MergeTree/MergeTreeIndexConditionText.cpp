@@ -310,14 +310,6 @@ bool MergeTreeIndexConditionText::isPerTokenPatternFunction(const String & funct
     return function_name == "hasTokenPrefix" || function_name == "hasTokenLike" || function_name == "hasTokenMatch";
 }
 
-bool MergeTreeIndexConditionText::perTokenPatternFunctionAppliesPreprocessor(
-    const String & function_name, const MergeTreeIndexTextPreprocessor & preprocessor)
-{
-    /// Only ASCII `lower`/`upper` map a token prefix to a prefix of the mapped token (`lowerUTF8` does not), and a LIKE
-    /// pattern or a regexp cannot be preprocessed (`lower` turns `\D` into `\d`), so only `hasTokenPrefix` applies them.
-    return function_name == "hasTokenPrefix" && preprocessor.hasActions() && preprocessor.isASCIILowerOrUpper();
-}
-
 bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
 {
     /// The third argument of hasToken is a start position, not a tokenizer.
@@ -1813,8 +1805,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!value_data_type.isString() || !candidate_for_exact_mode)
             return false;
 
-        /// With this index the function is always rewritten to the index tokenizer and preprocessor, so the result must not
-        /// depend on index use, settings or the needle: those cases return a query without patterns that only carries the rewrite.
+        /// Where this index rewrites the function to its tokenizer, the result must not depend on index use, settings or the
+        /// needle: those cases return a query without patterns that only carries the rewrite.
         auto rewrite_only = [&]
         {
             out.function = RPNElement::FUNCTION_UNKNOWN;
@@ -1823,10 +1815,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return true;
         };
 
-        const bool apply_preprocessor = has_preprocessor && perTokenPatternFunctionAppliesPreprocessor(function_name, *preprocessor);
-        String needle = value_field.safeGet<String>();
-        if (apply_preprocessor)
-            needle = preprocessor->processConstant(needle);
+        const auto & needle = value_field.safeGet<String>();
 
         /// Compiled as the function does, so an invalid pattern raises an exception regardless of the index use.
         /// A prefix becomes a `prefix%` pattern, whose dictionary scan seeks to the range of tokens with that prefix.
@@ -1839,8 +1828,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             patterns.emplace_back(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
 
         /// The needle applies to each token, so the matching dictionary tokens are exactly the ones the function looks for,
-        /// if it sees the stored tokens (no postprocessor, no unapplied preprocessor). An empty needle gains nothing.
-        if (has_postprocessor || (has_preprocessor && !apply_preprocessor) || needle.empty()
+        /// if it sees the stored tokens (no preprocessor, no postprocessor). An empty needle gains nothing.
+        if (has_preprocessor || has_postprocessor || needle.empty()
             || !settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
             return rewrite_only();
 

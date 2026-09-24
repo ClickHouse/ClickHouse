@@ -1,0 +1,21 @@
+-- filter and SELECT list: the index tokenizer
+8
+8
+8
+-- after GROUP BY: splitByNonAlpha, unless the tokenizer is explicit
+env:dev	0
+env:prod-eu	1
+prod	1
+env:dev	0
+env:prod-eu	0
+prod	1
+-- ALTER TABLE DELETE: splitByNonAlpha, unless the tokenizer is explicit
+48
+56
+-- lower preprocessor: the raw values in every shape
+0
+8
+Charged	0	1
+other	0	0
+64
+56

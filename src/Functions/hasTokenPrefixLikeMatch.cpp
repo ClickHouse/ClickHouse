@@ -175,16 +175,17 @@ constexpr auto text_index_note = R"(
 <Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 The function then finds the matching tokens in the index dictionary and reads only their posting lists instead of tokenizing every row.
-The index is not used if it has a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional),
-or if it has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) other than `lower` or `upper` of the column (`hasTokenPrefix`) or any preprocessor at all (`hasTokenLike`, `hasTokenMatch`).
+The index is not used if it has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional)
+or a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional).
 In these cases the function is evaluated on the raw `input` values, still with the tokenizer of the index.
 </Note>
 )";
 
 constexpr auto tokenizer_description = R"(
 Prior to searching, the function tokenizes `input` using the tokenizer specified for the text index on `input`, and the `splitByNonAlpha` tokenizer if `input` has no text index.
-The optional `tokenizer` argument sets the tokenizer explicitly, then the text index is used only if it has the same tokenizer.
-If several text indexes on `input` would give the function a different tokenizer or preprocessor, it throws an exception, and the `tokenizer` argument selects among different tokenizers.
+As for [`hasAnyTokens`](#hasAnyTokens), the tokenizer of the index is used in filters and projections directly over the table, but not e.g. on the result of `GROUP BY` or `JOIN`, or in mutations such as `ALTER TABLE ... DELETE`, where the result can differ.
+The optional `tokenizer` argument sets the tokenizer explicitly, which gives the same result in every query, and then the text index is used only if it has the same tokenizer.
+If several text indexes on `input` would give the function different tokenizers, it throws an exception, and the `tokenizer` argument selects among them.
 )";
 
 FunctionDocumentation::Arguments commonArguments(const char * needle_name, const char * needle_description)
@@ -206,9 +207,6 @@ Returns 1 if at least one token of `input` starts with `prefix`, and 0 otherwise
 The comparison is case-sensitive. An empty `prefix` matches every token, so the function returns 1 if `input` has at least one token.
 
 `hasTokenPrefix(input, prefix)` is equivalent to `arrayExists(t -> startsWith(t, prefix), tokens(input))`.
-
-If the text index has the preprocessor `lower` or `upper`, it is applied to `input` and `prefix`, as for [`hasAnyTokens`](#hasAnyTokens).
-Unlike for `hasAnyTokens`, this does not depend on whether the index is used for the query (e.g. `SETTINGS use_skip_indexes = 0`), only on the index definition.
 )") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenPrefix(input, prefix[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token starts with `prefix`, `0` otherwise.", {"UInt8"}};

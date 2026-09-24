@@ -104,8 +104,6 @@ public:
     static bool isSupportedFunction(const String & function_name);
     /// `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`.
     static bool isPerTokenPatternFunction(const String & function_name);
-    /// Whether the rewrite of a per-token pattern function applies the index preprocessor to the input and the needle.
-    static bool perTokenPatternFunctionAppliesPreprocessor(const String & function_name, const MergeTreeIndexTextPreprocessor & preprocessor);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
@@ -120,7 +118,7 @@ public:
 
     /// Create text search query for the function node if it is suitable for optimization.
     /// The query may have direct read mode `None` and nothing to search, then it only makes the function be rewritten
-    /// with the index tokenizer and preprocessor (see `optimizeDirectReadFromTextIndex`).
+    /// with the index tokenizer (see `optimizeDirectReadFromTextIndex`).
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;

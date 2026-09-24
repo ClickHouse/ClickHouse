@@ -612,12 +612,10 @@ private:
 
     /// Returns true for functions that require applying the preprocessor to the haystack.
     /// has/hasAll/hasAny bypass both transforms.
-    /// A preprocessor cannot be applied to the pattern of hasTokenLike/hasTokenMatch, so the index does not serve them then.
     static bool needApplyPreprocessor(const String & function_name)
     {
         return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase"
-            || function_name == "hasTokenPrefix";
+            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
     /// Returns true for functions that require applying the postprocessor to the haystack and needle.
@@ -628,8 +626,8 @@ private:
             || function_name == "hasPhrase";
     }
 
-    /// A per-token pattern function takes the tokenizer and the preprocessor from the index it is analyzed for, so all such
-    /// indexes must agree on them, whatever the settings. Returns the first of them by name, which then serves the function.
+    /// A per-token pattern function takes the tokenizer from the index it is analyzed for, so all such indexes must
+    /// agree on it, whatever the settings. Returns the first of them by name, which then serves the function.
     std::optional<String> choosePerTokenPatternFunctionIndex(const ActionsDAG::Node & function_node, const ActionsDAG::Node & canonical_node) const
     {
         const auto function_name = function_node.function_base->getName();
@@ -647,10 +645,6 @@ private:
                 continue;
 
             String rewrite = "tokenizer = " + condition.getTokenizer()->getDescription();
-            auto preprocessor = condition.getPreprocessor();
-            if (preprocessor && MergeTreeIndexConditionText::perTokenPatternFunctionAppliesPreprocessor(function_name, *preprocessor))
-                rewrite += ", preprocessor = " + preprocessor->getExpressionAST(haystack_name)->formatForErrorMessage();
-
             rewrite_by_index.emplace(index_name, std::move(rewrite));
         }
 
@@ -664,7 +658,7 @@ private:
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Text indexes {} and {} on {} define function {} differently ({} vs {}). "
-                    "Pass the tokenizer as the third argument if the tokenizers differ, otherwise keep only one of these indexes",
+                    "Pass the tokenizer as the third argument",
                     backQuote(chosen_index), backQuote(index_name), backQuote(haystack_name), function_name, chosen_rewrite, rewrite);
         }
 
@@ -802,7 +796,7 @@ private:
 
         const auto & condition = selected_conditions.front();
 
-        /// A per-token pattern function takes the tokenizer and the preprocessor only from an index it is analyzed for, not
+        /// A per-token pattern function takes the tokenizer only from an index it is analyzed for, not
         /// from e.g. an index on `mapKeys(m)` that serves `hasTokenPrefix(m['key'], ...)` as `mapContainsKey`.
         if (MergeTreeIndexConditionText::isPerTokenPatternFunction(function_node.function_base->getName())
             && condition.search_query->getFunctionName() != function_node.function_base->getName())
@@ -816,11 +810,9 @@ private:
         auto function_name = replacement.node->function_base->getName();
 
         /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
-        /// The per-token pattern functions apply it wherever the index is defined, so their result does not depend on settings or on the query shape.
-        const bool is_per_token_pattern_function = MergeTreeIndexConditionText::isPerTokenPatternFunction(function_name);
-        const bool apply_preprocessor = is_per_token_pattern_function
-            ? preprocessor && MergeTreeIndexConditionText::perTokenPatternFunctionAppliesPreprocessor(function_name, *preprocessor)
-            : is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
+        const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
+        /// As for hasAnyTokens, the index tokenizer reaches only the filters and projections this pass sees over the table, not e.g. those
+        /// after GROUP BY or JOIN, nor mutations. hasTokenPrefix/Like/Match never get the preprocessor, and an explicit tokenizer is the same everywhere.
         const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 
