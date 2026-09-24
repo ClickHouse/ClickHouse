@@ -210,3 +210,172 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_da
 ORDER BY log_comment;
 
 DROP TABLE tab;
+
+SELECT '-- the result does not depend on settings, only on the index definition';
+
+CREATE TABLE tab_array
+(
+    id UInt32,
+    tag String,
+    INDEX idx(tag) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab_array SELECT number, if(number < 8, 'env:prod-eu', 'env:dev') FROM numbers(64);
+
+SELECT 'hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'env:prod');
+SELECT 'hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'env:prod') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'env:prod') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'env:prod') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'env:prod') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'env:prod') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenPrefix(tag, \'prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'prod');
+SELECT 'hasTokenPrefix(tag, \'prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'prod') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenPrefix(tag, \'prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'prod') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix(tag, \'prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'prod') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenPrefix(tag, \'prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'prod') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenPrefix(tag, \'prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'prod') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenPrefix(tag, \'prod\')', count() FROM tab_array WHERE hasTokenPrefix(tag, 'prod') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasTokenLike(tag, 'env:%-eu');
+SELECT 'hasTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasTokenLike(tag, 'env:%-eu') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasTokenLike(tag, 'env:%-eu') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasTokenLike(tag, 'env:%-eu') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasTokenLike(tag, 'env:%-eu') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasTokenLike(tag, 'env:%-eu') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenLike(tag, \'env:%-eu\')', count() FROM tab_array WHERE hasTokenLike(tag, 'env:%-eu') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenMatch(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasTokenMatch(tag, '^env:[a-z]+-');
+SELECT 'hasTokenMatch(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasTokenMatch(tag, '^env:[a-z]+-') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenMatch(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasTokenMatch(tag, '^env:[a-z]+-') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenMatch(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasTokenMatch(tag, '^env:[a-z]+-') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenMatch(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasTokenMatch(tag, '^env:[a-z]+-') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenMatch(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasTokenMatch(tag, '^env:[a-z]+-') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenMatch(tag, \'^env:[a-z]+-\')', count() FROM tab_array WHERE hasTokenMatch(tag, '^env:[a-z]+-') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenPrefix(tag, \'\')', count() FROM tab_array WHERE hasTokenPrefix(tag, '');
+SELECT 'hasTokenPrefix(tag, \'\')', count() FROM tab_array WHERE hasTokenPrefix(tag, '') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenPrefix(tag, \'\')', count() FROM tab_array WHERE hasTokenPrefix(tag, '') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix(tag, \'\')', count() FROM tab_array WHERE hasTokenPrefix(tag, '') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenPrefix(tag, \'\')', count() FROM tab_array WHERE hasTokenPrefix(tag, '') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenPrefix(tag, \'\')', count() FROM tab_array WHERE hasTokenPrefix(tag, '') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenPrefix(tag, \'\')', count() FROM tab_array WHERE hasTokenPrefix(tag, '') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'NOT hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE NOT hasTokenPrefix(tag, 'env:prod');
+SELECT 'NOT hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE NOT hasTokenPrefix(tag, 'env:prod') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'NOT hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE NOT hasTokenPrefix(tag, 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'NOT hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE NOT hasTokenPrefix(tag, 'env:prod') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'NOT hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE NOT hasTokenPrefix(tag, 'env:prod') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'NOT hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE NOT hasTokenPrefix(tag, 'env:prod') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'NOT hasTokenPrefix(tag, \'env:prod\')', count() FROM tab_array WHERE NOT hasTokenPrefix(tag, 'env:prod') SETTINGS text_index_like_max_postings_to_read = 0;
+
+DROP TABLE tab_array;
+
+CREATE TABLE tab_lower
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(msg)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab_lower SELECT number, if(number < 8, 'Charged', 'other') FROM numbers(64);
+
+SELECT 'hasTokenPrefix(msg, \'Charg\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'Charg');
+SELECT 'hasTokenPrefix(msg, \'Charg\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'Charg') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenPrefix(msg, \'Charg\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'Charg') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix(msg, \'Charg\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'Charg') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenPrefix(msg, \'Charg\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'Charg') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenPrefix(msg, \'Charg\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'Charg') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenPrefix(msg, \'Charg\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'Charg') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenPrefix(msg, \'CHARG\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'CHARG');
+SELECT 'hasTokenPrefix(msg, \'CHARG\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'CHARG') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenPrefix(msg, \'CHARG\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'CHARG') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix(msg, \'CHARG\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'CHARG') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenPrefix(msg, \'CHARG\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'CHARG') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenPrefix(msg, \'CHARG\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'CHARG') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenPrefix(msg, \'CHARG\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, 'CHARG') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenLike(msg, \'charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'charg%');
+SELECT 'hasTokenLike(msg, \'charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'charg%') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenLike(msg, \'charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'charg%') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenLike(msg, \'charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'charg%') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenLike(msg, \'charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'charg%') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenLike(msg, \'charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'charg%') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenLike(msg, \'charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'charg%') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'Charg%');
+SELECT 'hasTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'Charg%') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'Charg%') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'Charg%') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'Charg%') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'Charg%') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenLike(msg, \'Charg%\')', count() FROM tab_lower WHERE hasTokenLike(msg, 'Charg%') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenMatch(msg, \'^C\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^C');
+SELECT 'hasTokenMatch(msg, \'^C\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^C') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenMatch(msg, \'^C\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^C') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenMatch(msg, \'^C\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^C') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenMatch(msg, \'^C\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^C') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenMatch(msg, \'^C\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^C') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenMatch(msg, \'^C\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^C') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenMatch(msg, \'^c\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^c');
+SELECT 'hasTokenMatch(msg, \'^c\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^c') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenMatch(msg, \'^c\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^c') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenMatch(msg, \'^c\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^c') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenMatch(msg, \'^c\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^c') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenMatch(msg, \'^c\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^c') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenMatch(msg, \'^c\')', count() FROM tab_lower WHERE hasTokenMatch(msg, '^c') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenPrefix(msg, \'\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, '');
+SELECT 'hasTokenPrefix(msg, \'\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, '') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenPrefix(msg, \'\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, '') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix(msg, \'\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, '') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenPrefix(msg, \'\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, '') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenPrefix(msg, \'\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, '') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenPrefix(msg, \'\')', count() FROM tab_lower WHERE hasTokenPrefix(msg, '') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_lower WHERE NOT hasTokenPrefix(msg, 'charg');
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_lower WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_lower WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes = 0;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_lower WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_lower WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_lower WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_lower WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS text_index_like_max_postings_to_read = 0;
+-- Also in the SELECT list.
+SELECT countIf(hasTokenPrefix(msg, 'Charg')), countIf(hasTokenLike(msg, 'charg%')) FROM tab_lower;
+SELECT countIf(hasTokenPrefix(msg, 'Charg')), countIf(hasTokenLike(msg, 'charg%')) FROM tab_lower SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_lower;
+
+CREATE TABLE tab_nullable
+(
+    id UInt32,
+    msg Nullable(String),
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab_nullable SELECT number, if(number % 3 = 0, NULL, if(number < 8, 'charged', 'other')) FROM numbers(64);
+
+SELECT 'hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg');
+SELECT 'hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE NOT hasTokenPrefix(msg, 'charg');
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes = 0;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'NOT hasTokenPrefix(msg, \'charg\')', count() FROM tab_nullable WHERE NOT hasTokenPrefix(msg, 'charg') SETTINGS text_index_like_max_postings_to_read = 0;
+SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') IS NULL;
+SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') IS NULL SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
+SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') IS NULL SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') IS NULL SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') IS NULL SETTINGS use_skip_indexes_on_data_read = 0;
+SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') IS NULL SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') IS NULL SETTINGS text_index_like_max_postings_to_read = 0;
+
+DROP TABLE tab_nullable;

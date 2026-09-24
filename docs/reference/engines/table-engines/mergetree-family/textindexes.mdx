@@ -546,6 +546,9 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [has](/reference/functions/regular-functions/array-functions#has)                                     | yes | `array` | yes |
 | [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                               | yes | `array` | yes |
 | [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
+| [hasTokenPrefix](/reference/functions/regular-functions/string-search-functions)                     | yes⁶ (`lower`/`upper` only) | all⁶ | no⁶ |
+| [hasTokenLike](/reference/functions/regular-functions/string-search-functions)                       | no⁶ | all⁶ | no⁶ |
+| [hasTokenMatch](/reference/functions/regular-functions/string-search-functions)                      | no⁶ | all⁶ | no⁶ |
 
 ¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
 `LIKE` additionally supports evaluation by a dictionary scan (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for the `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor, see section [LIKE/ILIKE queries](#like-ilike-queries-perf) below.
@@ -560,6 +563,10 @@ Some needles are additionally not eligible, see [LIKE/ILIKE queries](#like-ilike
 ⁴ `startsWith` and `endsWith` search the complete tokens of the needle, and the token at the open end of the needle is incomplete because the value continues there: `startsWith(col, 'ClickHouse is')` searches the token `ClickHouse`, while `startsWith(col, 'ClickHouse')` has no complete token to search.
 The latter is instead evaluated by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer, no preprocessor or postprocessor), which is also the path taken by `col LIKE 'ClickHouse%'` because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) rewrites it into `startsWith`.
 See [LIKE/ILIKE queries](#like-ilike-queries-perf).
+
+⁶ `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` are evaluated by a dictionary scan, see [below](#functions-example-hastokenprefix-hastokenlike-hastokenmatch).
+Their result depends only on the index definition, not on settings: without the tokenizer argument they always use the index tokenizer, and `hasTokenPrefix` always applies a `lower` or `upper` preprocessor.
+With another preprocessor (for `hasTokenLike` and `hasTokenMatch`: with any preprocessor) or with a postprocessor, the functions are evaluated on the raw column values and the index is not used.
 
 ⁵ The *compatible tokenizers* column ignores the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, which is a specialized tokenizer for `Map` columns.
 
@@ -852,7 +859,9 @@ ClickHouse finds them by a scan of the dictionary (a seek to the range of matchi
 If too many tokens match (see settings [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index) and [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)), the functions are evaluated on the column instead.
 
 Like `hasAnyTokens`, the functions use the tokenizer of the index if their optional third argument is omitted; an explicit tokenizer argument must match the index tokenizer.
-The index is not used if it has a postprocessor. `hasTokenPrefix` also supports the `lower` and `upper` preprocessors (applied to the prefix as well), while `hasTokenLike` and `hasTokenMatch` do not use an index with a preprocessor, because a preprocessor cannot be applied to a pattern.
+`hasTokenPrefix` applies a `lower` or `upper` preprocessor of the index to the column and to the prefix.
+With another preprocessor (for `hasTokenLike` and `hasTokenMatch`, which cannot apply a preprocessor to a pattern: with any preprocessor) or with a postprocessor, the functions see the raw column values and the index is not used.
+Unlike for `hasAnyTokens`, whose preprocessor is only applied when the index is used, the result of these functions depends only on the index definition: settings such as `use_skip_indexes` or `use_text_index_like_evaluation_by_dictionary_scan` only decide whether the index is used.
 
 Example:
 

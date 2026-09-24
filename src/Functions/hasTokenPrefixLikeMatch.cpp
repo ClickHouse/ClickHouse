@@ -175,11 +175,12 @@ Column `input` should have a [text index](/reference/engines/table-engines/merge
 The function then finds the matching tokens in the index dictionary and reads only their posting lists instead of tokenizing every row.
 The index is not used if it has a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional),
 or if it has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) other than `lower` or `upper` of the column (`hasTokenPrefix`) or any preprocessor at all (`hasTokenLike`, `hasTokenMatch`).
+In these cases the function is evaluated on the raw `input` values, still with the tokenizer of the index.
 </Note>
 )";
 
 constexpr auto tokenizer_description = R"(
-Prior to searching, the function tokenizes `input` using the tokenizer specified for the text index, if the text index can be used, and the `splitByNonAlpha` tokenizer otherwise.
+Prior to searching, the function tokenizes `input` using the tokenizer specified for the text index on `input`, and the `splitByNonAlpha` tokenizer if `input` has no text index.
 The optional `tokenizer` argument sets the tokenizer explicitly, then the text index is used only if it has the same tokenizer.
 )";
 
@@ -204,7 +205,7 @@ The comparison is case-sensitive. An empty `prefix` matches every token, so the 
 `hasTokenPrefix(input, prefix)` is equivalent to `arrayExists(t -> startsWith(t, prefix), tokens(input))`.
 
 If the text index has the preprocessor `lower` or `upper`, it is applied to `input` and `prefix`, as for [`hasAnyTokens`](#hasAnyTokens).
-The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not.
+Unlike for `hasAnyTokens`, this does not depend on whether the index is used for the query (e.g. `SETTINGS use_skip_indexes = 0`), only on the index definition.
 )") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenPrefix(input, prefix[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token starts with `prefix`, `0` otherwise.", {"UInt8"}};

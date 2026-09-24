@@ -607,7 +607,7 @@ private:
     static bool needApplyTokenizer(const String & function_name)
     {
         return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase"
-            || function_name == "hasTokenPrefix" || function_name == "hasTokenLike" || function_name == "hasTokenMatch";
+            || MergeTreeIndexConditionText::isPerTokenPatternFunction(function_name);
     }
 
     /// Returns true for functions that require applying the preprocessor to the haystack.
@@ -749,6 +749,13 @@ private:
         DataTypePtr needles_type = arg_needles->result_type;
 
         const auto & condition = selected_conditions.front();
+
+        /// A per-token pattern function takes the tokenizer and the preprocessor only from an index it is analyzed for, not
+        /// from e.g. an index on `mapKeys(m)` that serves `hasTokenPrefix(m['key'], ...)` as `mapContainsKey`.
+        if (MergeTreeIndexConditionText::isPerTokenPatternFunction(function_node.function_base->getName())
+            && condition.search_query->getFunctionName() != function_node.function_base->getName())
+            return;
+
         const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->condition);
         auto preprocessor = condition_text.getPreprocessor();
         auto postprocessor = condition_text.getPostprocessor();
@@ -757,7 +764,11 @@ private:
         auto function_name = replacement.node->function_base->getName();
 
         /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
-        const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
+        /// The per-token pattern functions apply it wherever the index is defined, so their result does not depend on settings or on the query shape.
+        const bool is_per_token_pattern_function = MergeTreeIndexConditionText::isPerTokenPatternFunction(function_name);
+        const bool apply_preprocessor = is_per_token_pattern_function
+            ? preprocessor && MergeTreeIndexConditionText::perTokenPatternFunctionAppliesPreprocessor(function_name, *preprocessor)
+            : is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
         const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 
