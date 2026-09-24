@@ -2291,23 +2291,39 @@ static bool tryNormalizeTextConstantForZonelessDateTimeInput(
     return true;
 }
 
-/// A `Variant`/`Dynamic` constant holds exactly one value, hence exactly one active member type, while its
-/// declared type is only the wrapper and `IColumn::get` hands out the nested value.
-/// Returns that member type, or nullptr when the constant is not a `Variant` or `Dynamic`.
-static DataTypePtr tryGetActiveTypeOfErasedConstant(const IColumn & column, const IDataType & type)
+/// Identifies a `FixedString` constant, including an active `Variant` or `Dynamic` member.
+/// The column holds the constant's single data row, without a `ColumnConst` wrapper. A string `Field`
+/// is non-NULL, so an erased constant must have an active member type. `ColumnDynamic::getTypeAt` also
+/// resolves types stored in the shared variant. Other value types do not use padded string comparison.
+static bool isFixedStringConstant(
+    const Field & value, const IColumn & column, const DataTypePtr & type)
 {
-    if (const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(&column))
-        return dynamic_column->getTypeAt(0);
+    if (value.getType() != Field::Types::String)
+        return false;
 
-    if (const auto * variant_column = typeid_cast<const ColumnVariant *>(&column))
+    DataTypePtr value_type = type;
+    if (isDynamic(type))
     {
-        const auto & variant_type = assert_cast<const DataTypeVariant &>(type);
-        const auto global_discr = variant_column->globalDiscriminatorAt(0);
-        chassert(global_discr < variant_type.getVariants().size());
-        return variant_type.getVariant(global_discr);
+        value_type = assert_cast<const ColumnDynamic &>(column).getTypeAt(0);
+        chassert(value_type);
+    }
+    else if (isVariant(type))
+    {
+        const auto & variant_column = assert_cast<const ColumnVariant &>(column);
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+        const auto discriminator = variant_column.globalDiscriminatorAt(0);
+        chassert(discriminator < variant_type.getVariants().size());
+        value_type = variant_type.getVariant(discriminator);
     }
 
-    return nullptr;
+    value_type = removeLowCardinalityAndNullable(value_type);
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(value_type.get()))
+    {
+        chassert(value.safeGet<String>().size() == fixed_string_type->getN());
+        return true;
+    }
+
+    return false;
 }
 
 /// A `FixedString(N)` constant is stored as a `String` `Field` of exactly N bytes, right-padded with
@@ -2324,19 +2340,9 @@ static DataTypePtr tryGetActiveTypeOfErasedConstant(const IColumn & column, cons
 /// Even a constant that fills its declared width can match longer `String` values ending in zero
 /// bytes. `Variant` and `Dynamic` retain the comparison semantics of their active member type.
 static bool fixedStringConstantLosesPadding(
-    const Field & value, const ColumnWithTypeAndName & constant, const DataTypePtr & key_expression_input_type)
+    const Field & value, bool is_fixed_string, const DataTypePtr & key_expression_input_type)
 {
-    if (value.getType() != Field::Types::String)
-        return false;
-
-    DataTypePtr constant_type = removeLowCardinalityAndNullable(constant.type);
-    if (WhichDataType(constant_type).isVariant() || WhichDataType(constant_type).isDynamic())
-    {
-        const auto active_type = tryGetActiveTypeOfErasedConstant(*constant.column, *constant.type);
-        constant_type = active_type ? removeLowCardinalityAndNullable(active_type) : nullptr;
-    }
-
-    if (constant_type && !WhichDataType(constant_type).isFixedString())
+    if (!is_fixed_string)
         return false;
 
     const auto & constant_bytes = value.safeGet<String>();
@@ -2378,6 +2384,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     result.reserve(chains.size());
 
     const Field value = (*constant.column)[0];
+    const bool is_fixed_string = isFixedStringConstant(value, *constant.column, constant.type);
 
     for (const auto & chain : chains)
     {
@@ -2386,7 +2393,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         {
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
-            if (fixedStringConstantLosesPadding(value, constant, transform_input_type)
+            if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
         }
@@ -2398,12 +2405,16 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
                 transformed_const_column, transformed_const_type))
             continue;
 
+        Field transformed_value = (*transformed_const_column)[0];
+        const bool transformed_is_fixed_string
+            = isFixedStringConstant(transformed_value, *transformed_const_column, transformed_const_type);
         result.push_back(
             TransformedConstant{
                 .key_column_num = chain.key_column_num,
                 .key_column_type = chain.key_column_type,
-                .value = (*transformed_const_column)[0],
+                .value = std::move(transformed_value),
                 .type = transformed_const_type,
+                .is_fixed_string = transformed_is_fixed_string,
                 .requires_relaxed_atom = true,
                 .reverse_comparison = !chain.chain_is_positive});
     }
@@ -2909,11 +2920,12 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     result.reserve(dags.size());
 
     const Field value = (*constant.column)[0];
+    const bool is_fixed_string = isFixedStringConstant(value, *constant.column, constant.type);
 
     for (auto & candidate : dags)
     {
         /// The DAG casts the constant to its input type.
-        if (fixedStringConstantLosesPadding(value, constant, candidate.dag.input_type))
+        if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type))
             continue;
 
         auto normalized_constant = constant;
@@ -2954,11 +2966,14 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         if (transformed_value.isNaN())
             continue;
 
+        const bool transformed_is_fixed_string
+            = isFixedStringConstant(transformed_value, *transformed_const_column, transformed_const_type);
         result.push_back(TransformedConstant{
             .key_column_num = candidate.key_column_num,
             .key_column_type = std::move(candidate.key_column_type),
             .value = std::move(transformed_value),
             .type = transformed_const_type,
+            .is_fixed_string = transformed_is_fixed_string,
             .requires_relaxed_atom = requires_relaxed_atom});
     }
 
@@ -5173,7 +5188,7 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             if (has_atom_for_key_column[candidate.key_column_num])
                 continue;
 
-            auto atom = tryBuildComparisonAtom(candidate, func_name, constant, key_arg.getTreeContext().getQueryContext());
+            auto atom = tryBuildComparisonAtom(candidate, func_name, key_arg.getTreeContext().getQueryContext());
             if (!atom)
                 continue;
 
@@ -5213,6 +5228,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             .argument_num_of_space_filling_curve = std::nullopt,
             .const_value = transformed.value,
             .const_type = transformed.type,
+            .const_is_fixed_string = transformed.is_fixed_string,
             .is_relaxed = is_relaxed,
             .reverse_comparison = transformed.reverse_comparison});
     };
@@ -5272,6 +5288,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
                 .argument_num_of_space_filling_curve = argument_num_of_space_filling_curve,
                 .const_value = const_value,
                 .const_type = const_type,
+                .const_is_fixed_string = isFixedStringConstant(const_value, *constant_for_transform.column, const_type),
                 .is_relaxed = false});
         }
     }
@@ -5388,10 +5405,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
 }
 
 std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
-    const ComparisonAtomCandidate & candidate,
-    std::string func_name,
-    const ColumnWithTypeAndName & original_constant,
-    const ContextPtr & context) const
+    const ComparisonAtomCandidate & candidate, std::string func_name, const ContextPtr & context) const
 {
     /// Atom construction proceeds in three stages.
     ///  1. It resolves the type mismatch between the matched key expression and the
@@ -5469,29 +5483,19 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 /// Either way the point range is unsound and prunes matching granules, so
                 /// decline this candidate. A wider-or-equal `FixedString(M)` key (`M >= N`) pads
                 /// the constant into exactly one key value, so a point range is sound.
-                /// Strip `LowCardinality` and `Nullable` first: a wrapped constant such as
+                /// `isFixedStringConstant` strips `LowCardinality` and `Nullable`: a wrapped constant such as
                 /// `toFixedString(x, N)` with a non-literal length (`LowCardinality(FixedString(N))`)
                 /// or `CAST(... AS LowCardinality(Nullable(FixedString(N))))` carries the same padded
                 /// bytes and comparison semantics. Direct candidates only peel an outer `Nullable`, so
                 /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
-                /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
-                /// type is already `LowCardinality`/`Nullable`-stripped above).
-                /// The rule applies to the erased constant's active member type; an active type that
-                /// cannot be determined counts as possibly padded, so the range is declined.
-                DataTypePtr const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
-                if (WhichDataType(const_type_unwrapped).isVariant() || WhichDataType(const_type_unwrapped).isDynamic())
+                /// `Nullable` intact. Stripping both wrappers when identifying the constant's type prevents
+                /// these forms from escaping the guard (the key type has both wrappers stripped above).
+                /// The candidate identifies its own constant's type, resolving any active `Variant`
+                /// or `Dynamic` member while its source column is still available.
+                if (candidate.const_is_fixed_string && isStringOrFixedString(key_expr_type_not_null))
                 {
-                    const auto & column = assert_cast<const ColumnConst &>(*original_constant.column).getDataColumn();
-                    const auto active_type = tryGetActiveTypeOfErasedConstant(column, *original_constant.type);
-                    const_type_unwrapped = active_type ? removeLowCardinalityAndNullable(active_type) : nullptr;
-                }
-
-                if ((!const_type_unwrapped || WhichDataType(const_type_unwrapped).isFixedString())
-                    && isStringOrFixedString(key_expr_type_not_null))
-                {
-                    const size_t const_bytes = const_value.safeGet<String>().size();
                     const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
-                    if (!fixed_key || fixed_key->getN() < const_bytes)
+                    if (!fixed_key || fixed_key->getN() < const_value.safeGet<String>().size())
                         return std::nullopt;
                 }
 

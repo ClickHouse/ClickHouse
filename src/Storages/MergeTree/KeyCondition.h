@@ -622,6 +622,8 @@ private:
         DataTypePtr key_column_type;
         Field value;
         DataTypePtr type;
+        /// Whether the value is a `FixedString`, including an active `Variant` or `Dynamic` member.
+        bool is_fixed_string = false;
         /// True when this transformation requires a relaxed atom. Otherwise, subsequent type
         /// conversion and atom construction still determine whether the atom is exact.
         bool requires_relaxed_atom = true;
@@ -643,6 +645,9 @@ private:
         std::optional<size_t> argument_num_of_space_filling_curve;
         Field const_value;
         DataTypePtr const_type;
+        /// Whether the constant is a `FixedString`, including an active `Variant` or `Dynamic` member.
+        /// This describes the candidate's value after any transform, not the predicate's original value.
+        bool const_is_fixed_string = false;
         /// This flag is true when the transformed constant already describes a superset of matching values.
         /// `tryBuildComparisonAtom` can further relax the constraint during type conversion; exact
         /// conversions preserve this initial precision.
@@ -706,10 +711,7 @@ private:
     /// Builds a complete comparison atom, including type conversion, relaxation and the final range.
     /// Returns `std::nullopt` when the candidate cannot supply a sound constraint.
     std::optional<RPNElement> tryBuildComparisonAtom(
-        const ComparisonAtomCandidate & candidate,
-        std::string func_name,
-        const ColumnWithTypeAndName & original_constant,
-        const ContextPtr & context) const;
+        const ComparisonAtomCandidate & candidate, std::string func_name, const ContextPtr & context) const;
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
