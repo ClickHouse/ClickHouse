@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Macros.h>
+#include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Core/LogsLevel.h>
@@ -12,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/NumberedFileName.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/FullyQualifiedObjectPath.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -43,25 +45,55 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const String & key,
-    size_t sequence_number)
+    const NumberedFileNames & numbered_keys,
+    size_t & sequence_number,
+    WrittenPathReservations & reservations)
 {
-    if (settings.truncate_on_insert
-        || !object_storage.exists(StoredObject(key)))
+    if (settings.truncate_on_insert)
+    {
+        /// A truncating insert overwrites the starting key by its very contract, but not while another insert into
+        /// this table is writing it: both would keep the starting key, and once they roll over into the numbered keys,
+        /// which are reserved one by one, they would get disjoint tails. The insert that is committed last would win
+        /// only the starting object, and the table would read the numbered objects of both - a mix of two rewrites
+        /// rather than one of them. The reservation also makes a concurrent insert with `*_create_new_file_on_insert`
+        /// step aside from the key while the object is not there yet. The caller does it before deleting anything.
+        if (!reservations.tryReserveStartingPath(key))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Object in bucket {} with key {} is being written by a concurrent insert into the table, "
+                "and cannot be overwritten with {}_truncate_on_insert until that insert is over",
+                configuration.getNamespace(), key, configuration.getTypeName());
+        return std::nullopt;
+    }
+
+    /// The starting key is free when the object is not there and no other insert into this table is writing it:
+    /// the object appears only when that insert is committed, and until then the reservation is the only thing
+    /// that tells the two inserts apart - without it both would write the same key, and one would lose its rows.
+    const bool object_exists = object_storage.exists(StoredObject(key));
+    if (!object_exists && reservations.tryReserveStartingPath(key))
         return std::nullopt;
 
     if (settings.create_new_file_on_insert)
     {
-        auto pos = key.find_first_of('.');
         String new_key;
         do
         {
-            new_key = key.substr(0, pos) + "." + std::to_string(sequence_number) + (pos == std::string::npos ? "" : key.substr(pos));
+            new_key = numbered_keys.getName(sequence_number);
             ++sequence_number;
         }
-        while (object_storage.exists(StoredObject(new_key)));
+        /// A key is free when the object is not there and no other insert into this table is writing it.
+        while (object_storage.exists(StoredObject(new_key)) || !reservations.tryReserve(new_key));
 
         return new_key;
     }
+
+    if (!object_exists)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Object in bucket {} with key {} is being written by a concurrent insert into the table. "
+            "If you want to overwrite it, enable setting {}_truncate_on_insert, if you "
+            "want to create a new file on each insert, enable setting {}_create_new_file_on_insert",
+            configuration.getNamespace(), key, configuration.getTypeName(), configuration.getTypeName());
 
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
@@ -69,6 +101,108 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
         "If you want to overwrite it, enable setting {}_truncate_on_insert, if you "
         "want to create a new file on each insert, enable setting {}_create_new_file_on_insert",
         configuration.getNamespace(), key, configuration.getTypeName(), configuration.getTypeName());
+}
+
+String getNextKeyForSplittingBySize(
+    const IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
+    const StorageObjectStorageQuerySettings & settings,
+    const NumberedFileNames & numbered_keys,
+    size_t & sequence_number,
+    WrittenPathReservations & reservations)
+{
+    while (true)
+    {
+        String new_key = numbered_keys.getName(sequence_number);
+        ++sequence_number;
+
+        /// A truncating insert overwrites the numbered keys of the previous inserts into this key - but only when
+        /// the numbered sequence is unambiguously its own. `*_create_new_file_on_insert` declares the numbered keys
+        /// a shared namespace where an insert steps aside from the keys taken by someone else, and where nothing is
+        /// removed by number for the same reason (see `removeStaleSplitObjectsByNumber`). The objects this table has
+        /// written itself are removed before the rewrite starts, so a key that is still taken when the rewrite rolls
+        /// over into it belongs to someone else, and is stepped over rather than overwritten.
+        const bool key_is_free
+            = (settings.truncate_on_insert && !settings.create_new_file_on_insert) || !object_storage.exists(StoredObject(new_key));
+
+        /// A key that another insert into this table is writing right now is skipped whatever the settings are:
+        /// its object is not there yet, so nothing tells it apart from a free key, and both inserts would write it.
+        if (key_is_free && reservations.tryReserve(new_key))
+            return new_key;
+
+        if (!key_is_free)
+        {
+            /// The name is already taken: either skip it and try the next number, or refuse to write.
+            if (!settings.create_new_file_on_insert)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Object in bucket {} with key {} already exists, but it is needed to continue writing the data split by size. "
+                    "If you want to overwrite it, enable setting {}_truncate_on_insert, if you want to skip the taken names, "
+                    "enable setting {}_create_new_file_on_insert",
+                    configuration.getNamespace(), new_key, configuration.getTypeName(), configuration.getTypeName());
+        }
+    }
+}
+
+void removeStaleSplitObjects(
+    IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
+    const std::vector<String> & stale_keys,
+    const std::function<void(const String &)> & on_removed,
+    const LoggerPtr & log)
+{
+    for (const auto & stale_key : stale_keys)
+    {
+        /// The insert writing this object is not over: it holds the reservation of every key it has generated
+        /// until it is, also of the keys it has already committed and published. The truncating insert cannot
+        /// reuse this key either - `tryReservePathForWrite` refuses a reserved key - so it steps over it.
+        if (configuration.isPathReservedForWrite(stale_key))
+        {
+            LOG_INFO(log, "Kept the object {}: it is being written by a concurrent insert into the table", stale_key);
+            continue;
+        }
+
+        object_storage.removeObjectIfExists(StoredObject(stale_key));
+        /// Logged here rather than left to the object storage: `S3` and `Azure` log the objects they delete, `HDFS` and `Local` do not.
+        LOG_INFO(log, "Removed the object {} written by a previous insert into the table", stale_key);
+        on_removed(stale_key);
+    }
+}
+
+/// The numbered keys are not attributed to a particular table - the storage keeps no metadata about the objects
+/// it has written. The removal is done only when the numbered keys are unambiguously overwritten by this insert
+/// anyway: a truncating insert that is split by size claims the whole numbered sequence of the key, while
+/// `*_create_new_file_on_insert` lets an insert step over the keys taken by someone else, and then it is not
+/// known which of the objects belong to this table - nothing is deleted in that case.
+void removeStaleSplitObjectsByNumber(
+    IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
+    const NumberedFileNames & numbered_keys,
+    bool create_new_file_on_insert,
+    const LoggerPtr & log)
+{
+    if (create_new_file_on_insert)
+        return;
+
+    size_t sequence_number = numbered_keys.start_sequence_number;
+    while (true)
+    {
+        String stale_key = numbered_keys.getName(sequence_number);
+        ++sequence_number;
+
+        /// See `removeStaleSplitObjects`. The object may or may not be there yet, so the probing goes on past it.
+        if (configuration.isPathReservedForWrite(stale_key))
+        {
+            LOG_INFO(log, "Kept the object {}: it is being written by a concurrent insert into the table", stale_key);
+            continue;
+        }
+
+        if (!object_storage.exists(StoredObject(stale_key)))
+            break;
+
+        object_storage.removeObjectIfExists(StoredObject(stale_key));
+        LOG_INFO(log, "Removed the stale object {} of a previous insert split by size, overwritten by a truncating insert", stale_key);
+    }
 }
 
 void resolveSchemaAndFormat(

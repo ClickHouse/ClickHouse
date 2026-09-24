@@ -1,0 +1,29 @@
+--- The number goes after the partition id, not into it
+p_a.5.1.tsv
+p_a.5.2.tsv
+p_a.5.3.tsv
+p_a.5.tsv
+p_a.6.1.tsv
+p_a.6.2.tsv
+p_a.6.3.tsv
+p_a.6.tsv
+p_a.b.1.tsv
+p_a.b.2.tsv
+p_a.b.3.tsv
+p_a.b.tsv
+a.5	400	239800	4
+a.6	400	399800	4
+a.b	400	79800	4
+--- A smaller truncating rewrite of one partition deletes only the numbered files of that partition
+p_a.5.tsv
+p_a.6.1.tsv
+p_a.6.2.tsv
+p_a.6.3.tsv
+p_a.6.tsv
+p_a.b.1.tsv
+p_a.b.2.tsv
+p_a.b.3.tsv
+p_a.b.tsv
+a.5	100	4950	1
+a.6	400	399800	4
+a.b	400	79800	4

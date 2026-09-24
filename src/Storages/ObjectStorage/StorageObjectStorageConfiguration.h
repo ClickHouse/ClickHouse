@@ -16,7 +16,9 @@
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <unordered_set>
 #include <optional>
+#include <Common/CopyableMutex.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
@@ -44,6 +46,8 @@ struct StorageObjectStorageQuerySettings
     /// Insert settings:
     bool truncate_on_insert;
     bool create_new_file_on_insert;
+    /// If not zero, a new file is started as soon as this number of bytes is written into the current one.
+    size_t split_on_write_by_size_bytes;
 
     /// Schema inference settings:
     bool schema_inference_use_cache;
@@ -64,6 +68,7 @@ public:
 
     StorageObjectStorageConfiguration() = default;
     virtual ~StorageObjectStorageConfiguration() = default;
+
 
     static constexpr auto SCHEMA_HASH_WILDCARD = "{_schema_hash}";
 
@@ -113,6 +118,10 @@ public:
     const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
+    /// The keys of the objects of a partition when the data written into it is split into several objects,
+    /// see `IPartitionStrategy::getNumberedPathsForWrite`. `path_for_write` is what `getPathForWrite` has
+    /// returned for this partition.
+    NumberedFileNames getNumberedPathsForWrite(const std::string & partition_id, const std::string & path_for_write) const;
 
     void setPathForRead(const Path & path)
     {
@@ -124,8 +133,100 @@ public:
      * This list is used to determine the next file name and the set of files that shall be read from remote storage.
      * This is not ideal, there are much better ways to implement reads and writes. It should be eventually removed
      */
-    virtual const Paths & getPaths() const = 0;
-    virtual void setPaths(const Paths & paths) = 0;
+    /// The list is mutated by the writes - an insert with `*_create_new_file_on_insert` or
+    /// `*_split_on_write_by_size_bytes` appends the keys it writes to it, and a truncating insert retires them -
+    /// while the reads snapshot it at planning time, so it is guarded by `paths_mutex` and handed out by value.
+    /// The backends keep the storage of the list (`keys`, `blobs_paths`, `paths`) and reach it only through
+    /// `getPathsUnlocked` / `getMutablePathsUnlocked` / `setPathsUnlocked`, which are called with the mutex held.
+    Paths getPaths() const
+    {
+        std::lock_guard lock(paths_mutex);
+        return getPathsUnlocked();
+    }
+
+    size_t getPathsCount() const
+    {
+        std::lock_guard lock(paths_mutex);
+        return getPathsUnlocked().size();
+    }
+
+    void setPaths(const Paths & paths)
+    {
+        std::lock_guard lock(paths_mutex);
+        setPathsUnlocked(paths);
+    }
+
+    /// Appends a path to the list, unless it is already there.
+    /// An insert split by size publishes every object it writes, so the list is mutated in place rather than
+    /// copied per object - a split export of thousands of objects would otherwise copy the whole list as many times.
+    void appendPath(const Path & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        Paths & paths = getMutablePathsUnlocked();
+        if (std::find_if(paths.begin(), paths.end(), [&](const auto & p) { return p.path == path.path; }) != paths.end())
+            return;
+        paths.push_back(path);
+        onPathsUpdatedUnlocked();
+    }
+
+    /// Drops a path from the list. Used to retire a key as soon as it has been removed from the object storage.
+    void retirePath(const String & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        Paths & paths = getMutablePathsUnlocked();
+        if (std::erase_if(paths, [&](const auto & p) { return p.path == path; }) == 0)
+            return;
+        onPathsUpdatedUnlocked();
+    }
+
+    /// A key that a write has chosen but has not committed yet is in the list of the paths of neither the
+    /// table nor the object storage: the readers must not see it before the object is there, and the object
+    /// appears only when the write is finalized. Nothing would then stop a concurrent insert into the same
+    /// table from generating the same key and overwriting the data of the first one. A writer therefore
+    /// reserves every key it generates, and the key generation of the other writers steps over the reserved
+    /// keys exactly like it steps over the objects that already exist. The reservations are writer-only:
+    /// no read ever sees them, and they are released when the insert is over - see `WrittenPathReservations`.
+    ///
+    /// Returns false when the key is already reserved by another insert into this table, or names an object
+    /// that this table has already published. A published key is checked here as well, under the same lock, and
+    /// not only in the object storage: the insert that wrote it publishes it before it releases the reservation,
+    /// so a key is never free for a moment in between, whatever the object storage reports about a just written
+    /// object - not every S3 implementation answers `HEAD` consistently right after the `PUT` has returned.
+    /// The list is scanned once per generated key, that is once per object written, which is negligible next to
+    /// writing the object itself.
+    bool tryReservePathForWrite(const String & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        const Paths & paths = getPathsUnlocked();
+        if (std::find_if(paths.begin(), paths.end(), [&](const auto & p) { return p.path == path; }) != paths.end())
+            return false;
+        return paths_reserved_for_write.paths.insert(path).second;
+    }
+
+    /// The same for the key an insert starts with - the raw path of a plain table, or the path of a partition.
+    /// It is a part of the table already, so it is published whether its object exists or not, and it is
+    /// reserved against the concurrent inserts into the table only: when the object is not there yet, the
+    /// reservation is the only thing that tells the concurrent inserts apart, and they would all write it.
+    /// Returns false when another insert into this table is writing this key right now.
+    bool tryReserveStartingPathForWrite(const String & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        return paths_reserved_for_write.paths.insert(path).second;
+    }
+
+    void releasePathReservedForWrite(const String & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        paths_reserved_for_write.paths.erase(path);
+    }
+
+    /// Whether an insert into this table is writing this key right now. A truncating insert leaves such objects
+    /// alone when it deletes the objects of the previous inserts: they belong to an insert that is not over yet.
+    bool isPathReservedForWrite(const String & path) const
+    {
+        std::lock_guard lock(paths_mutex);
+        return paths_reserved_for_write.paths.contains(path);
+    }
 
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
@@ -403,6 +504,31 @@ public:
     std::optional<String> source_disk_name;
 
 protected:
+    virtual const Paths & getPathsUnlocked() const = 0;
+    /// The list itself, for the mutations that touch a single element of it.
+    virtual Paths & getMutablePathsUnlocked() = 0;
+    virtual void setPathsUnlocked(const Paths & paths) = 0;
+    /// Called after `getMutablePathsUnlocked` has been mutated in place, so that a backend which derives
+    /// something from the list (`Local` keeps its raw path in sync with the first element) can update it.
+    virtual void onPathsUpdatedUnlocked() {}
+
+    /// The mutex belongs to the object, so a copy of the configuration gets its own fresh one.
+    mutable CopyableMutex paths_mutex;
+
+    /// The keys of the objects that the inserts into this table are writing right now, see `tryReservePathForWrite`.
+    /// Guarded by `paths_mutex`. The reservations belong to the writers of this very object, so a copy of the
+    /// configuration starts with none of them, like it starts with a fresh mutex.
+    struct ReservedPaths
+    {
+        std::unordered_set<String> paths;
+
+        ReservedPaths() = default;
+        /// Nothing is copied: the copy starts empty, whatever the source holds.
+        ReservedPaths(const ReservedPaths &) {}
+        /// Nothing is copied, so self-assignment needs no special handling.
+        ReservedPaths & operator=(const ReservedPaths &) { paths.clear(); return *this; }  /// NOLINT(cert-oop54-cpp)
+    };
+    ReservedPaths paths_reserved_for_write;
     void checkFormat() const;
 
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);

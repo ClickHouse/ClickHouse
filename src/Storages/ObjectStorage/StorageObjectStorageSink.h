@@ -1,7 +1,10 @@
 #pragma once
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
+
+#include <functional>
 
 namespace DB
 {
@@ -12,14 +15,27 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class StorageObjectStorageSink final : public SinkToStorage
 {
 public:
+    /// Called when the current object has reached the size limit configured by `*_split_on_write_by_size_bytes`.
+    /// Returns the path of the next object to write the data into.
+    using GetNextPathCallback = std::function<String()>;
+
+    /// Called after the object returned by `GetNextPathCallback` has been written and committed. Only then
+    /// the key is registered in the table, so that a concurrent `SELECT` never sees the key of an object
+    /// that is still being written or that the insert could not create at all.
+    using PublishPathCallback = std::function<void(const String &)>;
+
     StorageObjectStorageSink(
         const std::string & path_,
-        ObjectStoragePtr object_storage,
+        ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context,
-        const String & format,
-        const String & compression_method);
+        ContextPtr context_,
+        const String & format_,
+        const String & compression_method_,
+        size_t split_on_write_by_size_bytes_ = 0,
+        GetNextPathCallback get_next_path_ = {},
+        PublishPathCallback publish_path_ = {},
+        bool path_is_published_ = true);
 
     ~StorageObjectStorageSink() override;
 
@@ -29,17 +45,43 @@ public:
 
     void onFinish() override;
 
+    /// The path of the object that is being written at the moment.
     const String & getPath() const { return path; }
 
+    /// The size of the last written object. Makes sense only when the data is not split into multiple objects.
     size_t getFileSize() const;
 
 private:
-    const String path;
+    String path;
+    const ObjectStoragePtr object_storage;
+    const std::optional<FormatSettings> format_settings;
     SharedHeader sample_block;
+    const ContextPtr context;
+    const String format;
+    const String compression_method;
+    const size_t split_on_write_by_size_bytes;
+    const GetNextPathCallback get_next_path;
+    const PublishPathCallback publish_path;
+    /// Whether the object that is being written is already a part of the table. The first object of the
+    /// insert usually is - unless the insert had to step aside from an existing object into a new key with
+    /// `*_create_new_file_on_insert`; the next objects of a split insert never are. An object that is not,
+    /// is registered only after it has been written and committed.
+    bool path_is_published = true;
+
+    /// The buffer that writes into the object storage. It is also used to count the number of bytes
+    /// written to the object. It is declared before `write_buf` so that it outlives the compressing
+    /// wrapper referencing it.
+    std::unique_ptr<WriteBuffer> destination_buf;
+    /// The non-owning compressing wrapper around `destination_buf`; it is empty if the data is written uncompressed.
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     std::optional<size_t> result_file_size;
 
+    /// The buffer the data is formatted into: the compressing wrapper if the data is compressed,
+    /// the object storage buffer otherwise.
+    WriteBuffer & getWriteBuffer();
+
+    void initialize();
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
@@ -71,6 +113,9 @@ private:
     SharedHeader sample_block;
     const ContextPtr context;
     String last_written_object_path;
+    /// The keys generated for the partitions of this insert, held until the insert is over so that a
+    /// concurrent insert into the same table does not generate the same ones - see `WrittenPathReservations`.
+    WrittenPathReservationsPtr reservations;
 };
 
 }

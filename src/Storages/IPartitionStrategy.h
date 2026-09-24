@@ -3,6 +3,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/NumberedFileName.h>
 #include <Processors/Chunk.h>
 
 namespace DB
@@ -31,6 +32,12 @@ struct IPartitionStrategy
 
     virtual std::string getPathForRead(const std::string & prefix) = 0;
     virtual std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) = 0;
+
+    /// The names of the files of a partition when the data written into it is split into several files
+    /// (see `*_split_on_write_by_size_bytes` and `*_create_new_file_on_insert`): the files after the first one
+    /// carry a sequence number. `path_for_write` is what `getPathForWrite` has returned for this partition.
+    virtual NumberedFileNames getNumberedPathsForWrite(
+        const std::string & prefix, const std::string & partition_key, const std::string & path_for_write) = 0;
 
     virtual ColumnRawPtrs getFormatChunkColumns(const Chunk & chunk)
     {
@@ -95,6 +102,8 @@ struct WildcardPartitionStrategy : IPartitionStrategy
     ColumnPtr computePartitionKey(const Chunk & chunk) const override;
     std::string getPathForRead(const std::string & prefix) override;
     std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
+    NumberedFileNames getNumberedPathsForWrite(
+        const std::string & prefix, const std::string & partition_key, const std::string & path_for_write) override;
 };
 
 /*
@@ -114,6 +123,8 @@ struct HiveStylePartitionStrategy : IPartitionStrategy
     ColumnPtr computePartitionKey(const Chunk & chunk) const override;
     std::string getPathForRead(const std::string & prefix) override;
     std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
+    NumberedFileNames getNumberedPathsForWrite(
+        const std::string & prefix, const std::string & partition_key, const std::string & path_for_write) override;
 
     ColumnRawPtrs getFormatChunkColumns(const Chunk & chunk) override;
     Block getFormatHeader() override;

@@ -690,6 +690,29 @@ Possible values:
 
 See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 )", 0) \
+    DECLARE(UInt64, s3_split_on_write_by_size_bytes, 0, R"(
+If not zero, `INSERT` into an S3 engine table or into the [s3](/sql-reference/table-functions/s3) table function starts a new object as soon as at least this number of bytes has been written into the current one. The keys of the new objects follow the same pattern as for `s3_create_new_file_on_insert`:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+If the key of the first object already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next objects are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first object as well.
+
+For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc. With `partition_strategy = 'hive'` the name of the first object of every insert is generated anew, so the objects of one insert are `<id>.parquet` -> `<id>.1.parquet` -> `<id>.2.parquet`, etc. (the extension is the lower-cased name of the format), an insert never meets an object of a previous insert, and a truncating insert does not overwrite or delete the objects of the previous inserts - the `hive` layout is append-only, with or without splitting.
+
+The decision to start a new object is made after writing a block, so an object can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the object is taken into account, so for a compressed object it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
+
+If an object with the generated key already exists, the behavior is controlled by `s3_create_new_file_on_insert`: if it is enabled, the number is skipped and the next unused key is taken, otherwise an exception is thrown, and the objects written before that are left as is. If `s3_truncate_on_insert` is enabled and `s3_create_new_file_on_insert` is not, existing objects are overwritten instead. With both of them enabled the numbered keys stay a shared namespace: a truncating rewrite removes the objects it has written itself before it starts, and then steps over the keys that are still taken - they belong to someone else.
+
+Two inserts into the same table that run at the same time never write the same key: every key an insert writes - the one it starts with included - is held until that insert is over, and the other insert steps over it exactly like over an object that already exists. A key becomes visible for the readers of the table only after its object has been written, so a `SELECT` never plans an object that is still being written. A truncating insert that runs at the same time as an insert split by size does not delete the objects that insert has already written, and steps over their keys as well. A truncating insert fails if the key it starts with is being written by another insert into the same table at that moment, instead of mixing its objects with the objects of that insert. Inserts running on different servers do not see each other's keys, and there the generated keys can collide as before.
+
+A truncating insert starts the numbering over, and the objects of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its prefix. A table remembers the objects it has written for as long as it stays in memory, and exactly these objects are deleted, even if a previous insert had to skip some of the keys because they were taken by someone else. When there is nothing to attribute the numbered keys to - an `INSERT` into the `s3` table function, a partitioned write, or a table that was reloaded since the previous insert - only a truncating insert that is split by size claims the whole numbered sequence of its key and deletes it, and even that is not done if `s3_create_new_file_on_insert` is enabled at the same time: in that mode an insert can step over the keys taken by someone else, and it is not known which of the objects belong to this table.
+
+`TRUNCATE TABLE` deletes the same objects the table remembers, and it does not delete a numbered tail that it does not attribute to itself anymore - the one left over from an insert split by size before the table was reloaded. Such a tail is left in place, with a warning in the server log: an object the table does not own is not deleted, and a truncating insert split by size is what claims and removes it.
+
+Possible values:
+- 0 — All the data is written into a single object.
+- Positive integer — The number of bytes after which a new object is started.
+)", 0) \
     DECLARE(Bool, s3_skip_empty_files, true, R"(
 Enables or disables skipping empty files in [S3](/reference/engines/table-engines/integrations/s3) engine tables.
 
@@ -699,6 +722,29 @@ Possible values:
 )", 0) \
     DECLARE(Bool, azure_create_new_file_on_insert, false, R"(
 Enables or disables creating a new file on each insert in azure engine tables
+)", 0) \
+    DECLARE(UInt64, azure_split_on_write_by_size_bytes, 0, R"(
+If not zero, `INSERT` into an Azure Blob Storage engine table or into the [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage) table function starts a new blob as soon as at least this number of bytes has been written into the current one. The names of the new blobs follow the same pattern as for `azure_create_new_file_on_insert`:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+If the name of the first blob already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next blobs are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first blob as well.
+
+For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc. With `partition_strategy = 'hive'` the name of the first blob of every insert is generated anew, so the blobs of one insert are `<id>.parquet` -> `<id>.1.parquet` -> `<id>.2.parquet`, etc. (the extension is the lower-cased name of the format), an insert never meets an blob of a previous insert, and a truncating insert does not overwrite or delete the blobs of the previous inserts - the `hive` layout is append-only, with or without splitting.
+
+The decision to start a new blob is made after writing a block, so a blob can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the blob is taken into account, so for a compressed blob it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
+
+If a blob with the generated name already exists, the behavior is controlled by `azure_create_new_file_on_insert`: if it is enabled, the number is skipped and the next unused name is taken, otherwise an exception is thrown, and the blobs written before that are left as is. If `azure_truncate_on_insert` is enabled and `azure_create_new_file_on_insert` is not, existing blobs are overwritten instead. With both of them enabled the numbered names stay a shared namespace: a truncating rewrite removes the blobs it has written itself before it starts, and then steps over the names that are still taken - they belong to someone else.
+
+Two inserts into the same table that run at the same time never write the same name: the name an insert has generated is held until that insert is over, and the other insert steps over it exactly like over a blob that already exists. A name becomes visible for the readers of the table only after its blob has been written, so a `SELECT` never plans a blob that is still being written. A truncating insert fails if the name it starts with is being written by another insert into the same table at that moment. Inserts running on different servers do not see each other's names, and there the generated names can collide as before.
+
+A truncating insert starts the numbering over, and the blobs of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its prefix. A table remembers the blobs it has written for as long as it stays in memory, and exactly these blobs are deleted, even if a previous insert had to skip some of the names because they were taken by someone else. When there is nothing to attribute the numbered names to - an `INSERT` into the `azureBlobStorage` table function, a partitioned write, or a table that was reloaded since the previous insert - only a truncating insert that is split by size claims the whole numbered sequence of its name and deletes it, and even that is not done if `azure_create_new_file_on_insert` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the blobs belong to this table.
+
+`TRUNCATE TABLE` deletes the same blobs the table remembers, and it does not delete a numbered tail that it does not attribute to itself anymore - the one left over from an insert split by size before the table was reloaded. Such a tail is left in place, with a warning in the server log: a blob the table does not own is not deleted, and a truncating insert split by size is what claims and removes it.
+
+Possible values:
+- 0 — All the data is written into a single blob.
+- Positive integer — The number of bytes after which a new blob is started.
 )", 0) \
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
@@ -831,6 +877,29 @@ initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
 - 1 — `INSERT` query creates a new file.
+)", 0) \
+    DECLARE(UInt64, hdfs_split_on_write_by_size_bytes, 0, R"(
+If not zero, `INSERT` into an HDFS engine table or into the [hdfs](/sql-reference/table-functions/hdfs) table function starts a new file as soon as at least this number of bytes has been written into the current file. The names of the new files follow the same pattern as for `hdfs_create_new_file_on_insert`:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+If the name of the first file already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next files are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first file as well.
+
+For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc. With `partition_strategy = 'hive'` the name of the first file of every insert is generated anew, so the files of one insert are `<id>.parquet` -> `<id>.1.parquet` -> `<id>.2.parquet`, etc. (the extension is the lower-cased name of the format), an insert never meets an file of a previous insert, and a truncating insert does not overwrite or delete the files of the previous inserts - the `hive` layout is append-only, with or without splitting.
+
+The decision to start a new file is made after writing a block, so a file can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the file is taken into account, so for a compressed file it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
+
+If a file with the generated name already exists, the behavior is controlled by `hdfs_create_new_file_on_insert`: if it is enabled, the number is skipped and the next unused name is taken, otherwise an exception is thrown, and the files written before that are left as is. If `hdfs_truncate_on_insert` is enabled and `hdfs_create_new_file_on_insert` is not, existing files are overwritten instead. With both of them enabled the numbered names stay a shared namespace: a truncating rewrite removes the files it has written itself before it starts, and then steps over the names that are still taken - they belong to someone else.
+
+Two inserts into the same table that run at the same time never write the same name: the name an insert has generated is held until that insert is over, and the other insert steps over it exactly like over a file that already exists. A name becomes visible for the readers of the table only after its file has been written, so a `SELECT` never plans a file that is still being written. A truncating insert fails if the name it starts with is being written by another insert into the same table at that moment. Inserts running on different servers do not see each other's names, and there the generated names can collide as before.
+
+A truncating insert starts the numbering over, and the files of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its directory. A table remembers the files it has written for as long as it stays in memory, and exactly these files are deleted, even if a previous insert had to skip some of the names because they were taken by someone else. When there is nothing to attribute the numbered names to - an `INSERT` into the `hdfs` table function, a partitioned write, or a table that was reloaded since the previous insert - only a truncating insert that is split by size claims the whole numbered sequence of its path and deletes it, and even that is not done if `hdfs_create_new_file_on_insert` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the files belong to this table.
+
+`TRUNCATE TABLE` deletes the same files the table remembers, and it does not delete a numbered tail that it does not attribute to itself anymore - the one left over from an insert split by size before the table was reloaded. Such a tail is left in place, with a warning in the server log: a file the table does not own is not deleted, and a truncating insert split by size is what claims and removes it.
+
+Possible values:
+- 0 — All the data is written into a single file.
+- Positive integer — The number of bytes after which a new file is started.
 )", 0) \
     DECLARE(Bool, hdfs_skip_empty_files, false, R"(
 Enables or disables skipping empty files in [HDFS](/reference/engines/table-engines/integrations/hdfs) engine tables.
@@ -6600,6 +6669,27 @@ Enables or disables creating a new file on each insert in file engine tables if 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
 - 1 — `INSERT` query creates a new file.
+)", 0) \
+    DECLARE(UInt64, engine_file_split_on_write_by_size_bytes, 0, R"(
+If not zero, `INSERT` into a [File](/engines/table-engines/special/file) engine table or into the [file](/sql-reference/table-functions/file) table function starts a new file as soon as at least this number of bytes has been written into the current file. The names of the new files follow the same pattern as for `engine_file_allow_create_multiple_files`:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+If the name of the first file already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next files are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first file as well.
+
+For a partitioned write, the number is placed into the path pattern before the partition id is substituted for `{_partition_id}`, so that a partition id with a dot in it cannot shift it: `data_{_partition_id}.Parquet` with the partition id `a.b` gives `data_a.b.Parquet` -> `data_a.b.1.Parquet` -> `data_a.b.2.Parquet`, etc.
+
+The decision to start a new file is made after writing a block, so a file can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the file is taken into account, so for a compressed file it is the size of the compressed data, and for a file that already existed it also includes its initial size. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
+
+If a file with the generated name already exists, the behavior is controlled by `engine_file_allow_create_multiple_files`: if it is enabled, the number is skipped and the next unused name is taken, otherwise an exception is thrown, and the files written before that are left as is. If `engine_file_truncate_on_insert` is enabled and `engine_file_allow_create_multiple_files` is not, existing files are overwritten instead. With both of them enabled the numbered names stay a shared namespace: a truncating rewrite removes the files it has written itself before it starts, and then steps over the names that are still taken - they belong to someone else.
+
+A truncating insert starts the numbering over, and the files of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its directory. A table remembers the files it has written for as long as it stays in memory, and exactly these files are deleted, even if a previous insert had to skip some of the names because they were taken by someone else. When there is nothing to attribute the numbered names to - an `INSERT` into the `file` table function, a partitioned write, or a table that was reloaded since the previous insert - only a truncating insert that is split by size claims the whole numbered sequence of its path and deletes it, and even that is not done if `engine_file_allow_create_multiple_files` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the files belong to this table.
+
+`TRUNCATE TABLE` deletes the same files the table remembers, and it does not delete a numbered tail that it does not attribute to itself anymore - the one left over from an insert split by size before the table was reloaded. Such a tail is left in place, with a warning in the server log: a file the table does not own is not deleted, and a truncating insert split by size is what claims and removes it.
+
+Possible values:
+- 0 — All the data is written into a single file.
+- Positive integer — The number of bytes after which a new file is started.
 )", 0) \
     DECLARE(Bool, engine_file_skip_empty_files, false, R"(
 Enables or disables skipping empty files in [File](/reference/engines/table-engines/special/file) engine tables.

@@ -373,6 +373,19 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPa
     return Path {partition_strategy->getPathForWrite(raw_path.path, partition_id)};
 }
 
+NumberedFileNames StorageObjectStorageConfiguration::getNumberedPathsForWrite(const std::string & partition_id, const std::string & path_for_write) const
+{
+    if (!partition_strategy)
+        return getNumberedFileNames(path_for_write);
+
+    /// The same pattern that `getPathForWrite` substitutes the partition key into.
+    auto raw_path = getRawPath();
+    if (!schema_hash.empty())
+        boost::replace_all(raw_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+
+    return partition_strategy->getNumberedPathsForWrite(raw_path.path, partition_id, path_for_write);
+}
+
 bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";
