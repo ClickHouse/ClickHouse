@@ -30,12 +30,14 @@ SELECT enabled FROM system.fail_points WHERE name = 'prepared_sets_build_ordered
 SELECT 1 WHERE 1 IN (SELECT 1);
 SELECT enabled FROM system.fail_points WHERE name = 'prepared_sets_build_ordered_set_inplace_fail';
 
--- `system.tables` filtering builds its set through the destructive
+-- `system.databases` filtering builds its set through the destructive
 -- `VirtualColumnUtils::buildSetsForDAG` -> `FutureSetFromSubquery::buildSetInplace` path, which
 -- consumes the subquery source, so abandoning it would leave the set uncreated for good: the shot
--- must not land here, and the filter must still be applied.
-SELECT count() > 0 AND min(database = 'system')
-FROM system.tables WHERE database IN (SELECT 'system');
+-- must not land here, and the filter must still be applied. (`system.tables` is no use here: it
+-- first builds such a set through the clone-backed `buildOrderedSetInplace` to narrow the
+-- enumeration, which is exactly the build the shot is meant for.)
+SELECT count() = 1 AND min(name = 'system')
+FROM system.databases WHERE name IN (SELECT 'system');
 SELECT enabled FROM system.fail_points WHERE name = 'prepared_sets_build_ordered_set_inplace_fail';
 
 -- The ordered in-place build falls back to the destructive path when the subquery source cannot be
