@@ -1,0 +1,41 @@
+<test>
+    <create_query>
+        CREATE TABLE test_kc_wide_or
+        (
+            ts DateTime('UTC')
+        )
+        ENGINE = MergeTree() ORDER BY (toYYYYMM(ts), toDate(ts), ts)
+        SETTINGS index_granularity = 256
+    </create_query>
+
+    <fill_query>INSERT INTO test_kc_wide_or SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number FROM numbers(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_kc_wide_or FINAL</fill_query>
+
+    <!-- Each OR branch expands to atoms for all three key columns: a long RPN is
+         evaluated per granule range during index analysis. -->
+    <query>
+        SELECT count() FROM test_kc_wide_or WHERE
+               (ts >= toDateTime('2024-01-02 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-01-02 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-01-05 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-01-05 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-01-09 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-01-09 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-01-13 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-01-13 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-01-17 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-01-17 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-01-21 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-01-21 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-01-25 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-01-25 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-01-29 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-01-29 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-02-02 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-02-02 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-02-06 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-02-06 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-02-10 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-02-10 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-02-14 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-02-14 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-02-18 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-02-18 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-02-22 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-02-22 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-02-26 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-02-26 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-03-05 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-03-05 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-03-09 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-03-09 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-03-13 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-03-13 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-03-17 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-03-17 01:00:00', 'UTC'))
+            OR (ts >= toDateTime('2024-03-21 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-03-21 01:00:00', 'UTC'))
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS test_kc_wide_or</drop_query>
+</test>

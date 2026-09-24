@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Core/Block.h>
-
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ActionsDAG.h>
+#include <base/defines.h>
+
+#include <iterator>
 
 namespace DB
 {
@@ -198,7 +200,11 @@ public:
   * RPNBuilder take care of building stack of RPNElements with `NOT`, `AND`, `OR` types.
   * In addition client must provide ExtractAtomFromTreeFunction that returns true and RPNElement as output parameter,
   * if it can convert RPNBuilderTree node to RPNElement, false otherwise.
-  */
+  *
+  * Alternatively, the client may provide `ExtractAtomsFromTreeFunction`, which fills an initially empty
+  * `AtomGroup` with the atoms of one predicate leaf. `RPNBuilder` combines them with `AND` (emitting
+  * `atom0 atom1 AND atom2 AND ...` in RPN). An empty group means the leaf could not be converted.
+ */
 /// `indexHint` exists so that index analysis can see a condition that is never executed. A consumer
 /// that analyses indexes has to descend into it - that is the whole point of the hint. A consumer
 /// that estimates how selective an expression is must not: the condition removes no rows, since the
@@ -226,20 +232,72 @@ class RPNBuilder
 {
 public:
     using RPNElements = std::vector<RPNElement>;
+
+    /// Atoms of one predicate leaf, before logical operators are inserted into the RPN.
+    /// The group contains no logical operators; constant-folded atoms are allowed. It may be empty
+    /// when the leaf cannot be analyzed, or contain a single `FUNCTION_UNKNOWN` atom carrying metadata
+    /// from a single-atom callback.
+    struct AtomGroup
+    {
+        std::vector<RPNElement> atoms;
+    };
+
     using ExtractAtomFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElement & out)>;
+    using ExtractAtomsFromTreeFunction = std::function<void (const RPNBuilderTreeNode & node, AtomGroup & group)>;
 
     explicit RPNBuilder(
         const ActionsDAG::Node * filter_actions_dag_node,
         ContextPtr query_context_,
         const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
 
+    explicit RPNBuilder(
+        const ActionsDAG::Node * filter_actions_dag_node,
+        ContextPtr query_context_,
+        const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function_);
+
     explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
+    explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function_);
     RPNElements && extractRPN() &&;
 
+    /// Appends one predicate leaf as `atom0 atom1 AND atom2 AND ...`. For element types with
+    /// `continues_multi_atom_group`, the first atom is unmarked, and every remaining atom and internal
+    /// `AND` is marked. Operators joining independent leaves are unmarked. Consumers can therefore
+    /// treat the entire group as one leaf, occupying one position in a one-element-per-leaf RPN.
+    /// Only atoms and their internal `AND` operators can continue a group; an unknown atom stands alone.
+    /// Moving iterators transfer ownership of atoms.
+    template <typename Iterator>
+    static void appendAtomGroup(RPNElements & target, Iterator begin, Iterator end)
+    {
+        chassert(begin != end);
+        bool first = true;
+        for (auto it = begin; it != end; ++it)
+        {
+            RPNElement atom(*it);
+            chassert(atom.function != RPNElement::FUNCTION_AND);
+            chassert(atom.function != RPNElement::FUNCTION_OR);
+            chassert(atom.function != RPNElement::FUNCTION_NOT);
+            chassert(atom.function != RPNElement::FUNCTION_UNKNOWN || (first && std::next(it) == end));
+
+            /// Element types without this flag do not participate in disjunction tracking.
+            if constexpr (requires { atom.continues_multi_atom_group = true; })
+                atom.continues_multi_atom_group = !first;
+            target.emplace_back(std::move(atom));
+
+            if (!first)
+            {
+                RPNElement and_operator;
+                and_operator.function = RPNElement::FUNCTION_AND;
+                if constexpr (requires { and_operator.continues_multi_atom_group = true; })
+                    and_operator.continues_multi_atom_group = true;
+                target.emplace_back(std::move(and_operator));
+            }
+            first = false;
+        }
+    }
+
 private:
-    void traverseTree(const RPNBuilderTreeNode & node);
+    void traverseTree(const RPNBuilderTreeNode & node, const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function);
     bool extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out);
-    const ExtractAtomFromTreeFunction & extract_atom_from_tree_function;
     RPNElements rpn_elements;
 };
 

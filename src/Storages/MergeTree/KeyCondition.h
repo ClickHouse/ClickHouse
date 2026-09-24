@@ -69,6 +69,8 @@ private:
     struct ThisIsPrivate {};
 
 public:
+    class SparseRangeEvaluator;
+
     /// Construct key condition from ActionsDAG nodes.
     /// This overload takes the key column names and expression without any direction information,
     /// so the condition treats the key as ascending in every column. Use it only for keys that
@@ -82,16 +84,24 @@ public:
         bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
         bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
 
-    /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
-    /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
-    /// Any condition over a key that can be reverse-sorted (a MergeTree primary key) must be
-    /// constructed this way, otherwise a reverse key would be analyzed as ascending.
+    /// Takes the key's `KeyDescription` and honors its per-column sort directions. An empty vector
+    /// of reverse flags means all-ascending, as for a partition key. Passing only column names and
+    /// expressions would analyze a reverse-sorted key as ascending.
+    /// Primary-key conditions must use `createForPrimaryKey`, which also applies exactness restrictions.
     KeyCondition(
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         const KeyDescription & key_description,
         bool single_point_ = false,
         bool skip_analysis_ = false);
+
+    /// Builds a primary-key condition with its sort directions and restrictions on range exactness.
+    /// Partition and skip-index conditions use the general constructors because their range semantics differ.
+    static KeyCondition createForPrimaryKey(
+        const ActionsDAGWithInversionPushDown & filter_dag,
+        ContextPtr context,
+        const KeyDescription & primary_key,
+        bool skip_analysis = false);
 
     struct BloomFilterData
     {
@@ -181,6 +191,30 @@ public:
     /// coordinates: their range is `(*key_bounds)[key_index]` for the whole call, they do not participate in
     /// the hyperrectangle enumeration, and their entries in `sparse_left_keys`/`sparse_right_keys` are ignored.
     BoolMask checkInRange(
+        const std::vector<size_t> & sparse_key_indices,
+        const FieldRef * sparse_left_keys,
+        const FieldRef * sparse_right_keys,
+        const DataTypes & sparse_data_types,
+        const std::vector<UInt8> & equal_boundaries_mask,
+        BoolMask initial_mask,
+        const Hyperrectangle * key_bounds = nullptr) const;
+
+    /// Like `checkInRange`, but exact atoms can supply `can_be_false` without the relaxation
+    /// introduced by their siblings in the same predicate group. All atoms still contribute to
+    /// `can_be_true` for pruning. This follows the eligibility rules of `canCheckExactness`;
+    /// ineligible conditions use the ordinary range check.
+    /// Components set to true in `initial_mask` are ignored by the caller and need no separate
+    /// evaluation. Their returned values are unspecified, as with `checkInRange`.
+    BoolMask checkInRangeWithExactness(
+        size_t key_size,
+        const FieldRef * left_keys,
+        const FieldRef * right_keys,
+        const DataTypes & data_types,
+        BoolMask initial_mask = BoolMask(false, false),
+        const Hyperrectangle * key_bounds = nullptr) const;
+
+    /// Checks the sparse representation accepted by `checkInRange`, with the same exactness rules.
+    BoolMask checkInRangeWithExactness(
         const std::vector<size_t> & sparse_key_indices,
         const FieldRef * sparse_left_keys,
         const FieldRef * sparse_right_keys,
@@ -357,6 +391,13 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
+        /// Continues the preceding predicate leaf's atom group; `RPNBuilder::appendAtomGroup`
+        /// defines its layout. The whole group occupies one position in the RPN built with an empty key
+        /// (`key_condition_rpn_template`), which the skip-index disjunction machinery uses for positions
+        /// (see `KeyCondition::checkInHyperrectangle` and
+        /// `mergePartialResultsForDisjunctions`).
+        bool continues_multi_atom_group = false;
+
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
@@ -386,10 +427,8 @@ public:
         Hyperrectangle space_filling_curve_args_hyperrectangle;
 
         /// For FUNCTION_POINT_IN_POLYGON.
-        /// Function name (e.g. 'pointInPolygon') and the polygon.
-        /// Additionally, `key_columns` has two elements for point coordinates (x, y),
+        /// `key_columns` has two elements for the point coordinates (x, y),
         /// or one element if the point is a whole key column of Tuple type.
-        std::optional<String> point_in_polygon_function_name;
         std::shared_ptr<Polygon> polygon;
 
         /// What functions are applied to the key column before doing the range/set/etc check.
@@ -450,11 +489,11 @@ public:
     /// transformation by monotonic functions, as illustrated in the example
     /// mentioned earlier. Two NaN rules relax them as well, each for the bound
     /// its condition is evaluated against: a right-unbounded FUNCTION_IN_RANGE
-    /// atom over a key column that can hold a NaN inside a Tuple (see
-    /// relaxRangeAtomsOverNaNHidingTupleColumns), and, for a condition built
-    /// over a getExtremes-derived hyperrectangle, a range or single-element set
-    /// atom over any key column that can hide a NaN (see
-    /// relaxAtomsOverNaNHidingColumns).
+    /// atom over a primary-key column that can hold a NaN inside a `Tuple`
+    /// (`createForPrimaryKey` applies this restriction before publishing the
+    /// condition), and, for a condition built over a getExtremes-derived
+    /// hyperrectangle, a range or single-element set atom over any key column
+    /// that can hide a NaN (see relaxAtomsOverNaNHidingColumns).
     ///
     /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
     /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
@@ -469,6 +508,14 @@ public:
     /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
 
+    /// Reports whether range checks can prove that all rows in a range match. This is eligibility,
+    /// not a result for a particular range; `checkInRangeWithExactness` evaluates the range itself.
+    /// A multi-atom group can have an exact atom whose relaxed siblings force `can_be_false` to
+    /// `true` and make `isRelaxed` return `true`. Removing those siblings can enable exactness while the
+    /// full condition retains their stronger pruning. Uncovered relaxed atoms and multi-value set
+    /// indexes remain subject to the conservative `isRelaxed` contract.
+    bool canCheckExactness() const { return exactness_condition || !isRelaxed(); }
+
     /// Whether a value of this type can be a NaN that an aggregated `getExtremes` bound does not show, and
     /// whose ordering comparisons are therefore all false rather than complementary. `Tuple` qualifies, per
     /// element. An `Array`/`Map` bound hides a NaN too (opposite `nan_direction_hint` per bound in
@@ -480,10 +527,6 @@ public:
     /// no ordering comparison, so it makes an atom true only through an enclosing negation: `can_be_true`
     /// without `can_be_false`, i.e. `relaxed`. Making one true directly needs `FUNCTION_UNKNOWN` instead.
     void relaxAtomsOverNaNHidingColumns(const DataTypes & key_types);
-
-    /// The primary-key counterpart of the above, for a NaN hidden inside a `Tuple` key column rather than
-    /// behind a `getExtremes` bound. Weaker on purpose: it keeps the exact-range machinery intact.
-    void relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types);
 
     bool isSinglePoint() const { return single_point; }
 
@@ -526,6 +569,8 @@ private:
         const Hyperrectangle & sparse_hyperrectangle,
         const DataTypes & sparse_key_types) const;
 
+    using AtomGroup = RPNBuilder<RPNElement>::AtomGroup;
+
     /// Information used when building a KeyCondition out of ActionsDAG.
     struct BuildInfo
     {
@@ -538,7 +583,137 @@ private:
         const bool require_ready_sets = false;
     };
 
-    bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
+    /** Atom extraction maps predicates onto key columns in two opposite directions,
+      * and the naming below follows that split.
+      *
+      * The predicate-side functions (`tryMatch...`, `analyzePredicate...`) walk the
+      * predicate expression and ask whether it is a key column, possibly wrapped in a
+      * chain of functions. The discovered chain is a check-time chain: it is stored in
+      * the atom (`RPNElement::monotonic_functions_chain`) and is applied to granule key
+      * ranges during evaluation.
+      *
+      * The key-side functions (`collectKeyWrapping...`) walk the table's key expression
+      * and ask which key columns can be computed from a given predicate column, and
+      * how. The discovered chains and DAGs are build-time recipes: they are applied to
+      * the predicate's constant (or to the set elements) once, during construction, and
+      * they are never stored in atoms. The `transformConstantBy...KeyFunctions` pair is
+      * the predicate-side consumer of these recipes.
+      */
+
+    /// A key-side recipe that describes how the key column `key_column_num` computes
+    /// from a predicate column, as a chain of (possibly curried, see
+    /// `FunctionWithOptionalConstArg`) single-argument functions. The chain is applied
+    /// to the predicate's constant at build time and is never stored in atoms.
+    struct KeyWrappingChain
+    {
+        size_t key_column_num = 0;
+        DataTypePtr key_column_type;
+        MonotonicFunctionsChain functions_chain;
+        /// Cumulative monotonicity direction of `functions_chain`: false when applying the
+        /// chain reverses comparison order (an odd number of non-increasing functions).
+        bool chain_is_positive = true;
+    };
+
+    /// The result of pushing the predicate's constant through a key-side recipe.
+    /// The transformed `value` and `type` live in the key space of `key_column_num`
+    /// and compare against that column directly. An exact atom requires an injective
+    /// transform whose input contains no NaN; otherwise the atom must be relaxed.
+    struct TransformedConstant
+    {
+        size_t key_column_num = 0;
+        DataTypePtr key_column_type;
+        Field value;
+        DataTypePtr type;
+        /// Whether the value is a `FixedString`, including an active `Variant` or `Dynamic` member.
+        bool is_fixed_string = false;
+        /// True when this transformation requires a relaxed atom. Otherwise, subsequent type
+        /// conversion and atom construction still determine whether the atom is exact.
+        bool requires_relaxed_atom = true;
+        /// True when the key-side chain that produced this constant reverses comparison
+        /// order; the consumer must reverse the comparison operator accordingly.
+        bool reverse_comparison = false;
+    };
+
+    /// A comparison candidate identifies a matched key expression and a constant to compare with it.
+    struct ComparisonAtomCandidate
+    {
+        size_t key_column_num = 0;
+        /// This is the type of the matched key expression after `monotonic_functions_chain` is applied;
+        /// the comparison happens in this type.
+        DataTypePtr key_expr_type;
+        /// The check-time chain is stored in the atom and is applied to granule key
+        /// ranges during evaluation.
+        MonotonicFunctionsChain monotonic_functions_chain;
+        std::optional<size_t> argument_num_of_space_filling_curve;
+        Field const_value;
+        DataTypePtr const_type;
+        /// Whether the constant is a `FixedString`, including an active `Variant` or `Dynamic` member.
+        /// This describes the candidate's value after any transform, not the predicate's original value.
+        bool const_is_fixed_string = false;
+        /// This flag is true when the transformed constant already describes a superset of matching values.
+        /// `tryBuildComparisonAtom` can further relax the constraint during type conversion; exact
+        /// conversions preserve this initial precision.
+        bool is_relaxed = false;
+        /// This flag is true when the key-side chain that produced the constant reverses comparison
+        /// order (see `TransformedConstant::reverse_comparison`); the comparison operator
+        /// must then be reversed as well.
+        bool reverse_comparison = false;
+    };
+
+    /// The `extractAtoms*` family fills `group` with the atoms of one predicate leaf.
+    /// A comparison like `ts >= X` may produce atoms for `toYYYYMM(ts)`, `toDate(ts)` and `ts`
+    /// at once; a set atom may itself constrain several key columns. `RPNBuilder` combines the
+    /// group's atoms with `AND` (emitting `atom0 atom1 AND atom2 AND ...`). An empty group means
+    /// that the leaf could not be analyzed; such a leaf becomes `FUNCTION_UNKNOWN`.
+    void extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
+    void extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
+    void extractAtomsFromConstant(const RPNBuilderTreeNode & node, AtomGroup & group);
+    /// A bare numeric column used directly as a boolean condition (`WHERE flag`) is analyzed as
+    /// the comparison `flag != 0`, which may produce several atoms, including for derived keys.
+    void extractBareColumnAtoms(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
+    void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const BuildInfo & info, AtomGroup & group);
+    /// `rewritten_const_value` overrides the constant operand of the comparison, for a
+    /// predicate whose constant is not one of the function arguments as written (`LIKE
+    /// pattern ESCAPE 'c'`, where the escape character is folded into the pattern). The key
+    /// expression is then the first argument.
+    void extractBinaryComparisonAtoms(
+        const RPNBuilderFunctionTreeNode & func,
+        const BuildInfo & info,
+        const std::string & func_name,
+        bool allow_relaxed_pruning,
+        AtomGroup & group,
+        const Field * rewritten_const_value = nullptr,
+        const DataTypePtr & rewritten_const_type = nullptr);
+    /// `key <=> NULL` is "key IS NULL", so it produces the `isNull` atom, but only for a
+    /// bare key column: that atom ignores the monotonic-functions chain, which would be
+    /// unsound for a wrapped key.
+    void extractIsNullAtomForNotDistinctFrom(
+        const RPNBuilderTreeNode & key_arg,
+        const BuildInfo & info,
+        const Field & const_value,
+        AtomGroup & group);
+    /// The shared core of comparison-atom extraction; the comparison is already in
+    /// `key_expr <op> const` form. `constant` holds a `ColumnConst` whose value is neither NULL nor NaN.
+    void extractComparisonAtomsForKeyArgument(
+        const RPNBuilderTreeNode & key_arg,
+        const BuildInfo & info,
+        const std::string & func_name,
+        const ColumnWithTypeAndName & constant,
+        bool allow_relaxed_pruning,
+        AtomGroup & group);
+
+    /// Collects direct candidates, then candidates from monotonic and deterministic constant transforms.
+    std::vector<ComparisonAtomCandidate> collectComparisonAtomCandidates(
+        const RPNBuilderTreeNode & key_arg,
+        const BuildInfo & info,
+        const std::string & func_name,
+        const ColumnWithTypeAndName & constant,
+        bool allow_relaxed_pruning);
+
+    /// Builds a complete comparison atom, including type conversion, relaxation and the final range.
+    /// Returns `std::nullopt` when the candidate cannot supply a sound constraint.
+    std::optional<RPNElement> tryBuildComparisonAtom(
+        const ComparisonAtomCandidate & candidate, std::string func_name, const ContextPtr & context) const;
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
@@ -549,7 +724,7 @@ private:
     ///  and fills chain of possibly-monotonic functions.
     /// If @assume_function_monotonicity = true, assume all deterministic
     /// functions as monotonic, which is useful for partition pruning.
-    bool isKeyPossiblyWrappedByMonotonicFunctions(
+    bool tryMatchKeyColumnThroughMonotonicChain(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
@@ -558,7 +733,7 @@ private:
         MonotonicFunctionsChain & out_functions_chain,
         bool assume_function_monotonicity = false);
 
-    bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
+    bool tryMatchKeyColumnThroughMonotonicChainImpl(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
@@ -566,48 +741,63 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
-    bool extractMonotonicFunctionsChainFromKey(
+    /// The returned vector contains, for every key column, the chains of
+    /// `allow_key_function`-approved functions through which that key column computes
+    /// from the key subexpression `expr_name`. Each chain records whether it preserves
+    /// or reverses comparison order (see `KeyWrappingChain::chain_is_positive`).
+    /// When `first_match_only` is set, the search stops at the first collected chain.
+    std::vector<KeyWrappingChain> collectKeyWrappingChains(
         ContextPtr context,
         const String & expr_name,
         const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        MonotonicFunctionsChain & out_functions_chain,
-        bool & out_chain_is_positive,
-        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
+        bool first_match_only,
+        std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
 
+    /// For every key column that is computed from the predicate expression `node` by a
+    /// chain of `allow_key_function`-approved monotonic functions, this function
+    /// applies that chain to the constant once and returns the transformed constant.
+    /// The resulting atoms compare against the key columns directly, but they are
+    /// always relaxed, because monotonicity preserves order rather than exact
+    /// membership. With `multiple_key_columns_per_condition` disabled, only the first
+    /// such key column is considered.
+    std::vector<TransformedConstant> transformConstantByMonotonicKeyFunctions(
+        const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
+        const ColumnWithTypeAndName & constant,
+        std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
 
-    bool extractDeterministicFunctionsDagFromKey(
+    /// This is the same transformation (including the single-key-column behavior of
+    /// `multiple_key_columns_per_condition`), but through arbitrary deterministic
+    /// key-expression DAGs. It is only valid for equality predicates (see the caller),
+    /// because `x = c` implies `f(x) = f(c)` for any deterministic `f`, while order
+    /// comparisons are not preserved.
+    std::vector<TransformedConstant> transformConstantByDeterministicKeyFunctions(
+        const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
+        const ColumnWithTypeAndName & constant) const;
+
+    /// This is a key-side recipe like `KeyWrappingChain`, except that the computation
+    /// is an arbitrary deterministic sub-DAG instead of a chain of single-argument
+    /// functions.
+    struct DeterministicKeyDag
+    {
+        size_t key_column_num = 0;
+        DataTypePtr key_column_type;
+        DeterministicKeyTransformDag dag;
+    };
+
+    /// The returned vector contains a deterministic sub-DAG for every key column that
+    /// can be computed from `expr_name`. When `first_match_only` is set, the search
+    /// stops at the first collected sub-DAG.
+    std::vector<DeterministicKeyDag> collectKeyWrappingDags(
         const String & expr_name,
         const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        DeterministicKeyTransformDag & out_functions_chain) const;
+        bool first_match_only) const;
 
-    bool canConstantBeWrappedByMonotonicFunctions(
-        const RPNBuilderTreeNode & node,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type,
-        bool & out_chain_is_positive);
-
-    bool canConstantBeWrappedByDeterministicFunctions(
-        const RPNBuilderTreeNode & node,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type,
-        bool & out_atom_is_exact);
-
-    /// Checks if node is a subexpression of any of key columns expressions,
-    /// wrapped by deterministic functions, and if so, returns `true`, and
-    /// specifies key column position / type. Besides that it produces the
-    /// transformation DAG which should be executed on set elements, to
-    /// transform them into key column values.
-    bool canSetValuesBeWrappedByDeterministicFunctions(
+    /// Finds the first key column computable from `node` through deterministic functions and
+    /// returns its position, type, transformation DAG, and injectivity. The set analysis uses
+    /// the DAG to transform set elements into key column values.
+    bool tryGetDeterministicKeyTransform(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
@@ -615,25 +805,91 @@ private:
         DeterministicKeyTransformDag & out_transform,
         bool & out_is_injective) const;
 
-    /// If it's possible to make an RPNElement
-    /// that will filter values (possibly tuples) by the content of 'prepared_set',
-    /// do it and return true.
-    bool tryPrepareSetIndexForIn(
+    /// Appends prepared set-membership atoms for this predicate to `group`. Each atom may constrain
+    /// several key columns. The caller finalizes their function kinds before `RPNBuilder` combines
+    /// the group's atoms with `AND`. An empty group means the predicate could not be analyzed.
+    void prepareSetAtomsForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out);
-    bool tryPrepareSetIndexForHas(
+        AtomGroup & group,
+        bool allow_relaxed_pruning);
+    void prepareSetAtomsForHas(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPNElement & out);
+        AtomGroup & group,
+        bool allow_relaxed_pruning);
 
-    void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
-        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
-        std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
-        DataTypes & data_types,
-        size_t & args_count,
+    /// The inputs for one set atom, with one mapping, transform, and type per matched key column.
+    struct SetAtomCandidate
+    {
+        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
+        std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
+        DataTypes key_expr_types;
+        /// The number of tuple components of the predicate expression (1 for a scalar or packed tuple).
+        size_t args_count = 1;
+        /// A non-injective transform makes the set check a superset of the matching values.
+        bool is_relaxed = false;
+    };
+
+    /// A predicate expression from which deterministic key transforms can derive set atoms.
+    /// The source is a tuple component, a scalar expression, or a tuple expression as a whole.
+    struct SetTransformSource
+    {
+        /// The position in the predicate tuple, or 0 for a scalar or whole tuple.
+        size_t component = 0;
+        String expr_name;
+        /// Whole-tuple sources consume a single packed set column.
+        bool is_whole_tuple = false;
+    };
+
+    /// Collects predicate components and the whole tuple that appear among the key subexpressions.
+    /// For a scalar predicate expression, only the expression itself is considered.
+    static std::vector<SetTransformSource> collectSetTransformSources(
+        const RPNBuilderTreeNode & key_arg,
+        const NameSet & key_subexpr_names,
+        size_t args_count);
+
+    struct SetIndexAnalysisResult
+    {
+        SetAtomCandidate componentwise_candidate;
+        /// A tuple expression mapped onto one `Tuple`-typed key column needs a packed set column.
+        std::optional<SetAtomCandidate> packed_tuple_candidate;
+        /// Predicate components and whole-tuple expressions that can supply additional atoms.
+        /// Their transformation DAGs are collected only when building the group from the set columns.
+        std::vector<SetTransformSource> transform_sources;
+    };
+
+    /// Converts a candidate's set columns into key space and builds its `MergeTreeSetIndex`.
+    /// The caller finalizes the prepared atom's function kind for the membership predicate.
+    static std::optional<RPNElement> tryPrepareSetAtom(
+        const Columns & set_columns,
+        const DataTypes & set_types,
+        SetAtomCandidate candidate,
+        bool allow_relaxed_pruning,
+        const DataTypePtr & has_element_type);
+
+    /// Maps the predicate expression whose values are tested for set membership (the left-hand side
+    /// of `IN`, or the element argument of `has`) onto key columns. Each matched tuple component has
+    /// one `KeyTuplePositionMapping`, reaching a key column through a monotonic chain or a deterministic
+    /// set-transforming DAG. The result also identifies source expressions for additional wrapped-set
+    /// atoms when multiple-key-column analysis is enabled.
+    /// Returns no result when there are no candidate mappings or source expressions. The set is not materialized.
+    std::optional<SetIndexAnalysisResult> tryAnalyzePredicateExpressionForSetIndex(
+        const RPNBuilderTreeNode & arg, const BuildInfo & info);
+
+    /// Appends to `group` the set atoms for its `IN` or `has` predicate using the materialized set
+    /// and its analysis. Initial component and packed-tuple atoms take priority over additional
+    /// deterministic transforms for the remaining key columns. Coverage is local to the group.
+    /// `has_element_type` supplies the occupied element type of a `has` array, so every atom checks
+    /// that conversion preserves its comparison semantics.
+    void appendSetAtoms(
         const BuildInfo & info,
-        bool & out_relaxed);
+        const Columns & set_columns,
+        const DataTypes & set_types,
+        SetIndexAnalysisResult analysis,
+        bool allow_relaxed_pruning,
+        AtomGroup & group,
+        const DataTypePtr & has_element_type = nullptr);
 
     /// Checks that the index can not be used.
     ///
@@ -658,6 +914,38 @@ private:
     ///   In this case will be (FUNCTION_IN_RANGE, FUNCTION_UNKNOWN, FUNCTION_AND)
     ///   and all, two, partitions will be scanned, but due to filtering later none of rows will be matched.
     bool unknownOrAlwaysTrue(bool unknown_any) const;
+
+    /// Marks range atoms that cannot exclude tuple-contained NaNs as inexact and refreshes derived exactness.
+    /// Requires the full primary-key types in key-column order.
+    void relaxRangeAtomsForTupleNaNs(const DataTypes & key_types);
+
+    /// Rebuilds the derived exactness condition after changing the RPN, without modifying shared copies.
+    void updateExactnessCondition();
+
+    /// Combines pruning and falsity through the supplied range evaluator.
+    template <typename Evaluate>
+    BoolMask checkWithExactness(const Evaluate & evaluate, BoolMask initial_mask) const;
+
+    /// In every multi-atom group that stands directly under `FUNCTION_NOT` and has at least one
+    /// exact atom, drops the relaxed atoms: a relaxed atom forces the group's `can_be_false` to
+    /// `true`, which would disable pruning through the exact atoms of the group under `NOT`.
+    void dropCoveredRelaxedAtomsFromNegatedGroups();
+
+    /// Whether this element completes a predicate's atom group or is an independent logical operator.
+    static bool isAtomGroupEnd(const RPN & rpn, size_t position);
+
+    /// Returns `rpn` with the relaxed atoms dropped from every multi-atom group that contains
+    /// both an exact atom and a relaxed one (with `only_negated_groups`, only from the groups
+    /// standing directly under `FUNCTION_NOT`), or nothing when no group qualifies. Every atom
+    /// of a group is a necessary condition of the same predicate leaf, and an exact atom is an
+    /// exact index approximation of that leaf on its own, so the result describes the same
+    /// predicate: the dropped atoms only added pruning (`can_be_true`) at the cost of an
+    /// unreliable `can_be_false`.
+    static std::optional<RPN> dropCoveredRelaxedAtoms(const RPN & rpn, bool only_negated_groups);
+
+    /// Collapses multi-atom comparison groups whose key columns are all absent from `key_indices`.
+    /// Returns nothing when no group can be collapsed.
+    std::optional<RPN> collapseUnavailableAtomGroups(const std::vector<size_t> & key_indices) const;
 
     /** Iterates over RPN and collapses FUNCTION_IN_RANGE over the arguments of space-filling curve function
       * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE.
@@ -722,7 +1010,41 @@ private:
     /// Used to check toDateTime monotonicity.
     bool date_time_overflow_behavior_ignore;
 
+    /// Holds the value of the `analyze_index_with_multiple_key_columns_per_condition` setting.
+    /// When false, atom extraction keeps at most one atom per predicate leaf: the candidate
+    /// sources of `extractComparisonAtomsForKeyArgument` are consulted in priority order until one
+    /// of them matches, and the set analysis builds only the direct set atom. Multi-atom groups
+    /// then never form, but a single tuple-set atom can still constrain several key columns.
+    bool multiple_key_columns_per_condition = true;
+
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
+
+    /// Stores an eligible condition with covered relaxed siblings removed, used only for falsity checks.
+    /// It is null when the original condition suffices or no eligible derivative exists.
+    std::shared_ptr<KeyCondition> exactness_condition;
+};
+
+/// Prepares range evaluation for one sparse index layout, including columns supplied by partition
+/// bounds. The original condition still supplies key geometry and search-strategy decisions.
+/// The condition and the sorted key indices must outlive the evaluator and remain unchanged.
+class KeyCondition::SparseRangeEvaluator
+{
+public:
+    SparseRangeEvaluator(const KeyCondition & condition_, const std::vector<size_t> & key_indices_, bool check_exactness_);
+
+    BoolMask checkInRange(
+        const FieldRef * left_keys,
+        const FieldRef * right_keys,
+        const DataTypes & data_types,
+        const std::vector<UInt8> & equal_boundaries_mask,
+        BoolMask initial_mask,
+        const Hyperrectangle * key_bounds = nullptr) const;
+
+private:
+    const KeyCondition & condition;
+    const std::vector<size_t> & key_indices;
+    bool check_exactness;
+    std::unique_ptr<KeyCondition> prepared_condition;
 };
 }

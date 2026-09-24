@@ -21,7 +21,7 @@ namespace
     using LaneMask = bool __attribute__((ext_vector_type(64)));
 
     /// Converting to `bool` lanes is `!= 0`; a comparison would depend on `-faltivec-src-compat` on PowerPC.
-    ALWAYS_INLINE LaneMask isNonZero(ByteCounters bytes)
+    ALWAYS_INLINE LaneMask isNonZero(const ByteCounters & bytes)
     {
         return __builtin_convertvector(bytes, LaneMask);
     }
@@ -30,7 +30,7 @@ namespace
     constexpr size_t max_blocks_before_widening = 255;
 
     /// At most 64 * 255 = 16320, so the 16-bit sum cannot overflow either.
-    ALWAYS_INLINE size_t sumCounters(ByteCounters counters)
+    ALWAYS_INLINE size_t sumCounters(const ByteCounters & counters)
     {
         return __builtin_reduce_add(__builtin_convertvector(counters, WideCounters));
     }
