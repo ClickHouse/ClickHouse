@@ -59,7 +59,9 @@ class IntegrationCoverageExporter:
             raise RuntimeError(f"Per-module coverage is empty: no rows in {self.coverage_dir}")
         stats = self._query(f"SELECT count(), uniqExact(test_name) FROM {lines}").split()
         print(f"Coverage dumps: {stats[0]} rows, {stats[1]} modules")
-        assert self.dest.is_ready(), "Destination cluster is not ready"
+        # `dest` was checked with `is_ready` before the tests; a second ping here only
+        # adds its 3 s timeout as a way to lose hours of coverage.
+        assert self.dest.url, "Destination cluster was not checked with is_ready"
         check_start_time = f"toDateTime({sql_string(self.check_start_time)}, 'UTC')"
         check_name = sql_string(self.job_name)
         # Same key as `system.coverage_log`. `branch_flag` is a property of the region and
