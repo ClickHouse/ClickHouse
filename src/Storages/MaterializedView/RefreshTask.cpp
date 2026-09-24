@@ -690,7 +690,7 @@ void RefreshTask::run()
         String path = coordination.path + "/" + requestZnodeName();
         /// Keeper has no atomic increment: set the count against the versions read, retrying a lost race. The root is checked
         /// too: a consume re-creates this znode at version 0, so its version alone can repeat, but the consume writes the root.
-        Coordination::Error code;
+        Coordination::Error code = Coordination::Error::ZOK;
         do
         {
             Coordination::Stat root_stat;
