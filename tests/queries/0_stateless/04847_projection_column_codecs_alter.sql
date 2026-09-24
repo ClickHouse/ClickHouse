@@ -102,3 +102,16 @@ INSERT INTO t_alter_untyped SELECT number, toDateTime64(number, 3), number FROM 
 SELECT count() FROM t_alter_untyped;
 
 DROP TABLE t_alter_untyped;
+
+-- Validation follows statement order: the projection sees the Float64 type installed by the
+-- preceding command, so Gorilla is not judged against the old UInt64 type.
+CREATE TABLE t_alter_ordered (x UInt64) ENGINE = MergeTree ORDER BY tuple();
+
+ALTER TABLE t_alter_ordered
+    MODIFY COLUMN x Float64,
+    ADD PROJECTION p (x CODEC(Gorilla)) AS (SELECT x ORDER BY x);
+
+SELECT name, codecs FROM system.projections
+WHERE database = currentDatabase() AND table = 't_alter_ordered';
+
+DROP TABLE t_alter_ordered;

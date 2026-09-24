@@ -29,6 +29,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -2124,6 +2125,20 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     for (const auto & constraint : metadata->constraints.getConstraints())
         constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
+
+    /// A Replicated database and Shared Catalog execute an ALTER again on secondary replicas. The
+    /// initiator has already accepted session-gated declarations; a secondary may not have the same
+    /// session settings and must not wedge its DDL queue by rejecting the committed query.
+    const auto metadata_txn = context->getZooKeeperMetadataTransaction();
+    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay = context->getClientInfo().is_shared_catalog_internal
+        && !SharedDatabaseCatalog::isInitialQuery(context);
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+    const bool validate_new_projection_codecs = !is_ddl_replay && !is_shared_catalog_replay;
+
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -2326,6 +2341,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         backQuote(column_name));
             }
 
+            /// Later commands in this ALTER are applied after this type change. Validate them
+            /// against the same ordered column snapshot that apply() will see.
+            if (command.data_type)
+                all_columns.modify(column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
+
             modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -2492,7 +2512,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             /// Building the projection here would otherwise move failures for every other
             /// `ADD PROJECTION` from `apply` to this point.
-            if (command.projection_decl->as<const ASTProjectionDeclaration &>().columns)
+            if (validate_new_projection_codecs && command.projection_decl->as<const ASTProjectionDeclaration &>().columns)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(
                     command.projection_decl,
