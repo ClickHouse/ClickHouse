@@ -773,6 +773,57 @@ def clickhouse_execute_json(
 # Should we capture client's stacktraces via SIGTSTP
 CAPTURE_CLIENT_STACKTRACE = False
 
+# How long `kill_process_group` lets a sanitized build print its report before
+# killing the group.
+SANITIZER_REPORT_GRACE_SECONDS = 60
+
+
+def client_stacktrace_delay_seconds():
+    return 0.5 if RELEASE_NON_SANITIZED else 10
+
+
+def worker_cleanup_grace_seconds():
+    """The diagnostic sleeps of ONE `kill_process_group` invocation, which a parent
+    must allow before it kills a worker mid-cleanup. Not a bound on the whole
+    cleanup: the client stacktrace collection that follows those sleeps is not
+    counted, nor is the 0.1s between that call's SIGTERM and SIGKILL, and a worker
+    holding children in more than one process group pays these sleeps per group."""
+    grace = SANITIZER_REPORT_GRACE_SECONDS if SANITIZED else 0
+    if CAPTURE_CLIENT_STACKTRACE:
+        grace += client_stacktrace_delay_seconds()
+    return grace
+
+
+# Allowance for the parts of the cleanup that do not sleep, and the floor under
+# every single wait.
+WORKER_STOP_MARGIN_SECONDS = 10
+
+
+def terminate_workers(processes):
+    """SIGTERM every worker, then wait for them to finish `kill_process_group`
+    before SIGKILLing the stragglers. The wait must outlast the sleeps of a single
+    such invocation, or a worker is killed part-way through it and leaves its own
+    children alive and its sanitizer report unfinished. It is not a bound on a
+    worker holding children in several process groups: `cleanup_child_processes`
+    then sleeps once per group, and the later groups are still cut short, though
+    never earlier than the flat 10s wait this replaced.
+
+    Workers clean up concurrently, so the grace is one deadline for all of them
+    rather than a budget each, but no wait ever drops below the margin, which
+    covers a worker that was slow to start its cleanup. Every wait stays bounded,
+    so a wedged worker cannot hang the run."""
+    for p in processes:
+        if p.is_alive():
+            p.terminate()
+    deadline = monotonic() + worker_cleanup_grace_seconds() + WORKER_STOP_MARGIN_SECONDS
+    for p in processes:
+        p.join(timeout=max(deadline - monotonic(), WORKER_STOP_MARGIN_SECONDS))
+        if p.is_alive():
+            print(f"Force killing process {p.name} (pid {p.pid})")
+            p.kill()
+    for p in processes:
+        p.join(timeout=5)
+
 
 def kill_process_group(pgid, fatal_log):
     try:
@@ -781,8 +832,10 @@ def kill_process_group(pgid, fatal_log):
             print(
                 '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
             )
-            print("Wait 60 seconds to let sanitizers print the report...")
-            sleep(60)
+            print(
+                f"Wait {SANITIZER_REPORT_GRACE_SECONDS} seconds to let sanitizers print the report..."
+            )
+            sleep(SANITIZER_REPORT_GRACE_SECONDS)
 
         print(f"Killing process group {pgid}")
         print(f"Processes in process group {pgid}:")
@@ -793,7 +846,7 @@ def kill_process_group(pgid, fatal_log):
         if CAPTURE_CLIENT_STACKTRACE:
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
-            stacktrace_delay = 0.5 if RELEASE_NON_SANITIZED else 10
+            stacktrace_delay = client_stacktrace_delay_seconds()
             print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
             sleep(stacktrace_delay)
 
@@ -1003,6 +1056,11 @@ def get_processlist_size(args):
 # aggregating, so it is the only one that needs the per-user limit lifted.
 HUNG_CHECK_QUERY_SETTINGS = {"max_memory_usage_for_user": 0}
 
+# One attempt, no retries: this dump runs under a caller that kills the process
+# group on its own deadline, so it has to fail with time left for the hung check
+# to report what it saw.
+HUNG_CHECK_STACKTRACES_RETRIES = 1
+
 
 def get_processlist_with_stacktraces(args):
     if args.replicated_database:
@@ -1031,6 +1089,7 @@ def get_processlist_with_stacktraces(args):
                 "allow_introspection_functions": 1,
             },
             timeout=120,
+            max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
         )
     if args.shared_catalog:
         return clickhouse_execute(
@@ -1058,6 +1117,7 @@ def get_processlist_with_stacktraces(args):
                 "allow_introspection_functions": 1,
             },
             timeout=120,
+            max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
         )
     return clickhouse_execute(
         args,
@@ -1080,6 +1140,7 @@ def get_processlist_with_stacktraces(args):
             "allow_introspection_functions": 1,
         },
         timeout=120,
+        max_http_retries=HUNG_CHECK_STACKTRACES_RETRIES,
     )
 
 
@@ -1101,6 +1162,26 @@ def get_transactions_list(args):
     except Exception as e:
         return f"Cannot get list of transactions: {e}"
 
+
+# lldb's shared-library-event breakpoint is a software int3 in the inferior's
+# text, and only the debugger that wrote it restores it. Dropping it keeps the
+# server's text intact however the debugger ends. Internal breakpoint ids are
+# negative, handed out by decrementing and never reused, so no fixed range
+# covers them and they are read from lldb's own list. The JIT and sanitizer
+# hooks are internal too, hence the symbol test. The printed line is the audit
+# trail: an empty "dropped" means the int3 is still in the text.
+LLDB_DROP_RENDEZVOUS_BREAKPOINT = (
+    "script t=lldb.target; "
+    "r=lldb.SBCommandReturnObject(); "
+    "lldb.debugger.GetCommandInterpreter()"
+    '.HandleCommand("breakpoint list --internal", r); '
+    'ids=[int(l.split(":")[0]) for l in (r.GetOutput() or "").splitlines() '
+    'if l[:1] == "-" and l.split(":")[0][1:].isdigit()]; '
+    'hit=[i for i in ids if "dl_debug_state" in str(t.FindBreakpointByID(i)'
+    ".GetLocationAtIndex(0).GetAddress().GetSymbol().GetName())]; "
+    'print("internal breakpoints %s, dropped %s"'
+    " % (ids, [i for i in hit if t.BreakpointDelete(i)]))"
+)
 
 # Per-PID lldb budget: the release value is also the fallback for a caller that
 # cannot tell which flavor the server is.
@@ -1140,7 +1221,9 @@ def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
     # print_c_stacktraces save the full dump to c_stacktraces.log and preview
     # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
-        f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
+        f"{sudo}{lldb} --batch -p {pid}"
+        f" -o '{LLDB_DROP_RENDEZVOUS_BREAKPOINT}'"
+        " -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=timeout,
         keep_output_on_error=True,
     )
@@ -1877,7 +1960,6 @@ class SettingsRandomizer:
         "use_statistics": lambda: random.random() > 0.05,
         "use_statistics_cache": lambda: random.random() > 0.05,
         # More query plan optimizations
-        "enable_optimize_predicate_expression": lambda: random.random() > 0.05,
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
         "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
@@ -2037,9 +2119,9 @@ class MergeTreeSettingsRandomizer:
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
         "object_shared_data_serialization_version": lambda: random.choice(
-            ["map", "map_with_buckets", "advanced"]),
+            ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
         "object_shared_data_serialization_version_for_zero_level_parts": lambda: random.choice(
-            ["map", "map_with_buckets", "advanced"]),
+            ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
         "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
@@ -2057,7 +2139,7 @@ class MergeTreeSettingsRandomizer:
         "text_index_dictionary_block_size": lambda: random.choice([16, 64, 128, 256, 512, 1024, 8192]),
         "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),
-        "text_index_posting_list_codec": lambda: random.choice(["none", "bitpacking"]),
+        "text_index_posting_list_codec": lambda: random.choice(["none", "bitpacking", "pfor"]),
         "map_serialization_version": lambda: random.choice(["basic", "with_buckets"]),
         "map_serialization_version_for_zero_level_parts": lambda: random.choice(["basic", "with_buckets"]),
         "max_buckets_in_map": lambda: random.randint(1, 100),
@@ -2071,8 +2153,19 @@ class MergeTreeSettingsRandomizer:
         ),
     }
 
+    # Settings that depend on previously randomized settings.
+    # Each entry: setting_name -> (dependency_setting, generator_fn)
+    # generator_fn receives the resolved value of the dependency setting.
+    # Skipped when the dependency was not randomized.
+    dependent_settings = {
+        "object_shared_data_target_chunk_rows": (
+            "index_granularity",
+            lambda ig: random.randint(max(1, ig // 10), ig * 10),
+        ),
+    }
+
     @staticmethod
-    def get_random_settings(args):
+    def get_random_settings(args, tags):
         random_settings = {}
         # Tiny granules multiply the number of marks per part (marks ~ rows /
         # index_granularity), which is disproportionately expensive on slow
@@ -2083,13 +2176,19 @@ class MergeTreeSettingsRandomizer:
             or BuildFlags.DEBUG in args.build_flags
             or BuildFlags.WITH_COVERAGE in args.build_flags
         )
+        # A `long` test already writes enough data to sit close to the per-test
+        # timeout, so the same multiplier blows past it even on a release build:
+        # `03209_json_type_merges_small` went from 2 seconds to over 600 with
+        # `index_granularity = 1`. Raise the bounds for those tests as well; tiny
+        # granules stay covered by every test that is not tagged `long`.
+        coarse_granularity = slow_build or (tags and "long" in tags)
         for setting, generator in MergeTreeSettingsRandomizer.settings.items():
             if setting in args.changed_merge_tree_settings:
                 continue
 
-            if slow_build and setting == "index_granularity":
+            if coarse_granularity and setting == "index_granularity":
                 value = random.randint(100, 65536)
-            elif slow_build and setting == "index_granularity_bytes":
+            elif coarse_granularity and setting == "index_granularity_bytes":
                 value = random.randint(100 * 1024, 30 * 1024 * 1024)
             else:
                 value = generator()
@@ -2106,6 +2205,13 @@ class MergeTreeSettingsRandomizer:
                 continue
 
             random_settings[setting] = value
+
+        for setting, (dep, gen) in MergeTreeSettingsRandomizer.dependent_settings.items():
+            if setting in args.changed_merge_tree_settings:
+                continue
+            if dep not in random_settings:
+                continue
+            random_settings[setting] = gen(random_settings[dep])
 
         return random_settings
 
@@ -2995,7 +3101,9 @@ class TestCase:
 
         base_mt_settings = {}
         if allow_random_mt_settings:
-            base_mt_settings = MergeTreeSettingsRandomizer.get_random_settings(args)
+            base_mt_settings = MergeTreeSettingsRandomizer.get_random_settings(
+                args, self.tags
+            )
             self.apply_random_settings_limits(base_mt_settings)
 
         # User-specified fixed dicts
@@ -6112,17 +6220,7 @@ def do_run_tests(
                     print("Stopping tests, terminating all processes...")
                     # Wait briefly for test results to be written
                     sleep(5)
-                    for p in processes:
-                        if p.is_alive():
-                            p.terminate()
-                    # Wait for processes to exit, then force-kill stragglers
-                    for p in processes:
-                        p.join(timeout=10)
-                        if p.is_alive():
-                            print(f"Force killing process {p.name} (pid {p.pid})")
-                            p.kill()
-                    for p in processes:
-                        p.join(timeout=5)
+                    terminate_workers(processes)
                 finally:
                     signal.signal(signal.SIGTERM, old_sigterm_handler)
                 raise_stop_from_carrier(stop_exit_code)
@@ -6794,6 +6892,8 @@ ORDER BY (test_name, callee_offset)
                     print(" done")
                     break
                 print(". ", end="")
+                # Paces the probes; the zero-hung path breaks above.
+                sleep(1)
         except Exception as e:
             print(
                 colored(
@@ -6829,6 +6929,13 @@ ORDER BY (test_name, callee_offset)
                             attrs=["bold"],
                         )
                     )
+                    # stdout is a pipe and the dumps below can outlast the deadline.
+                    sys.stdout.flush()
+                    # The query that failed is an expensive aggregate over
+                    # system.stack_trace via HTTP; the plain read goes over TCP,
+                    # and the C stacks need no answer from the server at all.
+                    print_sql_stacktraces(args)
+                    print_c_stacktraces(args)
                     exit_code.value = 1
                     hung_check_failed = True
                 else:
@@ -6892,9 +6999,6 @@ ORDER BY (test_name, callee_offset)
             clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
         except Exception as e:
             print("Cannot flush final coverage: ", str(e))
-        cov_rows = int(clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL") or 0)
-        cov_tests = int(clickhouse_execute(args, "SELECT uniq(test_name) FROM system.coverage_log FINAL") or 0)
-        print(f"system.coverage_log: {cov_rows} rows, {cov_tests} distinct tests")
         try:
             ic_rows = int(
                 clickhouse_execute(

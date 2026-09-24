@@ -708,7 +708,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         .current_metric = CurrentMetrics::TemporaryFilesForAggregation,
         .bytes_compressed = ProfileEvents::ExternalAggregationCompressedBytes,
         .bytes_uncompressed = ProfileEvents::ExternalAggregationUncompressedBytes,
-        .num_files = ProfileEvents::ExternalAggregationWritePart}) : nullptr)
+        .num_files = ProfileEvents::ExternalAggregationWritePart,
+        .spilled_to_disk_operator = "aggregation"}) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
     , thread_pool(std::make_unique<ThreadPool>(
           CurrentMetrics::AggregatorThreads,
@@ -4618,6 +4619,31 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
             > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
+    auto & dst = getDataVariant<Method>(*res).data.impls[bucket];
+    /// `StringHashTable::reserve` splits the hint evenly over its four size-class sub-maps,
+    /// while a real key set concentrates in one of them, so it is not reserved.
+    constexpr bool can_reserve = requires { dst.reserve(size_t{}); } && !requires { dst.emptyStringSlot(); };
+    size_t input_keys = 0;
+    if constexpr (can_reserve)
+    {
+        for (const auto & variants : data)
+            input_keys += getDataVariant<Method>(*variants).data.impls[bucket].size();
+
+        /// A bucket that is about to be abandoned must not add a buffer to the unwinding query.
+        if (is_cancelled.load(std::memory_order_seq_cst))
+            return;
+
+        /// The counters are published input-first with the result released and read here
+        /// result-first with an acquire, so every observed result contribution comes with its
+        /// input contribution; extra input contributions only lower the ratio.
+        const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_acquire));
+        const UInt64 seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
+        if (seen_input_keys)
+            dst.reserve(std::min(
+                input_keys,
+                static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
+    }
+
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
         if (is_cancelled.load(std::memory_order_seq_cst))
@@ -4641,6 +4667,12 @@ void NO_INLINE Aggregator::mergeBucketImpl(
                 prefetch,
                 is_cancelled);
         }
+    }
+
+    if constexpr (can_reserve)
+    {
+        res->merged_buckets_input_keys.fetch_add(input_keys, std::memory_order_relaxed);
+        res->merged_buckets_result_keys.fetch_add(dst.size(), std::memory_order_release);
     }
 }
 
