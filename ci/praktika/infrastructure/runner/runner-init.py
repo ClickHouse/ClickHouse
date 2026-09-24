@@ -596,6 +596,9 @@ launchctl disable system/com.apple.bluetoothd || true
 mdutil -a -i off || true
 rm -rf /.Spotlight-V100 || true
 
+# No backup destination exists, but enabled Time Machine can still take local APFS snapshots.
+tmutil disable || true
+
 # Stop persisting file-change history; CI churn grows `/.fseventsd` to several GB. Takes effect after reboot.
 rm -rf /System/Volumes/Data/.fseventsd || true
 mkdir -p /System/Volumes/Data/.fseventsd
