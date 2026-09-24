@@ -1,10 +1,12 @@
 === a row cut in the middle of a value reports the read failure ===
 read-failure-reported: True
+reached-the-values-format: True
 timed-out: False
 server-alive: 1
 rows-visible	0
 === control: a complete row followed by a truncated body reports the same read failure ===
 read-failure-reported: True
+reached-the-values-format: True
 timed-out: False
 server-alive: 1
 rows-visible	0

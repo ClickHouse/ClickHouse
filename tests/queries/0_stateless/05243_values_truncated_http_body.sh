@@ -11,10 +11,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The `X-ClickHouse-100-Continue: defer` header is load-bearing, not decoration: it is what makes the
 # server keep the request body for the data format instead of reading it as query text, which is the
 # documented way to send the query in the URL and the data in the body. Without it a short body is
-# reported while still being read as query text and never reaches the format at all.
+# reported while still being read as query text and never reaches the format at all. That precondition
+# is asserted rather than assumed: the row context in the reported message is added only after the row
+# has been handed to the Values format, so it is absent when the body never reaches a format.
 #
 # curl cannot exercise this: it will not send a body shorter than the `Content-Length` it announced,
 # so a raw socket is used, with a half-close so the response can still be read after the short body.
+
+cleanup() {
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
+}
+trap cleanup EXIT
+cleanup
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (x UInt64) ENGINE = Memory"
 
@@ -41,6 +49,7 @@ while True:
 s.close()
 
 print('read-failure-reported:', b'Code: 33' in data)
+print('reached-the-values-format:', b'at row' in data)
 print('timed-out:', b'TIMED-OUT' in data)
 "
 }
