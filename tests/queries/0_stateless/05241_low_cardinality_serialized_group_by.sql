@@ -34,6 +34,9 @@ DROP TABLE IF EXISTS lc_serialized_group_by;
 -- columns. Pin the settings the path depends on: CI randomizes some of them, and the top-K
 -- optimization does not apply to serialized plans.
 SET serialize_query_plan = 0;
+-- The test server's default profile sets `max_rows_to_group_by` (10G), which disables the GROUP BY
+-- top-K optimization; pin it to zero like the other top-K heap tests.
+SET max_rows_to_group_by = 0;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET enable_group_by_top_k_optimization = 1;
 SET group_by_top_k_optimization_observation_rows = 1;
