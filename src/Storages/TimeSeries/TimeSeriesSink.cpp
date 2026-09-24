@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/NaNUtils.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
@@ -46,6 +47,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char time_series_insert_pause_after_target_validation[];
+}
 
 namespace TimeSeriesSetting
 {
@@ -767,7 +773,15 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
 {
     auto pipeline = std::make_unique<TargetPipeline>();
 
-    const auto & target_table_id = time_series_storage.getTargetTableID(kind, getContext());
+    auto target_table = time_series_storage.getTargetTable(kind, getContext());
+    auto target_table_id = target_table->getStorageID();
+    std::optional<StorageTimeSeries::LockedTargetTable> locked_target_table;
+    if ((kind == ViewTarget::Samples || kind == ViewTarget::RecentSamples)
+        && time_series_storage.getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+        locked_target_table.emplace(time_series_storage.lockAndValidateBucketedSamplesTarget(
+            kind, target_table, target_table_id, getContext()));
+    if (kind == ViewTarget::Samples && locked_target_table)
+        FailPointInjection::pauseFailPoint(FailPoints::time_series_insert_pause_after_target_validation);
 
     auto insert_query = make_intrusive<ASTInsertQuery>();
     insert_query->table_id = target_table_id;
@@ -790,7 +804,6 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
 
     pipeline->io = interpreter.execute();
     pipeline->executor = std::make_unique<PushingPipelineExecutor>(pipeline->io.pipeline);
-    pipeline->executor->start();
 
     /// Precompute converting actions from our source block types to the pipeline's expected types.
     const Block & target_header = pipeline->executor->getHeader();
@@ -801,6 +814,10 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
         pipeline->context);
     pipeline->converting_actions = std::make_shared<ExpressionActions>(
         std::move(converting_dag), ExpressionActionsSettings(pipeline->context));
+
+    if (locked_target_table)
+        time_series_storage.revalidateBucketedSamplesTarget(kind, *locked_target_table, target_table_id, getContext());
+    pipeline->executor->start();
 
     return pipeline;
 }

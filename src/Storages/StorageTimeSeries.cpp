@@ -4,12 +4,14 @@
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
@@ -22,9 +24,11 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
@@ -39,9 +43,15 @@
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char time_series_read_pause_after_target_validation[];
+}
+
 namespace Setting
 {
     extern const SettingsBool enable_time_series_table;
+    extern const SettingsSeconds lock_acquire_timeout;
 }
 
 namespace TimeSeriesSetting
@@ -58,6 +68,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNEXPECTED_TABLE_ENGINE;
     extern const int UNKNOWN_TABLE;
+    extern const int UNFINISHED;
 }
 
 namespace fs = std::filesystem;
@@ -265,15 +276,18 @@ StoragePtr StorageTimeSeries::getTargetTable(ViewTarget::Kind target_kind, const
 }
 
 void StorageTimeSeries::validateBucketedSamplesTarget(
-    ViewTarget::Kind target_kind, const StoragePtr & target_table, const ContextPtr & local_context) const
+    ViewTarget::Kind target_kind,
+    const StoragePtr & target_table,
+    const ContextPtr & local_context,
+    bool bypass_metadata_cache) const
 {
     if (getVersion() < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES
         || !isTimeSeriesVersionSupported(getVersion())
         || (target_kind != ViewTarget::Samples && target_kind != ViewTarget::RecentSamples))
         return;
 
-    auto outer_metadata = getInMemoryMetadataPtr(local_context, false);
-    auto target_metadata = target_table->getInMemoryMetadataPtr(local_context, false);
+    auto outer_metadata = getInMemoryMetadataPtr(local_context, bypass_metadata_cache);
+    auto target_metadata = target_table->getInMemoryMetadataPtr(local_context, bypass_metadata_cache);
     checkTimeSeriesBucketedSamplesTarget(
         outer_metadata->columns,
         target_metadata->columns,
@@ -282,6 +296,102 @@ void StorageTimeSeries::validateBucketedSamplesTarget(
         *getStorageSettings(),
         getStorageID(),
         target_table->getStorageID());
+}
+
+StorageTimeSeries::LockedTargetTable StorageTimeSeries::lockAndValidateBucketedSamplesTarget(
+    ViewTarget::Kind target_kind,
+    const StoragePtr & expected_table,
+    const StorageID & expected_id,
+    const ContextPtr & local_context) const
+{
+    const auto timeout = local_context->getSettingsRef()[Setting::lock_acquire_timeout];
+    auto share_lock = expected_table->lockForShare(local_context->getInitialQueryId(), timeout);
+
+    auto current_metadata = getValidatedBucketedSamplesTargetMetadata(
+        target_kind, expected_table, expected_id, local_context);
+    return {expected_table, std::move(current_metadata), std::move(share_lock)};
+}
+
+void StorageTimeSeries::revalidateBucketedSamplesTarget(
+    ViewTarget::Kind target_kind,
+    const LockedTargetTable & locked_target,
+    const StorageID & expected_id,
+    const ContextPtr & local_context) const
+{
+    auto current_metadata = getValidatedBucketedSamplesTargetMetadata(
+        target_kind, locked_target.table, expected_id, local_context);
+    if (current_metadata != locked_target.metadata)
+        throw Exception(ErrorCodes::UNFINISHED, "The {} target table of TimeSeries table {} changed while binding the nested plan; retry",
+                        target_kind, getStorageID().getNameForLogs());
+}
+
+StorageMetadataPtr StorageTimeSeries::getValidatedBucketedSamplesTargetMetadata(
+    ViewTarget::Kind target_kind,
+    const StoragePtr & expected_table,
+    const StorageID & expected_id,
+    const ContextPtr & local_context) const
+{
+    const auto current_id = expected_table->getStorageID();
+    const auto current_table = getTargetTableImpl(target_kind, local_context, /* throw_if_not_found = */ true);
+    if (current_table.get() != expected_table.get()
+        || current_id.database_name != expected_id.database_name
+        || current_id.table_name != expected_id.table_name
+        || current_id.uuid != expected_id.uuid)
+        throw Exception(ErrorCodes::UNFINISHED, "The {} target table of TimeSeries table {} changed during query planning; retry",
+                        target_kind, getStorageID().getNameForLogs());
+
+    auto current_metadata = expected_table->IStorage::getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ true);
+    StorageMetadataPtr current_metadata_ptr = current_metadata;
+    auto outer_metadata = getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ true);
+    checkTimeSeriesBucketedSamplesTarget(
+        outer_metadata->columns,
+        current_metadata_ptr->columns,
+        expected_table->getName(),
+        target_kind,
+        *getStorageSettings(),
+        getStorageID(),
+        current_id);
+
+    auto pinned_snapshot = local_context->getPinnedStorageSnapshot(current_id.uuid);
+    if (!pinned_snapshot && local_context->hasQueryContext())
+        pinned_snapshot = local_context->getQueryContext()->getPinnedStorageSnapshot(current_id.uuid);
+    if (pinned_snapshot
+        && (&pinned_snapshot->storage != expected_table.get()
+            || (pinned_snapshot->metadata != current_metadata_ptr
+                && (pinned_snapshot->metadata->columns != current_metadata_ptr->columns
+                    || pinned_snapshot->metadata->getMetadataVersion() != current_metadata_ptr->getMetadataVersion()))))
+        throw Exception(ErrorCodes::UNFINISHED, "The {} target table snapshot of TimeSeries table {} changed during query planning; retry",
+                        target_kind, getStorageID().getNameForLogs());
+
+    if (local_context->hasQueryContext())
+    {
+        if (auto query_metadata_cache = local_context->getQueryMetadataCache())
+        {
+            auto [metadata_cache, metadata_cache_lock] = query_metadata_cache->getStorageMetadataCache();
+            auto cached_metadata = metadata_cache->find(expected_table.get());
+            const bool has_current_cached_metadata = cached_metadata != metadata_cache->end();
+            if (has_current_cached_metadata && cached_metadata->second != current_metadata_ptr)
+                throw Exception(ErrorCodes::UNFINISHED, "The {} target table metadata of TimeSeries table {} changed during query planning; retry",
+                                target_kind, getStorageID().getNameForLogs());
+            metadata_cache_lock.unlock();
+
+            auto [snapshot_cache, snapshot_cache_lock] = query_metadata_cache->getStorageSnapshotCache();
+            auto cached_snapshot = snapshot_cache->find(expected_table.get());
+            if (cached_snapshot != snapshot_cache->end())
+            {
+                if (!has_current_cached_metadata)
+                    throw Exception(ErrorCodes::UNFINISHED, "The {} target table snapshot of TimeSeries table {} has no current metadata; retry",
+                                    target_kind, getStorageID().getNameForLogs());
+                /// In Debug/Sanitizer builds MergeTreeData copies metadata into snapshots, so pointer identity is meaningful only in other builds.
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+                if (cached_snapshot->second->metadata != current_metadata_ptr)
+                    throw Exception(ErrorCodes::UNFINISHED, "The {} target table snapshot of TimeSeries table {} changed during query planning; retry",
+                                    target_kind, getStorageID().getNameForLogs());
+#endif
+            }
+        }
+    }
+    return current_metadata_ptr;
 }
 
 void StorageTimeSeries::validateBucketedSamplesTargets(
@@ -784,12 +894,28 @@ void StorageTimeSeries::readImpl(
     read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries(*getStorageSettings(), query_info.isFinal()));
 
     NameSet requested_columns{column_names.begin(), column_names.end()};
+    StoragePtr samples_table;
+    StorageID samples_table_id = StorageID::createEmpty();
+    std::optional<LockedTargetTable> locked_samples_table;
+    if (getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES
+        && requested_columns.contains(TimeSeriesColumnNames::getOuterSamples(getVersion())))
+    {
+        samples_table = getTargetTable(ViewTarget::Samples, read_context);
+        samples_table_id = samples_table->getStorageID();
+        locked_samples_table.emplace(lockAndValidateBucketedSamplesTarget(
+            ViewTarget::Samples, samples_table, samples_table_id, read_context));
+    }
     auto select_query = makeASTSelectFromTimeSeries(*this, requested_columns, query_info, read_context);
+    if (getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+        FailPointInjection::pauseFailPoint(FailPoints::time_series_read_pause_after_target_validation);
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, /* subquery_depth_ = */ 0, /* is_subquery_ = */ false,
                                       query_info.settings_limit_offset_done);
     InterpreterSelectQueryAnalyzer interpreter(select_query, read_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+    if (locked_samples_table)
+        revalidateBucketedSamplesTarget(ViewTarget::Samples, *locked_samples_table, samples_table_id, read_context);
+    locked_samples_table.reset();
 
     if (!query_plan.isInitialized())
         return;

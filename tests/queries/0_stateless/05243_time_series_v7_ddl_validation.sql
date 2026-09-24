@@ -42,6 +42,7 @@ SAMPLES INNER COLUMNS (min_time SimpleAggregateFunction(min, Nullable(DateTime64
 DROP TABLE ts_good;
 
 -- External bucketed samples targets need the same merge-safe schema as inner targets.
+-- Full-definition `ATTACH` checks are in 05257, which generates fresh UUIDs for reruns.
 CREATE TABLE ts_external_raw
 (
     id UUID,
@@ -52,16 +53,9 @@ CREATE TABLE ts_external_raw
 ) ENGINE = AggregatingMergeTree ORDER BY (id, bucket) SETTINGS allow_dimensions_outside_sorting_key = 1;
 CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES ts_external_raw; -- { serverError BAD_TYPE_OF_FIELD }
-ATTACH TABLE ts_attach_bad UUID '3d3cf81a-2174-4b36-80d7-b5075e53ef8d'
-ENGINE = TimeSeries SETTINGS version = 7, recent_samples_ttl_seconds = 0
-SAMPLES ts_external_raw; -- { serverError BAD_TYPE_OF_FIELD }
-ATTACH TABLE ts_attach_inner_bad UUID 'de2f2c21-0e1d-4b0c-9e7d-11d40990c28b'
-ENGINE = TimeSeries SETTINGS version = 7, recent_samples_ttl_seconds = 0
-SAMPLES INNER COLUMNS (samples Array(Tuple(DateTime64(3), Float64)))
-SAMPLES INNER ENGINE = AggregatingMergeTree; -- { serverError BAD_TYPE_OF_FIELD }
 DROP TABLE ts_external_raw;
 
-CREATE TABLE ts_external_replacing UUID '7c5d88a4-8ea0-4ea1-8933-34cbdd173b01'
+CREATE TABLE ts_external_replacing
 (
     id UUID,
     samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(DateTime64(3), Float64))),
@@ -71,11 +65,6 @@ CREATE TABLE ts_external_replacing UUID '7c5d88a4-8ea0-4ea1-8933-34cbdd173b01'
 ) ENGINE = ReplacingMergeTree ORDER BY (id, bucket);
 CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
 SAMPLES ts_external_replacing; -- { serverError INVALID_SETTING_VALUE }
--- A full ATTACH must check the physical target, not merely the engine declared alongside its INNER UUID.
-ATTACH TABLE ts_attached_unsafe_inner UUID '7c5d88a4-8ea0-4ea1-8933-34cbdd173b02'
-ENGINE = TimeSeries SETTINGS version = 7, recent_samples_ttl_seconds = 0
-SAMPLES INNER UUID '7c5d88a4-8ea0-4ea1-8933-34cbdd173b01'
-SAMPLES INNER ENGINE = AggregatingMergeTree; -- { serverError INVALID_SETTING_VALUE }
 DROP TABLE ts_external_replacing;
 
 CREATE TABLE ts_external_good

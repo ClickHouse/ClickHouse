@@ -52,6 +52,27 @@ public:
     StorageID getTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StorageID tryGetTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
 
+    struct LockedTargetTable
+    {
+        StoragePtr table;
+        StorageMetadataPtr metadata;
+        TableLockHolder share_lock;
+    };
+
+    /// Pin the target table and record its metadata epoch before binding a plan.
+    LockedTargetTable lockAndValidateBucketedSamplesTarget(
+        ViewTarget::Kind target_kind,
+        const StoragePtr & expected_table,
+        const StorageID & expected_id,
+        const ContextPtr & local_context) const;
+
+    /// Reject an ALTER or target replacement which raced with binding the nested plan.
+    void revalidateBucketedSamplesTarget(
+        ViewTarget::Kind target_kind,
+        const LockedTargetTable & locked_target,
+        const StorageID & expected_id,
+        const ContextPtr & local_context) const;
+
     /// RESTORE calls this after all tables are created but before any data is inserted.
     /// An absent external target may be restored separately, but an inner target must exist.
     void validateBucketedSamplesTargets(const ContextPtr & local_context, bool allow_missing_external_targets = false) const;
@@ -146,7 +167,17 @@ private:
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
-    void validateBucketedSamplesTarget(ViewTarget::Kind target_kind, const StoragePtr & target_table, const ContextPtr & local_context) const;
+    void validateBucketedSamplesTarget(
+        ViewTarget::Kind target_kind,
+        const StoragePtr & target_table,
+        const ContextPtr & local_context,
+        bool bypass_metadata_cache = false) const;
+
+    StorageMetadataPtr getValidatedBucketedSamplesTargetMetadata(
+        ViewTarget::Kind target_kind,
+        const StoragePtr & expected_table,
+        const StorageID & expected_id,
+        const ContextPtr & local_context) const;
 
     MultiVersion<TimeSeriesSettings> storage_settings;
 

@@ -51,6 +51,9 @@ static struct InitFiu
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
+    PAUSEABLE_ONCE(time_series_insert_pause_after_target_validation) \
+    PAUSEABLE_ONCE(time_series_read_pause_after_target_validation) \
+    PAUSEABLE_ONCE(time_series_selector_pause_after_target_metadata) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \

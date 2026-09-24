@@ -144,11 +144,12 @@ bool tryBuildPromQLRangeSelectorPlan(
     auto selector_metadata = selector_storage->getInMemoryMetadataPtr(context, false);
     auto selector_snapshot = selector_storage->getStorageSnapshot(selector_metadata, context);
 
-    /// The selector's tags subquery is an execution dependency: besides producing the id set it
-    /// populates the query-local id-to-tags collector used by the native kernel. Disable the only
-    /// cache which can skip execution of that subquery while still returning a prepared set.
+    /// The selector's tags subquery populates the query-local id-to-tags collector used by the
+    /// native kernel. Both prepared-set reuse and Planner-level subquery result caching can
+    /// return the identifier set without executing `timeSeriesStoreTags`.
     auto mutable_selector_context = Context::createCopy(context);
     mutable_selector_context->setPreparedSetsCache(nullptr);
+    mutable_selector_context->setCanUseQueryResultCache(false);
     mutable_selector_context->setSetting("max_block_size", UInt64{max_block_size});
     selector_context = std::move(mutable_selector_context);
 

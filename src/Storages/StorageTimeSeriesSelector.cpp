@@ -47,6 +47,7 @@
 #include <base/insertAtEnd.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
@@ -59,11 +60,17 @@
 namespace DB
 {
 
+namespace FailPoints
+{
+extern const char time_series_selector_pause_after_target_metadata[];
+}
+
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int UNFINISHED;
 }
 
 namespace
@@ -679,27 +686,32 @@ ASTPtr makeFilterForSamplesTable(
         make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime),
         timeSeriesTimestampToAST(max_time, timestamp_data_type)));
 
+    /// id IN (SELECT id FROM (select_id_query))
+    /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
+    auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
+    auto id_is_selected = makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery));
+
     if (max_raw_samples_per_row)
     {
         /// The raw native path intentionally reads the physical `samples` array and slices it in
-        /// its transform. Reject an oversized stored row from its offsets subcolumn before the
-        /// nested timestamps and values are materialized. Silently filtering the row would change
-        /// the PromQL result, so the guard must fail closed.
+        /// its transform. Reject an oversized selected row from its offsets subcolumn before the
+        /// nested timestamps and values are materialized. Silently filtering a selected row would
+        /// change the PromQL result, so the guard must fail closed.
         auto samples_size = make_intrusive<ASTIdentifier>(String{TimeSeriesColumnNames::Samples} + ".size0");
         auto exceeds_limit = makeASTFunction(
             "greater", std::move(samples_size), make_intrusive<ASTLiteral>(*max_raw_samples_per_row));
+        /// Keep the selection test inside `throwIf`: PREWHERE may reorder its outer conditions,
+        /// and disabling short-circuit evaluation must not reject an unselected oversized row.
+        auto selected_and_oversized = makeASTFunction("and", std::move(exceeds_limit), id_is_selected->clone());
         auto throw_if_oversized = makeASTFunction(
             "throwIf",
-            std::move(exceeds_limit),
+            std::move(selected_and_oversized),
             make_intrusive<ASTLiteral>(
                 "PromQL native raw selector exceeded max_promql_native_rate_samples_per_series in one stored row"));
         conditions.push_back(makeASTFunction("not", std::move(throw_if_oversized)));
     }
 
-    /// id IN (SELECT id FROM (select_id_query))
-    /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
-    auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
-    conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
+    conditions.push_back(std::move(id_is_selected));
 
     /// For a whole-metric selector over a metric-clustered id layout one more condition is
     /// added: indexHint(<raw id column> >= tuple(hash(metric_name), min) AND <raw id column>
@@ -1337,7 +1349,8 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
         }
     }
 
-    auto samples_table_id = time_series_storage->getTargetTableID(samples_table_kind, context);
+    auto samples_table = time_series_storage->getTargetTable(samples_table_kind, context);
+    auto samples_table_id = samples_table->getStorageID();
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
 
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
@@ -1354,8 +1367,15 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.table_timestamp_type);
 
-    auto samples_table = time_series_storage->getTargetTable(samples_table_kind, context);
-    auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(context, false);
+    StorageMetadataPtr samples_metadata_before_planning;
+    if (has_bucketed_samples)
+    {
+        /// Capture the underlying metadata identity before building a plan from its virtual snapshot.
+        /// MergeTree copies that snapshot in debug builds, so the two virtual pointers cannot be compared.
+        const auto metadata = samples_table->IStorage::getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ true);
+        samples_metadata_before_planning = metadata;
+    }
+    auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ has_bucketed_samples);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
 
     /// Native ordered/raw fragments consume the bucketed physical layout. Keep the SQL selector
@@ -1504,9 +1524,24 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
+    std::optional<StorageTimeSeries::LockedTargetTable> locked_samples_table;
+    if (has_bucketed_samples)
+    {
+        locked_samples_table.emplace(time_series_storage->lockAndValidateBucketedSamplesTarget(
+            samples_table_kind, samples_table, samples_table_id, interpreter_context));
+        if (locked_samples_table->metadata.get() != samples_metadata_before_planning.get())
+            throw Exception(ErrorCodes::UNFINISHED, "The {} target table of TimeSeries table {} changed while building a selector plan; retry",
+                            samples_table_kind, time_series_storage->getStorageID().getNameForLogs());
+    }
+    if (locked_samples_table)
+        FailPointInjection::pauseFailPoint(FailPoints::time_series_selector_pause_after_target_metadata);
+
     InterpreterSelectQueryAnalyzer interpreter(select_query, interpreter_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+    if (locked_samples_table)
+        time_series_storage->revalidateBucketedSamplesTarget(
+            samples_table_kind, *locked_samples_table, samples_table_id, interpreter_context);
     return true;
 }
 
