@@ -354,14 +354,8 @@ size_t filterPartsByProjection(
 ///   (4) the projection part lacks it, the parent part lacks it too, and it is a parent TABLE column:
 ///       legitimate, the column was added after the part was written, so the default fill is correct
 ///       and identical on either read path (see 04412).
-/// Case (4) also has a type counterpart, asked once after the loop:
-///   (5) the parent part records another type than the table declares for a column the projection
-///       DERIVED a stored value from (a grouping key, an aggregate state, its own sort order): that
-///       value was computed from data the parent read no longer returns. A column the parent part
-///       records and the projection merely stores is not asked about, so (4) stays reachable; a column
-///       the parent part lacks contributes the inputs its DEFAULT is computed from, followed on through
-///       their own defaults, and a filtered projection additionally contributes the columns its WHERE
-///       reads; none of those is refused merely for being absent from the part.
+///   (5) a part records another type than the table declares for a column the projection DERIVED a
+///       stored value from: that value was computed from data the parent read no longer returns.
 static bool canReadProjectionPart(
     const IMergeTreeDataPart & projection_part,
     const IMergeTreeDataPart & parent_part,
@@ -390,8 +384,6 @@ static bool canReadProjectionPart(
         /// (4) Legitimate late-added table column, missing from both parts; the default fill matches.
     }
 
-    /// (5) Over the projection's own dependencies: @required_column_names is narrowed by the
-    /// filtering caller to the columns the projection outputs.
     return !projection.isStaleForPartColumns(
         parent_part.getColumns(),
         parent_part.getSerializationInfos(),

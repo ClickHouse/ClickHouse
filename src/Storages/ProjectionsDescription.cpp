@@ -677,25 +677,10 @@ bool ProjectionDescription::isStaleForPartColumns(
     const SerializationInfoByName & projection_part_serialization_infos,
     const ColumnsDescription & table_columns) const
 {
-    /// Every physical name asked about is compared against a type some part on disk recorded for it:
-    /// the parent part's own list first, then the type the projection part recorded for the copy it
-    /// froze. A name NEITHER side records has no type to compare against, and then exactly one case
-    /// is not staleness: a column this projection OUTPUTS, because the projection part holds no value
-    /// of it either, so both read paths synthesise it from the declaration as it stands today
-    /// (04412_projection_added_column_default). Any other unrecorded name is one the projection stored
-    /// something derived from under a declaration nothing on disk records, so it cannot be shown to
-    /// match: refuse (the rule our #112484 chose for skip indices).
-    /// A non-physical name (an ALIAS, a virtual) is never compared, only followed: no part records
-    /// one, so its absence is not evidence.
     Names columns_to_check;
-    /// Names whose DEFAULT expression still has to be followed.
     Names to_walk;
     NameSet seen;
 
-    /// Did the projection part record a type for @column_name? Then it holds a value FROZEN under
-    /// whatever the declaration was when it was written, so every column that value was computed from
-    /// still matters. When it recorded nothing either, both read paths synthesise the column from
-    /// today's declaration, and there is nothing frozen for its inputs to have been computed under.
     auto projection_recorded = [&](const String & column_name)
     {
         if (projection_part_columns.tryGetByName(column_name))
@@ -704,11 +689,7 @@ bool ProjectionDescription::isStaleForPartColumns(
         return missing && !missing->type_name.empty();
     };
 
-    /// A dependency the projection did not read verbatim: compare it, and follow its default when the
-    /// parent part does not record it while the projection part does. Mirrors
-    /// injectRequiredColumnsRecursively(): an ALIAS never resolves as physical, yet a DEFAULT may read
-    /// one (01084_defaults_on_aliases) and the parent reader expands it through
-    /// ColumnsDescription::getDefault() all the same.
+    /// An ALIAS never resolves as physical, yet a DEFAULT may read one and the reader expands it anyway.
     auto add_dependency = [&](const String & dependency_name)
     {
         auto dependency = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, dependency_name);
@@ -725,8 +706,6 @@ bool ProjectionDescription::isStaleForPartColumns(
             to_walk.push_back(key);
     };
 
-    /// A projection index fills its own description, so which of the structures it stores were derived
-    /// from which column is not narrowed down here either.
     bool narrowed = type == Type::Normal && !index;
 
     if (narrowed)
@@ -736,22 +715,13 @@ bool ProjectionDescription::isStaleForPartColumns(
             auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, output.name);
             if (!column)
             {
-                /// An ALIAS or virtual output, or a stored expression: it may consume a column the
-                /// projection also passes through, so ask about everything.
                 narrowed = false;
                 break;
             }
 
-            /// The part records the column, so the projection part holds a copy written under the same
-            /// recorded type and both reads convert it identically. Nothing to ask about.
             if (part_columns.tryGetByName(column->getNameInStorage()))
                 continue;
 
-            /// The part does NOT record it, so a parent read synthesises it now from the column's
-            /// DEFAULT over the inputs as they read TODAY, while the projection part holds what the
-            /// same DEFAULT produced when the projection was written. Compare it, and when the
-            /// projection part did record it, follow that DEFAULT too: one of its inputs may be a
-            /// column the part does not record either.
             if (seen.emplace(column->getNameInStorage()).second)
             {
                 columns_to_check.push_back(column->getNameInStorage());
@@ -763,14 +733,10 @@ bool ProjectionDescription::isStaleForPartColumns(
 
     if (narrowed)
     {
-        /// A Normal projection's key is built over the PARENT columns (getProjectionFromAST), so its
-        /// required-column names are comparable with @table_columns. No ORDER BY yields an empty set,
-        /// which is correct: such a projection stores every column verbatim and derives nothing.
+        /// A Normal projection's key is built over the parent columns, so these names match @table_columns.
         for (const auto & key_column : metadata->getColumnsRequiredForPrimaryKey())
             add_dependency(key_column);
 
-        /// A filtered projection stores only the rows its WHERE kept, so its row set was derived from
-        /// the columns that WHERE reads (05076 states the same rule for the JSON case it refuses).
         if (where_clause_ast)
         {
             IdentifierNameSet filter_identifiers;
@@ -781,13 +747,8 @@ bool ProjectionDescription::isStaleForPartColumns(
     }
     else
     {
-        /// Anything the loop above collected before it gave up is in `required_columns` too.
         columns_to_check = required_columns;
 
-        /// A required column the parent part does not record is synthesised by a parent read from its
-        /// DEFAULT as declared TODAY, while a projection part that recorded it holds what the same
-        /// DEFAULT produced when it was written. Follow that expression so the columns the frozen
-        /// value was computed FROM are compared too; the narrowed branch does this for its outputs.
         for (const auto & required_column : required_columns)
         {
             auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required_column);
@@ -801,8 +762,6 @@ bool ProjectionDescription::isStaleForPartColumns(
         }
     }
 
-    /// Follow the default expressions, because one of them may itself read a column the part does not
-    /// record either; the reader's own injection is recursive for the same reason.
     size_t walked = 0;
     /// `add_dependency` appends to `to_walk`, so the bound is re-read on every iteration.
     while (walked < to_walk.size())
@@ -821,16 +780,15 @@ bool ProjectionDescription::isStaleForPartColumns(
     {
         for (const auto & required_column : names)
         {
-            /// `required_columns` keeps a subcolumn unless the projection also OUTPUTS it, so
-            /// `toInt64(t.a)` leaves `t.a` here; the types below belong to the column it is stored in.
+            /// A name here may be a subcolumn (`toInt64(t.a)` leaves `t.a`); the type is the storage column's.
             auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required_column);
             if (!column)
                 continue;
             const auto & storage_name = column->getNameInStorage();
 
             DataTypePtr part_type;
-            /// The part's OWN list: IMergeTreeDataPart::tryGetColumn() answers from a storage-wide cache
-            /// keyed on IDataType::equals(), which erases the attributes getName() below asks about.
+            /// Not IMergeTreeDataPart::tryGetColumn(): it answers from a storage-wide cache keyed on
+            /// IDataType::equals(), which erases the attributes getName() below asks about.
             if (auto own = part_columns.tryGetByName(storage_name))
             {
                 part_type = own->type;
@@ -838,18 +796,11 @@ bool ProjectionDescription::isStaleForPartColumns(
             else if (const auto * missing = part_serialization_infos.getMissingColumnInfo(storage_name);
                      missing && !missing->type_name.empty())
             {
-                /// The part holds no values of the column: every one was the default of this recorded
-                /// type, which is also the type a read reconstructs it from.
                 part_type = DataTypeFactory::instance().tryGet(missing->type_name);
             }
 
             if (!part_type)
             {
-                /// The parent part records no type, so a parent read SYNTHESISES the column from its
-                /// DEFAULT as declared today, while what the projection part holds for it was FROZEN
-                /// when the projection was written, from the DEFAULT as declared THEN. The type
-                /// recorded on the projection side is what that frozen value - and the sort key and
-                /// the row set computed from it - was computed under.
                 if (auto stored = projection_part_columns.tryGetByName(storage_name))
                     part_type = stored->type;
                 else if (const auto * missing = projection_part_serialization_infos.getMissingColumnInfo(storage_name);
@@ -859,21 +810,15 @@ bool ProjectionDescription::isStaleForPartColumns(
 
             if (!part_type)
             {
-                /// Nothing on disk records the column. When this projection OUTPUTS it, its own part
-                /// holds no value of it either, so both read paths synthesise it from the DEFAULT as
-                /// declared today and there is nothing frozen to disagree with. Otherwise the
-                /// projection stored a key, an order or a row set derived from a declaration no part
-                /// recorded, which cannot be shown to match.
+                /// A column this projection OUTPUTS is synthesised from today's declaration either way.
                 if (sample_block.has(storage_name))
                     continue;
                 return true;
             }
 
             const auto & table_type = table_columns.get(storage_name).type;
-            /// equals() answers whether the on-disk representation is the same; getName() also carries
-            /// the attributes it drops (a time zone, a custom name over a plain type), which change what
-            /// an expression computes from unchanged bytes. MergeTreeIndices.cpp's hasSameMeaning() is
-            /// the same test for skip indices and carries the full rationale.
+            /// equals() compares the on-disk representation; getName() also carries the attributes it
+            /// drops (a time zone, a custom name), which change what an expression computes.
             if (!part_type->equals(*table_type) || part_type->getName() != table_type->getName())
                 return true;
         }

@@ -1558,10 +1558,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         }
         else if (projection_parts.size() == global_ctx->future_part->parts.size())
         {
-            /// The merged part records the declared types, so a stale projection merged through
-            /// becomes indistinguishable from an up-to-date one. Unlike the three reasons above this
-            /// one is not gated on the IGNORE mode: a projection whose stored values were computed
-            /// from another type has to be rebuilt whatever the mode.
+            /// Not gated on the IGNORE mode: merging a stale projection through would hide it is stale.
             if (projection_part_is_stale)
             {
                 LOG_DEBUG(

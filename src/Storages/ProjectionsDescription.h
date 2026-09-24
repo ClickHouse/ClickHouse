@@ -164,14 +164,8 @@ struct ProjectionDescription
 
     String getDirectoryName() const { return name + ".proj"; }
 
-    /// Does the part record, for a column this projection reads, a type other than the one
-    /// @table_columns declares? A projection part holds values computed from the parent columns as
-    /// the part records them (grouping keys, aggregate states, a normal projection's sort order),
-    /// while a read of the parent converts those columns to the declared type. When the parent part
-    /// records no type for such a column, the type the PROJECTION part recorded is the evidence:
-    /// the projection froze what the column's DEFAULT produced under it, and a parent read now
-    /// synthesises that DEFAULT under the declared type instead.
-    /// Renames are not resolved: a rename changes no value.
+    /// Does a part on disk record, for a column this projection derived a stored value from, a type
+    /// other than the one @table_columns declares? Renames are not resolved: no value changes.
     bool isStaleForPartColumns(
         const NamesAndTypesList & part_columns,
         const SerializationInfoByName & part_serialization_infos,

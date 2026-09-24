@@ -2692,7 +2692,7 @@ private:
             if (removed_projections.contains(projection.name))
                 continue;
 
-            /// This task's pipeline reads every column, so a rebuild is sound here.
+            /// This task's pipeline reads every column, so a projection can be recalculated here.
             bool source_projection_is_stale = false;
             if (auto source_projection = ctx->source_part->getProjectionParts().find(projection.name);
                 source_projection != ctx->source_part->getProjectionParts().end()
@@ -4308,9 +4308,8 @@ bool MutateTask::prepare()
             for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
                 ctx->files_to_skip.insert(projection_name + ".proj");
 
-            /// This task's pipeline reads only the columns the mutation changes, and the shared
-            /// projection calculation default-fills the rest, so a stale projection is left out of
-            /// the new part rather than rebuilt here.
+            /// This task's pipeline reads only the columns the mutation changes, so a projection can
+            /// only be left out here.
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
             {
                 auto source_projection = ctx->source_part->getProjectionParts().find(projection.name);
