@@ -153,7 +153,6 @@ void DeltaLakeSink::onFinish()
             /// FIXME: this should be just removeObject,
             /// but IObjectStorage does not have such method.
             const auto & path = sink->getPath();
-            /// This handler's `throw;` below must reach the caller, so a failing removal is logged, not propagated.
             try
             {
                 object_storage->removeObjectIfExists(StoredObject(path));

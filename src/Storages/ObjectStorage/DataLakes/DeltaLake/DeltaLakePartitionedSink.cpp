@@ -453,7 +453,6 @@ void DeltaLakePartitionedSink::onFinish()
             for (const auto & [sink, written_bytes, written_rows] : partition_info->data_files)
             {
                 const auto & path = sink->getPath();
-                /// This handler's `throw;` below must reach the caller, so a failing removal is logged, not propagated.
                 try
                 {
                     object_storage->removeObjectIfExists(StoredObject(path));
