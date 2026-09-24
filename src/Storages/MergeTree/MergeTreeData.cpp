@@ -140,6 +140,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/Increment.h>
 #include <base/sleep.h>
@@ -183,6 +184,7 @@
 
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
+#include <Poco/JSON/JSONException.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -397,6 +399,13 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char claim_inject_stale_part_dir[];
+    /// Pauses the asynchronous loading of outdated parts right before the next part is taken, so a
+    /// test can make the table read-only while the loading is pending and check that it stops.
+    extern const char mt_pause_before_loading_outdated_part[];
+    /// Pauses every queued load of an outdated part right before it checks whether the background
+    /// workers are still enabled, so a test can make the table read-only while several loads are
+    /// already queued in the thread pool and check that none of them runs.
+    extern const char mt_pause_before_loading_queued_outdated_part[];
     extern const char slowdown_system_parts_enumeration[];
 }
 
@@ -412,6 +421,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
+    extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int BACKUP_DAMAGED;
+    extern const int BACKUP_VERSION_NOT_SUPPORTED;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_PARTITION_VALUE;
@@ -447,6 +459,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_SIZE_LIMIT_EXCEEDED;
     extern const int ILLEGAL_PROJECTION;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
 namespace FailPoints
@@ -461,6 +474,9 @@ namespace FailPoints
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
+    /// Throws a `CANNOT_WRITE_TO_FILE_DESCRIPTOR` error with `ENOSPC` while loading a part restored from a backup,
+    /// after its files have been read. Used to test that a failure of the destination is not reported as a damaged backup.
+    extern const char restore_part_inject_no_space_error[];
 }
 
 namespace ErrorCodes
@@ -3305,9 +3321,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unloaded_parts.push_back(node);
     });
 
-    /// If all disks are readonly or the table is explicitly marked as readonly,
-    /// it does not make sense to load outdated parts (we will not own them).
-    if (!unloaded_parts.empty() && !all_disks_are_readonly && !is_table_readonly)
+    /// Retain outdated parts for a read-only table: its loading task starts when it becomes writable.
+    /// Until then, the unfinished flag also prevents cleanup from removing their empty covering parts.
+    if (!unloaded_parts.empty() && !all_disks_are_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
 
@@ -3564,6 +3580,16 @@ MergeTreeData::~MergeTreeData()
 void MergeTreeData::loadUnexpectedDataParts()
 try
 {
+    /// Started before the metadata commit of a `table_readonly` 1 -> 0 `ALTER`, see `StorageMergeTree::alter`.
+    /// Loading detaches broken parts, so it waits for the commit. A rolled-back commit restores
+    /// `table_readonly` and the task then stays idle until the next toggle schedules it again.
+    if (!areBackgroundWorkersEnabled())
+    {
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            unexpected_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
+        return;
+    }
+
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
         if (unexpected_data_parts.empty())
@@ -3584,18 +3610,40 @@ try
     ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_UNEXPECTED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
+    bool suspended = false;
     for (auto & load_state : unexpected_data_parts)
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
-        chassert(!load_state.part);
         if (unexpected_data_parts_loading_canceled)
         {
             runner.waitForAllToFinishAndRethrowFirstError();
             return;
         }
+
+        /// The table was made read-only while its unexpected parts were still loading, see
+        /// `StorageMergeTree::alter`. No further part is handed to the pool, and a load that was
+        /// queued but has not started yet returns without touching the disk (see the task below),
+        /// so only the parts whose loading already started may finish. The rest are loaded when the
+        /// setting is toggled back, which schedules this task again.
+        if (!areBackgroundWorkersEnabled())
+        {
+            suspended = true;
+            break;
+        }
+
+        /// Already loaded by an earlier run of this task that was suspended half way through.
+        if (load_state.part)
+            continue;
+
         /// Capturing load_state by reference is fine here because it's a reference to this, which outlives runner
         runner.enqueueAndKeepTrack([this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
         {
+            /// This load was queued while the table was still writable. The pool runs a bounded
+            /// number of loads at a time, so the loop above can be far ahead of it, and a load that
+            /// starts after the table became read-only must not detach a part.
+            if (!areBackgroundWorkersEnabled())
+                return;
+
             auto local_component_guard = Coordination::setCurrentComponent(component_name);
             loadUnexpectedDataPart(load_state);
 
@@ -3605,6 +3653,17 @@ try
         }, Priority{});
     }
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    /// Either the loop stopped because the workers were disabled, or it handed out every part but
+    /// some queued loads found the workers disabled and returned without loading.
+    if (suspended || std::ranges::any_of(unexpected_data_parts, [](const auto & state) { return !state.part; }))
+    {
+        LOG_DEBUG(log, "Suspended loading unexpected data parts because the background workers are disabled");
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            unexpected_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
+        return;
+    }
+
     LOG_DEBUG(log, "Loaded {} unexpected data parts", unexpected_data_parts.size());
 
     {
@@ -3624,6 +3683,18 @@ catch (...)
 void MergeTreeData::loadOutdatedDataParts(bool is_async)
 try
 {
+    /// Started before the metadata commit of a `table_readonly` 1 -> 0 `ALTER`, see `StorageMergeTree::alter`.
+    /// Loading detaches broken parts, removes duplicates, and prepares parts for removal, so it waits
+    /// for the commit. A rolled-back commit restores `table_readonly` and the task then stays idle
+    /// until the next toggle schedules it again. The same holds for a writable table that was made
+    /// read-only while this task was still pending from its start: it loads nothing until toggled back.
+    if (is_async && !areBackgroundWorkersEnabled())
+    {
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            outdated_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
+        return;
+    }
+
     {
         std::lock_guard lock(outdated_data_parts_mutex);
         if (outdated_unloaded_data_parts.empty())
@@ -3685,9 +3756,23 @@ try
     ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_OUTDATED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
+
+    /// Why the scheduling loop below stopped handing parts to the thread pool.
+    enum class StopReason : uint8_t
+    {
+        /// `stopOutdatedAndUnexpectedDataPartsLoadingTask`: the table is shutting down.
+        Canceled,
+        /// The background workers were disabled, see `StorageMergeTree::alter`.
+        Suspended,
+        /// Every part was handed to the pool.
+        Drained,
+    };
+    StopReason stop_reason = StopReason::Drained;
+
     while (true)
     {
         ThreadFuzzer::maybeInjectSleep();
+        FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_outdated_part);
         PartLoadingTree::NodePtr part;
 
         {
@@ -3695,15 +3780,20 @@ try
 
             if (is_async && outdated_data_parts_loading_canceled)
             {
-                /// Wait for every scheduled task
-                /// In case of any exception it will be re-thrown and server will be terminated.
-                runner.waitForAllToFinishAndRethrowFirstError();
-                requeue_failed_parts();
+                stop_reason = StopReason::Canceled;
+                break;
+            }
 
-                LOG_DEBUG(log,
-                    "Stopped loading outdated data parts because task was canceled. "
-                    "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
-                return;
+            /// The table was made read-only while its outdated parts were still loading, see
+            /// `StorageMergeTree::alter`. No further part is handed to the pool, and a load that was
+            /// queued but has not started yet puts its part back (see the task below), so only the
+            /// parts whose loading already started may finish, like any other background operation in
+            /// progress. The rest stay unloaded on disk until the setting is toggled back, which
+            /// schedules this task again.
+            if (is_async && !areBackgroundWorkersEnabled())
+            {
+                stop_reason = StopReason::Suspended;
+                break;
             }
 
             /// Do not start loading the remaining parts if the loading is going to be retried later anyway.
@@ -3715,8 +3805,22 @@ try
         }
 
         /// The captured locals will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts, &retryable_exception, &has_retryable_exception, replicated]()
+        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
+                                    &retryable_exception, &has_retryable_exception, replicated, is_async]()
         {
+            FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_queued_outdated_part);
+
+            /// This load was queued while the table was still writable. The pool runs a bounded
+            /// number of loads at a time, so the scheduling loop can be far ahead of it, and a load
+            /// that starts after the table became read-only must not touch the disk: the part goes
+            /// back to the unloaded ones, and the loop above accounts for it after the pool drained.
+            if (is_async && !areBackgroundWorkersEnabled())
+            {
+                std::lock_guard lock(outdated_data_parts_mutex);
+                outdated_unloaded_data_parts.push_back(my_part);
+                return;
+            }
+
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
             LoadPartResult res;
@@ -3761,38 +3865,57 @@ try
         }, Priority{});
     }
 
+    /// Wait for every queued load without holding `outdated_data_parts_mutex`: a load that found the
+    /// workers disabled takes it to put its part back.
+    /// In case of any exception it will be re-thrown and server will be terminated.
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    /// All the workers have finished, so no synchronization is needed to read `retryable_exception`.
+    std::lock_guard lock(outdated_data_parts_mutex);
+
+    /// All the workers have finished, so the parts that failed with a retryable error can be
+    /// returned to the queue and `retryable_exception` can be read without synchronization.
+    requeue_failed_parts();
+
+    if (stop_reason == StopReason::Canceled)
+    {
+        LOG_DEBUG(log,
+            "Stopped loading outdated data parts because task was canceled. "
+            "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
+        return;
+    }
+
     if (has_retryable_exception)
     {
-        size_t num_unloaded_parts = 0;
-        {
-            std::lock_guard lock(outdated_data_parts_mutex);
-            requeue_failed_parts();
-            num_unloaded_parts = outdated_unloaded_data_parts.size();
-        }
-
         /// Synchronous loading (on table drop) has no task to retry with, so it fails fast as before.
         if (!is_async)
             std::rethrow_exception(retryable_exception);
 
         LOG_WARNING(log, "Loading of outdated data parts was interrupted by a retryable error, will retry later. "
             "Loaded {} parts, {} left unloaded. Error: {}",
-            num_loaded_parts.load(), num_unloaded_parts, getExceptionMessage(retryable_exception, /*with_stacktrace=*/ false));
+            num_loaded_parts.load(), outdated_unloaded_data_parts.size(),
+            getExceptionMessage(retryable_exception, /*with_stacktrace=*/ false));
 
         outdated_data_parts_loading_task->scheduleAfter(loading_parts_max_backoff_ms);
+        return;
+    }
+
+    /// Either the loop stopped because the workers were disabled, or it handed out every part but
+    /// some queued loads found the workers disabled and put their parts back.
+    if (stop_reason == StopReason::Suspended || !outdated_unloaded_data_parts.empty())
+    {
+        LOG_DEBUG(log,
+            "Suspended loading outdated data parts because the background workers are disabled. "
+            "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            outdated_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
         return;
     }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts.load(), is_async ? "asynchronously" : "synchronously");
 
-    {
-        std::lock_guard lock(outdated_data_parts_mutex);
-        outdated_data_parts_loading_finished = true;
-        outdated_data_parts_cv.notify_all();
-    }
+    outdated_data_parts_loading_finished = true;
+    outdated_data_parts_cv.notify_all();
 }
 catch (...)
 {
@@ -3805,8 +3928,9 @@ catch (...)
 /// No TSA because of std::unique_lock and std::condition_variable.
 void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    /// Background tasks are not run if storage is static.
-    if (isStaticStorage())
+    /// Static and read-only tables do not start the outdated-parts loading task, and a started
+    /// task loads nothing while the background workers are disabled.
+    if (isStaticStorage() || (*getSettings())[MergeTreeSetting::table_readonly] || !areBackgroundWorkersEnabled())
         return;
 
     /// If waiting is not required, do NOT log and do NOT enable/disable turbo mode to make `waitForOutdatedPartsToBeLoaded` a lightweight check
@@ -3847,8 +3971,9 @@ void MergeTreeData::triggerBackgroundOperations()
 
 void MergeTreeData::waitForUnexpectedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    /// Background tasks are not run if storage is static.
-    if (isStaticStorage())
+    /// Background tasks are not run if storage is static, and a started loading task loads nothing
+    /// while the background workers are disabled.
+    if (isStaticStorage() || !areBackgroundWorkersEnabled())
         return;
 
     /// If waiting is not required, do NOT log and do NOT enable/disable turbo mode to make `waitForUnexpectedPartsToBeLoaded` a lightweight check
@@ -6401,26 +6526,70 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    for (const auto & part : getDataPartsVectorForInternalUsage())
+    if (!dropped_columns.empty())
     {
-        bool at_least_one_column_rest = false;
-        for (const auto & column : part->getColumns())
+        auto parts = getDataPartsVectorForInternalUsage();
+        auto parts_info = getPartsSnapshotInfo(parts);
+
+        /// A part can carry a column under a name the table does not know, because a rename this part
+        /// has not applied yet is recorded in the mutations, not in the part. Resolve those names, so a
+        /// pending rename is not mistaken for a column the table has lost.
+        IMutationsSnapshot::Params params
         {
-            if (!dropped_columns.contains(column.name))
+            .metadata_version = old_metadata.getMetadataVersion(),
+            .min_part_metadata_version = parts_info.min_metadata_version,
+            .min_part_data_versions = nullptr,
+            .max_mutation_versions = nullptr,
+            .need_data_mutations = false,
+            .need_alter_mutations = true,
+            .need_patch_parts = false,
+            .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+        };
+
+        auto mutations_snapshot = getMutationsSnapshot(params);
+
+        for (const auto & part : parts)
+        {
+            auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, local_context
+#if CLICKHOUSE_CLOUD
+                , nullptr
+#endif
+                );
+
+            bool at_least_one_column_rest = false;
+            for (const auto & column : part->getColumns())
             {
-                at_least_one_column_rest = true;
-                break;
+                auto name_in_table = alter_conversions->columnHasNewName(column.name)
+                    ? alter_conversions->getColumnNewName(column.name)
+                    : column.name;
+
+                /// A column the table no longer has does not keep the part alive: the mutation does not
+                /// carry it over into the new part either (`splitAndModifyMutationCommands` skips a column
+                /// absent from the table), so the part would be left with no columns at all. That is not a
+                /// loadable part - `loadColumns` and `loadIndexGranularity` reject it, and
+                /// `calculateColumnsSizesOnDisk` throws - so the mutation must not be allowed to produce
+                /// one. A partition detached before a `DROP COLUMN` and re-attached after it, or a
+                /// `KILL MUTATION` of a `RENAME COLUMN`, leaves a part in that state. The condition
+                /// mirrors the one `splitAndModifyMutationCommands` applies, virtual columns included:
+                /// a part written by a lightweight delete keeps its `_row_exists` through the mutation.
+                if (!dropped_columns.contains(name_in_table)
+                    && (old_metadata.columns.has(name_in_table) || old_metadata.virtuals.has(name_in_table)))
+                {
+                    at_least_one_column_rest = true;
+                    break;
+                }
             }
-        }
-        if (!at_least_one_column_rest)
-        {
-            std::string postfix;
-            if (dropped_columns.size() > 1)
-                postfix = "s";
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Cannot drop or clear column{} '{}', because all columns "
-                            "in part '{}' will be removed from disk. Empty parts are not allowed",
-                            postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
+
+            if (!at_least_one_column_rest)
+            {
+                std::string postfix;
+                if (dropped_columns.size() > 1)
+                    postfix = "s";
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot drop or clear column{} '{}', because all columns "
+                                "in part '{}' will be removed from disk. Empty parts are not allowed",
+                                postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
+            }
         }
     }
 }
@@ -9168,8 +9337,11 @@ Pipe MergeTreeData::alterPartition(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
 
-    /// A read-only table must reject explicit partition mutations as well.
-    if ((*getSettings())[MergeTreeSetting::table_readonly])
+    /// A read-only table must reject explicit partition mutations as well. `isReadonlyCommitInFlight`
+    /// covers the window in which a `table_readonly` 1 -> 0 `ALTER` has published `table_readonly = 0`
+    /// in memory but has not committed it: the table is still durably read-only, and the wait for the
+    /// outdated parts below returns at once because nothing is loading while the workers are disabled.
+    if ((*getSettings())[MergeTreeSetting::table_readonly] || isReadonlyCommitInFlight())
     {
         for (const PartitionCommand & command : commands)
         {
@@ -9269,6 +9441,11 @@ Pipe MergeTreeData::alterPartition(
                         "Cannot replace partition from table {} with storage {} to table {}",
                         from_storage->getStorageID().getNameForLogs(), from_storage->getName(), getStorageID().getNameForLogs());
 
+                /// The wait returns at once while the source is read-only, including inside both windows
+                /// of its `table_readonly` 1 -> 0 `ALTER`, because nothing is loading. That is safe for the
+                /// source: cloning reads only its active parts, and their set is complete once the source
+                /// is attached, since the deferred outdated parts are exactly the parts covered by an
+                /// active one.
                 from_storage_merge_tree->waitForOutdatedPartsToBeLoaded();
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
@@ -9659,6 +9836,89 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         restored_parts_holder->increaseNumBrokenParts();
 }
 
+namespace
+{
+
+/// Whether the error describes the disk or the configuration of this server rather than the contents of
+/// the backup. The files of the part have already been copied from the backup to the destination disk, so
+/// an OS-level failure while accessing them is a failure of that disk (no space, readonly filesystem,
+/// permissions, I/O error, ...) - except for a missing file, which means the backup does not contain it.
+/// `UNIQUE_KEY_DENSE_INDEX_UNREADABLE` means that `unique_key_index.sst` could not be validated on the
+/// destination disk and was left in place for a retry (a corrupt one is rebuilt instead), so it says
+/// nothing about the backup either.
+bool isDestinationSideError(const Exception & e)
+{
+    if (const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e))
+        return errno_exception->getErrno() != ENOENT;
+    return e.code() == ErrorCodes::NOT_ENOUGH_SPACE || e.code() == ErrorCodes::SUPPORT_IS_DISABLED
+        || e.code() == ErrorCodes::UNIQUE_KEY_DENSE_INDEX_UNREADABLE;
+}
+
+/// Whether a non-`DB::Exception` error comes from parsing the metadata files of a part with Poco
+/// (`Poco::JSON::Parser`, `Poco::Dynamic::Var` conversions), i.e. describes the contents of the files.
+bool isPartMetadataParseError(const Poco::Exception & e)
+{
+    return dynamic_cast<const Poco::JSON::JSONException *>(&e)
+        || dynamic_cast<const Poco::DataException *>(&e)
+        || dynamic_cast<const Poco::BadCastException *>(&e)
+        || dynamic_cast<const Poco::RangeException *>(&e)
+        || dynamic_cast<const Poco::InvalidAccessException *>(&e);
+}
+
+/// Assigns the final error code to a failure that happened while loading a part restored from a backup,
+/// and records it in `system.errors` (the load runs under `Exception::SuppressErrorCodesScope`, so nothing
+/// has been recorded for it yet).
+///
+/// A retryable failure (network, timeouts, ...) says nothing about the backup and keeps its original code.
+/// So does a failure of the destination (see `isDestinationSideError`): restoring a valid backup onto a full
+/// or readonly disk must not tell the user that the backup is damaged. Everything else means the backup
+/// cannot be read: either it was written by a newer server whose format this one does not understand
+/// (`BACKUP_VERSION_NOT_SUPPORTED`), or its contents are malformed (`BACKUP_DAMAGED`).
+///
+/// A failure that is not a `DB::Exception` has no code to reassign. If it is positively identified as a
+/// failure to parse the metadata of the part (see `isPartMetadataParseError`, e.g. a truncated or malformed
+/// `serialization.json`), `error` is replaced with a fresh `BACKUP_DAMAGED` exception carrying its text.
+/// Any other such failure (`std::bad_alloc`, `Poco::IOException` of the local filesystem, ...) says nothing
+/// about the backup: it is left as is and is not attributed to a broken part.
+///
+/// `in_local_step` is set if the failure happened in a step that only writes to the destination.
+/// Returns whether the failure is attributed to the part in the backup being broken.
+bool classifyAndRecordRestoreError(std::exception_ptr & error, bool retryable, bool in_local_step)
+{
+    try
+    {
+        std::rethrow_exception(error);
+    }
+    catch (...)
+    {
+        /// Ok: nothing is swallowed here. The caller still owns `error` and rethrows it after this call;
+        /// this block only reaches into the exception object to assign and record its final code.
+        Exception * e = current_exception_cast<Exception *>();
+        if (!e)
+        {
+            const auto * poco_exception = current_exception_cast<const Poco::Exception *>();
+            if (retryable || in_local_step || !poco_exception || !isPartMetadataParseError(*poco_exception))
+                return false;
+
+            /// The constructor records the new exception in `system.errors`.
+            error = std::make_exception_ptr(Exception(ErrorCodes::BACKUP_DAMAGED, "{}", poco_exception->displayText()));
+            return true;
+        }
+
+        bool part_is_broken = !retryable && !in_local_step && !isDestinationSideError(*e);
+        if (part_is_broken)
+        {
+            e->resetCode(
+                e->code() == ErrorCodes::UNKNOWN_FORMAT_VERSION ? ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED : ErrorCodes::BACKUP_DAMAGED);
+        }
+
+        e->recordToSystemErrors();
+        return part_is_broken;
+    }
+}
+
+}
+
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
 {
     MutableDataPartPtr part;
@@ -9675,15 +9935,26 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     String parent_part_dir = full_part_dir.parent_path();
     String part_dir_name = full_part_dir.filename();
 
+    /// Set while `load_part` runs a step that only writes to the destination, so that its failure is not
+    /// attributed to the backup.
+    bool in_local_step = false;
+
     /// Load this part from the directory `temp_part_dir`.
     auto load_part = [&]
     {
         MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings(), PartDirIntent::OpenExisting);
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
+        in_local_step = true;
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
+        in_local_step = false;
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
+        fiu_do_on(FailPoints::restore_part_inject_no_space_error,
+        {
+            ErrnoException::throwWithErrno(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, ENOSPC,
+                "Injected failure to write a file of part {} restored from backup", part_name);
+        });
         /// UNIQUE KEY: a restored part may not ship its `unique_key_index.sst`
         /// (older backup, or one taken before UK). Build it here so the part is
         /// usable; a failure throws and routes the part to `mark_broken` below
@@ -9714,8 +9985,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     {
         std::exception_ptr error;
         bool retryable = false;
+        in_local_step = false;
         try
         {
+            /// A failure to load a restored part is a property of the backup, not of this server, so it is
+            /// reported below with a backup-level error code. Suppress the recording of error codes while the
+            /// part is being loaded so that the failure is accounted in `system.errors` exactly once, under
+            /// that final code - otherwise a damaged backup keeps incrementing `CORRUPTED_DATA`, which is
+            /// reserved for corruption of the data this server owns and is alerted on as such.
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             load_part();
         }
         catch (const Poco::Net::NetException &)
@@ -9737,13 +10015,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         if (!error)
             return part;
 
-        if (!retryable && detach_if_broken)
+        bool part_is_broken = classifyAndRecordRestoreError(error, retryable, in_local_step);
+
+        /// A failure of the destination is not a broken part: it is not detached and fails the `RESTORE`.
+        if (part_is_broken && detach_if_broken)
         {
             mark_broken(error);
             return nullptr;
         }
 
-        if (!retryable)
+        if (part_is_broken)
         {
             LOG_ERROR(log,
                       "Failed to restore part {} because it's broken. You can skip broken parts while restoring by setting "
