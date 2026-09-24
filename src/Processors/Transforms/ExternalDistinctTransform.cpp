@@ -79,8 +79,8 @@ ProcessorMemoryStats ExternalDistinctTransform::getMemoryStats() const
     if (const auto * hashing = std::get_if<Hashing>(&state); hashing && !hashing->input_finished && hashing->set.getTotalRowCount())
     {
         res.spillable_memory_bytes = hashing->set.getTotalByteCount();
-        /// Allow hash-table growth and the bounded suppression extraction/sorting workspace.
-        res.need_reserved_memory_bytes = res.spillable_memory_bytes + 2 * DEFAULT_BYTES_IN_RUN
+        /// Allow the bounded suppression extraction/sorting workspace.
+        res.need_reserved_memory_bytes = 2 * DEFAULT_BYTES_IN_RUN
             + max_block_size_rows * sizeof(IColumn::Permutation::value_type);
     }
     else if (const auto * collecting = std::get_if<CollectingInput>(&state))
