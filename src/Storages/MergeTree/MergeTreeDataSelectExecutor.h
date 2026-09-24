@@ -115,11 +115,12 @@ public:
         const std::optional<KeyCondition> & key_condition_rpn_template,
         const MergeTreeDataPartInfoForReaderPtr & part_info,
         const MarkRanges & ranges,
-        const RangesInDataPartReadHints & in_read_hints,
+        RangesInDataPartReadHints in_read_hints,
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
+        bool retain_vector_search_filter,
         bool use_skip_indexes_for_disjunctions,
         PartialDisjunctionResult & partial_disjunction_result,
         LoggerPtr log);
