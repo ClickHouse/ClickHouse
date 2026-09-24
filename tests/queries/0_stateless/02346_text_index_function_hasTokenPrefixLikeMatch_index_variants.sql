@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
--- `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` give the same result with and without the text index for a postprocessor,
--- a map element or JSON path, a LowCardinality column and tokenizers other than `splitByNonAlpha` and `array`.
+-- The functions must give the same result with and without the text index,
+-- for a postprocessor, map and JSON columns, LowCardinality and other tokenizers.
 
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;

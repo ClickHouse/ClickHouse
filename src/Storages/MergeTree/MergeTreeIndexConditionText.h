@@ -117,8 +117,7 @@ public:
     const Block & getHeader() const { return header; }
 
     /// Create text search query for the function node if it is suitable for optimization.
-    /// The query may have direct read mode `None` and nothing to search, then it only makes the function be rewritten
-    /// with the index tokenizer (see `optimizeDirectReadFromTextIndex`).
+    /// A query with nothing to search only rewrites the function to the index tokenizer.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;

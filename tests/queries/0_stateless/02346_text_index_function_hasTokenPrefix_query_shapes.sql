@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
--- Without the tokenizer argument, `hasTokenPrefix` uses the index tokenizer only where the plan evaluates it over the table,
--- and `splitByNonAlpha` after GROUP BY and in mutations, as `hasAnyTokens` does. It never applies the index preprocessor.
+-- Without a tokenizer argument, `hasTokenPrefix` uses the index tokenizer only where the index is read,
+-- and `splitByNonAlpha` elsewhere (e.g. after GROUP BY, or in mutations), like `hasAnyTokens`.
 
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;

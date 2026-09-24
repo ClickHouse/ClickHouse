@@ -626,8 +626,8 @@ private:
             || function_name == "hasPhrase";
     }
 
-    /// A per-token pattern function takes the tokenizer from the index it is analyzed for, so all such indexes must agree on it,
-    /// whatever the settings. The first of them by name serves it, preferring one that answers it by a dictionary scan.
+    /// All indexes that can serve the function must use the same tokenizer.
+    /// Prefer an index that can scan its dictionary, then the first by name.
     std::optional<String> choosePerTokenPatternFunctionIndex(const ActionsDAG::Node & function_node, const ActionsDAG::Node & canonical_node) const
     {
         const auto function_name = function_node.function_base->getName();
@@ -704,7 +704,7 @@ private:
             if (!text_index_condition.canAnswerFunctionNode(function_node))
                 continue;
 
-            /// Only the chosen index serves a per-token pattern function, even if another one is analyzed for it as well.
+            /// Only the chosen index serves the function.
             if (per_token_pattern_index && search_query->getFunctionName() == function_name && index_name != *per_token_pattern_index)
                 continue;
 
@@ -799,8 +799,7 @@ private:
 
         const auto & condition = selected_conditions.front();
 
-        /// A per-token pattern function takes the tokenizer only from an index it is analyzed for, not
-        /// from e.g. an index on `mapKeys(m)` that serves `hasTokenPrefix(m['key'], ...)` as `mapContainsKey`.
+        /// Take the tokenizer only from an index built for this function, not e.g. from a `mapKeys(m)` index.
         if (MergeTreeIndexConditionText::isPerTokenPatternFunction(function_node.function_base->getName())
             && condition.search_query->getFunctionName() != function_node.function_base->getName())
             return;
@@ -814,8 +813,8 @@ private:
 
         /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
         const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
-        /// As for hasAnyTokens, the index tokenizer reaches only the filters and projections this pass sees over the table, not e.g. those
-        /// after GROUP BY or JOIN, nor mutations. hasTokenPrefix/Like/Match never get the preprocessor, and an explicit tokenizer is the same everywhere.
+        /// As for hasAnyTokens, only queries this pass sees get the index tokenizer (not e.g. after GROUP BY, or mutations).
+        /// An explicit tokenizer argument gives the same result everywhere.
         const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 

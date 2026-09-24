@@ -223,7 +223,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         [&](const RPNBuilderTreeNode & node, RPNElement & out)
         {
             const bool result = this->traverseAtomNode(node, out);
-            /// A query of an unknown atom only carries a function rewrite (see `createTextSearchQuery`), there is nothing to analyze.
+            /// This query only rewrites the function, there is nothing to analyze.
             if (out.function == RPNElement::FUNCTION_UNKNOWN)
                 out.text_search_queries.clear();
             return result;
@@ -1800,13 +1800,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (isPerTokenPatternFunction(function_name))
     {
-        /// A NULL needle gives NULL whatever the tokenizer. A map element or a JSON path is not the indexed expression,
-        /// so the function is not rewritten there (see `optimizeDirectReadFromTextIndex`) and keeps its own tokenizer.
+        /// A NULL needle gives NULL. A map element or a JSON path is not the indexed column, so it is not rewritten.
         if (!value_data_type.isString() || !candidate_for_exact_mode)
             return false;
 
-        /// Where this index rewrites the function to its tokenizer, the result must not depend on index use, settings or the
-        /// needle: those cases return a query without patterns that only carries the rewrite.
+        /// The function is rewritten even when the index is not used, so these cases return a query without patterns.
         auto rewrite_only = [&]
         {
             out.function = RPNElement::FUNCTION_UNKNOWN;
@@ -1817,8 +1815,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         const auto & needle = value_field.safeGet<String>();
 
-        /// Compiled as the function does, so an invalid pattern raises an exception regardless of the index use.
-        /// A prefix becomes a `prefix%` pattern, whose dictionary scan seeks to the range of tokens with that prefix.
+        /// Compile like the function does, so an invalid pattern always throws.
+        /// A prefix becomes `prefix%`, so the dictionary scan can seek to it.
         std::vector<OptimizedRegularExpression> patterns;
         if (function_name == "hasTokenPrefix")
             patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(escapeForLikePattern(needle) + "%"));
@@ -1827,13 +1825,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         else
             patterns.emplace_back(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
 
-        /// The needle applies to each token, so the matching dictionary tokens are exactly the ones the function looks for,
-        /// if it sees the stored tokens (no preprocessor, no postprocessor). An empty needle gains nothing.
+        /// The index answer is exact only if the function sees the stored tokens: no preprocessor, no postprocessor.
+        /// An empty needle matches everything, so the index does not help.
         if (has_preprocessor || has_postprocessor || needle.empty()
             || !settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
             return rewrite_only();
 
-        /// A UInt8 virtual column cannot carry the NULL the function returns for a NULL value, which NOT flips to true.
+        /// Direct read returns UInt8 and loses a NULL result, which `NOT` would turn into true.
         const auto pattern_read_mode = affix_patterns_allowed ? direct_read_mode : TextIndexDirectReadMode::None;
 
         out.function = RPNElement::FUNCTION_LIKE;

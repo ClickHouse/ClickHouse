@@ -24,7 +24,7 @@ SELECT hasTokenLike('abc', '%');
 SELECT hasTokenLike('', '%');
 SELECT hasTokenLike('abc', '');
 SELECT hasTokenLike('привет мир', 'пр_вет');
--- `\` escapes `%` and `_`, tokens are split by spaces here to keep them in the tokens.
+-- `\` escapes `%` and `_`. Tokens are split by spaces here, so they keep these characters.
 SELECT hasTokenLike('a%b axb', 'a\\%b', 'splitByString([\' \'])');
 SELECT hasTokenLike('axb', 'a\\%b', 'splitByString([\' \'])');
 SELECT hasTokenLike('a_b', 'a\\_b', 'splitByString([\' \'])');

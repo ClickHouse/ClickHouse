@@ -772,8 +772,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 analyzer->addTokenInfo(token, infos[i]);
             }
 
-            /// Collecting the postings of a great many tokens, even small embedded ones, is slower than evaluating the predicate on the column.
-            /// Only the tokens of `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` are capped, `LIKE` keeps its uncapped scan.
+            /// Reading postings for very many tokens is slower than checking the column.
+            /// Only hasTokenPrefix/Like/Match are capped, not `LIKE`.
             if (postings_to_read > max_postings_to_read
                 || (max_matched_tokens && analyzer->getNumPerTokenPatternTokens() > max_matched_tokens))
             {

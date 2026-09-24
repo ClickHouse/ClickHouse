@@ -28,8 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Each matcher decides whether a single token satisfies the constant needle.
-/// The text index applies the same predicate to its dictionary tokens (see `MergeTreeIndexConditionText`).
+/// Each matcher checks one token against the needle. The text index runs the same check on its dictionary.
 
 struct TokenPrefixMatcher
 {
@@ -106,7 +105,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        /// The needle and the tokenizer are constant, so they are parsed once per function object, as in `transform`.
+        /// The needle and the tokenizer are parsed once.
         std::call_once(init_flag, [&]
         {
             const String tokenizer_name = arguments.size() < 3
@@ -116,7 +115,7 @@ public:
             matcher.emplace(String(arguments[1].column->getDataAt(0)));
         });
 
-        /// Stateful tokenizers (`sparseGrams`, `japanese`) must not be shared between threads, as in `hasAnyTokens`.
+        /// A stateful tokenizer is not thread-safe, so each call gets its own copy.
         const auto cloned_tokenizer = shared_tokenizer->isStateful() ? shared_tokenizer->clone() : nullptr;
         const ITokenizer & tokenizer = cloned_tokenizer ? *cloned_tokenizer : *shared_tokenizer;
 

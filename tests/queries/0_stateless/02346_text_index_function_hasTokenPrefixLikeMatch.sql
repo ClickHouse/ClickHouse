@@ -1,6 +1,5 @@
 -- Tags: no-parallel-replicas
--- `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` use the text index: the dictionary tokens matching the
--- needle are exactly the tokens the functions look for, so the index prunes granules and answers them by direct read.
+-- `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` use the text index to skip granules and to answer by direct read.
 
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
@@ -21,7 +20,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 
--- 128 granules of 8 rows. Only a few granules have tokens starting with 'charg', 'recharge' only contains it.
+-- 128 granules of 8 rows. Few granules have a token starting with 'charg' ('recharge' does not).
 INSERT INTO tab SELECT
     number,
     multiIf(
@@ -219,8 +218,8 @@ SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_lik
 SELECT count() FROM tab WHERE hasTokenLike(msg, 'id1%') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_token_like';
 SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_match';
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = 'has_token_pattern_matched_tokens_unlimited';
--- LIKE, ILIKE, startsWith and endsWith are not capped, and their tokens do not count towards the cap of a per-token function.
--- The endsWith needle is one character, so that it scans the dictionary and matches 200 tokens.
+-- LIKE, ILIKE, startsWith and endsWith are not capped.
+-- The endsWith needle is one character, so it matches 200 tokens.
 SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_like';
 SELECT count() FROM tab WHERE msg ILIKE '%ID12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_ilike';
 SELECT count() FROM tab WHERE startsWith(msg, 'id12') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_starts_with';
@@ -415,8 +414,8 @@ SELECT '-- several text indexes on one expression must give the function the sam
 -- A column has at most one text index.
 CREATE TABLE tab_two (id UInt32, msg String, INDEX idx_a(msg) TYPE text(tokenizer = splitByNonAlpha), INDEX idx_b(msg) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(msg))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
--- But differently written expressions can both be the indexed expression: `tag != ''` is analyzed as `notEmpty(tag)`.
--- Different tokenizers: the function throws whatever the settings, unless the tokenizer argument selects one index.
+-- Two differently written expressions can be the same indexed expression (`tag != ''` is `notEmpty(tag)`).
+-- With different tokenizers the function throws, unless the tokenizer argument picks one index.
 CREATE TABLE tab_tokenizers
 (
     id UInt32,
@@ -469,8 +468,8 @@ SELECT 'splitByNonAlpha', count() FROM tab_tokenizers_swapped WHERE hasTokenPref
 DROP TABLE tab_tokenizers;
 DROP TABLE tab_tokenizers_swapped;
 
--- Same tokenizer, and only one index has a preprocessor, which the functions never apply: the indexes agree, the result is
--- the one on the raw values, and the index without the preprocessor serves the function by direct read, whatever its name.
+-- Same tokenizer, one index has a preprocessor: the functions ignore it and give the result on the raw values.
+-- The index without the preprocessor answers by direct read.
 CREATE TABLE tab_preprocessors
 (
     id UInt32,
@@ -519,7 +518,7 @@ SELECT 'hasTokenMatch', count() FROM tab_preprocessors_swapped WHERE hasTokenMat
 DROP TABLE tab_preprocessors;
 DROP TABLE tab_preprocessors_swapped;
 
--- The indexes agree: the function uses their tokenizer whatever the settings, and the first index by name serves it.
+-- The indexes agree, so the first one by name serves the function.
 CREATE TABLE tab_agree
 (
     id UInt32,
