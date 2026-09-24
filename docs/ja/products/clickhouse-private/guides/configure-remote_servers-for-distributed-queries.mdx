@@ -1,0 +1,88 @@
+---
+noindex: true
+title: "分散クエリ用に remote_servers を設定する"
+sidebarTitle: "remote_servers を設定する"
+description: "Kubernetes Secrets と `@from_env` ディレクティブを使用して、複数の ClickHouse Private クラスターにまたがってデータを分片化するよう ClickHouse remote_servers を安全に設定します。"
+---
+
+Kubernetes Secrets と `@from_env` ディレクティブを使用して、複数の ClickHouse Private クラスターにまたがってデータを分片化するよう ClickHouse `remote_servers` を安全に設定します。
+
+<div id="when-to-use-remote_servers">
+  ## remote_servers を使用するタイミング
+</div>
+
+[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) は、ClickHouse が[分散テーブル](https://clickhouse.com/docs/engines/table-engines/special/distributed) または [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) table function を介して分散クエリを実行する際に使用する、名前付きクラスターのトポロジーを定義します。
+
+単一の ClickHouse Private クラスター内では、レプリカはすでに ClickHouse Keeper と [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) を通じて連携しており、これは ClickHouse Cloud で使用されているものと同じアーキテクチャです。そのため、レプリケーション目的で `remote_servers` は必要ありません。この構成で、ほとんどのユースケースをカバーできます。
+
+複数の ClickHouse Private クラスターにまたがってデータをシャーディングすると、運用の複雑さが大幅に増すため、最終手段として考えるべきです。これがワークロード上必要だとお考えの場合は、それが本当に適切なアプローチかどうかを評価できるよう、まずは弊社にご相談いただくことを強くお勧めします。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* `onprem-clickhouse-cluster` Helm チャートのバージョン **1.1.151 以降**
+* 2 つの ClickHouse Private クラスターがデプロイされていること (このガイドでは `default-xx-01` と `default-xx-02` を使用します) 
+* クラスターのパスワードを含む、`default-xx-01-password` および `default-xx-02-password` という名前の Kubernetes [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) があること
+
+<div id="the-pattern">
+  ## パターン
+</div>
+
+1. Kubernetes Secrets に機密情報 (クラスターのパスワード) を格納します。
+2. `secretKeyRef` は、それらの値を ClickHouse コンテナーの環境変数として注入します。
+3. ClickHouse の設定は、[`@from_env`](https://clickhouse.com/docs/operations/configuration-files#from_env_zk) ディレクティブを使って、実行時にその値を読み込みます。
+
+これにより、レンダリングされたマニフェストに機密データが含まれないようにできます。
+
+> 外部シークレットストア (例: HashiCorp Vault、AWS Secrets Manager) と統合する場合は、[Kubernetes Secrets Store CSI Driver](https://github.com/kubernetes-sigs/secrets-store-csi-driver) を使用してシークレットをマウントし、[環境変数として読み込んでください](https://secrets-store-csi-driver.sigs.k8s.io/topics/set-as-env-var)。環境変数がどのように設定されても、`@from_env` パターンは同様に機能します。
+
+<div id="helm-values-example">
+  ## Helm values の例
+</div>
+
+各分片へは、そのクラスターの `-any` サービス経由でアクセスします。これは、そのクラスター内で利用可能な任意のレプリカにルーティングする Kubernetes サービスです。個々のポッドの DNS 名は時間の経過とともに変わる可能性があるため、それを使うよりもこの方法のほうが堅牢です。
+
+```yaml
+server:
+  additionalEnvVars:
+    - name: DEFAULT_XX_01_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-01-password
+          key: password
+    - name: DEFAULT_XX_02_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-02-password
+          key: password
+  config:
+    remote_servers:
+      my-distributed-cluster:
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_01_PASSWORD
+              host: c-default-xx-01-any.ns-default-xx-01.svc.cluster.local
+              port: 9000
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_02_PASSWORD
+              host: c-default-xx-02-any.ns-default-xx-02.svc.cluster.local
+              port: 9000
+```
+
+<div id="service-hostname-format">
+  ## サービスホスト名の形式
+</div>
+
+`-any` サービスのホスト名は、次のパターンです。
+
+```text
+c-<cluster-name>-any.<namespace>.svc.cluster.local
+```
+
+このパターンにより、機密データがマニフェストに直接テンプレート化されるのを防げます。`additionalEnvVars` フィールドは、`secretKeyRef` を使って Kubernetes Secret から環境変数を設定し、ClickHouse の設定内の `@from_env` ディレクティブが実行時にそれらの値を読み込みます。

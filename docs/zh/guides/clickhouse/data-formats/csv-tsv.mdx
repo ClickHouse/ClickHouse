@@ -79,7 +79,7 @@ clickhouse-client -q "INSERT INTO sometable FORMAT CSVWithNames" < data_small_he
   ### 使用自定义分隔符的 CSV 文件
 </div>
 
-如果 CSV 文件使用的分隔符不是逗号，可以使用 [format&#95;csv&#95;delimiter](/zh/reference/settings/formats/format-csv#format_csv_delimiter) 选项来设置对应的分隔符：
+如果 CSV 文件使用的分隔符不是逗号，可以使用 [format&#95;csv&#95;delimiter](/zh/reference/settings/formats#format_csv_delimiter) 选项来设置对应的分隔符：
 
 ```sql
 SET format_csv_delimiter = ';'
@@ -91,7 +91,7 @@ SET format_csv_delimiter = ';'
   ### 跳过 CSV 文件中的行
 </div>
 
-有时，在从 CSV 文件导入数据时，我们可能需要跳过前几行。这可以通过使用 [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/zh/reference/settings/formats/input-format#input_format_csv_skip_first_lines) 选项来实现：
+有时，在从 CSV 文件导入数据时，我们可能需要跳过前几行。这可以通过使用 [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/zh/reference/settings/formats#input_format_csv_skip_first_lines) 选项来实现：
 
 ```sql
 SET input_format_csv_skip_first_lines = 10
@@ -119,7 +119,7 @@ SELECT count(*) FROM file('data-small.csv', CSV)
   ### 在 CSV 文件中处理 NULL 值
 </div>
 
-NULL 值的编码方式可能因生成该文件的应用程序不同而有所差异。默认情况下，ClickHouse 在 CSV 中使用 `\N` 表示 NULL 值。不过，我们可以通过 [format&#95;csv&#95;null&#95;representation](/zh/reference/settings/formats/format-csv#format_csv_null_representation) 选项来修改这种表示方式。
+NULL 值的编码方式可能因生成该文件的应用程序不同而有所差异。默认情况下，ClickHouse 在 CSV 中使用 `\N` 表示 NULL 值。不过，我们可以通过 [format&#95;csv&#95;null&#95;representation](/zh/reference/settings/formats#format_tsv_null_representation) 选项来修改这一表示方式。
 
 假设我们有以下 CSV 文件：
 
@@ -174,7 +174,7 @@ SELECT * FROM file('nulls.csv')
 clickhouse-client -q "INSERT INTO sometable FORMAT TabSeparated" < data_small.tsv
 ```
 
-此外，还有一种 [TabSeparatedWithNames](/zh/reference/formats/TabSeparated/TabSeparatedWithNames) 格式，可用于处理带表头的 TSV 文件。此外，与 CSV 类似，我们也可以使用 [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/zh/reference/settings/formats/input-format#input_format_tsv_skip_first_lines) 选项跳过前 X 行。
+此外，还有一种 [TabSeparatedWithNames](/zh/reference/formats/TabSeparated/TabSeparatedWithNames) 格式，可用于处理带表头的 TSV 文件。此外，与 CSV 类似，我们也可以使用 [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/zh/reference/settings/formats#input_format_tsv_skip_first_lines) 选项跳过前 X 行。
 
 <div id="raw-tsv">
   ### 原始 TSV
@@ -244,7 +244,7 @@ FORMAT CSVWithNames
   ### 使用自定义分隔符导出 CSV
 </div>
 
-如果要使用逗号以外的分隔符，可以通过 [format&#95;csv&#95;delimiter](/zh/reference/settings/formats/format-csv#format_csv_delimiter) 设置选项来指定：
+如果要使用逗号以外的分隔符，可以通过 [format&#95;csv&#95;delimiter](/zh/reference/settings/formats#format_csv_delimiter) 设置选项来指定：
 
 ```sql
 SET format_csv_delimiter = '|'
@@ -271,7 +271,7 @@ FORMAT CSV
   ### 为 Windows 导出 CSV
 </div>
 
-如果希望 CSV 文件在 Windows 环境中正常使用，建议启用 [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/zh/reference/settings/formats/output-format#output_format_csv_crlf_end_of_line) 选项。这样会使用 `\r\n` 作为换行符，而不是 `\n`：
+如果希望 CSV 文件在 Windows 环境中正常使用，建议启用 [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/zh/reference/settings/formats#output_format_csv_crlf_end_of_line) 选项。这样会使用 `\r\n` 作为换行符，而不是 `\n`：
 
 ```sql
 SET output_format_csv_crlf_end_of_line = 1;

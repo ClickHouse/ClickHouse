@@ -10,11 +10,10 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/clickpipes/_changing_tls_settings.mdx';
-import SettingPartitionBy from '/snippets/clickpipes/_target_ch_partition_by.mdx';
 
 You can use ClickPipes to ingest data from your source Postgres database into ClickHouse Cloud. The source Postgres database can be hosted on-premises or in the cloud including Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase and others.
 
@@ -72,7 +71,7 @@ Make sure you're logged in to your ClickHouse Cloud account. If you don't have a
 
 <Info>
 
-   Before you start adding your connection details make sure that you have whitelisted ClickPipes IP addresses in your firewall rules. You can find the list of ClickPipes IP addresses [here](/integrations/clickpipes/networking/static-ips).
+   Before you start adding your connection details make sure that you have whitelisted ClickPipes IP addresses in your firewall rules. You can find the list of ClickPipes IP addresses [here](/integrations/clickpipes/home#list-of-static-ips).
    For more information refer to the source Postgres setup guides linked at [the top of this page](#prerequisites).
 </Info>
 
@@ -82,7 +81,7 @@ Make sure you're logged in to your ClickHouse Cloud account. If you don't have a
 
 You can use AWS Private Link to connect to your source Postgres database if it is hosted on AWS. This is useful if you
 want to keep your data transfer private.
-You can follow the [setup guide to set up the connection](/integrations/clickpipes/networking/aws-privatelink).
+You can follow the [setup guide to set up the connection](/integrations/clickpipes/aws-privatelink).
 
 #### (Optional) Changing TLS settings {#optional-changing-tls-settings}
 
@@ -102,7 +101,7 @@ You can specify SSH tunneling details if your source Postgres database isn't pub
 
 <Note>
 
-Make sure to whitelist [ClickPipes IP addresses](/integrations/clickpipes/networking/static-ips) in your firewall rules for the SSH bastion host so that ClickPipes can establish the SSH tunnel.
+Make sure to whitelist [ClickPipes IP addresses](/integrations/clickpipes/home#list-of-static-ips) in your firewall rules for the SSH bastion host so that ClickPipes can establish the SSH tunnel.
 </Note>
 
 Once the connection details are filled in, click on "Next".
@@ -135,11 +134,9 @@ You can configure the Advanced settings if needed. A brief description of each s
    If you're defining an ordering key in ClickHouse differently than from the primary key in Postgres, don't forget to read all the [considerations](/integrations/clickpipes/postgres/ordering-keys) around it
 </Warning>
 
-8. <SettingPartitionBy />
-
 ### Review permissions and start the ClickPipe {#review-permissions-and-start-the-clickpipe}
 
-9. Select the "Full access" role from the permissions dropdown and click "Complete Setup".
+8. Select the "Full access" role from the permissions dropdown and click "Complete Setup".
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Review permissions" size="lg" border/>
 

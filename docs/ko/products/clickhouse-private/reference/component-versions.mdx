@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "컴포넌트 버전"
+sidebarTitle: "컴포넌트 버전"
+description: "모든 ClickHouse Private 컴포넌트의 현재 안정 버전입니다."
+---
+
+모든 ClickHouse Private 컴포넌트의 현재 안정 버전입니다. 아티팩트를 레지스트리로 복사하고 Helm을 통해 설치할 때 이 태그를 사용하십시오.
+
+<div id="container-images">
+  ## 컨테이너 이미지
+</div>
+
+| 구성 요소                    | 이미지 태그              | 설명                                        |
+| ------------------------ | ------------------- | ----------------------------------------- |
+| clickhouse-server        | `25.12.1.1497`      | ClickHouse 서버 (표준)                        |
+| clickhouse-server (FIPS) | `25.12.1.1497-fips` | FIPS 140-2 컴플라이언스를 준수하는 ClickHouse 서버     |
+| clickhouse-keeper        | `26.2.1.258`        | 분산 조정 서비스 (ZooKeeper 대안)                  |
+| clickhouse-keeper (FIPS) | `26.2.1.258-fips`   | FIPS 140-2 컴플라이언스를 준수하는 ClickHouse Keeper |
+| clickhouse-operator      | `main-1.18587.1`    | 클러스터 수명 주기 관리를 위한 Kubernetes 오퍼레이터        |
+
+<div id="helm-charts">
+  ## Helm 차트
+</div>
+
+| 차트                             | 버전          | 설명                                  |
+| ------------------------------ | ----------- | ----------------------------------- |
+| helm/clickhouse-operator-helm  | `1.18587.1` | ClickHouse Operator를 설치합니다          |
+| helm/onprem-clickhouse-cluster | `1.1.311`   | ClickHouseCluster 사용자 지정 리소스를 생성합니다 |
+| helm/airgap-management         | `1.165.1`   | 선택적 관리 API                          |
+| helm/preflight-check           | `1.31.0`    | 설치 전 유효성 검사를 수행합니다                  |
+| helm/support-bundle            | `1.11.0`    | 문제 해결을 위한 진단 데이터를 수집합니다             |
+
+<div id="api">
+  ## API
+</div>
+
+| 구성 요소             | 버전        |
+| ----------------- | --------- |
+| airgap-management | `1.165.1` |
+
+<div id="notes">
+  ## 참고 사항
+</div>
+
+* **operator Helm 차트 버전**(`1.18587.1`)은 operator **이미지 태그**(`main-1.18587.1`)와 다릅니다. `helm install`로 설치할 때는 Helm 차트 버전을 사용하고, 컨테이너 이미지를 복사할 때는 이미지 태그를 사용하세요.
+* **FIPS 빌드**는 server와 Keeper의 표준 이미지 태그에 모두 `-fips`를 추가합니다.
+* 이 문서가 빌드될 때 버전 태그는 자동으로 치환됩니다. 원시 템플릿 변수(예: `25.12.1.1497`)가 보인다면, 빌드 단계가 아직 실행되지 않은 것입니다.

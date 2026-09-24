@@ -78,8 +78,8 @@ def set_default_env():
 
     Mode is determined from Info().pr_number and Info().workflow_name:
       - PR (pr_number > 0): 3 no-fault scenarios, default backend, 15 min each.
-      - NightlyKeeperFaults: fault scenarios, default backend, 20 min each.
-      - NightlyKeeperNoFaults: no-fault scenarios, default backend, 20 min each.
+      - NightlyKeeperFaults: fault scenarios, default + rocks backends, 20 min each.
+      - NightlyKeeperNoFaults: no-fault scenarios, default + rocks backends, 20 min each.
       - Other/local: both fault and no-fault, nightly defaults.
 
     The legacy KEEPER_PR_MODE env var is still honoured for local runs.
@@ -102,8 +102,6 @@ def set_default_env():
             "KEEPER_FAULTS": "false",
             "KEEPER_RUN_FAULT_TESTS": "false",
             "KEEPER_RUN_NO_FAULT_TESTS": "true",
-            # TODO: re-enable the lsmt backend after the memory usage of huge RemoveRecursive
-            # preprocessing is bounded (a whole-tree remove at bench cleanup OOMs the container).
             "KEEPER_MATRIX_BACKENDS": "default",
             "KEEPER_INCLUDE_IDS": "prod-mix-no-fault,read-multi-no-fault,write-multi-no-fault",
             "KEEPER_METRICS_INTERVAL_S": "5",
@@ -126,7 +124,7 @@ def set_default_env():
     for k, v in {
         "KEEPER_DURATION": "1200",
         "KEEPER_FAULTS": "true",
-        "KEEPER_MATRIX_BACKENDS": "default",
+        "KEEPER_MATRIX_BACKENDS": "default,rocks",
         "KEEPER_METRICS_INTERVAL_S": "5",
         "KEEPER_JOB_TYPE": "nightly",
     }.items():
@@ -369,13 +367,6 @@ def _load_all_scenario_ids(run_faults, run_no_faults):
     return ids
 
 
-def _matrix_backends():
-    """`KEEPER_MATRIX_BACKENDS` split, stripped and lowercased — the same normalization the
-    harness applies before selecting a backend, so every consumer sees identical values."""
-    raw = os.environ.get("KEEPER_MATRIX_BACKENDS", "default")
-    return [b.strip().lower() for b in raw.split(",") if b.strip()] or ["default"]
-
-
 def _scenario_ids_for_grafana(run_faults, run_no_faults):
     """Return fully-qualified scenario IDs for Grafana variables.
 
@@ -384,7 +375,9 @@ def _scenario_ids_for_grafana(run_faults, run_no_faults):
     """
     include_ids = os.environ.get("KEEPER_INCLUDE_IDS", "").strip()
     ids = [s.strip() for s in include_ids.split(",") if s.strip()] if include_ids else _load_all_scenario_ids(run_faults, run_no_faults)
-    return [f"{sid}[{b}]" for sid in ids for b in _matrix_backends()]
+    backends_raw = os.environ.get("KEEPER_MATRIX_BACKENDS", "default,rocks").strip()
+    backends = [b.strip() for b in backends_raw.split(",") if b.strip()] or ["default"]
+    return [f"{sid}[{b}]" for sid in ids for b in backends]
 
 
 def _add_grafana_links(result, commit_sha, stop_watch, run_faults, run_no_faults, scenario_filter=None, branch=None):
@@ -511,7 +504,8 @@ def main():
         return
 
     # Build RaftKeeper Docker image if the raftkeeper backend is enabled.
-    if "raftkeeper" in _matrix_backends():
+    backends_raw = os.environ.get("KEEPER_MATRIX_BACKENDS", "")
+    if "raftkeeper" in backends_raw:
         rk_image = os.environ.get("RAFTKEEPER_IMAGE", "raftkeeper:test")
         dockerfile = f"{REPO_DIR}/tests/integration/compose/Dockerfile.raftkeeper"
         if not Result.from_commands_run(

@@ -4,7 +4,6 @@
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/VirtualColumnUtils.h>
 
-#include <Columns/ColumnArray.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -75,7 +74,6 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
-    extern const int INCORRECT_DATA;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -180,8 +178,7 @@ private:
     DeserializeStates deserialize_states;
 
     void readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache);
-    void readData(const NameAndTypePair & name_and_type, MutableColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
-    void checkArrayOffsets(const IColumn & column, const String & column_name) const;
+    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
     bool isFinished();
 };
 
@@ -269,12 +266,12 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
     /// Second, read the data of all physical columns/subcolumns.
     for (const auto & name_type : physical_columns)
     {
-        MutableColumnPtr column;
+        ColumnPtr column;
         auto name_type_on_disk = getColumnOnDisk(name_type);
 
         try
         {
-            column = name_type_on_disk.type->createColumn(*IDataType::getSerialization(name_type_on_disk));
+            column = name_type_on_disk.type->createColumn();
             readData(name_type_on_disk, column, max_rows_to_read, caches[getCacheKey(name_type_on_disk)]);
         }
         catch (Exception & e)
@@ -324,7 +321,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name_and_type.name], &deserialize_state_cache);
 }
 
-void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr & column,
+void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
@@ -350,7 +347,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr
         return &it->second.compressed.value();
     };
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(*column, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
     if (column->getDataType() != name_and_type.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -359,30 +356,6 @@ void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr
             storage->getStorageID().getFullTableName(),
             name_and_type.type->getColumnType(),
             column->getDataType());
-
-    checkArrayOffsets(*column, name_and_type.name);
-    column->forEachSubcolumnRecursively([&](const IColumn & subcolumn) { checkArrayOffsets(subcolumn, name_and_type.name); });
-}
-
-void LogSource::checkArrayOffsets(const IColumn & column, const String & column_name) const
-{
-    const auto * array = typeid_cast<const ColumnArray *>(&column);
-    if (!array)
-        return;
-
-    /// An array holds as many elements as its last offset says: a shorter elements column makes
-    /// sizeAt() report a size that is not there, and consumers read past the end of the elements.
-    const auto & array_offsets = array->getOffsets();
-    size_t last_offset = array_offsets.empty() ? 0 : array_offsets.back();
-    if (last_offset != array->getData().size())
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Array offsets of column '{}' in {} are inconsistent with its elements: the last offset is {}, "
-            "but there are {} elements. The data is likely damaged",
-            column_name,
-            storage->getStorageID().getFullTableName(),
-            last_offset,
-            array->getData().size());
 }
 
 bool LogSource::isFinished()
@@ -566,7 +539,8 @@ void LogSink::onFinish()
         stream.finalize();
     streams.clear();
 
-    storage.saveMarksAndFileSizes(lock);
+    storage.saveMarks(lock);
+    storage.saveFileSizes(lock);
     storage.updateTotalRows(lock);
 
     done = true;
@@ -933,34 +907,14 @@ void StorageLog::removeUnsavedMarks(const WriteLock & /* already locked for writ
 
 void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    std::vector<String> paths;
-    paths.reserve(data_files.size() + 1);
     for (const auto & data_file : data_files)
-        paths.push_back(data_file.path);
+        file_checker.update(data_file.path);
 
     if (use_marks_file)
-        paths.push_back(marks_file_path);
+        file_checker.update(marks_file_path);
 
-    file_checker.updateAndSave(paths);
+    file_checker.save();
     total_bytes = file_checker.getTotalSize();
-}
-
-
-void StorageLog::saveMarksAndFileSizes(const WriteLock & lock)
-{
-    /// The marks file is itself one of the files whose size is recorded, so the count of saved marks
-    /// is only valid while those sizes are: repair() truncates the file back to the recorded size.
-    size_t num_marks_saved_before = num_marks_saved;
-    try
-    {
-        saveMarks(lock);
-        saveFileSizes(lock);
-    }
-    catch (...)
-    {
-        num_marks_saved = num_marks_saved_before;
-        throw;
-    }
 }
 
 
@@ -989,22 +943,6 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
     return std::chrono::seconds{lock_timeout};
-}
-
-size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
-{
-    if (!use_marks_file)
-        return 1;
-
-    const auto lock_timeout = getLockTimeout(local_context);
-    loadMarks(lock_timeout);
-
-    ReadLock lock{rwlock, lock_timeout};
-    if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-
-    /// An empty table still produces one `NullSource` in `createReadingPipe`.
-    return std::min(num_streams, std::max(1uz, data_files[INDEX_WITH_REAL_ROW_COUNT].marks.size()));
 }
 
 void StorageLog::drop()
@@ -1380,7 +1318,8 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
         }
 
         /// Finish writing.
-        saveMarksAndFileSizes(lock);
+        saveMarks(lock);
+        saveFileSizes(lock);
         updateTotalRows(lock);
     }
     catch (...)
@@ -1453,9 +1392,9 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-The engine belongs to the family of `Log` engines. See the common properties of `Log` engines and their differences in the [Log Engine Family](/reference/engines/table-engines/log-family/index) article.
+The engine belongs to the family of `Log` engines. See the common properties of `Log` engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 
-`Log` differs from [TinyLog](/reference/engines/table-engines/log-family/tinylog) in that a small file of "marks" resides with the column files. These marks are written on every data block and contain offsets that indicate where to start reading the file in order to skip the specified number of rows. This makes it possible to read table data in multiple threads.
+`Log` differs from [TinyLog](../../../engines/table-engines/log-family/tinylog.md) in that a small file of "marks" resides with the column files. These marks are written on every data block and contain offsets that indicate where to start reading the file in order to skip the specified number of rows. This makes it possible to read table data in multiple threads.
 For concurrent data access, the read operations can be performed simultaneously, while write operations block reads and each other.
 The `Log` engine does not support indexes. Similarly, if writing to a table failed, the table is broken, and reading from it returns an error. The `Log` engine is appropriate for temporary data, write-once tables, and for testing or demonstration purposes.
 
@@ -1470,7 +1409,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Log
 ```
 
-See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 ## Writing the data {#table_engines-log-writing-the-data}
 
@@ -1555,11 +1494,11 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-The engine belongs to the log engine family. See [Log Engine Family](/reference/engines/table-engines/log-family/index) for common properties of log engines and their differences.
+The engine belongs to the log engine family. See [Log Engine Family](../../../engines/table-engines/log-family/index.md) for common properties of log engines and their differences.
 
 This table engine is typically used with the write-once method: write data one time, then read it as many times as necessary. For example, you can use `TinyLog`-type tables for intermediary data that is processed in small batches. Note that storing data in a large number of small tables is inefficient.
 
-Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (up to about 1,000,000 rows). It makes sense to use this table engine if you have many small tables, since it's simpler than the [Log](/reference/engines/table-engines/log-family/log) engine (fewer files need to be opened).
+Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (up to about 1,000,000 rows). It makes sense to use this table engine if you have many small tables, since it's simpler than the [Log](../../../engines/table-engines/log-family/log.md) engine (fewer files need to be opened).
 
 ## Characteristics {#characteristics}
 
@@ -1580,7 +1519,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = TinyLog
 ```
 
-See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 ## Writing the data {#table_engines-tinylog-writing-the-data}
 
