@@ -834,6 +834,7 @@ std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
     const auto & columns = block_to_save.getColumns();
     const auto types = block_to_save.getDataTypes();
+    const String asof_key_name = strictness == JoinStrictness::Asof ? rightAsofKeyColumn().name : String{};
     ColumnAccessIndexes access_indexes;
     access_indexes.reserve(columns.size());
     Columns row_store_columns;
@@ -842,7 +843,8 @@ std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(
     for (size_t i = 0; i < columns.size(); ++i)
     {
         /// Only add columns that will be later reconstructed in the output.
-        if (isRowStorageUseful(columns[i]) && sample_block_with_columns_to_add.has(block_to_save.getByPosition(i).name))
+        const String & saved_name = block_to_save.getByPosition(i).name;
+        if (isRowStorageUseful(columns[i]) && (sample_block_with_columns_to_add.has(saved_name) || saved_name == asof_key_name))
         {
             access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_columns.size()});
             row_store_columns.push_back(columns[i]);
