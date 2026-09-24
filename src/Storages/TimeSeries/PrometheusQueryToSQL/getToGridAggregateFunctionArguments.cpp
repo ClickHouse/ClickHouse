@@ -33,7 +33,7 @@ ASTs getToGridAggregateFunctionArguments(const SQLQueryPiece & range_vector, Con
             /// values: arrayResize([], <count_of_time_steps>, <scalar_value>)
             /// where <scalar_value> is a literal or the `value` column of the single-row subquery.
             ASTPtr value = (range_vector.store_method == StoreMethod::CONST_SCALAR)
-                ? timeSeriesScalarToAST(range_vector.scalar_value, context.scalar_data_type)
+                ? timeSeriesScalarToAST(range_vector.scalar_value)
                 : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
             values = makeASTFunction(
@@ -48,10 +48,7 @@ ASTs getToGridAggregateFunctionArguments(const SQLQueryPiece & range_vector, Con
         case StoreMethod::SCALAR_GRID:
         {
             /// values: the `values` column of the scalar grid
-            values = makeASTFunction(
-                "CAST",
-                make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                make_intrusive<ASTLiteral>(fmt::format("Array({})", context.scalar_data_type->getName())));
+            values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
             break;
         }
 
@@ -61,9 +58,9 @@ ASTs getToGridAggregateFunctionArguments(const SQLQueryPiece & range_vector, Con
             /// values:     samples.2
             ASTPtr samples = makeASTFunction(
                 "timeSeriesFromGrid",
-                timeSeriesTimestampToAST(range_vector.start_time, context.timestamp_data_type),
-                timeSeriesTimestampToAST(range_vector.end_time, context.timestamp_data_type),
-                timeSeriesDurationToAST(range_vector.step, context.timestamp_data_type),
+                timeSeriesTimestampToAST(range_vector.start_time, context.result_timestamp_type),
+                timeSeriesTimestampToAST(range_vector.end_time, context.result_timestamp_type),
+                timeSeriesDurationToAST(range_vector.step, context.result_timestamp_type),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values));
             samples->setAlias(ColumnNames::Samples);
             timestamps = makeASTFunction("tupleElement", std::move(samples), make_intrusive<ASTLiteral>(1));
@@ -103,9 +100,9 @@ ASTs getToGridAggregateFunctionArguments(const SQLQueryPiece & range_vector, Con
         /// timestamps: timeSeriesRange(<start_time>, <end_time>, <step>)
         timestamps = makeASTFunction(
             "timeSeriesRange",
-            timeSeriesTimestampToAST(range_vector.start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(range_vector.end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(range_vector.step, context.timestamp_data_type));
+            timeSeriesTimestampToAST(range_vector.start_time, context.result_timestamp_type),
+            timeSeriesTimestampToAST(range_vector.end_time, context.result_timestamp_type),
+            timeSeriesDurationToAST(range_vector.step, context.result_timestamp_type));
     }
 
     return {std::move(timestamps), std::move(values)};

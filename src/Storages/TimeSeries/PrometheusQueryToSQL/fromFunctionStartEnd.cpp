@@ -38,7 +38,7 @@ SQLQueryPiece fromFunctionStartEnd(
     res.end_time = node_range.end_time;
     res.step = node_range.step;
     const auto timestamp = function_name == "start" ? query_range.start_time : query_range.end_time;
-    res.scalar_value = DecimalUtils::convertTo<Float64>(timestamp, context.timestamp_scale);
+    res.scalar_value = DecimalUtils::convertTo<Float64>(timestamp, context.result_timestamp_scale);
 
     return res;
 }

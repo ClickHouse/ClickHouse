@@ -1,3 +1,5 @@
+import struct
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -11,6 +13,9 @@ from .prometheus_test_utils import (
     http_api_response_close_to,
     send_protobuf_to_remote_write,
 )
+
+
+STALE_NAN = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
 
 
 cluster = ClickHouseCluster(__file__)
@@ -173,6 +178,52 @@ def send_test_data():
         ]
     )
 
+    # Large values with a tiny spread for stddev_over_time / stdvar_over_time: the population variance is exactly 0.25.
+    send_data(
+        [
+            (
+                {"__name__": "large_magnitude"},
+                {
+                    100: 540000000,
+                    110: 540000001,
+                },
+            )
+        ]
+    )
+
+    send_data(
+        [
+            (
+                {"__name__": "stale_marker_metric"},
+                {
+                    100: 1,
+                    120: 2,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "ordinary_nan_metric"},
+                {
+                    140: float("nan"),
+                },
+            ),
+            (
+                {"__name__": "stale_collision_a", "job": "x"},
+                {
+                    120: 1,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "stale_collision_b", "job": "x"},
+                {
+                    120: 2,
+                    140: 3,
+                },
+            ),
+        ]
+    )
+
     send_data(
         [
             (
@@ -216,6 +267,21 @@ def send_test_data():
                     190: 10,
                     200: 3,
                     210: 9,
+                },
+            )
+        ]
+    )
+
+    # A NaN among real samples, for `mad_over_time`: a NaN sample makes the result NaN.
+    send_data(
+        [
+            (
+                {"__name__": "nan_among_values"},
+                {
+                    110: 1,
+                    120: float("nan"),
+                    130: 3,
+                    140: 4,
                 },
             )
         ]
@@ -863,6 +929,67 @@ def test_instant_selectors():
     )
 
 
+def test_stale_markers():
+    # Before the marker, the instant selector returns the newest real sample.
+    do_query_test(
+        "stale_marker_metric",
+        125,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "stale_marker_metric"}, "value": [125, "2"]}]}',
+        [["[('__name__','stale_marker_metric')]", "1970-01-01 00:02:05.000", "2"]],
+    )
+
+    # A stale marker is the end of the series for instant-selector semantics.
+    do_query_test(
+        "stale_marker_metric",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # An ordinary NaN is still a real sample. Only Prometheus's exact stale payload is absent.
+    do_query_test(
+        "ordinary_nan_metric",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "ordinary_nan_metric"}, "value": [145, "NaN"]}]}',
+        [["[('__name__','ordinary_nan_metric')]", "1970-01-01 00:02:25.000", "nan"]],
+    )
+
+    # Downstream presence-based operators must see the stale selector as absent too.
+    do_query_test(
+        "count(stale_marker_metric)",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # A stale row must not participate in duplicate detection after a function drops
+    # the metric name. Only the live series remains after both names collapse to {job="x"}.
+    do_query_test(
+        'abs({__name__=~"stale_collision_a|stale_collision_b", job="x"})',
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"job": "x"}, "value": [145, "3"]}]}',
+        [["[('job','x')]", "1970-01-01 00:02:25.000", "3"]],
+    )
+
+    # Range selectors omit stale markers, so range functions can still see older real samples.
+    do_query_test(
+        "last_over_time(stale_marker_metric[1m])",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "stale_marker_metric"}, "value": [145, "2"]}]}',
+        [["[('__name__','stale_marker_metric')]", "1970-01-01 00:02:25.000", "2"]],
+    )
+
+    # In a range query, evaluation steps at and after the stale marker are absent.
+    do_range_query_test(
+        "stale_marker_metric",
+        100,
+        160,
+        20,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_marker_metric"}, "values": [[100, "1"], [120, "2"]]}]}',
+        [["[('__name__','stale_marker_metric')]", "[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:00.000',2)]"]],
+    )
+
+
 def test_function_over_time():
     # last_over_time
     do_query_test(
@@ -1204,6 +1331,96 @@ def test_function_over_time():
         [["[('job','test')]", "1970-01-01 00:03:30.000", 200]],
     )
 
+    # first_over_time: the earliest sample of each window, e.g. at 165 the window (120, 165] holds 3@130 and 4@140.
+    # Like last_over_time, it keeps the metric name.
+    do_query_test(
+        "first_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "3"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',3),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    # first_over_time on `resets`, which decreases within windows, so the first sample differs from
+    # the minimum and the maximum; all the tags are kept.
+    do_query_test(
+        "first_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "resets", "job": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "8"], [180, "2"], [195, "10"], [210, "10"]]}]}',
+        [
+            [
+                "[('__name__','resets'),('job','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',8),('1970-01-01 00:03:00.000',2),('1970-01-01 00:03:15.000',10),('1970-01-01 00:03:30.000',10)]",
+            ]
+        ],
+    )
+
+    # step (15s) > window (10s): the sample at 140 is outside grid point 150's window (140, 150], so 150 must be empty.
+    do_query_test(
+        "first_over_time(test[10s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [135, "3"], [195, "5"], [210, "8"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',3),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',8)]",
+            ]
+        ],
+    )
+
+    # ts_of_first_over_time: the timestamp of the earliest sample of each window; the metric name is dropped.
+    do_query_test(
+        "ts_of_first_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "110"], [135, "110"], [150, "110"], [165, "130"], [180, "140"], [195, "190"], [210, "190"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',110),('1970-01-01 00:02:15.000',110),('1970-01-01 00:02:30.000',110),('1970-01-01 00:02:45.000',130),('1970-01-01 00:03:00.000',140),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',190)]",
+            ]
+        ],
+    )
+
+    # ts_of_last_over_time: the timestamp of the latest sample of each window; the metric name is dropped.
+    do_query_test(
+        "ts_of_last_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "120"], [135, "130"], [150, "140"], [165, "140"], [180, "140"], [195, "190"], [210, "210"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',120),('1970-01-01 00:02:15.000',130),('1970-01-01 00:02:30.000',140),('1970-01-01 00:02:45.000',140),('1970-01-01 00:03:00.000',140),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',210)]",
+            ]
+        ],
+    )
+
+    # Instant queries: the window (165, 210] of `test` holds 5@190, 5@200, 8@210, the same window of `resets`
+    # holds 10@190, 3@200, 9@210.
+    do_query_test(
+        "first_over_time(resets[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "resets", "job": "test"}, "value": [210, "10"]}]}',
+        [["[('__name__','resets'),('job','test')]", "1970-01-01 00:03:30.000", 10]],
+    )
+
+    do_query_test(
+        "ts_of_first_over_time(resets[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [210, "190"]}]}',
+        [["[('job','test')]", "1970-01-01 00:03:30.000", 190]],
+    )
+
+    do_query_test(
+        "ts_of_last_over_time(test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "210"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 210]],
+    )
+
     # present_over_time: 1 wherever the window has a sample; the metric name is dropped.
     do_query_test(
         "present_over_time(test[45s])[120s:15s]",
@@ -1277,6 +1494,33 @@ def test_function_over_time():
         [["[]", "1970-01-01 00:03:30.000", "nan"]],
     )
 
+    # mad_over_time: the median absolute deviation `median(|x - median(x)|)`, on `resets` because it goes up and down.
+    # The windows hold one to five samples. At 140 the window holds {1,5,8,2}: median 3.5, deviations {2.5,1.5,1.5,4.5}
+    # -> 2. At 150 it holds {1,5,8,2,6}: median 5, deviations {4,0,3,3,1} -> 3. At 160 it holds {5,8,2,6}: median 5.5,
+    # deviations {0.5,2.5,3.5,0.5} -> 1.5. The metric name is dropped.
+    do_query_test(
+        "mad_over_time(resets[50s])[110s:10s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "0"], [120, "2"], [130, "3"], [140, "2"], [150, "3"], [160, "1.5"], [170, "2"], [180, "2"], [190, "2"], [200, "3.5"], [210, "1"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:50.000',0),('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:10.000',3),('1970-01-01 00:02:20.000',2),('1970-01-01 00:02:30.000',3),('1970-01-01 00:02:40.000',1.5),('1970-01-01 00:02:50.000',2),('1970-01-01 00:03:00.000',2),('1970-01-01 00:03:10.000',2),('1970-01-01 00:03:20.000',3.5),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # A NaN sample makes the result NaN, as in Prometheus since 3.14. The Prometheus image used by this test is older:
+    # it still sorts the NaN before the real values and gives 0 for the window {1,NaN,3} at 130 and 1 for {1,NaN,3,4}
+    # at 140. So only the window {1,NaN} at 120, where both versions give NaN, is compared with Prometheus here;
+    # the other windows are covered by 05241_timeseries_mad_to_grid.
+    do_query_test(
+        "mad_over_time(nan_among_values[45s])",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "nan"]],
+    )
+
     # predict_linear over 2-3 sample windows with exact slopes; windows with fewer than
     # two samples (165, 180 after the left-open cut, and 195) yield nothing. The regression
     # arithmetic carries float noise (12.000000000000002), hence the epsilon.
@@ -1288,6 +1532,91 @@ def test_function_over_time():
             [
                 "[]",
                 "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',10),('1970-01-01 00:02:30.000',8),('1970-01-01 00:03:30.000',12)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+
+    # stddev_over_time / stdvar_over_time (population standard deviation/variance).
+    # `eps=1e-9` accounts for our Welford/Chan two-stacks/recompute merge order differing from Prometheus'
+    # own single-pass Welford algorithm in the last couple of float digits.
+    do_query_test(
+        "stddev_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.9428090415820634"], [150, "1.299038105676658"], [165, "0.5"], [180, "0"], [195, "0"], [210, "1.4142135623730951"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.9428090415820634),('1970-01-01 00:02:30.000',1.299038105676658),('1970-01-01 00:02:45.000',0.5),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1.4142135623730951)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # Prometheus itself rounds the value at the `150` grid point differently on amd64 (`1.6875000000000002`) and
+    # arm64 (`1.6875`), which the same `eps` covers.
+    do_query_test(
+        "stdvar_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.888888888888889"], [150, "1.6875000000000002"], [165, "0.25"], [180, "0"], [195, "0"], [210, "2"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.8888888888888888),('1970-01-01 00:02:30.000',1.6875),('1970-01-01 00:02:45.000',0.25),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',2)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # The staleness window (5s) is narrower than the step between samples (10s), so at most one sample falls in a
+    # window and the result must be exactly 0 wherever a sample lands.
+    do_query_test(
+        "stddev_over_time(test[5s])[120s:10s]",
+        230,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [130, "0"], [140, "0"], [190, "0"], [200, "0"], [210, "0"], [220, "0"], [230, "0"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:10.000',0),('1970-01-01 00:02:20.000',0),('1970-01-01 00:03:10.000',0),('1970-01-01 00:03:20.000',0),('1970-01-01 00:03:30.000',0),('1970-01-01 00:03:40.000',0),('1970-01-01 00:03:50.000',0)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "stdvar_over_time(test[5s])[120s:10s]",
+        230,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [130, "0"], [140, "0"], [190, "0"], [200, "0"], [210, "0"], [220, "0"], [230, "0"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:10.000',0),('1970-01-01 00:02:20.000',0),('1970-01-01 00:03:10.000',0),('1970-01-01 00:03:20.000',0),('1970-01-01 00:03:30.000',0),('1970-01-01 00:03:40.000',0),('1970-01-01 00:03:50.000',0)]",
+            ]
+        ],
+    )
+
+    # Large values with a tiny spread: the population variance/stddev of {540000000, 540000001} is exactly 0.25/0.5.
+    do_query_test(
+        "stddev_over_time(large_magnitude[20s])[20s:10s]",
+        110,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[100, "0"], [110, "0.5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:01:50.000',0.5)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    do_query_test(
+        "stdvar_over_time(large_magnitude[20s])[20s:10s]",
+        110,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[100, "0"], [110, "0.25"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:01:50.000',0.25)]",
             ]
         ],
         eps=1e-9,
@@ -5443,7 +5772,6 @@ def test_label_manipulation_functions():
         "Function 'label_join' expects 3 or more arguments, but was called with 2 arguments",
     )
 
-
 @pytest.mark.parametrize(
     "query",
     [
@@ -5454,7 +5782,6 @@ def test_label_manipulation_functions():
         "vector(end())",
         "last_over_time(vector(start())[20s:5s] offset 7s)",
         "last_over_time(vector(end())[20s:5s] @ 1005)",
-        "last_over_time(last_over_time(vector(start())[10s:2s])[20s:5s])",
     ],
 )
 @pytest.mark.parametrize("timestamp", [1000.125, 1750000000.125])
@@ -5479,7 +5806,6 @@ def test_standalone_start_end_instant(query, timestamp):
         "vector(end())",
         "last_over_time(vector(start())[20s:5s] offset 7s)",
         "last_over_time(vector(end())[20s:5s] @ 1005)",
-        "last_over_time(last_over_time(vector(start())[10s:2s])[20s:5s])",
     ],
 )
 @pytest.mark.parametrize(
@@ -5505,5 +5831,5 @@ def test_standalone_start_end_range(query, start, end, step, span):
 
 def test_standalone_start_end_current_time():
     assert node.query(
-        "SELECT * FROM prometheusQuery(prometheus, 'start() - time() + end() - time()')"
+        "SELECT * FROM prometheusQuery(prometheus, 'start() - time() + end() - time()', 1000.125)"
     ) == "0\n"

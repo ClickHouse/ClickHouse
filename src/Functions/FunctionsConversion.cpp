@@ -641,7 +641,7 @@ FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypeP
 
 FunctionCast::WrapperType FunctionCast::createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const
 {
-    switch (kind.kind)
+    switch (kind.getKind())
     {
         GENERATE_INTERVAL_CASE(Nanosecond)
         GENERATE_INTERVAL_CASE(Microsecond)
@@ -871,21 +871,42 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
 namespace
 {
 
-/// `Map(K, V)` is physically an `Array(Tuple(K, V))`, and `CAST` converts between the two shapes at
-/// the top level. It is also how a `Map` constant is written down when the analyzer serializes a
-/// query for a remote server: `ConstantNode::toASTImpl` renders the field as an array of tuples and
-/// wraps it into `_CAST(..., 'Array(Map(K, V))')`. Counting a `Map` as the array it stands for puts
-/// both shapes at the same depth, so the nesting check below does not reject a cast the element
-/// wrappers can perform. A genuine depth mismatch, such as `Array(String)` to `Array(Array(String))`,
-/// is still rejected. A `Tuple` adds no depth, hence a `Map` counts as one dimension regardless of
-/// its value type.
-size_t getNumberOfDimensionsWithMapAsArray(const IDataType & type)
+/// The number of `Array` dimensions of a type as `CAST` sees it. It is a range rather than a single
+/// number, because `Map(K, V)` is physically an `Array(Tuple(K, V))` and `CAST` converts between the
+/// two spellings: a `Map` can be matched either by another `Map`, contributing no dimension of its
+/// own, or by the `Array(Tuple(K, V))` it stands for, contributing one. A `Tuple` adds no dimension,
+/// hence a `Map` is at most one dimension whatever its value type is.
+///
+/// The array spelling is how a `Map` constant is written down when the analyzer serializes a query
+/// for a remote server: `ConstantNode::toASTImpl` renders the field as an array of tuples and wraps
+/// it into `_CAST(..., 'Array(Map(K, V))')`.
+struct DimensionsRange
+{
+    size_t min;
+    size_t max;
+};
+
+DimensionsRange getNumberOfDimensionsForCast(const IDataType & type)
 {
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(&type))
-        return 1 + getNumberOfDimensionsWithMapAsArray(*type_array->getNestedType());
+    {
+        const DimensionsRange nested = getNumberOfDimensionsForCast(*type_array->getNestedType());
+        return {nested.min + 1, nested.max + 1};
+    }
     if (typeid_cast<const DataTypeMap *>(&type))
-        return 1;
-    return 0;
+        return {0, 1};
+    return {0, 0};
+}
+
+/// The nesting depths have to be reconcilable under some spelling of the `Map`s the two types
+/// contain. This rejects a genuine depth mismatch, such as `Array(String)` to `Array(Array(String))`,
+/// before an element wrapper does something unexpected with it (`CAST` from a `String` parses it).
+/// Anything else is left to the element wrappers, which name the types that cannot be converted.
+bool canHaveSameNumberOfDimensions(const IDataType & from, const IDataType & to)
+{
+    const DimensionsRange from_dimensions = getNumberOfDimensionsForCast(from);
+    const DimensionsRange to_dimensions = getNumberOfDimensionsForCast(to);
+    return from_dimensions.min <= to_dimensions.max && to_dimensions.min <= from_dimensions.max;
 }
 
 }
@@ -943,7 +964,7 @@ FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & f
     /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
     bool from_empty_array = isNothing(from_nested_type);
 
-    if (getNumberOfDimensionsWithMapAsArray(*from_type) != getNumberOfDimensionsWithMapAsArray(to_type) && !from_empty_array)
+    if (!canHaveSameNumberOfDimensions(*from_type, to_type) && !from_empty_array)
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "CAST AS Array can only be performed between same-dimensional array types");
 
@@ -3428,9 +3449,11 @@ bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
-/// Whether a numeric conversion `from` -> `to` can be JIT-compiled. A float source is refused for an
-/// integer or `Decimal` destination, because `fptosi` / `fptoui` have no defined result outside the
-/// destination range. A `Bool` destination stays allowed, it is compiled through `nativeBoolCast`.
+/// Whether a numeric conversion `from` -> `to` can be JIT-compiled. Compiled code cannot raise, so only
+/// conversions whose interpreted form has no range check are compilable: number to number, which wraps
+/// interpreted too; `Decimal` to float, or to a signed integer at least as wide as its storage (the
+/// `convertToImpl` arms that never throw); and any source to `Bool`, a raw comparison with zero. A
+/// `Decimal` destination range-checks `value * 10^scale`; `fptosi` / `fptoui` are undefined out of range.
 static bool isCompilableNumericConversion(const IDataType * from, const IDataType * to)
 {
     return castBothTypes(from, to, [](const auto & left, const auto & right)
@@ -3447,10 +3470,17 @@ static bool isCompilableNumericConversion(const IDataType * from, const IDataTyp
                     return isBool(right.getPtr());
                 return true;
             }
-            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                return !is_floating_point<typename LeftDataType::FieldType>;
             else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                return true;
+            {
+                using RightFieldType = typename RightDataType::FieldType;
+                if (isBool(right.getPtr()))
+                    return true;
+                if constexpr (is_floating_point<RightFieldType>)
+                    return true;
+                else
+                    return !is_unsigned_v<RightFieldType>
+                        && sizeof(RightFieldType) >= sizeof(NativeType<typename LeftDataType::FieldType>);
+            }
         }
         return false;
     });
@@ -3497,6 +3527,9 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
                 }
                 else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                 {
+                    /// Interpreted, this conversion range-checks `value * 10^scale`; the lowerings below do not.
+                    chassert(false, "Number to Decimal must not be JIT-compiled");
+
                     auto scale = right.getScale();
                     auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                     if constexpr (std::is_floating_point_v<LeftFieldType>)
@@ -3620,6 +3653,9 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
                 }
                 else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                 {
+                    /// Interpreted, this conversion range-checks `value * 10^scale`; the lowerings below do not.
+                    chassert(false, "Number to Decimal must not be JIT-compiled");
+
                     auto scale = right.getScale();
                     auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                     if constexpr (std::is_floating_point_v<LeftFieldType>)

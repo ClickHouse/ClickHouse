@@ -1906,7 +1906,7 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
         PrometheusQueryTree query_tree;
         String error_message;
         size_t error_pos = String::npos;
-        EXPECT_FALSE(query_tree.tryParse(query, /* timestamp_scale = */ 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(query_tree.tryParse(query, /* time_scale = */ 3, &error_message, &error_pos)) << query;
         EXPECT_NE(error_message.find("surrogate range 0xD800-0xDFFF"), String::npos) << query << ": " << error_message;
         EXPECT_EQ(error_pos, expected_error_pos) << query;
     };
@@ -1923,7 +1923,6 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
     EXPECT_EQ(parseStringLiteral(R"("\U00010000")"), "\xF0\x90\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U0010FFFF")"), "\xF4\x8F\xBF\xBF");
 }
-
 
 TEST(PromQLParser, StandaloneStartEndFunctions)
 {
