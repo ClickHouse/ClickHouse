@@ -1527,8 +1527,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
 
-    /// `chooseJoinOrder` returns a freshly built node, so the boundary belongs on it: a fragment
-    /// cloned or serialized from here carries this root, and a receiver cannot re-derive the mark.
+    /// `chooseJoinOrder` returns a freshly built node, so the mark does not survive it.
     if (was_reorder_boundary)
     {
         if (auto * new_join_step = typeid_cast<JoinStepLogical *>(node.step.get()))

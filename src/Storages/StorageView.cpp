@@ -539,20 +539,18 @@ StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & s
 }
 
 /// A view is analyzed on its own, so `createUniqueAliasesIfNecessary` numbers its relations from
-/// `__table1` again and they can collide with the enclosing query's. Mark the view's own topmost join
-/// so an enclosing join graph keeps it whole instead of flattening its relations in.
+/// `__table1` again and they can collide with the enclosing query's.
 static void markRootJoinAsReorderBoundary(QueryPlan & query_plan)
 {
     const auto * node = query_plan.getRootNode();
     if (!node)
         return;
 
-    /// The topmost join sits under the plan's single-child spine (a "Project names" expression step).
-    /// Descend the same way the join graph builder does, so both agree on which node is the view's join.
+    /// The topmost join sits under the plan's single-child spine (a "Project names" expression step),
+    /// which is how the join graph builder finds it too.
     while (node->children.size() == 1)
         node = node->children[0];
 
-    /// Not a join (a plain read, a UNION, an aggregation): nothing an enclosing graph could flatten.
     if (auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get()))
         join_step->setJoinReorderBoundary();
 }

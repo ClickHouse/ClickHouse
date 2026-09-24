@@ -178,8 +178,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
 /// First global query-plan version that writes version 1 of `Join`, whose `flags` byte carries the bit
-/// marking a join the reorder pass must not merge into the enclosing join graph. Version 0 of the step
-/// leaves that bit unset and ignores it on read, so a peer below this version reads the byte as a zero.
+/// marking a join the reorder pass must not merge into the enclosing graph. Version 0 never writes or reads it.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_REORDER_BOUNDARY = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.

@@ -231,7 +231,7 @@ TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, StepVersionZeroNeitherWritesNorR
 
 /// The registry picks the step version from the plan version negotiated with the peer, for every
 /// instance of the step, and refuses a version it does not know rather than misparsing it. Plan
-/// version 19 is the newest released one, so a peer of that release must still get version 0.
+/// version 19 is the one a released 26.9 peer speaks, so such a peer must still get version 0.
 TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, JoinStepVersionFollowsThePlanVersion)
 {
     QueryPlanStepRegistry registry;
