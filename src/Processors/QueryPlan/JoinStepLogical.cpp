@@ -460,12 +460,7 @@ JoinStepLogical::analyzeRequiredColumns(const std::vector<size_t> & required_out
         if (required_positions_set.contains(position) || isDummyColumnOfThisStep(output_node))
         {
             kept_output_nodes.push_back(output_node);
-            plan.kept_dag_output_positions.push_back(position);
             plan.result.kept_output_positions.push_back(position);
-        }
-        else
-        {
-            plan.dropped_dag_output_positions.push_back(position);
         }
     }
 
@@ -530,7 +525,7 @@ JoinStepLogical::analyzeRequiredColumns(const std::vector<size_t> & required_out
 
     plan.removes_any_action = surviving_nodes.size() < actions_dag.getNodes().size();
 
-    if (!plan.removes_any_action && plan.dropped_dag_output_positions.empty())
+    if (!plan.removes_any_action && plan.keptDAGOutputPositions().size() == dag_outputs.size())
     {
         plan.result = {};
         return plan;
@@ -602,18 +597,27 @@ JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(
     auto & actions_dag = *expression_actions.getActionsDAG();
     auto & dag_outputs = actions_dag.getOutputs();
 
+    /// An output the kept list skips goes away, and leaves actions_after_join with it. Both lists are in
+    /// output order, so one walk finds them.
+    const auto kept_positions = plan.keptDAGOutputPositions();
     ActionsDAG::NodeRawConstPtrs new_actions_after_join = actions_after_join;
-    for (size_t position : plan.dropped_dag_output_positions)
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    new_outputs.reserve(kept_positions.size() + (plan.adds_dummy_output ? 1 : 0));
+
+    size_t next_kept = 0;
+    for (size_t position = 0; position < dag_outputs.size(); ++position)
     {
         const auto * output_node = dag_outputs[position];
+        if (next_kept < kept_positions.size() && kept_positions[next_kept] == position)
+        {
+            ++next_kept;
+            new_outputs.push_back(output_node);
+            continue;
+        }
+
         new_actions_after_join.erase(
             std::remove(new_actions_after_join.begin(), new_actions_after_join.end(), output_node), new_actions_after_join.end());
     }
-
-    ActionsDAG::NodeRawConstPtrs new_outputs;
-    new_outputs.reserve(plan.kept_dag_output_positions.size() + (plan.adds_dummy_output ? 1 : 0));
-    for (size_t position : plan.kept_dag_output_positions)
-        new_outputs.push_back(dag_outputs[position]);
 
     if (plan.adds_dummy_output)
     {

@@ -6,6 +6,8 @@
 #include <utility>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+
+#include <span>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -229,9 +231,6 @@ protected:
         RemoveUnusedColumnsResult result;
 
         bool remove_inputs = false;
-        /// DAG output positions to keep, and to drop. A dropped output also leaves actions_after_join.
-        std::vector<size_t> kept_dag_output_positions;
-        std::vector<size_t> dropped_dag_output_positions;
         /// Set when no output is left and the step has to put its dummy column back.
         bool adds_dummy_output = false;
         /// Nodes that have to survive pruning besides the kept outputs: the join conditions, and one
@@ -239,6 +238,14 @@ protected:
         ActionsDAG::NodeRawConstPtrs extra_pruning_roots;
         /// Whether removeUnusedActions would erase any node.
         bool removes_any_action = false;
+
+        /// The DAG outputs that survive, as positions in `getOutputs()`. The dummy column, when one is
+        /// added, has no position of its own and is reported last, so this is a prefix of what the
+        /// result reports. An output not in here goes away, and leaves `actions_after_join` with it.
+        std::span<const size_t> keptDAGOutputPositions() const
+        {
+            return {result.kept_output_positions.data(), result.kept_output_positions.size() - (adds_dummy_output ? 1 : 0)};
+        }
     };
 
     RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const;

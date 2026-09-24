@@ -216,11 +216,19 @@ ExpressionStep::analyzeRequiredColumns(const std::vector<size_t> & required_outp
 
     /// The output header is structured as:
     /// [DAG output 0, ..., DAG output N-1, pass-through input 0, pass-through input 1, ...]
-    /// Split required positions into DAG output indices and pass-through input indices.
-    auto [required_dag_positions, required_passthrough_positions]
-        = actions_dag.splitOutputPositions(required_output_positions);
-    plan.required_dag_positions = std::move(required_dag_positions);
+    /// so the positions below the number of DAG outputs are the DAG outputs the caller asked for, and
+    /// the rest name pass-through columns, counting from that number. The positions are sorted, so the
+    /// first group is a prefix of them and the second is the remaining suffix.
+    chassert(std::ranges::is_sorted(required_output_positions));
+    const auto dag_output_count = actions_dag.getOutputs().size();
+    const auto first_passthrough
+        = std::ranges::lower_bound(required_output_positions, dag_output_count) - required_output_positions.begin();
+
+    plan.dag_position_count = first_passthrough;
     plan.removes_any_output = output_header->columns() != required_output_positions.size();
+
+    const auto required_passthrough_positions
+        = std::span{required_output_positions}.subspan(first_passthrough);
 
     /// What removeUnusedActions would keep once the outputs are pruned. Its other root is every input,
     /// but only while inputs may not be removed - and since an input has no children, adding those roots
@@ -230,8 +238,8 @@ ExpressionStep::analyzeRequiredColumns(const std::vector<size_t> & required_outp
     /// a folded node, so those children are dropped. Stop at such a node to see the same.
     const auto & dag_outputs = actions_dag.getOutputs();
     ActionsDAG::NodeRawConstPtrs roots;
-    roots.reserve(plan.required_dag_positions.size());
-    for (size_t position : plan.required_dag_positions)
+    roots.reserve(plan.dag_position_count);
+    for (size_t position : plan.requiredDAGPositions())
         roots.push_back(dag_outputs[position]);
     for (const auto & node : actions_dag.getNodes())
         if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
@@ -266,7 +274,7 @@ ExpressionStep::analyzeRequiredColumns(const std::vector<size_t> & required_outp
         }
 
         const bool is_required = next_required_passthrough < required_passthrough_positions.size()
-            && required_passthrough_positions[next_required_passthrough] == passthrough_index;
+            && required_passthrough_positions[next_required_passthrough] - dag_output_count == passthrough_index;
 
         if (is_required)
             ++next_required_passthrough;
@@ -277,7 +285,7 @@ ExpressionStep::analyzeRequiredColumns(const std::vector<size_t> & required_outp
 
     if (next_required_passthrough != required_passthrough_positions.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Required output position {} is out of range for pass-through inputs",
+            "Required output position {} is out of range for the output header",
             required_passthrough_positions[next_required_passthrough]);
 
     /// An input nothing reads is erased only where inputs may be removed; otherwise it stays as a root
@@ -307,8 +315,8 @@ ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(co
     /// Keep only the required DAG output nodes.
     auto & dag_outputs = actions_dag.getOutputs();
     ActionsDAG::NodeRawConstPtrs new_dag_outputs;
-    new_dag_outputs.reserve(plan.required_dag_positions.size());
-    for (size_t position : plan.required_dag_positions)
+    new_dag_outputs.reserve(plan.dag_position_count);
+    for (size_t position : plan.requiredDAGPositions())
         new_dag_outputs.push_back(dag_outputs[position]);
     dag_outputs = std::move(new_dag_outputs);
 

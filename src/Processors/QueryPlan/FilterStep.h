@@ -23,6 +23,10 @@ struct FilterDAGOutputPruningPlan
     bool remove_filter_column = false;
     /// DAG output positions to keep, before the filter column is erased from the header, the filter
     /// column included: it is needed to filter, whether or not anyone reads it.
+    ///
+    /// Unlike the other two steps, these are not the caller's positions over again. The header the
+    /// caller counts in has the filter column erased from it, so its positions are shifted back over
+    /// that column first, and the filter column is then added whether or not it was asked for.
     std::vector<size_t> required_dag_positions;
     /// Input header positions of the pass-through columns to drop.
     std::vector<size_t> dropped_passthrough_header_positions;
