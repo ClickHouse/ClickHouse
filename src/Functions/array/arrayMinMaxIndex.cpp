@@ -18,9 +18,6 @@ enum class ArrayMinMaxIndexStrategy : uint8_t
     Max,
 };
 
-namespace ArrayMinMaxIndexImpl
-{
-
 template <ArrayMinMaxIndexStrategy strategy>
 struct ArrayMinMaxIndexImpl
 {
@@ -74,8 +71,6 @@ struct ArrayMinMaxIndexImpl
         return result;
     }
 };
-
-}
 
 struct NameArrayMinIndex { static constexpr auto name = "arrayMinIndex"; };
 using FunctionArrayMinIndex = FunctionArrayMapped<ArrayMinMaxIndexImpl<ArrayMinMaxIndexStrategy::Min>, NameArrayMinIndex>;
