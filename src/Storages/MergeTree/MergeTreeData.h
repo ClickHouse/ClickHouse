@@ -1496,8 +1496,7 @@ public:
     std::shared_ptr<QueryIdHolder> getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const;
 
     /// Record current query id where querying the table. Throw if there are already `max_queries` queries accessing the same table.
-    /// Returns false if the `query_id` already exists in the running set, otherwise return true. Either way the
-    /// caller owns a reference to the id and must release it with `removeQueryId`.
+    /// Returns false if the `query_id` already exists in the running set, otherwise return true.
     bool insertQueryIdOrThrow(const String & query_id, size_t max_queries) const;
     bool insertQueryIdOrThrowNoLock(const String & query_id, size_t max_queries) const TSA_REQUIRES(query_id_set_mutex);
 
@@ -2306,8 +2305,8 @@ private:
     mutable std::atomic<size_t> total_outdated_parts_count = 0;
     std::atomic<size_t> total_uncompressed_bytes_in_patches = 0;
 
-    // Query ids which access the table, each with the number of readers holding it: the last one frees the slot.
-    mutable std::map<String, size_t> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
+    // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
+    mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
     mutable std::mutex query_id_set_mutex;
 
     // Get partition matcher for FREEZE / UNFREEZE queries.

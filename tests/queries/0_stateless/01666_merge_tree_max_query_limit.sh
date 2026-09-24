@@ -5,9 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# A table's max_concurrent_queries slot is freed when the reading pipeline is destroyed, which happens
-# after the statement that took it has returned. Under parallel replicas one statement reads the table
-# on several replicas of this server, and the slot is then still taken when the next statement starts.
+# The throttle asserted below is a per-table counter keyed on query id. Under parallel replicas one
+# statement becomes several reads of the same table on the same server, each carrying a different
+# query id, so the long running query competes against itself for the single max_concurrent_queries
+# slot and is rejected instead of holding it.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_parallel_replicas 0"
 
 function wait_for_query_to_start() {

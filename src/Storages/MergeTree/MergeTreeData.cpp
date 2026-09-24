@@ -13620,18 +13620,15 @@ bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_que
 
 bool MergeTreeData::insertQueryIdOrThrowNoLock(const String & query_id, size_t max_queries) const
 {
-    if (auto it = query_id_set.find(query_id); it != query_id_set.end())
-    {
-        ++it->second;
+    if (query_id_set.contains(query_id))
         return false;
-    }
     if (query_id_set.size() >= max_queries)
         throw Exception(
             ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
             "Too many simultaneous queries for table {}. Maximum is: {}",
             log.loadName(),
             max_queries);
-    query_id_set.emplace(query_id, 1);
+    query_id_set.insert(query_id);
     return true;
 }
 
@@ -13643,27 +13640,29 @@ void MergeTreeData::removeQueryId(const String & query_id) const
 
 void MergeTreeData::removeQueryIdNoLock(const String & query_id) const
 {
-    auto it = query_id_set.find(query_id);
-    if (it == query_id_set.end())
+    if (!query_id_set.contains(query_id))
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
-    else if (--it->second == 0)
-        query_id_set.erase(it);
+    else
+        query_id_set.erase(query_id);
 }
 
 std::shared_ptr<QueryIdHolder> MergeTreeData::getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const
 {
     auto lock = std::lock_guard<std::mutex>(query_id_set_mutex);
-    insertQueryIdOrThrowNoLock(query_id, max_concurrent_queries);
-    try
+    if (insertQueryIdOrThrowNoLock(query_id, max_concurrent_queries))
     {
-        return std::make_shared<QueryIdHolder>(query_id, *this);
+        try
+        {
+            return std::make_shared<QueryIdHolder>(query_id, *this);
+        }
+        catch (...)
+        {
+            /// If we fail to construct the holder, remove query_id explicitly to avoid leak.
+            removeQueryIdNoLock(query_id);
+            throw;
+        }
     }
-    catch (...)
-    {
-        /// If we fail to construct the holder, remove query_id explicitly to avoid leak.
-        removeQueryIdNoLock(query_id);
-        throw;
-    }
+    return nullptr;
 }
 
 ReservationPtr MergeTreeData::balancedReservation(
