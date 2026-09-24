@@ -335,6 +335,41 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
+/// The tests a function NAME alone decides: shared by the `ASTFunction` branch
+/// below and by `ASTColumnsApplyTransformer`, which carries a bare name.
+bool namesNonDeterministicFunction(const String & name, const ContextPtr & context)
+{
+    const String stripped = stripAggregateCombinators(name);
+    if (isOracleUnsafeFunctionName(name))
+        return true;
+
+    /// Experimental `timeSeries*ToGrid` aggregates bucket points onto a
+    /// parameterized grid; the result depends on grid parameters and
+    /// point ordering, so the metamorphic State/Merge and DQP rewrites
+    /// legitimately diverge. Whole family gated by prefix (it is growing).
+    /// Aggregate names resolve case-insensitively, so compare lowercased —
+    /// `TIMESERIES...` must not slip past the gate.
+    const String name_lower = Poco::toLower(name);
+    const String stripped_lower = Poco::toLower(stripped);
+    if (name_lower.starts_with("timeseries") || stripped_lower.starts_with("timeseries"))
+        return true;
+
+    for (const auto & candidate : {std::cref(name), std::cref(stripped)})
+    {
+        if (const auto resolver = FunctionFactory::instance().tryGet(candidate.get(), context))
+            if (!resolver->isDeterministic())
+                return true;
+        if (UserDefinedSQLFunctionFactory::instance().tryGet(candidate.get()))
+            /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+            return true;
+        if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(candidate.get(), context))
+            if (!udf_exec->isDeterministic())
+                return true;
+    }
+
+    return false;
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
@@ -379,46 +414,35 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
 
     if (const auto * func = ast->as<ASTFunction>())
     {
-        const String stripped = stripAggregateCombinators(func->name);
-        if (isOracleUnsafeFunctionName(func->name))
-            return true;
-
-        /// Experimental `timeSeries*ToGrid` aggregates bucket points onto a
-        /// parameterized grid; the result depends on grid parameters and
-        /// point ordering, so the metamorphic State/Merge and DQP rewrites
-        /// legitimately diverge. Whole family gated by prefix (it is growing).
-        /// Aggregate names resolve case-insensitively, so compare lowercased —
-        /// `TIMESERIES...` must not slip past the gate.
-        const String name_lower = Poco::toLower(func->name);
-        const String stripped_lower = Poco::toLower(stripped);
-        if (name_lower.starts_with("timeseries") || stripped_lower.starts_with("timeseries"))
+        if (namesNonDeterministicFunction(func->name, context))
             return true;
 
         /// Comparator-based array sorts are not stable on ties: with a
         /// non-injective lambda key (e.g. `arrayReverseSort(x -> 0, arr)`) the
         /// relative order of tied elements is implementation-defined and can
         /// differ between plans, so the produced array *content* differs. The
-        /// single-argument forms sort by value and stay deterministic.
+        /// single-argument forms sort by value and stay deterministic, so this
+        /// test reads the argument count and a name alone cannot decide it.
         /// Compared lowercased for the same reason as above; over-matching an
         /// unresolvable spelling merely skips one more query, which is safe.
         static const std::unordered_set<String> lambda_sort_functions = {
             "arraysort", "arrayreversesort", "arraypartialsort", "arraypartialreversesort"};
-        if (lambda_sort_functions.contains(name_lower)
+        if (lambda_sort_functions.contains(Poco::toLower(func->name))
             && func->arguments && func->arguments->children.size() >= 2)
             return true;
+    }
 
-        for (const auto & name : {std::cref(func->name), std::cref(stripped)})
-        {
-            if (const auto resolver = FunctionFactory::instance().tryGet(name.get(), context))
-                if (!resolver->isDeterministic())
-                    return true;
-            if (UserDefinedSQLFunctionFactory::instance().tryGet(name.get()))
-                /// SQL UDF determinism is not introspectable — treat as non-deterministic.
-                return true;
-            if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name.get(), context))
-                if (!udf_exec->isDeterministic())
-                    return true;
-        }
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        /// `func_name`, `parameters` and `lambda` are not among this node's
+        /// children (`Parsers/ASTColumnsTransformers.h`), so neither the branch
+        /// above nor the recursion below reaches the function `APPLY` applies.
+        if (!apply->func_name.empty() && namesNonDeterministicFunction(apply->func_name, context))
+            return true;
+        if (hasNonDeterministicFunctionsImpl(apply->lambda, context))
+            return true;
+        if (hasNonDeterministicFunctionsImpl(apply->parameters, context))
+            return true;
     }
 
     for (const auto & child : ast->children)
