@@ -93,6 +93,15 @@ ${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER ON *.* TO $author"
 run 'cluster top level' "ALTER TABLE $db.mv_own ON CLUSTER test_shard_localhost MODIFY QUERY SELECT id, secret FROM $db.secret"
 run 'cluster subquery ' "ALTER TABLE $db.mv_own ON CLUSTER test_shard_localhost MODIFY QUERY SELECT id, secret FROM (SELECT * FROM $db.secret)"
 
+# A view this host does not have must be refused here, before dispatch. The host would reject it too, since
+# the view exists nowhere in this setup, so the error code alone does not show which side refused it.
+${CLICKHOUSE_CLIENT} --query "GRANT ALTER VIEW MODIFY QUERY ON $db.mv_nowhere TO $author"
+out=$(${CLICKHOUSE_CLIENT} --user "$author" --query "
+ALTER TABLE $db.mv_nowhere ON CLUSTER test_shard_localhost MODIFY QUERY SELECT id, ''::String AS secret FROM $db.src" 2>&1)
+code=$(echo "$out" | grep -o -m1 -E '\([A-Z_]+\)' | tr -d '()')
+if echo "$out" | grep -q 'must be run from a host that has the view'; then where='on the initiator'; else where='elsewhere'; fi
+echo "cluster no view   ${code:-accepted} $where"
+
 echo '-- no data leaked: none of the denied bodies was stored, so the view still reads only src'
 run 'back to src     ' "ALTER TABLE $db.mv_own MODIFY QUERY SELECT id, ''::String AS secret FROM $db.src"
 ${CLICKHOUSE_CLIENT} --user "$author" --query "INSERT INTO $db.src VALUES (1)"

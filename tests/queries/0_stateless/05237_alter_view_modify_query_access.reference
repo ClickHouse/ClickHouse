@@ -23,6 +23,7 @@ still no read   ACCESS_DENIED
 -- ON CLUSTER must not become a way around the checks above
 cluster top level ACCESS_DENIED
 cluster subquery  ACCESS_DENIED
+cluster no view   UNKNOWN_TABLE on the initiator
 -- no data leaked: none of the denied bodies was stored, so the view still reads only src
 back to src      accepted
 rows, leaked    1	0

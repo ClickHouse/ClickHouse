@@ -509,6 +509,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// named no database at all, which is also how each host will read it.
         if (modify_query)
         {
+            /// The body is authorized here against the view's stored SQL security as well as the tables it reads,
+            /// so the initiator must have the view, just as it must have those tables.
+            if (!table)
+                throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                    "Table {}.{} does not exist on this host. `ALTER TABLE ... ON CLUSTER ... MODIFY QUERY` is authorized "
+                    "on the initiator, so it must be run from a host that has the view",
+                    backQuoteIfNeed(alter.getDatabase()), backQuoteIfNeed(alter.getTable()));
+
             String body_default_database = alter.getDatabase();
             if (body_default_database.empty())
                 body_default_database = getContext()->getCurrentDatabase();
@@ -688,6 +696,8 @@ bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr 
 void InterpreterAlterQuery::addRequiredAccessForModifyQuerySQLSecurity(
     AccessRightsElements & required_access, const StoragePtr & storage) const
 {
+    /// Without the view there is no body to replace: the local path fails on the missing table, and an
+    /// `ON CLUSTER` statement refuses to dispatch a `MODIFY QUERY` for a view this host does not have.
     if (!storage)
         return;
 
