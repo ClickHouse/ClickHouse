@@ -4541,6 +4541,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 }
 
 void MergeTreeData::writePartRemovalLog(const DataPartsVector & parts)
+try
 {
     if (parts.empty())
         return;
@@ -4577,6 +4578,12 @@ void MergeTreeData::writePartRemovalLog(const DataPartsVector & parts)
 
         part_log->add([&](PartLogElement & element) { element = part_log_elem; });
     }
+}
+catch (...)
+{
+    /// system.part_log is best-effort: a failed enqueue must not fail the removal, and in
+    /// dropAllData() it must not replace the exception the drop itself is reporting.
+    tryLogCurrentException(log, __PRETTY_FUNCTION__);
 }
 
 
