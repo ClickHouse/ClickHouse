@@ -19,6 +19,16 @@ P9 plan	1	0
 P9 plain	0	1
 P9b plan	1	Nullable(UInt8)	3
 P9b plain	1	Nullable(UInt8)	3
+P10 plan	1	0
+P10 plain	0	1
+P10b plan	true	Nullable(Bool)	3
+P10b plain	true	Nullable(Bool)	3
+P11 counters	1	0
+P11 counters plain	0	1
+P11 plan	true	Nullable(Bool)	3
+P11 plain	true	Nullable(Bool)	3
+P12 counters	1	0
+P12 counters plain	0	1
 N1 dist	50
 N1 plain	50
 N1b dist	1	Nullable(UInt8)	50

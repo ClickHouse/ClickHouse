@@ -4227,14 +4227,48 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             const Node * converted = nullptr;
             if (rejected_is_surviving_and)
             {
-                /// A node above the conjunction hides all of its arguments from a later split, so one
-                /// argument carries the type; by name, because the rejected conjuncts arrive unordered.
+                /// A carrier is picked by name, because the rejected conjuncts arrive unordered.
                 NodeRawConstPtrs retyped_children = new_children;
-                size_t carrier = 0;
-                for (size_t i = 1; i < retyped_children.size(); ++i)
-                    if (retyped_children[i]->result_name > retyped_children[carrier]->result_name)
-                        carrier = i;
-                retyped_children[carrier] = &addBooleanCondition(*retyped_children[carrier], predicate->result_type, nullptr);
+                const size_t none = retyped_children.size();
+                auto pick = [&](size_t except, bool not_nullable_only)
+                {
+                    size_t carrier = none;
+                    for (size_t i = 0; i < retyped_children.size(); ++i)
+                    {
+                        if (i == except)
+                            continue;
+                        if (not_nullable_only && isNullableOrLowCardinalityNullable(retyped_children[i]->result_type))
+                            continue;
+                        if (carrier == none || retyped_children[i]->result_name > retyped_children[carrier]->result_name)
+                            carrier = i;
+                    }
+                    return carrier;
+                };
+
+                /// `and` takes `Nullable` from any argument, but `Bool` only from one that is not
+                /// `Nullable`, because `isBool` compares type names and so does not look through it.
+                auto declared_not_nullable = removeNullable(predicate->result_type);
+                size_t reports_bool = none;
+                if (isBool(declared_not_nullable))
+                {
+                    for (size_t i = 0; i < retyped_children.size(); ++i)
+                        if (isBool(retyped_children[i]->result_type))
+                            reports_bool = i;
+                    if (reports_bool == none)
+                    {
+                        reports_bool = pick(none, true);
+                        if (reports_bool != none)
+                            retyped_children[reports_bool]
+                                = &addBooleanCondition(*retyped_children[reports_bool], declared_not_nullable, nullptr);
+                    }
+                }
+                if (predicate->result_type->isNullable() && !rejected->result_type->isNullable())
+                {
+                    const size_t carrier = pick(reports_bool, false);
+                    if (carrier != none)
+                        retyped_children[carrier]
+                            = &addBooleanCondition(*retyped_children[carrier], predicate->result_type, nullptr);
+                }
 
                 const auto * retyped = &addFunction(func_builder_and, std::move(retyped_children), {});
                 if (retyped->result_type->getName() == predicate->result_type->getName())
