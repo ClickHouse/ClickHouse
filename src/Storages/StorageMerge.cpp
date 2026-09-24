@@ -813,19 +813,15 @@ static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
 /// `planContainsLogicalExchange`). The outer plan itself always falls back: `ReadFromMerge` cannot
 /// execute remotely.
 ///
-/// This function is called several times for the same child, and the context it gets differs between
-/// the calls, which is why the recorded verdict is re-applied by hand below instead of calling
-/// `QueryPlan::applyDistributedPlanFallbackToLocal` unconditionally:
-///  1. `createChildrenPlans` passes the child's own copy of the context. The children are created
-///     lazily from `getChildPlans` inside the outer plan's distributability walk, before the outer
-///     verdict is recorded, so the copy still carries `make_distributed_plan = 1` and the child decides
-///     for itself. `applyDistributedPlanFallbackToLocal` records the verdict on the child plan.
-///  2. `addFilter` and `buildPipeline` pass the outer query context. By then the outer plan has fallen
-///     back and written `make_distributed_plan = 0` into it. `applyDistributedPlanFallbackToLocal` only
-///     ever lowers the flag and returns at once when the incoming settings already say 0, so calling it
-///     here would build an accepted child with the flag off, and the logical exchanges inserted in
-///     call 1 would be built as pass-throughs. The verdict has to be applied in both directions, and
-///     that is what the branches below do.
+/// This function is called several times for the same child: from `createChildrenPlans`, `addFilter`
+/// and `buildPipeline`. Every call must pass the child's own context (`ChildPlan::context`), never the
+/// outer query context. The children are created lazily from `getChildPlans` inside the outer plan's
+/// distributability walk, before the outer verdict is recorded, so the child's copy still carries
+/// `make_distributed_plan = 1` and the child decides for itself on the first call; the verdict is
+/// recorded on the child plan and written into the child's context. The outer context, on the other
+/// hand, receives the outer plan's fallback, `make_distributed_plan = 0`. A snapshot taken from it
+/// would make `applyDistributedPlanFallbackToLocal` return at once with the flag off, and the logical
+/// exchanges inserted into an accepted child on the first call would be built as pass-throughs.
 static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
     const ContextPtr & context, const SelectQueryInfo & query_info, QueryPlan & child_plan)
 {
@@ -846,8 +842,7 @@ static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
 
     /// The settings come from the child's own context, so `applyDistributedPlanFallbackToLocal` either
     /// decides now or re-applies the verdict it recorded on the child plan at creation.
-    if (child_plan.isInitialized())
-        child_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
+    child_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     return optimization_settings;
 }
 
