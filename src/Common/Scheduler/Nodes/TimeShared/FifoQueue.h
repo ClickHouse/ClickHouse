@@ -75,7 +75,7 @@ public:
             cancelActivation();
         }
         queue_cost -= result->cost;
-        incrementDequeued(result->cost);
+        incrementDequeued(result->cost, !requests.empty());
         SCHED_DBG("{} -- dequeue(cost={}, queued={})", getPath(), result->cost, requests.size());
         return {result, !requests.empty()};
     }

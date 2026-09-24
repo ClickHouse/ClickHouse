@@ -805,7 +805,7 @@ private:
         if (request)
         {
             SCHED_DBG("{} -- dequeue(cost={})", this->getPath(), request->cost);
-            incrementDequeued(request->cost);
+            incrementDequeued(request->cost, child_active);
         }
 
         return {request, child_active};

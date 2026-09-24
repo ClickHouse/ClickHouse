@@ -86,7 +86,7 @@ public:
                 SCHED_DBG("{} -- acquired(cost={}, requests={}/{}, cost={}/{})",
                     getPath(), request->cost, requests, max_requests, cost, max_cost);
             }
-            incrementDequeued(request->cost);
+            incrementDequeued(request->cost, active());
             return {request, active()};
         }
         return {nullptr, false};

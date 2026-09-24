@@ -132,7 +132,7 @@ public:
             {
                 SCHED_DBG("{} -- dequeue(child={}, cost={}, priority={})",
                     getPath(), front_child->basename, request->cost, front_priority.value);
-                incrementDequeued(request->cost);
+                incrementDequeued(request->cost, isActive());
                 return {request, isActive()};
             }
         }
