@@ -13,6 +13,7 @@
 #include <Compression/CompressionCodecQuantized.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <algorithm>
 
@@ -325,6 +326,12 @@ void LazyReadFromMergeTreeSource::takePointReadSources(RangesInDataParts & parts
         source->addTotalRowsApprox(total_rows);
         sources.emplace(part_starting_offset, std::move(source));
     }
+
+    /// The runtime-statistics sample is collected by `MergeTreeReadTask`, which this path does not go through, so
+    /// every part served here is missing from it. An entry short of the rescoring read is worse than none, because
+    /// it prices later parallel-replica decisions.
+    if (updater && !sources.empty())
+        updater->markUnsupportedCase();
 
     parts = std::move(not_taken);
 }

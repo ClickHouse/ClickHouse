@@ -148,7 +148,8 @@ public:
         const String & stream_name,
         size_t data_file_size,
         FixedWidthPointReadLayout layout,
-        const MergeTreeReaderSettings & reader_settings);
+        const MergeTreeReaderSettings & reader_settings,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback = {});
 
 private:
     std::optional<FixedWidthPointReadLayout> fixed_width_layout;

@@ -121,7 +121,8 @@ MergeTreePointReadSource::MergeTreePointReadSource(
     MergeTreeReaderSettings reader_settings_,
     MarkCachePtr mark_cache_,
     size_t max_block_size_)
-    : ISource(header_)
+    /// Auto-progress would report `chunk.bytes()`; this source accounts the real read instead, as MergeTreeSource does.
+    : ISource(header_, /*enable_auto_progress=*/ false)
     , header(std::move(header_))
     , part(std::move(part_))
     , row_offsets(std::move(row_offsets_))
@@ -150,8 +151,11 @@ void MergeTreePointReadSource::initialize()
     if (!layout)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreePointReadSource: column {} is not a fixed-width point-read stream", vector_column.name);
 
+    auto count_read_bytes = [this](ReadBufferFromFileBase::ProfileInfo info_)
+    { read_bytes.fetch_add(info_.bytes_read, std::memory_order_relaxed); };
+
     vector_stream = MergeTreeReaderStreamSingleColumnWholePart::createForFixedWidthPointRead(
-        part.data_part->getDataPartStoragePtr(), info->stream_name, file_size, *layout, reader_settings);
+        part.data_part->getDataPartStoragePtr(), info->stream_name, file_size, *layout, reader_settings, count_read_bytes);
 
     if (!other_columns.empty())
     {
@@ -168,7 +172,7 @@ void MergeTreePointReadSource::initialize()
             part.ranges,
             reader_settings,
             ValueSizeMap{},
-            ReadBufferFromFileBase::ProfileCallback{},
+            count_read_bytes,
             CLOCK_MONOTONIC_COARSE);
     }
 
@@ -277,6 +281,9 @@ Chunk MergeTreePointReadSource::generate()
     }
 
     next_offset_index += batch;
+
+    /// Report what the readers actually fetched since the last chunk, not what the chunk holds.
+    progress(batch, read_bytes.exchange(0, std::memory_order_relaxed));
     return Chunk(std::move(result), batch);
 }
 

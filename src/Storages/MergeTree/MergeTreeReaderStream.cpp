@@ -490,7 +490,8 @@ std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> MergeTreeReaderStrea
     const String & stream_name,
     size_t data_file_size,
     FixedWidthPointReadLayout layout,
-    const MergeTreeReaderSettings & reader_settings)
+    const MergeTreeReaderSettings & reader_settings,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
     static constexpr size_t marks_count = 1;
     MarkRanges whole_part{{0, marks_count}};
@@ -505,7 +506,7 @@ std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> MergeTreeReaderStrea
         /*uncompressed_cache=*/ nullptr,
         data_file_size,
         /*marks_loader=*/ nullptr,
-        ReadBufferFromFileBase::ProfileCallback{},
+        profile_callback,
         CLOCK_MONOTONIC_COARSE);
 
     stream->fixed_width_layout = layout;

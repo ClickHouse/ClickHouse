@@ -115,11 +115,13 @@ SELECT 'pq_aligned_codebook_intact',
     countIf(length(vec.product_quantization_codebook) = 65536), count()
 FROM quantize_pr_pq_aligned SETTINGS max_block_size = 512;
 
--- Point-read (aligned) vs granule-read (unaligned) product-codec search return the identical top-k.
+-- Point-read (aligned) vs granule-read (unaligned) product-codec search return the identical top-k. The multiplier has
+-- to keep the shortlist above full recall: `product` codes are coarse, and below that both sides miss true neighbours
+-- and agree only by luck, so any change of shortlist membership at the cut flips the comparison.
 WITH (SELECT vec FROM quantize_pr_pq_aligned WHERE id = 2500) AS ref
 SELECT 'pq_aligned_eq_unaligned',
-    (SELECT arraySort(groupArray(id)) FROM (SELECT id FROM quantize_pr_pq_aligned   ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20))
-    = (SELECT arraySort(groupArray(id)) FROM (SELECT id FROM quantize_pr_pq_unaligned ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20));
+    (SELECT arraySort(groupArray(id)) FROM (SELECT id FROM quantize_pr_pq_aligned   ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 100))
+    = (SELECT arraySort(groupArray(id)) FROM (SELECT id FROM quantize_pr_pq_unaligned ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 100));
 
 WITH (SELECT vec FROM quantize_pr_pq_aligned WHERE id = 2500) AS ref
 SELECT 'pq_nearest_is_self',
