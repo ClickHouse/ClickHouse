@@ -2289,6 +2289,25 @@ private:
 
     virtual void startBackgroundMovesIfNeeded() = 0;
 
+    /// Whether the started background workers may modify the table. `StorageMergeTree` keeps it unset
+    /// while the table is read-only, including while a settings `ALTER` of a read-only table is between
+    /// making `table_readonly = 0` visible in memory and committing it durably: the asynchronous
+    /// outdated and unexpected part loaders check it before touching the disk and between parts, and
+    /// the waits for them return at once while it is unset, exactly as for a read-only table, because
+    /// nothing is loading.
+    virtual bool areBackgroundWorkersEnabled() const { return true; }
+
+    /// Whether the table is still durably read-only. `StorageMergeTree` keeps it set while a settings
+    /// `ALTER` of a read-only table is between making `table_readonly = 0` visible in memory and
+    /// committing it durably. Foreground queries that modify data must keep seeing the table as
+    /// read-only in that window: a rolled-back commit restores `table_readonly = 1`, and an `INSERT`,
+    /// mutation, `TRUNCATE` or partition command that slipped through would have written to a table
+    /// that is durably read-only.
+    virtual bool isReadonlyCommitInFlight() const { return false; }
+
+    /// Re-arm period of an asynchronous part loader that woke up while the workers are disabled.
+    static constexpr size_t DISABLED_PARTS_LOADING_RETRY_MS = 1000;
+
     bool allow_nullable_key = false;
 
     void addPartContributionToDataVolume(const DataPartPtr & part);

@@ -60,6 +60,7 @@ public:
         size_t num_streams) override;
 
     bool supportsTransactions() const override { return true; }
+    bool supportsTruncate() const override { return false; }
 
     /// `JSON`, `Dynamic` and every type containing them are generated as well.
     bool supportsColumnsWithDynamicStructure() const override { return true; }
