@@ -638,14 +638,16 @@ private:
         {
             auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*info.condition);
             const auto & index_header = text_index_condition.getHeader();
-            /// An index with a preprocessor also answers its preprocessor expression, which another index may be defined on.
-            const auto expression_name = text_index_condition.getPreprocessedExpressionName();
 
             /// Take the first text index if there are multiple text indexes set for the same expression.
             /// It is ambiguous which index to use. However, we allow to use several indexes for different expressions.
             /// for example, we can use indexes both for mapKeys(m) and mapValues(m) in one function m['key'] = 'value'.
-            if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name)
-                || (expression_name && used_index_columns.contains(*expression_name)))
+            if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
+                continue;
+
+            /// An index with a preprocessor also answers its preprocessor expression, which another index may be defined on.
+            const auto expression_name = text_index_condition.getPreprocessedExpressionName();
+            if (expression_name && used_index_columns.contains(*expression_name))
                 continue;
 
             auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
