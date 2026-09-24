@@ -76,7 +76,9 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
     const auto & clause = table_join.getOnlyClause();
     const Names & key_names = isRight(kind) ? clause.key_names_right : clause.key_names_left;
 
-    auto sort_description = getCollationAwareSortPrefixInColumns(children_properties[ordered_child].sort_description, key_names);
+    const auto & ordered_input_header = *join_step.getInputHeaders()[ordered_child];
+    auto sort_description
+        = getCollationAwareSortPrefixInColumns(children_properties[ordered_child].sort_description, key_names, ordered_input_header);
 
     /// Keep the key columns that reach the output under their own, unambiguous name. The legacy planner lets
     /// both inputs carry a column of the same name - `JOIN ... USING (k)` is the common shape - and renames
@@ -112,7 +114,6 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
         for (size_t i = 0; i < clause.key_names_left.size(); ++i)
             ordered_key_to_equal_key.emplace(clause.key_names_left[i], clause.key_names_right[i]);
     }
-    const auto & ordered_input_header = *join_step.getInputHeaders()[ordered_child];
 
     size_t num_columns_in_output = 0;
     for (; num_columns_in_output < sort_description.size(); ++num_columns_in_output)
