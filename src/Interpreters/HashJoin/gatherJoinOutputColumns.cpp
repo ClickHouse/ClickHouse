@@ -74,7 +74,7 @@ constexpr UInt64 no_open_run = 1;
 /// `STRIDE` is 0 when the width is only known at run time, as for a `FixedString(n)` of arbitrary `n`.
 /// A compile-time width turns the copy into one load and one store. `default_pattern` is the `stride`
 /// bytes a zero ref word writes.
-/// `row_major` reads the plane as a row store's field: `row_store_row_length` bytes from one row's
+/// `from_row_store` reads the plane as a row store's field: `row_store_row_length` bytes from one row's
 /// value to the next, instead of the values sitting back to back.
 template <bool from_row_list, bool from_row_store, size_t STRIDE>
 void gatherFixedStride(
@@ -349,15 +349,15 @@ void copyRows(IColumn & dst, const IColumn & src, size_t begin, size_t length)
 
 /// `Nullable` over a fixed-width column in one pass: each word is read once and serves both planes,
 /// with one lead prefetch per plane, instead of a null-map pass and a value pass over the same words.
-/// Row-major, the null byte and the value are adjacent bytes of the same row.
-template <bool row_major, size_t STRIDE>
+/// In the row store, the null byte and the value are adjacent bytes of the same row.
+template <bool from_row_store, size_t STRIDE>
 void gatherNullableFixedStride(
     ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count, std::optional<size_t> row_store_row_length)
 {
     const GatherNode & nested = node.children[0];
     const size_t stride = STRIDE ? STRIDE : nested.stride;
-    const size_t null_step = row_major ? *row_store_row_length : 1;
-    const size_t value_step = row_major ? *row_store_row_length : stride;
+    const size_t null_step = from_row_store ? *row_store_row_length : 1;
+    const size_t value_step = from_row_store ? *row_store_row_length : stride;
     const void * const * null_by_block = node.data_by_block.data();
     const void * const * value_by_block = nested.data_by_block.data();
     const char * default_pattern = nested.default_pattern.data();
@@ -378,7 +378,8 @@ void gatherNullableFixedStride(
                 const UInt32 ahead_block = refWordBlockNo(ahead);
                 const size_t ahead_row = refWordRowNo(ahead);
                 __builtin_prefetch(static_cast<const char *>(null_by_block[ahead_block]) + ahead_row * null_step);
-                __builtin_prefetch(static_cast<const char *>(value_by_block[ahead_block]) + ahead_row * value_step);
+                if constexpr (!from_row_store)
+                    __builtin_prefetch(static_cast<const char *>(value_by_block[ahead_block]) + ahead_row * value_step);
             }
         }
         const UInt64 word = words[i];
@@ -391,8 +392,11 @@ void gatherNullableFixedStride(
         }
         const UInt32 block_no = refWordBlockNo(word);
         const size_t row = refWordRowNo(word);
-        null_out[i] = static_cast<const char *>(null_by_block[block_no])[row * null_step];
-        memcpy(value_out, static_cast<const char *>(value_by_block[block_no]) + row * value_step, stride);
+        const size_t null_offset = row * null_step;
+        /// `value_by_block` already points at the byte after the null flag at the same offset.
+        const size_t value_offset = from_row_store ? null_offset : row * value_step;
+        null_out[i] = static_cast<const char *>(null_by_block[block_no])[null_offset];
+        memcpy(value_out, static_cast<const char *>(value_by_block[block_no]) + value_offset, stride);
         value_out += stride;
     }
     chassert(value_out == value_span.data() + value_span.size());
