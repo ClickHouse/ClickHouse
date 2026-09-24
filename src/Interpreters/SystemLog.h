@@ -610,6 +610,13 @@ inline constexpr char SYSTEM_LOG_DOCUMENTATION_ERROR_LOG[] = R"DOCS_MD(
 .description
 Contains history of error values from table `system.errors`, periodically flushed to disk.
 
+.columns_notes
+<Note>
+`last_error_symbols` and `last_error_lines` are resolved from the binary's symbol table and debug info.
+`last_error_symbols` is populated wherever the symbol table is available (Linux and macOS builds).
+`last_error_lines` additionally requires DWARF debug info - read directly from the binary on Linux, or from a co-located `.dSYM` bundle on macOS - so it is empty when that debug info is not available. Both arrays are empty on platforms without introspection support (for example FreeBSD).
+</Note>
+
 .examples
 ```sql
 SELECT * FROM system.error_log LIMIT 1 FORMAT Vertical;
