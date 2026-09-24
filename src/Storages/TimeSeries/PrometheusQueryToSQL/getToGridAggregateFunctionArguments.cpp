@@ -48,7 +48,10 @@ ASTs getToGridAggregateFunctionArguments(const SQLQueryPiece & range_vector, Con
         case StoreMethod::SCALAR_GRID:
         {
             /// values: the `values` column of the scalar grid
-            values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
+            values = makeASTFunction(
+                "CAST",
+                make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                make_intrusive<ASTLiteral>(fmt::format("Array({})", context.scalar_data_type->getName())));
             break;
         }
 
