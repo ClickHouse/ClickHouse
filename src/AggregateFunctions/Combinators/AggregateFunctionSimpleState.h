@@ -83,7 +83,7 @@ public:
         nested_func->add(place, columns, row_num, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
@@ -101,11 +101,6 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertResultInto(place, to, arena);
-    }
-
-    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
-    {
-        nested_func->rollbackInsertResult(place, to);
     }
 
     bool allocatesMemoryInArena() const override { return nested_func->allocatesMemoryInArena(); }

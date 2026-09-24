@@ -10,29 +10,29 @@ CREATE TABLE nullable_key (k Nullable(int), v int) ENGINE MergeTree ORDER BY k S
 INSERT INTO nullable_key SELECT number * 2, number * 3 FROM numbers(10);
 INSERT INTO nullable_key SELECT NULL, -number FROM numbers(3);
 
-SELECT * FROM nullable_key ORDER BY v, k;
+SELECT * FROM nullable_key ORDER BY k, v;
 
 SET force_primary_key = 1;
 SET max_rows_to_read = 3;
-SELECT * FROM nullable_key WHERE k IS NULL ORDER BY v, k;
+SELECT * FROM nullable_key WHERE k IS NULL;
 SET max_rows_to_read = 10;
-SELECT * FROM nullable_key WHERE k IS NOT NULL ORDER BY v, k;
+SELECT * FROM nullable_key WHERE k IS NOT NULL;
 SET max_rows_to_read = 5;
-SELECT * FROM nullable_key WHERE k > 10 ORDER BY v, k;
-SELECT * FROM nullable_key WHERE k < 10 ORDER BY v, k;
+SELECT * FROM nullable_key WHERE k > 10;
+SELECT * FROM nullable_key WHERE k < 10;
 
 OPTIMIZE TABLE nullable_key FINAL;
 
 SET max_rows_to_read = 4; -- one additional left mark needs to be read
-SELECT * FROM nullable_key WHERE k IS NULL ORDER BY v, k;
+SELECT * FROM nullable_key WHERE k IS NULL;
 SET max_rows_to_read = 10;
-SELECT * FROM nullable_key WHERE k IS NOT NULL ORDER BY v, k;
+SELECT * FROM nullable_key WHERE k IS NOT NULL;
 
 -- Nullable in set and with transform_null_in = 1
 SET max_rows_to_read = 3;
-SELECT * FROM nullable_key WHERE k IN (10, 20) ORDER BY v, k SETTINGS transform_null_in = 1;
+SELECT * FROM nullable_key WHERE k IN (10, 20) SETTINGS transform_null_in = 1;
 SET max_rows_to_read = 5;
-SELECT * FROM nullable_key WHERE k IN (3, NULL) ORDER BY v, k SETTINGS transform_null_in = 1;
+SELECT * FROM nullable_key WHERE k IN (3, NULL) SETTINGS transform_null_in = 1;
 
 CREATE TABLE nullable_key_without_final_mark (s Nullable(String)) ENGINE MergeTree ORDER BY s SETTINGS allow_nullable_key = 1, write_final_mark = 0;
 INSERT INTO nullable_key_without_final_mark VALUES ('123'), (NULL);
@@ -47,15 +47,15 @@ INSERT INTO nullable_minmax_index VALUES (1, 1), (2, 2), (3, 2), (2, 1); -- [1, 
 INSERT INTO nullable_minmax_index VALUES (2, NULL), (3, NULL); -- [+Inf, +Inf]
 
 SET force_primary_key = 0;
-SELECT * FROM nullable_minmax_index ORDER BY v, k;
+SELECT * FROM nullable_minmax_index ORDER BY k, v;
 SET max_rows_to_read = 6;
-SELECT * FROM nullable_minmax_index WHERE v IS NULL ORDER BY v, k;
+SELECT * FROM nullable_minmax_index WHERE v IS NULL;
 SET max_rows_to_read = 8;
-SELECT * FROM nullable_minmax_index WHERE v IS NOT NULL ORDER BY v, k;
+SELECT * FROM nullable_minmax_index WHERE v IS NOT NULL;
 SET max_rows_to_read = 6;
-SELECT * FROM nullable_minmax_index WHERE v > 2 ORDER BY v, k;
+SELECT * FROM nullable_minmax_index WHERE v > 2;
 SET max_rows_to_read = 4;
-SELECT * FROM nullable_minmax_index WHERE v <= 2 ORDER BY v, k;
+SELECT * FROM nullable_minmax_index WHERE v <= 2;
 
 DROP TABLE nullable_key;
 DROP TABLE nullable_key_without_final_mark;

@@ -86,7 +86,7 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const QueryTreeNodePtr & query_node,
-    const TableExpressionNodes & table_nodes,
+    const QueryTreeNodes & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 
@@ -104,20 +104,20 @@ NameSet checkAccessRights(
 
 /// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
-        const TableExpressionNodePtr & table_expression,
+        const QueryTreeNodePtr & table_expression,
         const ContextPtr & query_context,
         bool check_access_rights = false);
 
 /// Build filter for specific table_expression
 /// `check_access_rights`: check column-level SELECT for the columns the filter reads (for user-supplied filters).
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const TableExpressionNodePtr & table_expression,
+        const QueryTreeNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {},
         bool check_access_rights = false);
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
-        const TableExpressionNodePtr & table_expression,
+        const QueryTreeNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {});
 
