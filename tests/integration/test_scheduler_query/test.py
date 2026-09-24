@@ -243,6 +243,8 @@ def test_max_waiting_queries_updated() -> None:
     pool_all.stop()
     # The raised limit (3) is enforced, not the initial 1 — proving the update reached the queue.
     assert "Workload limit `max_waiting_queries` has been reached: 3 of 3" in pool_all.last_error
+
+
 def test_admission_timeout_query_slot() -> None:
     # One query slot, unlimited waiting queue: a second query must WAIT for the slot (not be
     # rejected). With workload_admission_timeout_ms set it must fail after ~the timeout instead of
