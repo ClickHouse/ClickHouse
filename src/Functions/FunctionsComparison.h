@@ -1002,6 +1002,16 @@ private:
 
     using ComparisonNumberTypes = TypeList<UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256, BFloat16, Float32, Float64>;
 
+    template <typename T>
+    ColumnPtr executeNumSameType(const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
+    {
+        if (const auto * col_left = checkAndGetColumn<ColumnVector<T>>(col_left_untyped))
+            return executeNumRightType<T, T>(col_left, col_right_untyped);
+        if (const auto * col_left_const = checkAndGetColumnConst<ColumnVector<T>>(col_left_untyped))
+            return executeNumConstRightType<T, T>(col_left_const, col_right_untyped);
+        return nullptr;
+    }
+
     template <typename T0>
     ColumnPtr executeNumLeftType(const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
     {
@@ -2011,6 +2021,16 @@ public:
         res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count);
         if (res)
             return res;
+        if (types_equal && (which_left.isUUID() || which_left.isIPv4() || which_left.isIPv6()))
+        {
+            res = executeNumSameType<UUID>(col_left_untyped, col_right_untyped);
+            if (!res)
+                res = executeNumSameType<IPv4>(col_left_untyped, col_right_untyped);
+            if (!res)
+                res = executeNumSameType<IPv6>(col_left_untyped, col_right_untyped);
+            if (res)
+                return res;
+        }
         if ((((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string))
              && fixed_string_size == IPV6_BINARY_LENGTH)
             || ((left_is_ipv4 || left_is_ipv6) && (right_is_ipv4 || right_is_ipv6)))

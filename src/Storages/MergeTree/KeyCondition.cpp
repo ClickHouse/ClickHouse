@@ -581,6 +581,33 @@ static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_i
     return need_inversion ? makeASTOperator("not", cloned_node) : cloned_node;
 }
 
+/// Comparison ops whose `not(op)` rewrite via `inverse_relations` is invalid when an operand can be NaN:
+/// `not(NaN > c)` is true while `NaN <= c` is false. `=` / `!=` do stay complements under NaN and are
+/// covered only to keep one rule for every comparison. A finite float constant is safe.
+static bool isFloatComparison(const String & name, const ActionsDAG::NodeRawConstPtrs & children)
+{
+    if (name != "equals" && name != "notEquals"
+        && name != "less" && name != "greater"
+        && name != "lessOrEquals" && name != "greaterOrEquals")
+        return false;
+
+    for (const auto * child : children)
+    {
+        if (!KeyCondition::typeMayHideNaN(child->result_type))
+            continue;
+
+        /// Non-constant: could be NaN at runtime, must not invert.
+        if (child->type != ActionsDAG::ActionType::COLUMN || !child->column || !isColumnConst(*child->column))
+            return true;
+
+        /// Constant: only a NaN blocks the rewrite.
+        const Field field = (*child->column)[0];
+        if (field.isNaN())
+            return true;
+    }
+    return false;
+}
+
 /// `value_is_truth_tested` tells whether the consumer of this node only truth-tests its value
 /// (`boolean_context`), so neither the value itself nor its type is observed. It gates the
 /// `Nullable`-widening case below, which is the only one that changes the node's result type.
@@ -1347,7 +1374,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, child_boolean_context);
 
                 auto it = inverse_relations.find(name);
-                if (it != inverse_relations.end() && canFoldToInverseRelation(name, children))
+                if (it != inverse_relations.end()
+                    && canFoldToInverseRelation(name, children)
+                    && !(need_inversion && isFloatComparison(name, children)))
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
@@ -1627,30 +1656,116 @@ bool KeyCondition::isRelaxed() const
     });
 }
 
-/// Whether a float is reachable by descending `Tuple` elements and the `Nullable` / `LowCardinality`
-/// wrappers. `Array` and `Map` are not descended: an equal-type comparison of those is `compareAt`-based
-/// and orders a NaN exactly where the index does, so their bounds and their rows already agree.
-static bool floatReachableThroughTupleElements(const DataTypePtr & type)
+bool KeyCondition::typeMayHideNaN(const DataTypePtr & type)
 {
+    if (!type)
+        return false;
+
     const auto unwrapped = removeLowCardinalityAndNullable(type);
     if (WhichDataType(unwrapped).isFloat())
         return true;
 
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get());
-    if (!tuple)
-        return false;
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
+    {
+        for (const auto & element : tuple->getElements())
+            if (typeMayHideNaN(element))
+                return true;
+    }
 
-    const auto & elements = tuple->getElements();
-    return std::any_of(elements.begin(), elements.end(), floatReachableThroughTupleElements);
+    return false;
 }
 
+void KeyCondition::relaxAtomsOverNaNHidingColumns(const DataTypes & key_types)
+{
+    auto column_may_hide_nan = [&key_types](size_t key_column)
+    {
+        return key_column < key_types.size() && typeMayHideNaN(key_types[key_column]);
+    };
+
+    /// A packed `Tuple` key keeps the mapped set column as a `ColumnTuple`, so an element can carry the
+    /// NaN nested rather than at the top level.
+    auto set_column_contains_nan = [](const IColumn & column)
+    {
+        Field field;
+        for (size_t i = 0, size = column.size(); i < size; ++i)
+        {
+            column.get(i, field);
+            if (anyFieldSatisfies(field, isNaNField))
+                return true;
+        }
+        return false;
+    };
+
+    for (auto & element : rpn)
+    {
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            {
+                if (element.key_columns.size() != 1 || !column_may_hide_nan(element.getKeyColumn()))
+                    break;
+
+                if (element.monotonic_functions_chain.empty())
+                    element.relaxed = true;
+                else
+                    element.function = RPNElement::FUNCTION_UNKNOWN;
+                break;
+            }
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            {
+                if (std::none_of(element.key_columns.begin(), element.key_columns.end(), column_may_hide_nan))
+                    break;
+
+                /// Without a prepared set there is nothing to inspect: assume the worst rather than
+                /// keep an unverified `can_be_true`.
+                if (!element.set_index)
+                {
+                    element.function = RPNElement::FUNCTION_UNKNOWN;
+                    break;
+                }
+
+                const auto & ordered_set = element.set_index->getOrderedSet();
+                const auto & mapping = element.set_index->getIndexesMapping();
+
+                bool relax = false;
+                for (size_t i = 0; i < mapping.size(); ++i)
+                {
+                    if (!column_may_hide_nan(mapping[i].key_index))
+                        continue;
+
+                    /// `ordered_set[i]` belongs to `mapping[i]`: the constructor sorts `indexes_mapping`
+                    /// and then indexes the set elements through it, so `tuple_index` is not a position here.
+                    if (!mapping[i].functions.empty() || set_column_contains_nan(*ordered_set[i]))
+                    {
+                        element.function = RPNElement::FUNCTION_UNKNOWN;
+                        relax = false;
+                        break;
+                    }
+                    relax = true;
+                }
+                if (relax)
+                    element.relaxed = true;
+                break;
+            }
+            default:
+                break;
+        }
+    }
+}
+
+/// Whether a NaN is reachable by descending the `Tuple` elements of this type, i.e. `typeMayHideNaN`
+/// for a key column that is a `Tuple` rather than a float. `Array` and `Map` are not descended, for the
+/// reason `typeMayHideNaN` gives: an equal-type comparison of those is `compareAt`-based and orders a
+/// NaN exactly where the index does, so their bounds and their rows already agree.
 static bool typeCanHideNaNInsideTuple(const DataTypePtr & type)
 {
     if (!type)
         return false;
 
     const auto unwrapped = removeLowCardinalityAndNullable(type);
-    return typeid_cast<const DataTypeTuple *>(unwrapped.get()) && floatReachableThroughTupleElements(unwrapped);
+    return typeid_cast<const DataTypeTuple *>(unwrapped.get()) && KeyCondition::typeMayHideNaN(unwrapped);
 }
 
 /// A NaN inside a `Tuple` orders above only the values that share its prefix, so it can sit strictly
@@ -4368,6 +4483,44 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+/// A `Variant`/`Dynamic` constant holds exactly one value, hence exactly one active member type, while its
+/// declared type is only the wrapper and `tryGetConstant` hands out the nested value.
+/// Returns that member type, or nullptr when it cannot be determined.
+static DataTypePtr tryGetActiveTypeOfErasedConstant(const RPNBuilderTreeNode & const_node)
+{
+    if (!const_node.isConstant())
+        return nullptr;
+
+    const auto column_with_type = const_node.getConstantColumn();
+    ColumnPtr column = column_with_type.column;
+    if (!column)
+        return nullptr;
+
+    if (isColumnConst(*column))
+        column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
+
+    if (column->empty())
+        return nullptr;
+
+    if (const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(column.get()))
+        return dynamic_column->getTypeAt(0);
+
+    if (const auto * variant_column = typeid_cast<const ColumnVariant *>(column.get()))
+    {
+        const auto * variant_type = typeid_cast<const DataTypeVariant *>(column_with_type.type.get());
+        if (!variant_type)
+            return nullptr;
+
+        const auto global_discr = variant_column->globalDiscriminatorAt(0);
+        if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || global_discr >= variant_type->getVariants().size())
+            return nullptr;
+
+        return variant_type->getVariants()[global_discr];
+    }
+
+    return nullptr;
+}
+
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
@@ -4807,8 +4960,17 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
                         /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
                         /// type is already `LowCardinality`/`Nullable`-stripped above).
-                        const auto const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
-                        if (WhichDataType(const_type_unwrapped).isFixedString() && isStringOrFixedString(key_expr_type_not_null))
+                        /// The rule applies to the erased constant's active member type; an active type that
+                        /// cannot be determined counts as possibly padded, so the range is declined.
+                        DataTypePtr const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
+                        if (WhichDataType(const_type_unwrapped).isVariant() || WhichDataType(const_type_unwrapped).isDynamic())
+                        {
+                            const auto active_type = tryGetActiveTypeOfErasedConstant(func.getArgumentAt(const_arg_pos));
+                            const_type_unwrapped = active_type ? removeLowCardinalityAndNullable(active_type) : nullptr;
+                        }
+
+                        if ((!const_type_unwrapped || WhichDataType(const_type_unwrapped).isFixedString())
+                            && isStringOrFixedString(key_expr_type_not_null))
                         {
                             const size_t const_bytes = const_value.safeGet<String>().size();
                             const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
