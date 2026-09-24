@@ -297,6 +297,13 @@ TEST(TreeHashCompleteness, FormatRoundTripHashesEqual)
         "SELECT count() OVER (PARTITION BY number ORDER BY number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM numbers(3)",
         "SELECT count() OVER (ORDER BY number RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(3)",
         "SELECT count() OVER w FROM numbers(3) WINDOW w AS (ORDER BY number)",
+        /// A parent window named after a frame keyword: back-quoted on the way in, bare on the way
+        /// out, so the re-parse takes the path where the first reading of the bracket body consumes
+        /// the keyword and then fails. Anything that keeps that reading's frame - the scalars or the
+        /// offset expression it pushed into `children` - hashes differently here.
+        "SELECT 1 WINDOW x AS (`rows`)",
+        "SELECT 1 WINDOW x AS (`range` PARTITION BY 1)",
+        "SELECT 1 WINDOW x AS (`groups` ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
         "WITH x (r) AS MATERIALIZED (SELECT 1 AS q) SELECT r FROM x",
         "SET max_threads = DEFAULT, max_block_size = 1",
         "CREATE TABLE t (a UInt64, b String TTL now() + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY a "
