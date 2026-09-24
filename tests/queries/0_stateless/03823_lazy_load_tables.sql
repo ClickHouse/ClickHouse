@@ -56,10 +56,17 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t3 TO {CLICKHOUSE_DATABASE_1:Identifier}.t3_renamed;
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name = 't3_renamed';
+
+-- Re-attach so the ALTER below is the first access: whether the rename itself loads the table depends
+-- on the database disk.
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- ALTER on a lazy proxy triggers loading.
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t3_renamed ADD COLUMN value String DEFAULT 'test';
+SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name = 't3_renamed';
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't3_renamed' AND name = 'value';
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
