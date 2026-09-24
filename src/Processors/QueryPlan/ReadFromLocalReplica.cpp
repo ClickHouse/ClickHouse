@@ -40,13 +40,11 @@ void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
     if (!query_plan || !query_plan->isInitialized())
         return;
 
-    /// A read derives ordering only from the filters read-in-order can reach above it, and it reaches
-    /// them by taking the first child at every step - through a join or a `UNION ALL` view alike. So a
-    /// read is held to the filters on the longest such chain ending in it, and each read gets its own
-    /// set: a fragment can hold several coordinated reads (see `findReadingSteps`), and one set taken at
-    /// the root would describe only the branch the first children lead to. Handing that set to a read in
-    /// another branch would allow a column its own branch never fixed, whenever the two branches happen
-    /// to name a column alike.
+    /// One set per coordinated read - a fragment can hold several (see `findReadingSteps`) - each taken
+    /// on the chain `buildSortingDAG` walks to reach that read: first child at every step. The walk is
+    /// not reproduced here, `collectFixedColumnNames` runs that same function; what this loop writes out
+    /// is only where each chain starts. Test 05161 holds it to that: two reads under a `UNION ALL`,
+    /// naming the same column, one of which must not be given what the other's branch fixed.
     struct Frame
     {
         QueryPlan::Node * node;
@@ -63,11 +61,14 @@ void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
         /// performs entirely on this node - a small joined table, say - is nobody's business but this
         /// replica's, and restricting it would cost an ordering for nothing.
         ///
-        /// Once per read, and only the first time: every later condition arrives with the earlier ones
-        /// already spliced into this plan as `FilterStep`s. A set taken then would count those as
-        /// columns the fragment fixes on its own, and this read would be free to order itself by a
-        /// column only the initiator's copy of the fragment fixes - announcing `WithOrder` against the
-        /// replicas' `Default`, which is what the set is taken to prevent.
+        /// This set is the answer for a fragment whose conditions do not reach the replicas: they fix
+        /// what it fixes on its own, and nothing else may order its read. Where they do reach them the
+        /// read may order itself by everything pushed in as well, and `tryPushDownFilter` then leaves
+        /// the set unset rather than widening it.
+        ///
+        /// Hence once per read, and only the first time: every later condition arrives with the earlier
+        /// ones already spliced into this plan as `FilterStep`s, and a set taken then would count those
+        /// among what the fragment fixes on its own.
         auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
         if (reading && reading->isParallelReadingFromReplicas() && !reading->getFixedColumnRestriction().has_value())
             reading->restrictFixedColumns(QueryPlanOptimizations::collectFixedColumnNames(*chain_root));
