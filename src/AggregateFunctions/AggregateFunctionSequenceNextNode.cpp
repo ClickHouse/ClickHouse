@@ -460,7 +460,8 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
 AggregateFunctionPtr
 createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings == nullptr || !(*settings)[Setting::enable_funnel_functions])
+    /// The factory passes null settings outside a query context, where there is no session to gate.
+    if (settings && !(*settings)[Setting::enable_funnel_functions])
     {
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
             "Set `enable_funnel_functions` setting to enable it", name);
