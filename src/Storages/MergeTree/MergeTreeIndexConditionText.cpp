@@ -1166,18 +1166,13 @@ static bool tryNormalizeNeedlePadding(Field & value, const DataTypePtr & value_t
 /// `mapValues` stores neither.
 static bool isMapValueDefault(std::string_view value, const Block & header)
 {
-    if (value.empty())
-        return true;
-
     /// A text index is always defined on a single expression.
-    if (header.columns() != 1)
-        return false;
-
+    chassert(header.columns() == 1);
     auto value_type = removeNullable(removeLowCardinality(header.getByPosition(0).type));
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(value_type.get()))
         value_type = removeNullable(removeLowCardinality(array_type->getNestedType()));
 
-    return isFixedString(value_type) && value.find_first_not_of('\0') == std::string_view::npos;
+    return value.empty() || (isFixedString(value_type) && value.find_first_not_of('\0') == std::string_view::npos);
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
@@ -2130,13 +2125,14 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 {
     std::optional<size_t> set_key_position;
 
-    bool indexed_map_element = false;
+    /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
+    bool has_index_for_map_element_value = false;
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
         if (hasIndexForMapElementValue(node))
         {
-            indexed_map_element = true;
+            has_index_for_map_element_value = true;
             return true;
         }
         return hasIndexForColumn(node.getColumnName())
@@ -2210,7 +2206,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     for (size_t row = 0; row < total_row_count; ++row)
     {
         /// The atom is an OR over the elements, and the index skips NULL rows when building a
-        /// granule, so a NULL element is a disjunct it cannot bound. Decline the atom.
+        /// granule, so a NULL element is a disjunct it cannot bind. Decline the atom.
         if (set_column.isNullAt(row))
         {
             out.text_search_queries.clear();
@@ -2233,7 +2229,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
-        if (element.empty() || (indexed_map_element && isMapValueDefault(element, header)))
+        if (element.empty() || (has_index_for_map_element_value && isMapValueDefault(element, header)))
         {
             out.text_search_queries.clear();
             return false;
