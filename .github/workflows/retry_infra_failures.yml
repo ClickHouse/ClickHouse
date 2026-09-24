@@ -261,8 +261,15 @@ jobs:
             # red again; rerun_on_review_threads.yml re-runs it once the
             # threads are resolved.
             if [ "$should_rerun" = "true" ] && [ -n "$run_sha" ]; then
+              # Every job of the run that did not end green, not only the
+              # `failure` ones: a lane that ended `timed_out` or `cancelled`
+              # alongside the gate is an infrastructure flake that must still
+              # be retried, so it has to break the "only Finish Workflow"
+              # equality below.
               failed_workflow_jobs=$(echo "$jobs_raw" | jq -r '
-                .jobs[] | select(.conclusion == "failure") | .name
+                .jobs[] |
+                select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral") |
+                .name
               ')
               # A red "Review Threads" status alone does not prove that the
               # gate was the only reason: "Finish Workflow" aggregates every

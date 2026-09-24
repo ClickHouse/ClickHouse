@@ -942,3 +942,41 @@ def test_review_thread_gate_never_widens_the_coverage_family(monkeypatch, fake_i
     fake_info.pr_labels = []
     filter_job._pipeline_note_labels = set()
     assert filter_job.should_skip_job(coverage_build) == (False, "")
+
+
+def _retry_non_green_jobs(jobs):
+    """Run the "which jobs did not end green" filter of `retry_infra_failures.yml`."""
+    workflow = (
+        Path(__file__).resolve().parents[2]
+        / ".github/workflows/retry_infra_failures.yml"
+    ).read_text()
+    anchor = 'failed_workflow_jobs=$(echo "$jobs_raw" | jq -r'
+    assert anchor in workflow, "the retry suppression job filter moved - update this test"
+    jq_filter = workflow[workflow.index(anchor) :].split("'")[1]
+    result = subprocess.run(
+        ["jq", "-r", jq_filter],
+        input=json.dumps({"jobs": jobs}),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+@pytest.mark.parametrize("conclusion", ["timed_out", "cancelled", "action_required"])
+def test_retry_suppression_needs_finish_workflow_to_be_the_only_non_green_job(
+    conclusion,
+):
+    """Regression: `Finish Workflow` failed with the review-threads-only marker,
+    but another lane ended `timed_out` or `cancelled` rather than `failure`.
+    That lane is an infrastructure flake, so the suppression must not treat
+    the run as "only Finish Workflow failed"."""
+    finish = {"name": "Finish Workflow", "conclusion": "failure"}
+    green = [
+        {"name": "Style check", "conclusion": "success"},
+        {"name": "Build (amd_release)", "conclusion": "skipped"},
+    ]
+    assert _retry_non_green_jobs(green + [finish]) == "Finish Workflow"
+    flaky = {"name": "Build (amd_debug)", "conclusion": conclusion}
+    assert _retry_non_green_jobs(green + [flaky, finish]) != "Finish Workflow"
