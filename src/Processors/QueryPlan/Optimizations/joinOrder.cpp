@@ -385,6 +385,7 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     /// Carry the conflict-detector setting on the graph so DPsub (which only receives the
     /// `QueryGraph`) can decide whether to build its reordering constraints from CD-A/CD-C.
     query_graph.conflict_detector = optimization_settings.query_plan_optimize_join_order_conflict_detector;
+    query_graph.join_swap_table = optimization_settings.join_swap_table;
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),

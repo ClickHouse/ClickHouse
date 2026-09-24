@@ -105,6 +105,10 @@ struct QueryGraph
     /// of the original query whatever the settings, so it cannot answer this on its own.
     bool semi_anti_flattened = false;
 
+    /// `query_plan_join_swap_table`: empty when the planner may pick the build side itself, set when
+    /// the query pinned it. Only when it is empty may a join's inputs be put round the cheaper way.
+    std::optional<bool> join_swap_table;
+
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
     /// The relation may be joined (as a singleton side) only against a set that contains all
