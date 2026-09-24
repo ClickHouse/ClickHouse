@@ -14,18 +14,29 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Sources/NullSource.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
+
+namespace DB
+{
+void registerJoinStep(QueryPlanStepRegistry & registry);
+}
 
 using namespace DB;
 
 namespace
 {
+
+/// The step serialization version that carries the boundary bit, and the one before it.
+constexpr UInt64 boundary_step_version = 1;
+constexpr UInt64 pre_boundary_step_version = 0;
 
 SharedHeader makeHeader(const String & column_name)
 {
@@ -88,19 +99,20 @@ std::unique_ptr<JoinStepLogical> makeStep(bool mark_as_boundary)
 }
 
 /// Serialize through the production path and return the byte stream.
-String serializeStep(const IQueryPlanStep & step)
+String serializeStep(const IQueryPlanStep & step, UInt64 step_version)
 {
     WriteBufferFromOwnString out;
     SerializedSetsRegistry registry;
     IQueryPlanStep::Serialization ctx{out, registry};
     ctx.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+    ctx.step_version = step_version;
     step.serialize(ctx);
     return out.str();
 }
 
 /// Deserialize through the production path. The two input headers are what
 /// `JoinStepLogical::deserialize` reconstructs the left and right sides from.
-QueryPlanStepPtr deserializeStep(const String & bytes)
+QueryPlanStepPtr deserializeStep(const String & bytes, UInt64 step_version)
 {
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry registry;
@@ -110,15 +122,20 @@ QueryPlanStepPtr deserializeStep(const String & bytes)
     ContextPtr context = getContext().context;
 
     IQueryPlanStep::Deserialization ctx{
-        in, registry, {}, context, input_headers, output_header, settings, 0, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, false};
+        in, registry, {}, context, input_headers, output_header, settings,
+        /*max_type_complexity=*/0, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, step_version, /*skipping=*/false};
 
     return JoinStepLogical::deserialize(ctx);
 }
 
+bool boundaryOf(const QueryPlanStepPtr & step)
+{
+    return assert_cast<JoinStepLogical &>(*step).isJoinReorderBoundary();
+}
+
 bool roundTripBoundary(bool mark_as_boundary)
 {
-    auto restored = deserializeStep(serializeStep(*makeStep(mark_as_boundary)));
-    return assert_cast<JoinStepLogical &>(*restored).isJoinReorderBoundary();
+    return boundaryOf(deserializeStep(serializeStep(*makeStep(mark_as_boundary), boundary_step_version), boundary_step_version));
 }
 
 UInt8 flagsByte(const String & bytes)
@@ -194,25 +211,38 @@ TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, UnmarkedJoinStaysUnmarked)
 /// in it today.
 TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, BoundaryBitIsTheOnlyFlagInTheByte)
 {
-    EXPECT_EQ(flagsByte(serializeStep(*makeStep(/*mark_as_boundary=*/true))), 1);
-    EXPECT_EQ(flagsByte(serializeStep(*makeStep(/*mark_as_boundary=*/false))), 0);
+    EXPECT_EQ(flagsByte(serializeStep(*makeStep(/*mark_as_boundary=*/true), boundary_step_version)), 1);
+    EXPECT_EQ(flagsByte(serializeStep(*makeStep(/*mark_as_boundary=*/false), boundary_step_version)), 0);
 }
 
-/// Backward compatibility, which is what justifies not bumping DBMS_QUERY_PLAN_SERIALIZATION_VERSION:
-/// a sender that predates the bit writes the byte as a literal zero, and such a stream must restore a
-/// step that is not a boundary, i.e. exactly the behaviour those senders have.
-///
-/// The stream is produced by serializing a marked step and clearing its first byte, rather than by
-/// hand-writing the payload: the rest of the payload is a serialized `ActionsDAG` plus a
-/// `JoinOperator`, so hand-writing it would pin those two formats here as well.
-TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, OldFormatZeroFlagsByteYieldsFalse)
+/// A peer that reads this step at version 0 must see the bytes it read before the bit existed, so the
+/// writer leaves the bit unset there and the reader ignores it. Both halves are asserted because the
+/// two gates are independent: an arm covering only one of them passes with the other dropped.
+TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, StepVersionZeroNeitherWritesNorReadsTheBit)
 {
-    String bytes = serializeStep(*makeStep(/*mark_as_boundary=*/true));
-    ASSERT_EQ(flagsByte(bytes), 1);
+    const String v0 = serializeStep(*makeStep(/*mark_as_boundary=*/true), pre_boundary_step_version);
+    EXPECT_EQ(flagsByte(v0), 0);
+    EXPECT_FALSE(boundaryOf(deserializeStep(v0, pre_boundary_step_version)));
 
-    bytes[0] = 0;
-    auto restored = deserializeStep(bytes);
-    EXPECT_FALSE(assert_cast<JoinStepLogical &>(*restored).isJoinReorderBoundary());
+    const String v1 = serializeStep(*makeStep(/*mark_as_boundary=*/true), boundary_step_version);
+    ASSERT_EQ(flagsByte(v1), 1);
+    EXPECT_FALSE(boundaryOf(deserializeStep(v1, pre_boundary_step_version)));
+}
+
+/// The registry picks the step version from the plan version negotiated with the peer, for every
+/// instance of the step, and refuses a version it does not know rather than misparsing it. Plan
+/// version 19 is the newest released one, so a peer of that release must still get version 0.
+TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, JoinStepVersionFollowsThePlanVersion)
+{
+    QueryPlanStepRegistry registry;
+    registerJoinStep(registry);
+
+    EXPECT_EQ(registry.versionToWrite("Join", 19), 0u);
+    EXPECT_EQ(registry.versionToWrite("Join", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_REORDER_BOUNDARY), 1u);
+
+    EXPECT_NO_THROW(registry.checkVersionReadable("Join", 0));
+    EXPECT_NO_THROW(registry.checkVersionReadable("Join", 1));
+    EXPECT_THROW(registry.checkVersionReadable("Join", 2), Exception);
 }
 
 /// The node a reordered join leaves behind is assembled from the query graph, so it is not the step
@@ -230,8 +260,7 @@ TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, RebuiltRootKeepsTheBoundaryThrou
     ASSERT_TRUE(reordered_join);
     EXPECT_TRUE(reordered_join->isJoinReorderBoundary());
 
-    auto restored = deserializeStep(serializeStep(*reordered_join));
-    EXPECT_TRUE(assert_cast<JoinStepLogical &>(*restored).isJoinReorderBoundary());
+    EXPECT_TRUE(boundaryOf(deserializeStep(serializeStep(*reordered_join, boundary_step_version), boundary_step_version)));
 }
 
 /// The counterpart: reordering must not invent a boundary that the plan never carried.

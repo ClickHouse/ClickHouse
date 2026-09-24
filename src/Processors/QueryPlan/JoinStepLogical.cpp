@@ -2544,14 +2544,14 @@ static void serializeNodeList(
     }
 }
 
-/// A zero `flags` byte means "not a boundary", so a sender that does not set this bit and a receiver
-/// that does not know it both read today's behaviour, and the serialization version need not change.
+/// The `flags` byte belongs to every version of this step's layout and is always written, so only the
+/// meaning of this bit is gated on the step version, never the byte itself.
 static constexpr UInt8 JOIN_STEP_LOGICAL_FLAG_REORDER_BOUNDARY = 1;
 
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
-    if (join_reorder_boundary)
+    if (join_reorder_boundary && ctx.step_version >= 1)
         flags |= JOIN_STEP_LOGICAL_FLAG_REORDER_BOUNDARY;
     writeIntBinary(flags, ctx.out);
 
@@ -2637,7 +2637,8 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
-    step->join_reorder_boundary = (flags & JOIN_STEP_LOGICAL_FLAG_REORDER_BOUNDARY) != 0;
+    if (ctx.step_version >= 1)
+        step->join_reorder_boundary = (flags & JOIN_STEP_LOGICAL_FLAG_REORDER_BOUNDARY) != 0;
 
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS)
     {
@@ -2728,7 +2729,10 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    registry.registerStep(
+        "Join",
+        JoinStepLogical::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_REORDER_BOUNDARY}});
 }
 
 
