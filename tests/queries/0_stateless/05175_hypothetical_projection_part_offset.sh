@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-PIN="optimize_use_projections = 1, optimize_use_implicit_projections = 0, optimize_read_in_order = 1, prefer_optimize_projection = 0"
+PIN="optimize_use_projections = 1, optimize_use_implicit_projections = 0, optimize_read_in_order = 1"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_off_est; DROP TABLE IF EXISTS t_off_real;
