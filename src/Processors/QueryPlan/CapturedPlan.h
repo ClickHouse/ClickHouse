@@ -2,7 +2,7 @@
 
 #include <Common/JSONBuilder.h>
 #include <Processors/QueryPlan/PlanIndexStats.h>
-#include <Processors/QueryPlan/StepStatsModel.h>
+#include <Processors/QueryPlan/StepStatisticsModel.h>
 #include <base/types.h>
 
 #include <cstddef>
@@ -16,7 +16,7 @@ namespace DB
 {
 
 class QueryPlan;
-class StepStatsCollector;
+class StepStatisticsCollector;
 struct ExplainPlanOptions;
 struct PrettyNamesPerPlan;
 
@@ -48,7 +48,7 @@ std::string_view toString(SubPlanKind kind);
 ///
 /// Everything here is an owned value: nothing points into the plan, the pipeline or the steps, so
 /// a captured plan stays readable after all three are gone. That is the point of capturing at all
-/// -- `StepStatsCollector::analyzeStep` reads processors belonging to the pipeline and state held by
+/// -- `StepStatisticsCollector::analyzeStep` reads processors belonging to the pipeline and state held by
 /// the step, neither of which survives the query, while the document is written much later.
 struct CapturedStep
 {
@@ -74,36 +74,30 @@ struct CapturedStep
 };
 
 /// A plan that ran for the query but is not part of its plan tree.
-///
-/// An `IN (SELECT ...)` whose set is built during planning -- so that index analysis can use it --
-/// runs in a pipeline of its own before the main one exists, and nothing links it into the tree. Its
-/// rows still count towards the query, so a document that omitted it would describe a query reading
-/// sixty million rows without naming the table they came from.
 struct CapturedSubPlan
 {
     /// Identifies the subquery within the query. Every step that consumes its result carries the
-    /// same id (`IQueryPlanStep::getConsumedSubqueryIds`), which is how the document names the
-    /// consumers: the id is assigned once where the subquery is created and read at both ends,
-    /// never recomputed, so the two ends cannot disagree.
+    /// same id.
     size_t subquery_id = 0;
     SubPlanKind kind = SubPlanKind::Set;
 
+    /// Id of the root node
     String root_id;
     std::vector<CapturedStep> nodes;
 
-    /// Totals for the sub-plan's own pipeline. The execution time is the subquery's own: it ran
-    /// before the main pipeline existed, so it is not part of the query's execution time and the
-    /// two do not add up.
+    /// Totals for the sub-plan's own pipeline.
     std::optional<UInt64> execution_time_ns;
     std::optional<UInt64> max_threads;
 };
 
-/// A whole query, captured: its own steps, the sub-plans that ran for it, and the totals. Enough to
-/// write the document from, and nothing else.
+/// A whole query, captured: its own steps, the sub-plans that ran for it, and the totals.
 struct CapturedPlan
 {
+    /// Id of the root node
     String root_id;
+    /// Output columns
     std::vector<String> output;
+    /// Execution totals
     std::optional<UInt64> execution_time_ns;
     std::optional<UInt64> max_threads;
 
@@ -122,7 +116,7 @@ CapturedPlan capturePlan(
     const QueryPlan & plan,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatsCollector * steps_to_stats,
+    const StepStatisticsCollector * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names);
 
 /// The same for a sub-plan, whose pipeline is its own and finishes long before the query does.
@@ -132,7 +126,7 @@ CapturedSubPlan captureSubPlanData(
     size_t max_description_length,
     size_t subquery_id,
     SubPlanKind kind,
-    const StepStatsCollector * steps_to_stats,
+    const StepStatisticsCollector * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names);
 
 }

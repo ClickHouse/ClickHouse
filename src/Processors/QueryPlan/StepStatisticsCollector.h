@@ -6,7 +6,7 @@
 #include <vector>
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/StepStatsModel.h>
+#include <Processors/QueryPlan/StepStatisticsModel.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <base/types.h>
 #include <boost/container_hash/hash.hpp>
@@ -17,7 +17,7 @@ namespace DB
 
 /// Reads what a pipeline reported about each plan step, and derives the per-step values a
 /// consumer can render.
-class StepStatsCollector
+class StepStatisticsCollector
 {
     /// Everything collected from the pipeline is keyed by the step it belongs to. A raw pointer is
     /// safe here: the storage is built and consumed while the plan and its pipeline are alive, and
@@ -35,7 +35,7 @@ class StepStatsCollector
     using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
-    StepStatsCollector(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
+    StepStatisticsCollector(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
 
     /// Must run while the pipeline is still alive.
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
@@ -52,7 +52,7 @@ private:
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
     void computeJoinBranchCosts(const QueryPlan & plan);
 
-    StepStatsContext makeContext(const IQueryPlanStep * step) const;
+    StepStatisticsContext makeContext(const IQueryPlanStep * step) const;
 
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;

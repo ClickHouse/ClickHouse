@@ -1,6 +1,6 @@
 #include <type_traits>
 #include <variant>
-#include <Processors/QueryPlan/StepStatsPrinter.h>
+#include <Processors/QueryPlan/StepStatisticsASCIIPrinter.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
@@ -153,7 +153,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
 }
 
 }
-void StepStatsPrinter::print(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info)
+void StepStatisticsASCIIPrinter::print(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info)
 {
     for (const auto & group : step_data.step_metric_groups)
     {

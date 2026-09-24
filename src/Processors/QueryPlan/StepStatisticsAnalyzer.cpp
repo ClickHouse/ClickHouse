@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/StepStatsAnalyzer.h>
+#include <Processors/QueryPlan/StepStatisticsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -23,7 +23,7 @@ MetricGroup makeIOGroup(const StepIOStats & io)
 
 }
 
-AnalyzedStages buildAnalyzedStages(const StepStatsContext & context)
+AnalyzedStages buildAnalyzedStages(const StepStatisticsContext & context)
 {
     AnalyzedStages stages;
     for (size_t group : context.step->getStepGroups())
@@ -56,7 +56,7 @@ AnalyzedStages buildAnalyzedStages(const StepStatsContext & context)
     return stages;
 }
 
-AnalyzedStepData buildAnalyzedStepData(const StepStatsContext & context, StepAnalysisReport report)
+AnalyzedStepData buildAnalyzedStepData(const StepStatisticsContext & context, StepAnalysisReport report)
 {
     AnalyzedStepData result;
     result.stage_reports = buildAnalyzedStages(context);
@@ -69,12 +69,12 @@ AnalyzedStepData buildAnalyzedStepData(const StepStatsContext & context, StepAna
     return result;
 }
 
-AnalyzedStepData analyzeDefaultStep(const StepStatsContext & context, StepAnalysisReport report)
+AnalyzedStepData analyzeDefaultStep(const StepStatisticsContext & context, StepAnalysisReport report)
 {
     return buildAnalyzedStepData(context, std::move(report));
 }
 
-StepStatsAnalyzer getStepStatsAnalyzer(const IQueryPlanStep * step)
+StepStatisticsAnalyzer getStepStatisticsAnalyzer(const IQueryPlanStep * step)
 {
     if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step))
         return &analyzeJoinStep;

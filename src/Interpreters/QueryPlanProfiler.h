@@ -12,7 +12,7 @@ namespace DB
 
 class QueryPipeline;
 class QueryPlanProfiler;
-class StepStatsCollector;
+class StepStatisticsCollector;
 
 /// Records one plan that runs for a query without being part of its plan tree. For example:
 ///     - an `IN (SELECT ...)` whose set is built during planning so that index analysis can use it
@@ -49,7 +49,7 @@ private:
         SubPlanKind kind_);
 
     /// Serializes the sub-plan and gives it to the profiler, once.
-    void publish(const StepStatsCollector * stats) noexcept;
+    void publish(const StepStatisticsCollector * stats) noexcept;
 
     QueryPlanProfilerPtr profiler;
     const QueryPlan * plan = nullptr;
@@ -71,6 +71,10 @@ public:
 
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);
+
+    /// Starts recording a sub-plan, if the query in `context` is being profiled at all.
+    static SubPlanCapture captureSubPlan(
+        const ContextPtr & context, QueryPlan & sub_plan, size_t subquery_id, SubPlanKind kind);
 
     /// Records the plan the query is about to run, taking ownership of it and handing back
     /// a reference.
@@ -94,10 +98,6 @@ public:
     /// 0.00 ns as executed time.
     void instrumentPipeline(QueryPipeline & pipeline) const;
 
-    /// Starts recording a sub-plan, if the query in `context` is being profiled at all.
-    static SubPlanCapture captureSubPlan(
-        const ContextPtr & context, QueryPlan & sub_plan, size_t subquery_id, SubPlanKind kind);
-
 private:
     friend class SubPlanCapture;
 
@@ -114,7 +114,6 @@ private:
     }
 
     const size_t max_description_length;
-
 
     /// Set of fields the profiler needs to keep alive while the query is still being executed.
     /// Once the query finishes, or throws, these fields are cleared and only `captured` has

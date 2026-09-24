@@ -57,7 +57,7 @@ struct AnalyzedStepData
     bool label_stages = false;
 };
 
-struct StepStatsContext
+struct StepStatisticsContext
 {
     const IQueryPlanStep * step = nullptr;
     StepIOStats io;

@@ -90,10 +90,7 @@ public:
         return source_expression;
     }
 
-    /// Links this constant to the scalar subqueries that were executed to produce its value. They
-    /// are gone by planning time -- only the value is left -- so the ids have to be carried here
-    /// rather than recovered later.
-    ///
+    /// Links this constant to the scalar subqueries that were executed to produce its value.
     /// A list rather than one id because constant folding collapses whole expressions:
     /// `(SELECT a) + (SELECT b)` becomes a single constant made from two subqueries.
     void addScalarSubqueryId(size_t id) { scalar_subquery_ids.push_back(id); }

@@ -2,10 +2,10 @@
 #include <type_traits>
 #include <unordered_map>
 #include <Processors/Port.h>
-#include <Processors/QueryPlan/StepStatsCollector.h>
+#include <Processors/QueryPlan/StepStatisticsCollector.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
-#include <Processors/QueryPlan/StepStatsAnalyzer.h>
+#include <Processors/QueryPlan/StepStatisticsAnalyzer.h>
 #include <Processors/QueryPlan/JoinBranchCosts.h>
 #include <Processors/QueryPlan/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -21,7 +21,7 @@
 namespace DB
 {
 
-StepStatsCollector::StepStatsCollector(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
+StepStatisticsCollector::StepStatisticsCollector(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
@@ -33,7 +33,7 @@ StepStatsCollector::StepStatsCollector(const QueryPipeline & pipeline, const Que
     computeJoinBranchCosts(plan);
 }
 
-void StepStatsCollector::collectIOStats(const Processors & processors)
+void StepStatisticsCollector::collectIOStats(const Processors & processors)
 {
     auto crosses_step_boundary = [](const IProcessor & owner, const IProcessor & neighbour)
     {
@@ -79,7 +79,7 @@ void StepStatsCollector::collectIOStats(const Processors & processors)
     }
 }
 
-StepStatsCollector::ElapsedTimesPerStepGroup StepStatsCollector::collectTimingStats(const QueryPipeline & pipeline, const Processors & processors)
+StepStatisticsCollector::ElapsedTimesPerStepGroup StepStatisticsCollector::collectTimingStats(const QueryPipeline & pipeline, const Processors & processors)
 {
     ElapsedTimesPerStepGroup elapsed_per_step_group;
 
@@ -114,7 +114,7 @@ StepStatsCollector::ElapsedTimesPerStepGroup StepStatsCollector::collectTimingSt
     return elapsed_per_step_group;
 }
 
-void StepStatsCollector::computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group)
+void StepStatisticsCollector::computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group)
 {
     /// Compute the per-processor elapsed time distribution for each (step, group).
     /// The multiset is already sorted, so min/max are its bounds and the median is the middle element.
@@ -135,7 +135,7 @@ void StepStatsCollector::computeDistribution(const ElapsedTimesPerStepGroup & el
     }
 }
 
-void StepStatsCollector::computeJoinBranchCosts(const QueryPlan & plan)
+void StepStatisticsCollector::computeJoinBranchCosts(const QueryPlan & plan)
 {
     CardinalityByJoinStep cardinality_by_join_step;
     for (const auto & [step, io_stats] : stats_by_step)
@@ -163,9 +163,9 @@ void StepStatsCollector::computeJoinBranchCosts(const QueryPlan & plan)
     }
 }
 
-StepStatsContext StepStatsCollector::makeContext(const IQueryPlanStep * step) const
+StepStatisticsContext StepStatisticsCollector::makeContext(const IQueryPlanStep * step) const
 {
-    StepStatsContext context;
+    StepStatisticsContext context;
     context.step = step;
     context.execution_query_time_ns = execution_query_time_ns;
     context.max_num_threads_per_query = max_num_threads_per_query;
@@ -180,7 +180,7 @@ StepStatsContext StepStatsCollector::makeContext(const IQueryPlanStep * step) co
     return context;
 }
 
-AnalyzedStepData StepStatsCollector::analyzeStep(const IQueryPlanStep * step) const
+AnalyzedStepData StepStatisticsCollector::analyzeStep(const IQueryPlanStep * step) const
 {
     StepAnalysisReport raw_report;
     if (const auto report_it = join_raw_reports.find(step); report_it != join_raw_reports.end())
@@ -197,7 +197,7 @@ AnalyzedStepData StepStatsCollector::analyzeStep(const IQueryPlanStep * step) co
     }
 
     auto context_for_step = makeContext(step);
-    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step);
+    StepStatisticsAnalyzer step_stats_generator = getStepStatisticsAnalyzer(step);
 
     /// Use the service of a generator, which takes the context (e.g. i/o, total time)
     /// some internal raw metrics, which are specific for each step,  that

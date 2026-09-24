@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/QueryPlanToJSON.h>
 
 #include <Processors/QueryPlan/PlanIndexStats.h>
-#include <Processors/QueryPlan/StepStatsJSONPrinter.h>
+#include <Processors/QueryPlan/StepStatisticsJSONPrinter.h>
 #include <base/types.h>
 
 #include <memory>
@@ -32,7 +32,7 @@ JSONBuilder::ItemPtr capturedStepToJSON(const CapturedStep & step)
     map->add("Details", std::move(details));
 
     if (step.statistics)
-        map->add("Statistics", StepStatsJSONPrinter::toJSON(*step.statistics));
+        map->add("Statistics", StepStatisticsJSONPrinter::toJSON(*step.statistics));
 
     if (auto indexes = indexStatsToJSON(step.indexes))
         map->add("Indexes", std::move(indexes));

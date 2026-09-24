@@ -4,7 +4,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/StepStatsCollector.h>
+#include <Processors/QueryPlan/StepStatisticsCollector.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/types.h>
 
@@ -74,7 +74,7 @@ CapturedStep captureStep(
     const IQueryPlanStep & step,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatsCollector * steps_to_stats,
+    const StepStatisticsCollector * steps_to_stats,
     const PrettyNames * plan_pretty_names)
 {
     CapturedStep captured;
@@ -126,7 +126,7 @@ std::vector<CapturedStep> captureNodes(
     const QueryPlan & plan,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatsCollector * steps_to_stats,
+    const StepStatisticsCollector * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names)
 {
     struct Frame
@@ -196,7 +196,7 @@ CapturedSubPlan captureSubPlanData(
     size_t max_description_length,
     size_t subquery_id,
     SubPlanKind kind,
-    const StepStatsCollector * steps_to_stats,
+    const StepStatisticsCollector * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names)
 {
     CapturedSubPlan result;
@@ -226,7 +226,7 @@ CapturedPlan capturePlan(
     const QueryPlan & plan,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatsCollector * steps_to_stats,
+    const StepStatisticsCollector * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names)
 {
     CapturedPlan result;

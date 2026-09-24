@@ -117,8 +117,7 @@ public:
         bool is_masked_secret = false;
         /// Ids of the scalar subqueries this constant is made of. A list because folding
         /// collapses expressions: `(SELECT a) + (SELECT b)` is one constant from two subqueries.
-        /// Living on the node means clone, split and merge carry it for free. Not part of the node
-        /// identity, so it is intentionally excluded from `updateHash`.
+        /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
         std::vector<size_t> scalar_subquery_ids;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;

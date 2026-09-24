@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/StepStatsJSONPrinter.h>
+#include <Processors/QueryPlan/StepStatisticsJSONPrinter.h>
 
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <base/types.h>
@@ -117,7 +117,7 @@ std::unique_ptr<JSONBuilder::JSONMap> metricsToJSON(const MetricList & metrics)
 
 }
 
-std::unique_ptr<JSONBuilder::JSONMap> StepStatsJSONPrinter::toJSON(const AnalyzedStepData & step_data)
+std::unique_ptr<JSONBuilder::JSONMap> StepStatisticsJSONPrinter::toJSON(const AnalyzedStepData & step_data)
 {
     auto map = std::make_unique<JSONBuilder::JSONMap>();
 

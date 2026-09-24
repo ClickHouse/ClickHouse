@@ -67,8 +67,7 @@ namespace
 {
 
 /// Ids of every scalar subquery whose folded value appears anywhere under `node`. Recurses through
-/// a constant's `source_expression` as well as its children, because folding nests: the argument of
-/// an outer fold is itself a constant that replaced an expression.
+/// a constant's `source_expression` as well as its children.
 void collectScalarSubqueryIdsImpl(const QueryTreeNodePtr & node, std::vector<size_t> & ids)
 {
     if (!node)
@@ -3466,8 +3465,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 constant_node = std::make_shared<ConstantNode>(ConstantValue{ column_const->getPtr(), std::move(result_type) }, node, is_deterministic);
 
                 /// Folding collapses the expression, and with it any scalar subquery whose value
-                /// went into it -- `(SELECT a) + (SELECT b)` becomes one constant. Carry their ids
-                /// onto the result so the plan can still say which step reads them.
+                /// went into it. For example, `(SELECT a) + (SELECT b)` becomes one constant.
+                /// So, carry their ids onto the result so the plan can still say which step reads them.
                 collectScalarSubqueryIds(node, *constant_node);
             }
         }

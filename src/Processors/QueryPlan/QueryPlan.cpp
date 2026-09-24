@@ -32,8 +32,8 @@
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/StepStatsPrinter.h>
-#include <Processors/QueryPlan/StepStatsCollector.h>
+#include <Processors/QueryPlan/StepStatisticsASCIIPrinter.h>
+#include <Processors/QueryPlan/StepStatisticsCollector.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
@@ -423,7 +423,7 @@ static void explainStep(
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatsCollector * steps_to_stats = nullptr)
+    const StepStatisticsCollector * steps_to_stats = nullptr)
 {
 
     settings.out << settings.header_prefix << step.getName();
@@ -549,7 +549,7 @@ static void explainStep(
         step.describeDistributedPlan(settings, options);
 
     if (steps_to_stats)
-        StepStatsPrinter::print(steps_to_stats->analyzeStep(&step), settings.out, prefix, options.processors_profile);
+        StepStatisticsASCIIPrinter::print(steps_to_stats->analyzeStep(&step), settings.out, prefix, options.processors_profile);
 }
 
 std::string debugExplainStep(IQueryPlanStep & step)
@@ -639,7 +639,7 @@ void QueryPlan::explainPlan(
     const PrettyNamesPerPlan * precomputed_pretty_names,
     const std::string & parent_tree_prefix,
     bool is_last_child_plan,
-    StepStatsCollector * steps_to_stats) const
+    StepStatisticsCollector * steps_to_stats) const
 {
     checkInitialized();
 

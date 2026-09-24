@@ -156,8 +156,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         scalar_block = scalars_cache.at(node_with_hash);
 
         /// Nothing ran here, because this query computed the value earlier, and the id it was given
-        /// then is what links the step reading it to the sub-plan that produced it -- without
-        /// which a subquery used twice names only one of its readers in `query_plan`.
+        /// then is what links the step reading it to the sub-plan that produced it.
         if (const auto it = scalar_subquery_to_subquery_id.find(node_with_hash); it != scalar_subquery_to_subquery_id.end())
             scalar_subquery_id = it->second;
     }
@@ -302,9 +301,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 }
             }
 
-            /// This subquery runs here, during analysis, and its result is folded into the outer
-            /// query as a literal -- the plan that is later stored keeps no trace of it at all, not
-            /// even a reference, while its rows still count towards the query.
+            /// The subquery runs here, during analysis, and its result is folded into the outer
+            /// query as a literal.
             SubPlanCapture sub_plan_capture;
 
             if (!skip_execution_for_exists)
@@ -313,10 +311,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 BuildQueryPipelineSettings build_pipeline_settings(subquery_context);
 
                 query_plan.setConcurrencyControl(subquery_context->getSettingsRef()[Setting::use_concurrency_control]);
-
-                /// Optimized before the capture and then built without optimizing again, as the
-                /// interpreter does for the query's own plan: optimization rewrites the plan, so a
-                /// capture taken before it would describe a shape that never ran.
                 query_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
                 query_plan.optimize(optimization_settings);
 
@@ -348,7 +342,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 {
                 }
 
-                /// While the pipeline is still alive; the statistics are read from its processors.
                 sub_plan_capture.finish(io.pipeline);
             }
 
