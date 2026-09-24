@@ -279,16 +279,13 @@ void Set::appendSetElements(SetKeyColumns & holder)
                         keys_size, holder.key_columns.size(), set_elements.size());
 
     /// The collected elements outlive a failed append: a JOIN runtime filter keeps its `Set` and reads
-    /// the elements back when the build-side filters are merged. Take checkpoints of every element
-    /// column before any modification, so a throw in the middle of the loop below cannot leave a column
-    /// whose nested data and offsets disagree, nor leave the element columns at different lengths.
+    /// the elements back when the build-side filters are merged.
     ColumnCheckpoints checkpoints;
     checkpoints.reserve(keys_size);
     for (const auto & column : set_elements)
         checkpoints.push_back(column->getCheckpoint());
 
-    /// An empty element column is replaced by the filtered column instead of being appended to, so its
-    /// checkpoint describes a different object; keep the replaced column to restore it instead.
+    /// A checkpoint restores only the column it was taken from, so a replaced element needs the original kept.
     MutableColumns replaced_columns(keys_size);
 
     size_t rows = holder.key_columns.at(0)->size();
@@ -311,8 +308,7 @@ void Set::appendSetElements(SetKeyColumns & holder)
     }
     catch (...)
     {
-        /// Ignore memory limits while rolling back: leaving inconsistent columns behind is worse than a
-        /// temporary overshoot. Log first, so the original exception keeps its context.
+        /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
         LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
         tryLogCurrentException(log, "Caught exception while collecting set elements, rolling back...");
 
