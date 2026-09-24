@@ -10,6 +10,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 using namespace DB;
 
 namespace
@@ -155,6 +157,28 @@ TEST(ParserStreamSettings, FormatRoundTripPreservesCursor)
     const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
     ASSERT_TRUE(stream_ast->cursor);
     ASSERT_EQ(cursorTreeToMap(stream_ast->cursor).size(), 1u);
+}
+
+TEST(ParserStreamSettings, CursorAtDepthLimitFormatsAndHashes)
+{
+    /// Formatting and tree hashing recurse once per cursor level, so the depth `buildCursorTree`
+    /// accepts has to be a depth they both survive.
+    auto at_depth_limit = [](Int64 leaf)
+    {
+        std::string key;
+        for (size_t level = 1; level < MAX_CURSOR_TREE_DEPTH; ++level)
+            key += "a.";
+        return parse("SELECT * FROM t STREAM CURSOR {'" + key + "z': " + std::to_string(leaf) + "}");
+    };
+
+    const auto ast = at_depth_limit(10);
+
+    /// One brace per level, so formatting that stopped early cannot pass.
+    const auto formatted = format(ast);
+    ASSERT_EQ(static_cast<size_t>(std::ranges::count(formatted, '{')), MAX_CURSOR_TREE_DEPTH);
+
+    /// The leaf sits at the deepest level, so it only reaches the hash if the walk got there.
+    ASSERT_NE(ast->getTreeHash(/*ignore_aliases=*/ false), at_depth_limit(11)->getTreeHash(/*ignore_aliases=*/ false));
 }
 
 TEST(ParserStreamSettings, StreamAfterSampleIsAccepted)

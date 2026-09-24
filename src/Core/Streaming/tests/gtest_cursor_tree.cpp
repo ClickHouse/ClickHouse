@@ -76,7 +76,7 @@ TEST(CursorTree, BoundsTheDepthOfADottedKey)
 
     ASSERT_EQ(depth_of(root.get()), MAX_CURSOR_TREE_DEPTH);
 
-    /// At the limit every recursive consumer must still complete, not only the construction above.
+    /// At the limit the consumers below must still complete, not only the construction above.
     ASSERT_EQ(cursorTreeToMap(root).size(), 1u);
 
     auto cloned = root->clone();
