@@ -76,14 +76,13 @@ public:
 
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
-    /* (former) Implementation of ISimpleTransform.
-     */
-    void appendChunk(Chunk & chunk) /*override*/;
-
     /* Implementation of IProcessor;
      */
     Status prepare() override;
     void work() override;
+    void addInputBlock(Chunk chunk);
+    void computeReadyRows();
+    void startNextPartition();
     void releaseUnusedBlocks();
 
     /* Implementation details.
