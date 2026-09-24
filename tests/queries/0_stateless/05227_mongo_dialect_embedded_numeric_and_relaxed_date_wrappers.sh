@@ -38,8 +38,10 @@ run 'db.numeric_wrappers.insertOne({"id": 4, "events": [{"n": {"$numberInt": "50
 run 'db.numeric_wrappers.insertOne({"id": 4, "events": [{"d": {"$numberDouble": "Infinity"}}]});'
 run 'db.numeric_wrappers.insertOne({"id": 4, "events": [{"when": {"$date": "not a date"}}]});'
 
+# The dates are shown in UTC, the zone they were written in. The `$push` is a mutation, which the
+# server runs in its own time zone rather than the session's, and still stores the same instants.
 echo '-- the stored documents'
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} --session_timezone UTC --query "
     SELECT id, arrayMap(event -> JSONAllPaths(event), events) FROM numeric_wrappers ORDER BY id;
     SELECT id, arrayMap(event -> JSONAllPathsWithTypes(event), events) FROM numeric_wrappers ORDER BY id;
     SELECT id, events FROM numeric_wrappers ORDER BY id FORMAT JSONEachRow;

@@ -56,7 +56,8 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
 /** Replaces every Extended JSON wrapper inside a value with the value it wraps, so that a wrapper
   * never reaches a stored document as a field whose name starts with `$`. The type the wrapper
   * named is dropped: a value this deep lands in a `JSON` or a `Dynamic` column, which keeps the
-  * serialized form.
+  * serialized form. A date is written with the `Z` suffix, so that the instant does not depend on
+  * the time zone of whoever infers a `DateTime64` from the text.
   */
 rapidjson::Value convertMongoExtendedJSONWrappersDeep(
     const rapidjson::Value & value, std::string_view field_name, rapidjson::Document::AllocatorType & allocator);

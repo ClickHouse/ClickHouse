@@ -340,7 +340,19 @@ rapidjson::Value convertMongoExtendedJSONWrappersDeep(
     const rapidjson::Value & value, std::string_view field_name, rapidjson::Document::AllocatorType & allocator)
 {
     if (isMongoExtendedJSONWrapper(value))
-        return convertMongoExtendedJSONWrapper(value, field_name, allocator).second;
+    {
+        auto [type, converted] = convertMongoExtendedJSONWrapper(value, field_name, allocator);
+        /// A date this deep has no column type to pin its time zone: the `JSON` type infers a
+        /// `DateTime64` from the text, in the time zone of whoever parses it - the session of an
+        /// insert, but the server for the mutation of an update, so the zone-less text of the same
+        /// instant would be stored hours apart. The `Z` suffix makes the text name the instant.
+        if (type.starts_with("DateTime64"))
+        {
+            std::string zoned = std::string(stringView(converted)) + "Z";
+            converted.SetString(zoned.c_str(), static_cast<rapidjson::SizeType>(zoned.size()), allocator);
+        }
+        return std::move(converted);
+    }
 
     if (value.IsObject())
     {
