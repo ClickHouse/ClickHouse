@@ -1720,7 +1720,11 @@ void WindowTransform::work()
         chunk = std::exchange(pending_input, std::nullopt).value();
 
     appendChunk(chunk);
+    releaseUnusedBlocks();
+}
 
+void WindowTransform::releaseUnusedBlocks()
+{
     // We don't really have to keep the entire partition, and it can be big, so
     // we want to drop the starting blocks to save memory. We can drop the old
     // blocks if we already returned them as output, and the frame and the

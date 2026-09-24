@@ -84,6 +84,7 @@ public:
      */
     Status prepare() override;
     void work() override;
+    void releaseUnusedBlocks();
 
     /* Implementation details.
      */
