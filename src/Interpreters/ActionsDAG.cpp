@@ -4205,26 +4205,47 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
         NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
+        FunctionOverloadResolverPtr func_builder_and
+            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+
         const Node * rejected = nullptr;
         bool rejected_is_surviving_and = false;
         if (new_children.size() == 1)
             rejected = new_children.front();
         else
         {
-            FunctionOverloadResolverPtr func_builder_and
-                = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-            rejected = &addFunction(func_builder_and, std::move(new_children), {});
+            rejected = &addFunction(func_builder_and, new_children, {});
             rejected_is_surviving_and = true;
         }
 
         /// A surviving `and` already yields 0 or 1, so only a declared type it does not already
-        /// carry needs a node above it; by name, because `Bool` equals `UInt8` but prints `true`.
+        /// carry needs restoring; by name, because `Bool` equals `UInt8` but prints `true`.
         const bool restores_declared_type = !rejected_is_surviving_and
             || rejected->result_type->getName() != predicate->result_type->getName();
         if (!removes_filter && restores_declared_type)
         {
-            const auto * converted = &addBooleanCondition(*rejected, predicate->result_type, nullptr);
-            rejected_is_surviving_and &= converted == rejected;
+            const Node * converted = nullptr;
+            if (rejected_is_surviving_and)
+            {
+                /// A node above the conjunction hides all of its arguments from a later split, so one
+                /// argument carries the type; by name, because the rejected conjuncts arrive unordered.
+                NodeRawConstPtrs retyped_children = new_children;
+                size_t carrier = 0;
+                for (size_t i = 1; i < retyped_children.size(); ++i)
+                    if (retyped_children[i]->result_name > retyped_children[carrier]->result_name)
+                        carrier = i;
+                retyped_children[carrier] = &addBooleanCondition(*retyped_children[carrier], predicate->result_type, nullptr);
+
+                const auto * retyped = &addFunction(func_builder_and, std::move(retyped_children), {});
+                if (retyped->result_type->getName() == predicate->result_type->getName())
+                    converted = retyped;
+            }
+
+            if (!converted)
+            {
+                converted = &addBooleanCondition(*rejected, predicate->result_type, nullptr);
+                rejected_is_surviving_and &= converted == rejected;
+            }
             rejected = converted;
         }
 

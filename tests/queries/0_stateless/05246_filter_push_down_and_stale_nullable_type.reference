@@ -15,6 +15,10 @@ P6 plain	1	Nullable(UInt8)	31
 P7 plan	1
 P8 plan	1
 P8 plain	0
+P9 plan	1	0
+P9 plain	0	1
+P9b plan	1	Nullable(UInt8)	3
+P9b plain	1	Nullable(UInt8)	3
 N1 dist	50
 N1 plain	50
 N1b dist	1	Nullable(UInt8)	50

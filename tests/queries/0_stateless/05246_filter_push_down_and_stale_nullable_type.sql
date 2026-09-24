@@ -166,6 +166,59 @@ FROM (
              query_plan_propagate_predicate_across_join = 0,
              enable_join_runtime_filters = 0, query_plan_merge_filters = 1);
 
+-- P9: P8's shape with the pushed-out conjunct Nullable, so the surviving conjunction does not carry
+-- the declared type and it has to be restored. It has to be restored on one argument of the
+-- conjunction rather than above it, or `j.m > 3` no longer reaches PREWHERE once the join becomes an
+-- inner one. Same twin and the same pinned settings as P8, and the second counter again excludes
+-- PREWHERE lines so that the two counters stay disjoint.
+SELECT 'P9 plan',
+       countIf(explain ILIKE '%Prewhere filter column:%m > 3%'),
+       countIf(explain ILIKE '%Filter column:%m > 3%' AND explain NOT ILIKE '%Prewhere%')
+FROM (
+    EXPLAIN actions = 1
+    SELECT c, count() FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
+    WHERE (l.n > 0 AND j.m > 3 AND l.number + j.m < 15) AS c
+    GROUP BY c
+    SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 1,
+             query_plan_convert_outer_join_to_inner_join = 1,
+             query_plan_merge_filter_into_join_condition = 0,
+             query_plan_propagate_predicate_across_join = 0,
+             enable_join_runtime_filters = 0, query_plan_merge_filters = 1);
+SELECT 'P9 plain',
+       countIf(explain ILIKE '%Prewhere filter column:%m > 3%'),
+       countIf(explain ILIKE '%Filter column:%m > 3%' AND explain NOT ILIKE '%Prewhere%')
+FROM (
+    EXPLAIN actions = 1
+    SELECT c, count() FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
+    WHERE (l.n > 0 AND j.m > 3 AND l.number + j.m < 15) AS c
+    GROUP BY c
+    SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 0,
+             query_plan_convert_outer_join_to_inner_join = 1,
+             query_plan_merge_filter_into_join_condition = 0,
+             query_plan_propagate_predicate_across_join = 0,
+             enable_join_runtime_filters = 0, query_plan_merge_filters = 1);
+
+-- P9b: P9's condition is rewritten twice before it reaches that plan, once when the declared type
+-- moves onto an argument and once when a single argument is left, so read its values and type back.
+SELECT 'P9b plan', c, toTypeName(c), count()
+FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
+WHERE (l.n > 0 AND j.m > 3 AND l.number + j.m < 15) AS c
+GROUP BY c ORDER BY c
+SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 1,
+         query_plan_convert_outer_join_to_inner_join = 1,
+         query_plan_merge_filter_into_join_condition = 0,
+         query_plan_propagate_predicate_across_join = 0,
+         enable_join_runtime_filters = 0, query_plan_merge_filters = 1;
+SELECT 'P9b plain', c, toTypeName(c), count()
+FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
+WHERE (l.n > 0 AND j.m > 3 AND l.number + j.m < 15) AS c
+GROUP BY c ORDER BY c
+SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 0,
+         query_plan_convert_outer_join_to_inner_join = 1,
+         query_plan_merge_filter_into_join_condition = 0,
+         query_plan_propagate_predicate_across_join = 0,
+         enable_join_runtime_filters = 0, query_plan_merge_filters = 1;
+
 -- N1: the Nullable conjunct is joint, so it stays and the surviving `and` is Nullable(UInt8) for
 -- real. The declared type must be left alone when it did not change.
 SELECT 'N1 dist', count()
