@@ -3462,9 +3462,11 @@ bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
-/// Whether a numeric conversion `from` -> `to` can be JIT-compiled. A float source is refused for an
-/// integer or `Decimal` destination, because `fptosi` / `fptoui` have no defined result outside the
-/// destination range. A `Bool` destination stays allowed, it is compiled through `nativeBoolCast`.
+/// Whether a numeric conversion `from` -> `to` can be JIT-compiled. Compiled code cannot raise, so only
+/// conversions whose interpreted form has no range check are compilable: number to number, which wraps
+/// interpreted too; `Decimal` to float, or to a signed integer at least as wide as its storage (the
+/// `convertToImpl` arms that never throw); and any source to `Bool`, a raw comparison with zero. A
+/// `Decimal` destination range-checks `value * 10^scale`; `fptosi` / `fptoui` are undefined out of range.
 static bool isCompilableNumericConversion(const IDataType * from, const IDataType * to)
 {
     return castBothTypes(from, to, [](const auto & left, const auto & right)
@@ -3481,10 +3483,17 @@ static bool isCompilableNumericConversion(const IDataType * from, const IDataTyp
                     return isBool(right.getPtr());
                 return true;
             }
-            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                return !is_floating_point<typename LeftDataType::FieldType>;
             else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                return true;
+            {
+                using RightFieldType = typename RightDataType::FieldType;
+                if (isBool(right.getPtr()))
+                    return true;
+                if constexpr (is_floating_point<RightFieldType>)
+                    return true;
+                else
+                    return !is_unsigned_v<RightFieldType>
+                        && sizeof(RightFieldType) >= sizeof(NativeType<typename LeftDataType::FieldType>);
+            }
         }
         return false;
     });
@@ -3531,6 +3540,9 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
                 }
                 else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                 {
+                    /// Interpreted, this conversion range-checks `value * 10^scale`; the lowerings below do not.
+                    chassert(false, "Number to Decimal must not be JIT-compiled");
+
                     auto scale = right.getScale();
                     auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                     if constexpr (std::is_floating_point_v<LeftFieldType>)
@@ -3654,6 +3666,9 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
                 }
                 else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                 {
+                    /// Interpreted, this conversion range-checks `value * 10^scale`; the lowerings below do not.
+                    chassert(false, "Number to Decimal must not be JIT-compiled");
+
                     auto scale = right.getScale();
                     auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                     if constexpr (std::is_floating_point_v<LeftFieldType>)
