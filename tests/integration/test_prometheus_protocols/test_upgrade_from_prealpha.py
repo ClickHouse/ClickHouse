@@ -215,7 +215,7 @@ def send_bar_via_remote_write():
 # Checks that both `foo` and `bar` metrics exist.
 def check_foo_and_bar():
     assert node.query(
-        "SELECT metric_name, tags, time_series FROM prometheus ORDER BY metric_name"
+        "SELECT metric_name, tags, samples FROM prometheus ORDER BY metric_name"
     ) == TSV([
         ["bar", "{'__name__':'bar','job':'prometheus'}", "[('1970-01-01 00:33:20.000',20)]"],
         ["foo", "{'__name__':'foo','job':'prometheus'}", "[('1970-01-01 00:16:40.000',10)]"],

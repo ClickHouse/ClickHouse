@@ -320,7 +320,7 @@ def test_range_query_native_plan_routing():
         },
         expect_error=True,
     )
-    assert "exceeded its limit of 1 output groups" in parallel_error
+    assert "exceeded its query-wide limit of 1 output groups" in parallel_error
 
 
 def test_query_lookback_delta():
