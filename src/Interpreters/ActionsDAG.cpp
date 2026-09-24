@@ -4218,8 +4218,11 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             rejected_is_surviving_and = true;
         }
 
-        /// Preserve the original type if the column is needed in the result.
-        if (!removes_filter)
+        /// A surviving `and` already yields 0 or 1, so only a declared type it does not already
+        /// carry needs a node above it; by name, because `Bool` equals `UInt8` but prints `true`.
+        const bool restores_declared_type = !rejected_is_surviving_and
+            || rejected->result_type->getName() != predicate->result_type->getName();
+        if (!removes_filter && restores_declared_type)
         {
             const auto * converted = &addBooleanCondition(*rejected, predicate->result_type, nullptr);
             rejected_is_surviving_and &= converted == rejected;

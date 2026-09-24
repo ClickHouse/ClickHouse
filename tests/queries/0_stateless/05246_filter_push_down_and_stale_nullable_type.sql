@@ -37,10 +37,11 @@ SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, query_plan_
 -- passing if the optimizer ever stopped splitting this shape and the retyping under test stopped
 -- running. This row pins the split itself: the Nullable conjunct must leave the filter above the
 -- join and reach PREWHERE. The `plain` twin is the same query with push-down off, so the two lines
--- together show the row can report either outcome.
+-- together show the row can report either outcome. The second counter excludes PREWHERE lines
+-- explicitly, so the two counters stay disjoint whatever the plan printer does to its spacing.
 SELECT 'P0 plan',
        countIf(explain ILIKE '%Prewhere filter column:%n > 0%'),
-       countIf(explain ILIKE '%Filter column: n > 0%')
+       countIf(explain ILIKE '%Filter column: n > 0%' AND explain NOT ILIKE '%Prewhere%')
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM t_and_type_l AS l CROSS JOIN t_and_type_r AS r
@@ -48,7 +49,7 @@ FROM (
     SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 1);
 SELECT 'P0 plain',
        countIf(explain ILIKE '%Prewhere filter column:%n > 0%'),
-       countIf(explain ILIKE '%Filter column: n > 0%')
+       countIf(explain ILIKE '%Filter column: n > 0%' AND explain NOT ILIKE '%Prewhere%')
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM t_and_type_l AS l CROSS JOIN t_and_type_r AS r
@@ -134,6 +135,36 @@ FROM (
              query_plan_merge_filter_into_join_condition = 0,
              query_plan_propagate_predicate_across_join = 0,
              enable_join_runtime_filters = 0);
+
+-- P8: the same second split, with the filter column retained and every conjunct non-nullable, so
+-- the surviving conjunction already carries the type the whole condition was declared with. Nothing
+-- has to be restored here, and so nothing may be placed above the conjunction either: `j.m > 3` must
+-- still reach PREWHERE. The `plain` twin differs in `query_plan_filter_push_down` alone, so the two
+-- lines together show the row can report either outcome. Unlike P7 this shape reaches the second
+-- split only once the two filters are merged, and a join runtime filter is a second route to the
+-- same PREWHERE line, so both rows pin those too, along with P7's other settings.
+SELECT 'P8 plan', countIf(explain ILIKE '%Prewhere filter column:%m > 3%')
+FROM (
+    EXPLAIN actions = 1
+    SELECT c, count() FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
+    WHERE (l.number > 0 AND j.m > 3 AND l.number + j.m < 15) AS c
+    GROUP BY c
+    SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 1,
+             query_plan_convert_outer_join_to_inner_join = 1,
+             query_plan_merge_filter_into_join_condition = 0,
+             query_plan_propagate_predicate_across_join = 0,
+             enable_join_runtime_filters = 0, query_plan_merge_filters = 1);
+SELECT 'P8 plain', countIf(explain ILIKE '%Prewhere filter column:%m > 3%')
+FROM (
+    EXPLAIN actions = 1
+    SELECT c, count() FROM t_and_type_l AS l LEFT JOIN t_and_type_j AS j ON l.number = j.number
+    WHERE (l.number > 0 AND j.m > 3 AND l.number + j.m < 15) AS c
+    GROUP BY c
+    SETTINGS make_distributed_plan = 0, query_plan_filter_push_down = 0,
+             query_plan_convert_outer_join_to_inner_join = 1,
+             query_plan_merge_filter_into_join_condition = 0,
+             query_plan_propagate_predicate_across_join = 0,
+             enable_join_runtime_filters = 0, query_plan_merge_filters = 1);
 
 -- N1: the Nullable conjunct is joint, so it stays and the surviving `and` is Nullable(UInt8) for
 -- real. The declared type must be left alone when it did not change.
