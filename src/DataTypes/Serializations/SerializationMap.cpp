@@ -1190,9 +1190,29 @@ void collectMapFromBucketsWithOrderImpl(
     size_t num_rows = map_buckets[0]->size();
     map_offsets.reserve(map_offsets.size() + num_rows);
 
+    /// For `LowCardinality`, `insertFrom` from another dictionary is a hash table lookup for every element.
+    /// Such columns are restored with a single permutation of the concatenated buckets instead, which
+    /// inserts every dictionary once. For other columns, inserting the elements one by one is faster.
+    const bool reorder_keys = map_keys_column.lowCardinality();
+    const bool reorder_values = map_values_column.lowCardinality();
+    std::vector<size_t> bucket_starts(map_buckets.size());
+    std::vector<size_t> bucket_sizes(map_buckets.size());
+    size_t total_elements = 0;
+    for (size_t bucket = 0; bucket != map_buckets.size(); ++bucket)
+    {
+        bucket_starts[bucket] = total_elements;
+        bucket_sizes[bucket] = num_rows ? (*map_offsets_buckets[bucket])[num_rows - 1] : 0;
+        total_elements += bucket_sizes[bucket];
+    }
+
     const auto & bucket_index_data = bucket_index_col.getData();
     std::vector<size_t> bucket_positions(map_buckets.size());
     size_t bucket_index_offset = 0;
+    IColumn::Permutation permutation;
+    if (reorder_keys || reorder_values)
+        permutation.reserve(total_elements);
+    const size_t elements_before = map_offsets.empty() ? 0 : map_offsets.back();
+    size_t num_elements = 0;
 
     for (size_t i = 0; i != num_rows; ++i)
     {
@@ -1211,12 +1231,39 @@ void collectMapFromBucketsWithOrderImpl(
             if (bucket_idx >= map_buckets.size())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index {} is out of range, total buckets: {}", bucket_idx, map_buckets.size());
             size_t pos = bucket_positions[bucket_idx]++;
-            map_keys_column.insertFrom(*map_keys_buckets[bucket_idx], pos);
-            map_values_column.insertFrom(*map_values_buckets[bucket_idx], pos);
+            if (!reorder_keys)
+                map_keys_column.insertFrom(*map_keys_buckets[bucket_idx], pos);
+            if (!reorder_values)
+                map_values_column.insertFrom(*map_values_buckets[bucket_idx], pos);
+            if (reorder_keys || reorder_values)
+                permutation.push_back(bucket_starts[bucket_idx] + pos);
         }
 
-        map_offsets.push_back(map_keys_column.size());
+        num_elements += total_size;
+        map_offsets.push_back(elements_before + num_elements);
     }
+
+    if (!reorder_keys && !reorder_values)
+        return;
+
+    if (num_elements != total_elements)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index has {} elements, but buckets have {}", num_elements, total_elements);
+
+    if (total_elements == 0)
+        return;
+
+    auto reorder = [&](IColumn & result, const VectorWithMemoryTracking<ColumnPtr> & buckets)
+    {
+        auto all_elements = result.cloneEmpty();
+        all_elements->prepareForSquashing(buckets, 1);
+        for (size_t bucket = 0; bucket != buckets.size(); ++bucket)
+            all_elements->insertRangeFrom(*buckets[bucket], 0, bucket_sizes[bucket]);
+        result.insertRangeFrom(*all_elements->permute(permutation, 0), 0, total_elements);
+    };
+    if (reorder_keys)
+        reorder(map_keys_column, map_keys_buckets);
+    if (reorder_values)
+        reorder(map_values_column, map_values_buckets);
 }
 
 /// Dispatch wrapper for collectMapFromBucketsWithOrderImpl — dispatches on the index column type.
