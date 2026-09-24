@@ -1,0 +1,39 @@
+--- listing, the first source wins
+only2	Alias
+t	Alias
+1
+2
+3
+42
+2
+--- insert goes to the source table
+10
+--- create queries
+CREATE DATABASE db_ov\nENGINE = Overlay(\'db_src1\', \'db_src2\')
+CREATE TABLE db_ov.t\nENGINE = Alias(\'db_src1\', \'t\')
+x	UInt32					
+--- DDL inside the overlay database is not supported
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+4
+--- wrong arguments
+BAD_ARGUMENTS
+UNKNOWN_DATABASE
+BAD_ARGUMENTS
+--- sources are resolved by name
+t
+UNKNOWN_TABLE
+43
+--- detach and attach
+4
+--- access requires grants on both the overlay database and the source table
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+10
+--- row policies of the source table apply
+3
+4
+--- clickhouse-local keeps the actual table engines in its default database
+MergeTree

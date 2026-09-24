@@ -1,0 +1,52 @@
+---
+description: 'The Overlay database engine exposes the union of the tables of several existing databases.'
+sidebarTitle: 'Overlay'
+slug: /engines/database-engines/overlay
+title: 'Overlay'
+doc_type: 'reference'
+---
+
+The `Overlay` database engine exposes the union of the tables of several existing databases.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE overlay_db
+ENGINE = Overlay(db1[, db2, ...]);
+```
+
+A table name is resolved in the source databases in the order they are listed: the first database that has a table with this name wins.
+
+The database owns no tables. Every table of the overlay database behaves as an [`Alias`](/reference/engines/table-engines/special/alias) table to the table of the source database: reading and writing go to the source table.
+`CREATE`, `DROP`, `RENAME`, `ATTACH` and `DETACH` of tables inside the overlay database are not supported.
+
+The source databases are resolved by name on every access: when a source database is dropped, its tables disappear from the overlay database, and they reappear when it is created again.
+An `Overlay` database cannot be used as a source of another `Overlay` database.
+
+## Access control {#access-control}
+
+As for an `Alias` table, working with a table of the overlay database requires the grants both on the overlay database and on the source table, and the row policies of both apply.
+The names of the tables of the source databases are visible to anyone who can list the tables of the overlay database.
+
+## Example {#example}
+
+```sql
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE TABLE db1.a (x UInt8) ENGINE = Memory;
+CREATE TABLE db2.b (y String) ENGINE = Memory;
+INSERT INTO db2.b VALUES ('Hello');
+CREATE DATABASE overlay_db ENGINE = Overlay(db1, db2);
+SELECT name, engine FROM system.tables WHERE database = 'overlay_db' ORDER BY name;
+SELECT * FROM overlay_db.b;
+```
+
+```response
+┌─name─┬─engine─┐
+│ a    │ Alias  │
+│ b    │ Alias  │
+└──────┴────────┘
+┌─y─────┐
+│ Hello │
+└───────┘
+```

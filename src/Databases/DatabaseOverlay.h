@@ -110,4 +110,37 @@ protected:
     LoggerPtr log;
 };
 
+/// `CREATE DATABASE db ENGINE = Overlay(db1, db2, ...)`: a read-only database that exposes the union of the tables of the
+/// source databases, resolved by name on every access. A name is resolved in the first source that has it, and the table
+/// is represented by a `StorageAlias` to it, which requires the grants on the source table in addition to the grants
+/// on the overlay database, and combines the row policies of both.
+class DatabaseOverlayReadOnly final : public IDatabase, protected WithContext
+{
+public:
+    DatabaseOverlayReadOnly(const String & name_, Strings source_databases_, ContextPtr context_);
+
+    String getEngineName() const override { return "Overlay"; }
+
+    bool isTableExist(const String & table_name, ContextPtr context) const override;
+    StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
+
+    bool shouldBeEmptyOnDetach() const override { return false; }
+    bool empty() const override { return true; }
+    bool isReadOnly() const override { return true; }
+    void shutdown() override {}
+
+    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
+
+protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
+
+private:
+    /// The name of the first source database that has the table, or an empty string.
+    String findSourceDatabase(const String & table_name, ContextPtr context) const;
+
+    const Strings source_databases;
+};
+
 }
