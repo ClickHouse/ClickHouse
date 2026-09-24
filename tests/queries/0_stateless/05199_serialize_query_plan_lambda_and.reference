@@ -7,6 +7,8 @@ arrayExists	8
 arrayMap	8
 a constant that fits UInt8	1
 OR instead of AND	10
+a trivial view	8
+a Merge table	8
 the same, plan not shipped
 mapExists	3
 two comparisons	8
@@ -16,3 +18,5 @@ arrayExists	8
 arrayMap	8
 a constant that fits UInt8	1
 OR instead of AND	10
+a trivial view	8
+a Merge table	8

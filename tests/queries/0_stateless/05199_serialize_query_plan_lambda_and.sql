@@ -6,10 +6,17 @@
 
 DROP TABLE IF EXISTS t_05199;
 DROP TABLE IF EXISTS t_05199_dist;
+DROP TABLE IF EXISTS t_05199_view;
+DROP TABLE IF EXISTS t_05199_merge;
 
 CREATE TABLE t_05199 (id UInt64, col Map(String, UInt64)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_05199 SELECT number, map('key' || toString(number % 3), number * 100) FROM numbers(10);
 CREATE TABLE t_05199_dist AS t_05199 ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_05199);
+-- The same lambda shape read through a trivial view and a `Merge` table over the `Distributed` one: both
+-- wrap the `PlannerContext` into a new `Context` (the view pushdown in `PlannerJoinTree`, the per-table
+-- rewrite in `StorageMerge`) before the shard's plan is built.
+CREATE VIEW t_05199_view AS SELECT * FROM t_05199_dist;
+CREATE TABLE t_05199_merge AS t_05199 ENGINE = Merge(currentDatabase(), '^t_05199_dist$');
 
 SET prefer_localhost_replica = 0, compile_expressions = 1, min_count_to_compile_expression = 0;
 
@@ -23,6 +30,8 @@ SELECT 'arrayExists', sum(arrayExists(v -> v > 100 AND v < 1000, mapValues(col))
 SELECT 'arrayMap', sum(arraySum(arrayMap(v -> (v > 100 AND v < 1000) ? 1 : 0, mapValues(col)))) FROM t_05199_dist;
 SELECT 'a constant that fits UInt8', sum(mapExists((k, v) -> v > 0 AND v < 200, col)) FROM t_05199_dist;
 SELECT 'OR instead of AND', sum(mapExists((k, v) -> k LIKE '%2' OR v < 1000, col)) FROM t_05199_dist;
+SELECT 'a trivial view', sum(mapExists((k, v) -> v > 100 AND v < 1000, col)) FROM t_05199_view;
+SELECT 'a Merge table', sum(mapExists((k, v) -> v > 100 AND v < 1000, col)) FROM t_05199_merge;
 
 SET serialize_query_plan = 0;
 SELECT 'the same, plan not shipped';
@@ -34,6 +43,10 @@ SELECT 'arrayExists', sum(arrayExists(v -> v > 100 AND v < 1000, mapValues(col))
 SELECT 'arrayMap', sum(arraySum(arrayMap(v -> (v > 100 AND v < 1000) ? 1 : 0, mapValues(col)))) FROM t_05199_dist;
 SELECT 'a constant that fits UInt8', sum(mapExists((k, v) -> v > 0 AND v < 200, col)) FROM t_05199_dist;
 SELECT 'OR instead of AND', sum(mapExists((k, v) -> k LIKE '%2' OR v < 1000, col)) FROM t_05199_dist;
+SELECT 'a trivial view', sum(mapExists((k, v) -> v > 100 AND v < 1000, col)) FROM t_05199_view;
+SELECT 'a Merge table', sum(mapExists((k, v) -> v > 100 AND v < 1000, col)) FROM t_05199_merge;
 
+DROP TABLE t_05199_merge;
+DROP TABLE t_05199_view;
 DROP TABLE t_05199_dist;
 DROP TABLE t_05199;
