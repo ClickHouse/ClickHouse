@@ -152,6 +152,9 @@ public:
             return "uniqCombined";
     }
 
+    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -167,6 +170,12 @@ public:
         addBatchUniq<&Data::Set::insert>(row_begin, row_end, places, place_offset, columns, if_argument_pos,
             [&](size_t row) { return Traits::hash(Traits::value(*columns[0], row)); },
             [&](AggregateDataPtr place) { return &this->data(place).set; });
+    }
+
+    void addBatchWithNonNullPlaces(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
+        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
+    {
+        addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
     void addBatchSinglePlace( /// NOLINT
@@ -335,6 +344,9 @@ public:
         else
             return "uniqCombined";
     }
+
+    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
+    bool shouldPrintParametersWithTypes() const override { return true; }
 
     bool allocatesMemoryInArena() const override { return false; }
 

@@ -158,56 +158,72 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
                         " but compressed data is only {} bytes",
                         static_cast<UInt32>(compression_methods_size), source_size);
 
-    PODArray<char> compressed_buf(&source[compression_methods_size + 1], &source[source_size]);
+    const char * input = source + compression_methods_size + 1;
+    source_size -= compression_methods_size + 1;
+
+    /// source --memcpy--> compressed_buf --decode--> uncompressed_buf --swap--> compressed_buf --decode--> ... --decode--> uncompressed_buf --memcpy--> dest
+    /// Buffers get the codec's padding, the caller's `source` and `dest` have none.
+    /// A first stage that needs no padding decodes `source` directly, skipping the first memcpy.
+    /// A last stage that needs no padding decodes into `dest` directly, skipping the last one.
+    PODArray<char> compressed_buf;
     PODArray<char> uncompressed_buf;
-    /// Insert all data into compressed buf
-    source_size -= (compression_methods_size + 1);
 
     for (int idx = compression_methods_size - 1; idx >= 0; --idx)
     {
         UInt8 compression_method = source[idx + 1];
         const auto codec = CompressionCodecFactory::instance().get(compression_method);
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
+        const bool is_first_stage = idx == compression_methods_size - 1;
+        const bool is_last_stage = idx == 0;
 
-        if (compressed_buf.size() >= 1_GiB)
-            throw Exception(decompression_error_code, "Too large compressed size: {}", compressed_buf.size());
+        if (source_size >= 1_GiB)
+            throw Exception(decompression_error_code, "Too large compressed size: {}", source_size);
 
         if (source_size < COMPRESSED_BLOCK_HEADER_SIZE)
             throw Exception(decompression_error_code, "Compressed data is too short to contain a block header: {} bytes",
                             source_size);
 
+        if (additional_size_at_the_end_of_buffer)
         {
-            UInt32 bytes_to_resize = 0;
-            if (common::addOverflow(static_cast<UInt32>(compressed_buf.size()), additional_size_at_the_end_of_buffer, bytes_to_resize))
-                throw Exception(decompression_error_code, "Too large compressed size: {}", compressed_buf.size());
+            UInt32 padded_source_size = 0;
+            if (common::addOverflow(source_size, additional_size_at_the_end_of_buffer, padded_source_size))
+                throw Exception(decompression_error_code, "Too large compressed size: {}", source_size);
 
-            compressed_buf.resize(compressed_buf.size() + additional_size_at_the_end_of_buffer);
+            compressed_buf.resize(padded_source_size);
+            if (is_first_stage)
+                memcpy(compressed_buf.data(), input, source_size);
+            input = compressed_buf.data();
         }
 
-        UInt32 uncompressed_size = readDecompressedBlockSize(compressed_buf.data());
+        UInt32 uncompressed_size = readDecompressedBlockSize(input);
 
         if (uncompressed_size >= 1_GiB)
             throw Exception(decompression_error_code, "Too large uncompressed size: {}", uncompressed_size);
 
-        if (idx == 0 && uncompressed_size != decompressed_size)
+        if (is_last_stage && uncompressed_size != decompressed_size)
             throw Exception(decompression_error_code, "Wrong final decompressed size in codec Multiple, got {}, expected {}",
                 uncompressed_size, decompressed_size);
 
+        char * output = dest;
+        if (!is_last_stage || additional_size_at_the_end_of_buffer)
         {
-            UInt32 bytes_to_resize = 0;
-            if (common::addOverflow(uncompressed_size, additional_size_at_the_end_of_buffer, bytes_to_resize))
+            UInt32 padded_uncompressed_size = 0;
+            if (common::addOverflow(uncompressed_size, additional_size_at_the_end_of_buffer, padded_uncompressed_size))
                 throw Exception(decompression_error_code, "Too large uncompressed size: {}", uncompressed_size);
 
-            uncompressed_buf.resize(bytes_to_resize);
+            uncompressed_buf.resize(padded_uncompressed_size);
+            output = uncompressed_buf.data();
         }
 
-        codec->decompress(compressed_buf.data(), source_size, uncompressed_buf.data());
-        uncompressed_buf.swap(compressed_buf);
         /// The call to decompress will validate uncompressed_size (same readDecompressedBlockSize call as here)
+        codec->decompress(input, source_size, output);
+        uncompressed_buf.swap(compressed_buf);
+        input = output;
         source_size = uncompressed_size;
     }
 
-    memcpy(dest, compressed_buf.data(), decompressed_size);
+    if (input != dest)
+        memcpy(dest, input, decompressed_size);
     return decompressed_size;
 }
 

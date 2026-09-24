@@ -1,6 +1,6 @@
 -- hash DISTINCT canonicalizes the zeros and keeps the two NaN payloads apart
 3	[0,9221120237041090561,9221120237041090562]
--- the in-order plan: final sorted distinct above the sort, hash pre-distinct below it
-['DistinctSortedStreamTransform','DistinctTransform']
--- final sorted distinct groups the Float prefix by comparison equality: one row per class
-2	['nan','zero']
+-- a Float column keeps the sorted variant out of the plan: both distincts are hash ones
+['DistinctTransform','DistinctTransform']
+-- the in-order plan agrees: one zero and both NaN payloads survive
+3	['nan','nan','zero']
