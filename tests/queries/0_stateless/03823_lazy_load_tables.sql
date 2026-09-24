@@ -57,6 +57,9 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t3 TO {CLICKHOUSE_DATABASE_1:Identifier}.t3_renamed;
 
+-- The rename is visible without re-attaching: the new name is listed, the old one is gone.
+SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN ('t3', 't3_renamed');
+
 -- Re-attach so the ALTER below is the first access: whether the rename itself loads the table depends
 -- on the database disk.
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
