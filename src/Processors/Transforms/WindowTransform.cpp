@@ -3098,8 +3098,7 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
             // ClickHouse historically accepted and silently ignored arbitrary arguments,
             // which caused user confusion (issue #49526). Reject them by default; the
             // legacy permissive behavior is gated behind `allow_rank_dense_rank_arguments`.
-            // The factory passes null settings outside a query context, where there is no session to gate.
-            if (!argument_types.empty() && settings && !(*settings)[Setting::allow_rank_dense_rank_arguments])
+            if (!argument_types.empty() && (settings == nullptr || !(*settings)[Setting::allow_rank_dense_rank_arguments]))
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for window function {} doesn't match: passed {}, should be 0. "
                     "Set `allow_rank_dense_rank_arguments = 1` to restore the legacy behavior of silently ignoring arguments.",
@@ -3176,7 +3175,7 @@ FROM salaries;
         {
             // The `DENSE_RANK` window function takes no arguments per SQL standard.
             // See `rank` registration above for the rationale.
-            if (!argument_types.empty() && settings && !(*settings)[Setting::allow_rank_dense_rank_arguments])
+            if (!argument_types.empty() && (settings == nullptr || !(*settings)[Setting::allow_rank_dense_rank_arguments]))
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for window function {} doesn't match: passed {}, should be 0. "
                     "Set `allow_rank_dense_rank_arguments = 1` to restore the legacy behavior of silently ignoring arguments.",
