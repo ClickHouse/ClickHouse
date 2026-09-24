@@ -27,12 +27,12 @@ settings=(
   --max_bytes_ratio_before_external_sort 0
   --max_threads 4
   --log_comment "$CLICKHOUSE_TEST_UNIQUE_NAME"
-  --min_bytes_to_spill 0
+  --min_bytes_to_spill 8Mi
 )
 $CLICKHOUSE_CLIENT -nm "${settings[@]}" -q "
 CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);
-CREATE OR REPLACE WORKLOAD $workload IN $parent_workload SETTINGS max_memory = '4Gi', max_memory_before_spill = '200Mi';
-SELECT number FROM numbers_mt(60e6) ORDER BY number DESC LIMIT 3 OFFSET 30e6;
+CREATE OR REPLACE WORKLOAD $workload IN $parent_workload SETTINGS max_memory = '4Gi', max_memory_before_spill = '50Mi';
+SELECT number FROM numbers_mt(15e6) ORDER BY number DESC LIMIT 3 OFFSET 7.5e6;
 "
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
