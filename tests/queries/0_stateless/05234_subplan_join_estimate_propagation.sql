@@ -10,6 +10,10 @@ DROP TABLE IF EXISTS t_sub_left;
 DROP TABLE IF EXISTS t_sub_right;
 DROP TABLE IF EXISTS t_sub_top;
 
+-- The harness randomizes this off, which leaves the tables without column statistics and prints
+-- every relation with a `no_stats` tag. The propagated estimate itself does not depend on it.
+SET materialize_statistics_on_insert = 1;
+
 CREATE TABLE t_sub_left (k UInt32) ENGINE = MergeTree ORDER BY k
   SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE t_sub_right (k UInt32) ENGINE = MergeTree ORDER BY k

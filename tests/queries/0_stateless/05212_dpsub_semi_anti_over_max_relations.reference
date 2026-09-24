@@ -1,8 +1,0 @@
-within the limit: 6 tables, semi/anti are reordered by DPsub
-150
-over the limit: 16 tables, semi/anti stay out and greedy takes the group
-150
-the fallback chain still answers the same without DPsub
-150
-a 15 table group reaches the next algorithm whole, not cut to DPsub size
-1
