@@ -15,6 +15,7 @@ from ci.jobs.scripts.integration_coverage_export import IntegrationCoverageExpor
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
+    PER_TEST_COVERAGE_SKIP_PREFIXES,
     force_heavy_modules_sequential,
     get_optimal_test_batch,
 )
@@ -1334,6 +1335,16 @@ def get_parallel_sequential_tests_to_run(
         ]
         print(
             f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
+        )
+    if "per_test_coverage" in (job_options or ""):
+        before = len(test_files)
+        test_files = [
+            f
+            for f in test_files
+            if not any(f.startswith(prefix) for prefix in PER_TEST_COVERAGE_SKIP_PREFIXES)
+        ]
+        print(
+            f"Per-test coverage: skipped {before - len(test_files)} test files matching PER_TEST_COVERAGE_SKIP_PREFIXES"
         )
 
     assert len(test_files) > 100

@@ -66,11 +66,12 @@ class IntegrationCoverageExporter:
         check_name = sql_string(self.job_name)
         # Same key as `system.coverage_log`. `branch_flag` is a property of the region and
         # agrees between flushes unless several regions share one span; then take the one
-        # of the flush with the most entries.
+        # of the flush with the most entries, and the larger flag on a tie, so that the
+        # result does not depend on the order of the rows.
         self._query(
             f"INSERT INTO FUNCTION {self._remote('default.checks_coverage_lines')} "
             f"SELECT file, line_start, line_end, {check_start_time}, {check_name}, test_name, "
-            "least(sum(min_depth), 254), argMax(branch_flag, min_depth) "
+            "least(sum(min_depth), 254), argMax(branch_flag, (min_depth, branch_flag)) "
             f"FROM {lines} GROUP BY test_name, file, line_start, line_end"
         )
         indirect_calls = self._source("indirect_calls", INDIRECT_CALLS_STRUCTURE)

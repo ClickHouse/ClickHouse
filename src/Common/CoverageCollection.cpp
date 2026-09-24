@@ -219,6 +219,8 @@ void collectAndInsertCoverage(
         query_context->setCurrentQueryId({});
         query_context->setSetting("max_query_size", Field{0ULL});
         query_context->setSetting("async_insert", Field{0ULL});
+        /// Keep the flushes out of `system.query_log`: tests that count its rows would see them.
+        query_context->setSetting("log_queries", Field{0ULL});
         auto block_io = executeQuery(query, query_context, QueryFlags{.internal = true}).second;
         /// For a VALUES INSERT with async_insert=0, executeQuery returns a "completed"
         /// pipeline (source=Values parser, sink=MergeTreeSink).  Calling onFinish()
@@ -271,6 +273,7 @@ void collectAndInsertCoverage(
             ic_context->setCurrentQueryId({});
             ic_context->setSetting("max_query_size", Field{0ULL});
             ic_context->setSetting("async_insert", Field{0ULL});
+            ic_context->setSetting("log_queries", Field{0ULL});
             auto ic_bio = executeQuery(ic_buf.str(), ic_context, QueryFlags{.internal = true}).second;
             executeTrivialBlockIO(ic_bio, ic_context);
         }
