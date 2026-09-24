@@ -1,5 +1,12 @@
 SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1;
+-- Pin the non-lazy FINAL plan: query_plan_optimize_lazy_final rewrites FINAL into
+-- multiple read steps (one may be ReadType: Default), which breaks the single
+-- ReadType assertion below. Randomization enables it, so force it off.
+SET query_plan_optimize_lazy_final = 0;
+-- The InReverseOrder assertion below needs the reverse-order FINAL read on; it is randomized in
+-- CI, and the last query turns it off explicitly to assert the ReadType: Default fallback.
+SET optimize_read_in_reverse_order_final = 1;
 DROP TABLE IF EXISTS mytable;
 
 CREATE TABLE mytable

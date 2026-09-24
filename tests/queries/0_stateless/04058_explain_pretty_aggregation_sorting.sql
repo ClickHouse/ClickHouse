@@ -12,6 +12,8 @@ SET optimize_distinct_in_order = 1;
 SET optimize_sorting_by_input_stream_properties = 1;
 SET allow_reorder_prewhere_conditions = 0;
 SET read_in_order_use_virtual_row = 0;
+-- Pin off: this bypasses the cost heuristic and plans DISTINCT per partition,
+-- which rewrites the query plan the EXPLAIN assertions below print.
 SET force_distinct_partitions_independently = 0;
 
 DROP TABLE IF EXISTS t1;

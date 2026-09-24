@@ -11,6 +11,7 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
 
 -- R1: Small dimension table (Demo size: 10)
+SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 CREATE TABLE R1 (
     A_ID UInt32,
     A_Description String

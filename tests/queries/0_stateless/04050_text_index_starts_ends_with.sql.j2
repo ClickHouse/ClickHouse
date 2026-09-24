@@ -6,6 +6,9 @@ SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET query_plan_merge_expressions = 1;
 SET query_plan_text_index_add_hint = 1;
+-- Pin (randomized in CI): with the dictionary scan off, startsWith/endsWith no longer reach the
+-- text index, so the EXPLAIN arms below lose their Skip entry.
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 
 DROP TABLE IF EXISTS test_fts;
 
