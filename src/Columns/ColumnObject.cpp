@@ -1808,9 +1808,18 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
          my_max_dynamic_types = max_dynamic_types,
          my_statistics = statistics]() mutable
     {
-        /// See the comment in `filter`: the decompressed columns are exclusively owned here, so
-        /// `IColumn::mutate` on an rvalue is free, while the `const ColumnPtr &` overload of
-        /// `create` would deep copy them.
+        /// See the comment in `filter`: a column that was really compressed is decompressed into a
+        /// fresh, exclusively owned column, so `IColumn::mutate` on the rvalue is free, while the
+        /// `const ColumnPtr &` overload of `create` would deep copy it.
+        ///
+        /// A path whose compression was a no-op is different: `decompress` returns the very child
+        /// that is also captured here, and the captured owners cannot be released because this
+        /// callback runs once per read. `IColumn::mutate` then deep copies that child. This copy is
+        /// accepted on purpose: `ColumnObject` keeps raw mutable pointers to its paths, so it cannot
+        /// borrow a shared child the way `ColumnArray`, `ColumnTuple` and `ColumnMap` do, and
+        /// aliasing it via `assumeMutable` is exactly the pattern the ownership checks in
+        /// `IColumn::mutate` exist to catch. Keeping this path zero-copy would need `ColumnObject`
+        /// to store shared immutable children.
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> decompressed_typed_paths;
         decompressed_typed_paths.reserve(my_compressed_typed_paths.size());
         for (const auto & [path, column] : my_compressed_typed_paths)

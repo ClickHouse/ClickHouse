@@ -77,12 +77,14 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
-    static Ptr create(const ColumnPtr & variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
+    static Ptr create(ColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
         /// `ColumnDynamic` keeps raw mutable access to its variant column, so immutable input
-        /// must be deep-unshared here rather than borrowed.
+        /// must be deep-unshared here rather than borrowed. Taking the pointer by value and
+        /// moving it lets a uniquely owned temporary (e.g. the result of `decompress`) be reused
+        /// without a copy.
         return ColumnDynamic::create(
-            IColumn::mutate(variant_column_),
+            IColumn::mutate(std::move(variant_column_)),
             variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
