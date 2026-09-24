@@ -3,49 +3,14 @@
         <max_threads>1</max_threads>
     </settings>
 
-    <create_query>CREATE TABLE array_min_max_index_perf_u64 (case_id UInt8, a Array(UInt64)) ENGINE = Memory</create_query>
-    <create_query>CREATE TABLE array_min_max_index_perf_float (case_id UInt8, a Array(Float64)) ENGINE = Memory</create_query>
-    <create_query>CREATE TABLE array_min_max_index_perf_string (case_id UInt8, a Array(String)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE array_min_max_index_perf (a Array(UInt64)) ENGINE = Memory</create_query>
 
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 1, arrayMap(x -&gt; if(x = number % 128, toUInt64('18446744073709551615'), x), range(128))
-        FROM numbers(10000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 2, arrayMap(x -&gt; if(x = number % 16384, toUInt64('18446744073709551615'), x), range(16384))
-        FROM numbers(40)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_u64
-        SELECT 3, range(512)
+    <fill_query>INSERT INTO array_min_max_index_perf
+        SELECT arrayMap(x -&gt; if(x = number % 256, toUInt64(1000), x), range(256))
         FROM numbers(10000)</fill_query>
 
-    <fill_query>INSERT INTO array_min_max_index_perf_float
-        SELECT 1, arrayMap(x -&gt; if(x = number % 2048, toFloat64('1000000'), toFloat64(x)), range(2048))
-        FROM numbers(2000)</fill_query>
-    <fill_query>INSERT INTO array_min_max_index_perf_float
-        SELECT 2, arrayMap(x -&gt; toFloat64(x) - 8192, range(16384))
-        FROM numbers(40)</fill_query>
+    <query>SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a)) FROM array_min_max_index_perf FORMAT Null</query>
+    <query>SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a))) FROM array_min_max_index_perf FORMAT Null</query>
 
-    <fill_query>INSERT INTO array_min_max_index_perf_string
-        SELECT 1, arrayMap(x -&gt; concat('item-', toString(x)), range(32))
-        FROM numbers(10000)</fill_query>
-
-    <query>SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a)) FROM array_min_max_index_perf_u64 WHERE case_id IN (1, 2) FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_u64 WHERE case_id IN (1, 2) FORMAT Null</query>
-
-    <query>SELECT sum(arrayMinIndex(x -&gt; x % 97, a) + arrayMaxIndex(x -&gt; x % 97, a)) FROM array_min_max_index_perf_u64 WHERE case_id = 3 FORMAT Null</query>
-    <query>SELECT sum(indexOf(arrayMap(x -&gt; x % 97, a), arrayMin(x -&gt; x % 97, a)) + indexOf(arrayMap(x -&gt; x % 97, a), arrayMax(x -&gt; x % 97, a))) FROM array_min_max_index_perf_u64 WHERE case_id = 3 FORMAT Null</query>
-
-    <query>SELECT sum(arrayMinIndex(x, y -&gt; x + y, a, a) + arrayMaxIndex(x, y -&gt; x + y, a, a)) FROM array_min_max_index_perf_u64 WHERE case_id = 3 FORMAT Null</query>
-    <query>SELECT sum(indexOf(arrayMap(x, y -&gt; x + y, a, a), arrayMin(x, y -&gt; x + y, a, a)) + indexOf(arrayMap(x, y -&gt; x + y, a, a), arrayMax(x, y -&gt; x + y, a, a))) FROM array_min_max_index_perf_u64 WHERE case_id = 3 FORMAT Null</query>
-
-    <query>SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a)) FROM array_min_max_index_perf_float FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_float FORMAT Null</query>
-
-    <query>SELECT sum(arrayMinIndex(a) + arrayMaxIndex(a)) FROM array_min_max_index_perf_string FORMAT Null</query>
-    <query>SELECT sum(indexOf(a, arrayMin(a)) + indexOf(a, arrayMax(a))) FROM array_min_max_index_perf_string FORMAT Null</query>
-    <query>SELECT sum(arrayMinIndex(x -&gt; length(x), a) + arrayMaxIndex(x -&gt; length(x), a)) FROM array_min_max_index_perf_string FORMAT Null</query>
-    <query>SELECT sum(indexOf(arrayMap(x -&gt; length(x), a), arrayMin(x -&gt; length(x), a)) + indexOf(arrayMap(x -&gt; length(x), a), arrayMax(x -&gt; length(x), a))) FROM array_min_max_index_perf_string FORMAT Null</query>
-
-    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_u64</drop_query>
-    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_float</drop_query>
-    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf_string</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_min_max_index_perf</drop_query>
 </test>

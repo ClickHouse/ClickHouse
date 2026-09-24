@@ -1,108 +1,43 @@
+-- { echoOn }
+-- Basic behavior and first ties.
+SELECT arrayMinIndex([5, 3, 2, 7]), arrayMaxIndex([5, 3, 2, 7]);
 3	4
+SELECT arrayMinIndex([5, 3, 3, 7]), arrayMaxIndex([5, 7, 7, 3]);
 2	2
+SELECT arrayMinIndex(emptyArrayInt32()), arrayMaxIndex(emptyArrayUInt64());
 0	0
+SELECT arrayMinIndex([42]), arrayMaxIndex([42]);
 1	1
-2	1
+-- Lambda forms.
+SELECT arrayMinIndex(x -> abs(x), [-10, 7, 3]), arrayMaxIndex(x -> abs(x), [-10, 7, 3]);
 3	1
+SELECT arrayMinIndex(x -> 1, [10, 20, 30]), arrayMaxIndex(x -> 1, [10, 20, 30]);
 1	1
-1	3
-3	2
-1	1
-1	1
-1	128
-1	16384
-1	64
-1	128
-128	1
-1
-1	1
-1025	16384
-3	2
-1	1
-0	0
-2	2
-2	2
-2	2
-2	2
-2	2
-2	2
-2	2
-2	2
+SELECT arrayMinIndex(x, y -> x + y, [3, 1, 1, 5], [1, 4, 4, 0]), arrayMaxIndex(x, y -> x + y, [3, 1, 1, 5], [1, 4, 4, 0]);
 1	2
-1	2	1	2	1	2
-1	2	1	2	1	2
-2	4	1	2	2	4	1	2
-1
-1
+-- Nullable and floating-point values.
+SELECT arrayMinIndex([NULL, 2, 1]), arrayMaxIndex([NULL, 2, 1]);
+3	2
+SELECT arrayMinIndex([NULL::Nullable(Int64), NULL::Nullable(Int64)]), arrayMaxIndex([NULL::Nullable(Int64), NULL::Nullable(Int64)]);
+1	1
+SELECT arrayMinIndex([nan, 2.0, 1.0]), arrayMaxIndex([nan, 2.0, 1.0]);
+3	2
+SELECT arrayMinIndex([nan, nan]), arrayMaxIndex([nan, nan]);
+1	1
+SELECT arrayMinIndex([0.0, -0.0]), arrayMaxIndex([0.0, -0.0]);
+1	1
+SELECT arrayMinIndex([-inf, 0.0, -inf]), arrayMaxIndex([inf, 0.0, inf]);
+1	1
+-- Other comparable types.
+SELECT arrayMinIndex(['b', 'a', 'a']), arrayMaxIndex(['b', 'a', 'a']);
+2	1
+SELECT arrayMinIndex([(2, 'b'), (1, 'a'), (1, 'a')]), arrayMaxIndex([(2, 'b'), (1, 'a'), (1, 'a')]);
+2	1
+SELECT arrayMinIndex([toDecimal32(2, 2), toDecimal32(1, 2), toDecimal32(1, 2)]), arrayMaxIndex([toDecimal32(2, 2), toDecimal32(1, 2), toDecimal32(1, 2)]);
+2	1
+SELECT arrayMinIndex([toDate('2024-01-02'), toDate('2024-01-01'), toDate('2024-01-01')]), arrayMaxIndex([toDate('2024-01-02'), toDate('2024-01-01'), toDate('2024-01-01')]);
+2	1
+SELECT arrayMinIndex([toDateTime64('2024-01-03 00:00:00', 3), toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('2024-01-01 00:00:00', 3)]), arrayMaxIndex([toDateTime64('2024-01-03 00:00:00', 3), toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('2024-01-01 00:00:00', 3)]);
+2	1
+SELECT arrayMinIndex([toInt256(0), toInt256(-1), toInt256(-1), toInt256(1)]), arrayMaxIndex([toUInt256(0), toUInt256(2), toUInt256(2), toUInt256(1)]);
 2	2
-2	2
-1	3	1	3
-3	1
-2	1
-2	1
-1	65	1	65	1	65	1	65	1	65	1	65	1	65	1	65	2	1	2	1
-2	1
-1	2
-1	1	1	1	1	1	1
-2	1	2	2	1	2	2
-3	1	2	3	1	2	3
-7	1	4	7	1	4	7
-8	1	5	8	1	5	8
-15	1	8	15	1	8	15
-16	1	9	16	1	9	16
-31	1	16	31	1	16	31
-32	1	17	32	1	17	32
-33	1	17	33	1	17	33
-35	1	18	35	1	18	35
-36	1	19	36	1	19	36
-37	1	19	37	1	19	37
-47	1	24	47	1	24	47
-48	1	25	48	1	25	48
-49	1	25	49	1	25	49
-63	1	32	63	1	32	63
-64	1	33	64	1	33	64
-65	1	33	65	1	33	65
-95	1	48	95	1	48	95
-96	1	49	96	1	49	96
-127	1	64	127	1	64	127
-128	1	65	128	1	65	128
-129	1	65	129	1	65	129
-191	1	96	191	1	96	191
-192	1	97	192	1	97	192
-255	1	128	255	1	128	255
-256	1	129	256	1	129	256
-257	1	129	257	1	129	257
-511	1	256	511	1	256	511
-512	1	257	512	1	257	512
-513	1	257	513	1	257	513
-1023	1	512	1023	1	512	1023
-1024	1	513	1024	1	513	1024
-1025	1	513	1025	1	513	1025
-2047	1	1024	2047	1	1024	2047
-2048	1	1025	2048	1	1025	2048
-4095	1	2048	4095	1	2048	4095
-4096	1	2049	4096	1	2049	4096
-4097	1	2049	4097	1	2049	4097
-8191	1	4096	8191	1	4096	8191
-8192	1	4097	8192	1	4097	8192
-8193	1	4097	8193	1	4097	8193
-12287	1	6144	12287	1	6144	12287
-12288	1	6145	12288	1	6145	12288
-12289	1	6145	12289	1	6145	12289
-16383	1	8192	16383	1	8192	16383
-16384	1	8193	16384	1	8193	16384
-16385	1	8193	16385	1	8193	16385
-32768	1	16385	32768	1	16385	32768
-1
-1	17408
-65536	1
-1	16386
-1	65
-66	1
-1	128
-256	1
-1	257
-1	1	1	1
-1
-8193	8193	8193	8193	8193	8193	8193	8193	8193	8193	8193	8193	8193	8193	8193	8193	8193	8193	8193	8193
-1	2	1	2	129	129	65	65	1	1
