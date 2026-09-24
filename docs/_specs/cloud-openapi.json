@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1154344",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1156400",
       "email": "support@clickhouse.com"
     }
   },
@@ -23057,8 +23057,9 @@
             "type": "string"
           },
           "topics": {
-            "description": "Topics of the Kafka source.",
-            "type": "string"
+            "description": "One or more Kafka topics as a comma-separated string. All topics must have the same schema and are ingested into the same destination table by a single ClickPipe.",
+            "type": "string",
+            "example": "topic1,topic2"
           },
           "consumerGroup": {
             "description": "Consumer group of the Kafka source. If not provided \"clickpipes-<<ID>>\" will be used.",
@@ -23174,8 +23175,9 @@
             "type": "string"
           },
           "topics": {
-            "description": "Topics of the Kafka source.",
-            "type": "string"
+            "description": "One or more Kafka topics as a comma-separated string. All topics must have the same schema and are ingested into the same destination table by a single ClickPipe.",
+            "type": "string",
+            "example": "topic1,topic2"
           },
           "consumerGroup": {
             "description": "Consumer group of the Kafka source. If not provided \"clickpipes-<<ID>>\" will be used.",
@@ -23344,6 +23346,40 @@
           }
         }
       },
+      "ClickPipeKinesisSchemaRegistry": {
+        "properties": {
+          "type": {
+            "description": "Type of the schema registry. Kinesis ClickPipes support the AWS Glue Schema Registry, which authenticates with IAM instead of credentials.",
+            "type": "string",
+            "enum": [
+              "glue"
+            ]
+          },
+          "glueRegion": {
+            "description": "AWS region of the Glue Schema Registry.",
+            "type": "string",
+            "example": "us-east-1"
+          },
+          "glueRegistryName": {
+            "description": "Name of the Glue Schema Registry.",
+            "type": "string",
+            "example": "my-registry"
+          },
+          "glueRoleArn": {
+            "description": "IAM role to assume for Glue Schema Registry access. Defaults to the IAM identity of the Kinesis source.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "arn:aws:iam::123456789012:role/MyGlueRegistryRole"
+          }
+        },
+        "required": [
+          "type",
+          "glueRegion",
+          "glueRegistryName"
+        ]
+      },
       "ClickPipeKinesisSource": {
         "properties": {
           "format": {
@@ -23405,6 +23441,16 @@
               "null"
             ],
             "example": "arn:aws:iam::123456789012:role/MyRole"
+          },
+          "schemaRegistry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipeKinesisSchemaRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -23470,6 +23516,16 @@
             ],
             "example": "arn:aws:iam::123456789012:role/MyRole"
           },
+          "schemaRegistry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipeKinesisSchemaRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "accessKey": {
             "oneOf": [
               {
@@ -23481,7 +23537,7 @@
             ]
           },
           "protobufSchema": {
-            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Required with Protobuf format and not supported with other formats.",
+            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Required with Protobuf format unless a schema registry is configured, and not supported with other formats.",
             "type": "string",
             "example": "c3ludGF4ID0gInByb3RvMyI7IG1lc3NhZ2UgRXZlbnQge30=",
             "maxLength": 1048576,

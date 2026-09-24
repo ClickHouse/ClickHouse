@@ -1,27 +1,29 @@
-#include <base/pathToString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
-#include <Storages/SetSettings.h>
-#include <Storages/StorageSet.h>
-#include <Storages/StorageFactory.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeWriter.h>
-#include <Formats/NativeReader.h>
-#include <QueryPipeline/ProfileInfo.h>
-#include <Disks/IDisk.h>
-#include <Common/CurrentThread.h>
-#include <Common/formatReadable.h>
-#include <Common/StringUtils.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/Set.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
 #include <optional>
+#include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
+#include <base/pathToString.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
+#include <Disks/IDisk.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFile.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Set.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/ProfileInfo.h>
+#include <Storages/SetSettings.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageSet.h>
+#include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -37,6 +39,7 @@ namespace SetSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -197,6 +200,24 @@ SetPtr StorageSet::getSet() const
 {
     std::lock_guard lock(mutex);
     return set;
+}
+
+
+void StorageSet::checkNoRowPolicy(const ContextPtr & context) const
+{
+    auto storage_id = getStorageID();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    context->checkAccess(AccessType::SELECT, storage_id, metadata_snapshot->getColumns().getNamesOfPhysical());
+
+    auto row_policy_filter
+        = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Cannot use table {} on the right side of IN because a row policy applies to it. "
+            "The Set engine has no read path that could filter the rows",
+            storage_id.getNameForLogs());
 }
 
 

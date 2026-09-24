@@ -14,6 +14,7 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -140,9 +141,11 @@ void MergeTreeDeduplicationLog::load()
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
 
-        /// Can happen in case we have unfinished log
-        if (!current_writer)
-            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+        /// If the current log is unfinished, an appending writer for it is opened lazily on the first
+        /// written record (see `prepareToWrite`). Opening it eagerly here would add a phantom blob to the
+        /// log file on object storages when the table is shut down without writing any record: finalizing
+        /// an empty `WriteMode::Append` buffer registers the blob in the metadata without uploading any
+        /// object, and a subsequent load would fail to read it (e.g. with `NoSuchKey` on S3).
     }
 }
 
@@ -206,9 +209,16 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
     /// Go from end to the beginning
     for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend(); ++itr)
     {
-        if (current_sum > deduplication_window)
+        /// Never drop the current active log — it may still be open for writing
+        if (itr->first == current_log_number)
         {
-            /// We have more logs than required, all older files (including current) can be dropped
+            current_sum += itr->second.entries_count;
+            continue;
+        }
+
+        if (current_sum >= deduplication_window)
+        {
+            /// We have more logs than required, all older files (excluding current) can be dropped
             remove_from_value = itr->first;
             break;
         }
@@ -224,6 +234,7 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
+            LOG_DEBUG(getLogger("MergeTreeDeduplicationLog"), "Dropping outdated deduplication log {}", itr->second.path);
             /// A writer that was canceled instead of finalized never published its path on an
             /// object-storage disk, so the log this entry names may not exist.
             disk->removeFileIfExists(itr->second.path);
@@ -267,8 +278,17 @@ void MergeTreeDeduplicationLog::prepareToWrite()
 {
     /// A failed flush cancels the writer, and a canceled buffer rejects every later write, so a dead
     /// writer must be replaced. `rotate` also works on a disk that cannot append.
-    if (!current_writer || current_writer->isCanceled() || current_writer->isFinalized())
+    if (current_writer && (current_writer->isCanceled() || current_writer->isFinalized()))
         rotate();
+    else if (!current_writer)
+    {
+        /// There is no writer for an unfinished log until the first record is written to it, so open
+        /// it here (see the comment in `load`). A disk that cannot append gets a new log instead.
+        if (disk_supports_writing_with_append && !existing_logs.empty())
+            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+        else
+            rotate();
+    }
 
     chassert(current_writer != nullptr);
 }
@@ -392,9 +412,8 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
     deduplication_map.setMaxSize(deduplication_window);
     rotateAndDropIfNeeded();
 
-    /// Can happen in case we have unfinished log
-    if (!current_writer)
-        current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    /// If the current log is unfinished, an appending writer for it is opened lazily on the first
+    /// written record (see `prepareToWrite` and the comment in `load`).
 }
 
 
@@ -414,7 +433,10 @@ void MergeTreeDeduplicationLog::shutdown()
         {
             /// `finalize` throws a logical error on a canceled buffer, which has nothing left to flush.
             if (!current_writer->isCanceled())
+            {
                 current_writer->finalize();
+                current_writer->sync();
+            }
             current_writer.reset();
         }
         catch (...)

@@ -110,14 +110,14 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     {
         /// Check if the corresponding file exists.
         const auto table_path_as_fs = pathFromString(table_path);
-        if (!fs::exists(table_path_as_fs))
+        if (!existsOrFileNameTooLong([&] { return fs::exists(table_path_as_fs); }))
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
             return false;
         }
 
-        if (!fs::is_regular_file(table_path_as_fs))
+        if (!existsOrFileNameTooLong([&] { return fs::is_regular_file(table_path_as_fs); }))
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
@@ -139,7 +139,7 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
     }
 
     /// Invalidate cache if file no longer exists.
-    if (table && !fs::exists(pathFromString(getTablePath(name))))
+    if (table && !existsOrFileNameTooLong([&] { return fs::exists(pathFromString(getTablePath(name))); }))
     {
         std::lock_guard lock(mutex);
         loaded_tables.erase(name);
