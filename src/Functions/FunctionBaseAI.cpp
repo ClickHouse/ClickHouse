@@ -52,6 +52,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
     extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
 }
@@ -477,6 +478,9 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     String system_prompt = sanitizeForModel(buildSystemPrompt(arguments, params));
     auto response_format = buildResponseFormat(arguments);
     auto provider = createAIProvider(params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+    if (!provider->supportsChat())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "AI provider '{}' does not support chat completions", params.collection.provider);
 
     if (input_rows_count == 0)
         return result_type->createColumn();

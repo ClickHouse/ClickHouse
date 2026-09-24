@@ -1730,6 +1730,7 @@ The server successfully detected this situation and will download merged part fr
     M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query.", ValueType::Number) \
     M(AIOutputTokens, "Total completion tokens consumed across all AI function calls in the query.", ValueType::Number) \
     M(AIAPICalls, "Number of HTTP requests dispatched to AI providers.", ValueType::Number) \
+    M(AISearchUnits, "Total search units billed for reranking across all AI function calls in the query.", ValueType::Number) \
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
