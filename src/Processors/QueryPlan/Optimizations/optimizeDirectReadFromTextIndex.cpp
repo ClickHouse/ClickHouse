@@ -626,14 +626,15 @@ private:
             || function_name == "hasPhrase";
     }
 
-    /// A per-token pattern function takes the tokenizer from the index it is analyzed for, so all such indexes must
-    /// agree on it, whatever the settings. Returns the first of them by name, which then serves the function.
+    /// A per-token pattern function takes the tokenizer from the index it is analyzed for, so all such indexes must agree on it,
+    /// whatever the settings. The first of them by name serves it, preferring one that answers it by a dictionary scan.
     std::optional<String> choosePerTokenPatternFunctionIndex(const ActionsDAG::Node & function_node, const ActionsDAG::Node & canonical_node) const
     {
         const auto function_name = function_node.function_base->getName();
         const auto haystack_name = getNameWithoutAliases(function_node.children[0]);
 
         std::map<String, String> rewrite_by_index;
+        NameOrderedSet scanning_indexes;
         for (const auto & [index_name, info] : text_index_read_infos)
         {
             const auto & condition = typeid_cast<const MergeTreeIndexConditionText &>(*info.condition);
@@ -646,6 +647,8 @@ private:
 
             String rewrite = "tokenizer = " + condition.getTokenizer()->getDescription();
             rewrite_by_index.emplace(index_name, std::move(rewrite));
+            if (!search_query->getPatterns().empty())
+                scanning_indexes.insert(index_name);
         }
 
         if (rewrite_by_index.empty())
@@ -662,7 +665,7 @@ private:
                     backQuote(chosen_index), backQuote(index_name), backQuote(haystack_name), function_name, chosen_rewrite, rewrite);
         }
 
-        return chosen_index;
+        return scanning_indexes.empty() ? chosen_index : *scanning_indexes.begin();
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)

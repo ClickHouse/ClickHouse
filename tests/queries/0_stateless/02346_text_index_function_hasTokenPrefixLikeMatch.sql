@@ -466,8 +466,8 @@ SELECT 'splitByNonAlpha', count() FROM tab_tokenizers_swapped WHERE hasTokenPref
 DROP TABLE tab_tokenizers;
 DROP TABLE tab_tokenizers_swapped;
 
--- Same tokenizer, and only one index has a preprocessor, which the functions never apply: the indexes agree, and the
--- result is the one on the raw values whichever index serves the function.
+-- Same tokenizer, and only one index has a preprocessor, which the functions never apply: the indexes agree, the result is
+-- the one on the raw values, and the index without the preprocessor serves the function by direct read, whatever its name.
 CREATE TABLE tab_preprocessors
 (
     id UInt32,
@@ -501,6 +501,8 @@ SELECT 'hasTokenPrefix', count() FROM tab_preprocessors WHERE hasTokenPrefix(if(
 SELECT 'hasTokenPrefix', count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg');
 SELECT 'hasTokenPrefix', count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0;
 SELECT 'hasTokenPrefix', countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors_swapped;
+SELECT 'hasTokenPrefix', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasTokenPrefix(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg'));
 
 SELECT 'hasTokenLike', count() FROM tab_preprocessors WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%');
 SELECT 'hasTokenLike', count() FROM tab_preprocessors WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%') SETTINGS use_skip_indexes = 0;
