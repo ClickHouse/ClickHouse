@@ -91,6 +91,16 @@ const char * toString(JoinOrderAlgorithm join_order_algorithm)
     }
 }
 
+const char * toString(JoinOrderConflictDetector join_order_conflict_detector)
+{
+    switch (join_order_conflict_detector)
+    {
+        case JoinOrderConflictDetector::NONE: return "NONE";
+        case JoinOrderConflictDetector::CD_A: return "CD-A";
+        case JoinOrderConflictDetector::CD_C: return "CD-C";
+    }
+}
+
 const char * toString(JoinTableSide join_table_side)
 {
     switch (join_table_side)
