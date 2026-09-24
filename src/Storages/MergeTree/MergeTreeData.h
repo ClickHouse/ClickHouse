@@ -150,14 +150,8 @@ public:
     DataPartsAnyLock(const DataPartsAnyLock &) = delete;
     DataPartsAnyLock(DataPartsAnyLock &&) = delete;
 
-    DataPartsAnyLock(const DataPartsLock & lock [[clang::lifetimebound]]) noexcept // NOLINT(google-explicit-constructor)
-        : held_lock(&lock) {}
-    DataPartsAnyLock(const DataPartsSharedLock & lock [[clang::lifetimebound]]) noexcept // NOLINT(google-explicit-constructor)
-        : held_lock(&lock) {}
-
-private:
-    /// The lock this token was built from, never dereferenced: it is what makes the annotations above verifiable.
-    [[maybe_unused]] const void * held_lock;
+    DataPartsAnyLock(const DataPartsLock &) noexcept {} // NOLINT(google-explicit-constructor)
+    DataPartsAnyLock(const DataPartsSharedLock &) noexcept {} // NOLINT(google-explicit-constructor)
 };
 
 /// Data structure for *MergeTree engines.
@@ -558,6 +552,12 @@ public:
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
+    QueryProcessingStage::Enum getQueryProcessingStage(
+        ContextPtr query_context,
+        QueryProcessingStage::Enum to_stage,
+        const StorageSnapshotPtr &,
+        SelectQueryInfo & info) const override;
+
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
@@ -750,10 +750,8 @@ public:
 
     /// Returns sorted list of the parts with specified states
     /// out_states will contain snapshot of each part state
-    /// If `need_stop` is provided, it is checked periodically during the enumeration,
-    /// and if it returns true, the enumeration stops and returns what it has walked so far.
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
+    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
+    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states = nullptr) const;
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
 
@@ -771,9 +769,7 @@ public:
     DataPartsVector getPatchPartsVectorForPartition(const String & partition_id) const;
 
     /// Returns absolutely all parts (and snapshot of their states)
-    /// If `need_stop` is provided, it is checked periodically during the enumeration,
-    /// and if it returns true, the enumeration stops and returns what it has walked so far.
-    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
+    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
@@ -782,13 +778,12 @@ public:
     virtual MutationCounters getMutationCounters() const = 0;
 
     /// Same as above but only returns projection parts
-    ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
+    ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
         const DataPartStates & affordable_states,
-        MergeTreeData::DataPartStateVector * out_states,
-        const std::function<bool()> & need_stop = {}) const;
+        MergeTreeData::DataPartStateVector * out_states) const;
 
     void filterVisibleDataParts(DataPartsVector & maybe_visible_parts, CSN snapshot_version, TransactionID current_tid) const;
 

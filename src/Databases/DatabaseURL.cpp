@@ -309,14 +309,14 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     if (!isFileReadGranted(context_))
         return true;
 
-    if (!existsOrFileNameTooLong([&] { return fs::exists(path); }))
+    if (!fs::exists(path))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
         return false;
     }
 
-    if (!existsOrFileNameTooLong([&] { return fs::is_regular_file(path); }))
+    if (!fs::is_regular_file(path))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path);

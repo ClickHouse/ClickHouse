@@ -126,7 +126,7 @@ private:
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Combines the socket and the output-update wakeup into one fd that the executor polls
     /// while the source waits in `Async`.
-    Epoll wait_events_epoll{EpollNesting::Leaf};
+    Epoll wait_events_epoll;
 #endif
     /// Written by `onUpdatePorts` (possibly from another thread) to wake the waiting source
     /// when its output port is updated - in particular closed by a satisfied `LIMIT`

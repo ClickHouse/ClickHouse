@@ -276,7 +276,7 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
 
-    if (!existsOrFileNameTooLong([&] { return fs::exists(prefix_without_globs); }))
+    if (!fs::exists(prefix_without_globs))
         return;
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
@@ -415,12 +415,8 @@ void checkCreationIsAllowed(
 
     if (can_be_directory)
     {
-        const bool is_existing_directory = existsOrFileNameTooLong([&]
-        {
-            const auto table_path_stat = fs::status(table_path);
-            return fs::exists(table_path_stat) && fs::is_directory(table_path_stat);
-        });
-        if (is_existing_directory)
+        auto table_path_stat = fs::status(table_path);
+        if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
     }
 }
@@ -510,7 +506,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
     else if (pattern.find_first_of("*?{") == std::string::npos)
     {
-        if (!existsOrFileNameTooLong([&] { return fs::is_directory(pattern); }))
+        if (!fs::is_directory(pattern))
         {
             std::error_code error;
             size_t size = fs::file_size(pattern, error);
@@ -1758,7 +1754,7 @@ Chunk StorageFileSource::generate()
                         if (archive.empty())
                             return {};
 
-                        if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
+                        if (!fs::exists(archive))
                         {
                             if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                 continue;
@@ -1805,7 +1801,7 @@ Chunk StorageFileSource::generate()
                                 if (archive.empty())
                                     return {};
 
-                                if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
+                                if (!fs::exists(archive))
                                 {
                                     if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                         continue;
@@ -1867,7 +1863,7 @@ Chunk StorageFileSource::generate()
                     if (current_path.empty())
                         return {};
 
-                    if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
+                    if (!fs::exists(current_path))
                     {
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                             continue;
@@ -3190,8 +3186,6 @@ void registerStorageFile(StorageFactory & factory)
         "File",
         [](const StorageFactory::Arguments & factory_args)
         {
-            checkStorageSettingNames(factory_args);
-
             auto context = factory_args.getLocalContext();
             StorageFile::CommonArguments storage_args
             {
@@ -3223,7 +3217,7 @@ void registerStorageFile(StorageFactory & factory)
             {
                 Settings settings = factory_args.getContext()->getSettingsCopy();
 
-                // Applying the changes validates the values, not the names.
+                // Apply changes from SETTINGS clause, with validation.
                 settings.applyChanges(factory_args.storage_def->settings->changes);
 
                 storage_args.format_settings = getFormatSettings(factory_args.getContext(), settings);
