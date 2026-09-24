@@ -292,7 +292,8 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
         if (pattern->match(token.data(), token.size()))
         {
             added = true;
-            added_to_per_token_pattern |= per_token_patterns.contains(pattern);
+            if (!added_to_per_token_pattern && !per_token_patterns.empty())
+                added_to_per_token_pattern = per_token_patterns.contains(pattern);
 
             for (const auto & query_hash : query_hashes)
                 queries_by_token[token].emplace(query_hash);
