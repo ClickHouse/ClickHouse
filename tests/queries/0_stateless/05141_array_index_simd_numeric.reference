@@ -15,6 +15,8 @@ Signed integers	1	64	1	64	1	64	1	64
 Float32	1	64	0	0
 Float64	1	64	0	0
 Exact numeric conversion	0	0	0	0	0	0
+Bare UInt32 max	1	13
+Bare UInt64 max	1	9
 UInt8 threshold middle	1	17
 UInt16 threshold middle	1	9
 UInt32 threshold middle	1	5
