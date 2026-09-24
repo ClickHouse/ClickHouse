@@ -1,0 +1,49 @@
+-- aiRerank: disabled without allow_experimental_ai_rerank_function
+-- aiRerank: registered
+aiRerank
+-- aiRerank: too few arguments
+-- aiRerank: too many arguments
+-- aiRerank: wrong type for query argument (not a string)
+-- aiRerank: wrong type for documents argument (not an array)
+-- aiRerank: wrong type for documents argument (Array of non-String)
+-- aiRerank: non-constant parameter map
+-- aiRerank: wrong type for parameter argument (not a map)
+-- aiRerank: missing credentials (no default, no map)
+-- aiRerank: named collection missing provider
+-- aiRerank: named collection missing model (and none in map)
+-- aiRerank: model supplied via the parameter map resolves
+0
+-- aiRerank: nonexistent named collection
+-- aiRerank: model resolved from the named collection
+0
+-- aiRerank: model in the parameter map overrides the named collection
+0
+-- aiRerank: unknown provider name
+-- aiRerank: unknown provider name on empty input
+-- aiRerank: rejects openai provider (no reranking endpoint)
+-- aiRerank: rejects anthropic provider (no reranking endpoint)
+-- aiGenerate: rejects cohere provider (no chat endpoint)
+-- aiEmbed: rejects cohere provider (no embedding endpoint)
+-- aiSimilarity: rejects cohere provider (no embedding endpoint)
+-- aiRerank: unknown parameter key rejected
+-- aiRerank: non-integer top_n rejected
+-- aiRerank: negative top_n rejected
+-- aiRerank: overflowing top_n rejected (exceeds UInt64, must not wrap)
+-- aiRerank: top_n via map resolves
+0
+-- aiRerank: return type
+Array(Tuple(index UInt32, relevance_score Float32))
+-- aiRerank: return type with Nullable(String) query
+result	Array(Tuple(index UInt32, relevance_score Float32))
+-- aiRerank: NULL query → []
+0
+-- aiRerank: empty documents array → []
+0
+-- aiRerank: empty query string → []
+0
+-- aiRerank: empty input executes
+0
+-- aiRerank: DEFAULT survives INSERT (no exception)
+1	0
+-- aiRerank: default-credentials setting default
+ai_function_rerank_default_credentials	

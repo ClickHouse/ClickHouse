@@ -129,20 +129,83 @@ struct AIEmbeddingResponse
     UInt64 input_tokens = 0;
 };
 
+/** Parameters for a single AI reranking request.
+  *
+  * Rerank APIs score a list of documents against one query and return them ordered by relevance.
+  * Unlike embeddings, the documents of one request are ranked together and cannot be batched with
+  * another request's documents, so each processed row produces exactly one AIRerankRequest.
+  */
+struct AIRerankRequest
+{
+    /// The query the documents are ranked against.
+    String query;
+
+    /// Documents to rank. Zero-copy views into the row's `ColumnString`; the provider copies them into
+    /// the HTTP body. Response results reference these by their position in this vector.
+    VectorWithMemoryTracking<std::string_view> documents;
+
+    /// Model identifier as specified in the parameter map or the named collection (e.g. "rerank-v3.5").
+    String model;
+
+    /// Number of results to return, most relevant first. 0 means all documents. Must not exceed the
+    /// number of `documents`: the provider expects exactly this many entries in its response.
+    UInt64 top_n = 0;
+
+    /// SQL name of the AI function that produced this request (currently always "aiRerank").
+    /// Emitted as the `X-ClickHouse-AI-Function` header.
+    String function_name;
+};
+
+/// Response from a single reranking request. `results` is ordered by descending relevance and holds
+/// exactly `top_n` entries when set, or one per document otherwise.
+struct AIRerankResponse
+{
+    struct Result
+    {
+        /// Position of the document in the request's `documents` vector, exactly as returned by the provider.
+        UInt32 index = 0;
+        /// Relevance of the document to the query, in [0, 1] (higher is more relevant).
+        Float32 relevance_score = 0;
+    };
+
+    /// Ranked results, most relevant first.
+    VectorWithMemoryTracking<Result> results;
+
+    /// Number of input tokens billed, as reported by the provider (`meta.billed_units.input_tokens`).
+    /// Used for quota tracking. Cohere bills reranking in `search_units` and omits it, leaving it `0`,
+    /// but a Cohere-compatible endpoint that bills by tokens can report it.
+    UInt64 input_tokens = 0;
+
+    /// Number of output tokens billed, as reported by the provider (`meta.billed_units.output_tokens`).
+    /// Used for quota tracking; `0` when omitted, as with `input_tokens`.
+    UInt64 output_tokens = 0;
+
+    /// Billed search units, as reported by the provider (`meta.billed_units.search_units`).
+    /// Reported in the `AISearchUnits` profile event; not used for quota tracking.
+    UInt64 search_units = 0;
+};
+
 /** Abstract interface for AI provider HTTP clients.
   *
-  * Each provider (OpenAI, Anthropic, etc.) implements this interface to handle
+  * Each provider (OpenAI, Anthropic, Cohere, etc.) implements this interface to handle
   * the provider-specific HTTP request/response format. The provider is created
   * once per query via createAIProvider and reused for all rows.
+  *
+  * Chat completions, embeddings and reranking are each optional: a provider overrides
+  * `supportsX` and the matching method for every API it exposes, and the AI functions check
+  * `supportsX` before sending any request.
   */
 class IAIProvider
 {
 public:
     virtual ~IAIProvider() = default;
 
-    /// Send a chat completion request. Replaces the contents of `response`, filling the token counts
-    /// before the payload is validated: so a failed request can still update token counts.
-    virtual void call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) = 0;
+    /// Whether this provider exposes a chat completions endpoint.
+    virtual bool supportsChat() const { return false; }
+
+    /// Send a chat completion request. Only valid when `supportsChat()` is true. Replaces the contents of
+    /// `response`, filling the token counts before the payload is validated: so a failed request can still update token counts.
+    virtual void call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response);
 
     /// Whether this provider exposes an embeddings endpoint.
     virtual bool supportsEmbeddings() const { return false; }
@@ -151,6 +214,14 @@ public:
     /// `response`, filling `input_tokens` before the payload is validated: so a failed request can still update token counts
     virtual void embed(
         const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response);
+
+    /// Whether this provider exposes a reranking endpoint.
+    virtual bool supportsRerank() const { return false; }
+
+    /// Send a reranking request. Only valid when `supportsRerank()` is true. Replaces the contents of
+    /// `response`, filling the billed `input_tokens`, `output_tokens` and `search_units` before the payload is
+    /// validated, so a billed request that fails validation still has its usage recorded.
+    virtual void rerank(const AIRerankRequest & ai_rerank_request, const ConnectionTimeouts & timeouts, AIRerankResponse & response);
 };
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
