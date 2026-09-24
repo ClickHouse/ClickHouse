@@ -1,0 +1,12 @@
+control: ordering by the quantized column uses the shortlist
+1
+control: ordering by the quantized column returns the nearest neighbours
+0
+1
+2
+multi-dot column: no shortlist
+1
+multi-dot column: correct result
+63
+62
+61
