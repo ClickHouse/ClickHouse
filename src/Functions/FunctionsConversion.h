@@ -4646,6 +4646,11 @@ inline bool dateTimeConversionRangeCannotWrap(
     if (!counts_days && !which.isDateTime64())
         return true;
 
+    /// A range that starts at `+inf` or ends at `-inf` holds no finite value (for a `Nullable` key it is
+    /// a run of `NULL`s, which are stored last and stand for `+inf`), so there is nothing to wrap.
+    if (left.isPositiveInfinity() || right.isNegativeInfinity())
+        return true;
+
     auto to_seconds = [&](const Field & bound) -> std::optional<Int128>
     {
         switch (bound.getType())
