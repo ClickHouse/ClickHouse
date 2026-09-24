@@ -4,6 +4,7 @@
 #include <Access/RowPolicy.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
@@ -63,14 +64,15 @@ std::optional<ColumnRef> resolveColumn(const ASTIdentifier & identifier, const S
     return {};
 }
 
-/// Calls `on_column` for every identifier that names a column of the table.
+/// Calls `on_column` for every identifier that names a column of the table. `via_udf` means it sits in a SQL function body.
 struct ColumnRefWalker
 {
     const StorageID & table_id;
     const ColumnsDescription & columns;
-    std::function<void(ASTPtr &, const ColumnRef &)> on_column;
+    std::function<void(ASTPtr &, const ColumnRef &, bool via_udf)> on_column;
+    NameSet visited_udfs;
 
-    void walk(ASTPtr & ast, const NameSet & shadowed)
+    void walk(ASTPtr & ast, const NameSet & shadowed, bool via_udf)
     {
         /// Policies can't have correlated subqueries, so those columns are another table's.
         if (ast->as<ASTSubquery>())
@@ -80,7 +82,7 @@ struct ColumnRefWalker
         {
             if (!shadowed.contains(identifier->name_parts.front()))
                 if (auto ref = resolveColumn(*identifier, table_id, columns))
-                    on_column(ast, *ref);
+                    on_column(ast, *ref, via_udf);
             return;
         }
 
@@ -94,20 +96,24 @@ struct ColumnRefWalker
                     for (const auto & param : params->arguments->children)
                         if (const auto * name = param->as<ASTIdentifier>())
                             inner.insert(name->name());
-                walk(args[1], inner);
+                walk(args[1], inner, via_udf);
                 return;
             }
 
             /// `x IN allowed`: the right side is a table.
             if (functionIsInOrGlobalInOperator(function->name) && args.size() == 2 && args[1]->as<ASTIdentifier>())
             {
-                walk(args[0], shadowed);
+                walk(args[0], shadowed, via_udf);
                 return;
             }
+
+            /// Each body is walked once, so a cycle among them cannot recurse forever.
+            if (auto udf = UserDefinedSQLFunctionFactory::instance().tryGet(function->name); udf && visited_udfs.insert(function->name).second)
+                walk(udf, {}, /*via_udf=*/ true);
         }
 
         for (auto & child : ast->children)
-            walk(child, shadowed);
+            walk(child, shadowed, via_udf);
     }
 };
 
@@ -116,6 +122,7 @@ struct BoundPolicy
     UUID id;
     RowPolicyPtr policy;
     NameSet columns;
+    NameSet columns_via_udf;
 };
 
 ASTPtr parseFilter(const String & filter, const String & policy_name)
@@ -143,14 +150,19 @@ std::vector<BoundPolicy> collectBoundPolicies(const StorageID & table_id, const 
             || (!policy->isForDatabase() && policy->getTableName() != table_id.getTableName()))
             continue;
 
-        BoundPolicy bound{id, policy, {}};
-        ColumnRefWalker walker{table_id, columns, [&](ASTPtr &, const ColumnRef & ref) { bound.columns.insert(ref.column); }};
+        BoundPolicy bound{id, policy, {}, {}};
+        ColumnRefWalker walker{table_id, columns, [&](ASTPtr &, const ColumnRef & ref, bool via_udf)
+        {
+            bound.columns.insert(ref.column);
+            if (via_udf)
+                bound.columns_via_udf.insert(ref.column);
+        }, {}};
         for (const auto & filter : policy->filters)
         {
             if (filter.empty())
                 continue;
             auto ast = parseFilter(filter, policy->getFullName().toString());
-            walker.walk(ast, {});
+            walker.walk(ast, {}, false);
         }
         result.push_back(std::move(bound));
     }
@@ -200,6 +212,11 @@ void checkRowPoliciesBeforeAlter(
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Cannot drop column {}: it is used by row policy {}", backQuote(command.column_name), policy_name);
 
+            if (usesColumn(bound.columns_via_udf, command.column_name))
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Cannot rename column {}: row policy {} reads it inside a SQL user defined function",
+                    backQuote(command.column_name), policy_name);
+
             if (bound.policy->isForDatabase())
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Cannot rename column {}: it is used by row policy {}, which applies to every table of the database",
@@ -224,8 +241,10 @@ void renameColumnsInRowPolicies(
         return;
 
     /// Replaces just the column in `t.tenant` or `j.user.name`, keeping the qualifier and the subcolumn.
-    auto rename_identifier = [&](ASTPtr & node, const ColumnRef & ref)
+    auto rename_identifier = [&](ASTPtr & node, const ColumnRef & ref, bool via_udf)
     {
+        if (via_udf)
+            return;
         for (const auto & [from, to] : renames)
         {
             if (!isColumnOrSubcolumnOf(ref.column, from))
@@ -259,8 +278,8 @@ void renameColumnsInRowPolicies(
                 if (filter.empty())
                     continue;
                 auto ast = parseFilter(filter, updated->getFullName().toString());
-                ColumnRefWalker walker{table_id, columns, rename_identifier};
-                walker.walk(ast, {});
+                ColumnRefWalker walker{table_id, columns, rename_identifier, {}};
+                walker.walk(ast, {}, false);
                 filter = ast->formatWithSecretsOneLine();
             }
             return updated;
