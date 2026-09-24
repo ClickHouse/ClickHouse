@@ -2,7 +2,7 @@
     <profiles>
         <default>
             <!-- The server that creates the table: its own limits are generous, so the definition of a
-                 table nested deeper than the stock `max_parser_depth` passes both the initiating session
+                 table nested deeper than the recovering node's `max_parser_depth` passes both the initiating session
                  and this server's DDL worker, which re-parses every entry with the default profile. -->
             <max_parser_depth>100000</max_parser_depth>
             <max_ast_depth>100000</max_ast_depth>

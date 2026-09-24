@@ -24,13 +24,16 @@ creating_node = cluster.add_instance(
 )
 recovering_node = cluster.add_instance(
     "recovering_node",
-    user_configs=["configs/stock_parser_limits.xml"],
+    user_configs=["configs/low_parser_limits.xml"],
     with_zookeeper=True,
     macros={"shard": 1, "replica": 2},
 )
 
-# Deeper than the stock `max_parser_depth` / `max_ast_depth` of 1000, shallow enough for the stack.
-DEPTH = 600
+# Deeper than the `max_parser_depth` / `max_ast_depth` of the recovering node (about two levels of
+# parser depth per nesting), yet shallow enough for the analyzer's recursion on the stack of sanitizer
+# builds (under TSan `checkStackSize` allows only 5% of the stack, and 600 levels did not fit even
+# the half of it allowed under ASan and MSan).
+DEPTH = 30
 DEEP_EXPRESSION = "(id + " * DEPTH + "id" + ")" * DEPTH
 
 
@@ -48,7 +51,7 @@ def test_recover_table_with_metadata_deeper_than_parser_limits(started_cluster):
         "CREATE DATABASE deep ENGINE = Replicated('/test/deep', '{shard}', '{replica}')"
     )
 
-    # The definition exceeds the stock limits, ...
+    # The definition exceeds the recovering node's limits, ...
     assert "TOO_DEEP_AST" in recovering_node.query_and_get_error(
         f"SELECT formatQuery('CREATE TABLE deep.t (id UInt64, d UInt64 DEFAULT {DEEP_EXPRESSION}) ENGINE = MergeTree ORDER BY id')"
     )
@@ -60,16 +63,16 @@ def test_recover_table_with_metadata_deeper_than_parser_limits(started_cluster):
         settings={"max_parser_depth": 100000, "max_ast_depth": 100000},
     )
     creating_node.query("INSERT INTO deep.t (id) SELECT number FROM numbers(3)")
-    assert creating_node.query("SELECT sum(d) FROM deep.t") == "1803\n"
+    assert creating_node.query("SELECT sum(d) FROM deep.t") == f"{3 * (DEPTH + 1)}\n"
 
-    # A new replica with the stock limits has to recover the table from that metadata.
+    # A new replica with the low limits has to recover the table from that metadata.
     recovering_node.query(
         "CREATE DATABASE deep ENGINE = Replicated('/test/deep', '{shard}', '{replica}')"
     )
     recovering_node.query("SYSTEM SYNC DATABASE REPLICA deep")
     assert recovering_node.query("EXISTS TABLE deep.t") == "1\n"
     recovering_node.query("INSERT INTO deep.t (id) SELECT number FROM numbers(3)")
-    assert recovering_node.query("SELECT sum(d) FROM deep.t") == "1803\n"
+    assert recovering_node.query("SELECT sum(d) FROM deep.t") == f"{3 * (DEPTH + 1)}\n"
     # The database's recovery never refused the metadata (the probe above did, in a query of its own).
     recovering_node.query("SYSTEM FLUSH LOGS text_log")
     assert (

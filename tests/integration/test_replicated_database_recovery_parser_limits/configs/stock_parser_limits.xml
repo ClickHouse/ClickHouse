@@ -1,9 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <!-- The server that recovers the table: stock limits, which the stored metadata exceeds. -->
-            <max_parser_depth>1000</max_parser_depth>
-            <max_ast_depth>1000</max_ast_depth>
-        </default>
-    </profiles>
-</clickhouse>
