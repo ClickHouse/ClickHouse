@@ -56,6 +56,7 @@
 #include <array>
 #include <iterator>
 #include <list>
+#include <map>
 #include <numeric>
 #include <ranges>
 #include <xxhash.h>
@@ -634,6 +635,8 @@ private:
         bool has_dynamic_structure = false;
         bool is_dynamic_complex = false;
         bool raw_value = false;
+        /// For arrays, the info of the element type, which is found by name otherwise.
+        mutable const TypeInfo * array_element_info = nullptr;
         mutable UnorderedMapWithMemoryTracking<
             String,
             std::array<ScalarPlan, 3>,
@@ -679,6 +682,29 @@ private:
         SerializationPtr last_serialization;
         ScalarPlan * last_scalar_plan = nullptr;
     };
+
+    using SharedPathPlans = UnorderedMapWithMemoryTracking<
+        String,
+        SharedPathPlan,
+        StringHashForHeterogeneousLookup,
+        std::equal_to<>>;
+
+    /// Objects under the same prefixes (e.g. the elements of an array of objects) have the same shared paths,
+    /// so the plans are kept for the whole call rather than rebuilt for every object. A plan caches a
+    /// `ScalarPlan`, which depends on the role, so the role is a part of the key.
+    SharedPathPlans & getSharedPathPlans(JSONBloomRole role, std::string_view logical_prefix, std::string_view hash_prefix)
+    {
+        const size_t role_index = static_cast<size_t>(role) - 1;
+        if (logical_prefix == hash_prefix)
+        {
+            auto & plans_by_prefix = shared_path_plans_by_prefix[role_index];
+            auto it = plans_by_prefix.find(logical_prefix);
+            if (it == plans_by_prefix.end())
+                it = plans_by_prefix.try_emplace(String(logical_prefix)).first;
+            return it->second;
+        }
+        return shared_path_plans_by_prefixes[role_index][{String(logical_prefix), String(hash_prefix)}];
+    }
 
     const TypeInfo & getTypeInfo(
         const DataTypePtr & type,
@@ -824,11 +850,7 @@ private:
 
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
         const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-        UnorderedMapWithMemoryTracking<
-            String,
-            SharedPathPlan,
-            StringHashForHeterogeneousLookup,
-            std::equal_to<>> shared_path_plans;
+        auto & shared_path_plans = getSharedPathPlans(role, logical_prefix, hash_prefix);
 
         chassert(start_row <= shared_data_offsets.size());
         const size_t end_row = start_row + std::min(num_rows, shared_data_offsets.size() - start_row);
@@ -1035,6 +1057,7 @@ private:
         std::string_view hash_path,
         std::string_view logical_path,
         const DataTypeArray & array_type,
+        const TypeInfo & array_info,
         const ColumnArray & array_column,
         size_t row,
         bool is_dynamic,
@@ -1045,7 +1068,9 @@ private:
         const auto & offsets = array_column.getOffsets();
         const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
         const size_t end = offsets[row];
-        const auto & nested_type_info = getTypeInfo(removeJSONBloomWrappers(nested_type));
+        if (!array_info.array_element_info)
+            array_info.array_element_info = &getTypeInfo(removeJSONBloomWrappers(nested_type));
+        const auto & nested_type_info = *array_info.array_element_info;
 
         for (size_t element = begin; element != end; ++element)
             emitValue(
@@ -1314,7 +1339,7 @@ private:
 
         if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
-            emitArray(hash_path, logical_path, *array_type, assert_cast<const ColumnArray &>(column), row, is_dynamic, index_path);
+            emitArray(hash_path, logical_path, *array_type, type_info, assert_cast<const ColumnArray &>(column), row, is_dynamic, index_path);
             return;
         }
 
@@ -1361,6 +1386,8 @@ private:
         StringHashForHeterogeneousLookup,
         std::equal_to<>> type_infos;
     UnorderedMapWithMemoryTracking<const ColumnObject *, ObjectPlan> object_plans;
+    std::array<UnorderedMapWithMemoryTracking<String, SharedPathPlans, StringHashForHeterogeneousLookup, std::equal_to<>>, 3> shared_path_plans_by_prefix;
+    std::array<std::map<std::pair<String, String>, SharedPathPlans>, 3> shared_path_plans_by_prefixes;
     size_t temporary_column_depth = 0;
     WriteBufferFromOwnString value_buffer;
     const FormatSettings format_settings;
