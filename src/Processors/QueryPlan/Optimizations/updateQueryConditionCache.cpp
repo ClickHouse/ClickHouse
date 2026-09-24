@@ -62,7 +62,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
     {
         const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-        if (!prewhere_node || !isDeterministicAllowingTopKFilter(prewhere_node))
+        if (!prewhere_node || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(prewhere_node))
             return;
     }
 
