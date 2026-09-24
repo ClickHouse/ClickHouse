@@ -1,10 +1,12 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONStringValuesIndexer.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
@@ -20,6 +22,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
@@ -1939,6 +1942,11 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         addDocumentsFromMap(preprocessed_column, offset, rows_read, context);
     }
+    else if (isObject(removeNullable(removeLowCardinality(index_column.type)))
+        && tokenizer->getType() == ITokenizer::Type::JSONStringValues)
+    {
+        addDocumentsFromJSON(preprocessed_column, index_column.type, offset, rows_read);
+    }
     else
     {
         const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
@@ -2019,6 +2027,33 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
         }
 
         granule_builder.incrementCurrentRow();
+    }
+}
+
+void MergeTreeIndexAggregatorText::addDocumentsFromJSON(ColumnPtr column, const DataTypePtr & type, size_t start_row, size_t rows_read)
+{
+    column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+
+    const auto * nullable = typeid_cast<const ColumnNullable *>(column.get());
+    const IColumn * nested = nullable ? &nullable->getNestedColumn() : column.get();
+    const auto * column_object = typeid_cast<const ColumnObject *>(nested);
+    if (!column_object)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "jsonStringValues text index expected a JSON column, got {}", column->getName());
+
+    const auto * type_object = typeid_cast<const DataTypeObject *>(removeNullable(removeLowCardinality(type)).get());
+    if (!type_object)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "jsonStringValues text index expected type JSON, got {}", type->getName());
+
+    JSONStringValuesIndexer indexer(granule_builder);
+    for (size_t i = start_row; i < start_row + rows_read; ++i)
+    {
+        if (nullable && nullable->isNullAt(i))
+        {
+            granule_builder.incrementCurrentRow();
+            continue;
+        }
+
+        indexer.addRow(*column_object, *type_object, i);
     }
 }
 
@@ -2364,13 +2399,14 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
             "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
 
-    /// The keyValuePairs tokenizer cannot be combined with a preprocessor, a postprocessor or positions.
-    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+    /// The keyValuePairs and jsonStringValues tokenizers cannot be combined with a preprocessor, a postprocessor or positions.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs || tokenizer->getType() == ITokenizer::Type::JSONStringValues)
     {
-        auto reject_argument = [](const String & argument)
+        const char * tokenizer_name = tokenizer->getTokenizerExternalName();
+        auto reject_argument = [tokenizer_name](const String & argument)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `{}` tokenizer",
-                argument, KeyValuePairsTokenizer::getExternalName());
+                argument, tokenizer_name);
         };
 
         if (preprocessor_ast)
@@ -2406,6 +2442,28 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
                 "Text index with the `{}` tokenizer must be created on a Map column with String or "
                 "LowCardinality(String) keys and values, got: {}",
                 KeyValuePairsTokenizer::getExternalName(), index_data_type->getName());
+    }
+    else if (tokenizer->getType() == ITokenizer::Type::JSONStringValues)
+    {
+        if (!index.expression_list_ast || index.expression_list_ast->children.size() != 1)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index with the `{}` tokenizer must be created on a single JSON column identifier",
+                JSONStringValuesTokenizer::getExternalName());
+
+        const auto * identifier = index.expression_list_ast->children.front()->as<ASTIdentifier>();
+        if (!identifier || identifier->compound())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index with the `{}` tokenizer must be created on a JSON column identifier, got: {}",
+                JSONStringValuesTokenizer::getExternalName(),
+                index.expression_list_ast->children.front()->formatForErrorMessage());
+
+        if (!isObject(removeNullable(removeLowCardinality(index_data_type))))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index with the `{}` tokenizer must be created on a JSON column, got: {}",
+                JSONStringValuesTokenizer::getExternalName(), index_data_type->getName());
     }
     else
     {

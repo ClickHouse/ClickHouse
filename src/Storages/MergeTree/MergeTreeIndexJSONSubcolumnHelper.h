@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
+#include <string_view>
 
 #include <Core/Block.h>
 #include <Core/Field.h>
@@ -69,5 +71,27 @@ bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field,
     const DataTypePtr & value_type);
+
+/// Haystack kinds that `jsonStringValues` may answer with Exact.
+enum class JSONStringValuesHaystackKind : uint8_t
+{
+    TypedString,
+    NullableTypedString,
+    ExplicitDynamicString,
+};
+
+struct JSONStringValuesHaystack
+{
+    String path;
+    JSONStringValuesHaystackKind kind;
+};
+
+/// Match a filter column against a bare JSON text index (`tokenizer = jsonStringValues`).
+/// `root_column_name` is the unique header column (the JSON identifier). Does not unwrap CAST
+/// and does not strip arbitrary `.:\`Type\`` suffixes.
+std::optional<JSONStringValuesHaystack> tryMatchJSONStringValuesHaystack(
+    std::string_view column_name,
+    const DataTypePtr & result_type,
+    std::string_view root_column_name);
 
 }

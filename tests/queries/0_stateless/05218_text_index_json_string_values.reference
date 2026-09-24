@@ -1,0 +1,107 @@
+-- typed String: Exact
+idx	0
+idx	2
+scan	0
+scan	2
+-- typed Nullable(String): Exact on a positive filter
+hello	0
+all	4
+any	0
+any	2
+-- explicit .:String is path-scoped: error on msg, not on status or Array
+1
+-- numbers are not indexed; only a String leaf matches
+score 12	4
+score 42	0
+-- Array(String) is not recursed into
+0
+-- AND of two Exact predicates
+0
+-- the index prunes granules
+Granules: 5/5
+Name: idx
+Granules: 2/5
+-- Exact direct read replaces the predicate
+1
+-- Exact direct read replaces positive Nullable and .:String
+1
+1
+-- positive count() is ReadFromTextIndexCount
+1
+1
+-- Exact direct read also replaces under NOT
+3
+-- IS FALSE over Nullable uses skip index (no direct read, matches master)
+idx	4
+scan	4
+0
+-- NOT (IS FALSE) uses skip index (no direct read, matches master)
+idx	0
+idx	1
+idx	2
+idx	3
+scan	0
+scan	1
+scan	2
+scan	3
+-- equals 0 over Nullable uses skip index (no direct read, matches master)
+idx	4
+scan	4
+0
+-- notEquals 1 over Nullable uses skip index (no direct read, matches master)
+idx	4
+scan	4
+0
+-- bare Dynamic is Unknown: correct rows, but the index is not used
+idx	1
+scan	1
+0
+-- NOT over Nullable uses Exact (NULL -> 0)
+idx	1
+idx	2
+idx	3
+idx	4
+scan	4
+1
+-- AND of typed String with NOT Nullable treats NULL as 0
+idx	1
+idx	3
+idx	4
+scan	4
+idx	3
+idx	4
+scan	3
+-- projected hasToken treats NULL as 0
+0	1
+2	0
+0	1
+2	\N
+-- mixed parts: unmaterialized Nullable default throws (NULL -> UInt8 cast), matching master
+scan	0
+scan	2
+1
+-- nested JSON keeps the parent path prefix
+typed nested	0
+typed nested scan	0
+nested dynamic	0
+nested dynamic scan	0
+no relative-path false match	0
+-- Nullable(JSON) skips NULL rows and still indexes String leaves
+idx	0
+scan	0
+null row	1
+-- shared-data String paths: JSON(max_dynamic_paths = 0)
+idx	0
+scan	0
+number not indexed	0
+no cross-path FP	0
+-- Dynamic shared variant: JSON(max_dynamic_types = 1) evicts the minority String
+in shared variant	0	false
+in shared variant	1	false
+in shared variant	2	false
+in shared variant	3	true
+idx	3
+scan	3
+number not indexed	0
+-- rejected index definitions
+-- the tokenizer does not tokenize strings

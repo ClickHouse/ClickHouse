@@ -310,6 +310,9 @@ bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & f
         return false;
 
     auto argument_tokenizer = TokenizerFactory::instance().get(const_value.safeGet<String>());
+    if (tokenizer->getType() == ITokenizer::Type::JSONStringValues)
+        return argument_tokenizer->getDescription() == SplitByNonAlphaTokenizer().getDescription();
+
     if (argument_tokenizer->getDescription() != tokenizer->getDescription())
         return false;
 
@@ -1168,12 +1171,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
-    auto direct_read_mode = getDirectReadMode(function_name);
 
     /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
     /// path. Partition hard, so none of them can emit a token in the pair format.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
-        return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
+        return traverseMapElementKeyValueNode(
+            function_name,
+            index_column_node,
+            getDirectReadMode(function_name),
+            value_type,
+            value_field,
+            out);
+
+    if (tokenizer->getType() == ITokenizer::Type::JSONStringValues)
+        return traverseJSONStringValuesNode(function_name, index_column_node, value_type, value_field, out);
+
+    auto direct_read_mode = getDirectReadMode(function_name);
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
@@ -1948,6 +1961,102 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     return true;
 }
 
+bool MergeTreeIndexConditionText::traverseJSONStringValuesNode(
+    const String & function_name,
+    const RPNBuilderTreeNode & index_column_node,
+    const DataTypePtr & value_type,
+    const Field & value_field,
+    RPNElement & out) const
+{
+    if (function_name != "hasToken" && function_name != "hasAnyTokens" && function_name != "hasAllTokens")
+        return false;
+
+    if (header.columns() != 1)
+        return false;
+
+    const auto * dag_node = index_column_node.getDAGNode();
+    if (!dag_node || !dag_node->result_type)
+        return false;
+
+    auto haystack = tryMatchJSONStringValuesHaystack(
+        index_column_node.getColumnName(), dag_node->result_type, header.getByPosition(0).name);
+    if (!haystack)
+        return false;
+
+    auto stripped_value_type = removeLowCardinality(value_type);
+    if (!value_field.isNull())
+        stripped_value_type = removeNullable(stripped_value_type);
+
+    const WhichDataType which_value(stripped_value_type);
+    const SplitByNonAlphaTokenizer split_impl;
+    const ITokenizer & split = split_impl;
+    VectorWithMemoryTracking<String> raw_tokens;
+
+    if (function_name == "hasToken")
+    {
+        if (!which_value.isString())
+            return false;
+
+        const String & needle = value_field.safeGet<String>();
+        if (needle.empty())
+            return false;
+
+        if (std::ranges::any_of(needle, [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
+            return false;
+
+        split.stringToTokens(needle.data(), needle.size(), raw_tokens);
+        if (raw_tokens.size() != 1)
+            return false;
+    }
+    else if (which_value.isString())
+    {
+        const String & needle = value_field.safeGet<String>();
+        if (needle.empty())
+            return false;
+        split.stringToTokens(needle.data(), needle.size(), raw_tokens);
+    }
+    else if (which_value.isArray())
+    {
+        for (const auto & element : value_field.safeGet<Array>())
+        {
+            if (element.getType() != Field::Types::String)
+                return false;
+            const String & token = element.safeGet<String>();
+            if (token.empty())
+                return false;
+            raw_tokens.push_back(token);
+        }
+    }
+    else
+        return false;
+
+    if (raw_tokens.empty())
+        return false;
+
+    VectorWithMemoryTracking<String> encoded_tokens;
+    encoded_tokens.reserve(raw_tokens.size());
+    for (const auto & token : raw_tokens)
+    {
+        if (token.empty())
+            return false;
+        encoded_tokens.push_back(KeyValuePairsTokenizer::encodeToken(haystack->path, token, /*is_rest=*/ false));
+    }
+
+    /// Exact for both skip-index and direct read in any polarity. For Nullable / `.:String` haystacks
+    /// this deliberately diverges from SQL NULL semantics: a NULL leaf yields a 0 posting, so
+    /// `NOT hasToken(...)` includes NULL rows (NULL -> 0), matching the community behavior for Nullable
+    /// text indexes (see ClickHouse issue #118690). Unmaterialized parts (e.g. after `ALTER ADD INDEX`)
+    /// cannot compute this default and throw `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` instead — also
+    /// matching master.
+
+    const auto search_mode = function_name == "hasAnyTokens" ? TextSearchMode::Any : TextSearchMode::All;
+    out.function = function_name == "hasAnyTokens" ? RPNElement::FUNCTION_HAS_ANY_TOKENS
+        : (function_name == "hasAllTokens" ? RPNElement::FUNCTION_HAS_ALL_TOKENS : RPNElement::FUNCTION_EQUALS);
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        function_name, search_mode, TextIndexDirectReadMode::Exact, std::move(encoded_tokens)));
+    return true;
+}
+
 std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const
 {
     /// `m['key']` before the subcolumn rewrite.
@@ -2108,6 +2217,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const String & function_name,
     RPNElement & out) const
 {
+    if (tokenizer->getType() == ITokenizer::Type::JSONStringValues)
+        return false;
+
     std::optional<size_t> set_key_position;
 
     auto has_index = [&](const RPNBuilderTreeNode & node)

@@ -551,6 +551,9 @@ private:
     /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
     void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
+    /// Path-scoped tokens from String leaves of a ColumnObject slice. `jsonStringValues` only.
+    void addDocumentsFromJSON(ColumnPtr column, const DataTypePtr & type, size_t start_row, size_t rows_read);
+
     String index_column_name;
     MergeTreeIndexTextParams params;
     /// A private clone of the index tokenizer when it is stateful (e.g. the Japanese or sparse-grams

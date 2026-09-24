@@ -36,6 +36,7 @@ public:
         SparseGrams,
         AsciiCJK,
         KeyValuePairs,
+        JSONStringValues,
 #if USE_JIEBA
         Chinese,
 #endif
@@ -499,6 +500,25 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
+/// Switch for a text index on a bare `JSON` column. String leaves are split with `splitByNonAlpha`,
+/// then encoded with `KeyValuePairsTokenizer::encodeToken(path, token, is_rest = false)`.
+/// Tokens are built in `MergeTreeIndexAggregatorText::addDocumentsFromJSON`; the methods below throw.
+struct JSONStringValuesTokenizer final : public ITokenizerHelper<JSONStringValuesTokenizer>
+{
+    JSONStringValuesTokenizer() : ITokenizerHelper(Type::JSONStringValues) {}
+
+    static const char * getName() { return "jsonStringValues"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return getName(); }
+
+    bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+};
+
 /// Parser extracting sparse grams (the same as function sparseGrams).
 /// See sparseGramsImpl.h for more details.
 struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer>
@@ -761,8 +781,9 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             return;
         }
         case ITokenizer::Type::KeyValuePairs:
+        case ITokenizer::Type::JSONStringValues:
         {
-            /// This tokenizer does not split strings: `nextInString` throws.
+            /// These tokenizers do not split strings: `nextInString` throws.
             detail::forEachTokenImpl(tokenizer, data, length, callback);
             return;
         }

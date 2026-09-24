@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -678,6 +679,22 @@ private:
             used_index_columns.insert(index_header.begin()->name);
         }
 
+        const bool have_exact = std::ranges::any_of(
+            selected_conditions,
+            [](const SelectedCondition & condition)
+            {
+                return condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact;
+            });
+        if (have_exact)
+        {
+            std::erase_if(
+                selected_conditions,
+                [](const SelectedCondition & condition)
+                {
+                    return condition.search_query->getDirectReadMode() != TextIndexDirectReadMode::Exact;
+                });
+        }
+
         return selected_conditions;
     }
 
@@ -755,7 +772,8 @@ private:
 
         /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
         const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
-        const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
+        const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer
+            && tokenizer->getType() != ITokenizer::Type::JSONStringValues;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 
         if (!apply_preprocessor && !apply_tokenizer && !apply_postprocessor)

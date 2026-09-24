@@ -276,6 +276,14 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(KeyValuePairsTokenizer::getName(), ITokenizer::Type::KeyValuePairs, key_value_pairs_creator);
 
+    auto json_string_values_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        assertParamsCount(args.size(), 0, JSONStringValuesTokenizer::getExternalName());
+        return std::make_unique<JSONStringValuesTokenizer>();
+    };
+
+    factory.registerTokenizer(JSONStringValuesTokenizer::getName(), ITokenizer::Type::JSONStringValues, json_string_values_creator);
+
     auto sparse_grams_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
         const auto * tokenizer_name = SparseGramsTokenizer::getExternalName();
