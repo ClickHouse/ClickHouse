@@ -40,7 +40,8 @@ class MatchedRowsStats;
   * with the probe side. Probe rows are joined and passed on at once. Nothing on the probe side
   * is buffered.
   *
-  * Fill stores right-side blocks per lane and records a 16-bit route plus a HyperLogLog sketch.
+  * Fill stores right-side blocks per lane and records a 16-bit route. A HyperLogLog sketch sizes a
+  * cold build; a cached distinct count lets a warm build skip the sketch.
   * Nothing is inserted yet. The barrier sizes the table at 50% max fill and picks the partition
   * count. The partition count is the smallest power of two whose range fits private L2, at least
   * one range per worker.
@@ -282,6 +283,11 @@ public:
         for (auto & clause : clauses)
             clause.setGrowBudgetForDrainForTests(bytes);
     }
+    void setLiveEstimateGateEnabledForTests(bool value) { live_estimate_gate_enabled_for_tests = value; }
+    size_t getCachedLiveDistinctEstimateForTests(size_t clause_idx = 0) const
+    {
+        return cached_distinct_estimates[clause_idx].load(std::memory_order_relaxed);
+    }
     size_t predictedArenaBytesForTests(bool grouped) const { return clauses.front().predictedArenaBytesForTests(grouped); }
     size_t predictedDuplicateScratchBytesForTests(size_t rows_in_range, bool first_group) const
     {
@@ -310,6 +316,7 @@ public:
     /// `beginStoredBlockDrain`; `target.addBlockToJoin` must accept concurrent callers, as
     /// `GraceHashJoin` does.
     void drainStoredBlocksInto(IJoin & target);
+    double getFillSketchEstimateForTests(size_t clause_idx = 0);
 
     /// Every right block stored so far, for an algorithm that takes them over during the fill
     /// (`JoinSwitcher`, `GraceHashJoin`): the fill lanes, or the row store of a single fill thread. With
@@ -344,9 +351,8 @@ private:
 
     using FillBlock = HashJoinClause::FillBlock;
 
-    /// One per fill thread, so appends and sketch updates never contend. The mutex guards `hll` alone.
-    /// The lane's filler holds it across a block's hash pass. A sketch merge takes it lane by lane, so
-    /// a merge never stalls the other lanes.
+    /// One filler owns each lane. Spill readers use the lane lock to observe its sketch as
+    /// `computeRoutes` left it; fills without spill or row limits update atomic registers without it.
     struct FillLane
     {
         explicit FillLane(size_t num_clauses) : hll(num_clauses) { }
@@ -460,8 +466,7 @@ private:
     /// pipeline-carried lane index without a lock: one mutexed emplace on a lane's first block, then
     /// atomic loads. It is sized once and never resized, so the fast path cannot race a rehash.
     /// Lane-less callers keep the thread-id map.
-    /// Mutable because `predictedResidentBytes` is a `const` query that still has to refresh the
-    /// cached distinct estimate under this lock. The sketches themselves are under their lane's lock.
+    /// Guards lane registration and live estimate traversal; spill sketches use per-lane locks.
     mutable std::mutex fill_mutex;
     std::deque<FillLane> lanes;
     std::unordered_map<std::thread::id, FillLane *> lane_by_thread;
@@ -476,18 +481,18 @@ private:
     /// interval.
     mutable std::vector<std::atomic<size_t>> cached_distinct_estimates;
     mutable std::atomic<size_t> distinct_estimate_at_rows{0};
+    /// Register-wise union of spill lanes at the last scheduled estimate refresh, per clause.
+    mutable std::vector<DenseHyperLogLog> live_merged_hll;
+    bool live_estimate_gate_enabled_for_tests = true;
 
     std::optional<size_t> build_rows_hint;
     /// An estimated build below `parallel_hash_join_threshold`, and every build of a one-thread query, runs
     /// on one fill thread, which inserts into the table as the blocks arrive.
     bool single_fill_thread = false;
-    /// The distinct-key count a previous run of this query left in the hash table statistics cache,
-    /// read once when the table is sized (`readDistinctKeysFromStatisticsCache`); the clause then sizes
-    /// from it as an exact estimate.
+    /// The previous build's distinct count is read before no-spill parallel fill or the first
+    /// single-fill insert. Spill-enabled parallel fills sketch for the live memory estimate.
     std::optional<size_t> cached_distinct_keys;
-    /// Distinct-key statistics. The count this build publishes serves the next run of this query: join
-    /// reordering, runtime filters, and this join's table size. The previous run's count, when the cache
-    /// has one, sizes this build's table.
+    /// This build publishes the exact count for the next run's planning and table sizing.
     StatsCollectingParams stats_collecting_params;
     /// The matched-row statistics the planner's row store decision reads.
     StatsCollectingParams match_stats_collecting_params;
