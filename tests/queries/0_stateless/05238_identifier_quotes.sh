@@ -4,15 +4,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-output=$(echo 'SELECT `cube`, count() FROM t GROUP BY `cube`' | $CLICKHOUSE_FORMAT)
-echo "$output" | grep -Fq 'GROUP BY `cube`' || exit 1
-echo "cube OK"
+check_roundtrip()
+{
+    query="$1"
 
-output=$(echo 'SELECT `rollup`, count() FROM t GROUP BY `rollup`' | $CLICKHOUSE_FORMAT)
-echo "$output" | grep -Fq 'GROUP BY `rollup`' || exit 1
-echo "rollup OK"
+    formatted=$(printf '%s\n' "$query" | $CLICKHOUSE_FORMAT) || exit 1
+    formatted_again=$(printf '%s\n' "$formatted" | $CLICKHOUSE_FORMAT) || exit 1
 
-output=$(echo 'WITH `recursive` AS (SELECT 1 AS x) SELECT * FROM `recursive`' | $CLICKHOUSE_FORMAT)
-echo "$output" | grep -Fq '`recursive` AS' || exit 1
-echo "$output" | grep -Fq 'FROM `recursive`' || exit 1
-echo "recursive OK"
+    [ "$formatted" = "$formatted_again" ] || exit 1
+}
+
+check_roundtrip 'SELECT `cube`, count() FROM t GROUP BY `cube`'
+check_roundtrip 'SELECT `rollup`, count() FROM t GROUP BY `rollup`'
+check_roundtrip 'WITH `recursive` AS (SELECT 1 AS x) SELECT * FROM `recursive`'
+
+echo "OK"
