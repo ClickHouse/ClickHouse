@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
 
+#include <span>
+
 namespace DB
 {
 
@@ -80,8 +82,10 @@ private:
         bool remove_inputs = false;
         /// The positions the caller asked for, which are also the outputs that survive.
         std::vector<size_t> required_output_positions;
-        /// Positions in the DAG outputs to keep.
-        std::vector<size_t> required_dag_positions;
+        /// How many of them index the DAG's outputs. The output header holds those first and the
+        /// pass-through columns after, and the positions are sorted, so the DAG outputs asked for are a
+        /// prefix of the positions rather than a list of their own.
+        size_t dag_position_count = 0;
         /// One entry per column of the input header, in header order.
         std::vector<InputColumn> input_columns;
         /// Whether any output goes away, and whether removeUnusedActions would erase any node. The
@@ -90,6 +94,12 @@ private:
         bool removes_any_output = false;
         bool removes_any_action_keeping_inputs = false;
         bool removes_any_action_removing_inputs = false;
+
+        /// The DAG outputs the caller asked for, as positions in `getOutputs()`.
+        std::span<const size_t> requiredDAGPositions() const
+        {
+            return {required_output_positions.data(), dag_position_count};
+        }
 
         bool removesAnyAction() const;
         bool changesAnything() const;
