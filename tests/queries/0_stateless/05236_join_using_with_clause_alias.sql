@@ -84,6 +84,10 @@ DROP TABLE t_right;
 -- case 12: the JOIN is in a subquery with its own WITH.
 SELECT max(s) FROM (WITH x + 1 AS id SELECT sum(x) AS s FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id));
 
+-- case 14: aliases defined in other clauses are considered too (old-analyzer-compatible).
+SELECT sum(x) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id) WHERE (x + 1 AS id) > 0;
+SELECT sum(x) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id) GROUP BY x + 1 AS id;
+
 -- case 13: LEFT JOIN with join_use_nulls.
 WITH x + 1 AS id SELECT x, t2.id FROM (SELECT 1 AS x UNION ALL SELECT 5) t1 LEFT JOIN (SELECT 2 AS id) t2 USING (id) ORDER BY x SETTINGS join_use_nulls = 1;
 
