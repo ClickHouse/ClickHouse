@@ -68,14 +68,13 @@ void findNumericIndexOfBatch(
     const ColumnArray::Offset * offsets,
     UInt64 * result,
     size_t rows,
-    size_t min_array_size,
     T value);
 
 #define ARRAY_INDEX_INSTANTIATION(T) \
     extern template void findNumericHasBatch<T>( \
         const T * data, const ColumnArray::Offset * offsets, UInt8 * result, size_t rows, T value); \
     extern template void findNumericIndexOfBatch<T>( \
-        const T * data, const ColumnArray::Offset * offsets, UInt64 * result, size_t rows, size_t min_array_size, T value);
+        const T * data, const ColumnArray::Offset * offsets, UInt64 * result, size_t rows, T value);
 
 ARRAY_INDEX_INSTANTIATION(Int8)
 ARRAY_INDEX_INSTANTIATION(UInt8)
@@ -945,7 +944,6 @@ private:
                             data.offsets.data(),
                             result.getData().data(),
                             data.offsets.size(),
-                            ArrayIndexImpl::getOptimizedSearchMinSize<Initial, true>(),
                             converted_needle);
                     }
                     return true;
