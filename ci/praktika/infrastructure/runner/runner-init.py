@@ -40,7 +40,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 76
+    version: int = 77
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -220,6 +220,10 @@ class Runner:
             config.max_jobs = 1_000_000
             config.keep_workspace = True
 
+        if config.init_environment == Environment.MACOS:
+            # Leaked memory ends up in swap files that only a reboot frees.
+            config.max_life = 3600 * 24 * 3
+
         log(f"max jobs: {config.max_jobs}")
         log(f"max chill: {config.max_chill}")
         log(f"labels: {self.labels}")
@@ -238,11 +242,8 @@ class Runner:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
 
-        # macOS runners run continuously without lifetime limits, so they exit
-        # to pick up a newer init script instead of ageing out like Linux.
         if config.init_environment == Environment.MACOS:
             self._exit_if_init_script_upgraded()
-            return
 
         runner_age = int(time.time()) - self.runner_start_time
         if config.max_life < runner_age:
@@ -594,6 +595,11 @@ launchctl disable system/com.apple.bluetoothd || true
 # (on recent macOS `mdutil` alone does not reliably free it).
 mdutil -a -i off || true
 rm -rf /.Spotlight-V100 || true
+
+# Stop persisting file-change history; CI churn grows `/.fseventsd` to several GB. Takes effect after reboot.
+rm -rf /System/Volumes/Data/.fseventsd || true
+mkdir -p /System/Volumes/Data/.fseventsd
+touch /System/Volumes/Data/.fseventsd/no_log
 
 # CloudWatch agent
 case $(uname -m) in
