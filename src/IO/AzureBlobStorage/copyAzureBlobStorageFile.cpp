@@ -436,16 +436,22 @@ void copyAzureBlobStorageFile(
                 auto copy_status = properties_model.CopyStatus;
                 auto copy_status_description = properties_model.CopyStatusDescription;
 
-
+                /// `CopySource` and `CopyStatusDescription` are optional in the properties of a blob:
+                /// the SDK models them as `Nullable`, and `Nullable::Value()` of an empty one aborts the
+                /// process in a release build (`AZURE_ASSERT_MSG` expands to a bare `std::abort` under
+                /// `NDEBUG`). The properties polled here come from the remote endpoint, which is under no
+                /// obligation to send either header, so nothing below dereferences them unchecked.
                 if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
                 {
-                    LOG_TRACE(log, "Copy of {} to {} finished", properties_model.CopySource.Value(), dest_blob);
+                    LOG_TRACE(log, "Copy of {} to {} finished", src_blob, dest_blob);
                 }
                 else
                 {
                     if (copy_status.HasValue())
                         throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
-                                        src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), operation.IsDone());
+                                        src_blob, dest_blob, copy_status.Value().ToString(),
+                                        copy_status_description.HasValue() ? copy_status_description.Value() : String("<none>"),
+                                        operation.IsDone());
                     throw Exception(
                         ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
                         "Copy from {} to {} didn't complete with success status (operation is done {})",
