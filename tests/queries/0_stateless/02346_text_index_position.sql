@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the EXPLAIN output below differs with parallel replicas.
--- Checks that `position(s, 'needle') > 0` and the equivalent comparisons use the text index like `s LIKE '%needle%'`.
--- Every query must return the same rows with `use_skip_indexes` 0 and 1, and with direct read on and off.
+-- `position(s, 'x') > 0` must use the text index like `s LIKE '%x%'`.
+-- Every query must return the same rows with and without the index.
 
 SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
@@ -86,7 +86,7 @@ SELECT 'absent needle', arraySort(groupArray(id)) FROM tab WHERE position(messag
 SELECT 'absent needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'nonexistent') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'absent needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'nonexistent') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
--- Spaces make it a token hint on 'bar', so the row 'bar none' must still be filtered out.
+-- The row 'bar none' must not match.
 SELECT 'needle with spaces', arraySort(groupArray(id)) FROM tab WHERE position(message, 'foo bar baz') > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'needle with spaces', arraySort(groupArray(id)) FROM tab WHERE position(message, 'foo bar baz') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'needle with spaces', arraySort(groupArray(id)) FROM tab WHERE position(message, 'foo bar baz') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
@@ -122,7 +122,7 @@ SELECT 'and not', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'so
 SELECT 'and not', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'soup') AND NOT (position(message, 'lpha') > 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'and not', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'soup') AND NOT (position(message, 'lpha') > 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
--- Pushing the NOT down turns it into `position != 0`, which is an occurrence check.
+-- Same as `position != 0`.
 SELECT 'not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') = 0) SETTINGS use_skip_indexes = 0;
 SELECT 'not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') = 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') = 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
@@ -186,7 +186,7 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
--- The index is not used at all for the start position form.
+-- The start position form does not use the index.
 SELECT count() FROM (
     EXPLAIN indexes = 1
     SELECT count() FROM tab WHERE position(message, 'lpha', 3) > 0
@@ -205,11 +205,11 @@ FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE positionCaseInsensitive(
 SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION positionCaseInsensitiveUTF8(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE positionCaseInsensitiveUTF8(message, 'LPHA') > 0);
 
--- Both spellings build the same search query, so they share one virtual column.
+-- Both conditions use the same index read.
 SELECT uniqExactIf(extract(explain, '-> (__text_index_[0-9A-Za-z_]+)'), explain LIKE '%INPUT%\_\_text\_index\_%'), countIf(explain LIKE '%FUNCTION position(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'lpha') > 0 AND message LIKE '%lpha%');
 
--- A hint: the original predicate stays.
+-- The index only filters, the original check stays.
 SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION position(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'foo bar baz') > 0);
 
@@ -326,7 +326,7 @@ DROP TABLE tab;
 
 SELECT '-- Preprocessor and postprocessor';
 
--- The preprocessor would also strip the `%` around the needle and make 'p' and 'q' complete tokens.
+-- This preprocessor breaks the pattern, so the index is not used.
 CREATE TABLE tab
 (
     id UInt32,
@@ -411,7 +411,7 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO tab VALUES (1, 'hello world'), (2, 'x你好y'), (3, '你 hello');
 
--- The continuation bytes of '你'.
+-- The last two bytes of '你'.
 SELECT 'cut needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '\xBD\xA0') > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'cut needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '\xBD\xA0') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'cut needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '\xBD\xA0') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;

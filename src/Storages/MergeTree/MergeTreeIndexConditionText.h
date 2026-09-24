@@ -175,8 +175,7 @@ private:
         Field value_field,
         RPNElement & out) const;
 
-    /// `position(s, 'needle') > 0` and other comparisons that only test whether `needle` occurs in `s`,
-    /// served as `s LIKE '%needle%'` (or `ILIKE` for the ASCII case-insensitive functions).
+    /// `position(s, 'x') > 0` and similar checks, handled as `s LIKE '%x%'`.
     bool traverseSubstringOccurrenceNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     TextIndexDirectReadMode getHintOrNoneMode() const;
