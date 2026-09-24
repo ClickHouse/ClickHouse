@@ -60,8 +60,6 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     using Counters16 = UInt8 __attribute__((ext_vector_type(16)));
     using Mask16 = bool __attribute__((ext_vector_type(16)));
 
-    /// Converting the comparison to `bool` lanes makes it independent of whether it yields -1 or 1 per lane,
-    /// which depends on `-faltivec-src-compat` on PowerPC.
     constexpr auto threshold = static_cast<Int8>(0xBF);
 
     size_t res = 0;

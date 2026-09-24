@@ -105,8 +105,7 @@ enum ComputeWidthMode
 };
 
 /// One bit per byte of a block of `block_size` bytes that is not printable ASCII (32 to 126), lowest bit first.
-/// Converting the comparison to `bool` lanes makes it independent of whether it yields -1 or 1 per lane,
-/// which depends on `-faltivec-src-compat` on PowerPC. Turning the lanes into bits is endian dependent.
+/// Turning the lanes into bits is endian dependent.
 template <size_t block_size>
 ALWAYS_INLINE UInt32 nonPrintableASCIIMask(const UInt8 * data)
 {
