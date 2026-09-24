@@ -287,8 +287,7 @@ void PipelineExecutor::finalizeExecution()
     /// The output formats write their epilogue in `onPipelineFinished` below, and for some of them (`Parquet`,
     /// `ORC`, the parallel formatting) that is a substantial amount of work with its own memory, which used
     /// to be done by the executor threads. It stays within the resource accounting of the query: the CPU slots
-    /// are released only after the hooks have run, on every exit path, and the memory reservation is synced
-    /// with the memory tracker one last time after them.
+    /// are released only after the hooks have run, on every exit path.
     SCOPE_EXIT({
         single_thread_cpu_slot.reset();
         tasks.freeCPU();
@@ -338,14 +337,21 @@ void PipelineExecutor::finalizeExecution()
         }
     }
 
-    /// The whole progress of the query is known at this point, so the output formats can write their epilogue.
-    for (const auto & processor : graph->getProcessors())
-        processor->onPipelineFinished();
-
-    /// The memory retained by the epilogues has to reach the reservation, as the memory of the processors did.
+    /// Everything that can still fail the query is checked before the output formats write their epilogue:
+    /// once a format has committed its footer, a late exception could not be reported through the format
+    /// any more (it is already finalized), and the client would get a complete-looking successful response
+    /// for a failed query. The memory reservation is synced with the memory tracker one last time here, as
+    /// the executor threads do after every processor, so that `MEMORY_RESERVATION_KILLED` is still reported
+    /// as a failure; the time limit was checked above. The allocations of the epilogues themselves are still
+    /// limited by the memory tracker of the query, which throws from within the format, before it is marked
+    /// as finalized.
     WorkloadResources resources(nullptr, process_list_element);
     if (resources.isMemorySyncNeeded())
         resources.syncMemory();
+
+    /// The whole progress of the query is known at this point, so the output formats can write their epilogue.
+    for (const auto & processor : graph->getProcessors())
+        processor->onPipelineFinished();
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)
