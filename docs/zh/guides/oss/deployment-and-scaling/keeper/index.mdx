@@ -66,51 +66,40 @@ ClickHouse Keeper 既可作为 ZooKeeper 的独立替代方案使用，也可作
 
 内部协调设置位于 `<keeper_server>.<coordination_settings>` 部分，包含以下参数：
 
-| 参数                                        | 说明                                                                                                                             | 默认值              |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| `operation_timeout_ms`                    | 单个客户端操作的超时时间 (毫秒)                                                                                                              | `10000`          |
-| `min_session_timeout_ms`                  | 客户端会话的最小超时时间 (毫秒)                                                                                                              | `10000`          |
-| `session_timeout_ms`                      | 客户端会话的最大超时时间 (毫秒)                                                                                                              | `100000`         |
-| `dead_session_check_period_ms`            | ClickHouse Keeper 检查失效会话并将其移除的频率 (毫秒)                                                                                          | `500`            |
-| `heart_beat_interval_ms`                  | ClickHouse Keeper 的 leader 向跟随者发送心跳的频率 (毫秒)                                                                                    | `500`            |
-| `election_timeout_lower_bound_ms`         | 如果跟随者在此时间间隔内未收到 leader 的心跳，则可以发起 leader 选举。该值必须小于或等于 `election_timeout_upper_bound_ms`。理想情况下，两者不应相等。                           | `1000`           |
-| `election_timeout_upper_bound_ms`         | 如果跟随者在此时间间隔内未收到 leader 的心跳，则必须发起 leader 选举。                                                                                    | `2000`           |
-| `rotate_log_storage_interval`             | 单个文件中存储的日志记录数。                                                                                                                 | `100000`         |
-| `reserved_log_items`                      | 执行合并整理前保留的协调日志记录数。                                                                                                             | `100000`         |
-| `snapshot_distance`                       | ClickHouse Keeper 创建新快照的频率 (按日志记录数计算) 。                                                                                        | `100000`         |
-| `snapshots_to_keep`                       | 保留的快照数量。                                                                                                                       | `3`              |
-| `stale_log_gap`                           | 当 leader 认为跟随者已过时，并向其发送快照而不是日志时使用的阈值。                                                                                          | `10000`          |
-| `fresh_log_gap`                           | 节点变为最新状态时的阈值。                                                                                                                  | `200`            |
-| `max_requests_batch_size`                 | 请求发送到 RAFT 前，按请求数计算的批次最大大小。                                                                                                    | `100`            |
-| `force_sync`                              | 每次写入协调日志时都调用 `fsync`。                                                                                                          | `true`           |
-| `quorum_reads`                            | 通过整个 RAFT 共识流程执行读取请求，将其按写入方式处理，速度相近。                                                                                           | `false`          |
-| `raft_logs_level`                         | 协调相关的文本日志级别 (trace、debug 等) 。                                                                                                  | `system default` |
-| `auto_forwarding`                         | 允许将写入请求从跟随者转发给 leader。                                                                                                         | `true`           |
-| `shutdown_timeout`                        | 等待内部连接完成并关闭的时间 (毫秒) 。                                                                                                          | `5000`           |
-| `startup_timeout`                         | 如果服务器未在指定超时时间内连接到其他 quorum 参与者，则会终止 (毫秒) 。                                                                                     | `30000`          |
-| `async_replication`                       | 启用异步复制。在提升性能的同时保留所有读写保证。此设置默认禁用，以避免破坏向后兼容性。                                                                                    | `false`          |
-| `latest_logs_cache_size_threshold`        | 最新日志条目的内存缓存最大总大小。                                                                                                              | `1GiB`           |
-| `commit_logs_cache_size_threshold`        | 已弃用。如果未设置 `log_readahead_commit_window_bytes`，则使用此设置。                                                                          | -                |
-| `commit_logs_cache_entry_count_threshold` | 已弃用，无任何作用。请改用 `log_readahead_commit_window_bytes`。                                                                             | -                |
-| `log_readahead_enabled`                   | 为更新日志追赶读取 (跟随者复制) 启用按 peer 解码的预读。                                                                                              | `false`          |
-| `log_readahead_window_bytes`              | 每个 peer reader 缓冲的已解码条目的最大字节数。应至少与典型的 append-entries 批次一样大。                                                                    | `64MiB`          |
-| `log_readahead_max_peer_readers`          | 并发的每 peer 预读 reader 的最大数量。                                                                                                     | `8`              |
-| `log_readahead_eviction_timeout_ms`       | 非活动的每 peer 预读 reader 或 commit reader 被逐出前的空闲超时时间 (后续未命中会重新创建它) 。                                                               | `30000`          |
-| `log_readahead_pool_threads`              | 专用预读线程池中的线程数。`0` 会从 `log_readahead_max_peer_readers` 推导该值。                                                                     | `0`              |
-| `log_readahead_serve_wait_timeout_ms`     | 回退到直接读取前，等待后台预读填充的最长时间。                                                                                                        | `200`            |
-| `log_readahead_chunk_size`                | 预读填充任务中每个块解码的日志条目数。                                                                                                            | `16`             |
-| `log_readahead_commit_window_bytes`       | 提交线程前预先缓冲的已解码日志条目的最大总大小。`0` 会禁用提交预读 (提交操作会逐个从磁盘读取条目) 。                                                                         | `500MiB`         |
-| `log_startup_read_max_streams`            | Keeper 启动期间并发读取的更新日志文件最大数量。`0` = 自动使用 CPU 核心数。`1` = 使用串行 (并行化前) 的启动读取。有效并行度受需读取的更新日志文件数量限制；对于寻道受限的存储 (HDD、IOPS 受限的卷) ，请考虑降低此值。 | `0`              |
-| `log_startup_read_buffer_size`            | Keeper 启动时读取更新日志所使用的每流读取缓冲区大小 (字节) 。必须大于 `0`。缓冲区还会被限制为不超过文件大小。                                                                 | `8MiB`           |
-| `disk_move_retries_wait_ms`               | 文件在磁盘之间移动时发生失败后，两次重试之间的等待时间。                                                                                                   | `1000`           |
-| `disk_move_retries_during_init`           | 初始化期间，文件在磁盘之间移动时发生失败后的重试次数。                                                                                                    | `100`            |
-| `experimental_use_rocksdb`                | 使用 RocksDB 作为后端存储。                                                                                                             | `0`              |
+| 参数                                 | 说明                                                                                                   | 默认值              |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------- |
+| `operation_timeout_ms`             | 单个客户端操作的超时时间 (毫秒)                                                                                    | `10000`          |
+| `min_session_timeout_ms`           | 客户端会话的最小超时时间 (毫秒)                                                                                    | `10000`          |
+| `session_timeout_ms`               | 客户端会话的最大超时时间 (毫秒)                                                                                    | `100000`         |
+| `dead_session_check_period_ms`     | ClickHouse Keeper 检查失效会话并将其移除的频率 (毫秒)                                                                | `500`            |
+| `heart_beat_interval_ms`           | ClickHouse Keeper 的 leader 向跟随者发送心跳的频率 (毫秒)                                                          | `500`            |
+| `election_timeout_lower_bound_ms`  | 如果跟随者在此时间间隔内未收到 leader 的心跳，则可以发起 leader 选举。该值必须小于或等于 `election_timeout_upper_bound_ms`。理想情况下，两者不应相等。 | `1000`           |
+| `election_timeout_upper_bound_ms`  | 如果跟随者在此时间间隔内未收到 leader 的心跳，则必须发起 leader 选举。                                                          | `2000`           |
+| `rotate_log_storage_interval`      | 单个文件中存储的日志记录数。                                                                                       | `100000`         |
+| `reserved_log_items`               | 执行合并整理前保留的协调日志记录数。                                                                                   | `100000`         |
+| `snapshot_distance`                | ClickHouse Keeper 创建新快照的频率 (按日志记录数计算) 。                                                              | `100000`         |
+| `snapshots_to_keep`                | 保留的快照数量。                                                                                             | `3`              |
+| `stale_log_gap`                    | 当 leader 认为跟随者已过时，并向其发送快照而不是日志时使用的阈值。                                                                | `10000`          |
+| `fresh_log_gap`                    | 节点变为最新状态时的阈值。                                                                                        | `200`            |
+| `max_requests_batch_size`          | 请求发送到 RAFT 前，按请求数计算的批次最大大小。                                                                          | `100`            |
+| `force_sync`                       | 每次写入协调日志时都调用 `fsync`。                                                                                | `true`           |
+| `quorum_reads`                     | 通过整个 RAFT 共识流程执行读取请求，将其按写入方式处理，速度相近。                                                                 | `false`          |
+| `raft_logs_level`                  | 协调相关的文本日志级别 (trace、debug 等) 。                                                                        | `system default` |
+| `auto_forwarding`                  | 允许将写入请求从跟随者转发给 leader。                                                                               | `true`           |
+| `shutdown_timeout`                 | 等待内部连接完成并关闭的时间 (毫秒) 。                                                                                | `5000`           |
+| `startup_timeout`                  | 如果服务器未在指定超时时间内连接到其他 quorum 参与者，则会终止 (毫秒) 。                                                           | `30000`          |
+| `async_replication`                | 启用异步复制。在提升性能的同时保留所有读写保证。此设置默认禁用，以避免破坏向后兼容性。                                                          | `false`          |
+| `latest_logs_cache_size_threshold` | 最新日志条目的内存缓存最大总大小。                                                                                    | `1GiB`           |
+| `commit_logs_cache_size_threshold` | 提交下一步所需日志条目的内存缓存最大总大小。                                                                               | `500MiB`         |
+| `disk_move_retries_wait_ms`        | 文件在磁盘之间移动时发生失败后，两次重试之间的等待时间。                                                                         | `1000`           |
+| `disk_move_retries_during_init`    | 初始化期间，文件在磁盘之间移动时发生失败后的重试次数。                                                                          | `100`            |
+| `experimental_use_rocksdb`         | 使用 RocksDB 作为后端存储。                                                                                   | `0`              |
 
-quorum 的配置位于 `<keeper_server>.<raft_configuration>` 部分，其中包含服务器描述。
+Quorum 配置位于 `<keeper_server>.<raft_configuration>` 部分，包含各服务器的描述。
 
-整个 quorum 唯一的参数是 `secure`，用于启用 quorum 参与者之间通信的加密连接。如果节点之间的内部通信需要 SSL 连接，可将该参数设为 `true`；否则可不指定。
+整个 quorum 只有一个参数 `secure`，用于为 quorum 参与者之间的通信启用加密连接。如果节点之间的内部通信需要 SSL 连接，可将该参数设为 `true`；否则可不指定。
 
-每个 `<server>` 的主要参数为：
+每个 `<server>` 的主要参数有：
 
 * `id` — quorum 中的服务器标识符。
 * `hostname` — 该服务器所在主机的主机名。
@@ -182,7 +171,7 @@ clickhouse keeper --config /etc/your_path_to_config/config.xml
   ### 四字母命令
 </div>
 
-ClickHouse Keeper 也提供 4lw 命令，其用法与 ZooKeeper 基本相同。每个命令都由四个字母组成，例如 `mntr`、`stat` 等。还有一些比较常用的命令：`stat` 提供有关服务器和已连接客户端的常规信息，`srvr` 提供服务器的扩展信息，`cons` 提供连接的扩展信息。
+ClickHouse Keeper 也提供 4lw 命令，其用法与 ZooKeeper 基本相同。每个命令都由四个字母组成，例如 `mntr`、`stat` 等。还有一些比较常用的命令：`stat` 提供有关 server 和已连接客户端的常规信息，`srvr` 提供 server 的扩展信息，`cons` 提供 connections 的扩展信息。
 
 4lw 命令有一个白名单配置项 `four_letter_word_white_list`，其默认值为 `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,ydld`。
 
@@ -194,7 +183,7 @@ echo mntr | nc localhost 9181
 
 以下是 4lw 命令的详细说明：
 
-* `ruok`：测试服务器是否正在运行且未处于 error 状态。如果服务器正在运行，会返回 `imok`；否则将完全没有响应。返回 `imok` 并不一定表示服务器已加入 quorum，它只说明服务器进程处于活动状态，并已绑定到指定的客户端端口。要查看与 quorum 相关的状态以及客户端连接信息，请使用 `stat`。
+* `ruok`：测试 server 是否正在运行且未处于 error 状态。如果 server 正在运行，会返回 `imok`；否则将完全没有响应。返回 `imok` 并不一定表示 server 已加入 quorum，它只说明 server 进程处于活动状态，并已绑定到指定的客户端端口。要查看与 quorum 相关的状态以及客户端 connection 信息，请使用 `stat`。
 
 ```response
 imok
@@ -218,22 +207,11 @@ zk_ephemerals_count     0
 zk_approximate_data_size        723
 zk_open_file_descriptor_count   310
 zk_max_file_descriptor_count    10240
-zk_leader_uptime        1234
-zk_sum_leader_unavailable_time 1234
-zk_cnt_leader_unavailable_time 1
-zk_sum_election_time 1234
-zk_cnt_election_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
 
-`zk_sum_leader_unavailable_time`、`zk_cnt_leader_unavailable_time`、`zk_sum_election_time` 和 `zk_cnt_election_time` 是仅针对 leader 的累计指标。它们是每个服务器的观测值，而非集群级可用性度量：当该服务器不再观测到存活的 leader 时，便开始计时。在网络分区期间，其中可能包括旧 leader 在另一分区中仍然存活的时间。选举指标仅记录在此类本地观测到的无 leader 窗口之后成功完成的选举；未出现采样到的无 leader 状态的领导权转移不会被计入，这是有意的设计。
-
-Keeper 每隔 `heart_beat_interval_ms` 对其本地 NuRaft leader 状态采样一次，但采样频率不会高于每 100 毫秒一次。每个边界与本地状态转换之间最多可能相差一个有效时间间隔，短于该时间间隔的窗口可能会被遗漏。Keeper 会在 NuRaft 的 `BecomeLeader` 时记录本地选举完成。`srst` 会重置这四个值。
-
-每种最近一次本地观测到的窗口耗时也会以毫秒为单位作为 `KeeperLastLeaderElectionTime` 和 `KeeperLastLeaderUnavailableTime` 导出到 `system.asynchronous_metrics`。`KeeperLastLeaderElectionTime` 遵循与 `zk_sum_election_time` 相同的无 leader 窗口定义。两者也都仅针对 leader：非活动 leader 的节点，或尚未完成窗口的节点，都会报告 `0`。`srst` 会将它们与累计计数器一起重置。
-
-* `srvr`：列出服务器的完整信息。
+* `srvr`：列出 server 的完整信息。
 
 ```response
 ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
@@ -247,7 +225,7 @@ Mode: leader
 Node count: 4
 ```
 
-* `stat`：列出服务器和已连接客户端的简要信息。
+* `stat`：列出 server 和已连接客户端的简要信息。
 
 ```response
 ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
@@ -270,7 +248,7 @@ Node count: 4
 Server stats reset.
 ```
 
-* `conf`：输出服务配置的详细信息。
+* `conf`: 打印当前服务配置的详细信息。
 
 ```response
 server_id=1
@@ -396,13 +374,13 @@ target_committed_log_idx    101
 last_snapshot_idx   50
 ```
 
-* `rqld`：请求成为新的 leader。请求已发送时返回 `Sent leadership request to leader.`，未发送时返回 `Failed to send leadership request to leader.`。如果该节点已经是 leader，结果与请求已发送时相同。
+* `rqld`：请求成为新的 leader。若请求发送成功，则返回 `Sent leadership request to leader.`；若未发送，则返回 `Failed to send leadership request to leader.`。如果该节点已是 leader，则结果与请求发送成功时相同。
 
 ```response
 Sent leadership request to leader.
 ```
 
-* `ftfl`：列出所有功能开关及其在该 Keeper 实例中是否已启用。
+* `ftfl`：列出所有功能开关，以及它们是否已在 Keeper 实例上启用。
 
 ```response
 filtered_list   1
@@ -410,13 +388,13 @@ multi_read  1
 check_not_exists    0
 ```
 
-* `ydld`：请求让出 leader 身份并转为 follower。如果接收该请求的服务器是 leader，它会先暂停写操作，等待继任者 (当前 leader 不会成为继任者) 追赶至最新日志，然后辞去 leader 身份。继任者将自动选出。请求已发送时返回 `Sent yield leadership request to leader.`，未发送时返回 `Failed to send yield leadership request to leader.`。如果该节点已是 follower，结果与发送该请求时相同。
+* `ydld`：请求让出 leader 角色并切换为跟随者。如果接收该请求的 server 是 leader，它会先暂停写入操作，等待继任者 (当前 leader 不可能成为继任者) 完成对最新日志的追平，然后辞去 leader 身份。继任者将自动选出。如果请求发送成功，则返回 `Sent yield leadership request to leader.`；如果请求未发送，则返回 `Failed to send yield leadership request to leader.`。如果该节点本身已经是跟随者，结果与请求已发送时相同。
 
 ```response
 Sent yield leadership request to leader.
 ```
 
-* `pfev`：返回所有已收集事件的值。对于每个事件，返回事件名称、事件值和事件描述。
+* `pfev`：返回所有已收集事件的值。对于每个事件，会返回事件名称、事件值及其描述。
 
 ```response
 FileOpen        62      Number of files opened.
@@ -529,7 +507,7 @@ SYSTEM STOP MERGES;
 
 4. 可选但建议执行：找到 ZooKeeper 的 leader 节点，将其重新启动后再停止。这样会强制 ZooKeeper 在转换前先将一致性快照写入磁盘。
 
-5. 在 leader 节点上运行 `clickhouse-keeper-converter`。如果你安装了完整的 ClickHouse 可执行文件，请改用 `keeper-converter` 子命令 (`clickhouse keeper-converter`) 。如果两者都不可用，请[下载该可执行文件](/zh/get-started/setup/self-managed/quick-install#install-clickhouse-using-curl)。
+5. 在 leader 节点上运行 `clickhouse-keeper-converter`。如果你安装了完整的 ClickHouse 可执行文件，请改用 `keeper-converter` 子命令 (`clickhouse keeper-converter`) 。如果两者都不可用，请[下载该可执行文件](/zh/getting-started/quick-start/oss#install-clickhouse)。
 
 ```bash
 clickhouse-keeper-converter \
@@ -743,25 +721,17 @@ Keeper 实例的一种可能存储配置如下所示：
 </div>
 
 为尽量减少从磁盘读取的数据量，Keeper 会在内存中缓存日志条目。
-如果请求较大，日志条目会占用过多内存，因此会限制缓存的日志量。
-最新日志缓存的上限由以下参数控制：
+如果请求较大，日志条目会占用过多内存，因此缓存日志的数量设有上限。
+该上限由以下两个配置控制：
 
-* `latest_logs_cache_size_threshold` - 缓存中存储的最新日志总大小
+* `latest_logs_cache_size_threshold` - 缓存中保存的最新日志总大小
+* `commit_logs_cache_size_threshold` - 接下来需要提交的后续日志总大小
 
-如果默认值过大，可以通过调低此配置来减少内存使用量。
-
-后续提交所需的日志条目由已解码的预读读取器提供，其大小由
-`log_readahead_commit_window_bytes` 控制 (`0` 会禁用提交预读) 。此设置取代了
-已弃用的 `commit_logs_cache_size_threshold` 和 `commit_logs_cache_entry_count_threshold` 设置，
-后两者仅为保持配置兼容性而保留 (如果未设置前者，它仍会映射到 `log_readahead_commit_window_bytes`；
-后者则不起作用) 。当 `log_readahead_enabled` 为 `true` 时，同一预读机制还会为 follower
-副本追赶读取提供服务；有关 peer 端的调优参数，请参阅[内部协调设置](#internal-coordination-settings)中的
-`log_readahead_window_bytes`、`log_readahead_max_peer_readers`、`log_readahead_eviction_timeout_ms`、
-`log_readahead_pool_threads`、`log_readahead_serve_wait_timeout_ms` 和 `log_readahead_chunk_size`。
+如果默认值过大，可以通过调低这两个配置来减少内存占用。
 
 <Note>
-  您可以使用 `pfev` 命令查看从各缓存和文件读取的日志量。
-  还可以通过 Prometheus 端点提供的指标跟踪两个缓存的当前大小。
+  你可以使用 `pfev` 命令查看从各个缓存和文件中读取的日志量。
+  你也可以使用 Prometheus 端点提供的指标来跟踪这两个缓存的当前大小。
 </Note>
 
 <div id="prometheus">
@@ -809,266 +779,270 @@ curl 127.0.0.1:9363/metrics
 
 本指南提供了配置 ClickHouse Keeper 所需的简单最小设置，并附带一个测试分布式操作的示例。该示例在 Linux 上使用 3 个节点进行。
 
-<Steps>
-  <Step title="使用 Keeper 设置配置节点" id="1-configure-nodes-with-keeper-settings">
-    1. 在 3 台主机 (`chnode1`、`chnode2`、`chnode3`) 上安装 3 个 ClickHouse 实例。 (有关 ClickHouse 的安装详情，请参阅[快速入门](/zh/get-started/setup/install)。)
+<div id="1-configure-nodes-with-keeper-settings">
+  ### 1. 使用 Keeper 设置来配置节点
+</div>
 
-    2. 在每个节点上，添加以下配置项，以允许通过网络接口进行对外通信。
-       ```xml
-       <listen_host>0.0.0.0</listen_host>
-       ```
+1. 在 3 台主机 (`chnode1`、`chnode2`、`chnode3`) 上安装 3 个 ClickHouse 实例。 (有关 ClickHouse 的安装详情，请参阅[快速入门](/zh/get-started/setup/install)。)
 
-    3. 将以下 ClickHouse Keeper 配置添加到三台服务器中的每一台，并为各服务器更新 `<server_id>` 设置；例如，`chnode1` 应设为 `1`，`chnode2` 应设为 `2`，依此类推。
+2. 在每个节点上，添加以下配置项，以允许通过网络接口进行对外通信。
+   ```xml
+   <listen_host>0.0.0.0</listen_host>
+   ```
 
-       ```xml
-       <keeper_server>
-           <tcp_port>9181</tcp_port>
-           <server_id>1</server_id>
-           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
-           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+3. 将以下 ClickHouse Keeper 配置添加到三台服务器中的每一台，并为各服务器更新 `<server_id>` 设置；例如，`chnode1` 应设为 `1`，`chnode2` 应设为 `2`，依此类推。
 
-           <coordination_settings>
-               <operation_timeout_ms>10000</operation_timeout_ms>
-               <session_timeout_ms>30000</session_timeout_ms>
-               <raft_logs_level>warning</raft_logs_level>
-           </coordination_settings>
+   ```xml
+   <keeper_server>
+       <tcp_port>9181</tcp_port>
+       <server_id>1</server_id>
+       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
 
-           <raft_configuration>
-               <server>
-                   <id>1</id>
-                   <hostname>chnode1.domain.com</hostname>
-                   <port>9234</port>
-               </server>
-               <server>
-                   <id>2</id>
-                   <hostname>chnode2.domain.com</hostname>
-                   <port>9234</port>
-               </server>
-               <server>
-                   <id>3</id>
-                   <hostname>chnode3.domain.com</hostname>
-                   <port>9234</port>
-               </server>
-           </raft_configuration>
-       </keeper_server>
-       ```
+       <coordination_settings>
+           <operation_timeout_ms>10000</operation_timeout_ms>
+           <session_timeout_ms>30000</session_timeout_ms>
+           <raft_logs_level>warning</raft_logs_level>
+       </coordination_settings>
 
-       以下是上文中使用的基本设置：
+       <raft_configuration>
+           <server>
+               <id>1</id>
+               <hostname>chnode1.domain.com</hostname>
+               <port>9234</port>
+           </server>
+           <server>
+               <id>2</id>
+               <hostname>chnode2.domain.com</hostname>
+               <port>9234</port>
+           </server>
+           <server>
+               <id>3</id>
+               <hostname>chnode3.domain.com</hostname>
+               <port>9234</port>
+           </server>
+       </raft_configuration>
+   </keeper_server>
+   ```
 
-       | 参数                        | 描述                                     | 示例                                |
-       | ------------------------- | -------------------------------------- | --------------------------------- |
-       | tcp&#95;port              | Keeper 客户端使用的端口                        | 9181，默认对应 ZooKeeper 中的 2181       |
-       | server&#95;id             | Raft 配置中每个 ClickHouse Keeper 服务器使用的标识符 | 1                                 |
-       | coordination&#95;settings | 协调相关参数部分，例如超时                          | timeouts: 10000, log level: trace |
-       | server                    | 参与节点的服务器定义                             | 各服务器定义的列表                         |
-       | raft&#95;configuration    | Keeper 集群中各服务器的配置                      | 每个服务器的 server 和 settings          |
-       | id                        | Keeper 服务中服务器的数字 ID                    | 1                                 |
-       | hostname                  | Keeper 集群中各服务器的主机名、IP 或 FQDN           | `chnode1.domain.com`              |
-       | port                      | 用于服务器间 Keeper 连接监听的端口                  | 9234                              |
+   以下是上文中使用的基本设置：
 
-    4. 启用 ZooKeeper 组件。它将使用 ClickHouse Keeper 引擎：
+   | 参数                        | 描述                                     | 示例                                |
+   | ------------------------- | -------------------------------------- | --------------------------------- |
+   | tcp&#95;port              | Keeper 客户端使用的端口                        | 9181，默认对应 ZooKeeper 中的 2181       |
+   | server&#95;id             | Raft 配置中每个 ClickHouse Keeper 服务器使用的标识符 | 1                                 |
+   | coordination&#95;settings | 协调相关参数部分，例如超时                          | timeouts: 10000, log level: trace |
+   | server                    | 参与节点的服务器定义                             | 各服务器定义的列表                         |
+   | raft&#95;configuration    | Keeper 集群中各服务器的配置                      | 每个服务器的 server 和 settings          |
+   | id                        | Keeper 服务中服务器的数字 ID                    | 1                                 |
+   | hostname                  | Keeper 集群中各服务器的主机名、IP 或 FQDN           | `chnode1.domain.com`              |
+   | port                      | 用于服务器间 Keeper 连接监听的端口                  | 9234                              |
 
-       ```xml
-           <zookeeper>
-               <node>
-                   <host>chnode1.domain.com</host>
-                   <port>9181</port>
-               </node>
-               <node>
-                   <host>chnode2.domain.com</host>
-                   <port>9181</port>
-               </node>
-               <node>
-                   <host>chnode3.domain.com</host>
-                   <port>9181</port>
-               </node>
-           </zookeeper>
-       ```
+4. 启用 ZooKeeper 组件。它将使用 ClickHouse Keeper 引擎：
 
-       以下是上文中使用的基本设置：
+   ```xml
+       <zookeeper>
+           <node>
+               <host>chnode1.domain.com</host>
+               <port>9181</port>
+           </node>
+           <node>
+               <host>chnode2.domain.com</host>
+               <port>9181</port>
+           </node>
+           <node>
+               <host>chnode3.domain.com</host>
+               <port>9181</port>
+           </node>
+       </zookeeper>
+   ```
 
-       | 参数   | 描述                                    | 示例                     |
-       | ---- | ------------------------------------- | ---------------------- |
-       | node | 用于 ClickHouse Keeper 连接的节点列表          | 为每台服务器配置一个 settings 条目 |
-       | host | 每个 ClickHouse Keeper 节点的主机名、IP 或 FQDN | `chnode1.domain.com`   |
-       | port | ClickHouse Keeper 客户端端口               | 9181                   |
+   以上是前面用到的基本设置：
 
-    5. 重启 ClickHouse，并验证每个 Keeper 实例都在运行。在每台服务器上执行以下命令。如果 Keeper 正在运行且状态正常，`ruok` 命令将返回 `imok`：
-       ```bash
-       # echo ruok | nc localhost 9181; echo
-       imok
-       ```
+   | 参数   | 描述                                    | 示例                     |
+   | ---- | ------------------------------------- | ---------------------- |
+   | node | 用于 ClickHouse Keeper 连接的节点列表          | 为每台服务器配置一个 settings 条目 |
+   | host | 每个 ClickHouse Keeper 节点的主机名、IP 或 FQDN | `chnode1.domain.com`   |
+   | port | ClickHouse Keeper 客户端端口               | 9181                   |
 
-    6. `system` 数据库中有一张名为 `zookeeper` 的表，包含你的 ClickHouse Keeper 实例的详细信息。我们来查看这张表：
+5. 重启 ClickHouse，并验证每个 Keeper 实例都在运行。在每台服务器上执行以下命令。如果 Keeper 正在运行且状态正常，`ruok` 命令将返回 `imok`：
+   ```bash
+   # echo ruok | nc localhost 9181; echo
+   imok
+   ```
 
-       ```sql
-       SELECT *
-       FROM system.zookeeper
-       WHERE path IN ('/', '/clickhouse')
-       ```
+6. `system` 数据库中有一张名为 `zookeeper` 的表，包含你的 ClickHouse Keeper 实例的详细信息。我们来查看这张表：
 
-       表如下所示：
+   ```sql
+   SELECT *
+   FROM system.zookeeper
+   WHERE path IN ('/', '/clickhouse')
+   ```
 
-       ```response
-       ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
-       │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
-       │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
-       │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
-       └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
-       ```
-  </Step>
+   表如下所示：
 
-  <Step title="在 ClickHouse 中配置集群" id="2--configure-a-cluster-in-clickhouse">
-    1. 让我们在其中 2 个节点上配置一个简单集群：包含 2 个分片，且每个分片只有 1 个副本。第三个节点将用于满足 ClickHouse Keeper 对仲裁的要求。更新 `chnode1` 和 `chnode2` 上的配置。以下集群在每个节点上定义了 1 个分片，总共 2 个分片，且不进行复制。在此示例中，一部分数据会位于一个节点上，另一部分会位于另一个节点上：
+   ```response
+   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+   ```
 
-       ```xml
-           <remote_servers>
-               <cluster_2S_1R>
-                   <shard>
-                       <replica>
-                           <host>chnode1.domain.com</host>
-                           <port>9000</port>
-                           <user>default</user>
-                           <password>ClickHouse123!</password>
-                       </replica>
-                   </shard>
-                   <shard>
-                       <replica>
-                           <host>chnode2.domain.com</host>
-                           <port>9000</port>
-                           <user>default</user>
-                           <password>ClickHouse123!</password>
-                       </replica>
-                   </shard>
-               </cluster_2S_1R>
-           </remote_servers>
-       ```
+<div id="2--configure-a-cluster-in-clickhouse">
+  ### 2. 在 ClickHouse 中配置集群
+</div>
 
-       | 参数       | 描述                      | 示例                   |
-       | -------- | ----------------------- | -------------------- |
-       | shard    | 集群定义中的副本列表              | 每个分片的副本列表            |
-       | replica  | 每个副本的设置列表               | 每个副本的设置项             |
-       | host     | 承载副本分片的服务器主机名、IP 或 FQDN | `chnode1.domain.com` |
-       | port     | 使用原生 TCP 协议通信时所用的端口     | 9000                 |
-       | user     | 用于向集群实例进行身份验证的用户名       | default              |
-       | password | 为允许连接到集群实例而为该用户设置的密码    | `ClickHouse123!`     |
+1. 我们来配置一个简单集群：在其中 2 个节点上设置 2 个分片，且每个分片只有 1 个副本。第三个节点将用于满足 ClickHouse Keeper 的法定人数要求。更新 `chnode1` 和 `chnode2` 上的配置。以下集群在每个节点上定义了 1 个分片，总共 2 个分片，且不使用复制。在此示例中，部分数据会位于一个节点上，另一部分数据会位于另一个节点上：
 
-    2. 重启 ClickHouse 并验证集群已创建：
+   ```xml
+       <remote_servers>
+           <cluster_2S_1R>
+               <shard>
+                   <replica>
+                       <host>chnode1.domain.com</host>
+                       <port>9000</port>
+                       <user>default</user>
+                       <password>ClickHouse123!</password>
+                   </replica>
+               </shard>
+               <shard>
+                   <replica>
+                       <host>chnode2.domain.com</host>
+                       <port>9000</port>
+                       <user>default</user>
+                       <password>ClickHouse123!</password>
+                   </replica>
+               </shard>
+           </cluster_2S_1R>
+       </remote_servers>
+   ```
 
-       ```sql
-       SHOW clusters;
-       ```
+   | 参数       | 描述                             | 示例                   |
+   | -------- | ------------------------------ | -------------------- |
+   | shard    | 集群定义中的副本列表                     | 每个分片的副本列表示例          |
+   | replica  | 每个副本的设置列表                      | 每个副本的设置项             |
+   | host     | 承载副本分片的服务器的 hostname、IP 或 FQDN | `chnode1.domain.com` |
+   | port     | 使用原生 TCP 协议通信的端口               | 9000                 |
+   | user     | 用于向集群实例进行身份验证的用户名              | default              |
+   | password | 允许连接到集群实例的用户密码                 | `ClickHouse123!`     |
 
-       你应该能看到你的集群：
+2. 重启 ClickHouse 并验证集群已创建：
 
-       ```response
-       ┌─cluster───────┐
-       │ cluster_2S_1R │
-       └───────────────┘
-       ```
-  </Step>
+   ```sql
+   SHOW clusters;
+   ```
 
-  <Step title="创建并测试分布式表" id="3-create-and-test-distributed-table">
-    1. 在新集群上，使用 `chnode1` 上的 ClickHouse client 创建一个新数据库。`ON CLUSTER` 子句会自动在两个节点上创建该数据库。
-       ```sql
-       CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
-       ```
+   你应该会看到你的集群：
 
-    2. 在 `db1` 数据库中创建一张新表。再次使用 `ON CLUSTER`，会在两个节点上创建该表。
-       ```sql
-       CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
-       (
-           `id` UInt64,
-           `column1` String
-       )
-       ENGINE = MergeTree
-       ORDER BY column1
-       ```
+   ```response
+   ┌─cluster───────┐
+   │ cluster_2S_1R │
+   └───────────────┘
+   ```
 
-    3. 在 `chnode1` 节点上添加几行数据：
-       ```sql
-       INSERT INTO db1.table1
-           (id, column1)
-       VALUES
-           (1, 'abc'),
-           (2, 'def')
-       ```
+<div id="3-create-and-test-distributed-table">
+  ### 3. 创建并测试分布式表
+</div>
 
-    4. 在 `chnode2` 节点上添加几行数据：
-       ```sql
-       INSERT INTO db1.table1
-           (id, column1)
-       VALUES
-           (3, 'ghi'),
-           (4, 'jkl')
-       ```
+1. 在 `chnode1` 上使用 ClickHouse client，在新集群中创建一个新数据库。`ON CLUSTER` 子句会自动在两个节点上创建该数据库。
+   ```sql
+   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+   ```
 
-    5. 请注意，在每个节点上运行 `SELECT` 语句时，只会显示该节点上的数据。例如，在 `chnode1` 上：
+2. 在 `db1` 数据库中创建一个新表。同样，`ON CLUSTER` 会在两个节点上创建该表。
+   ```sql
+   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+   (
+       `id` UInt64,
+       `column1` String
+   )
+   ENGINE = MergeTree
+   ORDER BY column1
+   ```
 
-       ```sql
-       SELECT *
-       FROM db1.table1
-       ```
+3. 在 `chnode1` 节点上插入两行数据：
+   ```sql
+   INSERT INTO db1.table1
+       (id, column1)
+   VALUES
+       (1, 'abc'),
+       (2, 'def')
+   ```
 
-       ```response
-       Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+4. 在 `chnode2` 节点上再插入两行数据：
+   ```sql
+   INSERT INTO db1.table1
+       (id, column1)
+   VALUES
+       (3, 'ghi'),
+       (4, 'jkl')
+   ```
 
-       ┌─id─┬─column1─┐
-       │  1 │ abc     │
-       │  2 │ def     │
-       └────┴─────────┘
+5. 请注意，在每个节点上执行 `SELECT` 语句时，只会看到该节点上的数据。例如，在 `chnode1` 上：
 
-       2 rows in set. Elapsed: 0.006 sec.
-       ```
+   ```sql
+   SELECT *
+   FROM db1.table1
+   ```
 
-       在 `chnode2` 上：
+   ```response
+   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
 
-    6. ```sql
-       SELECT *
-       FROM db1.table1
-       ```
+   ┌─id─┬─column1─┐
+   │  1 │ abc     │
+   │  2 │ def     │
+   └────┴─────────┘
 
-       ```response
-       Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+   2 rows in set. Elapsed: 0.006 sec.
+   ```
 
-       ┌─id─┬─column1─┐
-       │  3 │ ghi     │
-       │  4 │ jkl     │
-       └────┴─────────┘
-       ```
+   在 `chnode2` 上：
 
-    7. 你可以创建一张 `Distributed` 表，用来表示两个分片上的数据。使用 `Distributed` 表引擎的表本身不存储任何数据，但支持在多台服务器上进行分布式查询处理。读取会访问所有分片，写入也可以分发到各个分片。在 `chnode1` 上运行以下查询：
-       ```sql
-       CREATE TABLE db1.dist_table (
-           id UInt64,
-           column1 String
-       )
-       ENGINE = Distributed(cluster_2S_1R,db1,table1)
-       ```
+6. ```sql
+   SELECT *
+   FROM db1.table1
+   ```
 
-    8. 请注意，查询 `dist_table` 会返回来自这两个分片的全部四行数据：
+   ```response
+   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
 
-       ```sql
-       SELECT *
-       FROM db1.dist_table
-       ```
+   ┌─id─┬─column1─┐
+   │  3 │ ghi     │
+   │  4 │ jkl     │
+   └────┴─────────┘
+   ```
 
-       ```response
-       Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
+7. 你可以创建一个 `Distributed` 表，用来表示这两个分片上的数据。使用 `Distributed` 表引擎的表本身不存储任何数据，但支持在多个服务器上进行分布式查询处理。读取会访问所有分片，写入也可以分发到各个分片。请在 `chnode1` 上运行以下查询：
+   ```sql
+   CREATE TABLE db1.dist_table (
+       id UInt64,
+       column1 String
+   )
+   ENGINE = Distributed(cluster_2S_1R,db1,table1)
+   ```
 
-       ┌─id─┬─column1─┐
-       │  1 │ abc     │
-       │  2 │ def     │
-       └────┴─────────┘
-       ┌─id─┬─column1─┐
-       │  3 │ ghi     │
-       │  4 │ jkl     │
-       └────┴─────────┘
+8. 可以看到，查询 `dist_table` 会返回来自这两个分片的全部四行数据：
 
-       4 rows in set. Elapsed: 0.018 sec.
-       ```
-  </Step>
-</Steps>
+   ```sql
+   SELECT *
+   FROM db1.dist_table
+   ```
+
+   ```response
+   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
+
+   ┌─id─┬─column1─┐
+   │  1 │ abc     │
+   │  2 │ def     │
+   └────┴─────────┘
+   ┌─id─┬─column1─┐
+   │  3 │ ghi     │
+   │  4 │ jkl     │
+   └────┴─────────┘
+
+   4 rows in set. Elapsed: 0.018 sec.
+   ```
 
 <div id="summary">
   ### 摘要

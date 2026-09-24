@@ -93,24 +93,15 @@ bool is404Muted(std::string_view message)
     return code == Poco::Net::HTTPResponse::HTTP_NOT_FOUND;
 }
 
-/// `AWSClient::AdjustClockSkew` prints this before every single retry, whatever the error was,
-/// even when nothing was signed and no response was received at all. It is pure speculation:
-/// the messages that follow it report whether a clock skew was actually detected and corrected.
-bool isClockSkewSpeculationMuted(const std::string_view message)
+bool isExpectedAwsHttpResponseMuted(const std::string_view message)
 {
-    static constexpr std::string_view prefix = "If the signature check failed.";
-    return message.starts_with(prefix);
-}
-
-bool isMuted(const std::string_view message)
-{
-    return isWrongSigningRegionMuted(message) || is404Muted(message) || isClockSkewSpeculationMuted(message);
+    return isWrongSigningRegionMuted(message) || is404Muted(message);
 }
 }
 
 void AWSLogger::Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) // NOLINT
 {
-    if (format_str && isMuted(format_str))
+    if (format_str && isExpectedAwsHttpResponseMuted(format_str))
         return;
     callLogImpl(log_level, tag, format_str); /// FIXME. Variadic arguments?
 }
@@ -118,7 +109,7 @@ void AWSLogger::Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, c
 void AWSLogger::LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream)
 {
     const auto str = message_stream.str();
-    if (isMuted(str))
+    if (isExpectedAwsHttpResponseMuted(str))
         return;
     callLogImpl(log_level, tag, str.c_str());
 }
@@ -134,7 +125,7 @@ void AWSLogger::callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char 
 
 void AWSLogger::vaLog(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, va_list)
 {
-    if (format_str && isMuted(format_str))
+    if (format_str && isExpectedAwsHttpResponseMuted(format_str))
         return;
     callLogImpl(log_level, tag, format_str); /// FIXME. Variadic arguments?
 }

@@ -18,7 +18,6 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
-│ COLLATIONS              │
 │ COLUMNS                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
@@ -39,7 +38,6 @@ SHOW TABLES FROM information_schema;
 `INFORMATION_SCHEMA` содержит следующие представления:
 
 * [COLUMNS](#columns)
-* [COLLATIONS](#collations)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
@@ -382,19 +380,3 @@ referenced_column_name:        ᴺᵁᴸᴸ
 </div>
 
 Предоставляет информацию об индексах таблицы. В настоящее время возвращает пустой результат (ни одной строки), чего достаточно для совместимости со сторонними инструментами, такими как Tableau Online.
-
-<div id="collations">
-  ## COLLATIONS
-</div>
-
-Содержит сведения о доступных collation. Включает collation из [system.collations](/ru/reference/system-tables/collations), а также две строки для совместимости с MySQL: `utf8mb4_0900_ai_ci` — collation, которую протокол MySQL объявляет при рукопожатии, в `SCHEMATA.DEFAULT_COLLATION_NAME` и `TABLES.TABLE_COLLATION`, — и `binary` — псевдо-collation, которую протокол MySQL указывает для числовых и других нестроковых столбцов в метаданных набора результатов. Это позволяет клиенту с поддержкой MySQL, который использует объявленные collation для поиска в этом представлении, находить их.
-
-Столбцы:
-
-* `collation_name` ([String](/ru/reference/data-types/string)) — Имя collation.
-* `character_set_name` ([Nullable](/ru/reference/data-types/nullable)([String](/ru/reference/data-types/string))) — Связанная кодировка (`utf8mb4` для `utf8mb4_0900_ai_ci`, `binary` для `binary`, в остальных случаях `NULL`). Предоставляется для совместимости с MySQL.
-* `id` ([Nullable](/ru/reference/data-types/nullable)([UInt64](/ru/reference/data-types/int-uint))) — Идентификатор collation MySQL (`255` для `utf8mb4_0900_ai_ci`, `63` для `binary`, в остальных случаях `NULL`). Предоставляется для совместимости с MySQL.
-* `is_default` ([Nullable](/ru/reference/data-types/nullable)([String](/ru/reference/data-types/string))) — Является ли collation значением по умолчанию для своей кодировки (`Yes` для обеих строк совместимости с MySQL, в остальных случаях `NULL`). Предоставляется для совместимости с MySQL.
-* `is_compiled` ([Nullable](/ru/reference/data-types/nullable)([String](/ru/reference/data-types/string))) — Встроена ли collation в сервер (`Yes` для обеих строк совместимости с MySQL, в остальных случаях `NULL`). Предоставляется для совместимости с MySQL.
-* `sortlen` ([Nullable](/ru/reference/data-types/nullable)([UInt64](/ru/reference/data-types/int-uint))) — Минимальная длина сортировки (`0` для `utf8mb4_0900_ai_ci`, `1` для `binary`, в остальных случаях `NULL`). Предоставляется для совместимости с MySQL.
-* `pad_attribute` ([Nullable](/ru/reference/data-types/nullable)([String](/ru/reference/data-types/string))) — Атрибут заполнения: `NO PAD` или `PAD SPACE` (`NO PAD` для обеих строк совместимости с MySQL, в остальных случаях `NULL`). Предоставляется для совместимости с MySQL.
