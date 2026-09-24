@@ -1129,9 +1129,22 @@ private:
                 ? &assert_cast<const ColumnLowCardinality &>(keys) : nullptr;
             const auto full_keys = lc_keys ? lc_keys->getDictionary().getNestedColumn() : keys.convertToFullColumnIfLowCardinality();
             VectorWithMemoryTracking<std::optional<UInt64>> seeds(lc_keys ? full_keys->size() : 0);
+            /// Maps like feature flags repeat the same pairs in many rows. With dictionaries for both keys and values,
+            /// a pair of dictionary indexes identifies a token, so skip the pairs whose tokens are already added.
+            const auto * lc_values = lc_keys ? typeid_cast<const ColumnLowCardinality *>(&values) : nullptr;
+            seen_map_pairs.clear();
             for (size_t element = begin; element != end; ++element)
             {
                 const size_t key_index = lc_keys ? lc_keys->getIndexAt(element) : element;
+                if (lc_values)
+                {
+                    const UInt64 pair = (UInt64(key_index) << 32) | lc_values->getIndexAt(element);
+                    HashSet<UInt64>::LookupResult it;
+                    bool inserted;
+                    seen_map_pairs.emplace(pair, it, inserted);
+                    if (!inserted)
+                        continue;
+                }
                 std::optional<UInt64> uncached_seed;
                 auto & seed = lc_keys ? seeds[key_index] : uncached_seed;
                 if (!seed)
@@ -1408,6 +1421,7 @@ private:
         StringHashForHeterogeneousLookup,
         std::equal_to<>> type_infos;
     UnorderedMapWithMemoryTracking<const ColumnObject *, ObjectPlan> object_plans;
+    HashSet<UInt64> seen_map_pairs;
     std::array<UnorderedMapWithMemoryTracking<String, SharedPathPlans, StringHashForHeterogeneousLookup, std::equal_to<>>, 3> shared_path_plans_by_prefix;
     std::array<std::map<std::pair<String, String>, SharedPathPlans>, 3> shared_path_plans_by_prefixes;
     size_t temporary_column_depth = 0;
