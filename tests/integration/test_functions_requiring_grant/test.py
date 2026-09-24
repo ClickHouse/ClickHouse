@@ -231,6 +231,19 @@ def test_alias_of_case_insensitive_function_requires_grant():
     assert instance.query("SELECT fullHostName() != ''", user="A") == "1\n"
 
 
+def test_alias_listed_in_other_case_requires_grant():
+    """`LCASE` in the config is a case-insensitive alias of `lower` written in another case,
+    so it must protect `lower` and every spelling of the alias."""
+    instance.query("CREATE USER A")
+
+    for query in ["SELECT lower('A')", "SELECT lcase('A')", "SELECT LCASE('A')"]:
+        assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
+
+    instance.query("GRANT FUNCTION ON lower TO A")
+    assert instance.query("SELECT lower('A')", user="A") == "a\n"
+    assert instance.query("SELECT LCASE('A')", user="A") == "a\n"
+
+
 def test_grant_by_other_spelling_or_alias():
     """The name in GRANT and REVOKE is resolved like the checked call, so any spelling works."""
     instance.query("CREATE USER A")
