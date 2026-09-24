@@ -28,8 +28,18 @@ Horizontal
 1
 Vertical
 
-=== parent text expression pins ===
+=== parent text expression does not pin when fully materialized ===
 2
+1
+Vertical
+
+=== parent text expression pins when a source part lacks the index ===
+2
+1
+Horizontal
+
+=== parent text expression pins when merge may reduce rows ===
+1
 1
 Horizontal
 

@@ -1091,6 +1091,46 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             for (const auto & stats_entry : part_stats.second)
                 columns_with_statistics_to_rebuild.insert(stats_entry.first);
         }
+
+        /// Classify the Tuple parent against the text-index work this merge will actually do,
+        /// not every metadata declaration. `MergeTextIndexStage::prepare` reuses an index's
+        /// existing segment files whenever every source part already has the materialized
+        /// index (`getDeserializedFormat`), so the merge never reads the parent Tuple data for
+        /// that index and the parent may stay flattened. A row-reducing merge always rebuilds
+        /// text indexes from column data (`addBuildTextIndexesStep`), so every text index pins
+        /// in that case. The full `text_indexes_to_merge` is left untouched for the merge itself.
+        IndicesDescription text_indexes_to_rebuild;
+        if (global_ctx->merge_may_reduce_rows)
+        {
+            text_indexes_to_rebuild = global_ctx->text_indexes_to_merge;
+        }
+        else
+        {
+            for (const auto & index : global_ctx->text_indexes_to_merge)
+            {
+                auto index_ptr = MergeTreeIndexFactory::instance().get(
+                    global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
+
+                bool any_part_lacks_index = false;
+                for (const auto & part : global_ctx->future_part->parts)
+                {
+                    /// An empty part contributes nothing to the merged index and is skipped by
+                    /// `MergeTextIndexStage::prepare`; it cannot force a rebuild on its own.
+                    if (part->rows_count == 0)
+                        continue;
+
+                    if (!index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
+                    {
+                        any_part_lacks_index = true;
+                        break;
+                    }
+                }
+
+                if (any_part_lacks_index)
+                    text_indexes_to_rebuild.push_back(index);
+            }
+        }
+
         tryFlattenGatheringColumns(
             global_ctx->gathering_columns,
             global_ctx->storage_columns,
@@ -1099,7 +1139,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             global_ctx->alter_conversions,
             columns_with_statistics_to_rebuild,
             global_ctx->skip_indexes_by_column,
-            global_ctx->text_indexes_to_merge,
+            text_indexes_to_rebuild,
             ctx->log);
     }
 

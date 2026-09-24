@@ -32,6 +32,8 @@ cleanup()
         DROP TABLE IF EXISTS t_active_multi_index;
         DROP TABLE IF EXISTS t_leaf_text_index;
         DROP TABLE IF EXISTS t_parent_text_index;
+        DROP TABLE IF EXISTS t_parent_text_index_rebuild;
+        DROP TABLE IF EXISTS t_parent_text_index_reduce_rows;
         DROP TABLE IF EXISTS t_no_materialize_parent_stats;
         DROP TABLE IF EXISTS t_virtual_indices;
     " 2>/dev/null || true
@@ -200,7 +202,7 @@ ${CLICKHOUSE_CLIENT} -q "
 print_merge_algorithm t_leaf_text_index
 
 echo
-echo '=== parent text expression pins ==='
+echo '=== parent text expression does not pin when fully materialized ==='
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_parent_text_index
     (
@@ -221,6 +223,52 @@ ${CLICKHOUSE_CLIENT} -q "
     CHECK TABLE t_parent_text_index SETTINGS check_query_single_value_result = 1;
 "
 print_merge_algorithm t_parent_text_index
+
+echo
+echo '=== parent text expression pins when a source part lacks the index ==='
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_parent_text_index_rebuild
+    (
+        k UInt64,
+        t Tuple(x String, y String),
+        INDEX idx toString(t) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1
+    )
+    ENGINE = MergeTree
+    ORDER BY k
+    SETTINGS ${COMMON_SETTINGS};
+
+    SYSTEM STOP MERGES t_parent_text_index_rebuild;
+    INSERT INTO t_parent_text_index_rebuild VALUES (1, ('abc', 'def'));
+    INSERT INTO t_parent_text_index_rebuild SETTINGS materialize_skip_indexes_on_insert = 0 VALUES (2, ('ghi', 'jkl'));
+    SYSTEM START MERGES t_parent_text_index_rebuild;
+    OPTIMIZE TABLE t_parent_text_index_rebuild FINAL;
+    SELECT count() FROM t_parent_text_index_rebuild;
+    CHECK TABLE t_parent_text_index_rebuild SETTINGS check_query_single_value_result = 1;
+"
+print_merge_algorithm t_parent_text_index_rebuild
+
+echo
+echo '=== parent text expression pins when merge may reduce rows ==='
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_parent_text_index_reduce_rows
+    (
+        k UInt64,
+        t Tuple(x String, y String),
+        INDEX idx toString(t) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1
+    )
+    ENGINE = ReplacingMergeTree
+    ORDER BY k
+    SETTINGS ${COMMON_SETTINGS};
+
+    SYSTEM STOP MERGES t_parent_text_index_reduce_rows;
+    INSERT INTO t_parent_text_index_reduce_rows VALUES (1, ('abc', 'def'));
+    INSERT INTO t_parent_text_index_reduce_rows VALUES (1, ('ghi', 'jkl'));
+    SYSTEM START MERGES t_parent_text_index_reduce_rows;
+    OPTIMIZE TABLE t_parent_text_index_reduce_rows FINAL;
+    SELECT count() FROM t_parent_text_index_reduce_rows;
+    CHECK TABLE t_parent_text_index_reduce_rows SETTINGS check_query_single_value_result = 1;
+"
+print_merge_algorithm t_parent_text_index_reduce_rows
 
 echo
 echo '=== disabled statistics materialization does not pin ==='

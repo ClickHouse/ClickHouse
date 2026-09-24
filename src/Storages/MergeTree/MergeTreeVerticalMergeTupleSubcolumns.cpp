@@ -58,7 +58,7 @@ bool indexesPinParent(
     const NameSet & storage_names,
     const NameSet & virtual_names,
     const std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
-    const IndicesDescription & text_indexes_to_merge)
+    const IndicesDescription & text_indexes_to_rebuild)
 {
     auto indexes_pin_parent = [&](const IndicesDescription & indexes)
     {
@@ -75,7 +75,7 @@ bool indexesPinParent(
     if (skip_indexes_it != skip_indexes_by_column.end() && indexes_pin_parent(skip_indexes_it->second))
         return true;
 
-    return indexes_pin_parent(text_indexes_to_merge);
+    return indexes_pin_parent(text_indexes_to_rebuild);
 }
 
 bool leafNameCollides(const Names & leaf_names, const NameSet & storage_names, const String & parent)
@@ -213,7 +213,7 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
     const std::vector<AlterConversionsPtr> & alter_conversions,
     const NameSet & columns_with_statistics_to_rebuild,
     const std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
-    const IndicesDescription & text_indexes_to_merge)
+    const IndicesDescription & text_indexes_to_rebuild)
 {
     if (!Nested::tryGetFlattenableTuple(column.type))
         return {.reason = "not_flattenable_tuple"};
@@ -244,7 +244,7 @@ TupleSubcolumnsClassifyResult classifyOneGatheringColumn(
             storage_names,
             virtual_names,
             skip_indexes_by_column,
-            text_indexes_to_merge))
+            text_indexes_to_rebuild))
         return {.reason = "index_pins_parent"};
 
     if (columns_with_statistics_to_rebuild.contains(column.name))
@@ -320,7 +320,7 @@ void tryFlattenGatheringColumns(
     const std::vector<AlterConversionsPtr> & alter_conversions,
     const NameSet & columns_with_statistics_to_rebuild,
     std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
-    const IndicesDescription & text_indexes_to_merge,
+    const IndicesDescription & text_indexes_to_rebuild,
     LoggerPtr log)
 {
     NamesAndTypesList new_gathering;
@@ -337,7 +337,7 @@ void tryFlattenGatheringColumns(
             alter_conversions,
             columns_with_statistics_to_rebuild,
             skip_indexes_by_column,
-            text_indexes_to_merge);
+            text_indexes_to_rebuild);
         logClassifyResult(log, column, result);
 
         if (!result.shouldFlatten())

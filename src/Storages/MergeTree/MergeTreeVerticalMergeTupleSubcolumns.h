@@ -27,7 +27,7 @@ void tryFlattenGatheringColumns(
     const std::vector<AlterConversionsPtr> & alter_conversions,
     const NameSet & columns_with_statistics_to_rebuild,
     std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
-    const IndicesDescription & text_indexes_to_merge,
+    const IndicesDescription & text_indexes_to_rebuild,
     LoggerPtr log);
 
 /// Add compressed sizes for flattened gathering leaves. Ordinary storage columns
