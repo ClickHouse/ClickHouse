@@ -62,7 +62,14 @@ void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
         /// Only a read that announces to the coordinator has a mode to agree on. A read the fragment
         /// performs entirely on this node - a small joined table, say - is nobody's business but this
         /// replica's, and restricting it would cost an ordering for nothing.
-        if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()); reading && reading->isParallelReadingFromReplicas())
+        ///
+        /// The snapshot is taken once per read, at the first condition pushed in from outside: by the
+        /// second one the first is already a `FilterStep` in this plan, and a set taken then would
+        /// describe it as something the fragment fixes on its own. (Recomputing would in fact answer
+        /// the same, because the walk applies the restriction already in force as it goes - see
+        /// `buildSortingDAG` - so the recomputed set is an intersection with it. Not relying on that.)
+        auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get());
+        if (reading && reading->isParallelReadingFromReplicas() && !reading->getFixedColumnRestriction().has_value())
             reading->restrictFixedColumns(QueryPlanOptimizations::collectFixedColumnNames(*chain_root));
 
         for (size_t i = 0; i < node->children.size(); ++i)
