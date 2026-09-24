@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"parallel_replicas_filter_pushdown", false, false, "Obsolete setting. A condition standing above the part of the query parallel replicas execute is now spliced into the query they run whenever the rewrite that does it accepts the fragment, the way the distributed path has always done it. The setting was added to switch off a filter push-down that could leave the initiator reading in a different order than the replicas; that is prevented directly now, by withholding the ordering rather than the condition."},
             {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
             {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
@@ -59,7 +60,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
-            {"parallel_replicas_filter_pushdown", false, false, "Obsolete setting. A condition standing above the part of the query parallel replicas execute is now spliced into the query they run whenever the rewrite that does it accepts the fragment, the way the distributed path has always done it. The setting was added to switch off a filter push-down that could leave the initiator reading in a different order than the replicas; that is prevented directly now, by withholding the ordering rather than the condition."},
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
             {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7 or 26.8: the previous value is deliberately equal to the new one, because those versions already rejected such a key and only a version before 26.7 restores the earlier acceptance."},

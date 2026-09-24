@@ -88,6 +88,8 @@ WHERE explain LIKE '%Read type%' OR explain LIKE '%Runtime filters:%'
 SELECT v.ts FROM v_rf_read_mode AS v JOIN b_rf_read_mode AS bb ON v.tenant = bb.a
 WHERE v.tenant = 5 ORDER BY v.ts LIMIT 5;
 
+SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
+
 DROP VIEW v_rf_read_mode;
 DROP TABLE t2_rf_read_mode;
 DROP TABLE t_rf_read_mode;
