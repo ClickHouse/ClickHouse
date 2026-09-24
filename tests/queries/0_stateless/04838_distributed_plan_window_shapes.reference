@@ -169,6 +169,7 @@ GatherExchange (sorted by (a ASC, v ASC))
 └──Window (Window step for window \'PARTITION BY a ORDER BY v ASC RANGE BETWEEN 5 PRECEDING AND CURRENT ROW\')
    │  Window: (PARTITION BY a ORDER BY v ASC)
    │  Functions: sum(v) OVER (PARTITION BY a ORDER BY v ASC RANGE BETWEEN 5 PRECEDING AND CURRENT ROW)
+   │  Aggregate tree threshold: 2048 rows
    └──Sorting (Sorting for window \'PARTITION BY a ORDER BY v ASC RANGE BETWEEN 5 PRECEDING AND CURRENT ROW\')
       │  Sort description: a ASC, v ASC
       └──ShuffleExchange (scatter by (a))

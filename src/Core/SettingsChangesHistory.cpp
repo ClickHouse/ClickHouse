@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"min_window_frame_rows_for_aggregate_tree", std::numeric_limits<UInt64>::max(), 2048, "New setting: the minimum sliding window frame size (in rows) to switch from re-aggregating the whole frame for every row to the incremental algorithm based on a tree of partial aggregate states. previous_value is the maximum UInt64 so `compatibility` with versions before 26.10 effectively disables the incremental algorithm and keeps the pre-existing recompute path (whose floating-point regrouping and argMin/argMax tie choices differ)."},
             {"enable_join_runtime_filters_index_analysis", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."},
             {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},

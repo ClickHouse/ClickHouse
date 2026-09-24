@@ -26,8 +26,12 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
+#include <Common/memory.h>
+
 #include <algorithm>
+#include <array>
 #include <limits>
+#include <optional>
 
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
@@ -275,15 +279,28 @@ else \
         demangle(typeid(*column).name())); \
 }
 
+bool WindowTransform::aggregateFunctionSupportsFrameTree(const IAggregateFunction & function)
+{
+    // Zero-sized states (the Nothing placeholders for only-NULL arguments) would
+    // make every segment slot alias the same address, and functions with a
+    // constant-time batch add re-aggregate any frame for free; both keep the
+    // recompute path.
+    return function.sizeOfData() != 0
+        && function.mergeIsEquivalentToAddingRows()
+        && !function.addBatchSinglePlaceIsConstant();
+}
+
 WindowTransform::WindowTransform(SharedHeader input_header_,
         SharedHeader output_header_,
         const WindowDescription & window_description_,
-        const std::vector<WindowFunctionDescription> & functions)
+        const std::vector<WindowFunctionDescription> & functions,
+        UInt64 min_frame_rows_for_aggregate_tree_)
     : IProcessor({input_header_}, {output_header_})
     , input(inputs.front())
     , output(outputs.front())
     , input_header(*input_header_)
     , window_description(window_description_)
+    , min_frame_rows_for_aggregate_tree(min_frame_rows_for_aggregate_tree_)
 {
     // Materialize all columns in header, because we materialize all columns
     // in chunks and it's convenient if they match.
@@ -333,6 +350,15 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         aggregate_function->create(workspace.aggregate_function_state.data());
 
         workspaces.push_back(std::move(workspace));
+    }
+    workspace_frame_trees.resize(workspaces.size());
+    for (size_t i = 0; i < workspaces.size(); ++i)
+    {
+        if (workspaces[i].window_function_impl)
+            continue;
+        workspace_frame_trees[i].merge_equivalent = aggregateFunctionSupportsFrameTree(*workspaces[i].aggregate_function);
+        workspace_frame_trees[i].has_trivial_destructor = workspaces[i].aggregate_function->hasTrivialDestructor();
+        any_workspace_supports_frame_tree |= workspace_frame_trees[i].merge_equivalent;
     }
 
     partition_by_indices.reserve(window_description.partition_by.size());
@@ -419,12 +445,14 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                     workspace.aggregate_function->getName());
             }
         }
-
     }
 }
 
 WindowTransform::~WindowTransform()
 {
+    // The tree states may only be destroyed while the arena is still alive.
+    resetFrameTrees();
+
     // Some states may be not created yet if the creation failed.
     for (auto & ws : workspaces)
     {
@@ -656,14 +684,54 @@ auto WindowTransform::moveRowNumber(const RowNumber & original_row_number, Int64
 
 void WindowTransform::advanceFrameStartRowsOffset()
 {
-    // Just recalculate it each time by walking blocks.
-    const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.begin_offset.safeGet<UInt64>()
-            * (window_description.frame.begin_preceding ? -1 : 1));
+    // The unclamped frame start is current_row +- N and current_row advances one row
+    // per call, so the position is maintained incrementally instead of re-walking the
+    // blocks every time. A FOLLOWING frame start is not cached: its walk may stop at
+    // not-yet-arrived blocks (offset_left > 0) and must be recomputed until fully
+    // walked.
+    const bool advanced_one_row = frame_start_rows_cache_valid
+        && ((current_row.block == frame_start_rows_cache_current.block
+                && current_row.row == frame_start_rows_cache_current.row + 1)
+            || (current_row.block == frame_start_rows_cache_current.block + 1 && current_row.row == 0
+                && frame_start_rows_cache_current_at_block_end));
+    // While clamped with a deficit of more than one row the pinned row is not consulted
+    // (the result is clamped to partition_start below), so it may lie in a freed block;
+    // the moment it becomes the real position its block must still exist, otherwise
+    // recompute from current_row.
+    bool cached = false;
+    if (advanced_one_row)
+    {
+        if (frame_start_rows_cache_offset_left < -1)
+        {
+            ++frame_start_rows_cache_offset_left;
+            cached = true;
+        }
+        else if (frame_start_rows_cache_row.block >= first_block_number)
+        {
+            if (frame_start_rows_cache_offset_left == -1)
+                ++frame_start_rows_cache_offset_left;
+            else
+                advanceRowNumber(frame_start_rows_cache_row);
+            cached = true;
+        }
+    }
+    if (!cached)
+    {
+        const auto [moved_row, walk_left] = moveRowNumber(current_row,
+            window_description.frame.begin_offset.safeGet<UInt64>()
+                * (window_description.frame.begin_preceding ? -1 : 1));
+        frame_start_rows_cache_row = moved_row;
+        frame_start_rows_cache_offset_left = walk_left;
+    }
+    const Int64 offset_left = frame_start_rows_cache_offset_left;
+    frame_start_rows_cache_valid = window_description.frame.begin_preceding;
+    frame_start_rows_cache_current = current_row;
+    frame_start_rows_cache_current_at_block_end = current_row.row + 1 == blockRowsNumber(current_row);
 
-    frame_start = moved_row;
+    frame_start = frame_start_rows_cache_row;
 
-    assertValid(frame_start);
+    if (offset_left == 0)
+        assertValid(frame_start);
 
     // When moving backwards (PRECEDING) and we hit the start of available data
     // (offset_left < 0), the logical position is before partition_start.
@@ -1198,6 +1266,458 @@ void WindowTransform::advanceFrameEnd()
     }
 }
 
+// Calls func(argument_columns, first_row, past_the_end_row) for each stretch of rows
+// [rows_begin, rows_end) that lies within one block.
+template <typename F>
+void WindowTransform::forEachRowsRangeInBlocks(WindowFunctionWorkspace & ws, RowNumber rows_begin, RowNumber rows_end, F && func)
+{
+    if (rows_begin == rows_end)
+        return;
+
+    // To achieve better performance, we will have to loop over blocks and
+    // rows manually, instead of using advanceRowNumber().
+    // For this purpose, the past-the-end block can be different than the
+    // block of the past-the-end row (it's usually the next block).
+    const auto past_the_end_block = rows_end.row == 0
+        ? rows_end.block
+        : rows_end.block + 1;
+
+    for (auto block_number = rows_begin.block;
+         block_number < past_the_end_block;
+         ++block_number)
+    {
+        auto & block = blockAt(block_number);
+
+        if (ws.cached_block_number != block_number)
+        {
+            for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
+            {
+                ws.argument_columns[i] = block.input_columns[
+                    ws.argument_column_indices[i]].get();
+            }
+            ws.cached_block_number = block_number;
+        }
+
+        // First and last blocks may be processed partially, and other blocks
+        // are processed in full.
+        const auto first_row = block_number == rows_begin.block
+            ? rows_begin.row : 0;
+        const auto past_the_end_row = block_number == rows_end.block
+            ? rows_end.row : block.rows;
+
+        func(ws.argument_columns.data(), first_row, past_the_end_row);
+    }
+}
+
+// Adds rows [rows_begin, rows_end) to the given aggregate state.
+void WindowTransform::addRowsToAggregationState(WindowFunctionWorkspace & ws, AggregateDataPtr state, RowNumber rows_begin, RowNumber rows_end)
+{
+    const auto * a = ws.aggregate_function.get();
+    // Removing arena.get() from the loop makes it faster somehow...
+    auto * arena_ptr = arena.get();
+    forEachRowsRangeInBlocks(ws, rows_begin, rows_end,
+        [&](const IColumn ** columns, size_t first_row, size_t past_the_end_row)
+        {
+            a->addBatchSinglePlace(first_row, past_the_end_row, state, columns, arena_ptr);
+        });
+}
+
+// The result saturates at `limit`, so counting large spans just to compare against a
+// threshold stays cheap.
+UInt64 WindowTransform::countRowsBetween(RowNumber from, RowNumber to, UInt64 limit) const
+{
+    chassert(from <= to);
+    if (from.block == to.block)
+        return std::min(to.row - from.row, limit);
+
+    UInt64 count = blockRowsNumber(from) - from.row;
+    for (auto block_number = from.block + 1; block_number < to.block && count < limit; ++block_number)
+        count += blockAt(block_number).rows;
+    return std::min(count + to.row, limit);
+}
+
+char * WindowTransform::FrameAggregateTree::segmentState(size_t level, UInt64 segment)
+{
+    auto & tree_level = levels[level];
+    chassert(segment >= tree_level.begin_segment);
+    // Equality only for the slot being created in createSegment.
+    chassert(segment <= tree_level.end_segment);
+    chassert(segment >= tree_level.chunk_begin_segment);
+    const UInt64 slot = segment - tree_level.chunk_begin_segment;
+    chassert(slot / segments_per_chunk < tree_level.chunks.size());
+    return tree_level.chunks[slot / segments_per_chunk].data() + (slot % segments_per_chunk) * padded_state_size;
+}
+
+char * WindowTransform::FrameAggregateTree::createSegment(size_t level)
+{
+    auto & tree_level = levels[level];
+    const UInt64 segment = tree_level.end_segment;
+    if (tree_level.chunks.empty())
+        tree_level.chunk_begin_segment = segment;
+    if (segment == tree_level.chunk_begin_segment + tree_level.chunks.size() * segments_per_chunk)
+        tree_level.chunks.emplace_back(segments_per_chunk * padded_state_size, state_align);
+    auto * state = segmentState(level, segment);
+    function->create(state);
+    tree_level.end_segment = segment + 1;
+    return state;
+}
+
+void WindowTransform::FrameAggregateTree::destroySegments(size_t level, UInt64 begin, UInt64 end)
+{
+    if (function->hasTrivialDestructor())
+        return;
+    for (UInt64 segment = begin; segment < end; ++segment)
+        function->destroy(segmentState(level, segment));
+}
+
+void WindowTransform::FrameAggregateTree::trailingAdd(size_t level, UInt64 segment, Arena * arena_ptr)
+{
+    if (!use_accel)
+        return;
+    if (accel.size() <= level)
+        accel.resize(level + 1);
+    auto & acc = accel[level];
+    if (!acc.trailing.data())
+        acc.trailing.reset(padded_state_size, state_align);
+    if (!acc.trailing_created || acc.trailing_end != segment)
+    {
+        // No destroy of the previous contents: use_accel implies a trivial destructor.
+        function->create(acc.trailing.data());
+        acc.trailing_created = true;
+        acc.trailing_begin = segment;
+        acc.trailing_end = segment;
+    }
+    function->merge(acc.trailing.data(), segmentState(level, segment), arena_ptr);
+    ++acc.trailing_end;
+}
+
+void WindowTransform::FrameAggregateTree::trailingReset(size_t level)
+{
+    if (use_accel && level < accel.size())
+        accel[level].trailing_created = false;
+}
+
+void WindowTransform::FrameAggregateTree::tableMerge(size_t level, UInt64 begin, UInt64 end, AggregateDataPtr result, Arena * arena_ptr)
+{
+    chassert(use_accel);
+    if (accel.size() <= level)
+        accel.resize(level + 1);
+    auto & acc = accel[level];
+    const UInt64 group_begin = begin / fanout * fanout;
+    chassert(end - group_begin <= fanout);
+    const UInt64 slot = begin - group_begin;
+    if (acc.table_group_begin != group_begin || acc.table_covered_end != end || slot < acc.table_first_slot)
+    {
+        if (!acc.table.data())
+            acc.table.reset(fanout * padded_state_size, state_align);
+        char * slots = acc.table.data();
+        const UInt64 last_slot = end - group_begin - 1;
+        for (UInt64 k = last_slot + 1; k-- > slot;)
+        {
+            char * suffix_state = slots + k * padded_state_size;
+            function->create(suffix_state);
+            function->merge(suffix_state, segmentState(level, group_begin + k), arena_ptr);
+            if (k != last_slot)
+                function->merge(suffix_state, suffix_state + padded_state_size, arena_ptr);
+        }
+        acc.table_group_begin = group_begin;
+        acc.table_covered_end = end;
+        acc.table_first_slot = slot;
+    }
+    function->merge(result, acc.table.data() + slot * padded_state_size, arena_ptr);
+}
+
+// Builds the parent of the just-completed segment group, cascading up the tree.
+void WindowTransform::FrameAggregateTree::buildParents(Arena * arena_ptr)
+{
+    size_t level = 0;
+    UInt64 complete_end = frame_end_index / fanout;
+    while (complete_end != 0 && complete_end % fanout == 0)
+    {
+        const UInt64 parent = complete_end / fanout - 1;
+
+        if (levels[level].begin_segment > parent * fanout)
+        {
+            // Some children were already evicted, so the parent would start before the
+            // frame start and can never be queried; skip it. Previously built parents
+            // start even earlier, so they are stale too.
+            if (level + 1 < levels.size())
+            {
+                auto & parent_level = levels[level + 1];
+                destroySegments(level + 1, parent_level.begin_segment, parent_level.end_segment);
+                parent_level = Level(parent + 1);
+            }
+            return;
+        }
+
+        if (level + 1 == levels.size())
+            levels.emplace_back(Level(parent));
+
+        auto & parent_level = levels[level + 1];
+        if (parent_level.end_segment != parent)
+        {
+            // A skip below also skipped the completion trigger of parents at this level;
+            // everything built here starts before that gap, hence before the frame start.
+            chassert(parent_level.end_segment < parent);
+            destroySegments(level + 1, parent_level.begin_segment, parent_level.end_segment);
+            parent_level = Level(parent);
+        }
+
+        auto * parent_state = createSegment(level + 1);
+        for (UInt64 child = parent * fanout; child < (parent + 1) * fanout; ++child)
+            function->merge(parent_state, segmentState(level, child), arena_ptr);
+
+        trailingReset(level);
+        trailingAdd(level + 1, parent, arena_ptr);
+
+        ++level;
+        complete_end = parent + 1;
+    }
+}
+
+void WindowTransform::FrameAggregateTree::activate(const IAggregateFunction & function_)
+{
+    chassert(!isActive());
+    chassert(frame_end_index == 0);
+    function = &function_;
+    state_align = function_.alignOfData();
+    padded_state_size = ::Memory::alignUp(function_.sizeOfData(), state_align);
+    // The suffix caches pay off when the query cost is dominated by the number of
+    // merge calls, i.e. for cheap fixed-size states. The trivial destructor also makes
+    // the cache lifecycle trivial: slots are reused by calling create over the
+    // previous contents, and reset just drops the buffers. A trivial destructor is not
+    // enough on its own: a state such as `sumForEach` still suballocates from the arena
+    // on every merge, and rebuilding the cache slots on successive rows would leave those
+    // allocations abandoned until the end of the partition.
+    use_accel = function_.hasTrivialDestructor() && !function_.allocatesMemoryInArena() && padded_state_size <= 64;
+    levels.emplace_back();
+}
+
+void WindowTransform::FrameAggregateTree::append(const IColumn ** columns, size_t first_row, size_t past_the_end_row, Arena * arena_ptr)
+{
+    size_t row = first_row;
+    while (row < past_the_end_row)
+    {
+        const UInt64 offset_in_segment = frame_end_index % fanout;
+        auto * state = offset_in_segment == 0
+            ? createSegment(0)
+            : segmentState(0, frame_end_index / fanout);
+        const size_t rows_to_add = std::min<UInt64>(fanout - offset_in_segment, past_the_end_row - row);
+        function->addBatchSinglePlace(row, row + rows_to_add, state, columns, arena_ptr);
+        row += rows_to_add;
+        frame_end_index += rows_to_add;
+        if (frame_end_index % fanout == 0)
+        {
+            trailingAdd(0, frame_end_index / fanout - 1, arena_ptr);
+            buildParents(arena_ptr);
+        }
+    }
+}
+
+void WindowTransform::FrameAggregateTree::evict(UInt64 rows_passed)
+{
+    frame_start_index += rows_passed;
+
+    UInt64 span = fanout;
+    for (size_t level = 0; level < levels.size(); ++level, span *= fanout)
+    {
+        auto & tree_level = levels[level];
+        // A segment starting before the frame start can never be queried again; the
+        // trailing (possibly incomplete) level-0 segment is kept regardless.
+        UInt64 new_begin = std::min((frame_start_index + span - 1) / span, tree_level.end_segment);
+        if (level == 0)
+            new_begin = std::min(new_begin, frame_end_index / fanout);
+        if (new_begin <= tree_level.begin_segment)
+            continue;
+        destroySegments(level, tree_level.begin_segment, new_begin);
+        tree_level.begin_segment = new_begin;
+        while (!tree_level.chunks.empty() && tree_level.chunk_begin_segment + segments_per_chunk <= tree_level.begin_segment)
+        {
+            tree_level.chunks.pop_front();
+            tree_level.chunk_begin_segment += segments_per_chunk;
+        }
+    }
+}
+
+UInt64 WindowTransform::FrameAggregateTree::leadRowCount() const
+{
+    const UInt64 aligned_start = ::Memory::alignUp(frame_start_index, fanout);
+    return std::min(frame_end_index, aligned_start) - frame_start_index;
+}
+
+void WindowTransform::FrameAggregateTree::mergeFrame(AggregateDataPtr result, Arena * arena_ptr)
+{
+    const UInt64 covered_start = frame_start_index + leadRowCount();
+    if (covered_start == frame_end_index)
+        return;
+
+    // Leading partial groups are merged while ascending the tree, trailing ones are
+    // collected and merged in reverse afterwards, keeping everything in frame order.
+    UInt64 range_begin = covered_start / fanout;
+    UInt64 range_end = (frame_end_index + fanout - 1) / fanout;
+
+    auto merge_segments = [&](size_t level, UInt64 begin, UInt64 end)
+    {
+        // Stride within each chunk instead of recomputing the address per segment.
+        while (begin < end)
+        {
+            const UInt64 slot = begin - levels[level].chunk_begin_segment;
+            const UInt64 run_end = std::min(end, begin + (segments_per_chunk - slot % segments_per_chunk));
+            const char * state = segmentState(level, begin);
+            for (; begin < run_end; ++begin, state += padded_state_size)
+                function->merge(result, state, arena_ptr);
+        }
+    };
+
+    auto merge_leading = [&](size_t level, UInt64 begin, UInt64 end)
+    {
+        if (use_accel)
+            tableMerge(level, begin, end, result, arena_ptr);
+        else
+            merge_segments(level, begin, end);
+    };
+
+    struct SegmentRange
+    {
+        size_t level;
+        UInt64 begin;
+        UInt64 end;
+        // When set, the precombined trailing state to merge instead of the raw range.
+        const char * state;
+    };
+    // At most one trailing range per level; levels cannot exceed log_fanout(2^64).
+    // Not value-initialized: only [0, trailing_count) is ever read.
+    std::array<SegmentRange, 16> trailing; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+    size_t trailing_count = 0;
+
+    size_t level = 0;
+    while (range_begin < range_end)
+    {
+        chassert(level < levels.size());
+        chassert(range_begin >= levels[level].begin_segment);
+        chassert(range_end <= levels[level].end_segment);
+
+        const UInt64 begin_aligned = ::Memory::alignUp(range_begin, fanout);
+        // Parents past the last built one keep their children represented at this level.
+        const UInt64 end_aligned = level + 1 < levels.size()
+            ? std::min(range_end / fanout, levels[level + 1].end_segment) * fanout
+            : begin_aligned;
+        if (begin_aligned >= end_aligned)
+        {
+            // The suffix table may only cover immutable segments: the still-incomplete
+            // trailing level-0 segment mutates per row while the cache key would not.
+            const UInt64 complete_end = level == 0 ? std::min(range_end, frame_end_index / fanout) : range_end;
+            if (use_accel && range_begin < complete_end && complete_end - range_begin / fanout * fanout <= fanout)
+            {
+                merge_leading(level, range_begin, complete_end);
+                merge_segments(level, complete_end, range_end);
+            }
+            else
+                merge_segments(level, range_begin, range_end);
+            break;
+        }
+        if (range_begin != begin_aligned)
+            merge_leading(level, range_begin, begin_aligned);
+        if (end_aligned != range_end)
+        {
+            chassert(trailing_count < trailing.size());
+            // Whatever the trailing state does not cover (usually just the incomplete
+            // level-0 segment) is merged raw after it.
+            const char * trailing_state = nullptr;
+            UInt64 raw_begin = end_aligned;
+            if (use_accel && level < accel.size())
+            {
+                const auto & acc = accel[level];
+                if (acc.trailing_created && acc.trailing_begin == end_aligned
+                    && acc.trailing_end > end_aligned && acc.trailing_end <= range_end)
+                {
+                    trailing_state = acc.trailing.data();
+                    raw_begin = acc.trailing_end;
+                }
+            }
+            trailing[trailing_count] = {level, raw_begin, range_end, trailing_state};
+            ++trailing_count;
+        }
+        range_begin = begin_aligned / fanout;
+        range_end = end_aligned / fanout;
+        ++level;
+    }
+
+    for (size_t i = trailing_count; i > 0; --i)
+    {
+        if (trailing[i - 1].state != nullptr)
+            function->merge(result, trailing[i - 1].state, arena_ptr);
+        merge_segments(trailing[i - 1].level, trailing[i - 1].begin, trailing[i - 1].end);
+    }
+}
+
+void WindowTransform::FrameAggregateTree::reset()
+{
+    if (!isActive())
+        return;
+
+    for (size_t level = 0; level < levels.size(); ++level)
+        destroySegments(level, levels[level].begin_segment, levels[level].end_segment);
+
+    function = nullptr;
+    frame_start_index = 0;
+    frame_end_index = 0;
+    levels.clear();
+    accel.clear();
+}
+
+void WindowTransform::frameTreeActivate(size_t workspace_index)
+{
+    auto & workspace_tree = workspace_frame_trees[workspace_index];
+    workspace_tree.tree.activate(*workspaces[workspace_index].aggregate_function);
+    workspace_tree.appended_end = frame_start;
+}
+
+// Appends rows [appended_end, frame_end) to the tree. The pending rows are still in
+// memory: appended_end is never behind prev_frame_start, which bounds block retention.
+void WindowTransform::frameTreeAppend(size_t workspace_index)
+{
+    auto & workspace_tree = workspace_frame_trees[workspace_index];
+    auto * arena_ptr = arena.get();
+    forEachRowsRangeInBlocks(workspaces[workspace_index], workspace_tree.appended_end, frame_end,
+        [&](const IColumn ** columns, size_t first_row, size_t past_the_end_row)
+        {
+            workspace_tree.tree.append(columns, first_row, past_the_end_row, arena_ptr);
+        });
+    workspace_tree.appended_end = frame_end;
+}
+
+// Rebuilds ws's aggregation state as the combination of rows [frame_start, frame_end).
+void WindowTransform::frameTreeQuery(size_t workspace_index)
+{
+    auto & tree = workspace_frame_trees[workspace_index].tree;
+    auto & ws = workspaces[workspace_index];
+    const auto * a = ws.aggregate_function.get();
+    auto * buf = ws.aggregate_function_state.data();
+
+    if (!workspace_frame_trees[workspace_index].has_trivial_destructor)
+        a->destroy(buf);
+    a->create(buf);
+
+    if (const UInt64 lead_rows = tree.leadRowCount())
+    {
+        [[maybe_unused]] const auto [lead_end_row, offset_left] = moveRowNumber(frame_start, static_cast<Int64>(lead_rows));
+        chassert(offset_left == 0);
+        addRowsToAggregationState(ws, buf, frame_start, lead_end_row);
+    }
+    tree.mergeFrame(buf, arena.get());
+}
+
+void WindowTransform::resetFrameTrees()
+{
+    for (auto & workspace_tree : workspace_frame_trees)
+    {
+        workspace_tree.tree.reset();
+        workspace_tree.appended_end = {};
+    }
+    frame_trees_active = false;
+}
+
 // Update the aggregation states after the frame has changed.
 void WindowTransform::updateAggregationState()
 {
@@ -1212,83 +1732,74 @@ void WindowTransform::updateAggregationState()
     chassert(partition_start <= frame_start);
     chassert(frame_end <= partition_end);
 
-    // We might have to reset aggregation state and/or add some rows to it.
-    // Figure out what to do.
-    bool reset_aggregation = false;
-    RowNumber rows_to_add_start;
-    RowNumber rows_to_add_end;
-    if (frame_start == prev_frame_start)
+    // The frame boundaries are shared by all workspaces, so the per-row facts are too:
+    // all trees activate, evict, and deactivate together.
+    const bool frame_start_moved = frame_start != prev_frame_start;
+    bool activate_trees = false;
+    bool deactivate_trees = false;
+    UInt64 evicted_rows = 0;
+    if (frame_start_moved && any_workspace_supports_frame_tree)
     {
-        // The frame start didn't change, add the tail rows.
-        reset_aggregation = false;
-        rows_to_add_start = prev_frame_end;
-        rows_to_add_end = frame_end;
-    }
-    else
-    {
-        // The frame start changed, reset the state and aggregate over the
-        // entire frame. This can be made per-function after we learn to
-        // subtract rows from some types of aggregation states, but for now we
-        // always have to reset when the frame start changes.
-        reset_aggregation = true;
-        rows_to_add_start = frame_start;
-        rows_to_add_end = frame_end;
+        const bool frame_is_large = countRowsBetween(frame_start, frame_end, min_frame_rows_for_aggregate_tree)
+            >= min_frame_rows_for_aggregate_tree;
+        if (frame_is_large == frame_trees_active)
+        {
+            if (frame_trees_active)
+                evicted_rows = countRowsBetween(prev_frame_start, frame_start);
+        }
+        else if (frame_is_large)
+        {
+            activate_trees = true;
+            frame_trees_active = true;
+        }
+        else
+        {
+            deactivate_trees = true;
+            frame_trees_active = false;
+        }
     }
 
-    for (auto & ws : workspaces)
+    for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
+        auto & ws = workspaces[wi];
         if (ws.window_function_impl)
         {
             // No need to do anything for true window functions.
             continue;
         }
 
-        const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
 
-        if (reset_aggregation)
+        if (!frame_start_moved)
         {
-            a->destroy(buf);
-            a->create(buf);
+            // The frame start didn't change, add the tail rows. (An active tree is
+            // left lagging; frameTreeAppend catches it up when the start moves again.)
+            addRowsToAggregationState(ws, buf, prev_frame_end, frame_end);
+            continue;
         }
 
-        // To achieve better performance, we will have to loop over blocks and
-        // rows manually, instead of using advanceRowNumber().
-        // For this purpose, the past-the-end block can be different than the
-        // block of the past-the-end row (it's usually the next block).
-        const auto past_the_end_block = rows_to_add_end.row == 0
-            ? rows_to_add_end.block
-            : rows_to_add_end.block + 1;
-
-        for (auto block_number = rows_to_add_start.block;
-             block_number < past_the_end_block;
-             ++block_number)
+        if (deactivate_trees && workspace_frame_trees[wi].tree.isActive())
         {
-            auto & block = blockAt(block_number);
+            workspace_frame_trees[wi].tree.reset();
+            workspace_frame_trees[wi].appended_end = {};
+        }
+        else if (activate_trees && workspace_frame_trees[wi].merge_equivalent)
+            frameTreeActivate(wi);
 
-            if (ws.cached_block_number != block_number)
-            {
-                for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
-                {
-                    ws.argument_columns[i] = block.input_columns[
-                        ws.argument_column_indices[i]].get();
-                }
-                ws.cached_block_number = block_number;
-            }
-
-            // First and last blocks may be processed partially, and other blocks
-            // are processed in full.
-            const auto first_row = block_number == rows_to_add_start.block
-                ? rows_to_add_start.row : 0;
-            const auto past_the_end_row = block_number == rows_to_add_end.block
-                ? rows_to_add_end.row : block.rows;
-
-            // We should add an addBatch analog that can accept a starting offset.
-            // For now, add the values one by one.
-            auto * columns = ws.argument_columns.data();
-            // Removing arena.get() from the loop makes it faster somehow...
-            auto * arena_ptr = arena.get();
-            a->addBatchSinglePlace(first_row, past_the_end_row, buf, columns, arena_ptr);
+        auto & tree = workspace_frame_trees[wi].tree;
+        chassert(tree.isActive() == (frame_trees_active && workspace_frame_trees[wi].merge_equivalent));
+        if (tree.isActive())
+        {
+            frameTreeAppend(wi);
+            tree.evict(evicted_rows);
+            frameTreeQuery(wi);
+        }
+        else
+        {
+            const auto * a = ws.aggregate_function.get();
+            a->destroy(buf);
+            a->create(buf);
+            addRowsToAggregationState(ws, buf, frame_start, frame_end);
         }
     }
 }
@@ -1595,6 +2106,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
 
             a->destroy(buf);
         }
+
+        resetFrameTrees();
 
         // Release the arena we use for aggregate function states, so that it
         // doesn't grow without limit. Not sure if it's actually correct, maybe
