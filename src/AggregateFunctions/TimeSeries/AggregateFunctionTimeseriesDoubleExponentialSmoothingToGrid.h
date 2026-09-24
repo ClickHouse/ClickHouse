@@ -161,8 +161,6 @@ public:
         return Aggregator{smoothing_factor, trend_factor};
     }
 
-    static constexpr bool DateTime64Supported = true;
-
 protected:
     const Float64 smoothing_factor{};   /// smoothing factor (sf), in (0, 1)
     const Float64 trend_factor{};       /// trend factor (tf), in (0, 1)

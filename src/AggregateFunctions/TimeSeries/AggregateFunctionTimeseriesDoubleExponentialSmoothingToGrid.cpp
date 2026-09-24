@@ -71,7 +71,7 @@ FROM
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesDoubleExponentialSmoothingToGrid = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesDoubleExponentialSmoothingToGrid = {26, 10};
     FunctionDocumentation::Category category_timeSeriesDoubleExponentialSmoothingToGrid = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_timeSeriesDoubleExponentialSmoothingToGrid = {description_timeSeriesDoubleExponentialSmoothingToGrid, syntax_timeSeriesDoubleExponentialSmoothingToGrid, arguments_timeSeriesDoubleExponentialSmoothingToGrid, parameters_timeSeriesDoubleExponentialSmoothingToGrid, returned_value_timeSeriesDoubleExponentialSmoothingToGrid, examples_timeSeriesDoubleExponentialSmoothingToGrid, introduced_in_timeSeriesDoubleExponentialSmoothingToGrid, category_timeSeriesDoubleExponentialSmoothingToGrid};
 
