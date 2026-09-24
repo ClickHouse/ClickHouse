@@ -499,7 +499,11 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             }
         }
     }
-    else
+
+    /// Checksums regenerated from the files on disk by `loadChecksums` describe those files as they are,
+    /// so they cannot vouch for a marks file torn by a crash: check the shape of the marks files directly
+    /// in that case too.
+    if (checksums.empty() || checksums_were_regenerated)
     {
         if (!cols_substreams.empty())
         {
@@ -523,6 +527,10 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                             "Part {} is broken: {} is empty.",
                             getDataPartStorage().getFullPath(),
                             std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+
+                    /// Compressed marks of different streams compress to different sizes.
+                    if (index_granularity_info.mark_type.compressed)
+                        continue;
 
                     if (!marks_size)
                         marks_size = file_size;
@@ -562,6 +570,10 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                             "Part {} is broken: {} is empty.",
                             getDataPartStorage().getFullPath(),
                             std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+
+                    /// Compressed marks of different streams compress to different sizes.
+                    if (index_granularity_info.mark_type.compressed)
+                        return;
 
                     if (!marks_size)
                         marks_size = file_size;

@@ -14,10 +14,13 @@ WORKING_DIR="${CLICKHOUSE_TMP}/05214_broken_projection_does_not_skip_part_check"
 
 create_table()
 {
+    local min_bytes_for_wide_part=${1:-1000000000}
+    rm -rf "${WORKING_DIR}"
+    mkdir -p "${WORKING_DIR}"
     ${CLICKHOUSE_LOCAL} --path "${WORKING_DIR}" --multiquery -q "
         CREATE TABLE t (id UInt64, v UInt64, PROJECTION p (SELECT v, count() GROUP BY v))
         ENGINE = MergeTree ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+        SETTINGS min_bytes_for_wide_part = ${min_bytes_for_wide_part}, min_rows_for_wide_part = 1000000000, compress_marks = 1;
 
         INSERT INTO t SELECT number, number % 10 FROM numbers(5000);
         SELECT 'inserted', count() FROM t;
@@ -37,17 +40,31 @@ report()
 
 # The marks of the part itself are gone as well as the projection's, which is what a single power loss
 # can leave behind.
-rm -rf "${WORKING_DIR}"
-mkdir -p "${WORKING_DIR}"
 create_table
 find "${WORKING_DIR}" -name 'data.cmrk4' -exec truncate -s 0 {} \;
 report 'both'
 
 # Only the projection's marks are gone: the part keeps all of its rows and stays attached.
-rm -rf "${WORKING_DIR}"
-mkdir -p "${WORKING_DIR}"
 create_table
 find "${WORKING_DIR}" -path '*p.proj*' -name 'data.cmrk4' -exec truncate -s 0 {} \;
 report 'projection only'
+
+# The same, but `checksums.txt` of the part is gone as well, so it is regenerated from the files on disk
+# while loading, and those checksums bless the empty marks file. The shape of the marks files is checked
+# directly in this case.
+create_table
+find "${WORKING_DIR}" -name 'data.cmrk4' -exec truncate -s 0 {} \;
+find "${WORKING_DIR}" -name 'checksums.txt' -not -path '*.proj*' -delete
+report 'both, no checksums'
+
+create_table
+find "${WORKING_DIR}" -path '*p.proj*' -name 'data.cmrk4' -exec truncate -s 0 {} \;
+find "${WORKING_DIR}" -name 'checksums.txt' -not -path '*.proj*' -delete
+report 'projection only, no checksums'
+
+# Intact compressed marks of a regenerated part are not mistaken for broken ones, for a Wide part too.
+create_table 0
+find "${WORKING_DIR}" -name 'checksums.txt' -not -path '*.proj*' -delete
+report 'wide, no checksums'
 
 rm -rf "${WORKING_DIR}"
