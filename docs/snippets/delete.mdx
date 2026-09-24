@@ -34,34 +34,9 @@ If you need to guarantee that your data is deleted from storage in a predictable
 
 ## Choose the delete mode {#lightweight-delete-mode}
 
-The [`lightweight_delete_mode`](/reference/settings/session-settings/lightweight#lightweight_delete_mode) setting controls how ClickHouse marks rows as deleted:
+The [`lightweight_delete_mode`](/reference/settings/session-settings/lightweight#lightweight_delete_mode) setting selects mutation-based deletes (the default) or lightweight updates that write patch parts containing `_row_exists = 0` for deleted rows. Queries apply these patches before physical cleanup.
 
-| Value | Behavior |
-| --- | --- |
-| `alter_update` (default) | Runs an `ALTER TABLE ... UPDATE` mutation to update the `_row_exists` mask. |
-| `lightweight_update` | Uses a lightweight `UPDATE` with patch parts when supported; otherwise, uses an `ALTER TABLE ... UPDATE` mutation. |
-| `lightweight_update_force` | Uses a lightweight `UPDATE` with patch parts when supported; otherwise, throws an exception. |
-
-With patch parts, ClickHouse writes `_row_exists = 0` only for the deleted rows, together with metadata that identifies those rows. It avoids rewriting the entire mask column in the affected parts. Subsequent `SELECT` queries apply these patches to exclude the deleted rows before physical cleanup.
-
-The patch-part path waits for patch creation on the executing replica before returning, rather than submitting a background mutation controlled by `lightweight_deletes_sync`. It does not need to wait for existing merges and mutations to finish. Applying patches adds work to reads; see [lightweight update performance considerations](/reference/statements/update#performance-considerations).
-
-On `ReplicatedMergeTree` tables, patch creation completes on the executing replica; other replicas may continue returning deleted rows until they receive the patch. `lightweight_deletes_sync` does not make this path wait for other replicas. To wait for deletion on all replicas, use `lightweight_delete_mode = 'alter_update'` with `lightweight_deletes_sync = 2`.
-
-To use this path, [`enable_lightweight_update`](/reference/settings/session-settings/enable-lightweight#enable_lightweight_update) must be enabled, and the table must meet the [lightweight update requirements](/reference/statements/update#lightweight-update-requirements), including the `enable_block_number_column` and `enable_block_offset_column` table settings. For example, for a supported `hits` table:
-
-```sql
-ALTER TABLE hits MODIFY SETTING
-    enable_block_number_column = 1,
-    enable_block_offset_column = 1;
-
-SET enable_lightweight_update = 1;
-SET lightweight_delete_mode = 'lightweight_update_force';
-
-DELETE FROM hits WHERE Title LIKE '%hello%';
-```
-
-This example uses `lightweight_update_force` so that an unsupported configuration produces an exception instead of a mutation-based delete.
+See [Choose the delete mode in the `DELETE` reference](/reference/statements/delete#lightweight-delete-mode) for the available modes, prerequisites, a configuration example, and differences in visibility across replicas.
 
 ## Deleting large amounts of data {#deleting-large-amounts-of-data}
 
