@@ -4,6 +4,7 @@
 #include <Columns/canonicalizeNegativeZero.h>
 #include <Common/Arena.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
@@ -35,10 +36,15 @@ void HashOutputFormat::consume(Chunk chunk)
     /// `nullptr` for a column without a negative zero, which is by far the most common case.
     Columns canonical_columns(num_columns);
     Columns full_columns(num_columns);
+    /// The column whose serialized values tell the two zeros apart: `convertToFullIfWrapped` keeps
+    /// `LowCardinality`, whose dictionary can hold a negative zero as well, and `canonicalizeNegativeZero`
+    /// does not look into it, so the check is done on the column without `LowCardinality`.
+    Columns value_columns(num_columns);
     for (size_t j = 0; j < num_columns; ++j)
     {
         full_columns[j] = columns[j]->convertToFullIfWrapped();
-        canonical_columns[j] = canonicalizeNegativeZero(*full_columns[j]);
+        value_columns[j] = recursiveRemoveLowCardinality(full_columns[j]);
+        canonical_columns[j] = canonicalizeNegativeZero(*value_columns[j]);
     }
 
     Arena arena;
@@ -52,11 +58,16 @@ void HashOutputFormat::consume(Chunk chunk)
                 continue;
 
             const char * begin = nullptr;
-            const std::string_view value = full_columns[j]->serializeValueIntoArena(i, arena, begin, nullptr);
+            const std::string_view value = value_columns[j]->serializeValueIntoArena(i, arena, begin, nullptr);
             begin = nullptr;
             const std::string_view canonical_value = canonical_columns[j]->serializeValueIntoArena(i, arena, begin, nullptr);
             if (value != canonical_value)
                 hash.update(value.data(), value.size());
+
+            /// Both values are only needed for the comparison; release them in the reverse order of
+            /// allocation, so that the arena does not grow with the number of rows.
+            arena.rollback(canonical_value.size());
+            arena.rollback(value.size());
         }
     }
 }

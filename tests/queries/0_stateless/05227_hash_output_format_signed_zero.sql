@@ -21,3 +21,12 @@ SELECT if(number = 3, -0., 0.) FROM numbers(6) FORMAT Hash;
 SELECT if(number = 3, -0., 0.) FROM numbers(6) SETTINGS max_block_size = 1 FORMAT Hash;
 SELECT if(number = 3, -0., 0.) FROM numbers(6) SETTINGS max_block_size = 4 FORMAT Hash;
 SELECT 0. FROM numbers(6) FORMAT Hash;
+
+-- A `LowCardinality` dictionary can hold a negative zero as well, when it is read from a format.
+SET allow_suspicious_low_cardinality_types = 1;
+SELECT x FROM format(TSV, 'x LowCardinality(Float64)', '-0') FORMAT Hash;
+SELECT x FROM format(TSV, 'x LowCardinality(Float64)', '0') FORMAT Hash;
+SELECT x FROM format(TSV, 'x LowCardinality(Nullable(Float64))', '-0') FORMAT Hash;
+SELECT x FROM format(TSV, 'x LowCardinality(Nullable(Float64))', '0') FORMAT Hash;
+SELECT x FROM format(TSV, 'x Array(LowCardinality(Float64))', '[-0,0]') FORMAT Hash;
+SELECT x FROM format(TSV, 'x Array(LowCardinality(Float64))', '[0,0]') FORMAT Hash;
