@@ -1,6 +1,5 @@
 #include "config.h"
 
-#include <algorithm>
 #include <Formats/JSONExtractTree.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -58,13 +57,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
-
-#include <Common/memcpySmall.h>
-
-#include <base/memcmpSmall.h>
-
-#include <bit>
-#include <limits>
 
 namespace DB
 {
@@ -252,28 +244,6 @@ bool tryGetNumericValueFromJSONElement(
 namespace
 {
 
-/// Reserve capacity for a chars buffer that is grown incrementally (one document per call). Keeps the
-/// default power-of-two doubling (amortized O(1) appends) until a single growth increment would exceed
-/// `max_growth_step`, after which it grows by exact step-sized chunks. This bounds the over-allocation
-/// for large buffers (e.g. shared-data path names) without reallocating on every row, which a plain
-/// per-row `reserve_exact` would cause. `max_growth_step == 0` keeps pure power-of-two growth.
-void reserveCharsWithGrowthCap(ColumnString::Chars & chars, size_t required, size_t max_growth_step)
-{
-    if (required <= chars.capacity())
-        return;
-
-    if (max_growth_step == 0)
-    {
-        chars.reserve(required);
-        return;
-    }
-
-    size_t new_capacity = chars.capacity() * 2;
-    if (new_capacity - chars.capacity() > max_growth_step)
-        new_capacity = chars.capacity() + max_growth_step;
-    chars.reserve_exact(std::max(new_capacity, required));
-}
-
 template <typename JSONParser>
 String jsonElementToString(const typename JSONParser::Element & element, const FormatSettings & format_settings)
 {
@@ -422,7 +392,7 @@ public:
             auto & col_str = assert_cast<ColumnString &>(column);
             auto & chars = col_str.getChars();
             {
-                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
+                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
                 jsonElementToString<JSONParser>(element, buf, format_settings);
             }
             col_str.getOffsets().push_back(chars.size());
@@ -568,9 +538,6 @@ public:
     }
 
 private:
-    /// Values up to this length are padded on the stack instead of through a `String`.
-    static constexpr size_t max_padding_on_stack = 64;
-
     template <typename T>
     bool checkValueSizeAndInsert(IColumn & column, const T & value, String & error) const
     {
@@ -583,25 +550,15 @@ private:
         // For the non low cardinality case of FixedString, the padding is done in the FixedString Column implementation.
         // In order to avoid having to pass the data to a FixedString Column and read it back (which would slow down the execution)
         // the data is padded here and written directly to the Low Cardinality Column
-        auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
         if (value.size() == fixed_length)
         {
-            lc_column.insertData(value.data(), value.size());
-        }
-        else if (fixed_length <= max_padding_on_stack)
-        {
-            /// Building a `String` here costs a copy plus an out of line `resize` on every value.
-            /// The buffer is zeroed with a constant size so that the compiler inlines it.
-            char padded_value[max_padding_on_stack];
-            memset(padded_value, 0, max_padding_on_stack);
-            memcpySmall(padded_value, value.data(), value.size());
-            lc_column.insertData(padded_value, fixed_length);
+            assert_cast<ColumnLowCardinality &>(column).insertData(value.data(), value.size());
         }
         else
         {
             String padded_value(value);
             padded_value.resize(fixed_length, '\0');
-            lc_column.insertData(padded_value.data(), padded_value.size());
+            assert_cast<ColumnLowCardinality &>(column).insertData(padded_value.data(), padded_value.size());
         }
         return true;
     }
@@ -735,10 +692,7 @@ template <typename JSONParser>
 class DateTimeNode : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
-    explicit DateTimeNode(const DataTypeDateTime & datetime_type)
-        : TimezoneMixin(datetime_type), utc_time_zone(DateLUT::instance("UTC"))
-    {
-    }
+    explicit DateTimeNode(const DataTypeDateTime & datetime_type) : TimezoneMixin(datetime_type) { }
 
     bool insertResultToColumn(
         IColumn & column,
@@ -764,16 +718,14 @@ public:
         }
         else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
+            if (element.isInt64() && (element.getInt64() < 0))
+            {
+                error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
+                return false;
+            }
+
             if (element.isInt64())
             {
-                /// A negative integer is a pre-epoch Unix timestamp; the final clamp below brings it into the
-                /// `DateTime` range (the epoch), matching the row input serializer, rather than rejecting it.
-                /// With `read_datetime_number_as_raw_value` (pre-26.8) a negative integer is rejected as before.
-                if (format_settings.read_datetime_number_as_raw_value && element.getInt64() < 0)
-                {
-                    error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
-                    return false;
-                }
                 value = element.getInt64();
                 if (format_settings.throwOnDateTimeOverflow() && (value < 0 || value > 0xFFFFFFFF))
                 {
@@ -792,21 +744,6 @@ public:
                     return false;
                 }
                 value = static_cast<time_t>(std::min(raw, UInt64(0xFFFFFFFF)));
-            }
-        }
-        else if (insert_settings.allow_type_conversion && element.isDouble() && !format_settings.read_datetime_number_as_raw_value)
-        {
-            /// A fractional number is a Unix timestamp truncated to whole seconds. Parse its shortest round-trip
-            /// text through the shared row-input reader so precision-overflow (e.g. `1e39`) is rejected and a
-            /// negative value is clamped to the epoch, matching the row input path. Parity holds only up to
-            /// `Float64` precision: the DOM parser has already rounded the literal, so a value it cannot represent
-            /// exactly can cross the second boundary (`1703363853.9999999` arrives here as `1703363854.0`).
-            String str_value = jsonElementToString<JSONParser>(element, format_settings);
-            ReadBufferFromMemory buf(str_value);
-            if (!tryReadDateTimeAsNumber(value, buf, !format_settings.throwOnDateTimeOverflow()) || !buf.eof())
-            {
-                error = fmt::format("cannot read DateTime value from JSON element: {}", str_value);
-                return false;
             }
         }
         else
@@ -841,10 +778,6 @@ public:
 
         return false;
     }
-
-    /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
-    /// `DateTime` type does not build a UTC lookup table; see the note there.
-    const DateLUTImpl & utc_time_zone;
 };
 
 template <typename JSONParser>
@@ -980,8 +913,7 @@ template <typename JSONParser>
 class DateTime64Node : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
-    explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type)
-        : TimezoneMixin(datetime64_type), utc_time_zone(DateLUT::instance("UTC")), scale(datetime64_type.getScale())
+    explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type) : TimezoneMixin(datetime64_type), scale(datetime64_type.getScale())
     {
     }
 
@@ -1012,55 +944,16 @@ public:
             if (!insert_settings.allow_type_conversion)
                 return false;
 
-            /// An unquoted number is a Unix timestamp in seconds (with optional sub-second precision), scaled to
-            /// the column precision. With `read_datetime_number_as_raw_value` (pre-26.8) an integer is instead the
-            /// raw scaled value (ticks); a fractional number was always seconds.
             switch (element.type())
             {
                 case ElementType::DOUBLE:
-                {
-                    /// Convert through decimal text rather than `Float64` arithmetic to preserve sub-second
-                    /// precision: `convertToDecimal` computes `0.58 * 100 = 57.999...` and truncates to 57 ticks,
-                    /// while parsing the text `0.58` at the column scale gives the exact 58 (as the row input path,
-                    /// `CAST` and `toDateTime64` do). Parity holds only up to the `Float64` the DOM parser rounded to.
-                    String str_value = jsonElementToString<JSONParser>(element, format_settings);
-                    ReadBufferFromMemory buf(str_value);
-                    if (!tryReadDateTime64AsNumber(value, scale, buf) || !buf.eof())
-                    {
-                        error = fmt::format("cannot read DateTime64 value from JSON element: {}", str_value);
-                        return false;
-                    }
+                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DateTime64>>(element.getDouble(), scale);
                     break;
-                }
                 case ElementType::UINT64:
-                    if (format_settings.read_datetime_number_as_raw_value)
-                    {
-                        /// Raw ticks are stored in the `Int64` native type; a `UInt64` above `Int64` max would
-                        /// narrow to a negative timestamp, so range-check and fail on overflow rather than wrapping.
-                        const UInt64 raw = element.getUInt64();
-                        if (raw > static_cast<UInt64>(std::numeric_limits<DateTime64::NativeType>::max()))
-                        {
-                            error = fmt::format("raw DateTime64 tick value {} is out of range", raw);
-                            return false;
-                        }
-                        value.value = static_cast<DateTime64::NativeType>(raw);
-                    }
-                    /// Use the non-throwing conversion so that an out-of-range timestamp degrades to the default
-                    /// value, matching the `DOUBLE` case above and the best-effort contract of `JSONExtract`.
-                    else if (!tryConvertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DateTime64>>(element.getUInt64(), scale, value))
-                    {
-                        error = fmt::format("cannot convert UInt64 value {} to DateTime64", element.getUInt64());
-                        return false;
-                    }
+                    value.value = element.getUInt64();
                     break;
                 case ElementType::INT64:
-                    if (format_settings.read_datetime_number_as_raw_value)
-                        value.value = element.getInt64();
-                    else if (!tryConvertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DateTime64>>(element.getInt64(), scale, value))
-                    {
-                        error = fmt::format("cannot convert Int64 value {} to DateTime64", element.getInt64());
-                        return false;
-                    }
+                    value.value = element.getInt64();
                     break;
                 default:
                     error = fmt::format("cannot read DateTime64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
@@ -1095,9 +988,6 @@ public:
     }
 
 private:
-    /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
-    /// `DateTime64` type does not build a UTC lookup table; see the note there.
-    const DateLUTImpl & utc_time_zone;
     UInt32 scale;
 };
 
@@ -1494,12 +1384,6 @@ public:
         auto & tuple = assert_cast<ColumnTuple &>(column);
         size_t old_size = column.size();
         bool were_valid_elements = false;
-        /// When every element got exactly one value, all the nested columns already have the right
-        /// size and the `set_size` walk below (a virtual `size` per element) can be skipped. A JSON
-        /// object can repeat a key, so the elements that took a value are tracked as a bit set and
-        /// not just counted: two values for one element is not the same as one value for two.
-        size_t inserted_elements = 0;
-        UInt64 filled_elements = 0;
 
         auto set_size = [&](size_t size)
         {
@@ -1517,24 +1401,6 @@ public:
             }
         };
 
-        /// Mark that `index` took a value. Elements past the width of the bit set keep the fixup.
-        auto note_inserted_element = [&](size_t index)
-        {
-            ++inserted_elements;
-            if (index < sizeof(filled_elements) * 8)
-                filled_elements |= 1ULL << index;
-        };
-
-        auto set_size_after_success = [&](size_t size)
-        {
-            /// One value per element, and each in a distinct element, so every nested column is
-            /// already at `size`.
-            const bool all_elements_distinct = static_cast<size_t>(std::popcount(filled_elements)) == inserted_elements;
-            if (were_valid_elements && inserted_elements == tuple.tupleSize() && all_elements_distinct)
-                return;
-            set_size(size);
-        };
-
         if (element.isArray())
         {
             auto array = element.getArray();
@@ -1545,12 +1411,10 @@ public:
                 if (nested[index]->insertResultToColumn(tuple.getColumn(index), *it++, insert_settings, format_settings, error))
                 {
                     were_valid_elements = true;
-                    note_inserted_element(index);
                 }
                 else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                 {
                     tuple.getColumn(index).insertDefault();
-                    note_inserted_element(index);
                 }
                 else
                 {
@@ -1560,7 +1424,7 @@ public:
                 }
             }
 
-            set_size_after_success(old_size + static_cast<size_t>(were_valid_elements));
+            set_size(old_size + static_cast<size_t>(were_valid_elements));
             return were_valid_elements;
         }
 
@@ -1575,12 +1439,10 @@ public:
                     if (nested[index]->insertResultToColumn(tuple.getColumn(index), (*it++).second, insert_settings, format_settings, error))
                     {
                         were_valid_elements = true;
-                        note_inserted_element(index);
                     }
                     else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                     {
                         tuple.getColumn(index).insertDefault();
-                        note_inserted_element(index);
                     }
                     else
                     {
@@ -1592,48 +1454,26 @@ public:
             }
             else
             {
-                /// Objects usually list their keys in the order the tuple declares them, so try the
-                /// next expected name before hashing the key for `name_to_index_map`.
-                size_t expected_index = 0;
-                auto matches_expected_name = [&](std::string_view key)
-                {
-                    if (expected_index >= explicit_names.size())
-                        return false;
-                    const String & name = explicit_names[expected_index];
-                    return memequalSmall(key.data(), key.size(), name.data(), name.size());
-                };
-
                 for (const auto & [key, value] : object)
                 {
-                    size_t index = 0;
-                    if (matches_expected_name(key))
+                    auto index = name_to_index_map.find(key);
+                    if (index != name_to_index_map.end())
                     {
-                        index = expected_index;
-                    }
-                    else
-                    {
-                        auto it = name_to_index_map.find(key);
-                        if (it == name_to_index_map.end())
-                            continue;
-                        index = it->second;
-                    }
-                    expected_index = index + 1;
-
-                    if (nested[index]->insertResultToColumn(tuple.getColumn(index), value, insert_settings, format_settings, error))
-                    {
-                        were_valid_elements = true;
-                        note_inserted_element(index);
-                    }
-                    else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
-                    {
-                        set_size(old_size);
-                        error += fmt::format(" (during reading tuple element \"{}\")", key);
-                        return false;
+                        if (nested[index->second]->insertResultToColumn(tuple.getColumn(index->second), value, insert_settings, format_settings, error))
+                        {
+                            were_valid_elements = true;
+                        }
+                        else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
+                        {
+                            set_size(old_size);
+                            error += fmt::format(" (during reading tuple element \"{}\")", key);
+                            return false;
+                        }
                     }
                 }
             }
 
-            set_size_after_success(old_size + static_cast<size_t>(were_valid_elements));
+            set_size(old_size + static_cast<size_t>(were_valid_elements));
             return were_valid_elements;
         }
 
@@ -2006,10 +1846,6 @@ public:
         std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
         for (const auto & regexp : path_regexps_to_skip_)
             path_regexps_to_skip.emplace_back(regexp);
-
-        all_typed_paths_have_trivial_defaults = std::all_of(
-            typed_paths_types_.begin(), typed_paths_types_.end(),
-            [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
     }
 
     bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
@@ -2019,16 +1855,8 @@ public:
         if (element.isNull() && format_settings.null_as_default)
         {
             auto & column_object = assert_cast<ColumnObject &>(column);
-            if (all_typed_paths_have_trivial_defaults)
-            {
-                for (auto * col : column_object.getSortedTypedPathColumns())
-                    col->insertDefault();
-            }
-            else
-            {
-                for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
-                    typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
-            }
+            for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
+                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
             for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
                 dynamic_column->insertDefault();
             column_object.getSharedDataColumn().insertDefault();
@@ -2064,7 +1892,7 @@ public:
             new_paths_total_size += path.size();
 
         auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-        reserveCharsWithGrowthCap(shared_data_paths->getChars(), shared_data_paths->getChars().size() + new_paths_total_size, format_settings.json_max_string_column_growth_step);
+        shared_data_paths->getChars().reserve(shared_data_paths->getChars().size() + new_paths_total_size);
         shared_data_paths->getOffsets().reserve(shared_data_paths->getOffsets().size() + paths_and_values_for_shared_data.size());
         auto & shared_data_values_chars = shared_data_values->getChars();
         auto & shared_data_values_offsets = shared_data_values->getOffsets();
@@ -2086,7 +1914,7 @@ public:
             else
             {
                 /// Serialize value directly into shared data chars.
-                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
+                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
                 if (!insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column))
                 {
                     error += fmt::format(" (while reading path {})", path);
@@ -2101,21 +1929,10 @@ public:
         column_object.getSharedDataOffsets().push_back(shared_data_paths->size());
 
         /// Fill remaining typed and dynamic paths.
-        if (all_typed_paths_have_trivial_defaults)
+        for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
         {
-            for (auto * col : column_object.getSortedTypedPathColumns())
-            {
-                if (col->size() == prev_size)
-                    col->insertDefault();
-            }
-        }
-        else
-        {
-            for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
-            {
-                if (typed_column->size() == prev_size)
-                    typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
-            }
+            if (typed_column->size() == prev_size)
+                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
         }
 
         for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
@@ -2613,7 +2430,6 @@ private:
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
-    bool all_typed_paths_have_trivial_defaults = true;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;

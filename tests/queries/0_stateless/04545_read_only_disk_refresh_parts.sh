@@ -16,7 +16,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS writer SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS reader SYNC"
 
-disk_path="${CLICKHOUSE_DISKS_FILES}/04545/${CLICKHOUSE_DATABASE}/"
+disk_path="disks/04545/${CLICKHOUSE_DATABASE}/"
 
 # Writer: a read-write plain_rewritable object-storage disk.
 ${CLICKHOUSE_CLIENT} --query "
@@ -67,7 +67,7 @@ SETTINGS table_disk = true,
       type = object_storage,
       object_storage_type = local,
       metadata_type = local,
-      path = '${CLICKHOUSE_DISKS_FILES}/04545_local/${CLICKHOUSE_DATABASE}/')
+      path = 'disks/04545_local/${CLICKHOUSE_DATABASE}/')
 " 2>&1 | grep -qF "requires metadata stored on the object storage" && echo "local metadata read-only disk rejected for table_disk"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS reader_local SYNC"

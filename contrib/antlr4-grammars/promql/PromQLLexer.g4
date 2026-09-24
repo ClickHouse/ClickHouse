@@ -107,9 +107,6 @@ OFFSET: 'offset';
 
 BOOL: 'bool';
 
-START: 'start';
-END: 'end';
-
 AGGREGATION_OPERATOR:
     'sum'
     | 'min'
@@ -183,13 +180,7 @@ FUNCTION options {
     | 'stddev_over_time'
     | 'stdvar_over_time'
     | 'last_over_time'
-    | 'first_over_time'
     | 'present_over_time'
-    | 'ts_of_min_over_time'
-    | 'ts_of_max_over_time'
-    | 'ts_of_last_over_time'
-    | 'ts_of_first_over_time'
-    | 'mad_over_time'
     | 'acos'
     | 'acosh'
     | 'asin'

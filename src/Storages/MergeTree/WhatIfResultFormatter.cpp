@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/WhatIfResult.h>
+#include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
@@ -8,25 +8,24 @@
 namespace DB
 {
 
-void WhatIfResult::format(WriteBuffer & out) const
+void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
 {
     writeCString("Baseline (after PK + partition + existing indexes):\n", out);
     writeString(fmt::format("  table:       {}.{}\n", database, table), out);
     writeString(fmt::format("  parts:       {}\n", baseline_parts), out);
     writeString(fmt::format("  marks:       {}\n", baseline_marks), out);
-    writeString(fmt::format("  rows:        {}\n", baseline_rows), out);
     if (baseline_est_bytes > 0)
         writeString(fmt::format("  est_bytes:   {}\n", ReadableSize(baseline_est_bytes)), out);
     writeCString("\n", out);
 
-    for (const auto & idx : candidates)
+    for (const auto & idx : index_results)
     {
-        if (!idx.type.empty())
-            writeString(fmt::format("With {} ({}, hypothetical):\n", idx.name, idx.type), out);
+        if (!idx.index_type.empty())
+            writeString(fmt::format("With {} ({}, hypothetical):\n", idx.index_name, idx.index_type), out);
         else
-            writeString(fmt::format("{}:\n", idx.name), out);
+            writeString(fmt::format("{}:\n", idx.index_name), out);
 
-        if (idx.status == WhatIfCandidateResult::NotApplicable)
+        if (idx.status == IndexResult::NotApplicable)
         {
             writeCString("  status:       not_applicable\n", out);
             writeString(fmt::format("  reason:       {}\n", idx.not_applicable_reason), out);
@@ -35,70 +34,31 @@ void WhatIfResult::format(WriteBuffer & out) const
         }
 
         writeCString("  status:       applicable\n", out);
-        if (idx.estimated_marks)
-            writeString(fmt::format("  marks:        {}\n", *idx.estimated_marks), out);
-        if (idx.estimated_rows)
-            writeString(fmt::format("  rows:         {}\n", *idx.estimated_rows), out);
-        /// the layout a projection part would get is not recorded in a part, so the estimate can only span them
-        if (idx.estimated_marks_high > idx.estimated_marks_low)
-            writeString(
-                fmt::format("  marks_span:   {} to {}\n", idx.estimated_marks_low, idx.estimated_marks_high), out);
+        writeString(fmt::format("  marks:        {}\n", idx.estimated_marks), out);
 
-        /// only for indexes
-        if (idx.kind == WhatIfCandidateResult::Index && idx.estimated_marks && baseline_marks > 0 && baseline_est_bytes > 0)
+        if (baseline_marks > 0 && baseline_est_bytes > 0)
         {
             UInt64 hypo_bytes = static_cast<UInt64>(
-                static_cast<double>(baseline_est_bytes) * static_cast<double>(*idx.estimated_marks) / static_cast<double>(baseline_marks));
+                static_cast<double>(baseline_est_bytes) * static_cast<double>(idx.estimated_marks) / static_cast<double>(baseline_marks));
             writeString(fmt::format("  est_bytes:    {}\n", ReadableSize(hypo_bytes)), out);
         }
 
-        /// a projection can read more than the base table, and a ratio reads better than a negative skip
-        if (idx.kind == WhatIfCandidateResult::Projection)
-        {
-            if (idx.estimated_marks && baseline_marks > 0)
-            {
-                const double read_ratio = static_cast<double>(*idx.estimated_marks) / static_cast<double>(baseline_marks);
-                writeString(fmt::format("  read_ratio:   {:.2f}x\n", read_ratio), out);
-            }
-        }
-        else if (idx.estimated_marks)
-            writeString(fmt::format("  skip_ratio:   {:.1f}%\n", idx.skip_ratio * 100.0), out);
-
-        if (!idx.verdict.empty())
-            writeString(fmt::format("  verdict:      {}\n", idx.verdict), out);
-        if (!idx.verdict_reason.empty())
-            writeString(fmt::format("  reason:       {}\n", idx.verdict_reason), out);
+        writeString(fmt::format("  skip_ratio:   {:.1f}%\n", idx.skip_ratio * 100.0), out);
         writeCString("\n", out);
 
         writeCString("Estimation:\n", out);
-
-        String estimate_source_str;
-        switch (idx.estimate_source)
-        {
-            case WhatIfCandidateResult::Empirical: estimate_source_str = "empirical"; break;
-            case WhatIfCandidateResult::Statistical: estimate_source_str = "statistical"; break;
-            case WhatIfCandidateResult::ApplicabilityOnly: estimate_source_str = "applicability_only"; break;
-        }
-        writeString(fmt::format("  source:           {}\n", estimate_source_str), out);
+        writeString(fmt::format("  source:           {}\n", idx.estimate_source), out);
 
         String empirical_status_str;
         switch (idx.empirical_status)
         {
-            case WhatIfCandidateResult::Ok: empirical_status_str = "ok"; break;
-            case WhatIfCandidateResult::Unsupported: empirical_status_str = "unsupported"; break;
-            case WhatIfCandidateResult::Disabled: empirical_status_str = "disabled"; break;
+            case IndexResult::Ok: empirical_status_str = "ok"; break;
+            case IndexResult::Unsupported: empirical_status_str = "unsupported"; break;
+            case IndexResult::Disabled: empirical_status_str = "disabled"; break;
         }
         writeString(fmt::format("  empirical_status: {}\n", empirical_status_str), out);
 
-        if (idx.empirical_status == WhatIfCandidateResult::Unsupported)
-        {
-            String reason = idx.empirical_unsupported_reason;
-            if (reason.empty())
-                reason = "The empirical estimate could not be produced for this candidate";
-            writeString(fmt::format("  empirical_reason: {}\n", reason), out);
-        }
-
-        if (idx.empirical_status == WhatIfCandidateResult::Ok)
+        if (idx.empirical_status == IndexResult::Ok)
         {
             writeString(fmt::format("  sampled_parts:    {} / {}\n", idx.sampled_parts, idx.total_parts), out);
             writeString(fmt::format("  sampled_marks:    {} / {}\n", idx.sampled_marks, idx.total_marks), out);

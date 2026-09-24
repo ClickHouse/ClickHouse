@@ -310,12 +310,6 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
                 "Can't decompress data: the compressed data size ({}, this should include header size) is less than the header size ({})",
                     size_compressed_without_checksum, static_cast<size_t>(header_size));
 
-        if (size_compressed_without_checksum - header_size != size_decompressed)
-            throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA,
-                "Can't decompress data: the compressed data size without header ({}) does not match size_decompressed ({}) "
-                "for a codec that stores data uncompressed",
-                    size_compressed_without_checksum - header_size, size_decompressed);
-
         to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
     }
     else

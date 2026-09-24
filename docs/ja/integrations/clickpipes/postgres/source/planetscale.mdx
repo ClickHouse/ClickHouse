@@ -26,29 +26,29 @@ ClickPipes は Postgres バージョン 12 以降をサポートしています�
   ## 論理レプリケーションを有効にする
 </div>
 
-1. Postgresインスタンスでレプリケーションを有効にするには、まず以下の設定になっていることを確認する必要があります。
+1. Postgresインスタンスでレプリケーションを有効にするには、まず次の設定になっていることを確認する必要があります。
 
    ```sql
    wal_level = logical
    ```
 
-   これを確認するには、次のSQLコマンドを実行します。
+   確認するには、次のSQLコマンドを実行します。
 
    ```sql
    SHOW wal_level;
    ```
 
-   デフォルトでは、出力は `logical` になっているはずです。そうでない場合は、PlanetScaleコンソールにログインし、`Cluster configuration->Parameters` に移動して `Write-ahead log` までスクロールし、設定を変更してください。
+   デフォルトでは、出力は `logical` になっているはずです。そうでない場合は、PlanetScale Console にログインし、`Cluster configuration->Parameters` に移動して `Write-ahead log` までスクロールし、設定を変更してください。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="PlanetScaleコンソールでwal_levelを調整" size="md" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="PlanetScale Consoleでwal_levelを調整" size="md" border />
 
 <Warning>
-  PlanetScaleコンソールでこの設定を変更すると、再起動が発生します。
+  PlanetScale Console でこの設定を変更すると、必ず再起動が発生します。
 </Warning>
 
-2. また、設定 `max_slot_wal_keep_size` はデフォルトの4GBから増やすことを推奨します。これも PlanetScaleコンソールで `Cluster configuration->Parameters` に移動し、`Write-ahead log` までスクロールして設定します。新しい値の決め方については、[こちら](/ja/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings)を参照してください。
+2. また、設定 `max_slot_wal_keep_size` はデフォルトの4GBから増やすことを推奨します。これも PlanetScale Console で `Cluster configuration->Parameters` に移動し、`Write-ahead log` までスクロールして設定します。新しい値の決め方については、[こちら](/ja/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings)を参照してください。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="PlanetScaleコンソールでmax_slot_wal_keep_sizeを調整" size="md" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="PlanetScale Consoleでmax_slot_wal_keep_sizeを調整" size="md" border />
 
 <div id="creating-a-user-with-permissions-and-publication">
   ## 権限と publication を持つユーザーの作成
@@ -56,13 +56,13 @@ ClickPipes は Postgres バージョン 12 以降をサポートしています�
 
 デフォルトの `postgres.<...>` ユーザーを使用して PlanetScale Postgres インスタンスに接続し、以下のコマンドを実行します。
 
-1. ClickPipes 専用のユーザーを作成します:
+1. ClickPipes 専用のユーザーを作成します。
 
    ```sql
    CREATE USER clickpipes_user PASSWORD 'some-password';
    ```
 
-2. 前の手順で作成したユーザーに、スキーマレベルの読み取り専用アクセス権を付与します。以下の例は、`public` スキーマに対する権限を示しています。レプリケートしたいテーブルを含む各スキーマに対して、これらのコマンドを繰り返してください:
+2. 前の手順で作成したユーザーに、スキーマレベルの読み取り専用アクセス権を付与します。以下の例は、`public` スキーマに対する権限を示しています。レプリケートしたいテーブルを含む各スキーマに対して、これらのコマンドを繰り返してください。
 
    ```sql
    GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
@@ -70,7 +70,7 @@ ClickPipes は Postgres バージョン 12 以降をサポートしています�
    ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
    ```
 
-3. ユーザーにレプリケーション権限を付与します:
+3. ユーザーにレプリケーション権限を付与します。
 
    ```sql
    ALTER USER clickpipes_user WITH REPLICATION;
@@ -94,7 +94,7 @@ ClickPipes は Postgres バージョン 12 以降をサポートしています�
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication は、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケートする予定でない限り、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
+`clickpipes` publication には、指定したテーブルから生成される変更イベントのセットが含まれ、後でレプリケーションストリームの取り込みに使用されます。
 
 <div id="caveats">
   ## 注意事項
