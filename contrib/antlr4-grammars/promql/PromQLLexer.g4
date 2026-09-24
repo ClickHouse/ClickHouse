@@ -191,6 +191,7 @@ FUNCTION options {
     | 'ts_of_max_over_time'
     | 'ts_of_last_over_time'
     | 'ts_of_first_over_time'
+    | 'mad_over_time'
     | 'acos'
     | 'acosh'
     | 'asin'

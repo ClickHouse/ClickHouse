@@ -677,6 +677,20 @@ void considerEnablingParallelReplicas(
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
         return;
     }
+    /// A read served from a projection measures the projection's parts, not the table's, and the two
+    /// plans need not agree on using it: `parallel_replicas_support_projection` is honoured only where
+    /// a local plan is available, and the distributed path turns projections off outright (see
+    /// `ClusterProxy::executeQuery`). The statistics key cannot tell the two apart either - a
+    /// projection part belongs to the same storage and produces the same header - so a hash match
+    /// between a projection-backed boundary here and a base-table boundary in the replicas plan would
+    /// price one with the other's measurements, and `selected_rows` stays put so the drift check sees
+    /// nothing. Skip, the way `force_use_projection` is skipped above: projection use is the one thing
+    /// the parallel-replicas plan cannot be relied on to reproduce.
+    if (analysis->readFromProjection())
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "The read is served from a projection. Skipping optimization");
+        return;
+    }
     const auto rows_to_read = analysis->selected_rows;
     if (!rows_to_read)
     {
