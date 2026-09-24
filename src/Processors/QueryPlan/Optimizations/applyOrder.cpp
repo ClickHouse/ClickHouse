@@ -131,7 +131,8 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             (properties->sort_scope == SortingProperty::SortScope::Global
             || (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)))
         {
-            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
+            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(
+                properties->sort_description, distinct_step->getColumnNames(), *distinct_step->getInputHeaders().front()));
 
             /// Only preliminary distinct performs per-stream deduplication. A final distinct merges
             /// its input into one stream, so keeping the read parallel would only disable the
@@ -201,7 +202,8 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (properties->sort_scope != SortingProperty::SortScope::Global)
             return {};
 
-        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
+        auto prefix = getCollationAwareSortPrefixInColumns(
+            properties->sort_description, limit_by_step->getColumns(), *limit_by_step->getInputHeaders().front());
         if (prefix.size() == limit_by_step->getColumns().size())
             limit_by_step->applyOrder(prefix);
 
@@ -213,7 +215,8 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (properties->sort_scope != SortingProperty::SortScope::Global)
             return {};
 
-        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
+        auto prefix = getCollationAwareSortPrefixInColumns(
+            properties->sort_description, negative_limit_by_step->getColumns(), *negative_limit_by_step->getInputHeaders().front());
         if (prefix.size() == negative_limit_by_step->getColumns().size())
             negative_limit_by_step->applyOrder(prefix);
 
