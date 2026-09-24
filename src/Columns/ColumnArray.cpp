@@ -1467,6 +1467,16 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
     if (replicate_offsets.empty() || replicate_offsets.back() == 0)
         return cloneEmpty();
 
+    /// Every row holds an empty array, so all replicated arrays are empty too: only the offsets are needed.
+    if (data->empty())
+    {
+        if (size() != replicate_offsets.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
+        MutableColumnPtr res = cloneEmpty();
+        assert_cast<ColumnArray &>(*res).getOffsets().resize_fill(replicate_offsets.back(), 0);
+        return res;
+    }
+
     if (typeid_cast<const ColumnUInt8 *>(data.get()))
         return replicateNumber<UInt8>(replicate_offsets);
     if (typeid_cast<const ColumnUInt16 *>(data.get()))
