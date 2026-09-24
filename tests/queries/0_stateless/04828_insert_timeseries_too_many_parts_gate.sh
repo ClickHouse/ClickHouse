@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 -q "
 CREATE TABLE ts_gate_data (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS parts_to_throw_insert = 1;
 CREATE TABLE ts_gate_tags (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String), min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE ts_gate_metrics (metric_family_name String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
-CREATE TABLE ts_gate ENGINE = TimeSeries DATA ts_gate_data TAGS ts_gate_tags METRICS ts_gate_metrics;
+CREATE TABLE ts_gate ENGINE = TimeSeries SAMPLES ts_gate_data TAGS ts_gate_tags METRIC FAMILIES ts_gate_metrics;
 CREATE TABLE ts_gate_source (x UInt64) ENGINE = MergeTree ORDER BY x;
 "
 
@@ -45,8 +45,8 @@ CREATE TABLE ts_gate_source (x UInt64) ENGINE = MergeTree ORDER BY x;
 # of the three single-row blocks, so a check running at its first write would count the parts the
 # first view's branch has already committed and reject the query on `parts_to_throw_insert = 1`).
 $CLICKHOUSE_CLIENT -q "
-CREATE MATERIALIZED VIEW ts_gate_mv_a TO ts_gate AS SELECT 'metric_a' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x, 3), toFloat64(x))] AS time_series FROM ts_gate_source;
-CREATE MATERIALIZED VIEW ts_gate_mv_b TO ts_gate AS SELECT 'metric_b' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x, 3), toFloat64(x))] AS time_series FROM ts_gate_source WHERE x >= 2;
+CREATE MATERIALIZED VIEW ts_gate_mv_a TO ts_gate AS SELECT 'metric_a' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x, 3), toFloat64(x))] AS samples FROM ts_gate_source;
+CREATE MATERIALIZED VIEW ts_gate_mv_b TO ts_gate AS SELECT 'metric_b' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x, 3), toFloat64(x))] AS samples FROM ts_gate_source WHERE x >= 2;
 "
 
 $CLICKHOUSE_CLIENT $SETTINGS --parallel_view_processing=0 -q "INSERT INTO ts_gate_source SELECT number FROM numbers(3)"
@@ -83,13 +83,13 @@ CREATE TABLE ts_quorum_data_1 (id UInt64, timestamp DateTime64(3), value Float64
 CREATE TABLE ts_quorum_data_2 (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_04828/ts_quorum_data', '2') ORDER BY (id, timestamp);
 CREATE TABLE ts_quorum_tags (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String), min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE ts_quorum_metrics (metric_family_name String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
-CREATE TABLE ts_quorum ENGINE = TimeSeries DATA ts_quorum_data_1 TAGS ts_quorum_tags METRICS ts_quorum_metrics;
+CREATE TABLE ts_quorum ENGINE = TimeSeries SAMPLES ts_quorum_data_1 TAGS ts_quorum_tags METRIC FAMILIES ts_quorum_metrics;
 CREATE TABLE ts_quorum_source (x UInt64) ENGINE = Null;
 "
 
 $CLICKHOUSE_CLIENT -q "
-CREATE MATERIALIZED VIEW ts_quorum_mv_a TO ts_quorum AS SELECT 'metric_a' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x, 3), toFloat64(x))] AS time_series FROM ts_quorum_source;
-CREATE MATERIALIZED VIEW ts_quorum_mv_b TO ts_quorum AS SELECT 'metric_b' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x + 100, 3), toFloat64(x))] AS time_series FROM ts_quorum_source;
+CREATE MATERIALIZED VIEW ts_quorum_mv_a TO ts_quorum AS SELECT 'metric_a' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x, 3), toFloat64(x))] AS samples FROM ts_quorum_source;
+CREATE MATERIALIZED VIEW ts_quorum_mv_b TO ts_quorum AS SELECT 'metric_b' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x + 100, 3), toFloat64(x))] AS samples FROM ts_quorum_source;
 "
 
 for x in 1 2 3; do
