@@ -45,6 +45,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool optimize_use_projections;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_constant_folding_in_index_analysis;
 }
@@ -519,6 +520,7 @@ bool tryEstimateProjection(
     const ConditionTemplate<KeyCondition>::Ptr & part_offset_condition,
     const ConditionTemplate<KeyCondition>::Ptr & total_offset_condition,
     SortOrderHelp sort_help,
+    bool has_filter,
     ReadFromMergeTree * read_step,
     const RangesInDataParts & baseline_parts,
     UInt64 baseline_marks,
@@ -653,6 +655,26 @@ bool tryEstimateProjection(
         result.verdict_reason
             = fmt::format("the same {} would be read, and {}", marks_text(projection_marks), describe(sort_help));
     }
+
+    /// `prefer_optimize_projection` makes the optimizer take a usable projection whatever it costs,
+    /// including where it would not look at one: no parts to read, nothing to filter or sort
+    const bool nothing_to_serve = !has_filter && sort_help != SortOrderHelp::Helps;
+    if (query_settings[Setting::prefer_optimize_projection] && (result.verdict != "chosen" || nothing_to_serve || baseline_parts.empty()))
+    {
+        String cost;
+        if (baseline_parts.empty())
+            cost = "the query reads no parts";
+        else if (nothing_to_serve)
+            cost = "the query has no filter or ORDER BY for the projection to help with";
+        else if (projection_marks > baseline_marks)
+            cost = fmt::format("the projection reads {} instead of {} from the base table", marks_text(projection_marks), baseline_marks);
+        else if (projection_marks == baseline_marks && sort_help != SortOrderHelp::Helps)
+            cost = fmt::format("the projection reads the same {} as the base table and serves no ORDER BY", marks_text(projection_marks));
+        else
+            cost = fmt::format("the projection reads {} against {} from the base table", marks_text(projection_marks), baseline_marks);
+        result.verdict = "chosen (forced)";
+        result.verdict_reason = "`prefer_optimize_projection = 1` overrides the cost; " + cost;
+    }
     result.estimate_source = WhatIfCandidateResult::Empirical;
     result.empirical_status = WhatIfCandidateResult::Ok;
     result.sampled_parts = scanned_parts;
@@ -752,7 +774,9 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    if (baseline_parts.empty())
+    /// `prefer_optimize_projection` lifts this gate and the no-filter one below, as in the optimizer
+    const bool prefer_projection = context->getSettingsRef()[Setting::prefer_optimize_projection];
+    if (baseline_parts.empty() && !prefer_projection)
     {
         result.not_applicable_reason = "The query reads no parts, so the optimizer would not consider a projection";
         return result;
@@ -876,7 +900,7 @@ WhatIfCandidateResult evaluateProjection(
     /// the same gate as `optimizeUseNormalProjections`: a filter has to exist or the order has to help,
     /// but a filter the projection key cannot prune still leaves a full projection scan worth measuring,
     /// which wins whenever the projection stores less per row than the table does
-    if (!filter_dag && sort_help != SortOrderHelp::Helps)
+    if (!filter_dag && sort_help != SortOrderHelp::Helps && !prefer_projection)
     {
         result.not_applicable_reason = fmt::format("Query has no filter predicate, and {}", describe(sort_help));
         return result;
@@ -888,7 +912,7 @@ WhatIfCandidateResult evaluateProjection(
     {
         if (tryEstimateProjection(
                 result, *projection, key_condition ? &*key_condition : nullptr, part_offset_condition, total_offset_condition,
-                sort_help, read_step, baseline_parts, analysis.selected_marks, context))
+                sort_help, filter_dag != nullptr, read_step, baseline_parts, analysis.selected_marks, context))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
     }
