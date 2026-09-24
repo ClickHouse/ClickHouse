@@ -20,12 +20,6 @@
 #include <base/sort.h>
 #include <algorithm>
 
-#ifdef __SSE4_1__
-    #include <smmintrin.h>
-#else
-    #include <fenv.h>
-#endif
-
 
 namespace DB
 {
@@ -36,7 +30,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_SET_ROUNDING_MODE;
 }
 
 
@@ -65,29 +58,16 @@ enum class ScaleMode : uint8_t
 
 enum class RoundingMode : uint8_t
 {
-#ifdef __SSE4_1__
-    Round   = _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC,
-    Floor   = _MM_FROUND_TO_NEG_INF | _MM_FROUND_NO_EXC,
-    Ceil    = _MM_FROUND_TO_POS_INF | _MM_FROUND_NO_EXC,
-    Trunc   = _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC,
-#else
-    Round   = 8,    /// Values correspond to above values, just in case.
-    Floor   = 9,
-    Ceil    = 10,
-    Trunc   = 11,
-#endif
+    Round,
+    Floor,
+    Ceil,
+    Trunc,
 };
 
 enum class TieBreakingMode : uint8_t
 {
     Auto,    /// banker's rounding for floating point numbers, round up otherwise
     Bankers, /// banker's rounding
-};
-
-enum class Vectorize : uint8_t
-{
-    No,
-    Yes
 };
 
 /// For N, no more than the number of digits in the largest type.
@@ -195,64 +175,14 @@ struct IntegerRoundingComputation
 };
 
 
-template <typename T, Vectorize vectorize>
-class FloatRoundingComputationBase;
-
-#ifdef __SSE4_1__
-
-/// Vectorized implementation for x86.
-
-template <>
-class FloatRoundingComputationBase<Float32, Vectorize::Yes>
-{
-public:
-    using ScalarType = Float32;
-    using VectorType = __m128;
-    static const size_t data_count = 4;
-
-    static VectorType load(const ScalarType * in) { return _mm_loadu_ps(in); }
-    static VectorType load1(const ScalarType in) { return _mm_load1_ps(&in); }
-    static void store(ScalarType * out, VectorType val) { _mm_storeu_ps(out, val);}
-    static VectorType multiply(VectorType val, VectorType scale) { return _mm_mul_ps(val, scale); }
-    static VectorType divide(VectorType val, VectorType scale) { return _mm_div_ps(val, scale); }
-    template <RoundingMode mode> static VectorType apply(VectorType val) { return _mm_round_ps(val, int(mode)); }
-
-    static VectorType prepare(size_t scale)
-    {
-        return load1(static_cast<ScalarType>(scale));
-    }
-};
-
-template <>
-class FloatRoundingComputationBase<Float64, Vectorize::Yes>
-{
-public:
-    using ScalarType = Float64;
-    using VectorType = __m128d;
-    static const size_t data_count = 2;
-
-    static VectorType load(const ScalarType * in) { return _mm_loadu_pd(in); }
-    static VectorType load1(const ScalarType in) { return _mm_load1_pd(&in); }
-    static void store(ScalarType * out, VectorType val) { _mm_storeu_pd(out, val);}
-    static VectorType multiply(VectorType val, VectorType scale) { return _mm_mul_pd(val, scale); }
-    static VectorType divide(VectorType val, VectorType scale) { return _mm_div_pd(val, scale); }
-    template <RoundingMode mode> static VectorType apply(VectorType val) { return _mm_round_pd(val, int(mode)); }
-
-    static VectorType prepare(size_t scale)
-    {
-        return load1(static_cast<ScalarType>(scale));
-    }
-};
-
-#endif
-
-/// Sequential implementation for ARM. Also used for scalar arguments.
+/// `Round` rounds half to even regardless of the current floating point rounding mode.
+/// Plain scalar code, so the loop in `FloatRoundingImpl::apply` vectorizes to the widest vectors of the target.
 
 inline float roundWithMode(float x, RoundingMode mode)
 {
     switch (mode)
     {
-        case RoundingMode::Round: return nearbyintf(x);
+        case RoundingMode::Round: return __builtin_roundevenf(x);
         case RoundingMode::Floor: return floorf(x);
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
@@ -265,7 +195,7 @@ inline double roundWithMode(double x, RoundingMode mode)
 {
     switch (mode)
     {
-        case RoundingMode::Round: return nearbyint(x);
+        case RoundingMode::Round: return __builtin_roundeven(x);
         case RoundingMode::Floor: return floor(x);
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
@@ -276,69 +206,35 @@ inline double roundWithMode(double x, RoundingMode mode)
 
 inline BFloat16 roundWithMode(BFloat16 x, RoundingMode mode)
 {
-    switch (mode)
-    {
-        case RoundingMode::Round: return BFloat16(nearbyintf(Float32(x)));
-        case RoundingMode::Floor: return BFloat16(floorf(Float32(x)));
-        case RoundingMode::Ceil: return BFloat16(ceilf(Float32(x)));
-        case RoundingMode::Trunc: return BFloat16(truncf(Float32(x)));
-    }
-
-    std::unreachable();
+    return BFloat16(roundWithMode(Float32(x), mode));
 }
-
-template <typename T>
-class FloatRoundingComputationBase<T, Vectorize::No>
-{
-public:
-    using ScalarType = T;
-    using VectorType = T;
-    static const size_t data_count = 1;
-
-    static VectorType load(const ScalarType * in) { return *in; }
-    static VectorType load1(const ScalarType in) { return in; }
-    static VectorType store(ScalarType * out, ScalarType val) { return *out = val;}
-    static VectorType multiply(VectorType val, VectorType scale) { return val * scale; }
-    static VectorType divide(VectorType val, VectorType scale) { return val / scale; }
-    template <RoundingMode mode> static VectorType apply(VectorType val) { return roundWithMode(val, mode); }
-
-    static VectorType prepare(size_t scale)
-    {
-        return load1(ScalarType(scale));
-    }
-};
-
-template <>
-class FloatRoundingComputationBase<BFloat16, Vectorize::Yes> : public FloatRoundingComputationBase<BFloat16, Vectorize::No>
-{
-};
 
 
 /** Implementation of low-level round-off functions for floating-point values.
   */
-template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode, Vectorize vectorize>
-class FloatRoundingComputation : public FloatRoundingComputationBase<T, vectorize>
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
+struct FloatRoundingComputation
 {
-    using Base = FloatRoundingComputationBase<T, vectorize>;
-
-public:
-    static void compute(const T * __restrict in, const typename Base::VectorType & scale, T * __restrict out)
+    static T prepare(size_t scale)
     {
-        auto val = Base::load(in);
+        return T(scale);
+    }
 
-        if (scale_mode == ScaleMode::Positive)
-            val = Base::multiply(val, scale);
-        else if (scale_mode == ScaleMode::Negative)
-            val = Base::divide(val, scale);
+    static ALWAYS_INLINE T compute(T val, T scale)
+    {
+        if constexpr (scale_mode == ScaleMode::Positive)
+            val = val * scale;
+        else if constexpr (scale_mode == ScaleMode::Negative)
+            val = val / scale;
 
-        val = Base::template apply<rounding_mode>(val);
+        val = roundWithMode(val, rounding_mode);
 
-        if (scale_mode == ScaleMode::Positive)
-            val = Base::divide(val, scale);
-        else if (scale_mode == ScaleMode::Negative)
-            val = Base::multiply(val, scale);
+        if constexpr (scale_mode == ScaleMode::Positive)
+            val = val / scale;
+        else if constexpr (scale_mode == ScaleMode::Negative)
+            val = val * scale;
 
-        Base::store(out, val);
+        return val;
     }
 };
 
@@ -351,56 +247,24 @@ struct FloatRoundingImpl
 private:
     static_assert(!is_decimal<T>);
 
-    template <Vectorize vectorize =
-#ifdef __SSE4_1__
-        Vectorize::Yes
-#else
-        Vectorize::No
-#endif
-    >
-    using Op = FloatRoundingComputation<T, rounding_mode, scale_mode, vectorize>;
-    using Data = std::array<T, Op<>::data_count>;
-    using ColumnType = ColumnVector<T>;
-    using Container = typename ColumnType::Container;
+    using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
+    using Container = typename ColumnVector<T>::Container;
 
 public:
     static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
     {
-        auto mm_scale = Op<>::prepare(scale);
+        const T scale_value = Op::prepare(scale);
+        const size_t size = in.size();
+        const T * __restrict p_in = in.data();
+        T * __restrict p_out = out.data();
 
-        const size_t data_count = std::tuple_size<Data>();
-
-        const T* end_in = in.data() + in.size();
-        const T* limit = in.data() + in.size() / data_count * data_count;
-
-        const T* __restrict p_in = in.data();
-        T* __restrict p_out = out.data();
-
-        while (p_in < limit)
-        {
-            Op<>::compute(p_in, mm_scale, p_out);
-            p_in += data_count;
-            p_out += data_count;
-        }
-
-        if (p_in < end_in)
-        {
-            Data tmp_src{{}};
-            Data tmp_dst;
-
-            size_t tail_size_bytes = (end_in - p_in) * sizeof(*p_in);
-
-            memcpy(&tmp_src, p_in, tail_size_bytes);
-            Op<>::compute(reinterpret_cast<T *>(&tmp_src), mm_scale, reinterpret_cast<T *>(&tmp_dst));
-            memcpy(p_out, &tmp_dst, tail_size_bytes);
-        }
+        for (size_t i = 0; i < size; ++i)
+            p_out[i] = Op::compute(p_in[i], scale_value);
     }
 
-    static void applyOne(T in, size_t scale, T& out)
+    static void applyOne(T in, size_t scale, T & out)
     {
-        using ScalarOp = Op<Vectorize::No>;
-        auto s = ScalarOp::prepare(scale);
-        ScalarOp::compute(&in, s, &out);
+        out = Op::compute(in, Op::prepare(scale));
     }
 };
 
@@ -738,15 +602,6 @@ public:
             res = Dispatcher<DataType, rounding_mode, tie_breaking_mode>::template apply<int>(value_arg.column.get());
             return true;
         };
-
-#if !defined(__SSE4_1__)
-        /// In case of "nearbyint" function is used, we should ensure the expected rounding mode for the Banker's rounding.
-        /// Actually it is by default. But we will set it just in case.
-
-        if constexpr (rounding_mode == RoundingMode::Round)
-            if (0 != fesetround(FE_TONEAREST))
-                throw Exception(ErrorCodes::CANNOT_SET_ROUNDING_MODE, "Cannot set floating point rounding mode");
-#endif
 
         TypeIndex left_index = value_arg.type->getTypeId();
         if (!callOnBasicType<void, true, true, true, false>(left_index, call_data))
