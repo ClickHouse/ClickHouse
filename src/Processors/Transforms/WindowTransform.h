@@ -69,6 +69,10 @@ public:
 
     ~WindowTransform() override;
 
+    void resolveColumnIndices(const std::vector<WindowFunctionDescription> & functions);
+    void initWorkspaces(const std::vector<WindowFunctionDescription> & functions);
+    void setupRangeOffsetComparison();
+
     String getName() const override
     {
         return "WindowTransform";

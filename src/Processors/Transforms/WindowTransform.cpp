@@ -294,7 +294,13 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
     }
     input_header.setColumns(input_columns);
 
-    // Initialize window function workspaces.
+    resolveColumnIndices(functions);
+    initWorkspaces(functions);
+    setupRangeOffsetComparison();
+}
+
+void WindowTransform::initWorkspaces(const std::vector<WindowFunctionDescription> & functions)
+{
     workspaces.reserve(functions.size());
     for (const auto & f : functions)
     {
@@ -326,6 +332,9 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 window_description.frame = *custom_default_frame;
         }
 
+        if (workspace.window_function_impl && !workspace.window_function_impl->checkWindowFrameType(this))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'", workspace.aggregate_function->getName());
+
         workspace.is_aggregate_function_state = workspace.aggregate_function->isState();
         workspace.aggregate_function_state.reset(
             aggregate_function->sizeOfData(),
@@ -334,7 +343,10 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
 
         workspaces.push_back(std::move(workspace));
     }
+}
 
+void WindowTransform::resolveColumnIndices(const std::vector<WindowFunctionDescription> & functions)
+{
     partition_by_indices.reserve(window_description.partition_by.size());
     for (const auto & column : window_description.partition_by)
     {
@@ -359,68 +371,41 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
     for (const auto index : order_by_indices)
         should_materialize[index] = 1;
 
-    for (const auto & workspace : workspaces)
-        for (auto argument_column_indice : workspace.argument_column_indices)
-            should_materialize[argument_column_indice] = 1;
+    for (const auto & f : functions)
+        for (const auto & argument_name : f.argument_names)
+            should_materialize[input_header.getPositionByName(argument_name)] = 1;
+}
+
+void WindowTransform::setupRangeOffsetComparison()
+{
+    auto & frame = window_description.frame;
+    const bool begin_is_offset = frame.begin_type == WindowFrame::BoundaryType::Offset;
+    const bool end_is_offset = frame.end_type == WindowFrame::BoundaryType::Offset;
+    const bool is_range_offset_frame = frame.type == WindowFrame::FrameType::RANGE && (begin_is_offset || end_is_offset);
+    if (!is_range_offset_frame)
+        return;
 
     // Choose a row comparison function for RANGE OFFSET frame based on the
     // type of the ORDER BY column.
-    if (window_description.frame.type == WindowFrame::FrameType::RANGE
-        && (window_description.frame.begin_type
-                == WindowFrame::BoundaryType::Offset
-            || window_description.frame.end_type
-                == WindowFrame::BoundaryType::Offset))
+    chassert(order_by_indices.size() == 1);
+    const auto & entry = input_header.getByPosition(order_by_indices[0]);
+    const IColumn * column = entry.column.get();
+    APPLY_FOR_TYPES(compareValuesWithOffset)
+
+    // Convert the offsets to the ORDER BY column type. We can't just check
+    // that the type matches, because e.g. the int literals are always
+    // (U)Int64, but the column might be Int8 and so on.
+    auto convert_offset = [&](Field & offset, std::string_view bound_name)
     {
-        chassert(order_by_indices.size() == 1);
-        const auto & entry = input_header.getByPosition(order_by_indices[0]);
-        const IColumn * column = entry.column.get();
-        APPLY_FOR_TYPES(compareValuesWithOffset)
+        offset = convertFieldToTypeOrThrow(offset, *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
+        if (accurateLess(offset, Field(0)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame {} offset must be nonnegative, {} given", bound_name, offset);
+    };
 
-        // Convert the offsets to the ORDER BY column type. We can't just check
-        // that the type matches, because e.g. the int literals are always
-        // (U)Int64, but the column might be Int8 and so on.
-        if (window_description.frame.begin_type
-            == WindowFrame::BoundaryType::Offset)
-        {
-            window_description.frame.begin_offset = convertFieldToTypeOrThrow(
-                window_description.frame.begin_offset,
-                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
-
-            if (accurateLess(window_description.frame.begin_offset, Field(0)))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
-                    window_description.frame.begin_offset);
-            }
-        }
-        if (window_description.frame.end_type
-            == WindowFrame::BoundaryType::Offset)
-        {
-            window_description.frame.end_offset = convertFieldToTypeOrThrow(
-                window_description.frame.end_offset,
-                *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
-
-            if (accurateLess(window_description.frame.end_offset, Field(0)))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
-                    window_description.frame.end_offset);
-            }
-        }
-    }
-
-    for (const auto & workspace : workspaces)
-    {
-        if (workspace.window_function_impl)
-        {
-            if (!workspace.window_function_impl->checkWindowFrameType(this))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'",
-                    workspace.aggregate_function->getName());
-            }
-        }
-
-    }
+    if (begin_is_offset)
+        convert_offset(frame.begin_offset, "start");
+    if (end_is_offset)
+        convert_offset(frame.end_offset, "end");
 }
 
 WindowTransform::~WindowTransform()
