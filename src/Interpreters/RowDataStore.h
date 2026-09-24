@@ -47,6 +47,9 @@ public:
     /// The row length every store built from `layout` has.
     static size_t rowLengthOf(const RowLayout & layout) { return layout.empty() ? 0 : layout.back().offset + layout.back().size; }
 
+    /// Cache misses that reading one row from a store built from `layout` saves over reading it column by column.
+    static size_t cacheMissReduction(const RowLayout & layout);
+
     /// Create the row-major buffer and fills it with rows from `columns` in input order.
     static std::shared_ptr<RowDataStore> create(const RowLayoutPtr & layout, const Columns & columns);
 

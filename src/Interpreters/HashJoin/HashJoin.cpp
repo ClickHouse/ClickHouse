@@ -811,6 +811,10 @@ Block HashJoin::materializeColumnsFromRightBlock(Block block) const
     return JoinCommon::materializeColumnsFromRightBlock(std::move(block), savedBlockSample());
 }
 
+/// A row store is worth building when reading one output row's payload from it takes at least this
+/// many fewer cache misses than reading it column by column.
+static constexpr size_t MIN_CACHE_MISSES_SAVED_BY_ROW_STORE = 2;
+
 std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(const Block & block)
 {
     /// Skip initializing if it's already initialized or disabled.
@@ -856,6 +860,13 @@ std::optional<HashJoin::RowStoreLayoutWithAccessIndexes> HashJoin::initRowStore(
 
     /// Add each field's offset, size and nullability to the row store access indexes.
     RowDataStore::RowLayoutPtr layout = RowDataStore::computeLayout(row_store_columns, row_store_types);
+
+    if (RowDataStore::cacheMissReduction(*layout) < MIN_CACHE_MISSES_SAVED_BY_ROW_STORE)
+    {
+        data->row_store_state = RowStoreState::Disabled;
+        return {};
+    }
+
     for (auto & access_index : access_indexes)
     {
         if (access_index.type != ColumnAccessIndex::Type::RowStore)

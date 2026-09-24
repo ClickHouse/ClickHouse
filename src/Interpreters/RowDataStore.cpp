@@ -26,6 +26,8 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
+static constexpr UInt64 BYTES_IN_CACHE_LINE = 64;
+
 namespace
 {
 
@@ -156,6 +158,15 @@ RowDataStore::RowLayoutPtr RowDataStore::computeLayout(const Columns & columns, 
     return std::make_shared<const RowLayout>(std::move(layout));
 }
 
+size_t RowDataStore::cacheMissReduction(const RowLayout & layout)
+{
+    size_t columnar_cache_lines = 0;
+    for (const auto & field : layout)
+        columnar_cache_lines += field.is_nullable ? 2 : 1;
+    const size_t row_store_cache_lines = (rowLengthOf(layout) + BYTES_IN_CACHE_LINE - 1) / BYTES_IN_CACHE_LINE;
+    return columnar_cache_lines - row_store_cache_lines;
+}
+
 RowDataStore::RowDataStore(RowLayoutPtr layout_)
     : layout(std::move(layout_))
     , row_length(rowLengthOf(*layout))
@@ -227,7 +238,6 @@ const RowDataStore::FieldLayout & RowDataStore::getFieldLayout(size_t input_col_
 
 static constexpr UInt64 MIN_BYTES_IN_BATCH = 32 * 1024;
 static constexpr UInt64 MAX_BYTES_IN_BATCH = 512 * 1024;
-static constexpr UInt64 BYTES_IN_CACHE_LINE = 64;
 
 size_t rowStoreBatchSize(size_t row_length)
 {
