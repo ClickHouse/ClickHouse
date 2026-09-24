@@ -855,6 +855,9 @@ private:
 
         chassert(start_row <= shared_data_offsets.size());
         const size_t end_row = start_row + std::min(num_rows, shared_data_offsets.size() - start_row);
+        /// A typed path of the indexed column has the default value where the path is absent. These values are
+        /// not indexed, like absent paths in shared data, and conditions do not use the index for default values.
+        const bool skip_typed_defaults = !temporary_column_depth && role == JSONBloomRole::Scalar && logical_prefix.empty() && hash_prefix.empty();
         for (auto & path : paths)
         {
             if (!path.should_visit)
@@ -866,12 +869,12 @@ private:
                     const auto full_column = recursiveRemoveLowCardinality(path.column->cut(start_row, end_row - start_row));
                     ++temporary_column_depth;
                     emitRange(path.hash_path, path.logical_path, role, path.type, *full_column, 0, end_row - start_row,
-                        false, *path.type_info, path.should_index);
+                        false, *path.type_info, path.should_index, skip_typed_defaults);
                     --temporary_column_depth;
                 }
                 else
                     emitRange(path.hash_path, path.logical_path, role, path.type, *path.column, start_row, end_row,
-                        false, *path.type_info, path.should_index);
+                        false, *path.type_info, path.should_index, skip_typed_defaults);
                 continue;
             }
             const auto & dynamic = assert_cast<const ColumnDynamic &>(*path.column);
@@ -1201,7 +1204,8 @@ private:
         size_t end,
         bool is_dynamic,
         const TypeInfo & info,
-        bool index_path)
+        bool index_path,
+        bool skip_defaults = false)
     {
         if (begin == end || (!index_path && !info.has_json_path_descendants))
             return;
@@ -1217,11 +1221,15 @@ private:
             const auto * strings = info.raw_value ? typeid_cast<const ColumnString *>(&values) : nullptr;
             std::optional<std::string_view> previous_string;
             bool has_value = false;
+            /// In a `Nullable` typed path, the default of the nested column is a real value.
+            skip_defaults = skip_defaults && !nullable;
             for (size_t row = begin; row != end; ++row)
             {
                 if (nullable && nullable->isNullAt(row))
                     continue;
                 has_value = true;
+                if (skip_defaults && values.isDefaultAt(row))
+                    continue;
                 if (strings)
                 {
                     const auto data = strings->getDataAt(row);
@@ -1605,8 +1613,9 @@ std::optional<JSONPathMatch> tryMatchJSONSubcolumn(std::string_view column_path,
         if (isStructuralJSONSubcolumn(object_type, path, array_json_bridges))
             return std::nullopt;
 
-        bool indexes_missing_values = object_type.getTypedPaths().contains(path);
-        if (!indexes_missing_values && !subcolumn_type->hasDynamicStructure())
+        /// Defaults of typed paths are not indexed, like absent paths in shared data.
+        bool indexes_missing_values = false;
+        if (!object_type.getTypedPaths().contains(path) && !subcolumn_type->hasDynamicStructure())
         {
             indexes_missing_values = std::ranges::any_of(
                 object_type.getTypedPaths(),

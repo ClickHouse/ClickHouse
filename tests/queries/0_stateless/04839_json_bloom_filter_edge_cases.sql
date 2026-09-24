@@ -54,7 +54,8 @@ SELECT 'decimal float conservative', groupArray(id) FROM json_bf_edges WHERE j.d
 SELECT 'decimal float collision', groupArray(id) FROM json_bf_edges WHERE j.big_dec = 1e16;
 SELECT 'date', groupArray(id) FROM json_bf_edges WHERE j.day = toDate('1970-01-02') SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'datetime64 typed', groupArray(id) FROM json_bf_edges WHERE j.dt = toDateTime64('1970-01-01 00:00:01.500000000', 9, 'UTC') SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'datetime64 date', groupArray(id) FROM json_bf_edges WHERE j.dt = toDate('1970-01-01') SETTINGS force_data_skipping_indices = 'idx';
+-- Defaults of typed paths are not indexed, so this condition does not use the index.
+SELECT 'datetime64 date', groupArray(id) FROM json_bf_edges WHERE j.dt = toDate('1970-01-01');
 SELECT 'datetime64 float', count() FROM json_bf_edges WHERE j.dt = 1.5;
 SELECT 'ipv4', groupArray(id) FROM json_bf_edges WHERE j.ip = toIPv4('192.0.2.1') SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'ipv4 uint64', groupArray(id) FROM json_bf_edges WHERE j.ip = toUInt64(3221225985) SETTINGS force_data_skipping_indices = 'idx';

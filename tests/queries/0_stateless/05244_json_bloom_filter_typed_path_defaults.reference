@@ -1,0 +1,16 @@
+s = a	[5,6,8]
+s = b	[7]
+s = c	[11]
+n = 7	[5,6,8]
+n = 9	[11]
+ns = v	[11]
+Parts: 1 | Granules: 1
+Granules: 3/3
+Granules: 1/3
+s = empty	[1,2,3,4,9,10,12]
+n = 0	[1,2,3,4,9,10,12]
+s in	[1,2,3,4,9,10,11,12]
+s = empty and ns = empty	[3]
+ns = empty	[3]
+no index	[1,2,3,4,5,6,8,9,10,11,12]
+with index	[1,2,3,4,5,6,8,9,10,11,12]

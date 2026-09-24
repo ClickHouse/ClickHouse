@@ -23,7 +23,8 @@ SELECT arraySort(groupArray(id)) FROM json_bf_ranges WHERE j.v.:Int64 = 18;
 SELECT arraySort(groupArray(id)) FROM json_bf_ranges WHERE j.v.:String = '19';
 SELECT arraySort(groupArray(id)) FROM json_bf_ranges WHERE j.sparse = 'hit-20';
 SELECT arraySort(groupArray(id)) FROM json_bf_ranges WHERE has(j.arr, 117);
-SELECT arraySort(groupArray(id)) FROM json_bf_ranges WHERE j.z = 0.0;
+-- Defaults of typed paths are not indexed, so this condition does not use the index.
+SELECT arraySort(groupArray(id)) FROM json_bf_ranges WHERE j.z = 0.0 SETTINGS force_data_skipping_indices = DEFAULT;
 SELECT count() FROM json_bf_ranges WHERE j.nz = 0.0;
 SELECT arraySort(groupArray(id)) FROM json_bf_ranges WHERE j.v.:Int64 = 18 OR has(j.arr, 117);
 SELECT arraySort(groupArray(id)) FROM json_bf_ranges WHERE j.z = 0.0 AND j.sparse = 'hit-20';

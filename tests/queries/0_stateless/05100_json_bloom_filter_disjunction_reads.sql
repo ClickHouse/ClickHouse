@@ -38,7 +38,8 @@ ALTER TABLE json_bf_disjunction_reads UPDATE
     j = '{"a":9999,"b":10000,"c":0,"common":"yes"}'::JSON
 WHERE j.a = 0 SETTINGS mutations_sync = 2;
 SELECT count() FROM json_bf_disjunction_reads WHERE j.a = 9999;
-SELECT count() FROM json_bf_disjunction_reads WHERE j.a = 0;
+-- Defaults of typed paths are not indexed, so this condition does not use the index.
+SELECT count() FROM json_bf_disjunction_reads WHERE j.a = 0 SETTINGS force_data_skipping_indices = DEFAULT;
 DETACH TABLE json_bf_disjunction_reads;
 ATTACH TABLE json_bf_disjunction_reads;
 SELECT count() FROM json_bf_disjunction_reads WHERE j.a = 9999 OR j.b = 12000;

@@ -82,8 +82,9 @@ SELECT 'map tuple values descendant', arraySort(groupArray(id))
 FROM json_bf_structural_null
 WHERE has(j.map_tuple.values.a, 2);
 
-SELECT 'path equals', groupArray(id) FROM json_bf_structural_null WHERE j.x = 0 SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'path in', groupArray(id) FROM json_bf_structural_null WHERE j.x IN (0) SETTINGS force_data_skipping_indices = 'idx';
+-- Defaults of typed paths are not indexed, so these conditions do not use the index.
+SELECT 'path equals', groupArray(id) FROM json_bf_structural_null WHERE j.x = 0;
+SELECT 'path in', groupArray(id) FROM json_bf_structural_null WHERE j.x IN (0);
 SELECT 'descendant equals', groupArray(id) FROM json_bf_structural_null WHERE j.t.y = 0 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'descendant in', groupArray(id) FROM json_bf_structural_null WHERE j.t.y IN (0) SETTINGS force_data_skipping_indices = 'idx';
 
