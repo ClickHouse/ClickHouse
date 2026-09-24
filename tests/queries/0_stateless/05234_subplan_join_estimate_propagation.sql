@@ -34,7 +34,9 @@ SET explain_query_plan_default = 'pretty'; -- the asserted lines are part of thi
 -- `Left: rows estimated` is the count handed across the subplan boundary; without propagation the
 -- parent has nothing for that relation and prints `no stats`. The relation chain names the sub-join
 -- and already carries its inputs' estimates, so it must not be given a second estimate of its own.
-SELECT trimLeft(explain) AS plan
+-- The tree prefix is dropped because its depth follows the plan around it, and the table name in
+-- front of an alias because only some storage configurations print it. Neither carries the estimate.
+SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[^A-Za-z]*', ''), '[A-Za-z_0-9]+ AS ', '') AS plan
 FROM (
     EXPLAIN SELECT count()
     FROM t_sub_left AS l

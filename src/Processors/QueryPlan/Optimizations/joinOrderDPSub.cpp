@@ -507,6 +507,16 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
+
+    /// The search costs a join the same whichever way round its inputs go, so the side that ended
+    /// up in `entry.right` is whichever the enumeration reached first. The right side is the one
+    /// read into the hash table, so give that role to the smaller estimate. Only kinds that commute
+    /// may be turned round - semi/anti and the one-sided outer joins keep their preserved side on
+    /// the left - and only when both estimates are known, since an absent one says nothing.
+    if ((isInner(entry.kind) || isCrossOrComma(entry.kind)) && left->estimated_rows && right->estimated_rows
+        && *left->estimated_rows < *right->estimated_rows)
+        left.swap(right);
+
     return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
 }
 

@@ -1,27 +1,27 @@
 dpsub
-      Join: a[1000] ⋈ b[100] ⋈ (d[200] ⋈ (c[50] ⋈ e[20]))
+      Join: c[50] ⋈ e[20] ⋈ d[200] ⋈ (a[1000] ⋈ b[100])
       ResultRows: 4000000000
-        Join: a[1000] ⋈ b[100]
-        ResultRows: 100000
-        Join: d[200] ⋈ (c[50] ⋈ e[20])
+        Join: c[50] ⋈ e[20] ⋈ d[200]
         ResultRows: 200000
           Join: c[50] ⋈ e[20]
           ResultRows: 1000
+        Join: a[1000] ⋈ b[100]
+        ResultRows: 100000
 dphyp,dpsub
-      Join: a[1000] ⋈ b[100] ⋈ (d[200] ⋈ (c[50] ⋈ e[20]))
+      Join: c[50] ⋈ e[20] ⋈ d[200] ⋈ (a[1000] ⋈ b[100])
       ResultRows: 4000000000
-        Join: a[1000] ⋈ b[100]
-        ResultRows: 100000
-        Join: d[200] ⋈ (c[50] ⋈ e[20])
+        Join: c[50] ⋈ e[20] ⋈ d[200]
         ResultRows: 200000
           Join: c[50] ⋈ e[20]
           ResultRows: 1000
+        Join: a[1000] ⋈ b[100]
+        ResultRows: 100000
 dpsize,dpsub
-      Join: a[1000] ⋈ b[100] ⋈ (d[200] ⋈ (c[50] ⋈ e[20]))
+      Join: c[50] ⋈ e[20] ⋈ d[200] ⋈ (a[1000] ⋈ b[100])
       ResultRows: 4000000000
-        Join: a[1000] ⋈ b[100]
-        ResultRows: 100000
-        Join: d[200] ⋈ (c[50] ⋈ e[20])
+        Join: c[50] ⋈ e[20] ⋈ d[200]
         ResultRows: 200000
           Join: c[50] ⋈ e[20]
           ResultRows: 1000
+        Join: a[1000] ⋈ b[100]
+        ResultRows: 100000
