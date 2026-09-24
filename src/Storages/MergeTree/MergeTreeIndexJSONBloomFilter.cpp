@@ -1241,16 +1241,16 @@ private:
                 if (nullable && nullable->isNullAt(row))
                     continue;
                 has_value = true;
-                if (skip_defaults && values.isDefaultAt(row))
-                    continue;
                 if (strings)
                 {
                     const auto data = strings->getDataAt(row);
                     const std::string_view value(data.data(), data.size());
-                    if (previous_string == value)
+                    if ((skip_defaults && value.empty()) || previous_string == value)
                         continue;
                     previous_string = value;
                 }
+                else if (skip_defaults && values.isDefaultAt(row))
+                    continue;
                 tokens.addValue(
                     path_id, hashTypedValue(seed, *info.serialization, info.which, info.raw_value, values, row, value_buffer, format_settings));
             }
