@@ -1,0 +1,62 @@
+---
+slug: /concepts/features/operations/insert/async-insert-select
+sidebarTitle: 'Asynchronous INSERT ... SELECT'
+title: 'Asynchronous INSERT ... SELECT'
+description: 'How INSERT ... SELECT takes the asynchronous insert queue route, and the routing, accounting, and cancellation rules that apply to it.'
+keywords: ['asynchronous inserts', 'async_insert', 'insert select', 'async_insert_select_as_async_insert']
+doc_type: 'guide'
+---
+
+`INSERT ... SELECT` can take the [asynchronous insert](/optimize/asynchronous-inserts) queue route, not just a plain `INSERT ... VALUES`. This page describes when it does, how the write side is accounted, and what happens when the query is cancelled or times out.
+
+## Eligibility and routing {#eligibility-and-routing}
+
+An `INSERT ... SELECT` takes the async queue route only when all of these hold:
+
+- `async_insert = 1`.
+- `async_insert_select_as_async_insert = 1` (the default). This is the master switch: with it off, `INSERT ... SELECT` is always synchronous regardless of `async_insert`. Setting `compatibility` to a version before 26.10 flips its default to `0`; an explicit `async_insert_select_as_async_insert = 1` opts back in.
+- The whole `SELECT` result is a single block no larger than `async_insert_max_data_size`.
+- The destination is a `MergeTree`-family table (an alias is followed to its target for this check).
+
+Even when all of the above hold, the insert falls back to the synchronous route in any of these cases:
+
+- The result spans more than one block, exceeds `async_insert_max_data_size`, or is empty.
+- Non-parallel quorum is used: `insert_quorum` is set and `insert_quorum_parallel = 0`.
+- The destination has dependent materialized views.
+- The destination is a materialized view. The `MergeTree` check applies to the view, not its target table, so it is not eligible.
+- The destination is a table function, or a remote table engine such as `Distributed`.
+- The `SELECT` reads its own destination table (`INSERT INTO t SELECT ... FROM t`).
+- `insert_null_as_default` must substitute a default for a `Nullable` `SELECT` column feeding a non-`Nullable` target column.
+- The insert is internal (refreshable materialized view refresh, `POPULATE`, or `CREATE TABLE ... AS SELECT`). These are always synchronous and ignore `async_insert_select_as_async_insert` and `async_insert`.
+
+A transaction is handled differently. When the query runs inside a transaction (explicit, or `implicit_transaction = 1`), the async route is unsupported and, by default, ClickHouse raises `NOT_IMPLEMENTED` rather than falling back. Only with `throw_on_unsupported_query_inside_transaction = 0` does the query fall back to a synchronous insert.
+
+Routing chosen before the async gate wins, so the `SELECT` side can rule the async route out on its own. With `parallel_distributed_insert_select` (on by default), an `INSERT ... SELECT` that reads from a cluster source such as `s3Cluster` into a replicated table runs on the distributed insert path and never reaches the async queue. Parallel replicas behave the same way.
+
+## Return mode and waiting {#return-mode-and-waiting}
+
+`wait_for_async_insert` works as for any async insert: `1` (the default) waits for the flush; `0` returns as soon as the block is queued.
+
+To help a `SELECT` produce the single block the async route requires: [`optimize_trivial_insert_select`](/reference/settings/session-settings/optimize-trivial#optimize_trivial_insert_select) caps a trivial `INSERT INTO dest SELECT ... FROM source` between distinct tables to [`max_insert_threads`](/reference/settings/session-settings/max-insert#max_insert_threads) reading threads. Set `max_insert_threads = 1` and the `SELECT` commonly produces one block.
+
+## Write accounting and observability {#write-accounting-and-observability}
+
+The write side is attributed to the flush query, not to the original `INSERT ... SELECT`:
+
+- Write `ProfileEvents` (`InsertedRows`, `InsertedBytes`) and the write-side `system.query_log` row belong to the flush query, not to the `query_id` of the `INSERT ... SELECT`. Measuring writes by that `query_id` sees only read-side counters. For the write-side numbers, read the flush's own row in `system.query_log` and `system.asynchronous_insert_log`.
+- With `wait_for_async_insert = 1` (the default), the query's own `written_rows` and `written_bytes` (and the HTTP `X-ClickHouse-Summary` header) report the rows and bytes accepted from the `SELECT`, not the flush query's own total. A failed flush still surfaces as an error to the client.
+- With `wait_for_async_insert = 0`, those numbers are not reported, because the query returns before the flush result exists.
+- The `WRITTEN_BYTES` quota is charged once, on the flush path, and is not rolled back if the flush fails.
+
+## Cancellation and timeouts {#cancellation-and-timeouts}
+
+The block is queued before the wait for the flush starts, so cancelling the query stops the client from waiting, not the queue from flushing.
+
+- `KILL QUERY`, or reaching `max_execution_time` during the wait, returns an error to the client, but the rows may still be written. Do not treat a cancelled or timed-out query on this route as proof that nothing was written.
+- With `timeout_overflow_mode = 'break'` there is no error and no early return: the query waits for the flush past `max_execution_time`, up to `wait_for_async_insert_timeout`. Breaking out early would report success before the write is confirmed.
+
+## When decisions are bound {#when-decisions-are-bound}
+
+Eligibility for the async route is decided once at query start, before the block is queued, and an up-front access check rejects an unauthorized insert early. Whether an `INSERT ... SELECT` takes the async route at all depends on the result's block shape, not just on `async_insert`.
+
+The destination lookup and the binding authorization then run at flush time, the same as for [any asynchronous insert](/optimize/asynchronous-inserts): a materialized view attached to the destination, or a grant revoked, between queueing and flush affects the flush.
