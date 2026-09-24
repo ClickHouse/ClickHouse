@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Regression test for issue #107946: with make_distributed_plan = 1, aggregating over a Merge table
 -- of Distributed tables raised the LOGICAL_ERROR exception 'ScatterExchangeStep should have one
 -- source shard, got 8'. The distributed plan transforms ran twice on each Merge child plan (when
