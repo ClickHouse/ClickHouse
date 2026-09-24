@@ -1564,6 +1564,14 @@ def test_on_cluster_ddl_rejected_for_datalake_catalog(started_cluster):
     )
     assert "ON CLUSTER is not supported for DataLakeCatalog" in err, err
 
+    err = node1.query_and_get_error(
+        f"DROP DATABASE {CATALOG_NAME} ON CLUSTER cluster_simple",
+        settings={"distributed_ddl_output_mode": "throw"},
+    )
+    assert "ON CLUSTER is not supported for DataLakeCatalog" in err, err
+    assert node1.query(f"EXISTS DATABASE {CATALOG_NAME}") == "1\n"
+    assert node2.query(f"EXISTS DATABASE {CATALOG_NAME}") == "1\n"
+
     node2.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
     try:
         control_table = f"{test_ref}_control"
