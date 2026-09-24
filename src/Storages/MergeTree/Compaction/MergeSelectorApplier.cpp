@@ -199,23 +199,59 @@ bool tableCanMergeVertically(const ChooseContext & ctx)
     if (!supported_mode)
         return false;
 
-    /// A merge that also deletes expired rows stays horizontal unless `MergeTask::canVerticalTTLDelete`
-    /// allows it. Whether this particular merge has expired rows to delete is not known here, so a table
-    /// with any TTL is treated as if every merge of it had.
-    if (metadata.hasAnyTTL())
-    {
-        if (mode != Mode::Ordinary)
-            return false;
-        if (!settings[MergeTreeSetting::vertical_merge_optimize_ttl_delete])
-            return false;
-        if (metadata.hasAnyGroupByTTL() || metadata.hasAnyColumnTTL())
-            return false;
-    }
-
     const size_t num_columns = metadata.getColumns().size();
     const size_t key_columns = getColumnsMergedOnHorizontalStageOfVerticalMerge(ctx);
     const size_t gathering_columns = num_columns > key_columns ? num_columns - key_columns : 0;
     return gathering_columns >= settings[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate];
+}
+
+/// Whether a merge that also removes expired values may still run vertically, see
+/// `MergeTask::canVerticalTTLDelete`. Whether the source parts carry lightweight deletes (which rule it out
+/// too) is not known here.
+bool tableCanMergeVerticallyWhileRemovingExpiredValues(const ChooseContext & ctx)
+{
+    const auto & metadata = ctx.metadata_snapshot;
+
+    if (ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+        return false;
+    if (!ctx.merge_tree_settings[MergeTreeSetting::vertical_merge_optimize_ttl_delete])
+        return false;
+    if (metadata.hasAnyGroupByTTL() || metadata.hasAnyColumnTTL())
+        return false;
+    return metadata.hasRowsTTL() || metadata.hasAnyRowsWhereTTL();
+}
+
+/// Whether a merge of `range` will remove expired values, following how
+/// `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare` sets `need_remove_expired_values`: some source part
+/// has TTL values that were not calculated, or the earliest unfinished TTL of the merged part is due.
+/// A merge that turns out to remove expired values although this says it does not is priced too low only
+/// in the narrow window of a TTL that becomes due between the selection and the merge.
+bool rangeRemovesExpiredValues(const ChooseContext & ctx, PartsRangeView range)
+{
+    const auto & metadata = ctx.metadata_snapshot;
+    if (!metadata.hasAnyTTL())
+        return false;
+
+    /// A merge treats the finished `GROUP BY` TTLs of its source parts as unfinished again (see
+    /// `MergeTreeDataPartTTLInfos::update`), so their due times are not in the `part_min_ttl` of the parts.
+    if (metadata.hasAnyGroupByTTL())
+        return true;
+
+    time_t min_ttl = 0;
+    for (const auto & part : range)
+    {
+        if (!part.all_ttl_calculated_if_any)
+            return true;
+
+        if (part.general_ttl_info)
+        {
+            const time_t part_min_ttl = part.general_ttl_info->part_min_ttl;
+            if (part_min_ttl && (!min_ttl || part_min_ttl < min_ttl))
+                min_ttl = part_min_ttl;
+        }
+    }
+
+    return min_ttl && min_ttl <= ctx.current_time;
 }
 
 /// Whether a merge of `range` will run through `MergeAlgorithm::Vertical`, following the rules of
@@ -250,6 +286,9 @@ bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range)
         && sum_rows >= settings[MergeTreeSetting::min_rows_for_full_part_storage]
         && result_level >= settings[MergeTreeSetting::min_level_for_full_part_storage];
     if (!wide_part || !full_storage)
+        return false;
+
+    if (rangeRemovesExpiredValues(ctx, range) && !tableCanMergeVerticallyWhileRemovingExpiredValues(ctx))
         return false;
 
     return sum_rows >= settings[MergeTreeSetting::vertical_merge_algorithm_min_rows_to_activate]

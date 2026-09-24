@@ -40,13 +40,15 @@ function run()
 {
     local table=$1
     local enable_vertical=$2
+    local column_ttl=$3
+    local table_ttl=$4
 
     $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS $table;
 
     CREATE TABLE $table (k UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64,
-        c8 UInt64, c9 UInt64, c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64, c15 UInt64)
-    ENGINE = MergeTree ORDER BY k
+        c8 UInt64, c9 UInt64, c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64, c15 UInt64 $column_ttl)
+    ENGINE = MergeTree ORDER BY k $table_ttl
     SETTINGS merge_memory_estimate_per_source_part_column = $ESTIMATE,
         min_parts_to_merge_at_once = 2,
         merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once = 0,
@@ -98,3 +100,8 @@ run t_merge_width_horizontal 0
 # Every range merges vertically, and a vertical merge of this table affords all eight parts at once.
 echo 'vertical uncapped'
 run t_merge_width_vertical 1
+
+# TTLs that are far from due do not make a merge remove expired values, so the merge stays vertical - even
+# with a column TTL, which rules out a vertical merge that does remove them - and keeps its width.
+echo 'vertical with TTLs not due'
+run t_merge_width_vertical_ttl 1 "TTL toDateTime(k) + INTERVAL 100 YEAR" "TTL toDateTime(k) + INTERVAL 100 YEAR"
