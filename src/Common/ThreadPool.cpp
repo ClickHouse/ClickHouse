@@ -581,7 +581,40 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         if (job_occupies_thread && !adding_new_thread)
         {
             idle_thread_for_job = popNewestIdleThreadNoLock();
-            if (!idle_thread_for_job)
+
+            /// The counters may say that there are free workers while none of them is in the idle stack:
+            /// a worker that was just woken by another `schedule` (and may find no job for itself), or a
+            /// worker that has just finished its job, is not linked into the stack until it reacquires
+            /// `mutex`. Nothing guarantees that such a worker will ever take our job, so start a fresh
+            /// worker for it instead, as long as the pool is below `max_threads`. A worker that was started
+            /// outside the critical section but not accepted above (because of `max_free_threads`) is used
+            /// for that if there is one.
+            if (!idle_thread_for_job && !new_thread && threads.size() < max_threads)
+            {
+                int64_t current_capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+                while (current_capacity > 0
+                    && !remaining_pool_capacity.compare_exchange_weak(current_capacity, current_capacity - 1, std::memory_order_relaxed))
+                {
+                }
+
+                if (current_capacity > 0)
+                {
+                    try
+                    {
+                        new_thread = std::make_unique<ThreadFromThreadPool>(*this);
+                    }
+                    catch (...)
+                    {
+                        remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
+                        return on_error(fmt::format("failed to start the thread: {}", DB::getCurrentExceptionMessage(true)));
+                    }
+                }
+            }
+
+            if (!idle_thread_for_job && new_thread && threads.size() < max_threads)
+                adding_new_thread = true;
+
+            if (!idle_thread_for_job && !adding_new_thread)
             {
                 new_thread.reset();
                 if constexpr (std::is_same_v<Thread, GlobalThreadType>)

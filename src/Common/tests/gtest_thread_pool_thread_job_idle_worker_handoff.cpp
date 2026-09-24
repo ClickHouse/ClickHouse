@@ -1,9 +1,11 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
@@ -95,4 +97,52 @@ TEST(ThreadPool, ThreadJobIsHandedToIdleWorkerDirectly)
 
     release_thread_job = true;
     pool.wait();
+}
+
+/// The counters of the pool may say that there are free workers while none of them is in the idle
+/// stack: a worker that was just woken by a concurrent `schedule`, and may find no job for itself, is
+/// not linked into the stack until it reacquires the mutex. `scheduleThreadOrThrow` used to refuse such
+/// a job with "all threads of the pool are busy" although the pool was far below `max_threads`. It must
+/// start a fresh worker instead. The jobs here are short and never hold more than a few workers at once,
+/// so none of them may be refused.
+TEST(ThreadPool, ThreadJobIsNotRefusedWhileBelowMaxThreads)
+{
+    static constexpr size_t max_threads = 256;
+    static constexpr size_t schedulers = 4;
+    static constexpr size_t iterations = 5000;
+
+    ThreadPool pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        max_threads, /* max_free_threads */ max_threads, /* queue_size */ 0);
+
+    std::atomic<size_t> refused = 0;
+    std::atomic<size_t> jobs_done = 0;
+
+    std::vector<std::thread> threads;
+    threads.reserve(schedulers);
+    for (size_t i = 0; i < schedulers; ++i)
+    {
+        threads.emplace_back([&]
+        {
+            for (size_t j = 0; j < iterations; ++j)
+            {
+                pool.scheduleOrThrow([&] { ++jobs_done; });
+                try
+                {
+                    pool.scheduleThreadOrThrow([&] { ++jobs_done; });
+                }
+                catch (const DB::Exception &)
+                {
+                    ++refused;
+                }
+            }
+        });
+    }
+
+    for (auto & thread : threads)
+        thread.join();
+    pool.wait();
+
+    EXPECT_EQ(refused.load(), 0);
+    EXPECT_EQ(jobs_done.load(), 2 * schedulers * iterations - refused.load());
 }
