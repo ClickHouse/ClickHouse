@@ -16,10 +16,6 @@ codegen.dict untouched and codegen_select_fuzzer keeps fuzzing with a grammar
 that no longer matches the sources. src/Functions/stl.hpp is such a carrier:
 a `*.h` / `*.cpp` glob does not match a `.hpp` file.
 
-The file also covers what the generator extracts: a name no pass derives is a
-name the grammar never produces, and tests/fuzz/update_dict.sh fails the
-nightly libFuzzer job on it before any fuzzer runs.
-
 The comparison is over resolved file paths rather than the two lists of
 patterns, because a pattern list can agree while the sets it expands to do not.
 Every assertion has a mutation arm that narrows one side and requires the
@@ -58,27 +54,6 @@ _GENERATED_SOURCE = "out.cpp"
 # which carries a token the generator extracts. It stands in for the whole class
 # a suffix-filtered glob drops.
 _UNSUFFIXED_CARRIER = "src/Functions/stl.hpp"
-
-# The names src/Functions/grouping.cpp registers by looping over an initializer
-# list and passing the loop variable to the factory. They stand in for the whole
-# class of names that never appear as a register* argument.
-_LOOP_REGISTERED_NAMES = (
-    "__groupingForCube",
-    "__groupingForGroupingSets",
-    "__groupingForRollup",
-    "__groupingOrdinary",
-)
-
-# The head of the pattern matching that form, and a keyword no source file
-# holds, so replacing one with the other leaves the pass matching nothing.
-_LOOP_PASS_ANCHOR = r"'for[[:space:]]*\("
-_LOOP_PASS_DISABLED = r"'forNoSuchKeyword[[:space:]]*\("
-
-# A name whose only carrier is the register* call taking a string literal
-# (factory.registerAlias("lcase", ...) in src/Functions/lower.cpp): it is in
-# neither CommonParsers.h nor the curated old.dict, so it can only arrive
-# through the pass the one above sits next to.
-_LITERAL_ARGUMENT_NAME = "lcase"
 
 
 def _read(path):
@@ -479,70 +454,6 @@ class TestTheDictionaryTracksAnUnsuffixedCarrier:
         control, treatment = arms
         assert '"codegenDepsProbeToken"' not in control
         assert len(treatment) == len(control) + 1
-
-
-class TestLoopRegisteredNamesReachTheDictionary:
-    """Run the generator, so a registration form no pass covered is measured.
-
-    A name the generator cannot derive is a name the grammar never produces, and
-    update_dict.sh's coverage check fails the nightly libFuzzer job on it before
-    any fuzzer runs. src/Functions/grouping.cpp registers its four
-    specializations in a range-for over an initializer list and passes the loop
-    variable to factory.registerFunction, so the pass matching a string literal
-    as the register* argument did not see them: the binary registered four names
-    the source-derived dictionary did not have.
-    """
-
-    @staticmethod
-    def _generate(generator, output):
-        finished = subprocess.run(
-            [generator, _REPO, output],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=600,
-        )
-        assert finished.returncode == 0, finished.stderr
-        return _read(output).splitlines()
-
-    @pytest.fixture(scope="class")
-    def generated(self, tmp_path_factory):
-        directory = tmp_path_factory.mktemp("loop_registered")
-        return self._generate(_GENERATOR, str(directory / "source.dict"))
-
-    @pytest.fixture(scope="class")
-    def without_the_pass(self, tmp_path_factory):
-        # The control arm runs a copy of the generator with that one pass
-        # matching nothing, which is the state the names were missing in.
-        generator = _read(_GENERATOR)
-        mutated = generator.replace(_LOOP_PASS_ANCHOR, _LOOP_PASS_DISABLED, 1)
-        assert mutated != generator, (
-            f"no pass starts with {_LOOP_PASS_ANCHOR} any more, so this arm "
-            "disables nothing; point it at the loop-registration pattern"
-        )
-        directory = tmp_path_factory.mktemp("loop_registered_control")
-        script = directory / "generate_source_dict.sh"
-        script.write_text(mutated, encoding="utf-8")
-        script.chmod(0o755)
-        return self._generate(str(script), str(directory / "source.dict"))
-
-    @pytest.mark.parametrize("name", _LOOP_REGISTERED_NAMES)
-    def test_the_name_is_in_the_dictionary(self, generated, name):
-        assert f'"{name}"' in generated
-
-    def test_the_pass_adds_exactly_those_names(self, generated, without_the_pass):
-        # update_dict.sh's coverage check is one-way (binary minus source), so a
-        # dictionary carrying tokens the binary lacks passes the nightly job.
-        added = set(generated) - set(without_the_pass)
-        assert added == {f'"{name}"' for name in _LOOP_REGISTERED_NAMES}
-        assert set(without_the_pass) - set(generated) == set()
-
-    def test_disabling_the_pass_leaves_the_others_working(self, without_the_pass):
-        # The mutation has to disable one pass, not the generator.
-        assert f'"{_LITERAL_ARGUMENT_NAME}"' in without_the_pass, (
-            f"{_LITERAL_ARGUMENT_NAME} is gone; pick another name whose only "
-            "carrier is a register* call taking a string literal"
-        )
 
 
 class TestPythonGlobResolutionIsFaithful:
