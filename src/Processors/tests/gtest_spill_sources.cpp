@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <memory>
-#include <optional>
 #include <tuple>
 #include <vector>
 
@@ -29,14 +28,12 @@ class SpillSourceTest : public testing::TestWithParam<std::tuple<SourceKind, IPr
 protected:
     SharedHeader header = std::make_shared<const Block>(
         Block{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "key")});
-    OutputPort completion{Block{}};
+    InputPort completion{Block{}};
     DiskPtr disk;
     TemporaryDataOnDiskScopePtr tmp_data;
-    std::optional<TemporaryBlockStreamHolder> stream;
 
     void TearDown() override
     {
-        stream.reset();
         tmp_data.reset();
         destroyDisk(disk);
     }
@@ -57,14 +54,13 @@ protected:
             disk = createDisk("spill_source");
             tmp_data = std::make_shared<TemporaryDataOnDiskScope>(
                 TemporaryDataOnDiskSettings{}, std::make_shared<SingleDiskVolume>("temporary", disk));
-            stream.emplace(header, tmp_data, 0);
+            TemporaryBlockStreamHolder stream(header, tmp_data, 0);
             for (auto & chunk : chunks)
-                (*stream)->write(header->cloneWithColumns(chunk.detachColumns()));
-            stream->finishWriting();
+                stream->write(header->cloneWithColumns(chunk.detachColumns()));
+            stream.finishWriting();
 
-            auto source = std::make_unique<BufferingFromFileSource>(header, *stream, getLogger("SpillSourceTest"));
-            connect(completion, source->getCompletionPort());
-            completion.finish();
+            auto source = std::make_unique<BufferingFromFileSource>(std::move(stream));
+            connect(source->getCompletionPort(), completion);
             return source;
         }
 
@@ -75,6 +71,27 @@ protected:
     }
 };
 
+}
+
+TEST_F(SpillSourceTest, FileCompletionFollowsReaderCleanup)
+{
+    auto source = makeSource(SourceKind::File);
+    InputPort downstream{header};
+    connect(source->getPort(), downstream);
+    downstream.setNeeded();
+
+    ASSERT_EQ(source->prepare(), IProcessor::Status::Ready);
+    source->work();
+
+    /// A downstream limit can close the output while the reader owns a prefetched chunk. Completion
+    /// must wait for `work` to release that chunk and the reader outside the preparation lock.
+    downstream.close();
+    EXPECT_FALSE(completion.isFinished());
+    ASSERT_EQ(source->prepare(), IProcessor::Status::Ready);
+    EXPECT_FALSE(completion.isFinished());
+    source->work();
+    ASSERT_EQ(source->prepare(), IProcessor::Status::Finished);
+    EXPECT_TRUE(completion.isFinished());
 }
 
 TEST_P(SpillSourceTest, CancellationPreservesTheRequestedResult)
@@ -127,6 +144,7 @@ TEST_P(SpillSourceTest, CancellationPreservesTheRequestedResult)
     }
 
     ASSERT_TRUE(downstream.isFinished());
+
     /// Partial results drain every buffered block. Other cancellation reasons stop after the next block.
     const std::vector<UInt64> expected = partial_result ? std::vector<UInt64>{1, 2, 3, 4, 5, 6} : std::vector<UInt64>{1, 2};
     EXPECT_EQ(values, expected);

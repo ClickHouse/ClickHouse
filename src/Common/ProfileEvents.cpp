@@ -431,6 +431,8 @@
     M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggregating/joining)", ValueType::Bytes) \
     M(ExternalProcessingUncompressedBytesTotal, "Amount of data (uncompressed, before compression) written by external processing (sorting/aggregating/joining)", ValueType::Bytes) \
     M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggregating/joining)", ValueType::Number) \
+    M(ExternalProcessingIntermediateMerge, "Number of intermediate merges performed by external sorting, external DISTINCT, and partial merge JOIN. An intermediate merge combines several temporary files into one new temporary file when more files remain than the final merge accepts (`max_external_merge_fan_in` or `join_on_disk_max_files_to_merge`). The final merge is not counted.", ValueType::Number) \
+    M(ExternalProcessingIntermediateMergeInputs, "Total number of temporary files read by intermediate merges, summed over all intermediate merges. A file produced by one intermediate merge is counted again if a later intermediate merge reads it. Subtracting ExternalProcessingIntermediateMerge gives the number of files eliminated by intermediate merges.", ValueType::Number) \
     M(ExternalSortWritePart, "Number of times a temporary file was written to disk for sorting in external memory.", ValueType::Number) \
     M(ExternalSortMerge, "Number of times temporary files were merged for sorting in external memory.", ValueType::Number) \
     M(ExternalSortCompressedBytes, "Number of compressed bytes written for sorting in external memory.", ValueType::Bytes) \
