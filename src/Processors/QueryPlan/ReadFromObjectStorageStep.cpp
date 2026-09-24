@@ -96,6 +96,24 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*filter_actions_dag, getContext());
 }
 
+bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
+{
+    if (!boost::iequals(configuration->format, "Parquet"))
+        return false;
+
+    /// The output header is broader than what the format reads: Hive partition columns (from the
+    /// path) and virtual columns (`_path`, `_file`, `_row_id`, ...) are added after the format has
+    /// produced its chunk, so the reader could never compare them against the threshold.
+    const auto * format_column = info.format_header.findByName(sort_column.name);
+    if (!format_column || !format_column->type->equals(*sort_column.type))
+        return false;
+
+    /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
+    /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
+    /// would come from other values than the ones the reader compares against it.
+    return !info.columns_description.hasDefault(sort_column.name);
+}
+
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
@@ -129,6 +147,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
         query_info.prewhere_info);
+    format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
     {

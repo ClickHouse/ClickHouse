@@ -1,0 +1,20 @@
+--- Parquet on S3
+[[0], [1], [2]] read fewer rows: True
+OK
+OK
+OK
+OK
+OK
+--- Iceberg
+[[0], [1], [2]] read fewer rows: True
+OK
+OK
+--- Iceberg: a file written before the sort column got its name
+99999	4
+99998	3
+99997	2
+OK
+OK
+--- Iceberg: sorted by an identity partition column
+OK
+OK

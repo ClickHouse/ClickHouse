@@ -41,6 +41,13 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
+    /// TopN dynamic filtering: only the Parquet reader consumes `FormatFilterInfo::top_k_filter`,
+    /// and only for a sort column it physically reads from the file. Whether a particular file may
+    /// apply it is decided per file by `StorageObjectStorageSource` (data lake schema evolution and
+    /// identity partitions rewrite the values the reader returns).
+    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
+    void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 #if CLICKHOUSE_CLOUD
@@ -87,6 +94,7 @@ private:
     size_t num_streams;
     const size_t max_num_streams;
     const bool distributed_processing;
+    std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 #if CLICKHOUSE_CLOUD
     /// This is set when this step is part of a distributed query plan and it will be executed in a distributed manner.
     /// "bucket_id" task parameter will be used to determine what part of the data to read.
