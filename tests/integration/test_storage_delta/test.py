@@ -4938,6 +4938,99 @@ def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
     assert parquet_paths() == committed
 
 
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_commit_failure_cleanup_attempts_every_data_file(started_cluster, partitioned):
+    # The cleanup after a failed DeltaLake commit must attempt every data file the INSERT
+    # had uploaded, not stop on the first removal that fails. Observing that needs a
+    # removal fault that persists across calls: with a fault that fires once the later
+    # removals succeed, so a handler that gave up after the first failure would leave the
+    # same files on disk and the same single log line as one that continued, which is what
+    # the sibling test above cannot tell apart. The oracle here is the number of distinct
+    # data files named in the handler's own log lines: one per data file when every removal
+    # is attempted, one in total when the loop stops at the first failure.
+    instance = started_cluster.instances["node1"]
+    failpoint = "local_object_storage_network_error_during_every_remove"
+    table_name = randomize_table_name("test_commit_failure_every_file")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+    log_dir = f"/{result_file}/_delta_log"
+    insert_settings = (
+        "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
+        "output_format_parquet_compression_method = 'none'"
+    )
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}')"
+    )
+
+    def parquet_paths():
+        listing = instance.exec_in_container(
+            ["bash", "-c", f"find /{result_file} -name '*.parquet' | sort"]
+        ).strip()
+        return [path for path in listing.split("\n") if path]
+
+    assert parquet_paths() == []
+
+    # Control: the same INSERT with no faults commits, which fixes how many data files an
+    # INSERT of this shape writes.
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number::Int32, number::Int32 "
+        f"FROM numbers(3) SETTINGS {insert_settings}"
+    )
+    committed = parquet_paths()
+    assert len(committed) == 3, (
+        f"control insert wrote {len(committed)} data files: {committed}"
+    )
+
+    instance.exec_in_container(["chmod", "555", log_dir], user="root")
+    try:
+        # REGULAR, so it stays armed until disabled and every removal in the window fails.
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        _, error = instance.query_and_get_answer_with_error(
+            f"INSERT INTO {table_name} SELECT (number + 10)::Int32, (number + 10)::Int32 "
+            f"FROM numbers(3) SETTINGS {insert_settings}"
+        )
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        instance.exec_in_container(["chmod", "755", log_dir], user="root")
+
+    # O1: the client is still told why nothing was written, not why a cleanup step failed.
+    assert "Injected error after remove object" not in error, (
+        f"the data-file removal error replaced the commit error: {error}"
+    )
+    assert "_delta_log" in error, f"unexpected insert error: {error}"
+
+    # O2: one failed removal is logged per data file, each naming a different one. The
+    # table name anchors the match so the two parametrizations cannot read each other's
+    # lines, and cancelBuffers() logs a different message, so it cannot inflate the count.
+    message = "Failed to remove uncommitted data file after a failed commit"
+    removal_log = instance.grep_in_log(message)
+    logged_paths = set(
+        re.findall(
+            re.escape(f"{message}: ") + rf"(\S*{re.escape(table_name)}_data/\S+\.parquet)",
+            removal_log,
+        )
+    )
+    assert len(logged_paths) == 3, (
+        f"the handler logged {len(logged_paths)} failed removals, expected one per data file "
+        f"(a handler that stopped at the first failure logs one): {removal_log}"
+    )
+
+    # The injected fault throws after the unlink, so the uncommitted files are gone either
+    # way: this stays an invariant guard, not the discriminating oracle.
+    assert parquet_paths() == committed
+
+
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_type_from_storage_def(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]
