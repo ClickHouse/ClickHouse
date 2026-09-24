@@ -236,8 +236,11 @@ StorageTimeSeries::StorageTimeSeries(
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
+    /// Replicated database recovery can re-create the outer table before its inner targets.
+    /// Validate ordinary full ATTACH here, but defer recovery validation until target access.
     if (is_version_supported && mode == LoadingStrictnessLevel::ATTACH
-        && !is_restore_from_backup && !query.attach_short_syntax)
+        && !is_restore_from_backup && !query.attach_short_syntax
+        && !local_context->isRecoveryFromStoredMetadata())
         validateBucketedSamplesTargets(local_context);
 }
 

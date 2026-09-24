@@ -203,6 +203,9 @@ ${CLICKHOUSE_CLIENT} -q "SELECT comment = '' FROM system.tables WHERE database =
 # The inner tables really were dropped and re-created, so they are empty again. If the eager inner
 # drop silently did nothing, the 50 rows inserted above would still be here.
 ${CLICKHOUSE_CLIENT} -q "SELECT sum(total_rows) FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.%'"
+# Recovery may attach the outer table before its inner targets. Once recovery completes, target
+# access must still validate and resolve the restored samples table, not merely leave `ts` visible.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM timeSeriesSamples('${DB}', 'ts')"
 
 # Vacuity guard: assert recovery actually ran and actually took the DROP branch for `ts`. Without
 # this the assertions above would also pass on a run where recovery never triggered at all.
