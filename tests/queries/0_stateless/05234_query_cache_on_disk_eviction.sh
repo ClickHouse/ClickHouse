@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The entries of the query cache on disk (setting `query_cache_on_disk_cache_name`) are ordinary entries of the filesystem cache:
 # they are split into file segments, evicted when the filesystem cache runs out of space, not stored at all when they do not fit, and
-# removed by `SYSTEM DROP FILESYSTEM CACHE`. Tested with `clickhouse-local` and tiny filesystem caches with small file segments.
+# removed by `SYSTEM DROP FILESYSTEM CACHE '<name>'`. Tested with `clickhouse-local` and tiny filesystem caches with small file segments.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -61,7 +61,7 @@ ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
     ${query} 'slru', query_cache_tag = 'a';
     SELECT event, value FROM system.events WHERE event LIKE 'QueryCacheOnDisk%' ORDER BY event;"
 
-echo "-- SYSTEM DROP FILESYSTEM CACHE removes the entries"
+echo "-- SYSTEM DROP FILESYSTEM CACHE '<name>' removes the entries"
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "
     ${query} 'lru', query_cache_tag = 'd';
     ${query} 'lru', query_cache_tag = 'd';

@@ -12,7 +12,7 @@ QueryCacheOnDiskMisses	2
 -- An entry which does not fit into the probationary queue of an SLRU cache is not stored and leaves no file segments behind
 0
 QueryCacheOnDiskMisses	2
--- SYSTEM DROP FILESYSTEM CACHE removes the entries
+-- SYSTEM DROP FILESYSTEM CACHE '<name>' removes the entries
 0
 QueryCacheOnDiskHits	1
 QueryCacheOnDiskMisses	2
