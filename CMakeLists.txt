@@ -376,6 +376,23 @@ if (ARCH_AMD64)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
+# Puts a canary between the locals and the return address and checks it before returning, so that an
+# overflow of a local buffer aborts instead of returning to an address the attacker wrote. 'strong'
+# instruments only the functions that can be overflowed - a local array, an address-taken local, an
+# alloca - which keeps the cost low enough to always enable.
+# It goes into COMPILER_FLAGS rather than CMAKE_C_FLAGS/CMAKE_CXX_FLAGS so that it is in place before
+# cmake/linux/default_libs.cmake adds libc++, libc++abi, libunwind, base/glibc-compatibility and
+# base/harmful: a subdirectory sees the flags as they were when it was added.
+# Three things stay out. contrib/compiler-rt-cmake resets the inherited flags to an allowlist. On x86-64
+# the memcpy/memmove/memset entry points of contrib/libllvmlibc-cmake carry an explicit
+# no_stack_protector so that their CPU dispatch stays a plain tail call. And `clickhouse_fuzzer` links
+# every `src/` library plus the libFuzzer and Address Sanitizer runtimes into one image already just
+# under the 2 GiB reach of `R_X86_64_PC32`, which the extra prologues push over; the fuzzers are never
+# shipped, and Address Sanitizer reports stack buffer overflows earlier and in more detail than an abort.
+if (NOT ENABLE_FUZZING)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
+endif()
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
