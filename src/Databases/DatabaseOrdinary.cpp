@@ -211,13 +211,30 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCrea
     /// The `convert_to_replicated` flag is looked up on the first disk of the table's storage policy, and
     /// both phases of the conversion have to resolve it identically. The policy is taken from the CREATE
     /// query rather than from the storage object, because a lazily loaded table has no storage object yet.
-    MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
-    auto policy = getContext()->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
+    /// The resolution mirrors `MergeTreeData::getStoragePolicy`: a `disk` setting takes precedence over
+    /// `storage_policy`.
     if (create_query.storage)
+    {
         if (auto * query_settings = create_query.storage->settings)
-            if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
-                policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
-    return policy;
+        {
+            if (const Field * disk_setting = query_settings->changes.tryGet("disk"))
+            {
+                /// The value may be a `disk(...)` function defining a custom disk; resolve it to the disk
+                /// name the same way the table does when it is loaded from existing metadata.
+                SettingChange disk_change("disk", *disk_setting);
+                MergeTreeSettings::resolveDiskSetting(
+                    disk_change, getContext(), /* is_loading_from_existing_metadata = */ true,
+                    getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+                return getContext()->getStoragePolicyFromDisk(disk_change.value.safeGet<String>());
+            }
+
+            if (const Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
+                return getContext()->getStoragePolicy(policy_setting->safeGet<String>());
+        }
+    }
+
+    MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
+    return getContext()->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
 }
 
 String DatabaseOrdinary::getConvertToReplicatedFlagPath(const ASTCreateQuery & create_query)

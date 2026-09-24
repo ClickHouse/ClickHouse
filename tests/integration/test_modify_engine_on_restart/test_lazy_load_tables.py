@@ -106,3 +106,74 @@ def test_modify_engine_on_restart_with_lazy_load_tables_and_storage_policy(
     assert q(ch1, "SELECT count() FROM mt_jbod").strip() == "200"
 
     ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+def test_modify_engine_on_restart_with_lazy_load_tables_and_disk_setting(
+    started_cluster,
+):
+    # `SETTINGS disk = ...` places the table just like `storage_policy` does, and takes precedence over it,
+    # so both phases have to resolve the flag disk from it too.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(
+        f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+
+    q(
+        ch1,
+        """
+        CREATE TABLE mt_disk ( A Int64, D Date ) ENGINE = MergeTree() ORDER BY A
+        SETTINGS disk = 'jbod1';
+        """,
+    )
+    q(ch1, "INSERT INTO mt_disk SELECT number, today() FROM numbers(100);")
+
+    set_convert_flags(ch1, database_name, ["mt_disk"])
+
+    ch1.restart_clickhouse()
+
+    check_flags_deleted(ch1, database_name, ["mt_disk"])
+
+    assert (
+        q(
+            ch1,
+            f"SELECT engine FROM system.tables WHERE database = '{database_name}' AND name = 'mt_disk'",
+        ).strip()
+        == "ReplicatedMergeTree"
+    )
+
+    q(ch1, "INSERT INTO mt_disk SELECT number, today() FROM numbers(100, 100);")
+    assert q(ch1, "SELECT count() FROM mt_disk").strip() == "200"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+def test_restore_replica_with_lazy_load_tables(started_cluster):
+    # After a restart a table of a `lazy_load_tables` database is a stand-in until it is first accessed.
+    # `SYSTEM RESTORE REPLICA` has to see through it to the real `ReplicatedMergeTree`, otherwise it
+    # reports that the table is not replicated.
+    zk_path = "/clickhouse/tables/modify_engine_lazy_load_restore_replica"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(
+        f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+
+    q(
+        ch1,
+        f"CREATE TABLE rmt ( A Int64 ) ENGINE = ReplicatedMergeTree('{zk_path}', '{{replica}}') ORDER BY A;",
+    )
+    q(ch1, "INSERT INTO rmt SELECT number FROM numbers(100);")
+
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.delete(zk_path, recursive=True)
+    assert zk.exists(zk_path) is None
+
+    ch1.restart_clickhouse()
+
+    q(ch1, "SYSTEM RESTORE REPLICA rmt")
+    assert zk.exists(zk_path)
+
+    q(ch1, "INSERT INTO rmt SELECT number FROM numbers(100, 100);")
+    assert q(ch1, "SELECT count() FROM rmt").strip() == "200"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
