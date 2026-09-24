@@ -211,6 +211,9 @@ public:
 
     String getName() const override { return "uniqUpTo"; }
 
+    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
     bool allocatesMemoryInArena() const override { return false; }
 
     bool mergeIsEquivalentToAddingRows() const override { return true; }
@@ -272,6 +275,9 @@ public:
     }
 
     String getName() const override { return "uniqUpTo"; }
+
+    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
+    bool shouldPrintParametersWithTypes() const override { return true; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
