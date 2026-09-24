@@ -11,6 +11,8 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinitionImpl.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -22,26 +24,30 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Reads the columns of a table, which must exist.
-    ColumnsDescription readTableColumns(const StorageID & table_id, const ContextPtr & context)
+    struct ExternalTargetInfo
     {
-        auto resolved_table_id = context->tryResolveStorageID(table_id);
-        context->checkAccess(AccessType::SHOW_COLUMNS, resolved_table_id.database_name, resolved_table_id.table_name);
-        auto table = DatabaseCatalog::instance().tryGetTable(resolved_table_id, context);
-        if (!table)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", table_id.getNameForLogs());
-        auto metadata = table->getInMemoryMetadataPtr(context, false);
-        return metadata->columns;
-    }
+        std::map<ViewTarget::Kind, ColumnsDescription> columns;
+        std::map<ViewTarget::Kind, String> engine_names;
+    };
 
-    /// Reads the columns of the external target tables of a CREATE query.
-    std::map<ViewTarget::Kind, ColumnsDescription> readExternalTargetColumns(const ASTCreateQuery & create_query, const ContextPtr & context)
+    /// Reads the columns and engine names of the external target tables of a definition.
+    ExternalTargetInfo readExternalTargets(const ASTCreateQuery & create_query, const ContextPtr & context)
     {
-        std::map<ViewTarget::Kind, ColumnsDescription> result;
+        ExternalTargetInfo result;
         for (auto kind : StorageTimeSeries::getTargetKinds())
         {
             if (create_query.hasTargetTableID(kind))
-                result[kind] = readTableColumns(create_query.getTargetTableID(kind), context);
+            {
+                const auto & table_id = create_query.getTargetTableID(kind);
+                auto resolved_table_id = context->tryResolveStorageID(table_id);
+                context->checkAccess(AccessType::SHOW_COLUMNS, resolved_table_id.database_name, resolved_table_id.table_name);
+                auto table = DatabaseCatalog::instance().tryGetTable(resolved_table_id, context);
+                if (!table)
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", table_id.getNameForLogs());
+                auto metadata = table->getInMemoryMetadataPtr(context, false);
+                result.columns[kind] = metadata->columns;
+                result.engine_names[kind] = table->getName();
+            }
         }
         return result;
     }
@@ -66,13 +72,19 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
     params.mode = mode;
     params.is_restore_from_backup = is_restore_from_backup;
 
-    /// Only a new table needs the information from outside its definition; the other tables must exist then
-    /// (on ATTACH they may not be loaded yet).
+    /// A full user-supplied ATTACH also needs to validate external targets. A short ATTACH or metadata replay
+    /// cannot assume that those tables have been loaded yet.
+    bool fresh_user_attach = (mode == LoadingStrictnessLevel::ATTACH) && !create_query.attach_short_syntax && !is_restore_from_backup;
+    if (params.isNewTable() || fresh_user_attach)
+    {
+        auto external_targets = readExternalTargets(create_query, context);
+        params.external_target_columns = std::move(external_targets.columns);
+        params.external_target_engine_names = std::move(external_targets.engine_names);
+    }
+
     if (params.isNewTable())
     {
         params.query_settings = &context->getSettingsRef();
-        params.external_target_columns = readExternalTargetColumns(create_query, context);
-
         if (!create_query.as_table.empty())
             params.as_create_query = readASCreateQuery(create_query, context);
     }

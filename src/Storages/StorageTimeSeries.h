@@ -52,6 +52,10 @@ public:
     StorageID getTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StorageID tryGetTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
 
+    /// RESTORE calls this after all tables are created but before any data is inserted.
+    /// An absent external target may be restored separately, but an inner target must exist.
+    void validateBucketedSamplesTargets(const ContextPtr & local_context, bool allow_missing_external_targets = false) const;
+
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
@@ -141,6 +145,8 @@ private:
 
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
+
+    void validateBucketedSamplesTarget(ViewTarget::Kind target_kind, const StoragePtr & target_table, const ContextPtr & local_context) const;
 
     MultiVersion<TimeSeriesSettings> storage_settings;
 

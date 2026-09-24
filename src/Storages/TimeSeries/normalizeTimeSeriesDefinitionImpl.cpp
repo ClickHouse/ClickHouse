@@ -1846,6 +1846,22 @@ namespace
         return true;
     }
 
+    /// A bucketed samples target must keep every row unless its merge operation combines the samples.
+    /// `Distributed` delegates storage to another table whose engine cannot be checked locally.
+    bool checkBucketedSamplesTargetEngine(std::string_view engine_name, ViewTarget::Kind kind, const StorageID & table_id)
+    {
+        bool plain_merge_tree = (engine_name == "MergeTree") || (engine_name == "ReplicatedMergeTree")
+            || (engine_name == "SharedMergeTree");
+        bool aggregating_merge_tree = (engine_name == "AggregatingMergeTree")
+            || (engine_name == "ReplicatedAggregatingMergeTree") || (engine_name == "SharedAggregatingMergeTree");
+        bool non_merging_or_delegating = (engine_name == "Memory") || (engine_name == "Distributed");
+        if (!plain_merge_tree && !aggregating_merge_tree && !non_merging_or_delegating)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "{}: The {} table cannot use {} with bucketed samples; use `AggregatingMergeTree`, `MergeTree` (including their Replicated and Shared variants), `Memory`, or `Distributed` with a merge-safe remote target",
+                table_id.getNameForLogs(), kind, engine_name);
+        return aggregating_merge_tree;
+    }
+
     /// Checks that a target table or an inner-columns list has all the columns required by the
     /// TimeSeries table engine, and that those columns match the resolved types.
     void checkTargetTable(
@@ -2270,6 +2286,42 @@ namespace
 }
 
 
+void checkTimeSeriesBucketedSamplesTarget(
+    const ColumnsDescription & outer_columns,
+    const ColumnsDescription & target_columns,
+    std::string_view engine_name,
+    ViewTarget::Kind target_kind,
+    const TimeSeriesSettings & settings,
+    const StorageID & time_series_table_id,
+    const StorageID & target_table_id)
+{
+    chassert(hasBucketedSamples(settings));
+    chassert(target_kind == ViewTarget::Samples || target_kind == ViewTarget::RecentSamples);
+
+    bool require_aggregating_samples_column = checkBucketedSamplesTargetEngine(engine_name, target_kind, time_series_table_id);
+
+    const auto * outer_samples = outer_columns.tryGet(TimeSeriesColumnNames::getOuterSamples(settings[TimeSeriesSetting::version]));
+    auto sample_types = outer_samples ? trySplitSamplesDataType(outer_samples->type) : std::nullopt;
+    if (!sample_types)
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+            "{}: The outer samples column must have type Array(Tuple(timestamp, value))",
+            time_series_table_id.getNameForLogs());
+
+    const auto * target_id = target_columns.tryGet(TimeSeriesColumnNames::ID);
+    if (!target_id)
+        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+            "{}: Column {} is required for the {} table used by TimeSeries table engine",
+            target_table_id.getNameForLogs(), TimeSeriesColumnNames::ID, target_kind);
+
+    ResolvedTimeSeriesTypes types;
+    types.timestamp_type = sample_types->first;
+    types.scalar_type = sample_types->second;
+    types.id_type = settings[TimeSeriesSetting::id_type].value
+        ? settings[TimeSeriesSetting::id_type].value : target_id->type;
+    checkTargetTable(target_columns, target_kind, settings, types, target_table_id, require_aggregating_samples_column);
+}
+
+
 void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const NormalizeTimeSeriesDefinitionParams & params)
 {
     chassert(create_query.is_time_series_table);
@@ -2339,8 +2391,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
             /* fallback_types = */ nullptr);
     }
 
-    /// Resolve types timestamp_type, scalar_type, id_type.
-    /// The columns of the external target tables are passed for a new table only: on ATTACH they may not be loaded yet.
+    /// Resolve types timestamp_type, scalar_type, id_type. External target columns are available for a new
+    /// table or a full user-supplied ATTACH; metadata replay does not require the targets to be loaded yet.
     ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(
         create_query,
         params.external_target_columns,
@@ -2353,24 +2405,75 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     if (old_create_query)
         applyASClause(create_query, resolved_types, *old_create_query, *old_types);
 
+    StorageID table_id{create_query.getDatabase(), create_query.getTable()};
+    auto get_external_target_columns = [&](ViewTarget::Kind kind) -> const ColumnsDescription &
+    {
+        auto it = params.external_target_columns.find(kind);
+        if (it == params.external_target_columns.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "{}: The columns of the external {} table {} are required to normalize a TimeSeries table",
+                table_id.getNameForLogs(), kind, create_query.getTargetTableID(kind).getNameForLogs());
+        return it->second;
+    };
+
+    auto get_external_target_engine_name = [&](ViewTarget::Kind kind) -> const String &
+    {
+        auto it = params.external_target_engine_names.find(kind);
+        if (it == params.external_target_engine_names.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "{}: The engine of the external {} table {} is required to normalize a bucketed TimeSeries table",
+                table_id.getNameForLogs(), kind, create_query.getTargetTableID(kind).getNameForLogs());
+        return it->second;
+    };
+
+    /// A full user-supplied ATTACH and a restored definition are validated without normalizing their stored inner tables.
+    /// Metadata replay must not depend on external tables being loaded already; RESTORE checks physical targets later.
+    const bool full_user_attach = params.mode == LoadingStrictnessLevel::ATTACH
+        && !create_query.attach_short_syntax && !params.is_restore_from_backup;
+    if (full_user_attach || params.is_restore_from_backup)
+    {
+        TimeSeriesSettings settings;
+        if (create_query.storage)
+            settings.loadFromQuery(*create_query.storage);
+
+        if (hasBucketedSamples(settings))
+        {
+            for (auto kind : {ViewTarget::Samples, ViewTarget::RecentSamples})
+            {
+                if ((kind == ViewTarget::RecentSamples) && (settings[TimeSeriesSetting::recent_samples_ttl_seconds] == 0))
+                    continue;
+                if (hasTargetTableID(create_query, kind))
+                {
+                    if (params.is_restore_from_backup)
+                        continue;
+                    const auto & engine_name = get_external_target_engine_name(kind);
+                    bool require_aggregating_samples_column = checkBucketedSamplesTargetEngine(engine_name, kind, table_id);
+                    checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, create_query.getTargetTableID(kind),
+                        require_aggregating_samples_column);
+                }
+                else
+                {
+                    /// Validate a temporary normalized schema without changing the attached definition.
+                    auto inner_columns = create_query.getTargetInnerColumns(kind)
+                        ? boost::static_pointer_cast<ASTColumns>(create_query.getTargetInnerColumns(kind)->clone())
+                        : make_intrusive<ASTColumns>();
+                    normalizeInnerColumns(*inner_columns, kind, settings, resolved_types, table_id);
+
+                    const auto * inner_engine = create_query.getTargetInnerEngine(kind);
+                    bool require_aggregating_samples_column = !inner_engine || !inner_engine->engine
+                        || checkBucketedSamplesTargetEngine(inner_engine->engine->name, kind, table_id);
+                    checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, settings, resolved_types, table_id,
+                        require_aggregating_samples_column);
+                }
+            }
+        }
+    }
+
     /// For new tables: per-kind, check external tables or normalize the inner table's columns and assign its engine.
     if (is_new_table)
     {
         if (!params.query_settings)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The query settings are required to normalize the definition of a new TimeSeries table");
-
-        StorageID table_id{create_query.getDatabase(), create_query.getTable()};
-
-        /// The columns of every external target table must be passed for a new table.
-        auto get_external_target_columns = [&](ViewTarget::Kind kind) -> const ColumnsDescription &
-        {
-            auto it = params.external_target_columns.find(kind);
-            if (it == params.external_target_columns.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "{}: The columns of the external {} table {} are required to normalize the definition of a new TimeSeries table",
-                    table_id.getNameForLogs(), kind, create_query.getTargetTableID(kind).getNameForLogs());
-            return it->second;
-        };
 
         TimeSeriesSettings settings;
         if (create_query.storage)
@@ -2432,7 +2535,16 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
             if (hasTargetTableID(create_query, kind))
             {
                 /// An external target table is specified - check it has all the required columns.
-                checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, create_query.getTargetTableID(kind));
+                bool is_bucketed_samples_target = hasBucketedSamples(settings)
+                    && ((kind == ViewTarget::Samples) || (kind == ViewTarget::RecentSamples));
+                bool require_aggregating_samples_column = false;
+                if (is_bucketed_samples_target)
+                {
+                    const auto & engine_name = get_external_target_engine_name(kind);
+                    require_aggregating_samples_column = checkBucketedSamplesTargetEngine(engine_name, kind, table_id);
+                }
+                checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, create_query.getTargetTableID(kind),
+                    require_aggregating_samples_column);
             }
             else
             {
@@ -2447,25 +2559,11 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                     ? boost::static_pointer_cast<ASTStorage>(create_query.getTargetInnerEngine(kind)->clone())
                     : make_intrusive<ASTStorage>();
 
-                /// A bucketed samples table must not use a MergeTree variant that discards or otherwise
-                /// changes rows sharing the same sorting key without merging their samples.
-                if (hasBucketedSamples(settings) && ((kind == ViewTarget::Samples) || (kind == ViewTarget::RecentSamples))
-                    && inner_engine->engine)
-                {
-                    const auto & engine_name = inner_engine->engine->name;
-                    bool plain_merge_tree = (engine_name == "MergeTree") || (engine_name == "ReplicatedMergeTree")
-                        || (engine_name == "SharedMergeTree");
-                    if (engine_name.ends_with("MergeTree") && !engine_name.ends_with("AggregatingMergeTree") && !plain_merge_tree)
-                        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                            "{}: The inner {} table cannot use {} with bucketed samples; use `AggregatingMergeTree` or `MergeTree`",
-                            table_id.getNameForLogs(), kind, engine_name);
-                }
-
                 /// An `AggregatingMergeTree` collapses rows with the same sorting key. Its bucketed
                 /// `samples`, `min_time`, and `max_time` columns must use the matching aggregate functions.
                 bool require_aggregating_samples_column = hasBucketedSamples(settings)
                     && ((kind == ViewTarget::Samples) || (kind == ViewTarget::RecentSamples))
-                    && (!inner_engine->engine || inner_engine->engine->name.ends_with("AggregatingMergeTree"));
+                    && (!inner_engine->engine || checkBucketedSamplesTargetEngine(inner_engine->engine->name, kind, table_id));
                 checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, settings, resolved_types, table_id,
                     require_aggregating_samples_column);
 

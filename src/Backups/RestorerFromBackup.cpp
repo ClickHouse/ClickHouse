@@ -26,6 +26,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageTimeSeries.h>
 #include <base/insertAtEnd.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -33,6 +34,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -179,6 +181,20 @@ void RestorerFromBackup::run(Mode mode_)
     setStage(Stage::CREATING_TABLES);
     removeUnresolvedDependencies();
     createAndCheckTables();
+
+    /// The physical targets of a restored TimeSeries table may differ from its stored definition.
+    /// Validate them after every target has been created, before any table starts restoring data.
+    std::vector<std::shared_ptr<StorageTimeSeries>> time_series_tables;
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & table : table_infos)
+        {
+            if (auto time_series = typeid_cast<std::shared_ptr<StorageTimeSeries>>(table.second.storage))
+                time_series_tables.push_back(std::move(time_series));
+        }
+    }
+    for (const auto & time_series : time_series_tables)
+        time_series->validateBucketedSamplesTargets(context, /* allow_missing_external_targets = */ true);
 
     /// All what's left is to insert data to tables.
     setStage(Stage::INSERTING_DATA_TO_TABLES);

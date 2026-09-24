@@ -30,6 +30,7 @@
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
+#include <Storages/TimeSeries/normalizeTimeSeriesDefinitionImpl.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
 #include <boost/algorithm/string.hpp>
@@ -223,6 +224,10 @@ StorageTimeSeries::StorageTimeSeries(
         storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+
+    if (is_version_supported && mode == LoadingStrictnessLevel::ATTACH
+        && !is_restore_from_backup && !query.attach_short_syntax)
+        validateBucketedSamplesTargets(local_context);
 }
 
 
@@ -254,7 +259,47 @@ bool StorageTimeSeries::hasTarget(ViewTarget::Kind target_kind) const
 
 StoragePtr StorageTimeSeries::getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const
 {
-    return getTargetTableImpl(target_kind, local_context, /* throw_if_not_found = */ true);
+    auto target_table = getTargetTableImpl(target_kind, local_context, /* throw_if_not_found = */ true);
+    validateBucketedSamplesTarget(target_kind, target_table, local_context);
+    return target_table;
+}
+
+void StorageTimeSeries::validateBucketedSamplesTarget(
+    ViewTarget::Kind target_kind, const StoragePtr & target_table, const ContextPtr & local_context) const
+{
+    if (getVersion() < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES
+        || !isTimeSeriesVersionSupported(getVersion())
+        || (target_kind != ViewTarget::Samples && target_kind != ViewTarget::RecentSamples))
+        return;
+
+    auto outer_metadata = getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_table->getInMemoryMetadataPtr(local_context, false);
+    checkTimeSeriesBucketedSamplesTarget(
+        outer_metadata->columns,
+        target_metadata->columns,
+        target_table->getName(),
+        target_kind,
+        *getStorageSettings(),
+        getStorageID(),
+        target_table->getStorageID());
+}
+
+void StorageTimeSeries::validateBucketedSamplesTargets(
+    const ContextPtr & local_context, bool allow_missing_external_targets) const
+{
+    if (getVersion() < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES || !isTimeSeriesVersionSupported(getVersion()))
+        return;
+
+    for (auto target_kind : {ViewTarget::Samples, ViewTarget::RecentSamples})
+    {
+        if (!hasTarget(target_kind))
+            continue;
+
+        const bool allow_missing = allow_missing_external_targets && !isInnerTable(target_kind);
+        auto target_table = getTargetTableImpl(target_kind, local_context, /* throw_if_not_found = */ !allow_missing);
+        if (target_table)
+            validateBucketedSamplesTarget(target_kind, target_table, local_context);
+    }
 }
 
 StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const
@@ -674,7 +719,8 @@ void StorageTimeSeries::backupData(BackupEntriesCollector & backup_entries_colle
         /// We backup the target table's data only if it's inner.
         if (isInnerTable(target_kind))
         {
-            auto table = getTargetTable(target_kind, backup_entries_collector.getContext());
+            /// Backups must still be possible for a table whose existing target is unsafe, so it can be repaired offline.
+            auto table = getTargetTableImpl(target_kind, backup_entries_collector.getContext(), /* throw_if_not_found = */ true);
             String kind_str{magic_enum::enum_name(target_kind)};
             boost::algorithm::to_lower(kind_str);
             /// A table of an older version keeps the folder name "metrics", so an older server can restore the backup.
@@ -962,6 +1008,12 @@ The _samples_ table must have columns:
 | `bucket` | [x] | `DateTime64(3)` | the type of the timestamps | The start of the bucket: the timestamps of the samples rounded down to a multiple of the bucket length |
 | `min_time` | [x] | `SimpleAggregateFunction(min, DateTime64(3))` | the type of the timestamps, optionally `Nullable` and optionally wrapped in `SimpleAggregateFunction(min, ...)` | The minimum timestamp of the samples in the row |
 | `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | the type of the timestamps, optionally `Nullable` and optionally wrapped in `SimpleAggregateFunction(max, ...)` | The maximum timestamp of the samples in the row |
+
+An external samples or recent samples table using `AggregatingMergeTree` must use the corresponding `SimpleAggregateFunction`
+types for `samples`, `min_time`, and `max_time`. Plain `MergeTree` can keep separate rows for the same bucket. The supported
+engines are `AggregatingMergeTree` and `MergeTree`, including their `Replicated` and `Shared` variants, and `Memory`.
+`Distributed` is also supported, but its remote target must preserve the same merge-safety property; this cannot be checked
+by the local `TimeSeries` table. Other `MergeTree` variants that replace or discard rows with the same sorting key cannot be used.
 
 The `samples` column the engine creates itself gets the compression codec `ZSTD(3)` because it dominates the on-disk size of the samples table.
 See also [Adjusting types of columns](#adjusting-column-types).

@@ -6,16 +6,19 @@
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 #include <map>
+#include <string_view>
 
 
 namespace DB
 {
 class ASTCreateQuery;
+struct StorageID;
+struct TimeSeriesSettings;
 struct Settings;
 
 /// The parameters of the normalization of a TimeSeries table definition (see `normalizeTimeSeriesDefinitionImpl`).
-/// The information from outside the definition is needed only for a new table; the normalization of an existing table
-/// (on ATTACH) doesn't use it, so the corresponding fields can be left empty then.
+/// The information from outside the definition is needed for a new table and a full user-supplied ATTACH.
+/// A short ATTACH or metadata replay doesn't use it, because external targets may not be loaded yet.
 struct NormalizeTimeSeriesDefinitionParams
 {
     /// How the table is loaded: `CREATE` or `SECONDARY_CREATE` for a new table, `ATTACH` or stricter for an existing one.
@@ -32,8 +35,12 @@ struct NormalizeTimeSeriesDefinitionParams
     boost::intrusive_ptr<const ASTCreateQuery> as_create_query;
 
     /// The columns of every external target table of the query, by the kind of the target.
-    /// Required for a new table.
+    /// Required for a new table and a full user-supplied ATTACH.
     std::map<ViewTarget::Kind, ColumnsDescription> external_target_columns;
+
+    /// The engine names of external target tables. Required for bucketed samples targets of a new table
+    /// or a full user-supplied ATTACH.
+    std::map<ViewTarget::Kind, String> external_target_engine_names;
 
     /// The query-level settings (the `default_table_engine` setting chooses the engines of the inner tables).
     /// Required for a new table.
@@ -47,5 +54,16 @@ struct NormalizeTimeSeriesDefinitionParams
 /// `normalizeTimeSeriesDefinition` (see normalizeTimeSeriesDefinition.h) collects `params` from the database catalog
 /// and the query context, then calls this function.
 void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const NormalizeTimeSeriesDefinitionParams & params);
+
+/// Checks the physical bucketed samples target before using it. The target can differ from the engine and
+/// columns recorded in a `TimeSeries` definition after `ATTACH`, `RESTORE`, or an independent target `ALTER`.
+void checkTimeSeriesBucketedSamplesTarget(
+    const ColumnsDescription & outer_columns,
+    const ColumnsDescription & target_columns,
+    std::string_view engine_name,
+    ViewTarget::Kind target_kind,
+    const TimeSeriesSettings & settings,
+    const StorageID & time_series_table_id,
+    const StorageID & target_table_id);
 
 }
