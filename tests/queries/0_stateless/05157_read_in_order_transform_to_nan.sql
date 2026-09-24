@@ -51,3 +51,17 @@ SELECT count() FROM t_read_in_order_nan_int WHERE x * 0. = 0;
 SELECT count() FROM t_read_in_order_nan_int WHERE x / 0 = inf;
 
 DROP TABLE t_read_in_order_nan_int;
+
+-- `x / inf` over an integer key is monotonic but maps every value to `0`, so it is not strict: the next
+-- `ORDER BY` term must not be taken from the key, the rows have to be sorted by `y`.
+
+CREATE TABLE t_read_in_order_nan_two_keys (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY (x, y);
+INSERT INTO t_read_in_order_nan_two_keys VALUES (0, 100), (1, 0);
+
+SELECT x, y FROM t_read_in_order_nan_two_keys ORDER BY x / inf, y;
+SELECT x, y FROM t_read_in_order_nan_two_keys ORDER BY x / inf, y LIMIT 1;
+SELECT x, y FROM t_read_in_order_nan_two_keys ORDER BY inf / (x + 1), y;
+SELECT x, y FROM t_read_in_order_nan_two_keys ORDER BY x / 2, y;
+SELECT 'prefix covers y', countIf(explain LIKE '%Prefix sort description: divide(x, inf) ASC, y ASC%' OR explain LIKE '%Prefix sort description: x / inf ASC, y ASC%') FROM (EXPLAIN PLAN actions = 1 SELECT x, y FROM t_read_in_order_nan_two_keys ORDER BY x / inf, y);
+
+DROP TABLE t_read_in_order_nan_two_keys;

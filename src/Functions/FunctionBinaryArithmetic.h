@@ -4063,6 +4063,10 @@ public:
                     return {false, true, false, false};
                 }
 
+                /// `±inf / variable` is `±inf` for every finite nonzero `variable`: not strict.
+                if (constant.isInf())
+                    is_strict = false;
+
                 bool is_constant_positive = accurateLess(Field(0), constant);
                 if (name_view == "intDiv"
                     && intDivConstDividendReinterpretsNegative(const_type, arg_type, constant))
@@ -4082,6 +4086,12 @@ public:
                 auto constant = (*right.column)[0];
                 if (accurateEquals(constant, Field(0)))
                     return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
+
+                /// `variable / ±inf` is `0` for every finite `variable` (an infinite one is declined above),
+                /// so it is monotonic but collapses all values into one: not strict, otherwise the
+                /// read-in-order match would keep taking the next `ORDER BY` terms from the key.
+                if (constant.isInf())
+                    is_strict = false;
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
 
