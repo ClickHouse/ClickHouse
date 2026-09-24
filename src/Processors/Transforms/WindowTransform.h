@@ -254,8 +254,11 @@ public:
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
 
-    // FIXME Reset it when the partition changes. We only save the temporary
-    // states in it (probably?).
+    // One arena shared by the aggregate function states of the current partition.
+    // Results never live in it: plain functions write values into the output
+    // column, and -State results are merged into the ColumnAggregateFunction's
+    // own arena. It is replaced when the partition changes, right after the
+    // states are destroyed, so it does not grow across partitions.
     std::unique_ptr<Arena> arena;
 
     // A sliding window of blocks we currently need. We add the input blocks as

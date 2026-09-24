@@ -1300,8 +1300,6 @@ void WindowTransform::writeOutCurrentRow()
         IColumn * result_column = block.output_columns[wi].get();
         const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
-        // FIXME does it also allocate the result on the arena?
-        // We'll have to pass it out with blocks then...
 
         if (frame_unchanged && !ws.is_aggregate_function_state && current_row.row > 0)
         {
@@ -1582,9 +1580,8 @@ void WindowTransform::startNextPartition()
         a->destroy(buf);
     }
 
-    // Release the arena we use for aggregate function states, so that it
-    // doesn't grow without limit. Not sure if it's actually correct, maybe
-    // it allocates the return values in the Arena as well...
+    // Replace the arena so that it does not grow across partitions. All states
+    // were destroyed above and no result lives in it, see the field comment.
     if (arena)
     {
         arena = std::make_unique<Arena>();
@@ -1608,10 +1605,9 @@ IProcessor::Status WindowTransform::prepare()
 {
     if (output.isFinished() || isCancelled())
     {
-        // The consumer asked us not to continue (or we decided it ourselves),
-        // so we abort. Not sure what the difference between the two conditions
-        // is, but it seemed that output.isFinished() is not enough to cancel on
-        // Ctrl+C. Test manually if you change it.
+        // output.isFinished(): the consumer closed the port early, e.g. LIMIT is
+        // satisfied. isCancelled(): KILL QUERY, a client disconnect or Ctrl+C
+        // cancelled the processor. Either way there is nothing more to produce.
         input.close();
         return Status::Finished;
     }
@@ -1659,7 +1655,7 @@ IProcessor::Status WindowTransform::prepare()
         chassert(next_output_block_number == first_block_number + blocks.size());
         chassert(first_not_ready_row == blocksEnd());
 
-        // FIXME do we really have to do this?
+        // The consumer learns that the data ended only from the closed output port.
         output.finish();
 
         return Status::Finished;
