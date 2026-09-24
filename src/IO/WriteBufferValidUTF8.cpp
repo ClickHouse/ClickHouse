@@ -5,8 +5,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 
-
-
 namespace DB
 {
 
