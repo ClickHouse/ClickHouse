@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
 
+# The server allows a single root workload, so tests that need one share whatever root exists and
+# create `all` only when there is none. Only the creator drops it, hence such tests are no-parallel.
+WORKLOAD_ROOT=
+WORKLOAD_ROOT_CREATED=
+
 function workload_ensure_root()
 {
-    local parent_workload=$($CLICKHOUSE_CLIENT -nm -q "SELECT name FROM system.workloads WHERE parent = ''")
-    if [[ -z $parent_workload ]]; then
-        $CLICKHOUSE_CLIENT -nm -q "CREATE OR REPLACE WORKLOAD all"
-        echo "all"
-        return
+    WORKLOAD_ROOT=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.workloads WHERE parent = ''")
+    if [[ -z $WORKLOAD_ROOT ]]; then
+        $CLICKHOUSE_CLIENT -q "CREATE WORKLOAD all"
+        WORKLOAD_ROOT=all
+        WORKLOAD_ROOT_CREATED=1
     fi
-    echo "$parent_workload"
+}
+
+function workload_remove_our_root()
+{
+    if [[ -n $WORKLOAD_ROOT_CREATED ]]; then
+        $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS $WORKLOAD_ROOT"
+    fi
 }

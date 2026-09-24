@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,11 +8,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/workloads.lib
 
 workload=w_$CLICKHOUSE_TEST_UNIQUE_NAME
-parent_workload=$(workload_ensure_root)
+workload_ensure_root
+parent_workload=$WORKLOAD_ROOT
 
 function cleanup()
 {
   $CLICKHOUSE_CLIENT -nm -q "DROP WORKLOAD $workload" >& /dev/null || :
+  workload_remove_our_root
 }
 trap cleanup EXIT
 
