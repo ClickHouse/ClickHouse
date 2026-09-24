@@ -4987,7 +4987,7 @@ See also:
 )", 0) \
     \
     DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, R"(
-The minimum disk space to keep while writing temporary data used in external sorting and aggregation.
+The minimum free disk space, in bytes, to keep while writing temporary data for external sorting, `full_sorting_merge` joins, aggregation, and `DISTINCT`.
 )", 0) \
     \
     DECLARE(DefaultTableEngine, default_temporary_table_engine, DefaultTableEngine::Memory, R"(

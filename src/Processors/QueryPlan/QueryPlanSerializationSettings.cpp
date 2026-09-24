@@ -37,7 +37,7 @@ namespace DB
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, "The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, "In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., "If memory usage after remerge does not reduced by this ratio, remerge will be disabled.", 0) \
-    DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, "The minimum disk space to keep while writing temporary data used in external sorting and aggregation.", 0) \
+    DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, "The minimum free disk space, in bytes, to keep while writing temporary data for external sorting, `full_sorting_merge` joins, aggregation, and `DISTINCT`.", 0) \
     \
     DECLARE(UInt64, aggregation_in_order_max_block_bytes, 50000000, "Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.", 0) \
     DECLARE(Bool, aggregation_in_order_memory_bound_merging, true, "Enable memory bound merging strategy when in-order is applied.", 0) \
