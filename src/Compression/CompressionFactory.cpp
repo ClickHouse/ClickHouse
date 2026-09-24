@@ -1,9 +1,9 @@
+#include <span>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <Core/Settings.h>
-#include <IO/ReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -12,11 +12,9 @@
 #include <Parsers/parseQuery.h>
 #include <Common/StringUtils.h>
 #include <Poco/String.h>
+#include <Common/typeid_cast.h>
 
-#include <algorithm>
 #include <Columns/IColumn.h>
-
-#include <boost/algorithm/string/join.hpp>
 
 #include "config.h"
 
@@ -104,27 +102,33 @@ CompressionCodecPtr CompressionCodecFactory::get(
             else
                 codec = getImpl(codec_family_name, codec_arguments, column_type);
 
-            if (only_generic && !codec->isGenericCompression())
-                continue;
+            std::span<const CompressionCodecPtr> expanded_codecs(&codec, 1);
 
-            /// Lossy codecs (e.g. SZ3) reinterpret the raw bytes as floating-point values.
-            /// When the data type is unknown we can not verify the column is floating-point
-            if (!column_type && codec->isLossyCompression())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/nullables "
-                    "of them); it can not be used as a marks, primary key or default compression codec, or in any "
-                    "other context where the column data type is unknown",
-                    codec_family_name);
+            /// `CODEC(ALP, Default)` with `default_compression_codec = 'LZ4, AES_128_GCM_SIV'` must become `ALP, LZ4, AES_128_GCM_SIV`.
+            /// Not a chain within a chain.
+            if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(codec.get()))
+                expanded_codecs = multiple->getCodecs();
 
-            codecs.emplace_back(codec);
+            for (const auto & expanded_codec : expanded_codecs)
+            {
+                if (only_generic && !expanded_codec->isGenericCompression() && !expanded_codec->isEncryption())
+                    continue;
+
+                if (!column_type && expanded_codec->isLossyCompression())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/nullables "
+                        "of them); it can not be used as a marks, primary key or default compression codec, or in any "
+                        "other context where the column data type is unknown",
+                        codec_family_name);
+
+                codecs.emplace_back(expanded_codec);
+            }
         }
-
-        CompressionCodecPtr res;
 
         if (codecs.size() == 1)
             return codecs.back();
         if (codecs.size() > 1)
-            return std::make_shared<CompressionCodecMultiple>(codecs);
+            return std::make_shared<CompressionCodecMultiple>(std::move(codecs));
         return std::make_shared<CompressionCodecNone>();
     }
 
@@ -197,9 +201,8 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
             res_columns[3]->insert(tmp->isGenericCompression());
             res_columns[4]->insert(tmp->isEncryption());
             res_columns[5]->insert(tmp->isFloatingPointTimeSeriesCodec());
-            res_columns[6]->insert(tier == SettingsTierType::EXPERIMENTAL);
-            res_columns[7]->insert(tier);
-            res_columns[8]->insert(tmp->getDescription());
+            res_columns[6]->insert(tier);
+            res_columns[7]->insert(tmp->getDescription());
         }
     );
 }
