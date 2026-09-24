@@ -36,6 +36,24 @@ static ColumnPtr expandColumnByFilter(ColumnPtr column, const PaddedPODArray<UIn
     return mutable_column;
 }
 
+/// Both types are expected to be convertible (like FixedString and String), so a type error from the
+/// cast is a logical error. Other failures (e.g. MEMORY_LIMIT_EXCEEDED) keep their own error code.
+static ColumnPtr castNestedResult(const ColumnWithTypeAndName & nested_result, const DataTypePtr & result_type, const String & function_name)
+{
+    try
+    {
+        return castColumn(nested_result, result_type);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+            && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+            throw;
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", function_name, nested_result.type->getName(), result_type->getName(), e.message());
+    }
+}
+
 ExecutableFunctionDynamicAdaptor::ExecutableFunctionDynamicAdaptor(
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
     size_t dynamic_argument_index_)
@@ -175,22 +193,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-            {
-                try
-                {
-                    return castColumn(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type);
-                }
-                catch (const Exception & e)
-                {
-                    /// Only wrap type-conversion errors as LOGICAL_ERROR.
-                    /// Other exceptions (e.g. MEMORY_LIMIT_EXCEEDED) should propagate as-is.
-                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                        throw;
-
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), removeNullable(result_type)->getName(), removeNullable(nested_result_type)->getName(), e.message());
-                }
-            }
+                return castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type, getName());
 
             return makeNullableSafe(nested_result);
         }
@@ -293,20 +296,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
 
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!result_type->equals(*nested_result_type))
-            {
-                try
-                {
-                    return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                        throw;
-
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), result_type->getName(), nested_result_type->getName(), e.message());
-                }
-            }
+                return castNestedResult(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type, getName());
 
             return nested_result;
         }
@@ -525,24 +515,9 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-            {
-                try
-                {
-                    variants_results.push_back(castColumn(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type));
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                        throw;
-
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), result_type->getName(), nested_result_type->getName(), e.message());
-                }
-            }
+                variants_results.push_back(castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type, getName()));
             else
-            {
                 variants_results.push_back(makeNullableSafe(nested_result));
-            }
         }
         /// Otherwise cast this result to the resulting Dynamic type.
         else
