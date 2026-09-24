@@ -770,13 +770,19 @@ namespace
                 throwInconsistentSchema("Function", ctx->getText());
 
             auto function_name = getText(function_name_ctx);
+            if ((function_name == "step" || function_name == "range") && !arguments.empty())
+            {
+                error_listener.setError(fmt::format("Function '{}' expects no arguments", function_name), getStartPos(function_name_ctx));
+                return nullptr;
+            }
             return makeFunction(function_name, arguments);
         }
 
         /// Returns the result type of a function.
         ResultType getFunctionResultType(std::string_view function_name)
         {
-            if (function_name == "scalar" || function_name == "time" || function_name == "pi")
+            if (function_name == "scalar" || function_name == "time" || function_name == "pi"
+                || function_name == "step" || function_name == "range")
                 return ResultType::SCALAR;
             else
                 return ResultType::INSTANT_VECTOR;
