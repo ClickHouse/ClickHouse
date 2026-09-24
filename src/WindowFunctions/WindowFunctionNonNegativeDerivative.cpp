@@ -154,8 +154,8 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
 
 }
 
-void registerWindowFunctionsNonNegativeDerivative(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionsNonNegativeDerivative(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionNonNegativeDerivative(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionNonNegativeDerivative(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("nonNegativeDerivative", {[](const std::string & name,
            const DataTypes & argument_types, const Array & parameters, const Settings *)

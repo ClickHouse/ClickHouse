@@ -545,10 +545,14 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
     Processors/Transforms/WindowTransform.cpp  # window functions
-    WindowFunctions/WindowFunctionRanking.cpp                # window functions
-    WindowFunctions/WindowFunctionLagLead.cpp                # window functions
+    WindowFunctions/WindowFunctionRank.cpp                   # window functions
+    WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
+    WindowFunctions/WindowFunctionRowNumber.cpp              # window functions
+    WindowFunctions/WindowFunctionNtile.cpp                  # window functions
+    WindowFunctions/WindowFunctionPercentRank.cpp            # window functions
+    WindowFunctions/WindowFunctionCumeDist.cpp               # window functions
     WindowFunctions/WindowFunctionNthValue.cpp               # window functions
-    WindowFunctions/WindowFunctionDistribution.cpp           # window functions
+    WindowFunctions/WindowFunctionLagLead.cpp                # window functions
     WindowFunctions/WindowFunctionExponentialTimeDecayed.cpp # window functions
     WindowFunctions/WindowFunctionNonNegativeDerivative.cpp  # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states

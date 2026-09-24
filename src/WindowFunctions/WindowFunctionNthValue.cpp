@@ -87,8 +87,8 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
 
 }
 
-void registerWindowFunctionsNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionsNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("nth_value", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)

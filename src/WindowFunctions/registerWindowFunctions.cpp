@@ -5,12 +5,16 @@
 namespace DB
 {
 
-void registerWindowFunctionsRanking(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionsDistribution(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionDenseRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionPercentRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionCumeDist(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionRowNumber(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionNtile(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
 void registerWindowFunctionsLagLead(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionsNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
 void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionsNonNegativeDerivative(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
+void registerWindowFunctionNonNegativeDerivative(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory)
 {
@@ -24,12 +28,16 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         .is_order_dependent = true,
         .is_window_function = true};
 
-    registerWindowFunctionsRanking(factory, properties);
-    registerWindowFunctionsDistribution(factory, properties);
-    registerWindowFunctionsNthValue(factory, properties);
+    registerWindowFunctionRank(factory, properties);
+    registerWindowFunctionDenseRank(factory, properties);
+    registerWindowFunctionPercentRank(factory, properties);
+    registerWindowFunctionCumeDist(factory, properties);
+    registerWindowFunctionRowNumber(factory, properties);
+    registerWindowFunctionNtile(factory, properties);
+    registerWindowFunctionNthValue(factory, properties);
     registerWindowFunctionsLagLead(factory, properties);
     registerWindowFunctionsExponentialTimeDecayed(factory, properties);
-    registerWindowFunctionsNonNegativeDerivative(factory, properties);
+    registerWindowFunctionNonNegativeDerivative(factory, properties);
 }
 
 }
