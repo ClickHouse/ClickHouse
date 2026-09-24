@@ -86,9 +86,9 @@ static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
 }
 
 /// The arguments of an optimization, in the same shapes as `extractParts` above accepts: an array
-/// literal wrapped in a `_CAST`, or a bare `array(...)` call, which is what an argument list of mixed
-/// types - the shape `buildAnalyzeIndexQuery` sends - stays as, since there is no common type to fold
-/// it into. Every element is evaluated on its own, so each keeps its own type.
+/// literal wrapped in a `_CAST`, or an `array(...)` call. An argument list of mixed types - the shape
+/// `buildAnalyzeIndexQuery` sends - is an `array(...)` call, either bare or, with `use_variant_as_common_type`,
+/// wrapped in a `_CAST` to an array of `Variant`. Every element is evaluated on its own, so each keeps its own type.
 static Array extractOptimizationArguments(const ASTPtr & argument, const ContextPtr & context)
 {
     ASTPtr array = argument;
@@ -96,10 +96,14 @@ static Array extractOptimizationArguments(const ASTPtr & argument, const Context
     {
         if (func->name == "_CAST" && func->arguments && !func->arguments->children.empty()) /// _CAST([...], 'Array(String)')
             array = func->arguments->children.at(0);
-        else if (func->name == "array" && func->arguments) /// array(ExpressionList)
-            array = func->arguments;
-        else
-            array = ASTPtr();
+
+        if (const auto * inner = array->as<ASTFunction>())
+        {
+            if (inner->name == "array" && inner->arguments) /// array(ExpressionList)
+                array = inner->arguments;
+            else
+                array = ASTPtr();
+        }
     }
 
     if (array)
