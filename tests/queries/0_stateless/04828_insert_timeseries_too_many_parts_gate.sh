@@ -32,7 +32,7 @@ DROP TABLE IF EXISTS ts_gate_metrics;
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 -q "
 CREATE TABLE ts_gate_data (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS parts_to_throw_insert = 1;
 CREATE TABLE ts_gate_tags (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String), min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE ts_gate_metrics (metric_family_name String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+CREATE TABLE ts_gate_metrics (metric_family String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family;
 CREATE TABLE ts_gate ENGINE = TimeSeries SAMPLES ts_gate_data TAGS ts_gate_tags METRIC FAMILIES ts_gate_metrics;
 CREATE TABLE ts_gate_source (x UInt64) ENGINE = MergeTree ORDER BY x;
 "
@@ -82,7 +82,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 -q "
 CREATE TABLE ts_quorum_data_1 (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_04828/ts_quorum_data', '1') ORDER BY (id, timestamp);
 CREATE TABLE ts_quorum_data_2 (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_04828/ts_quorum_data', '2') ORDER BY (id, timestamp);
 CREATE TABLE ts_quorum_tags (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String), min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE ts_quorum_metrics (metric_family_name String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+CREATE TABLE ts_quorum_metrics (metric_family String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family;
 CREATE TABLE ts_quorum ENGINE = TimeSeries SAMPLES ts_quorum_data_1 TAGS ts_quorum_tags METRIC FAMILIES ts_quorum_metrics;
 CREATE TABLE ts_quorum_source (x UInt64) ENGINE = Null;
 "

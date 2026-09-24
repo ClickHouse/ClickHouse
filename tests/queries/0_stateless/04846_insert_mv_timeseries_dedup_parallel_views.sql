@@ -18,7 +18,7 @@ DROP TABLE IF EXISTS ts_dedup_metrics;
 
 CREATE TABLE ts_dedup_data (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS non_replicated_deduplication_window = 100;
 CREATE TABLE ts_dedup_tags (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String), min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE ts_dedup_metrics (metric_family_name String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+CREATE TABLE ts_dedup_metrics (metric_family String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family;
 CREATE TABLE ts_dedup ENGINE = TimeSeries SAMPLES ts_dedup_data TAGS ts_dedup_tags METRIC FAMILIES ts_dedup_metrics;
 CREATE TABLE ts_dedup_source (x UInt64) ENGINE = MergeTree ORDER BY x;
 
