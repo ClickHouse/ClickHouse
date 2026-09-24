@@ -239,11 +239,15 @@ public:
 
     IConnections & getConnections() { return *connections; }
 
+    /// The skip decision on its own; `needToSkipUnavailableShard` also reports it.
+    bool shouldSkipUnavailableShard() const;
     bool needToSkipUnavailableShard();
 
     /// Reports a skipped shard to `unavailable_shard_tracker` (if any), enforcing the
     /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio` limits.
-    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded.
+    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded, and
+    /// `ALL_CONNECTION_TRIES_FAILED` once every execution unit was skipped without returning data.
+    /// Because it throws, finish the skipped shard's fragment span first, or the skip is lost from it.
     void reportShardSkipped();
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
