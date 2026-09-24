@@ -496,6 +496,38 @@ TEST(ColumnStatsProvenance, JoinCardinalityClampInvalidatesDistinctCountUpperBou
     EXPECT_TRUE(isDistinctCountUpperBound(retained.ndv_provenance));
 }
 
+TEST(ColumnStatsProvenance, JoinKeyNdvMinRespectsPreservedSide)
+{
+    tryRegisterFunctions();
+    const auto estimate_join_key_ndvs = [](JoinKind kind, JoinStrictness strictness, UInt64 left_ndv, UInt64 right_ndv)
+    {
+        auto left_header = makeHeader("l");
+        auto right_header = makeHeader("r");
+        JoinExpressionActions expression_actions(*left_header, *right_header);
+        const auto & inputs = expression_actions.getActionsDAG()->getInputs();
+        JoinActionRef left_key(inputs.at(0), expression_actions);
+        JoinActionRef right_key(inputs.at(1), expression_actions);
+        auto predicate = JoinActionRef::transform({left_key, right_key}, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+
+        auto left_stats = measuredColumnStats();
+        left_stats.num_distinct_values = left_ndv;
+        auto right_stats = measuredColumnStats();
+        right_stats.num_distinct_values = right_ndv;
+        auto left = std::make_shared<DPJoinEntry>(0, 1000, std::unordered_map<String, ColumnStats>{{"l", left_stats}});
+        auto right = std::make_shared<DPJoinEntry>(1, 1000, std::unordered_map<String, ColumnStats>{{"r", right_stats}});
+        DPJoinEntry joined(left, right, 0, 1, 1000, JoinOperator(kind, strictness, JoinLocality::Unspecified, {predicate}));
+        return std::pair{joined.column_stats.at("l").num_distinct_values, joined.column_stats.at("r").num_distinct_values};
+    };
+
+    EXPECT_EQ(estimate_join_key_ndvs(JoinKind::Inner, JoinStrictness::All, 100, 40), (std::pair<UInt64, UInt64>{40, 40}));
+    EXPECT_EQ(estimate_join_key_ndvs(JoinKind::Left, JoinStrictness::All, 100, 40), (std::pair<UInt64, UInt64>{100, 40}));
+    EXPECT_EQ(estimate_join_key_ndvs(JoinKind::Right, JoinStrictness::All, 40, 100), (std::pair<UInt64, UInt64>{40, 100}));
+    EXPECT_EQ(estimate_join_key_ndvs(JoinKind::Full, JoinStrictness::All, 100, 40), (std::pair<UInt64, UInt64>{100, 40}));
+    EXPECT_EQ(estimate_join_key_ndvs(JoinKind::Left, JoinStrictness::Anti, 100, 40), (std::pair<UInt64, UInt64>{100, 40}));
+    EXPECT_EQ(estimate_join_key_ndvs(JoinKind::Left, JoinStrictness::Semi, 100, 40), (std::pair<UInt64, UInt64>{40, 40}));
+    EXPECT_EQ(estimate_join_key_ndvs(JoinKind::Right, JoinStrictness::Semi, 40, 100), (std::pair<UInt64, UInt64>{40, 40}));
+}
+
 TEST(ColumnStatsProvenance, FilterAddsRowSubsetAndMakesRowsInexact)
 {
     const auto header = makeHeader();

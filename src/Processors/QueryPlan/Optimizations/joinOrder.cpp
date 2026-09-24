@@ -86,9 +86,28 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
 
         if (left_it != column_stats.end() && right_it != column_stats.end())
         {
-            UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
-            left_it->second.num_distinct_values = min_ndv;
-            right_it->second.num_distinct_values = min_ndv;
+            bool update_left = false;
+            bool update_right = false;
+            if (join_operator.strictness == JoinStrictness::Semi)
+            {
+                /// Only the output side is filtered to matching keys; the other side is not in the output.
+                update_left = join_operator.kind == JoinKind::Left;
+                update_right = join_operator.kind == JoinKind::Right;
+            }
+            else if (join_operator.strictness != JoinStrictness::Anti)
+            {
+                /// An outer join preserves the named side, so only the non-preserved side can lose key values.
+                update_left = join_operator.kind == JoinKind::Inner || join_operator.kind == JoinKind::Right
+                    || join_operator.kind == JoinKind::Cross || join_operator.kind == JoinKind::Comma;
+                update_right = join_operator.kind == JoinKind::Inner || join_operator.kind == JoinKind::Left
+                    || join_operator.kind == JoinKind::Cross || join_operator.kind == JoinKind::Comma;
+            }
+
+            const UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
+            if (update_left)
+                left_it->second.num_distinct_values = min_ndv;
+            if (update_right)
+                right_it->second.num_distinct_values = min_ndv;
         }
     }
 
