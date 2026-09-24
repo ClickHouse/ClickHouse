@@ -214,3 +214,42 @@ hasTokenPrefix(msg, \'charg\') IS NULL	22
 hasTokenPrefix(msg, \'charg\') IS NULL	22
 hasTokenPrefix(msg, \'charg\') IS NULL	22
 hasTokenPrefix(msg, \'charg\') IS NULL	22
+-- several text indexes on one expression must give the function the same tokenizer and preprocessor
+array	8
+array	8
+array	8
+array	0
+array	8
+array	0
+splitByNonAlpha	8
+splitByNonAlpha	8
+splitByNonAlpha	8
+splitByNonAlpha	0
+splitByNonAlpha	8
+splitByNonAlpha	0
+hasTokenLike	8
+hasTokenLike	8
+hasTokenLike	8
+hasTokenLike	8
+hasTokenLike	8
+hasTokenLike	8
+hasTokenMatch	8
+hasTokenMatch	8
+env:prod	8
+env:prod	8
+env:prod	8
+env:prod	8
+prod	0
+prod	0
+prod	0
+prod	0
+env:prod	8
+env:prod	8
+prod	0
+prod	0
+Parts: 1 | Granules: 1
+Granules: 8/8
+Granules: 1/8
+Granules: 1/1
+direct read by idx_a	1	0
+direct read by idx_a	1	0
