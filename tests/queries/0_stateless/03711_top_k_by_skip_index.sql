@@ -48,8 +48,8 @@ SELECT trimLeft(explain) AS explain FROM (
 WHERE explain LIKE '%TopK%';
 
 -- Verify that the dynamic filter is injected into the `PREWHERE` and shares it with the promoted
--- `WHERE` predicate. Matching stops before that predicate's operands: the analyzer qualifies the
--- column (`__table1.v2`) and types the constant (`0_UInt8`), the old analyzer prints neither.
+-- `WHERE` predicate. Matching stops before that predicate's operands: their printed form pins the
+-- qualified column name and the typed constant, which this assertion does not depend on.
 SELECT
     'dynamic filter in prewhere',
     countIf(explain LIKE '%Prewhere filter column: and(\_\_topKFilter(v1), greater(%'),
