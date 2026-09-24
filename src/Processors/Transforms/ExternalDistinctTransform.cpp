@@ -94,7 +94,7 @@ ProcessorMemoryStats ExternalDistinctTransform::getMemoryStats() const
     return res;
 }
 
-size_t ExternalDistinctTransform::spill(size_t /*at_least_bytes*/)
+size_t ExternalDistinctTransform::spill(size_t at_least_bytes)
 {
     const size_t bytes = getMemoryStats().spillable_memory_bytes;
     if (!bytes || isCancelled())
@@ -102,6 +102,10 @@ size_t ExternalDistinctTransform::spill(size_t /*at_least_bytes*/)
 
     if (auto * hashing = std::get_if<Hashing>(&state))
     {
+        LOG_TRACE(log, "Switching DISTINCT to external mode: scheduler requested spilling (requested bytes: {}, set memory: {}, query memory: {})",
+            formatReadableSizeWithBinarySuffix(at_least_bytes),
+            formatReadableSizeWithBinarySuffix(bytes),
+            formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()));
         startSpilling(*hashing);
         /// The extractor retains the set until its last key is materialized. Drain every suppression
         /// run before settling the scheduler's request, keeping only one run's working columns alive.
