@@ -6,7 +6,7 @@ from typing import Dict, List, Union
 import requests
 from botocore.exceptions import ClientError
 
-from ci_utils import GH, Envs, Shell, WithIter
+from ci_utils import Shell, WithIter
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 
@@ -53,13 +53,6 @@ class CIBuddy:
         self.commit_url = pr_info.commit_html_url
         self.sha_full = pr_info.sha
         self.sha = self.sha_full[:10]
-
-    def check_workflow(self):
-        GH.print_workflow_results()
-        if not GH.is_workflow_ok():
-            self.post_job_error(
-                f"{Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
-            )
 
     @staticmethod
     def _get_webhooks():
@@ -205,11 +198,6 @@ class CIBuddy:
 def parse_args():
     parser = argparse.ArgumentParser("CI Buddy bot notifies about CI events")
     parser.add_argument(
-        "--check-wf-status",
-        action="store_true",
-        help="Checks workflow status",
-    )
-    parser.add_argument(
         "--test",
         action="store_true",
         help="for test and debug",
@@ -227,5 +215,3 @@ if __name__ == "__main__":
 
     if args.test:
         CIBuddy(dry_run=True).post_job_error("TEst")
-    elif args.check_wf_status:
-        CIBuddy(dry_run=args.dry_run).check_workflow()
