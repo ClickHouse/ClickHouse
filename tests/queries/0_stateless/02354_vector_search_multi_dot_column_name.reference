@@ -4,15 +4,9 @@ control: ordering by the indexed column returns the nearest neighbours
 0
 1
 2
-multi-dot column, analyzer: the index of the suffix column is not used
+multi-dot column: the index of the suffix column is not used
 1
-multi-dot column, analyzer: correct result
-63
-62
-61
-multi-dot column, old analyzer: the index of the suffix column is not used
-1
-multi-dot column, old analyzer: correct result
+multi-dot column: correct result
 63
 62
 61
