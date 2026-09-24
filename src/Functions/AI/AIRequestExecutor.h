@@ -23,21 +23,14 @@ struct AIRequestPolicy
     UInt64 max_retries = 0;
     UInt64 retry_initial_delay_ms = 0;
 
-    /// `ai_function_throw_on_error`. When disabled, a request that failed for good produces no
-    /// response instead of throwing, and the caller leaves the row at its default value.
+    /// `ai_function_throw_on_error`. When disabled, a request that failed (after retries) does not
+    /// throw, and the caller outputs a default value.
     bool throw_on_error = true;
 };
 
 /// Issue one chat-completion request on the AI request thread pool (`getAIRequestThreadPool`) and
-/// check that the model produced a complete answer.
-///
-/// Retries with backoff, API-call reservation and token accounting happen on the worker. The pool
-/// size caps how many provider requests the whole server has in flight at once.
-///
-/// The future holds the response, or nothing when no usable response was produced: the per-query
-/// API-call quota was exhausted, or the request failed and `throw_on_error` is disabled. `get`
-/// rethrows when the request failed and `throw_on_error` is enabled, and always rethrows a quota
-/// exception, which `ai_function_throw_on_quota_exceeded` governs instead.
+/// check that the model produced a complete answer. Also handles retries with backoff, API-call
+/// reservation, and token accounting.
 std::future<std::optional<AIResponse>> submitAIRequest(
     std::shared_ptr<IAIProvider> provider, AIRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
 

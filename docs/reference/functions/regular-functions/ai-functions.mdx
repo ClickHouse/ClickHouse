@@ -28,17 +28,15 @@ All functions are sharing a common infrastructure that provides:
 
 - **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 - **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/reference/settings/session-settings/ai-function#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
-- **Concurrent requests**: Requests are issued from a server-wide thread pool, several at a time ([`ai_function_max_concurrent_requests`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests)).
+- **Concurrent requests**: Requests are issued from a server-wide thread pool, several at a time (controlled by [`ai_function_max_concurrent_requests`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests)).
 
 ## Throughput {#throughput}
 
-An AI function call is a network request, so throughput is `concurrency / request latency`, not a function of CPU. At a typical latency of one second per request, one request at a time is about 60 rows per minute regardless of how many cores the server has.
+The requests are issued from a server-wide thread pool. Its size (`max_ai_request_thread_pool_size`, a server setting) caps how many AI provider requests the whole server has in flight at once, across every query.
 
-The requests are issued from a server-wide thread pool rather than by the function itself. Its size (`max_ai_request_thread_pool_size`, a server setting) caps how many AI provider requests the whole server has in flight at once, across every query.
+[`ai_function_max_concurrent_requests`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests) bounds a single function call's share of that pool.
 
-[`ai_function_max_concurrent_requests`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests) bounds a single function call's share of that pool. It applies the same way to a function evaluated in an `INSERT ... SELECT` and to one evaluated inside a materialized view, and it does not depend on how the source data is spread over parts, on block sizes, or on [`parallel_view_processing`](/reference/settings/session-settings/parallel#parallel_view_processing).
-
-The limit is per AI function call per block, so a query whose pipeline runs several streams may have more requests in flight than the setting allows for a single stream. Where the per-query total matters, put a ceiling on the setting with a settings profile constraint, which a query cannot raise:
+The `ai_function_max_concurrent_requests` limit is per AI function call per block, so a query whose pipeline runs several streams may have more requests in flight than the setting allows for a single stream. Where the per-query total matters, put a ceiling on the setting with a settings profile constraint, which a query cannot raise:
 
 ```xml
 <profiles>
@@ -59,19 +57,9 @@ The default is `1`, one request at a time, because raising it loosens two guaran
 
 [`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
 
-A large backfill needs the quotas raised as well as the concurrency, and all three quotas, not just the API-call one:
-
-```sql
-INSERT INTO reviews_classified
-SELECT *, aiClassify(review_body, ['positive', 'neutral', 'negative']) AS sentiment
-FROM reviews
-SETTINGS ai_function_max_concurrent_requests = 16,
-         ai_function_max_api_calls_per_query = 0,
-         ai_function_max_input_tokens_per_query = 0,
-         ai_function_max_output_tokens_per_query = 0
-```
-
+<Note>
 For a materialized view, the settings go on the `INSERT` that feeds the view's source table, not on the `CREATE MATERIALIZED VIEW` statement: the quotas are read from the top-level query, and a `SETTINGS` clause in a view definition is ignored.
+</Note>
 
 ## Configuration {#configuration}
 

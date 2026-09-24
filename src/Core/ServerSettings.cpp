@@ -212,7 +212,7 @@ Maximum total number of threads to use for requests to AI providers. One thread 
     DECLARE(UInt64, max_ai_request_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for requests to AI providers.
 )", 0) \
-    DECLARE(UInt64, ai_request_thread_pool_queue_size, 10000, R"(
+    DECLARE(UInt64, ai_request_thread_pool_queue_size, 10'000, R"(
 The maximum number of jobs that can be scheduled on the thread pool for requests to AI providers.
 )", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
