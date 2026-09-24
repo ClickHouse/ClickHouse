@@ -26,6 +26,10 @@ function wait_part()
 
 function restore_failpoints()
 {
+    # Unconditionally: nothing above guarantees the ONCE failpoint was consumed, and a fail point
+    # left armed is server-global state that fires in whatever test runs next.
+    $CLICKHOUSE_CLIENT -q "system disable failpoint replicated_queue_fail_next_entry" ||:
+
     if [ -z "$failed_replica" ]; then
         return
     fi

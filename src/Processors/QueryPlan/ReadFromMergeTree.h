@@ -378,6 +378,44 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
+    /// Adopt from another read of the same table, for the same query, everything that
+    /// `optimizePrimaryKeyConditionAndLimit` and `applyFilters` would have produced. A plan optimized
+    /// without that pass has none of it, and a read handed an analysis result never builds it later
+    /// either: `selectRangesToRead` returns the analysis it was given and stops. The ranges are not
+    /// enough on their own, because each of these is consumed separately while reading:
+    ///   - `indexes`, or `supportsSkipIndexesOnDataRead` is false and skip indexes are not applied to
+    ///     granules at all;
+    ///   - the filter actions, or the reader has no condition to record, so the query condition cache is
+    ///     never populated and every later query over the same predicate misses it;
+    ///   - `limit`, which nothing in `ReadFromMergeTree` reads today - the ordered read takes its bound
+    ///     from `query_info.input_order_info` - but which the pass does produce, so a read that skipped
+    ///     the pass is missing it and would diverge here the moment that changes.
+    /// They are adopted together rather than one at a time as each turns out to be needed.
+    /// Taken over wholesale rather than only where this read has nothing: it is called together with
+    /// `setAnalyzedResult`, which replaces the ranges outright, and these are the conditions those ranges
+    /// were selected by. Keeping anything of this read's own would pair one read's ranges with another's
+    /// conditions. Nothing here is built by a plan optimized without the pass named above, so in practice
+    /// there is nothing to replace; this makes that independent of whether something prefilled it.
+    void adoptFiltersFrom(const ReadFromMergeTree & other)
+    {
+        indexes = other.indexes;
+
+        filter_actions_dag = other.filter_actions_dag;
+        query_info.filter_actions_dag = filter_actions_dag;
+
+        limit = other.limit;
+
+        /// `FINAL` defers the row policy and `PREWHERE` past deduplication, and what does it is part of
+        /// `applyFilters`, so a read of a plan optimized without that pass applies them during reading
+        /// instead - before the rows they filter have been deduplicated. No caller reaches this with a
+        /// `FINAL` read today: `supportsDataflowStatisticsCollection` is false for one, and automatic
+        /// parallel replicas requires every step of the plan to support it. Redone here rather than
+        /// adopted from the other read, which would hold only as long as the two plans split the `WHERE`
+        /// into a `PREWHERE` the same way: a deferred filter is this read's own
+        /// `query_info.prewhere_info` or `query_info.row_level_filter` under another name.
+        deferFiltersAfterFinalIfNeeded();
+    }
+
     /// selectRangesToRead() will always re-analyze
     AnalysisResultPtr getOrCreateAnalyzedResult() const { return analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(); }
 
