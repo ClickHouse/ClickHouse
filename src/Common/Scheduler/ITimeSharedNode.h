@@ -72,8 +72,9 @@ public:
             flushThroughput(clock_gettime_ns());
     }
 
-    /// Helper for introspection metrics. Should be called when `dequeueRequest` finds the node inactive and returns no request,
-    /// e.g. after its remaining requests were canceled.
+    /// Helper for introspection metrics. Should be called when the node becomes inactive without dequeueing a request:
+    /// when `dequeueRequest` finds it inactive (e.g. its remaining requests were canceled) or when a node leaves its
+    /// parent's active set by itself (e.g. a constraint whose limits were lowered).
     void flushThroughputOnDeactivation()
     {
         if (pending_throughput_requests > 0)

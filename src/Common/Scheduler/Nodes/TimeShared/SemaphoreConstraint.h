@@ -143,6 +143,7 @@ public:
                 // Drop any activation a concurrent finishRequest queued under the old limit; otherwise it
                 // would re-activate us under the new (lower) limit and admit one request over the bound.
                 cancelActivation();
+                flushThroughputOnDeactivation();
             }
         }
     }
