@@ -814,6 +814,122 @@ def test_profile_events_table_function_is_not_counted_as_disk(started_cluster):
     assert event("DiskGCSGetObject") == 0
 
 
+def test_request_rate_throttler_table_function(started_cluster):
+    """`s3_max_get_rps` / `s3_max_put_rps` and their bursts limit the native client exactly like the
+    S3-compatibility client: every GET / HEAD request takes a token from the GET bucket, every PUT /
+    POST / PATCH request from the PUT bucket. A glob read issues at least a listing, a metadata
+    request and a download per object, so with one request per second and a burst of one some of
+    them must wait."""
+    node = started_cluster.instances["node"]
+
+    insert_id = f"gcs_throttle_put_{uuid.uuid4()}"
+    for i in range(2):
+        node.query(
+            f"INSERT INTO FUNCTION gcs('{gcs_url(f'throttle_tf/part{i}.tsv')}', NOSIGN, 'TSV', 'a UInt64') "
+            "SELECT number FROM numbers(10)",
+            settings={"use_native_gcs": 1, "s3_max_put_rps": 1, "s3_max_put_burst": 1},
+            query_id=f"{insert_id}_{i}",
+        )
+
+    read_id = f"gcs_throttle_get_{uuid.uuid4()}"
+    assert 20 == int(
+        node.query(
+            f"SELECT count() FROM gcs('{gcs_url('throttle_tf/*.tsv')}', NOSIGN, 'TSV', 'a UInt64')",
+            settings={
+                "use_native_gcs": 1,
+                "s3_max_get_rps": 1,
+                "s3_max_get_burst": 1,
+                "max_threads": 1,
+            },
+            query_id=read_id,
+        )
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    def event(query_id, name):
+        return int(
+            node.query(
+                f"SELECT ProfileEvents['{name}'] FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+    assert event(f"{insert_id}_0", "GCSPutRequestThrottlerCount") > 0
+    assert event(f"{insert_id}_0", "GCSGetRequestThrottlerCount") == 0
+    assert event(f"{insert_id}_0", "DiskGCSPutRequestThrottlerCount") == 0
+
+    assert event(read_id, "GCSGetRequestThrottlerCount") >= 2
+    assert event(read_id, "GCSGetRequestThrottlerBlocked") > 0
+    assert event(read_id, "GCSGetRequestThrottlerSleepMicroseconds") > 0
+    assert event(read_id, "DiskGCSGetRequestThrottlerCount") == 0
+
+    # Without the settings nothing passes through a throttler.
+    plain_id = f"gcs_throttle_none_{uuid.uuid4()}"
+    node.query(
+        f"SELECT count() FROM gcs('{gcs_url('throttle_tf/*.tsv')}', NOSIGN, 'TSV', 'a UInt64')",
+        settings={"use_native_gcs": 1},
+        query_id=plain_id,
+    )
+    node.query("SYSTEM FLUSH LOGS")
+    assert event(plain_id, "GCSGetRequestThrottlerCount") == 0
+
+
+def test_request_rate_throttler_disk(started_cluster):
+    """A GCS disk reads its limits from the same `s3_max_*` keys an `s3` disk does, and counts the
+    throttled requests into the `DiskGCS*` events as well."""
+    node = started_cluster.instances["node"]
+    disk_endpoint = f"http://{cluster.gcs_host}:{cluster.gcs_port}/{cluster.gcs_bucket}/throttle_disk/"
+
+    node.query("DROP TABLE IF EXISTS gcs_throttle SYNC")
+    node.query(
+        "CREATE TABLE gcs_throttle (a UInt64, b String) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS disk = disk("
+        "  name = 'gcs_disk_throttle',"
+        "  type = object_storage,"
+        "  object_storage_type = gcs,"
+        "  metadata_type = local,"
+        f"  endpoint = '{disk_endpoint}',"
+        "  no_sign_request = true,"
+        "  s3_max_get_rps = 1000,"
+        "  s3_max_put_rps = 1000"
+        ")",
+        settings={"use_native_gcs": 1},
+    )
+
+    write_id = f"gcs_throttle_disk_write_{uuid.uuid4()}"
+    node.query(
+        "INSERT INTO gcs_throttle SELECT number, toString(number) FROM numbers(1000)",
+        query_id=write_id,
+    )
+
+    read_id = f"gcs_throttle_disk_read_{uuid.uuid4()}"
+    assert sum(range(1000)) == int(
+        node.query(
+            "SELECT sum(a) FROM gcs_throttle",
+            settings={"enable_filesystem_cache": 0},
+            query_id=read_id,
+        )
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    def event(query_id, name):
+        return int(
+            node.query(
+                f"SELECT ProfileEvents['{name}'] FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+    assert event(write_id, "GCSPutRequestThrottlerCount") > 0
+    assert event(write_id, "DiskGCSPutRequestThrottlerCount") > 0
+    assert event(read_id, "GCSGetRequestThrottlerCount") > 0
+    assert event(read_id, "DiskGCSGetRequestThrottlerCount") > 0
+
+    node.query("DROP TABLE gcs_throttle SYNC")
+
+
 def test_parallel_download_of_one_object(started_cluster):
     """A whole-object read must be split across `max_download_threads` ranged requests.
 

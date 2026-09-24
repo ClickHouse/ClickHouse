@@ -574,6 +574,8 @@ These are the parameters of a disk defined in the server configuration. A dynami
 | `http_keep_alive_timeout`    | For how many seconds a pooled connection is reused before it is reconnected. `0` removes the bound.                                                  | `5`           |
 | `http_keep_alive_max_requests` | How many requests a pooled connection serves before it is reconnected. `0` removes the bound.                                                      | `100`         |
 | `retry_attempts`            | How many times a failed request is retried before the error is reported. `0` disables retries.                                                       | `10`          |
+| `s3_max_get_rps`, `s3_max_get_burst` | Request-rate limit of the GET requests (downloads, metadata requests, listings): requests per second, and how many can be issued at once before the limit applies. The same keys, defaults and fallback to the query-level settings as for the `s3` disk type. | `0` (unlimited); burst: the rate |
+| `s3_max_put_rps`, `s3_max_put_burst` | Request-rate limit of the PUT, POST and PATCH requests (uploads, server-side copies). DELETE requests are not limited. | `0` (unlimited); burst: the rate |
 | `readonly`                  | Only allow reading from the disk.                                                                                                                    | `false`       |
 | `proxy`                     | Proxy configuration in the same format as for the `s3` disk type; the server-wide `<proxy>` section and proxy environment variables also apply.      | -             |
 

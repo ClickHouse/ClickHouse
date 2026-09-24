@@ -6,6 +6,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
 #include <Disks/IDisk.h>
 #include <IO/S3AuthSettings.h>
+#include <IO/S3RequestSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
@@ -221,6 +222,23 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     gcs_settings.max_connections = auth[S3AuthSetting::max_connections];
     gcs_settings.http_keep_alive_timeout = auth[S3AuthSetting::http_keep_alive_timeout];
     gcs_settings.http_keep_alive_max_requests = auth[S3AuthSetting::http_keep_alive_max_requests];
+
+    /// The request-rate limits (`s3_max_get_rps`, `s3_max_get_burst`, `s3_max_put_rps`,
+    /// `s3_max_put_burst`) are taken from the throttlers the S3 request settings resolved for this
+    /// configuration, so the native client is limited exactly like the S3-compatibility client would
+    /// be. Only the limits are copied: the native client builds its own token buckets, which count
+    /// into the `GCS*RequestThrottler*` profile events rather than the `S3*` ones.
+    const auto & request_throttler = s3_settings->request_settings.request_throttler;
+    if (const auto & get_throttler = request_throttler.get_throttler)
+    {
+        gcs_settings.max_get_rps = get_throttler->getMaxSpeed();
+        gcs_settings.max_get_burst = get_throttler->getMaxBurst();
+    }
+    if (const auto & put_throttler = request_throttler.put_throttler)
+    {
+        gcs_settings.max_put_rps = put_throttler->getMaxSpeed();
+        gcs_settings.max_put_burst = put_throttler->getMaxBurst();
+    }
 
     validateGCSRefreshTokenTriple(gcs_settings);
     checkGCSCredentialsAllowedInUserQuery(gcs_settings, context);

@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <base/types.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/ProxyConfigurationResolver.h>
@@ -109,6 +110,16 @@ struct GCSObjectStorageSettings
     /// Upper bound on the retries of one request, from the `retry_attempts` key of a disk section.
     /// 0 means "do not retry".
     UInt64 retry_attempts = DEFAULT_GCS_RETRY_ATTEMPTS;
+    /// Request-rate limits: requests per second and burst of the GET requests, and of the PUT / POST /
+    /// PATCH requests (uploads, copies); DELETE requests are not throttled. The same limits, with the
+    /// same meaning and resolution, as the S3 transport's (`s3_max_get_rps`, `s3_max_get_burst`,
+    /// `s3_max_put_rps`, `s3_max_put_burst`), so switching `use_native_gcs` on or moving a disk from
+    /// `s3` to `gcs` keeps them. A zero rate means "unlimited"; the burst is already resolved (never 0
+    /// when the rate is set). Every client built from the settings has its own token buckets.
+    UInt64 max_get_rps = 0;
+    UInt64 max_get_burst = 0;
+    UInt64 max_put_rps = 0;
+    UInt64 max_put_burst = 0;
     /// Proxy of the requests, resolved per request. Set from the disk section (the old
     /// `<gcs><proxy>` format, then the server-wide `<proxy>` / the environment) exactly like the S3
     /// disk does. Left unset on the SQL surface: `getGCSClient` then resolves the server-wide
@@ -199,6 +210,15 @@ std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigPro
 /// its list expires. Returns an empty function for a null resolver.
 std::function<void(const Poco::Net::HTTPClientSession::ProxyConfig &)> makeGCSProxyErrorReporter(
     const std::shared_ptr<ProxyConfigurationResolver> & resolver);
+
+/// Resolve a request-rate limit the way `S3RequestSettings::finishInit` does: the rate from the
+/// configuration if it is set there, otherwise from the query-level setting; the burst from the
+/// configuration if it is set there, otherwise from the query-level burst setting, otherwise
+/// `Throttler::default_burst_seconds` times the rate. A zero rate leaves both at zero ("unlimited").
+void resolveGCSRequestRateLimit(
+    std::optional<UInt64> configured_rps, std::optional<UInt64> configured_burst,
+    UInt64 setting_rps, UInt64 setting_burst,
+    UInt64 & rps, UInt64 & burst);
 
 /// Build the GCS credentials the settings authenticate with, following the priority order of
 /// `chooseGCSCredentialSource`. Exposed separately from `getGCSClient` so that a consumer which

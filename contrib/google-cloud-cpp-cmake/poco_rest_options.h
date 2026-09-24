@@ -101,6 +101,17 @@ struct PocoRestProxyErrorReportOption
     using Type = std::function<void(const Poco::Net::HTTPClientSession::ProxyConfig &)>;
 };
 
+/// Called by the transport with the method of every storage request, before it borrows a session for
+/// it, so that ClickHouse can apply its request-rate throttlers (`s3_max_get_rps` / `s3_max_put_rps`
+/// and their bursts, the same limits the S3 transport applies in `PocoHTTPClient`). It may block for
+/// as long as the throttler requires. It runs on the thread issuing the request, is called for every
+/// attempt of a retried request, and must not throw. It is not called for the token requests of the
+/// `PocoRestAuthorizedUserOption` credential, which go to a different service.
+struct PocoRestRequestThrottleOption
+{
+    using Type = std::function<void(const std::string & method)>;
+};
+
 /// Called by the transport right before every HTTP request it sends, with the request method and
 /// its path-and-query. It lets ClickHouse count the REST calls the storage library makes on its own
 /// (the library pages `objects.list` lazily behind a `ListObjectsReader`, so the call site cannot

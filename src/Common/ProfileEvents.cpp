@@ -876,6 +876,19 @@ The server successfully detected this situation and will download merged part fr
     M(DiskGCSDeleteObjects, "Number of GCS API DeleteObject calls for a GCS disk.", ValueType::Number) \
     M(DiskGCSCopyObject, "Number of GCS API RewriteObject calls for a GCS disk.", ValueType::Number) \
     \
+    M(GCSGetRequestThrottlerCount, "Number of native GCS GET requests passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(GCSGetRequestThrottlerBlocked, "Number of native GCS GET requests blocked by throttler.", ValueType::Number) \
+    M(GCSGetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform native GCS GET request throttling.", ValueType::Microseconds) \
+    M(GCSPutRequestThrottlerCount, "Number of native GCS PUT, POST and PATCH requests (uploads, copies) passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(GCSPutRequestThrottlerBlocked, "Number of native GCS PUT, POST and PATCH requests (uploads, copies) blocked by throttler.", ValueType::Number) \
+    M(GCSPutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform native GCS PUT, POST and PATCH request throttling.", ValueType::Microseconds) \
+    M(DiskGCSGetRequestThrottlerCount, "Number of native GCS disk GET requests passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(DiskGCSGetRequestThrottlerBlocked, "Number of native GCS disk GET requests blocked by throttler.", ValueType::Number) \
+    M(DiskGCSGetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform native GCS disk GET request throttling.", ValueType::Microseconds) \
+    M(DiskGCSPutRequestThrottlerCount, "Number of native GCS disk PUT, POST and PATCH requests (uploads, copies) passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(DiskGCSPutRequestThrottlerBlocked, "Number of native GCS disk PUT, POST and PATCH requests (uploads, copies) blocked by throttler.", ValueType::Number) \
+    M(DiskGCSPutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform native GCS disk PUT, POST and PATCH request throttling.", ValueType::Microseconds) \
+    \
     M(ReadBufferFromGCSMicroseconds, "Time spent on reading from GCS.", ValueType::Microseconds) \
     M(ReadBufferFromGCSInitMicroseconds, "Time spent opening a GCS object read stream, which includes connecting.", ValueType::Microseconds) \
     M(ReadBufferFromGCSBytes, "Bytes read from GCS.", ValueType::Bytes) \

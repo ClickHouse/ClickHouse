@@ -26,7 +26,10 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
+#include <Common/Throttler.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <IO/HTTPRequestThrottler.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SocketPeerClosed.h>
@@ -39,10 +42,30 @@ namespace ProfileEvents
 {
     extern const Event GCSListObjects;
     extern const Event DiskGCSListObjects;
+    extern const Event GCSGetRequestThrottlerCount;
+    extern const Event GCSGetRequestThrottlerBlocked;
+    extern const Event GCSGetRequestThrottlerSleepMicroseconds;
+    extern const Event GCSPutRequestThrottlerCount;
+    extern const Event GCSPutRequestThrottlerBlocked;
+    extern const Event GCSPutRequestThrottlerSleepMicroseconds;
+    extern const Event DiskGCSGetRequestThrottlerCount;
+    extern const Event DiskGCSGetRequestThrottlerBlocked;
+    extern const Event DiskGCSGetRequestThrottlerSleepMicroseconds;
+    extern const Event DiskGCSPutRequestThrottlerCount;
+    extern const Event DiskGCSPutRequestThrottlerBlocked;
+    extern const Event DiskGCSPutRequestThrottlerSleepMicroseconds;
 }
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 s3_max_get_rps;
+    extern const SettingsUInt64 s3_max_get_burst;
+    extern const SettingsUInt64 s3_max_put_rps;
+    extern const SettingsUInt64 s3_max_put_burst;
+}
 
 namespace
 {
@@ -320,6 +343,26 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.http_keep_alive_max_requests
         = config.getUInt64(config_prefix + ".http_keep_alive_max_requests", DEFAULT_GCS_KEEP_ALIVE_MAX_REQUESTS);
 
+    /// The request-rate limits are read from the same keys an `s3` disk reads them from, with the same
+    /// fallback to the query-level settings of the context that creates the disk, so moving a disk
+    /// between the `s3` and `gcs` types keeps its limits.
+    const auto & settings = context->getSettingsRef();
+    auto get_optional = [&](const char * key) -> std::optional<UInt64>
+    {
+        const String path = config_prefix + "." + key;
+        if (!config.has(path))
+            return std::nullopt;
+        return config.getUInt64(path);
+    };
+    resolveGCSRequestRateLimit(
+        get_optional("s3_max_get_rps"), get_optional("s3_max_get_burst"),
+        settings[Setting::s3_max_get_rps], settings[Setting::s3_max_get_burst],
+        result.max_get_rps, result.max_get_burst);
+    resolveGCSRequestRateLimit(
+        get_optional("s3_max_put_rps"), get_optional("s3_max_put_burst"),
+        settings[Setting::s3_max_put_rps], settings[Setting::s3_max_put_burst],
+        result.max_put_rps, result.max_put_burst);
+
     /// The same lookup order an S3 disk uses (`S3Settings::loadFromConfigForObjectStorage`): the
     /// disk-local `<proxy>` section first, then the server-wide `<proxy>` configuration, then the
     /// `http_proxy` / `https_proxy` / `no_proxy` environment variables.
@@ -333,6 +376,25 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     validateGCSRefreshTokenTriple(result);
 
     return result;
+}
+
+void resolveGCSRequestRateLimit(
+    std::optional<UInt64> configured_rps, std::optional<UInt64> configured_burst,
+    UInt64 setting_rps, UInt64 setting_burst,
+    UInt64 & rps, UInt64 & burst)
+{
+    rps = configured_rps.value_or(setting_rps);
+    if (!rps)
+    {
+        burst = 0;
+        return;
+    }
+    if (configured_burst)
+        burst = *configured_burst;
+    else if (setting_burst)
+        burst = setting_burst;
+    else
+        burst = Throttler::default_burst_seconds * rps;
 }
 
 bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSettings & other) const
@@ -377,6 +439,10 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
         && retry_attempts == other.retry_attempts
         && http_keep_alive_timeout == other.http_keep_alive_timeout
         && http_keep_alive_max_requests == other.http_keep_alive_max_requests
+        && max_get_rps == other.max_get_rps
+        && max_get_burst == other.max_get_burst
+        && max_put_rps == other.max_put_rps
+        && max_put_burst == other.max_put_burst
         /// Resolvers are compared by identity: two of them can hand out different proxies (and a
         /// remote one cannot be asked what it would answer without querying it), so only the very
         /// same resolver object is known to describe the same transport. The cost of the
@@ -590,6 +656,52 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
             gcsProxyProtocol(settings.endpoint_override), context->getConfigRef());
     options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(makeGCSProxyConfigProvider(proxy_resolver));
     options.set<::ClickHouse::PocoRestProxyErrorReportOption>(makeGCSProxyErrorReporter(proxy_resolver));
+
+    /// The request-rate throttlers, applied per HTTP request (every attempt of a retried one) and by
+    /// method, exactly as `PocoHTTPClient` applies them to S3 requests: GET and HEAD consume the GET
+    /// budget, PUT, POST and PATCH (uploads, rewrites) the PUT budget, and DELETE neither.
+    if (settings.max_get_rps || settings.max_put_rps)
+    {
+        auto request_throttler = std::make_shared<HTTPRequestThrottler>();
+        if (settings.max_get_rps)
+        {
+            request_throttler->get_throttler = std::make_shared<Throttler>(
+                settings.max_get_rps,
+                settings.max_get_burst,
+                ProfileEvents::GCSGetRequestThrottlerCount,
+                ProfileEvents::GCSGetRequestThrottlerSleepMicroseconds);
+            request_throttler->get_blocked = ProfileEvents::GCSGetRequestThrottlerBlocked;
+            if (settings.for_disk)
+            {
+                request_throttler->disk_get_amount = ProfileEvents::DiskGCSGetRequestThrottlerCount;
+                request_throttler->disk_get_blocked = ProfileEvents::DiskGCSGetRequestThrottlerBlocked;
+                request_throttler->disk_get_sleep_us = ProfileEvents::DiskGCSGetRequestThrottlerSleepMicroseconds;
+            }
+        }
+        if (settings.max_put_rps)
+        {
+            request_throttler->put_throttler = std::make_shared<Throttler>(
+                settings.max_put_rps,
+                settings.max_put_burst,
+                ProfileEvents::GCSPutRequestThrottlerCount,
+                ProfileEvents::GCSPutRequestThrottlerSleepMicroseconds);
+            request_throttler->put_blocked = ProfileEvents::GCSPutRequestThrottlerBlocked;
+            if (settings.for_disk)
+            {
+                request_throttler->disk_put_amount = ProfileEvents::DiskGCSPutRequestThrottlerCount;
+                request_throttler->disk_put_blocked = ProfileEvents::DiskGCSPutRequestThrottlerBlocked;
+                request_throttler->disk_put_sleep_us = ProfileEvents::DiskGCSPutRequestThrottlerSleepMicroseconds;
+            }
+        }
+        options.set<::ClickHouse::PocoRestRequestThrottleOption>(
+            [request_throttler](const std::string & method)
+            {
+                if (method == "GET" || method == "HEAD")
+                    request_throttler->throttleHTTPGet();
+                else if (method == "PUT" || method == "POST" || method == "PATCH")
+                    request_throttler->throttleHTTPPut();
+            });
+    }
 
     /// A listing is paged lazily inside `ListObjectsReader`, so the call site sees one call while the
     /// library issues one `objects.list` request per page. Count them where they are actually sent,

@@ -639,6 +639,7 @@ class PocoRestClient : public RestClient {
       auto credential_options = options_;
       credential_options.unset<::ClickHouse::PocoRestAuthorizedUserOption>();
       credential_options.unset<CustomHeadersOption>();
+      credential_options.unset<::ClickHouse::PocoRestRequestThrottleOption>();
       credentials_ = oauth2_internal::Decorate(
           std::make_shared<oauth2_internal::AuthorizedUserCredentials>(
               std::move(info), credential_options,
@@ -817,6 +818,13 @@ class PocoRestClient : public RestClient {
     // query string instead: the round trip therefore silently reads, heads and
     // deletes a *different*, non-existent resource while writes keep working.
     Poco::URI uri(url, /*enable_url_encoding=*/false);
+    // Throttle before borrowing a session, so that a request waiting for the
+    // throttler does not keep a pooled keep-alive connection idle meanwhile.
+    if (options.has<::ClickHouse::PocoRestRequestThrottleOption>()) {
+      auto const& throttle =
+          options.get<::ClickHouse::PocoRestRequestThrottleOption>();
+      if (throttle) throttle(method);
+    }
     SessionPoolTicket ticket;
     auto session = MakeSession(uri, options, &ticket);
     if (used_proxy != nullptr) *used_proxy = ticket.proxy;
