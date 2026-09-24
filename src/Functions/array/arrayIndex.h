@@ -95,8 +95,9 @@ constexpr size_t getOptimizedSearchMinSize()
 {
     if constexpr (sizeof(T) == 1)
     {
-        /// memchr is kept out of line, so short rows stay on the scalar path.
-        return 64;
+        /// has() checks an eight-element prefix before memchr, while short indexOf() rows
+        /// are faster on the scalar path because memchr call overhead dominates.
+        return IsIndexOf ? 64 : 8;
     }
     else if constexpr (!IsIndexOf)
     {
@@ -109,7 +110,7 @@ constexpr size_t getOptimizedSearchMinSize()
     }
     else
     {
-        /// indexOf does a scalar prefix before the first-index reduction or presence probe.
+        /// indexOf does a scalar prefix before the presence probe.
         if constexpr (sizeof(T) == 2 || sizeof(T) == 4)
             return 80;
         else

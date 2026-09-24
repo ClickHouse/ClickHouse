@@ -23,21 +23,6 @@ ALWAYS_INLINE bool hasInBlock(const T * data, T value)
     return found != 0;
 }
 
-template <typename T, size_t N>
-ALWAYS_INLINE size_t findFirstIndexInBlock(const T * data, T value)
-{
-    constexpr unsigned not_found = static_cast<unsigned>(N);
-    unsigned found = not_found;
-
-    for (unsigned j = 0; j < not_found; ++j)
-    {
-        const unsigned candidate = data[j] == value ? j : not_found;
-        found = std::min(found, candidate);
-    }
-
-    return found;
-}
-
 template <SupportedNumeric T>
 ALWAYS_INLINE bool findNumericHasInternal(const T * data, size_t size, T value)
 {
@@ -104,29 +89,16 @@ ALWAYS_INLINE size_t findNumericIndexOfInternal(const T * data, size_t size, T v
     else
     {
         constexpr size_t block_size = 64 / sizeof(T);
-        constexpr size_t direct_index_limit = 1024 / sizeof(T);
         size_t i = 0;
 
-        if (size <= direct_index_limit)
+        for (; size - i >= block_size; i += block_size)
         {
-            for (; size - i >= block_size; i += block_size)
-            {
-                const size_t found = findFirstIndexInBlock<T, block_size>(data + i, value);
-                if (found != block_size)
-                    return i + found;
-            }
-        }
-        else
-        {
-            for (; size - i >= block_size; i += block_size)
-            {
-                if (!hasInBlock<T, block_size>(data + i, value))
-                    continue;
+            if (!hasInBlock<T, block_size>(data + i, value))
+                continue;
 
-                for (size_t j = 0; j < block_size; ++j)
-                    if (data[i + j] == value)
-                        return i + j;
-            }
+            for (size_t j = 0; j < block_size; ++j)
+                if (data[i + j] == value)
+                    return i + j;
         }
 
         for (; i < size; ++i)
