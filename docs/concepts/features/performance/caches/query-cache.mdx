@@ -37,8 +37,9 @@ In ClickHouse Cloud, you must use [query level settings](/concepts/features/conf
 </Note>
 
 <Note>
-[clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) runs a single query at a time. Since query result caching does not make sense, the query
-result cache is disabled in clickhouse-local.
+[clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) runs a single query at a time. Since caching query results in memory does not make sense
+for a single process, the in-memory query cache is disabled in clickhouse-local. The [query cache on disk](#query-cache-on-disk) is available: its entries live in a
+filesystem cache on disk, so results cached by one clickhouse-local process can be served to later ones which use the same filesystem cache directory.
 </Note>
 
 Setting [use_query_cache](/reference/settings/session-settings/use-query#use_query_cache) can be used to control whether a specific query or all queries of the
