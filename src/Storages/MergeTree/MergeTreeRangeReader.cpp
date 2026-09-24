@@ -1724,7 +1724,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header) const
+void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool keep_additional_columns) const
 {
     result.checkInternalConsistency();
 
@@ -1802,14 +1802,19 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// Additional columns are needed by the later steps of the chain, and after the last one by
         /// `MergeTreeReadersChain::applyPatchesAfterReader`: a `DEFAULT` column of the result is
         /// evaluated again when a patch part overwrites a column its expression reads, and that
-        /// column may be one the step projected out.
-        for (auto & col : additional_columns)
+        /// column may be one the step projected out. The caller tells whether they are needed.
+        /// A column the action outputs is in `block` and is not stored here, so the stored columns
+        /// are exactly the ones the action passed through unchanged or dropped.
+        if (keep_additional_columns)
         {
-            /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
-            /// TODO: also need to exclude the columns that are not needed for the next steps.
-            if (block.has(col.name))
-                continue;
-            result.additional_columns.insert(col);
+            for (auto & col : additional_columns)
+            {
+                /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
+                /// TODO: also need to exclude the columns that are not needed for the next steps.
+                if (block.has(col.name))
+                    continue;
+                result.additional_columns.insert(col);
+            }
         }
     }
 
