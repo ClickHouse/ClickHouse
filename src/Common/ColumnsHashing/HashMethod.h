@@ -3,6 +3,7 @@
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <algorithm>
 #include <bit>
 #include <limits>
 #include <Columns/ColumnFixedString.h>
@@ -471,9 +472,15 @@ struct HashMethodKeysFixed
 
     PaddedPODArray<Key> prepared_keys;
 
-    /// Set when this state covers only a sub-range of the block: `prepared_keys` stays empty and keys
-    /// are packed one row at a time instead.
-    bool pack_keys_per_row = false;
+    /// Set when this state covers only a sub-range of the block. `prepared_keys` then holds that
+    /// sub-range, starting at `prepared_keys_begin`, or is empty; a row it does not hold is packed on
+    /// its own.
+    bool covers_sub_range = false;
+    size_t prepared_keys_begin = 0;
+
+    /// A sub-range shorter than this is packed per row: the array would cost more to allocate and fill
+    /// than the rows it saves packing.
+    static constexpr size_t min_rows_to_batch_pack_sub_range = 256;
 
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
@@ -510,14 +517,24 @@ struct HashMethodKeysFixed
 
         if (usePreparedKeys(key_sizes))
         {
-            /// Batch-packing costs one pass over the whole column, so a state that will be asked about
-            /// only a sub-range does not batch at all: one state per run of a sorted prefix would
+            /// Batch-packing costs one pass over the rows it packs, so a state that will be asked about
+            /// only a sub-range packs just that sub-range: one state per run of a sorted prefix would
             /// otherwise pay for the whole block each time. Same trade as `Params::aggregation_in_order`.
             const size_t block_rows = key_columns.empty() ? 0 : key_columns[0]->size();
-            if (rows.begin == 0 && rows.end >= block_rows)
+            const size_t rows_end = std::min(rows.end, block_rows);
+            if (rows.begin == 0 && rows_end >= block_rows)
+            {
                 packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+            }
             else
-                pack_keys_per_row = true;
+            {
+                covers_sub_range = true;
+                if (rows_end > rows.begin && rows_end - rows.begin >= min_rows_to_batch_pack_sub_range)
+                {
+                    prepared_keys_begin = rows.begin;
+                    packFixedBatchRange(keys_size, Base::getActualColumns(), key_sizes, prepared_keys, rows.begin, rows_end);
+                }
+            }
         }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -586,11 +603,16 @@ struct HashMethodKeysFixed
                 return packFixed<Key, true>(row, keys_size, low_cardinality_keys.nested_columns, key_sizes,
                                             &low_cardinality_keys.positions, &low_cardinality_keys.position_sizes);
 
+            if (covers_sub_range)
+            {
+                const size_t index = row - prepared_keys_begin;
+                if (index < prepared_keys.size())
+                    return prepared_keys[index];
+                return packFixedLongestFirst<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
+            }
+
             if (!prepared_keys.empty())
                 return prepared_keys[row];
-
-            if (pack_keys_per_row)
-                return packFixedLongestFirst<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
             if constexpr (sizeof(Key) <= 16)

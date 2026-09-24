@@ -88,6 +88,46 @@ void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
     fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
 }
 
+/// Same as fillFixedBatch, but only over rows [begin, end): `out` holds one element per row of that
+/// range, so its element `i` is row `begin + i`.
+template <typename T, typename Key>
+void fillFixedBatchRange(
+    size_t keys_size,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    size_t begin,
+    size_t end,
+    PaddedPODArray<Key> & out,
+    size_t & offset)
+{
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        if (key_sizes[i] == sizeof(T))
+        {
+            out.resize_fill(end - begin);
+
+            /// Note: here we violate strict aliasing, as fillFixedBatch does.
+            const char * source = static_cast<const ColumnFixedSizeHelper *>(key_columns[i])->getRawDataBegin<sizeof(T)>();
+            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
+            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(end - begin, reinterpret_cast<const T *>(source) + begin, dest);
+            offset += sizeof(T);
+        }
+    }
+}
+
+/// Same as packFixedBatch, but only over rows [begin, end), which must be a non-empty range.
+template <typename T>
+void packFixedBatchRange(
+    size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<T> & out, size_t begin, size_t end)
+{
+    size_t offset = 0;
+    fillFixedBatchRange<UInt128>(keys_size, key_columns, key_sizes, begin, end, out, offset);
+    fillFixedBatchRange<UInt64>(keys_size, key_columns, key_sizes, begin, end, out, offset);
+    fillFixedBatchRange<UInt32>(keys_size, key_columns, key_sizes, begin, end, out, offset);
+    fillFixedBatchRange<UInt16>(keys_size, key_columns, key_sizes, begin, end, out, offset);
+    fillFixedBatchRange<UInt8>(keys_size, key_columns, key_sizes, begin, end, out, offset);
+}
+
 template <typename Key, size_t ELEMENT_SIZE>
 static inline void ALWAYS_INLINE fillFixedLongestFirst(
     size_t row, size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, char * bytes, size_t & offset)

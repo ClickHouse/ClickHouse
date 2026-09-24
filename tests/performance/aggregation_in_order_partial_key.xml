@@ -24,5 +24,16 @@
     <!-- Control: the whole-block batched key pack, which keeps its batching and must not regress. -->
     <query>WITH number % 4000000 AS k1, (number * 7) % 4000000 AS k2 SELECT k1, k2, count() FROM numbers_mt(10000000) GROUP BY k1, k2 SETTINGS optimize_aggregation_in_order = 0 FORMAT Null</query>
 
+    <!-- The other end of the same trade: runs of 65536 equal `a`, so a block holds one or two of them
+         and a state covers nearly all of it. Packing such a state's keys one row at a time is slower
+         than the whole-block batch it replaces, which is what these two queries hold to parity. -->
+    <create_query>CREATE TABLE agg_in_order_long_runs (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a</create_query>
+    <fill_query>INSERT INTO agg_in_order_long_runs SELECT intDiv(number, 65536), number * 7, number * 11 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE agg_in_order_long_runs FINAL</fill_query>
+
+    <query>SELECT a, b, count() FROM agg_in_order_long_runs GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+    <query>SELECT DISTINCT a, b, c FROM agg_in_order_long_runs SETTINGS optimize_distinct_in_order = 1 FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS agg_in_order_partial_key</drop_query>
+    <drop_query>DROP TABLE IF EXISTS agg_in_order_long_runs</drop_query>
 </test>
