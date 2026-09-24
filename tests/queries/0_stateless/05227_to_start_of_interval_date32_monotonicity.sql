@@ -7,10 +7,13 @@
 -- path.
 
 SET session_timezone = 'UTC';
+-- The `EXPLAIN` checks count the granules the primary key keeps, so the tables have no column statistics
+-- (`auto_statistics_types` is randomized, and a `minmax` statistic prunes whole parts before the primary key
+-- is consulted) and an adaptive granularity, whose final mark lets the primary key prune the last granule.
 
 DROP TABLE IF EXISTS t_interval_date32;
 CREATE TABLE t_interval_date32 (d Date32) ENGINE = MergeTree ORDER BY d
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, auto_statistics_types = '';
 INSERT INTO t_interval_date32 VALUES ('1900-01-01'),('1969-12-31'),('2000-01-01'),('2149-06-06'),('2200-01-01'),('2299-12-31');
 
 SELECT count() FROM t_interval_date32 WHERE toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2050-01-01', 'UTC');
@@ -25,7 +28,7 @@ SELECT countIf(dateTrunc('day', d) >= toDateTime('2050-01-01', 'UTC')) FROM t_in
 SELECT 'the index is still used when the whole range fits the result type';
 DROP TABLE IF EXISTS t_interval_in_range;
 CREATE TABLE t_interval_in_range (d Date32) ENGINE = MergeTree ORDER BY d
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, auto_statistics_types = '';
 INSERT INTO t_interval_in_range SELECT toDate32('2000-01-01') + number FROM numbers(100);
 SELECT count() FROM t_interval_in_range WHERE toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2000-03-01', 'UTC') SETTINGS force_primary_key = 1;
 SELECT countIf(toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2000-03-01', 'UTC')) FROM t_interval_in_range;
@@ -34,7 +37,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_interval_in_range W
 SELECT 'a DateTime64 argument saturates and stays monotonic';
 DROP TABLE IF EXISTS t_interval_dt64;
 CREATE TABLE t_interval_dt64 (d DateTime64(3)) ENGINE = MergeTree ORDER BY d
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, auto_statistics_types = '';
 INSERT INTO t_interval_dt64 VALUES ('1900-01-01 00:00:00.000'),('2000-01-01 00:00:00.000'),('2200-01-01 00:00:00.000');
 SELECT count() FROM t_interval_dt64 WHERE toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2100-01-01') SETTINGS force_primary_key = 1;
 SELECT countIf(toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2100-01-01')) FROM t_interval_dt64;
@@ -42,7 +45,7 @@ SELECT countIf(toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2100-01-01')) FR
 SELECT 'a Date result keeps the index up to its own 2149-06-06 limit, not the narrower DateTime one';
 DROP TABLE IF EXISTS t_interval_date_result;
 CREATE TABLE t_interval_date_result (d Date32) ENGINE = MergeTree ORDER BY d
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, auto_statistics_types = '';
 INSERT INTO t_interval_date_result SELECT toDate32('2107-01-01') + number * 366 FROM numbers(30);
 SELECT count() FROM t_interval_date_result WHERE toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2120-01-01') SETTINGS force_primary_key = 1;
 SELECT countIf(toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2120-01-01')) FROM t_interval_date_result;
@@ -72,7 +75,7 @@ SELECT 'a week rounding just after the epoch reaches back before it and wraps as
 -- was mapped through the rounding as if it were increasing, which prunes it away entirely.
 DROP TABLE IF EXISTS t_interval_epoch;
 CREATE TABLE t_interval_epoch (d Date32) ENGINE = MergeTree ORDER BY d
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, auto_statistics_types = '';
 INSERT INTO t_interval_epoch SELECT toDate32('1970-01-01') + number FROM numbers(10);
 SELECT toStartOfInterval(toDate32('1970-01-01'), INTERVAL 1 WEEK);
 SELECT count() FROM t_interval_epoch WHERE toStartOfInterval(d, INTERVAL 1 WEEK) = toDate('2149-06-04');
@@ -87,7 +90,7 @@ SELECT 'the window follows the rounding, not a fixed cutoff: a year or month rou
 -- the month rounding of every day of June 2149 is 2149-06-01, so those ranges stay monotonic and prunable.
 DROP TABLE IF EXISTS t_interval_late_2149;
 CREATE TABLE t_interval_late_2149 (d Date32) ENGINE = MergeTree ORDER BY d
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, auto_statistics_types = '';
 INSERT INTO t_interval_late_2149 SELECT toDate32('2149-06-07') + number FROM numbers(24);
 SELECT count() FROM t_interval_late_2149 WHERE toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2149-01-01') SETTINGS force_primary_key = 1;
 SELECT countIf(toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2149-01-01')) FROM t_interval_late_2149;
@@ -107,7 +110,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_interval_epoch WHER
 SELECT 'a Nullable(Date32) key is guarded as well';
 DROP TABLE IF EXISTS t_interval_nullable;
 CREATE TABLE t_interval_nullable (d Nullable(Date32)) ENGINE = MergeTree ORDER BY d
-    SETTINGS allow_nullable_key = 1, index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS allow_nullable_key = 1, index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, auto_statistics_types = '';
 INSERT INTO t_interval_nullable VALUES ('1900-01-01'),('1969-12-31'),('2000-01-01'),('2149-06-06'),('2200-01-01'),('2299-12-31'),(NULL);
 SELECT count() FROM t_interval_nullable WHERE toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2050-01-01', 'UTC');
 SELECT countIf(toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2050-01-01', 'UTC')) FROM t_interval_nullable;
@@ -125,7 +128,7 @@ SELECT 'a day rounding west of UTC runs out of DateTime a day earlier than in UT
 -- the session here, which is where the result type takes it from as well.
 DROP TABLE IF EXISTS t_interval_tz;
 CREATE TABLE t_interval_tz (d Date32) ENGINE = MergeTree ORDER BY d
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, auto_statistics_types = '';
 INSERT INTO t_interval_tz VALUES ('2106-02-05'),('2106-02-06'),('2106-02-07');
 SET session_timezone = 'America/Hermosillo';
 SELECT toStartOfInterval(toDate32('2106-02-07'), INTERVAL 1 DAY, 'UTC'), toStartOfInterval(toDate32('2106-02-07'), INTERVAL 1 DAY);
