@@ -4,7 +4,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
@@ -57,7 +57,7 @@ struct JoinOnKeyColumns
     /// index selectors visit a subset of the source block); the rest of `buffer` stays
     /// uninitialized and must not be read.
     const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
-    /// `PartitionedHashJoin::joinRightColumns` calls this overload when its selector holds
+    /// `HashJoin::joinRightColumns` calls this overload when its selector holds
     /// row indexes rather than one continuous range.
     const UInt8 * buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const;
 };
@@ -169,8 +169,8 @@ struct EmitPlan
 
 /// `type_name` is parallel to `positions`. `with_gather` is false for joinGet, whose output type may
 /// wrap the stored one in `Nullable` and which emits row by row through `buildJoinGetOutput`.
-EmitPlan
-planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> positions, const NamesAndTypes & type_name, bool with_gather);
+EmitPlan planJoinEmit(
+    const HashJoinTypes::RightTableData & data, std::span<const size_t> positions, const NamesAndTypes & type_name, bool with_gather);
 
 /// Records the probe's matches as encoded ref words. Every strictness records rather than emits:
 /// the output columns are built later, by the emit kernels, from the words this collects.
@@ -182,11 +182,13 @@ public:
         const ScatteredBlock & left_block_,
         const Block & block_with_columns_to_add,
         const Block & saved_block_sample,
-        const HashJoin & join,
+        const TableJoin & table_join,
+        const HashJoinTypes::RightTableData & joined_data,
+        bool enable_prefetch_,
         std::vector<JoinOnKeyColumns> && join_on_keys_,
         ExpressionActionsPtr additional_filter_expression_,
         const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos_,
-        bool is_asof_join,
+        const ColumnWithTypeAndName * right_asof_column,
         bool is_join_get_,
         bool record_refs_for_stats)
         : left_block(left_block_.getSourceBlock())
@@ -194,11 +196,11 @@ public:
         , additional_filter_expression(additional_filter_expression_)
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
-        , enable_prefetch(join.enableSoftwarePrefetch())
+        , enable_prefetch(enable_prefetch_)
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
-        if (is_asof_join)
+        if (right_asof_column)
             ++num_columns_to_add;
 
         record_row_refs = num_columns_to_add > 0 || record_refs_for_stats;
@@ -210,27 +212,26 @@ public:
         std::vector<size_t> right_indexes;
         right_indexes.reserve(num_columns_to_add);
 
-        lazy_output.output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
-        lazy_output.join_data_sorted = join.getJoinedData()->sorted;
-        lazy_output.join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
-        lazy_output.stored_columns = join.getJoinedData()->stored_columns_index->blocksData();
-        lazy_output.block_row_stores = join.getJoinedData()->stored_columns_index->rowStoresData();
+        lazy_output.output_by_row_list_threshold = table_join.outputByRowListPerkeyRowsThreshold();
+        lazy_output.join_data_sorted = joined_data.sorted;
+        lazy_output.join_data_avg_perkey_rows = joined_data.avgPerKeyRows();
+        lazy_output.stored_columns = joined_data.stored_columns_index->blocksData();
+        lazy_output.block_row_stores = joined_data.stored_columns_index->rowStoresData();
 
         for (const auto & src_column : block_with_columns_to_add)
         {
             /// Column names `src_column.name` and `qualified_name` can differ for StorageJoin,
             /// because it uses not qualified right block column names
-            auto qualified_name = join.getTableJoin().renamedRightColumnName(src_column.name);
+            auto qualified_name = table_join.renamedRightColumnName(src_column.name);
             /// Don't insert column if it's in left block
             if (!left_block.has(qualified_name))
                 addColumn(src_column);
         }
 
-        if (is_asof_join)
+        if (right_asof_column)
         {
             chassert(join_on_keys.size() == 1);
-            const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
-            addColumn(right_asof_column);
+            addColumn(*right_asof_column);
             left_asof_key = join_on_keys[0].key_columns.back();
         }
 
@@ -248,7 +249,7 @@ public:
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
 
-        EmitPlan plan = planJoinEmit(*join.getJoinedData(), right_indexes, lazy_output.type_name, !is_join_get);
+        EmitPlan plan = planJoinEmit(joined_data, right_indexes, lazy_output.type_name, !is_join_get);
         lazy_output.output_access_indexes = std::move(plan.access_indexes);
         lazy_output.emit_gather = std::move(plan.gather);
         lazy_output.has_row_store = plan.has_row_store;

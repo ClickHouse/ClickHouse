@@ -1,8 +1,8 @@
-#include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
+#include <Interpreters/HashJoin/JoinRouteHashing.h>
 
 #include <Interpreters/HashJoin/KeyGetter.h>
-#include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
-#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
+#include <Interpreters/HashJoin/DenseHyperLogLog.h>
+#include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Common/Arena.h>
 
 #include <algorithm>
@@ -53,7 +53,7 @@ void computeFixedRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key
     }
 }
 
-template <HashJoin::Type type, typename Table>
+template <HashJoinTypes::Type type, typename Table>
 void computeRoutesForTable(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog & hll)
 {
     /// The routing only reads keys, so the getter needs no `JoinUsedFlags` offset.
@@ -67,7 +67,7 @@ void computeRoutesForTable(const ColumnRawPtrs & key_columns, const Sizes & key_
 }
 
 void computeJoinRoutesForFill(
-    HashJoin::Type type,
+    HashJoinTypes::Type type,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     size_t rows,
@@ -82,8 +82,8 @@ void computeJoinRoutesForFill(
     switch (type)
     {
 #define M(TYPE) \
-    case HashJoin::Type::TYPE: \
-        computeRoutesForTable<HashJoin::Type::TYPE, typename decltype(HashJoinTableMapsAll::TYPE)::element_type>( \
+    case HashJoinTypes::Type::TYPE: \
+        computeRoutesForTable<HashJoinTypes::Type::TYPE, typename decltype(HashJoinTableMapsAll::TYPE)::element_type>( \
             key_columns, key_sizes, rows, skip, routes, hll); \
         return;
         APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)

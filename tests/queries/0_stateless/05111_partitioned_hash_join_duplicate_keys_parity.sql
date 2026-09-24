@@ -60,7 +60,7 @@ SELECT
     number AS p
 FROM numbers(450000);
 
-SELECT 'hash is selected', count() > 0 FROM (EXPLAIN actions = 1 SELECT p.p FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
+SELECT 'hash is selected', count() > 0 FROM (EXPLAIN actions = 1 SELECT p.p FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') WHERE explain LIKE '%Algorithm: HashJoin%';
 
 SELECT 'inner all uint64', pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)

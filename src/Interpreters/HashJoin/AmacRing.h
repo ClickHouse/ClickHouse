@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/HashJoin/KeyGetter.h>
-#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
+#include <Interpreters/HashJoin/HashJoinTable.h>
 #include <base/defines.h>
 #include <Common/ColumnsHashing.h>
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
 #include <Interpreters/JoinUtils.h>
 #include <base/types.h>
 #include <Core/Joins.h>
@@ -121,8 +121,8 @@ public:
 
     void collectNonJoined(UInt64 non_joined_rows);
 
-    void prepareRightFlagsIfNeeded(const HashJoin::StoredBlocksList & stored_blocks);
-    void prepareRightFlags(const HashJoin::StoredBlocksList & stored_blocks);
+    void prepareRightFlagsIfNeeded(const HashJoinTypes::StoredBlocksList & stored_blocks);
+    void prepareRightFlags(const HashJoinTypes::StoredBlocksList & stored_blocks);
     bool hasRightFlags() const { return right_rows_flags != nullptr; }
 
     UInt64 getInputLeft() const { return left_rows_total.load(std::memory_order_relaxed); }

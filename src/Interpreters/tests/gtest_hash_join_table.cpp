@@ -12,11 +12,11 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/PartitionedHashJoin/AmacRing.h>
-#include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
-#include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
-#include <Interpreters/PartitionedHashJoin/RangeCommittedBuffer.h>
-#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
+#include <Interpreters/HashJoin/AmacRing.h>
+#include <Interpreters/HashJoin/DenseHyperLogLog.h>
+#include <Interpreters/HashJoin/JoinRouteHashing.h>
+#include <Interpreters/HashJoin/RangeCommittedBuffer.h>
+#include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <base/getPageSize.h>
@@ -352,7 +352,7 @@ TEST(HashJoinTable, RoutesMatchTablePlacement)
         const Sizes key_sizes{sizeof(UInt64)};
         PaddedPODArray<UInt16> routes(uint64_key->size());
         DenseHyperLogLog hll;
-        computeJoinRoutesForFill(HashJoin::Type::key64, key_columns, key_sizes, uint64_key->size(), nullptr, routes.data(), hll);
+        computeJoinRoutesForFill(HashJoinTypes::Type::key64, key_columns, key_sizes, uint64_key->size(), nullptr, routes.data(), hll);
         EXPECT_NEAR(hll.estimate(), static_cast<double>(uint64_key->size()), 0.05 * static_cast<double>(uint64_key->size()));
 
         for (const size_t bits : {1uz, 9uz, 15uz})
@@ -384,7 +384,7 @@ TEST(HashJoinTable, RoutesMatchTablePlacement)
         const Sizes key_sizes{0};
         PaddedPODArray<UInt16> routes(rows);
         DenseHyperLogLog hll;
-        computeJoinRoutesForFill(HashJoin::Type::key_string, key_columns, key_sizes, rows, nullptr, routes.data(), hll);
+        computeJoinRoutesForFill(HashJoinTypes::Type::key_string, key_columns, key_sizes, rows, nullptr, routes.data(), hll);
 
         constexpr size_t bits = 7;
         StringTable table(/*size_degree_=*/16, bits);

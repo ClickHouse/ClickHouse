@@ -29,7 +29,7 @@ Positions: 4 0 1 2
             __table2.value String
     Type: INNER
     Strictness: ALL
-    Algorithm: PartitionedHashJoin
+    Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
       Expression (Left Pre Join Actions)
       Header: __table1.id UInt64
@@ -121,7 +121,7 @@ Positions: 4 0 1 2
             __table2.value String
     Type: INNER
     Strictness: ALL
-    Algorithm: PartitionedHashJoin
+    Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
       Expression (Left Pre Join Actions)
       Header: __table1.id UInt64
@@ -213,7 +213,7 @@ Positions: 4 0 1 2
             __table2.value String
     Type: INNER
     Strictness: ALL
-    Algorithm: PartitionedHashJoin
+    Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
       Expression (Left Pre Join Actions)
       Header: __table1.id UInt64

@@ -1,5 +1,4 @@
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 
 namespace DB
 {
@@ -10,20 +9,18 @@ extern const int LOGICAL_ERROR;
 }
 
 /** Each combination's maps shape mirrors the `MapGetter` table. Only combinations a real query plan
-  * can reach are listed; anything else is a logic error, as in `HashJoin::joinBlock`.
+  * can reach are listed; anything else is a logic error.
   * `prefer_use_maps_all` is set when the barrier promoted ALL to RightAny on a unique-key build:
   * the ALL-built `RowRefList` maps are probed with RightAny semantics and skip replication. It is
   * also set for a mixed ON condition, whose residual filter has to see every right row of a key
   * before it can decide: those joins run on `RowRefList` maps whatever their strictness.
   *
-  * Bodies live in `PartitionedHashJoinProbeImpl.h`, instantiated per kind so no one translation
+  * Bodies live in `HashJoinProbeImpl.h`, instantiated per kind so no one translation
   * unit compiles them all.
   */
-JoinResultPtr PartitionedHashJoin::probeDispatch(Block block, size_t lane)
+JoinResultPtr HashJoin::probeDispatch(Block block, size_t lane)
 {
-    const JoinKind kind = hash_join->getKind();
-    const JoinStrictness strictness = hash_join->getStrictness();
-    const bool prefer_use_maps_all = hash_join->preferUseMapsAll();
+    const bool prefer_use_maps_all = preferUseMapsAll();
 
     using enum JoinKind;
     using enum JoinStrictness;
@@ -104,7 +101,7 @@ JoinResultPtr PartitionedHashJoin::probeDispatch(Block block, size_t lane)
         }
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination for PartitionedHashJoin: {} {}", strictness, kind);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination for HashJoin: {} {}", strictness, kind);
 }
 
 }

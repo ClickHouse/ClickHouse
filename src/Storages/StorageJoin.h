@@ -13,8 +13,8 @@ namespace DB
 {
 
 class TableJoin;
-class PartitionedHashJoin;
-using PartitionedHashJoinPtr = std::shared_ptr<PartitionedHashJoin>;
+class HashJoin;
+using HashJoinPtr = std::shared_ptr<HashJoin>;
 
 /** Allows you save the state for later use on the right side of the JOIN.
   * When inserted into a table, the data will be inserted into the state,
@@ -49,7 +49,7 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
-    /// The query's join over this table: a `PartitionedHashJoin` sharing the table and the stored blocks
+    /// The query's join over this table: a `HashJoin` sharing the table and the stored blocks
     /// by pointer, holding the lock that protects them from insertions for as long as it lives.
     JoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const;
     JoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const;
@@ -114,7 +114,7 @@ private:
     bool overwrite;
 
     std::shared_ptr<TableJoin> table_join;
-    PartitionedHashJoinPtr join;
+    HashJoinPtr join;
 
     /// Protect state for concurrent use in insertFromBlock and joinBlock.
     /// Lock is stored in the query's join instance during query and blocks concurrent insertions.

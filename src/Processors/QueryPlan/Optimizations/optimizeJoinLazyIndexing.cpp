@@ -1,4 +1,4 @@
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IJoin.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>

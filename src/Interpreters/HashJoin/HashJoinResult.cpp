@@ -121,7 +121,7 @@ static void appendRightColumns(
     }
 
     std::set<size_t> block_columns_to_erase;
-    if (HashJoin::canRemoveColumnsFromLeftBlock(table_join))
+    if (JoinCommon::canRemoveColumnsFromLeftBlock(table_join))
     {
         /// Keep left columns matching getOutputColumns(Left) by name AND multiplicity: it may list a
         /// name fewer times than the physical block holds it, and the surviving count must equal

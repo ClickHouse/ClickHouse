@@ -4,7 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/castTypeToEither.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
@@ -20,7 +20,7 @@ namespace DB
   * up in a table indexed by key value - the 8- and 16-bit key maps, or a `range*` map the post-build
   * conversion built from a dense `key32` / `key64` table - a membership probe of that table is exact and
   * cheaper, so it replaces the planner's filter under the same lookup key. The maps struct is a template
-  * parameter: `HashJoin::MapsTemplate` and the partitioned join's shared maps name their fixed tables
+  * parameter: `HashJoinTypes::MapsTemplate` and the partitioned join's shared maps name their fixed tables
   * alike, and the `shared_ptr` the probe function captures keeps the table alive past the join.
   */
 namespace SharedFixedHashTableFilterDetail
@@ -161,9 +161,9 @@ buildSharedFilterProbeFn(std::shared_ptr<HashMapT> range_map_arg, std::make_unsi
 
 /// The types whose table is indexed by key value: the 8- and 16-bit key maps over their whole key space,
 /// and the range maps over `[min_key, min_key + size)`.
-inline bool isFixedHashTableType(HashJoin::Type type)
+inline bool isFixedHashTableType(HashJoinTypes::Type type)
 {
-    using enum HashJoin::Type;
+    using enum HashJoinTypes::Type;
     switch (type)
     {
         case key8:
@@ -186,8 +186,8 @@ inline bool isFixedHashTableType(HashJoin::Type type)
 /// signed or unsigned counterpart of the table's key. Empty when `type` is not a fixed table or the
 /// table was never created.
 template <typename Maps>
-SharedFixedHashTableRuntimeFilter::ProbeFn
-sharedFixedHashTableProbeFn(const Maps & maps, HashJoin::Type type, HashJoin::RightTableData::KeyRange key_range, bool build_signed)
+SharedFixedHashTableRuntimeFilter::ProbeFn sharedFixedHashTableProbeFn(
+    const Maps & maps, HashJoinTypes::Type type, HashJoinTypes::RightTableData::KeyRange key_range, bool build_signed)
 {
     using ProbeFn = SharedFixedHashTableRuntimeFilter::ProbeFn;
     auto over = [&]<typename Unsigned>(const auto & table, Unsigned min_key, size_t range_size) -> ProbeFn
@@ -202,12 +202,12 @@ sharedFixedHashTableProbeFn(const Maps & maps, HashJoin::Type type, HashJoin::Ri
     /// The 8- and 16-bit maps span their whole key space; a range map's bounds come from the conversion.
     switch (type)
     {
-        case HashJoin::Type::key8:
+        case HashJoinTypes::Type::key8:
             return over(maps.key8, UInt8(0), 1uz << 8);
-        case HashJoin::Type::key16:
+        case HashJoinTypes::Type::key16:
             return over(maps.key16, UInt16(0), 1uz << 16);
 #define M(NAME, KEY) \
-    case HashJoin::Type::NAME: \
+    case HashJoinTypes::Type::NAME: \
         return over(maps.NAME, static_cast<KEY>(key_range.min_key), key_range.size);
             M(range8_key32, UInt32)
             M(range16_key32, UInt32)
@@ -235,8 +235,8 @@ template <typename Maps>
 void publishSharedFixedHashTableFilters(
     const TableJoin & table_join,
     const Block & right_table_keys,
-    HashJoin::Type type,
-    HashJoin::RightTableData::KeyRange key_range,
+    HashJoinTypes::Type type,
+    HashJoinTypes::RightTableData::KeyRange key_range,
     size_t keys_to_join,
     const Maps & maps)
 {

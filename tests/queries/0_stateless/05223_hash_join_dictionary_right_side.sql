@@ -23,7 +23,7 @@ AS SELECT number % 1500, number FROM numbers(3000);
 
 SELECT '-- hash serves the dictionary when direct is not listed';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT p.p FROM probe_05223 AS p INNER JOIN dict_05223 AS d ON p.id = d.id SETTINGS join_algorithm = 'hash')
-WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
+WHERE explain LIKE '%Algorithm: HashJoin%';
 
 SELECT '-- the same rows as direct';
 SELECT
@@ -35,7 +35,7 @@ SELECT
 
 SELECT '-- a mixed ON condition, which direct declines, runs on the hash join';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT p.p FROM probe_05223 AS p RIGHT JOIN dict_05223 AS d ON p.id = d.id AND p.p < d.v SETTINGS join_algorithm = 'direct,hash')
-WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
+WHERE explain LIKE '%Algorithm: HashJoin%';
 SELECT count(), sum(p.p), sum(d.v) FROM probe_05223 AS p INNER JOIN dict_05223 AS d ON p.id = d.id AND p.p < d.v SETTINGS join_algorithm = 'direct,hash';
 SELECT count(), sum(p.p), sum(d.v) FROM probe_05223 AS p RIGHT JOIN dict_05223 AS d ON p.id = d.id AND p.p < d.v SETTINGS join_algorithm = 'direct,hash';
 SELECT count(), sum(p.p), sum(d.v) FROM probe_05223 AS p FULL JOIN dict_05223 AS d ON p.id = d.id AND p.p < d.v SETTINGS join_algorithm = 'direct,hash';

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
 #include <base/types.h>
 
 namespace DB
@@ -11,7 +11,7 @@ struct DenseHyperLogLog;
 
 /** The build fill's per-row routing, from the same hash `HashJoinTable` buckets by.
   *
-  * For every row, the map hash of the build's `HashJoin::Type` is computed through that type's key
+  * For every row, the map hash of the build's `HashJoinTypes::Type` is computed through that type's key
   * getter. The fill and the table agree byte for byte on what the key is. `hashJoinTablePlacement`
   * turns the hash into the table's placement word, and the word's top 16 bits are saved as the row's
   * route. A plan of `bits` partitions sends the row to partition `route >> (16 - bits)`. The table
@@ -28,7 +28,7 @@ struct DenseHyperLogLog;
   * routes are zero and the sketch sees the key values themselves.
   */
 void computeJoinRoutesForFill(
-    HashJoin::Type type,
+    HashJoinTypes::Type type,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     size_t rows,

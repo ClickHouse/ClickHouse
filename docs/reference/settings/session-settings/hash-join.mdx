@@ -17,7 +17,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting: limit the number of partitions of a `partitioned_hash` join so that the per-partition records of the hash table fit in a quarter of the L1 data cache."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting: limit the number of partitions of a `hash` join so that the per-partition records of the hash table fit in a quarter of the L1 data cache."}]}]}/>
 
 Limit how many partitions the hash join may use. The records that say where each partition's cells start and end must fit in a quarter of the L1 data cache. The probe reads one such record per row. With more partitions, that read misses the L1 cache.
 
@@ -25,7 +25,7 @@ Limit how many partitions the hash join may use. The records that say where each
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8192"},{"label": "New setting: the maximum number of partitions a `partitioned_hash` join writes in one pass over the right table. When the join needs more partitions, it makes several passes."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "8192"},{"label": "New setting: the maximum number of partitions a `hash` join writes in one pass over the right table. When the join needs more partitions, it makes several passes."}]}]}/>
 
 Maximum number of partitions the hash join writes in one pass over the right table. When the join needs more partitions, it makes several passes. Values from 2 to 32768 are accepted and rounded down to a power of two. Each partition of a pass needs about 76 bytes of buffer per thread. The default keeps the buffers of one pass near 600 KiB. That fits in a 1 MiB L2 cache.
 
