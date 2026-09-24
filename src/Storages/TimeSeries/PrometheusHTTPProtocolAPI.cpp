@@ -681,11 +681,11 @@ void PrometheusHTTPProtocolAPI::writeHistogram(WriteBuffer & response, const His
             return custom_values_data.getFloat64(custom_values_begin + uidx);
         };
 
-        /// Custom buckets are (lower, upper] throughout, so every one of them uses rule 0 - including
-        /// the first, whose lower bound is -Inf and therefore cannot be inclusive.
+        /// Prometheus marks the first custom bucket (index 0, lower bound -Inf) inclusive on both ends, so it takes
+        /// rule 3; every later one is (lower, upper], rule 0 (see model/histogram/generic.go in Prometheus).
         const auto positive_buckets = expandHistogramSpans(*payload.positive_spans, *payload.positive_values, row_index);
         for (const auto & bucket : positive_buckets)
-            add_bucket(0, custom_bound(bucket.index - 1), custom_bound(bucket.index), bucket.count);
+            add_bucket(bucket.index == 0 ? 3 : 0, custom_bound(bucket.index - 1), custom_bound(bucket.index), bucket.count);
     }
     else
     {
