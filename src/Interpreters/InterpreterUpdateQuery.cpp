@@ -122,16 +122,18 @@ BlockIO InterpreterUpdateQuery::execute()
         update_query.setDatabase(resolved_table_id.database_name);
         table_for_access = DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext());
     }
-    const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(table_for_access, getContext());
+    const auto row_exists_column_kind = InterpreterAlterQuery::getRowExistsColumnKind(table_for_access, getContext());
 
     bool deletes_via_row_exists = false;
     bool updates_columns = false;
     for (const ASTPtr & assignment_ast : update_query.assignments->children)
     {
-        if (row_exists_is_marker && isLightweightDeleteAssignment(assignment_ast->as<const ASTAssignment &>()))
-            deletes_via_row_exists = true;
-        else
+        const bool is_lightweight_delete_assignment = isLightweightDeleteAssignment(assignment_ast->as<const ASTAssignment &>());
+        if (!is_lightweight_delete_assignment
+            || row_exists_column_kind != InterpreterAlterQuery::RowExistsColumnKind::LightweightDeleteMarker)
             updates_columns = true;
+        if (is_lightweight_delete_assignment && row_exists_column_kind != InterpreterAlterQuery::RowExistsColumnKind::Regular)
+            deletes_via_row_exists = true;
     }
 
     AccessRightsElements required_access;
@@ -156,6 +158,12 @@ BlockIO InterpreterUpdateQuery::execute()
 
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database)
+        {
+            const auto & captured_update = captured_query_ptr->as<const ASTUpdateQuery &>();
+            const auto default_database = captured_update.getDatabase().empty() ? cluster_default_database : captured_update.getDatabase();
+            checkNoRowPolicyForSetOperands(captured_query_ptr, default_database, context, /* throw_if_unresolved = */ true);
+        };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -175,6 +183,8 @@ BlockIO InterpreterUpdateQuery::execute()
 
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);
+
+    checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))

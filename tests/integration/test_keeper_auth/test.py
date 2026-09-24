@@ -818,6 +818,71 @@ def test_world_anyone_specific_permissions(started_cluster):
         zk_stop_and_close(no_auth_connection)
 
 
+@pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
+def test_world_anyone_all_permissions_with_other_acl(started_cluster, get_zk):
+    """world:anyone with all permissions still grants everyone when the list has other entries"""
+    connection = None
+    no_auth_connection = None
+    path = "/test_world_anyone_all_and_auth"
+
+    try:
+        connection = get_zk()
+        connection.add_auth("digest", "user1:password1")
+
+        connection.create(
+            path,
+            b"data",
+            acl=[
+                make_acl("world", "anyone", all=True),
+                make_acl("auth", "", read=True),
+            ],
+        )
+
+        # fixupACL appends in request order, so the index order is the request order.
+        acls, _ = connection.get_acls(path)
+        assert len(acls) == 2
+        assert acls[0].id.scheme == "world"
+        assert acls[0].id.id == "anyone"
+        assert acls[0].perms == 31  # All permissions
+        assert acls[1].id.scheme == "digest"
+        assert acls[1].id.id == "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI="
+        assert acls[1].perms == 1  # Read only
+
+        no_auth_connection = get_zk()
+        assert no_auth_connection.get(path)[0] == b"data"
+        no_auth_connection.set(path, b"new_data")
+
+        # The node stays repairable: world:anyone with all permissions carries ADMIN.
+        # The digest entry is wider than the one create stored, so the list below cannot
+        # resolve to the stored list and the assertions after it observe setACL only.
+        connection.set_acls(
+            path,
+            [
+                make_acl("world", "anyone", all=True),
+                make_acl(
+                    "digest",
+                    "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=",
+                    read=True,
+                    write=True,
+                ),
+            ],
+        )
+        acls, stat = connection.get_acls(path)
+        assert stat.aversion == 1
+        assert len(acls) == 2
+        assert acls[0].id.scheme == "world"
+        assert acls[0].id.id == "anyone"
+        assert acls[0].perms == 31  # All permissions
+        assert acls[1].id.scheme == "digest"
+        assert acls[1].id.id == "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI="
+        assert acls[1].perms == 3  # Read and write
+
+        zk_delete_after_acl_change(connection, path)
+    finally:
+        zk_stop_and_close(connection)
+        zk_stop_and_close(no_auth_connection)
+
+
 def test_auth_snapshot(started_cluster):
     connection = None
     connection1 = None

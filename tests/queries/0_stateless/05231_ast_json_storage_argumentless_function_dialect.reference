@@ -1,0 +1,35 @@
+for key 'order_by' has no 'arguments' list
+for key 'primary_key' has no 'arguments' list
+for key 'sample_by' has no 'arguments' list
+for key 'partition_by' has no 'arguments' list
+for key 'order_by' has no 'arguments' list
+for key 'expression' has no 'arguments' list
+for key 'ttl' has no 'arguments' list
+for key 'ttl_expr' has no 'arguments' list
+for key 'where_expr' has no 'arguments' list
+for key 'children' has no 'arguments' list
+for key 'order_by' has no 'arguments' list
+for key 'sample_by' has no 'arguments' list
+for key 'predicate' has no 'arguments' list
+for key 'select' has no 'arguments' list
+for key 'select' has no 'arguments' list
+for key 'select' has no 'arguments' list
+for key 'predicate' has no 'arguments' list
+for key 'table_function' has no 'arguments' list
+for key 'as_table_function' has no 'arguments' list
+for key 'table_function' has no 'arguments' list
+for key 'table_function' has no 'arguments' list
+for key 'ttl' has no 'arguments' list
+must be a list of TTL elements
+must not be an empty list
+must not be an empty list
+for key 'partition_by' has no 'arguments' list
+for key 'engine' has no 'arguments' list
+for key 'order_by' has no 'arguments' list
+PARTITION BY a % 8
+ORDER BY (a, b)
+SAMPLE BY a
+INDEX i a TYPE minmax GRANULARITY 1
+UInt8 CODEC(LZ4)
+TTL d + toIntervalDay(1) RECOMPRESS CODEC(LZ4)
+1
