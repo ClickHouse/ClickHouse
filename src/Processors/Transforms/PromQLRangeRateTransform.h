@@ -17,6 +17,36 @@
 namespace DB
 {
 
+class ColumnArray;
+
+namespace PromQLRangeRateHelpers
+{
+
+/// Prometheus range selectors discard this exact NaN payload, but preserve other NaNs.
+bool isStaleMarker(const IColumn & values, size_t sample);
+bool containsStaleMarker(const IColumn & values, size_t begin, size_t end);
+MutableColumnPtr filterStaleMarkers(const ColumnArray & samples, size_t row);
+
+template <typename Callback>
+void forEachNonStaleRange(const IColumn & values, size_t begin, size_t end, Callback && callback)
+{
+    size_t range_begin = begin;
+    for (size_t sample = begin; sample < end; ++sample)
+    {
+        if (!isStaleMarker(values, sample))
+            continue;
+
+        if (range_begin < sample)
+            callback(range_begin, sample);
+        range_begin = sample + 1;
+    }
+
+    if (range_begin < end)
+        callback(range_begin, end);
+}
+
+}
+
 /// Query-wide uniqueness check for the post-`rate` label groups emitted by
 /// parallel primary-key lanes.
 class PromQLRangeRateGroupSet

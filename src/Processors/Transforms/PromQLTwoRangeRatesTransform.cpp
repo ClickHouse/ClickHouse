@@ -1,5 +1,6 @@
 #include <Processors/Transforms/PromQLTwoRangeRatesTransform.h>
 #include <Processors/Transforms/PromQLColumnHelpers.h>
+#include <Processors/Transforms/PromQLRangeRateTransform.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -559,9 +560,30 @@ void PromQLTwoRangeRatesTransform::work()
                 max_samples_per_series);
 
         if (reads_raw_samples)
-            rate_function->addBatchSinglePlace(slice_begin, slice_end, rate_place.data(), raw_rate_arguments, nullptr);
+        {
+            PromQLRangeRateHelpers::forEachNonStaleRange(*raw_rate_arguments[1], slice_begin, slice_end, [&](size_t begin, size_t end)
+            {
+                rate_function->addBatchSinglePlace(begin, end, rate_place.data(), raw_rate_arguments, nullptr);
+            });
+        }
         else
-            rate_function->add(rate_place.data(), sliced_rate_arguments, row, nullptr);
+        {
+            const auto * tuple_samples = typeid_cast<const ColumnTuple *>(&samples_array->getData());
+            if (!tuple_samples || tuple_samples->tupleSize() != 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native sliced two-rate transform expects Array(Tuple(timestamp, value))");
+
+            const size_t value_begin = row == 0 ? 0 : samples_array->getOffsets()[row - 1];
+            const size_t value_end = samples_array->getOffsets()[row];
+            const auto & values = *tuple_samples->getColumnPtr(1);
+            if (PromQLRangeRateHelpers::containsStaleMarker(values, value_begin, value_end))
+            {
+                auto filtered_samples = PromQLRangeRateHelpers::filterStaleMarkers(*samples_array, row);
+                const IColumn * filtered_rate_arguments[] = {filtered_samples.get()};
+                rate_function->add(rate_place.data(), filtered_rate_arguments, 0, nullptr);
+            }
+            else
+                rate_function->add(rate_place.data(), sliced_rate_arguments, row, nullptr);
+        }
         current_series_samples += row_samples;
         ++current_input_row;
     }

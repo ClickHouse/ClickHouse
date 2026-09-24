@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
+#include <bit>
 
 namespace DB
 {
@@ -25,6 +26,54 @@ extern const int BAD_ARGUMENTS;
 extern const int CANNOT_EXECUTE_PROMQL_QUERY;
 extern const int LOGICAL_ERROR;
 extern const int TOO_MANY_ROWS_OR_BYTES;
+}
+
+namespace PromQLRangeRateHelpers
+{
+
+namespace
+{
+
+constexpr UInt64 STALE_NAN_BITS = 0x7ff0000000000002ULL;
+
+}
+
+bool isStaleMarker(const IColumn & values, size_t sample)
+{
+    return !values.isNullAt(sample) && std::bit_cast<UInt64>(values.getFloat64(sample)) == STALE_NAN_BITS;
+}
+
+bool containsStaleMarker(const IColumn & values, size_t begin, size_t end)
+{
+    for (size_t sample = begin; sample < end; ++sample)
+    {
+        if (isStaleMarker(values, sample))
+            return true;
+    }
+
+    return false;
+}
+
+MutableColumnPtr filterStaleMarkers(const ColumnArray & samples, size_t row)
+{
+    const auto * tuples = typeid_cast<const ColumnTuple *>(&samples.getData());
+    if (!tuples || tuples->tupleSize() != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL stale-marker filter expects Array(Tuple(timestamp, value))");
+
+    const auto & values = *tuples->getColumnPtr(1);
+    const size_t begin = row == 0 ? 0 : samples.getOffsets()[row - 1];
+    const size_t end = samples.getOffsets()[row];
+    auto filtered = ColumnArray::create(samples.getData().cloneEmpty(), ColumnArray::ColumnOffsets::create());
+    auto & filtered_array = assert_cast<ColumnArray &>(*filtered);
+    for (size_t sample = begin; sample < end; ++sample)
+    {
+        if (!isStaleMarker(values, sample))
+            filtered_array.getData().insertFrom(samples.getData(), sample);
+    }
+    filtered_array.getOffsets().push_back(filtered_array.getData().size());
+    return filtered;
+}
+
 }
 
 SharedHeader PromQLRangeRateTransform::transformHeader(const AggregateFunctionPtr & rate_function)
@@ -300,9 +349,30 @@ void PromQLRangeRateTransform::work()
                 max_samples_per_series);
 
         if (reads_raw_samples)
-            rate_function->addBatchSinglePlace(slice_begin, slice_end, rate_place.data(), raw_rate_arguments, nullptr);
+        {
+            PromQLRangeRateHelpers::forEachNonStaleRange(*raw_rate_arguments[1], slice_begin, slice_end, [&](size_t begin, size_t end)
+            {
+                rate_function->addBatchSinglePlace(begin, end, rate_place.data(), raw_rate_arguments, nullptr);
+            });
+        }
         else
-            rate_function->add(rate_place.data(), sliced_rate_arguments, row, nullptr);
+        {
+            const auto * tuple_samples = typeid_cast<const ColumnTuple *>(&samples_array->getData());
+            if (!tuple_samples || tuple_samples->tupleSize() != 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native sliced range rate expects Array(Tuple(timestamp, value))");
+
+            const size_t value_begin = row == 0 ? 0 : samples_array->getOffsets()[row - 1];
+            const size_t value_end = samples_array->getOffsets()[row];
+            const auto & values = *tuple_samples->getColumnPtr(1);
+            if (PromQLRangeRateHelpers::containsStaleMarker(values, value_begin, value_end))
+            {
+                auto filtered_samples = PromQLRangeRateHelpers::filterStaleMarkers(*samples_array, row);
+                const IColumn * filtered_rate_arguments[] = {filtered_samples.get()};
+                rate_function->add(rate_place.data(), filtered_rate_arguments, 0, nullptr);
+            }
+            else
+                rate_function->add(rate_place.data(), sliced_rate_arguments, row, nullptr);
+        }
         current_series_samples += row_samples;
         ++current_input_row;
     }

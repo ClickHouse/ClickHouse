@@ -18,6 +18,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/Prometheus/PrometheusQueryClassifier.h>
+#include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -37,6 +38,7 @@
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Common/re2.h>
 
+#include <base/arithmeticOverflow.h>
 #include <fmt/format.h>
 
 
@@ -585,6 +587,17 @@ std::optional<PromQLNativeVectorGridPreparation> tryPreparePromQLNativeVectorGri
     const size_t selected_series = set_and_key->set->getTotalRowCount();
     if (selected_series > context->getSettingsRef()[Setting::max_promql_native_rate_series])
         return {};
+
+    const auto max_grid_cells = context->getSettingsRef()[Setting::max_promql_native_vector_grid_cells];
+    if (max_grid_cells.value)
+    {
+        const size_t evaluation_points = PrometheusQueryToSQL::stepsInTimeSeriesRange(
+            *evaluation_settings.start_time, *evaluation_settings.end_time, *evaluation_settings.step);
+        UInt64 grid_cells = 0;
+        if (common::mulOverflow(static_cast<UInt64>(selected_series), static_cast<UInt64>(evaluation_points), grid_cells)
+            || grid_cells > max_grid_cells.value)
+            return {};
+    }
 
     return PromQLNativeVectorGridPreparation{
         .identifier_sets = std::move(built_sets),

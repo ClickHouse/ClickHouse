@@ -441,17 +441,34 @@ bool PromQLRangeRateMergingAlgorithm::consumeRow(
             current_bucket->insertFrom(bucket_column, row);
             has_current_external_bucket = true;
         }
-        streaming_rate->addRawSamples(
-            *streaming_rate_state,
-            *raw_rate_arguments[0],
-            *raw_rate_arguments[1],
-            slice_begin,
-            slice_end);
+        PromQLRangeRateHelpers::forEachNonStaleRange(*raw_rate_arguments[1], slice_begin, slice_end, [&](size_t begin, size_t end)
+        {
+            streaming_rate->addRawSamples(
+                *streaming_rate_state,
+                *raw_rate_arguments[0],
+                *raw_rate_arguments[1],
+                begin,
+                end);
+        });
     }
     else
     {
         const IColumn * sliced_rate_arguments[] = {source.samples_column.get()};
-        rate_function->add(rate_place.data(), sliced_rate_arguments, row, nullptr);
+        const auto * tuple_samples = typeid_cast<const ColumnTuple *>(&samples_array.getData());
+        if (!tuple_samples || tuple_samples->tupleSize() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL native sliced range rate merge expects Array(Tuple(timestamp, value))");
+
+        const size_t value_begin = row == 0 ? 0 : samples_array.getOffsets()[row - 1];
+        const size_t value_end = samples_array.getOffsets()[row];
+        const auto & values = *tuple_samples->getColumnPtr(1);
+        if (PromQLRangeRateHelpers::containsStaleMarker(values, value_begin, value_end))
+        {
+            auto filtered_samples = PromQLRangeRateHelpers::filterStaleMarkers(samples_array, row);
+            const IColumn * filtered_rate_arguments[] = {filtered_samples.get()};
+            rate_function->add(rate_place.data(), filtered_rate_arguments, 0, nullptr);
+        }
+        else
+            rate_function->add(rate_place.data(), sliced_rate_arguments, row, nullptr);
     }
 
     current_series_samples += row_samples;
