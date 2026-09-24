@@ -3,6 +3,7 @@
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -109,6 +110,14 @@ std::string SpillingHashJoin::getName() const
         return fmt::format(name_format, concurrent_join->getName());
 
     return fmt::format(name_format, hash_join->getName());
+}
+
+std::string SpillingHashJoin::getAlgorithm() const
+{
+    if (state.load(std::memory_order_acquire) == State::GRACE_HASH_JOIN)
+        return toString(JoinAlgorithm::GRACE_HASH);
+
+    return toString(concurrent_join ? JoinAlgorithm::PARALLEL_HASH : JoinAlgorithm::HASH);
 }
 
 bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
@@ -238,6 +247,8 @@ void SpillingHashJoin::switchToGraceHashJoin()
         /// Convert ConcurrentHashJoin slots into GraceHashJoin.
         /// Other build-phase threads will also help via `addBlockToJoin`.
         tryConvertSlots();
+
+        QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
         return;
     }
 
@@ -270,6 +281,8 @@ void SpillingHashJoin::switchToGraceHashJoin()
         chosen_join->addBlockToJoin(right_blocks.front(), /*check_limits=*/false);
         right_blocks.pop_front();
     }
+
+    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
 
     state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
 }

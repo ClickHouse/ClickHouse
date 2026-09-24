@@ -9,6 +9,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Scheduler/MemoryReservation.h>
@@ -26,6 +27,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char executing_graph_add_node_fail[];
 }
 
 namespace
@@ -94,6 +101,12 @@ void ExecutingGraph::removeNode(Node & node)
 
 ExecutingGraph::Node & ExecutingGraph::addNode(ProcessorPtr processor)
 {
+    /// Stands in for an allocation failure while a processor is being recorded (see `updatePipeline`).
+    fiu_do_on(FailPoints::executing_graph_add_node_fail,
+    {
+        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint {} is triggered", FailPoints::executing_graph_add_node_fail);
+    });
+
     processors->push_back(std::move(processor));
     return addNode(std::prev(processors->end()));
 }
@@ -164,6 +177,29 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
 {
     IProcessor::PipelineUpdate update = cur_node.processor()->updatePipeline();
 
+    /// The processor has already connected its ports to the new processors. From here on every step
+    /// that records them in the graph may throw (each allocates, and an allocation may fail on the memory
+    /// limit), and a failure halfway leaves the nodes and edges inconsistent with the ports: the node
+    /// of a recorded processor, or `cur_node` itself, is connected to a processor that is not in the
+    /// graph. The exception cancels the executor, but a thread that is already expanding another node
+    /// would still walk every node in `addEdges` and hit that connection as a logical error. Mark the
+    /// graph instead, so that later expansions bail out, and keep the new processors alive because
+    /// the ports of live nodes point at them.
+    try
+    {
+        return updatePipelineImpl(stack, cur_node, update);
+    }
+    catch (...)
+    {
+        expansion_failed = true;
+        processors_of_failed_expansion.splice(processors_of_failed_expansion.end(), update.to_add);
+        throw;
+    }
+}
+
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
+    boost::container::devector<Node *> & stack, Node & cur_node, IProcessor::PipelineUpdate & update)
+{
     IProcessor::CancelReason cancel_reason_if_cancelled = IProcessor::CancelReason::NotCancelled;
     {
         std::lock_guard guard(processors_mutex);
@@ -498,6 +534,11 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
             read_lock.unlock();
             {
                 std::unique_lock write_lock(nodes_mutex);
+
+                /// An earlier expansion threw halfway (see `updatePipeline`); the graph no longer describes the
+                /// ports and the executor has been cancelled with that exception. Do not touch the graph.
+                if (expansion_failed)
+                    return UpdateNodeStatus::Cancelled;
 
                 for (auto * node : pending_expansion)
                 {

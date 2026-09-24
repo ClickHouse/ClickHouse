@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <Core/UUID.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
@@ -28,6 +29,7 @@
 #include <memory>
 #include <mutex>
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -108,6 +110,10 @@ protected:
     String query;
     UInt64 normalized_query_hash;
     ClientInfo client_info;
+
+    /// The principal this query runs as; empty when its context has no bound user, as for a query the
+    /// server runs on its own behalf. The name in `client_info` is reusable, so it cannot decide identity.
+    std::optional<UUID> user_id;
 
     /// Acquired workload resources
     QuerySlotPtr query_slot;
@@ -212,6 +218,7 @@ public:
         const String & query_,
         UInt64 normalized_query_hash_,
         const ClientInfo & client_info_,
+        const std::optional<UUID> & user_id_,
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
         MemoryReservationPtr && memory_reservation_,
@@ -481,6 +488,10 @@ protected:
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
 
+    /// An unset `expected_user_id` cancels whatever holds the key.
+    CancellationCode sendCancelToQueryImpl(
+        const String & current_query_id, const String & current_user, const std::optional<UUID> & expected_user_id);
+
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
 
@@ -568,8 +579,20 @@ public:
         return max_waiting_queries_amount.load();
     }
 
+    struct OwnQuery
+    {
+        String user;
+        String query;
+    };
+
+    /// The running query with this id, if it belongs to `user_id`. A query id is unique across users
+    /// while it runs, so the id locates the entry and the user id decides whether it is that user's.
+    std::optional<OwnQuery> tryGetOwnRunningQuery(const String & current_query_id, const UUID & user_id);
+
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
+    /// Cancel it only if it still belongs to `expected_user_id`, since user names are reusable.
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, const UUID & expected_user_id);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     /// Remember the `BackendKeyData` pair that authenticates `CancelRequest` for a PostgreSQL
