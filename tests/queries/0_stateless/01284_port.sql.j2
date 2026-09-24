@@ -18,6 +18,10 @@ select 'default-port';
 select port{{ suffix }}('http://127.0.0.1/', toUInt16(80));
 select port{{ suffix }}('http://foobar.com/', toUInt16(80));
 
+select 'query-fragment';
+select port{{ suffix }}('http://foobar.com:8080?x=1');
+select port{{ suffix }}('http://foobar.com:8080#fragment');
+
 -- unsupported
 /* ILLEGAL_TYPE_OF_ARGUMENT */ select port(toFixedString('', 1)); -- { serverError 43 }
 /* ILLEGAL_TYPE_OF_ARGUMENT */ select port{{ suffix }}('', 1); -- { serverError 43 }
@@ -38,3 +42,30 @@ select 'host-no-dot';
 select port{{ suffix }}('//foobar:80/');
 
 {%- endfor %}
+
+-- the bracket contents must be a real IPv6 address, not just a bracket-balanced string
+select 'ipv6-RFC-garbage-bracket-content';
+select portRFC('http://[2001db81]:80');
+select portRFC('http://user@[2001db81]:80');
+
+-- nothing may follow the closing bracket of an IP-literal except a delimiter or end of input
+select 'ipv6-RFC-garbage-after-bracket';
+select portRFC('http://[2001:db8::8a2e:370:7334]evil.com');
+select portRFC('http://user@[2001:db8::8a2e:370:7334]evil.com');
+
+-- a colon or dot in the userinfo must not leak into validation of the host that follows it
+select 'ipv6-RFC-userinfo-state-leak';
+select portRFC('http://user:password@[20[01:db8::8a2e:370:7334]:80');
+
+-- a mixed IPv6/IPv4 tail literal is a valid IPv6 address, see issue 118890
+select 'ipv6-RFC-mixed';
+select portRFC('http://[::ffff:192.0.2.128]:80');
+select portRFC('http://user@[::ffff:192.0.2.128]:80/', toUInt16(443));
+
+-- userinfo may contain more than one ':' and must not be mistaken for the host:port separator
+select 'ipv6-RFC-userinfo-multicolon';
+select portRFC('http://user:pass:word@[2001:db8::8a2e:370:7334]:80', toUInt16(443));
+
+-- a second '@' makes the authority unparseable, see 05153_domain_rfc_multiple_at_sign
+select 'ipv6-RFC-multiple-at-sign';
+select portRFC('http://user@paypal.com@[2001:db8::8a2e:370:7334]:80', toUInt16(443));
