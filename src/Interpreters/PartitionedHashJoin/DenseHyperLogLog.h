@@ -30,6 +30,8 @@ struct DenseHyperLogLog
     static_assert(std::atomic<UInt8>::is_always_lock_free);
 
     std::array<std::atomic<UInt8>, register_count> registers{};
+    /// Set when `add` raises a rank; the spill reader clears it after merging.
+    mutable bool dirty = false;
 
     /// Without this, the rank would read the words' low 19 bits: the middle bits of the multiplicative
     /// product, not avalanche-quality for structured keys. fmix32 is a bijection: it redistributes bits
@@ -51,7 +53,11 @@ struct DenseHyperLogLog
         const UInt32 field = mixed & ((1u << (32 - precision)) - 1);
         const UInt8 rank = field ? static_cast<UInt8>(std::countl_zero(field) - precision + 1) : static_cast<UInt8>(32 - precision + 1);
         auto & value = registers[index];
-        value.store(std::max(value.load(std::memory_order_relaxed), rank), std::memory_order_relaxed);
+        if (rank > value.load(std::memory_order_relaxed))
+        {
+            value.store(rank, std::memory_order_relaxed);
+            dirty = true;
+        }
     }
 
     void merge(const DenseHyperLogLog & other)

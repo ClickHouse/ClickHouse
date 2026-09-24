@@ -174,6 +174,8 @@ public:
     void setPartitionBitsForTests(size_t value) { clause.setPartitionBitsForTests(value); }
     void setGrowBudgetForTests(size_t bytes) { clause.setGrowBudgetForTests(bytes); }
     void setGrowBudgetForDrainForTests(size_t bytes) { clause.setGrowBudgetForDrainForTests(bytes); }
+    void setLiveEstimateGateEnabledForTests(bool value) { live_estimate_gate_enabled_for_tests = value; }
+    size_t getCachedLiveDistinctEstimateForTests() const { return cached_distinct_estimate.load(std::memory_order_relaxed); }
     size_t predictedArenaBytesForTests(bool grouped) const { return clause.predictedArenaBytesForTests(grouped); }
     size_t predictedDuplicateScratchBytesForTests(size_t rows_in_range, bool first_group) const
     {
@@ -297,6 +299,7 @@ private:
     /// sixteenth. A slightly stale value only delays the switch by one refresh interval.
     mutable std::atomic<size_t> cached_distinct_estimate{0};
     mutable std::atomic<size_t> distinct_estimate_at_rows{0};
+    bool live_estimate_gate_enabled_for_tests = true;
 
     std::optional<size_t> build_rows_hint;
     /// An estimated build below `parallel_hash_join_threshold` runs on one fill thread, which inserts

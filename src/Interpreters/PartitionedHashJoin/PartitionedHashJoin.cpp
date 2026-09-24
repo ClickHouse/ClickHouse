@@ -640,9 +640,21 @@ size_t PartitionedHashJoin::liveDistinctEstimate() const
     if (cached_locked != 0 && rows <= last_rows_locked + last_rows_locked / 16)
         return cached_locked;
 
+    /// Spill writers hold the shared fill lock, so a clean sketch is stable under this lock.
+    if (max_bytes_before_external_join && live_estimate_gate_enabled_for_tests && cached_locked != 0
+        && std::none_of(lanes.begin(), lanes.end(), [](const auto & lane) { return lane.hll.dirty; }))
+    {
+        distinct_estimate_at_rows.store(rows, std::memory_order_release);
+        return cached_locked;
+    }
+
     DenseHyperLogLog merged;
     for (const auto & lane : lanes)
+    {
         merged.merge(lane.hll);
+        if (max_bytes_before_external_join)
+            lane.hll.dirty = false;
+    }
 
     /// Floor at 1 so a still-empty sketch does not size the prediction as a zero-byte table. The
     /// post-build gate uses the same floor on `hll_estimate`. The value is not kept monotone: an

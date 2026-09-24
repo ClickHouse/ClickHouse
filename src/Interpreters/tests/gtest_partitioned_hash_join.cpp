@@ -1035,6 +1035,164 @@ TEST(PartitionedHashJoin, ReusesCachedDistinctCountWithoutSketching)
     expectTableInvariants(spill.join->getBuildStats(), 10000, 10000);
 }
 
+TEST(PartitionedHashJoin, LiveEstimateGatePreservesFirstSpillPoint)
+{
+    constexpr size_t lanes = 4;
+    constexpr size_t keys_per_block = 512;
+    constexpr size_t blocks = 16;
+
+    const auto prediction_trace = [&](bool gate_enabled, std::vector<size_t> & estimates)
+    {
+        BuildOptions options;
+        options.num_threads = lanes;
+        options.max_bytes_before_external_join = 1ULL << 30;
+        auto built = makeJoin(options);
+        built.join->setLiveEstimateGateEnabledForTests(gate_enabled);
+
+        std::vector<size_t> predictions;
+        predictions.reserve(blocks + 6);
+        const auto add_block = [&](size_t first_key, size_t count, size_t lane, size_t block_no, bool repeat_key = false)
+        {
+            /// `SpillingHashJoin` checks the prediction before admitting each block.
+            predictions.push_back(built.join->predictedResidentBytes());
+            estimates.push_back(built.join->getCachedLiveDistinctEstimateForTests());
+
+            std::vector<UInt64> keys;
+            std::vector<UInt64> ids;
+            keys.reserve(count);
+            ids.reserve(count);
+            for (size_t i = 0; i < count; ++i)
+            {
+                keys.push_back(keyOf(first_key + (repeat_key ? 0 : i)));
+                ids.push_back(block_no * 20000 + i);
+            }
+            EXPECT_TRUE(addBuildBlock(*built.join, twoColumnBlock("rk", "build_id", keys, ids), lane));
+        };
+        for (size_t block_no = 0; block_no < blocks; ++block_no)
+            add_block(block_no < 12 ? (block_no % lanes) * keys_per_block : (lanes + block_no - 12) * keys_per_block,
+                keys_per_block, block_no % lanes, block_no);
+
+        add_block(100000, 11000, 0, blocks);
+        /// Repeating a key in its original lane forces a clean refresh before new keys arrive.
+        add_block(0, 1200, 0, blocks + 1, /*repeat_key=*/true);
+        add_block(200000, 1000, 2, blocks + 2);
+        add_block(0, 300, 0, blocks + 3, /*repeat_key=*/true);
+
+        /// The wrapper makes one last prediction when no further block can trigger a switch.
+        predictions.push_back(built.join->predictedResidentBytes(/*at_barrier=*/true));
+        estimates.push_back(built.join->getCachedLiveDistinctEstimateForTests());
+        return predictions;
+    };
+
+    std::vector<size_t> full_estimates;
+    std::vector<size_t> gated_estimates;
+    const auto full_merge = prediction_trace(/*gate_enabled=*/false, full_estimates);
+    const auto gated = prediction_trace(/*gate_enabled=*/true, gated_estimates);
+    ASSERT_EQ(gated.size(), full_merge.size());
+    EXPECT_EQ(gated, full_merge);
+    EXPECT_EQ(gated_estimates, full_estimates);
+    ASSERT_GT(*std::min_element(full_merge.begin(), full_merge.end()), 0u);
+
+    const auto first_spill = [](const std::vector<size_t> & predictions, size_t budget)
+    {
+        return static_cast<size_t>(std::find_if(predictions.begin(), predictions.end(), [budget](size_t bytes) { return bytes >= budget; })
+                                   - predictions.begin());
+    };
+    for (size_t prediction : full_merge)
+    {
+        for (size_t budget : {prediction - 1, prediction, prediction + 1})
+            EXPECT_EQ(first_spill(gated, budget), first_spill(full_merge, budget)) << "budget " << budget;
+    }
+}
+
+static void checkLiveEstimateConcurrentFill(bool spill_enabled)
+{
+    constexpr size_t workers = 4;
+    constexpr size_t blocks_per_worker = 16;
+    constexpr size_t keys_per_block = 1024;
+    constexpr size_t distinct_keys = workers * blocks_per_worker * keys_per_block;
+
+    BuildOptions options;
+    options.num_threads = workers;
+    options.max_bytes_before_external_join = spill_enabled ? 1ULL << 30 : 0;
+    auto built = makeJoin(options);
+
+    std::atomic<bool> reader_ready{false};
+    std::atomic<bool> start{false};
+    std::atomic<bool> done{false};
+    std::atomic<bool> inserts_ok{true};
+    std::atomic<size_t> active_writers{0};
+    std::atomic<size_t> reads_during_fill{0};
+    std::thread reader([&]
+    {
+        ThreadStatus thread_status;
+        reader_ready.store(true, std::memory_order_release);
+        reader_ready.notify_one();
+        start.wait(false, std::memory_order_acquire);
+        while (!done.load(std::memory_order_acquire))
+        {
+            const bool active_before = active_writers.load(std::memory_order_acquire) != 0;
+            built.join->predictedResidentBytes();
+            if (active_before && active_writers.load(std::memory_order_acquire) != 0)
+                reads_during_fill.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    std::vector<std::thread> writers;
+    writers.reserve(workers);
+    for (size_t worker = 0; worker < workers; ++worker)
+    {
+        writers.emplace_back([&, worker]
+        {
+            ThreadStatus thread_status;
+            start.wait(false, std::memory_order_acquire);
+            for (size_t block_no = 0; block_no < blocks_per_worker; ++block_no)
+            {
+                std::vector<UInt64> keys;
+                std::vector<UInt64> ids;
+                keys.reserve(keys_per_block);
+                ids.reserve(keys_per_block);
+                const size_t first = (worker * blocks_per_worker + block_no) * keys_per_block;
+                for (size_t i = 0; i < keys_per_block; ++i)
+                {
+                    keys.push_back(keyOf(first + i));
+                    ids.push_back(first + i);
+                }
+                const Block block = twoColumnBlock("rk", "build_id", keys, ids);
+                active_writers.fetch_add(1, std::memory_order_release);
+                if (!addBuildBlock(*built.join, block, worker))
+                    inserts_ok.store(false, std::memory_order_relaxed);
+                active_writers.fetch_sub(1, std::memory_order_release);
+            }
+        });
+    }
+
+    reader_ready.wait(false, std::memory_order_acquire);
+    start.store(true, std::memory_order_release);
+    start.notify_all();
+    for (auto & writer : writers)
+        writer.join();
+    done.store(true, std::memory_order_release);
+    reader.join();
+
+    ASSERT_TRUE(inserts_ok.load(std::memory_order_relaxed));
+    EXPECT_GT(reads_during_fill.load(std::memory_order_relaxed), 0u);
+    finishBuild(built, options);
+    EXPECT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Fits);
+    expectTableInvariants(built.join->getBuildStats(), distinct_keys, distinct_keys);
+    probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/100);
+}
+
+TEST(PartitionedHashJoin, LiveEstimateConcurrentFillWithSpill)
+{
+    checkLiveEstimateConcurrentFill(true);
+}
+
+TEST(PartitionedHashJoin, LiveEstimateConcurrentFillWithoutSpill)
+{
+    checkLiveEstimateConcurrentFill(false);
+}
+
 /// When the owner inserts fill their ranges under a budget that refused the load-factor grow, the drain grows the table
 /// once and finishes exactly.
 TEST(PartitionedHashJoin, FullRangesGrowInDrain)
