@@ -7,42 +7,42 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-24T02:33:08.308Z",
+          "updatedAt": "2026-09-24T03:20:54.853Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ja": {
-          "updatedAt": "2026-09-24T02:33:07.536Z",
+          "updatedAt": "2026-09-24T03:20:54.001Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ru": {
-          "updatedAt": "2026-09-24T02:33:07.931Z",
+          "updatedAt": "2026-09-24T03:20:54.427Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "zh": {
-          "updatedAt": "2026-09-24T02:33:08.059Z",
+          "updatedAt": "2026-09-24T03:20:54.563Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-24T02:33:07.796Z",
+          "updatedAt": "2026-09-24T03:20:54.288Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ko": {
-          "updatedAt": "2026-09-24T02:33:07.669Z",
+          "updatedAt": "2026-09-24T03:20:54.139Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "es": {
-          "updatedAt": "2026-09-24T02:33:07.401Z",
+          "updatedAt": "2026-09-24T03:20:53.851Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ar": {
-          "updatedAt": "2026-09-24T02:33:08.183Z",
+          "updatedAt": "2026-09-24T03:20:54.713Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         }
@@ -14669,47 +14669,47 @@
     },
     {
       "fileId": "e8499f991cb07ef9c66212d6ccc58a71ddef8b8a880f0753f6526f9e7d260c74",
-      "versionId": "089b60c2ecdc8a5d50f8643a18e6ba2e94f2e25d75dc25aeab262554a4b65a92",
+      "versionId": "06ed1c630ff17ba43627e1a7ee0adda87c6c32eed1c97532a5f2f9ba36404b10",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:40.743Z",
-          "fileName": "es/products/managed-postgres/security.mdx",
-          "postProcessHash": "a20a081b5907bd6472d033f85e7a0c292e4d42dadc6f779d9d7ea1a991beb5a3"
-        },
-        "ja": {
-          "updatedAt": "2026-09-15T11:36:40.743Z",
-          "fileName": "ja/products/managed-postgres/security.mdx",
-          "postProcessHash": "8166378085575b0842c3ac25395d8ef4e1a914de975cbdd724ce30b320a5bce3"
-        },
         "ko": {
-          "updatedAt": "2026-09-15T11:36:40.744Z",
+          "updatedAt": "2026-09-24T03:20:58.780Z",
           "fileName": "ko/products/managed-postgres/security.mdx",
-          "postProcessHash": "ede7fa4dbecc1b76fc59d965a45c34fe388911f29d1b7c44aba80b2f37cc4813"
+          "postProcessHash": "7fb4b933da73a11652c588823f7d44a3fb619e192f3d8addebfd91792e3cee6f"
+        },
+        "es": {
+          "updatedAt": "2026-09-24T03:20:58.781Z",
+          "fileName": "es/products/managed-postgres/security.mdx",
+          "postProcessHash": "07fd2f5245ed94adb02a372bcaeb48c90f75e1202769a58bec0f09550e3324e6"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:40.744Z",
+          "updatedAt": "2026-09-24T03:20:58.782Z",
           "fileName": "pt-BR/products/managed-postgres/security.mdx",
-          "postProcessHash": "67a5807dc83946f81f23f22af94258f58996b99588e8b06ef1a4380945d1305f"
-        },
-        "ru": {
-          "updatedAt": "2026-09-15T11:36:40.744Z",
-          "fileName": "ru/products/managed-postgres/security.mdx",
-          "postProcessHash": "b70fda450a7f119f92610784c559a6846a0d77c1f4198605ddfe410048be1a32"
+          "postProcessHash": "141883f26ab018fd527ffda2ed32db07ac4df69aaf01490307a31481db6a554c"
         },
         "zh": {
-          "updatedAt": "2026-09-15T11:36:40.745Z",
+          "updatedAt": "2026-09-24T03:20:58.783Z",
           "fileName": "zh/products/managed-postgres/security.mdx",
-          "postProcessHash": "d7ab2cbf30165245aa8f5e7b7731d9586b1f14832a091c3c787e6174438c587b"
-        },
-        "ar": {
-          "updatedAt": "2026-09-15T11:36:40.745Z",
-          "fileName": "ar/products/managed-postgres/security.mdx",
-          "postProcessHash": "78643563bb554b9e3c714962265e9b056119bfc92825411f828765fa4084f8ee"
+          "postProcessHash": "02f1c2905168104145a1477428abb7acc5b159b5d15b769a4276d94e836c0dfe"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:40.745Z",
+          "updatedAt": "2026-09-24T03:20:58.783Z",
           "fileName": "fr/products/managed-postgres/security.mdx",
-          "postProcessHash": "b51782dddeafbc216a47b18a20cfbb6910ecfd872b7738562e544275651073f3"
+          "postProcessHash": "424b9c099457447b0c0dbd3e1e5bcef24bbd6b432f9d9077c1025783b8539bb2"
+        },
+        "ru": {
+          "updatedAt": "2026-09-24T03:20:58.784Z",
+          "fileName": "ru/products/managed-postgres/security.mdx",
+          "postProcessHash": "da1bc12eb060d63e79041c3a7ca6f0c724498e3983ee33ae5dba2c7da54b7507"
+        },
+        "ja": {
+          "updatedAt": "2026-09-24T03:20:58.785Z",
+          "fileName": "ja/products/managed-postgres/security.mdx",
+          "postProcessHash": "886ee6acac47c7890c877731ea2c86a42845896f8a779b5bfd37cf0652b65dcf"
+        },
+        "ar": {
+          "updatedAt": "2026-09-24T03:20:58.785Z",
+          "fileName": "ar/products/managed-postgres/security.mdx",
+          "postProcessHash": "2094e88f31ca96ef6946d1e363acbb10c050ff6dab322edb3c6c2bebcf9d3578"
         }
       },
       "fileName": "products/managed-postgres/security.mdx"

@@ -2,8 +2,8 @@
 slug: /cloud/managed-postgres/security
 sidebarTitle: '安全'
 title: '安全'
-description: 'ClickHouse Managed Postgres 的安全功能，包括 IP 白名单、加密和 Private Link'
-keywords: ['Postgres 安全', 'IP 白名单', '加密', 'tls', 'ssl', 'private link', '备份保留策略']
+description: 'ClickHouse Managed Postgres 的安全功能，包括 IP 白名单、加密、AWS PrivateLink 和 GCP Private Service Connect'
+keywords: ['Postgres 安全', 'IP 白名单', '加密', 'tls', 'ssl', 'private link', 'private service connect', 'psc', '备份保留策略']
 doc_type: 'guide'
 ---
 
@@ -123,9 +123,33 @@ AWS PrivateLink 可在您的 ClickHouse Managed Postgres 实例与您的 AWS 虚
 
 ## GCP Private Service Connect {#gcp-private-service-connect}
 
-Private Service Connect 可在您的 ClickHouse Managed Postgres 实例与您的 GCP 虚拟私有云 (VPC) 之间建立私有连接，无需将流量暴露到公共互联网。
+GCP Private Service Connect (PSC) 可在您的 ClickHouse Managed Postgres 实例与 Google Cloud 虚拟私有云 (VPC) 之间建立私有连接，流量不会暴露在公共互联网上，从而进一步增强网络隔离与安全性。
 
-如需为您的 ClickHouse Managed Postgres 实例启用 Private Service Connect，请创建支持工单联系 ClickHouse 支持团队。
+<Info>
+  **需要手动设置**
+
+  目前已支持 GCP Private Service Connect，但需由 ClickHouse 支持团队手动配置。该功能非常适合对网络隔离有严格要求的企业客户。
+</Info>
+
+### 申请设置 GCP Private Service Connect {#requesting-gcp-private-service-connect}
+
+要为您的 ClickHouse Managed Postgres 实例启用 GCP Private Service Connect，请按以下步骤操作：
+
+1. **联系 ClickHouse 支持团队**：提交一个支持工单
+
+2. **提供以下信息**：
+   * 您的 ClickHouse 组织 ID
+   * Postgres 服务的 ID/主机名
+   * 您计划从中连接 Private Service Connect 端点的 GCP 项目 ID
+
+3. **ClickHouse 支持团队将会**：
+   * 在 ClickHouse Managed Postgres 侧预配 Private Service Connect 服务附件
+   * 向您提供服务附件 ID，供您创建端点。
+
+4. **设置您的 GCP Private Service Connect**：
+   * 使用 ClickHouse 支持团队提供的服务附件 ID，在您的 VPC 中创建 Private Service Connect 端点。该端点必须与 Postgres 服务位于同一区域，并且必须在您所提供的某个 GCP 项目中创建。
+   * 端点进入 &quot;Accepted&quot; 状态后，即可通过端点 IP 连接到端口 `5432` (直连) 或 `6432` (连接池器) 。
+   * 端点 IP 没有与 Postgres 主机名匹配的 DNS name，因此请使用 `sslmode=require`；如需使用 `sslmode=verify-full`，请添加一条私有 Cloud DNS 记录，将 Postgres 主机名映射到端点 IP。
 
 ## 备份保留策略 {#backup-retention}
 
