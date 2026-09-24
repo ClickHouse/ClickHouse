@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
 #include <Common/BitHelpers.h>
@@ -336,12 +337,13 @@ class KeyExtractorImpl final : public DistinctSetFilter::KeyExtractor
 {
 public:
     KeyExtractorImpl(
-        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types_, Sizes key_sizes_)
+        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types_, Sizes key_sizes_, bool hash_keys_)
         : data(std::move(data_))
         , key_types(std::move(key_types_))
         , key_sizes(std::move(key_sizes_))
         , position(method.data.begin())
         , end(method.data.end())
+        , hash_keys(hash_keys_)
     {
         if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
             unpack_order = Method::State::packedKeysOrder(key_sizes);
@@ -390,6 +392,22 @@ public:
         if (position == end)
             data.reset();
 
+        if (hash_keys)
+        {
+            ColumnRawPtrs key_columns;
+            key_columns.reserve(raw_columns.size());
+            for (const auto * column : raw_columns)
+                key_columns.push_back(column);
+
+            auto hashes = ColumnUInt128::create(rows);
+            for (size_t row = 0; row < rows; ++row)
+                hashes->getData()[row] = ColumnsHashing::hash128(row, key_columns.size(), key_columns);
+
+            MutableColumns result;
+            result.emplace_back(std::move(hashes));
+            return result;
+        }
+
         return columns;
     }
 
@@ -399,6 +417,7 @@ private:
     const Sizes key_sizes;
     typename Method::Data::const_iterator position;
     const typename Method::Data::const_iterator end;
+    const bool hash_keys;
     std::optional<Sizes> unpack_order;
 };
 
@@ -407,7 +426,16 @@ private:
 DistinctKeyRepresentation DistinctSetFilter::getKeyRepresentation() const
 {
     chassert(!data->empty());
-    return data->type == SetVariants::Type::hashed ? DistinctKeyRepresentation::Hash128 : DistinctKeyRepresentation::Columns;
+    if (data->type == SetVariants::Type::hashed)
+        return DistinctKeyRepresentation::Hash128;
+
+    for (const auto & type : key_types)
+    {
+        if (comparisonCanMergeDistinctValues(*type))
+            return DistinctKeyRepresentation::Hash128;
+    }
+
+    return DistinctKeyRepresentation::Columns;
 }
 
 std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys() &&
@@ -415,13 +443,15 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
     chassert(!skip_null_keys);
     chassert(getTotalRowCount() > 0);
 
-    if (getKeyRepresentation() == DistinctKeyRepresentation::Hash128)
+    const bool keys_are_hashes = data->type == SetVariants::Type::hashed;
+    const bool hash_extracted_keys = getKeyRepresentation() == DistinctKeyRepresentation::Hash128 && !keys_are_hashes;
+    if (keys_are_hashes)
         key_types = {std::make_shared<DataTypeUInt128>()};
 
-    auto create_extractor = [this]<typename Method>(const Method & method) -> std::unique_ptr<KeyExtractor>
+    auto create_extractor = [this, hash_extracted_keys]<typename Method>(const Method & method) -> std::unique_ptr<KeyExtractor>
     {
         return std::make_unique<KeyExtractorImpl<Method>>(
-            method, std::move(data), std::move(key_types), std::move(key_sizes));
+            method, std::move(data), std::move(key_types), std::move(key_sizes), hash_extracted_keys);
     };
 
     switch (data->type)
