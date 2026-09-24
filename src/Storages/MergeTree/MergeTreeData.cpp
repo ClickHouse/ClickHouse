@@ -1203,10 +1203,10 @@ void MergeTreeData::checkProperties(
                                 "You can add expressions that use only the newly added columns",
                                 backQuoteIfNeed(col));
 
-            if (new_metadata.columns.getDefaults().contains(col))
+            if (const auto column_default = new_metadata.columns.getDefault(col))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Newly added column {} has a default expression, so adding expressions that use "
-                                "it to the sorting key is forbidden", backQuoteIfNeed(col));
+                                "Newly added column {} has a {} expression, so adding expressions that use "
+                                "it to the sorting key is forbidden", backQuoteIfNeed(col), toString(column_default->kind));
         }
     }
 
