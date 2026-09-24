@@ -2,7 +2,7 @@ services:
   # Service "prometheus_reader" runs a prometheus server which scrapes nothing and can request data via the RemoteRead protocol
   # from ClickHouse by url ${PROMETHEUS_REMOTE_READ_HANDLERS}.
   prometheus_reader:
-    image: prom/prometheus:v3.5.0
+    image: prom/prometheus:v3.7.3
     hostname: ${PROMETHEUS_READER_HOSTNAME:-prometheus_reader}
     restart: always
     entrypoint: |
