@@ -7,6 +7,8 @@
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Processors/Transforms/ChunkRowRange.h>
 #include <Processors/Transforms/LimitByGroupMapping.h>
+#include <base/defines.h>
+#include <Common/PODArray.h>
 
 
 namespace DB
@@ -46,8 +48,15 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    /// Appends the part of one same-group run that the `LIMIT BY` window keeps to `output_slices`.
-    void processRun(UInt64 run_start_row, UInt64 run_row_count, UInt64 group_rows_seen_before_run);
+    /// Once a group has filled its window every later run for it is a no-op, so keep that test at the
+    /// call site: the call costs more than the work.
+    void processRun(UInt64 run_start_row, UInt64 run_row_count, UInt64 group_rows_seen_before_run)
+    {
+        if (group_rows_seen_before_run < group_limit_end)
+            processRunInsideWindow(run_start_row, run_row_count, group_rows_seen_before_run);
+    }
+
+    NO_INLINE void processRunInsideWindow(UInt64 run_start_row, UInt64 run_row_count, UInt64 group_rows_seen_before_run);
 
     /// Kept per-group interval is `[group_offset, group_limit_end)`.
     const UInt64 group_offset;
@@ -62,7 +71,7 @@ private:
     UInt64 trivial_group_rows_seen = 0;
 
     /// Slices from the current chunk that will be emitted to output.
-    std::vector<ChunkRowRange> output_slices;
+    PODArray<ChunkRowRange> output_slices;
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 };
@@ -126,7 +135,7 @@ private:
     UInt64 current_group_rows_seen = 0;
 
     /// Slices from the current chunk that will be emitted to output.
-    std::vector<ChunkRowRange> output_slices;
+    PODArray<ChunkRowRange> output_slices;
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 };

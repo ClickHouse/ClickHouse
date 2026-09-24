@@ -41,11 +41,9 @@ LimitByTransform::LimitByTransform(
 {
 }
 
-void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, UInt64 group_rows_seen_before_run)
+void LimitByTransform::processRunInsideWindow(
+    UInt64 run_start_row, UInt64 run_row_count, UInt64 group_rows_seen_before_run)
 {
-    if (group_rows_seen_before_run >= group_limit_end)
-        return;
-
     const auto slice = shrinkRunToLimitWindow(run_start_row, run_row_count, group_rows_seen_before_run, group_offset, group_limit_end);
 
     if (slice.length > 0)
