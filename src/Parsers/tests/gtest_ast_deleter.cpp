@@ -112,8 +112,8 @@ TEST(ASTDeleter, CompleteObjectAddressIsTakenBeforeDestruction)
     const void * child_observed_address = nullptr;
 
     {
-        auto ast = make_intrusive<ASTWithNonPrimaryIAST>(observed_address);
-        ast->children.emplace_back(make_intrusive<ASTObservedDuringDestruction>(child_observed_address));
+        auto ast = DB::make_intrusive<ASTWithNonPrimaryIAST>(observed_address);
+        ast->children.emplace_back(DB::make_intrusive<ASTObservedDuringDestruction>(child_observed_address));
 
         const DB::IAST * iast = ast.get();
         ASSERT_NE(static_cast<const void *>(ast.get()), static_cast<const void *>(iast));
