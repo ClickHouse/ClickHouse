@@ -4,7 +4,7 @@ SELECT count() FROM (SELECT number FROM numbers_mt(2000) LIMIT 1 AFTER number >=
 -- `LIMIT 0` should return no rows.
 SELECT count() FROM (SELECT number FROM numbers(10) LIMIT 0 AFTER number >= 0);
 
--- If `UNTIL` appears before `AFTER`, the result is empty.
+-- An `UNTIL` condition that is true at the starting row makes the range empty.
 SELECT count() FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 6 UNTIL number >= 2);
 
 -- `UNTIL` can be used without numeric `LIMIT`.
