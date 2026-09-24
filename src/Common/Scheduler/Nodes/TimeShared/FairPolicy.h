@@ -142,7 +142,10 @@ public:
         while (true)
         {
             if (heap_size == 0)
+            {
+                flushThroughputOnDeactivation();
                 return {nullptr, false};
+            }
 
             // Recursively pull request from child
             auto [request, child_active] = items.front().child->dequeueRequest();

@@ -807,6 +807,8 @@ private:
             SCHED_DBG("{} -- dequeue(cost={})", this->getPath(), request->cost);
             incrementDequeued(request->cost, child_active);
         }
+        else if (!child_active)
+            flushThroughputOnDeactivation();
 
         return {request, child_active};
     }

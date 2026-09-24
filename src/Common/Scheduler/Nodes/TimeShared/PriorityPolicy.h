@@ -110,7 +110,10 @@ public:
         while (true)
         {
             if (items.empty())
+            {
+                flushThroughputOnDeactivation();
                 return {nullptr, false};
+            }
 
             // Capture child info before potentially removing from heap
             ITimeSharedNode * front_child = items.front().child;

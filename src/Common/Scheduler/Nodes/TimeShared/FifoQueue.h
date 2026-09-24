@@ -66,7 +66,10 @@ public:
     {
         std::lock_guard lock(mutex);
         if (requests.empty())
+        {
+            flushThroughputOnDeactivation();
             return {nullptr, false};
+        }
         ResourceRequest * result = &requests.front();
         requests.pop_front();
         if (requests.empty())

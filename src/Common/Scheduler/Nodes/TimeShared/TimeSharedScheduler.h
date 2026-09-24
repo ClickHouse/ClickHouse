@@ -141,7 +141,10 @@ public:
         while (true)
         {
             if (current == nullptr) // No active resources
+            {
+                flushThroughputOnDeactivation();
                 return {nullptr, false};
+            }
 
             // Dequeue request from current resource
             // We ask request of any kind and the nodes prioritize Release over Acquire internally (if both are supported)

@@ -88,6 +88,7 @@ public:
             incrementDequeued(cost, active());
             return {request, active()};
         }
+        flushThroughputOnDeactivation();
         return {nullptr, false};
     }
 

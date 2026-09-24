@@ -65,10 +65,20 @@ public:
         dequeued_requests.store(dequeued_requests.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
         dequeued_cost.store(dequeued_cost.load(std::memory_order_relaxed) + cost, std::memory_order_relaxed);
         pending_throughput_cost += cost;
-        if (++pending_throughput_requests >= throughput_batch_requests || !still_active)
-            flushThroughput(clock_gettime_ns());
+        ++pending_throughput_requests;
         if (!still_active)
-            throughput_batch_requests = 1; /// The dequeue rate after reactivation is unknown
+            flushThroughputOnDeactivation();
+        else if (pending_throughput_requests >= throughput_batch_requests)
+            flushThroughput(clock_gettime_ns());
+    }
+
+    /// Helper for introspection metrics. Should be called when `dequeueRequest` finds the node inactive and returns no request,
+    /// e.g. after its remaining requests were canceled.
+    void flushThroughputOnDeactivation()
+    {
+        if (pending_throughput_requests > 0)
+            flushThroughput(clock_gettime_ns());
+        throughput_batch_requests = 1; /// The dequeue rate after reactivation is unknown
     }
 
     /// Average dequeued_cost per second
