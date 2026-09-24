@@ -7,6 +7,7 @@
 #include <Processors/Port.h>
 
 #include <deque>
+#include <optional>
 
 /// See https://stackoverflow.com/questions/72533435/error-zero-as-null-pointer-constant-while-comparing-template-class-using-spaces
 #pragma clang diagnostic push
@@ -219,17 +220,11 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
-    /* Data (formerly) inherited from ISimpleTransform, needed for the
-     * implementation of the IProcessor interface.
-     */
+    /// Runtime data.
     InputPort & input;
     OutputPort & output;
-
-    bool has_input = false;
+    std::optional<Chunk> pending_input;
     bool input_is_finished = false;
-    Port::Data input_data;
-    bool has_output = false;
-    Port::Data output_data;
 
     /* Data for window transform itself.
      */

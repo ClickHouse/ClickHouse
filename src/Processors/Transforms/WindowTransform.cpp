@@ -1631,15 +1631,6 @@ IProcessor::Status WindowTransform::prepare()
         return Status::Finished;
     }
 
-    if (output_data.exception)
-    {
-        // An exception occurred during processing.
-        output.pushData(std::move(output_data));
-        output.finish();
-        input.close();
-        return Status::Finished;
-    }
-
     chassert(first_not_ready_row.block >= first_block_number);
     // The first_not_ready_row might be past-the-end if we have already
     // calculated the window functions for all input rows. That's why the
@@ -1662,11 +1653,12 @@ IProcessor::Status WindowTransform::prepare()
             {
                 columns.push_back(ColumnPtr(std::move(res)));
             }
-            output_data.chunk.setColumns(columns, block.rows);
+            Chunk chunk;
+            chunk.setColumns(columns, block.rows);
 
             ++next_output_block_number;
 
-            output.pushData(std::move(output_data));
+            output.push(std::move(chunk));
         }
 
         // We don't need input.setNotNeeded() here, because we already pull with
@@ -1689,26 +1681,14 @@ IProcessor::Status WindowTransform::prepare()
     }
 
     // Consume input data if we have any ready.
-    if (!has_input && input.hasData())
+    if (!pending_input && input.hasData())
     {
         // Pulling with set_not_needed = true and using an explicit setNeeded()
         // later is somewhat more efficient, because after the setNeeded(), the
         // required input block will be generated in the same thread and passed
         // to our prepare() + work() methods in the same thread right away, so
         // hopefully we will work on hot (cached) data.
-        input_data = input.pullData(true /* set_not_needed */);
-
-        // If we got an exception from input, just return it and mark that we're
-        // finished.
-        if (input_data.exception)
-        {
-            output.pushData(std::move(input_data));
-            output.finish();
-
-            return Status::PortFull;
-        }
-
-        has_input = true;
+        pending_input = input.pull(true /* set_not_needed */);
 
         // Now we have new input and can try to generate more output in work().
         return Status::Ready;
@@ -1733,22 +1713,13 @@ IProcessor::Status WindowTransform::prepare()
 
 void WindowTransform::work()
 {
-    // Exceptions should be skipped in prepare().
-    chassert(!input_data.exception);
+    chassert(pending_input || input_is_finished);
 
-    chassert(has_input || input_is_finished);
+    Chunk chunk;
+    if (pending_input)
+        chunk = std::exchange(pending_input, std::nullopt).value();
 
-    try
-    {
-        has_input = false;
-        appendChunk(input_data.chunk);
-    }
-    catch (DB::Exception &)
-    {
-        output_data.exception = std::current_exception();
-        has_input = false;
-        return;
-    }
+    appendChunk(chunk);
 
     // We don't really have to keep the entire partition, and it can be big, so
     // we want to drop the starting blocks to save memory. We can drop the old
@@ -3410,7 +3381,7 @@ Numbers the current row within its partition starting from 1.
 
 ```sql
 row_number (column_name)
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
         [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
@@ -3445,7 +3416,7 @@ INSERT INTO salaries FORMAT Values
 ```
 
 ```sql title="Query"
-SELECT player, salary, 
+SELECT player, salary,
        row_number() OVER (ORDER BY salary DESC) AS row_number
 FROM salaries;
 ```
@@ -3546,7 +3517,7 @@ Returns the first non-NULL value evaluated against the nth row (offset) in its o
 
 ```sql
 nth_value (x, offset)
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
         [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
