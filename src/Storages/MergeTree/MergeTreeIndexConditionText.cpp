@@ -952,22 +952,6 @@ bool isInfixPattern(const String & pattern)
     return pattern.starts_with('%') && pattern.ends_with('%');
 }
 
-/// Escapes the LIKE metacharacters so that `needle` is matched literally.
-String escapeForLikePattern(std::string_view needle)
-{
-    String pattern;
-    pattern.reserve(needle.size());
-
-    for (char c : needle)
-    {
-        if (c == '%' || c == '_' || c == '\\')
-            pattern += '\\';
-        pattern += c;
-    }
-
-    return pattern;
-}
-
 }
 
 /// Returns one pattern, or nothing when the pattern is not eligible for a dictionary scan.

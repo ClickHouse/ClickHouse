@@ -230,4 +230,19 @@ bool likePatternHasUnknownBackslashEscape(std::string_view pattern)
     return false;
 }
 
+String escapeForLikePattern(std::string_view needle)
+{
+    String pattern;
+    pattern.reserve(needle.size());
+
+    for (char c : needle)
+    {
+        if (c == '%' || c == '_' || c == '\\')
+            pattern += '\\';
+        pattern += c;
+    }
+
+    return pattern;
+}
+
 }
