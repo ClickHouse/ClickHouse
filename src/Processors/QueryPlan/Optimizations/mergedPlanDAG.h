@@ -43,6 +43,15 @@ struct MergedPlanDAG
     /// put, which saves renumbering every value's stuffing on the way up.
     using Stuffings = std::list<Stuffing>;
 
+    /// Where a value comes from in the plan: the plan node whose step computes it, and the node of that
+    /// step's own DAG it is a copy of. A source's columns have the source's plan node and no step node,
+    /// since a source has no DAG of its own here.
+    struct Origin
+    {
+        QueryPlan::Node * plan_node = nullptr;
+        const ActionsDAG::Node * step_node = nullptr;
+    };
+
     /// The DAG, plus the sources every node reads. See `getSources`.
     JoinExpressionActions expression_actions;
 
@@ -69,6 +78,12 @@ struct MergedPlanDAG
     /// stuffed by them in turn, so it already answers "did every join above this point match".
     std::unordered_map<const ActionsDAG::Node *, const Stuffing *> nearest_stuffing;
 
+    /// Every value, mapped to where it comes from. Needed to rebuild the plan step by step: the steps are
+    /// not interchangeable - a filter decides which rows the steps above it see, so moving something it
+    /// sits below to beneath it can throw where the query does not - so whatever is decided about a value
+    /// has to be carried out in the step that computes it.
+    std::unordered_map<const ActionsDAG::Node *, Origin> origins;
+
     const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
 
     /// Nodes for the columns of the subtree's output header, in order.
@@ -92,6 +107,8 @@ struct MergedPlanDAG
     /// Whether a join sits above this value's own computation point. Not derivable from the stuffings: an
     /// `INNER JOIN` stuffs neither side and replicates all the same.
     bool hasJoinAbove(const ActionsDAG::Node * node) const { return nodes_with_join_above.contains(node); }
+
+    const Origin & getOrigin(const ActionsDAG::Node * node) const;
 };
 
 /// Always succeeds: where a step cannot be represented the walk stops and that step becomes a source, so

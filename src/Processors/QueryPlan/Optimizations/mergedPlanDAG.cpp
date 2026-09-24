@@ -5,6 +5,11 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Common/typeid_cast.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -19,6 +24,15 @@ const MergedPlanDAG::Stuffing * MergedPlanDAG::getNearestStuffing(const ActionsD
         return it->second;
 
     return nullptr;
+}
+
+const MergedPlanDAG::Origin & MergedPlanDAG::getOrigin(const ActionsDAG::Node * node) const
+{
+    const auto it = origins.find(node);
+    if (it == origins.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} of the merged plan DAG has no origin", node->result_name);
+
+    return it->second;
 }
 
 namespace
@@ -100,6 +114,7 @@ MergedPlanDAG startDAGFromSource(QueryPlan::Node & node)
         const auto * input = merged.expression_actions.addInput(column.name, column.type, /*source_relation=*/0).getNode();
         source.inputs.push_back(input);
         dag_outputs.push_back(input);
+        merged.origins.emplace(input, MergedPlanDAG::Origin{&node, nullptr});
     }
 
     merged.sources.push_back(std::move(source));
@@ -165,13 +180,18 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     if (step->hasCorrelatedExpressions())
         return {};
 
-    const auto mergeAndTrack = [](Built & built, const ActionsDAG & step_dag, ActionsDAG::NodeMapping & clone_mapping)
+    const auto mergeAndTrack = [&node](Built & built, const ActionsDAG & step_dag, ActionsDAG::NodeMapping & clone_mapping)
     {
         auto & dag = *built.dag.expression_actions.getActionsDAG();
         const auto last_before = lastNodeBefore(dag);
 
         if (!mergeStepExpressions(built.dag, step_dag, clone_mapping))
             return false;
+
+        /// An input of the step stands for a value computed below, which has its origin already.
+        for (const auto & [original, merged_node] : clone_mapping)
+            if (original->type != ActionsDAG::ActionType::INPUT)
+                built.dag.origins.emplace(merged_node, MergedPlanDAG::Origin{&node, original});
 
         /// Nothing below this step gates what it computes: a join further down gated the values this
         /// reads, and their answers already stand where that join left them.
@@ -265,6 +285,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     /// values map points at them, so nothing has to be renumbered.
     built.dag.stuffings.splice(built.dag.stuffings.end(), right.dag.stuffings);
     built.dag.nearest_stuffing.merge(right.dag.nearest_stuffing);
+    built.dag.origins.merge(right.dag.origins);
 
     /// This join sits above everything either side computed, and above everything the joins below them
     /// sit above, so its own mark is the only one the result needs.
