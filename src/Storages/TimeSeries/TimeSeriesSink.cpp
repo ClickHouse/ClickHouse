@@ -179,7 +179,7 @@ namespace
         }
     }
 
-    /// Fills columns metric_family_name, type, unit, help for the "metric families" table.
+    /// Fills the columns of the "metric families" table: the name of a metric family, type, unit, help.
     void fillMetricFamiliesColumns(
         const IColumn & metric_family_column,
         const IColumn & type_column,
@@ -535,7 +535,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     /// later does insertRangeFrom(), which requires matching binary representations.
     /// In the end any final difference is handled by the converting actions inside `samples_pipeline`.
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion());
-    auto [timestamp_type, scalar_type] = splitTimeSeriesType(getHeader().getByName(samples_column_name).type);
+    auto [timestamp_type, value_type] = splitTimeSeriesType(getHeader().getByName(samples_column_name).type);
 
     if (settings[TimeSeriesSetting::store_min_time_and_max_time])
     {
@@ -597,7 +597,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     Block samples_header;
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
-    samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
+    samples_header.insert(ColumnWithTypeAndName{value_type, TimeSeriesColumnNames::Value});
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
 
     /// The recent samples table (if any) receives a copy of every samples block.
@@ -689,7 +689,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         *new_tags_names, *new_tags_values, *new_tags_offsets,
         columns_by_tag_name);
 
-    auto [timestamp_type, scalar_type] = splitTimeSeriesType(time_series_col.type);
+    auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_col.type);
 
     /// Optionally fill min_time and max_time columns if enabled in settings.
     MutableColumnPtr min_time_column;
@@ -752,7 +752,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         auto timestamp_column = timestamp_type->createColumn();
         timestamp_column->reserve(total_samples);
 
-        auto value_column = scalar_type->createColumn();
+        auto value_column = value_type->createColumn();
         value_column->reserve(total_samples);
 
         fillSamplesColumns(
@@ -764,7 +764,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         Block samples_block;
         samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
-        samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
+        samples_block.insert(ColumnWithTypeAndName{std::move(value_column), value_type, TimeSeriesColumnNames::Value});
 
         /// The samples table is written before the recent samples table: if the insert fails between
         /// the two writes, the sample is then missing from the recent samples table and just stays
@@ -790,7 +790,7 @@ void TimeSeriesSink::initMetricFamiliesPipeline()
 
     Block metric_families_header;
     metric_families_header.insert(ColumnWithTypeAndName{
-        header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::MetricFamilyName});
+        header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
 
     metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::Type).type, TimeSeriesColumnNames::Type});
@@ -846,7 +846,8 @@ void TimeSeriesSink::consumeMetricFamilies(const Block & block)
 
     /// Step 3. Assemble the block and push it to the "metric families" table.
     Block metric_families_block;
-    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_metric_family_column), metric_family_col.type, TimeSeriesColumnNames::MetricFamilyName});
+    metric_families_block.insert(ColumnWithTypeAndName{
+        std::move(new_metric_family_column), metric_family_col.type, TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
     metric_families_block.insert(ColumnWithTypeAndName{std::move(new_type_column), type_col.type, TimeSeriesColumnNames::Type});
     metric_families_block.insert(ColumnWithTypeAndName{std::move(new_unit_column), unit_col.type, TimeSeriesColumnNames::Unit});
     metric_families_block.insert(ColumnWithTypeAndName{std::move(new_help_column), help_col.type, TimeSeriesColumnNames::Help});
