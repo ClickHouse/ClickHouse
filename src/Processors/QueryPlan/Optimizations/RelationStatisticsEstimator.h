@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -30,7 +31,10 @@ static_assert(sizeof(RelationStatsOptions) == sizeof(bool), "RelationStatsCache 
 /// Statistics memoized for one optimizer pass. The two maps keep the default and
 /// `propagate_join_estimates` modes separate because an optimized logical join intentionally has
 /// different results in those modes. Entries whose subtrees cannot observe that option are shared
-/// between both maps.
+/// between both maps. Each entry snapshots its step and child addresses so a missed invalidation of
+/// a replaced step or child becomes a debug assertion and a self-healing release-build cache miss.
+/// This cannot detect a step object mutated in place (for example, `setJoin` or `updatePrewhereInfo`)
+/// or a freed and reallocated filter DAG node; those still require explicit invalidation.
 class RelationStatsCache
 {
 public:
@@ -51,6 +55,8 @@ private:
         /// Compared by identity only and never dereferenced. The pointed-to DAG is owned by the plan,
         /// whose mutations must invalidate the affected entry before that DAG can be destroyed.
         const ActionsDAG::Node * filter = nullptr;
+        const IQueryPlanStep * step = nullptr;
+        std::vector<const QueryPlan::Node *> children;
         bool options_independent = false;
         /// Zero means reusable for the lifetime of this pass; other values identify one estimator call.
         UInt64 invocation = 0;

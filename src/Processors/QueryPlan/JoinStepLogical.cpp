@@ -1719,6 +1719,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
             eligible_conditions += tryGetIEJoinKeyCondition(condition).has_value();
         if (eligible_conditions > 2)
         {
+            /// TODO: Thread the pass-local `RelationStatsCache` through physical conversion so IEJoin
+            /// key planning can reuse estimates already derived by join optimization.
             planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0]).column_stats;
             planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats;
         }

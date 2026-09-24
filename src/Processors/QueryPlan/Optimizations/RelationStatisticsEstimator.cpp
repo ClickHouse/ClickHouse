@@ -512,7 +512,24 @@ estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, R
     {
         auto & entries = stats_cache.entries_by_mode[mode_index(options)];
         auto it = entries.find(&current_node);
-        if (it == entries.end() || it->second.filter != current_filter
+        if (it == entries.end())
+            return nullptr;
+
+        const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(current_node.step.get());
+        const bool children_match = reference
+            ? it->second.children.size() == 1 && it->second.children.front() == reference->getSubplanReferenceRoot()
+            : it->second.children.size() == current_node.children.size()
+                && std::ranges::equal(it->second.children, current_node.children);
+        if (it->second.step != current_node.step.get() || !children_match)
+        {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+            chassert(false, "RelationStatsCache entry was not invalidated after replacing a plan step or child");
+#endif
+            entries.erase(it);
+            return nullptr;
+        }
+
+        if (it->second.filter != current_filter
             || (it->second.invocation != 0 && it->second.invocation != invocation))
             return nullptr;
         return &it->second;
@@ -524,9 +541,17 @@ estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, R
                                   bool options_independent,
                                   bool persistent)
     {
+        std::vector<const QueryPlan::Node *> children;
+        if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(current_node.step.get()))
+            children.push_back(reference->getSubplanReferenceRoot());
+        else
+            children.assign(current_node.children.begin(), current_node.children.end());
+
         RelationStatsCache::Entry entry{
             .stats = std::move(stats),
             .filter = current_filter,
+            .step = current_node.step.get(),
+            .children = std::move(children),
             .options_independent = options_independent,
             .invocation = persistent ? 0 : invocation};
         stats_cache.entries_by_mode[mode_index(options)].insert_or_assign(&current_node, entry);

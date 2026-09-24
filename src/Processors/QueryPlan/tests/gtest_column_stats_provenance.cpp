@@ -839,6 +839,25 @@ TEST(ColumnStatsProvenance, RelationStatsCacheSharesOptionIndependentEntriesAndS
     EXPECT_EQ(visits, 2);
 }
 
+#ifndef DEBUG_OR_SANITIZER_BUILD
+TEST(ColumnStatsProvenance, RelationStatsCacheDetectsReplacedStepWithoutInvalidate)
+{
+    size_t visits = 0;
+    QueryPlan::Node node;
+    node.step = std::make_unique<CountingSourceStep>(makeHeader(), visits);
+    RelationStatsCache cache;
+
+    const auto original = estimateReadRowsCount(node, nullptr, {}, &cache);
+    EXPECT_FALSE(original.estimated_rows.has_value());
+    EXPECT_EQ(visits, 1);
+
+    node.step = std::make_unique<TestSystemOneStep>(makeHeader());
+    const auto replaced = estimateReadRowsCount(node, nullptr, {}, &cache);
+    EXPECT_EQ(replaced.estimated_rows, 1);
+    EXPECT_TRUE(replaced.rows_exact);
+}
+#endif
+
 TEST(ColumnStatsProvenance, RelationStatsCacheRebindsWrappedSubtreeAndSeparatesFilters)
 {
     const auto header = makeHeader();
@@ -855,6 +874,10 @@ TEST(ColumnStatsProvenance, RelationStatsCacheRebindsWrappedSubtreeAndSeparatesF
     auto & moved_subtree = nodes.emplace_back(std::move(node));
     node = QueryPlan::Node{std::make_unique<LimitStep>(header, 0, 0), {&moved_subtree}};
     cache.rebindNode(node, moved_subtree);
+
+    const auto moved_stats = estimateReadRowsCount(moved_subtree, nullptr, {}, &cache);
+    ASSERT_EQ(moved_stats.estimated_rows, 1);
+    EXPECT_EQ(visits, 1);
 
     const auto wrapped_stats = estimateReadRowsCount(node, nullptr, {}, &cache);
     ASSERT_EQ(wrapped_stats.estimated_rows, 0);
