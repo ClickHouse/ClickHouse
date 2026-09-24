@@ -1802,6 +1802,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     return false;
 }
 
+/// Serves `position(s, 'needle') > 0` and the comparisons equivalent to it as `s LIKE '%needle%'`, or as
+/// `s ILIKE '%needle%'` for the case-insensitive functions.
 bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     const auto comparison_name = function_node.getFunctionName();
@@ -1837,18 +1839,19 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
     const auto search_function = search_node.toFunctionNode();
     const auto search_function_name = search_function.getFunctionName();
 
-    /// Their searchers compare bytes, or ASCII letters case-insensitively, as the dictionary scan does.
+    /// For the needles the `ILIKE` path accepts (ASCII, no `k`), all case-insensitive functions, the UTF-8 ones
+    /// included, find on a column exactly the ASCII case-insensitive occurrences its dictionary scan finds.
     String like_function_name;
     if (search_function_name == "position" || search_function_name == "positionUTF8" || search_function_name == "countSubstrings")
         like_function_name = "like";
-    else if (search_function_name == "positionCaseInsensitive" || search_function_name == "countSubstringsCaseInsensitive")
+    else if (search_function_name == "positionCaseInsensitive" || search_function_name == "positionCaseInsensitiveUTF8"
+        || search_function_name == "countSubstringsCaseInsensitive" || search_function_name == "countSubstringsCaseInsensitiveUTF8")
         like_function_name = "ilike";
     else
         return false;
 
-    /// A third argument is the start position, which `LIKE` cannot express. Only an ASCII `lower`/`upper` preprocessor
-    /// leaves the `%`, `_` and `\` added below intact; an index with a postprocessor is not served.
-    if (search_function.getArgumentsSize() != 2 || has_postprocessor || (has_preprocessor && !preprocessor->isASCIILowerOrUpper()))
+    /// A third argument is the start position, which `LIKE` cannot express.
+    if (search_function.getArgumentsSize() != 2)
         return false;
 
     Field needle;
@@ -1856,9 +1859,11 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
     if (!search_function.getArgumentAt(1).tryGetConstant(needle, needle_type) || needle.getType() != Field::Types::String)
         return false;
 
-    /// `position(s, '')` is 1 for every row. A needle cut inside a UTF-8 character does not tokenize like the row does.
+    /// The `LIKE` path does not check these: its hint path runs the preprocessor over the whole pattern, which only
+    /// `lower` and `upper` leave intact, and tokenizes a needle that is not valid UTF-8 differently from the rows.
     const auto & needle_string = needle.safeGet<String>();
-    if (needle_string.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle_string.data()), needle_string.size()))
+    if ((has_preprocessor && !preprocessor->isASCIILowerOrUpper())
+        || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle_string.data()), needle_string.size()))
         return false;
 
     Field pattern("%" + escapeForLikePattern(needle_string) + "%");

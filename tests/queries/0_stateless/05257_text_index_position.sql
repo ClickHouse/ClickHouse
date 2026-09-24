@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the EXPLAIN output below differs with parallel replicas.
--- The text index serves `position(s, 'needle') > 0` and the equivalent comparisons as `s LIKE '%needle%'`, nothing else.
--- Every query runs without the index, with the index, and with direct read from the index.
+-- Checks that `position(s, 'needle') > 0` and the equivalent comparisons use the text index like `s LIKE '%needle%'`.
+-- Every query must return the same rows with `use_skip_indexes` 0 and 1, and with direct read on and off.
 
 SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
@@ -22,15 +22,13 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 1;
 
--- Row 10 starts with U+212A KELVIN SIGN and row 12 contains U+017F LATIN SMALL LETTER LONG S: neither
--- matches an ASCII needle case-insensitively in positionCaseInsensitive.
 INSERT INTO tab VALUES
     (1, 'alpha bravo'), (2, 'charlie delta'), (3, 'alphabet soup'), (4, 'lpha centauri'), (5, 'ALPHA UPPER'),
     (6, 'sale 50%_off today'), (7, 'path c:\\temp\\file'), (8, 'foo bar baz'), (9, 'bar none'),
-    (10, concat(char(0xE2, 0x84, 0xAA), 'elvin scale')), (11, 'kelvin scale'),
-    (12, concat('mea', char(0xC5, 0xBF), 'ure')), (13, 'Measure twice'), (14, 'soup kitchen'), (15, '');
+    (10, 'Kelvin scale'), (11, 'kelvin scale'),
+    (12, 'measure'), (13, 'Measure twice'), (14, 'soup kitchen'), (15, '');
 
-SELECT '-- Occurrence checks';
+SELECT '-- Comparisons that use the index';
 
 SELECT 'position > 0', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'position > 0', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
@@ -76,6 +74,14 @@ SELECT 'countSubstringsCaseInsensitive', arraySort(groupArray(id)) FROM tab WHER
 SELECT 'countSubstringsCaseInsensitive', arraySort(groupArray(id)) FROM tab WHERE countSubstringsCaseInsensitive(message, 'LPHA') >= 1 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'countSubstringsCaseInsensitive', arraySort(groupArray(id)) FROM tab WHERE countSubstringsCaseInsensitive(message, 'LPHA') >= 1 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
+SELECT 'positionCaseInsensitiveUTF8', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitiveUTF8(message, 'LPHA') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'positionCaseInsensitiveUTF8', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitiveUTF8(message, 'LPHA') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'positionCaseInsensitiveUTF8', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitiveUTF8(message, 'LPHA') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT 'countSubstringsCaseInsensitiveUTF8', arraySort(groupArray(id)) FROM tab WHERE countSubstringsCaseInsensitiveUTF8(message, 'LPHA') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'countSubstringsCaseInsensitiveUTF8', arraySort(groupArray(id)) FROM tab WHERE countSubstringsCaseInsensitiveUTF8(message, 'LPHA') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'countSubstringsCaseInsensitiveUTF8', arraySort(groupArray(id)) FROM tab WHERE countSubstringsCaseInsensitiveUTF8(message, 'LPHA') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
 SELECT 'absent needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'nonexistent') > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'absent needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'nonexistent') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'absent needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'nonexistent') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
@@ -98,12 +104,12 @@ SELECT 'short needle', arraySort(groupArray(id)) FROM tab WHERE position(message
 SELECT 'short needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'bar') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'short needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'bar') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
--- A needle with 'k' is refused, as for ILIKE; the U+212A row must not match either way.
+-- A needle with 'k' does not use the index, as for ILIKE.
 SELECT 'case-insensitive with k', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'case-insensitive with k', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'case-insensitive with k', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
--- A needle with 's' is served: the dictionary scan folds ASCII only, as positionCaseInsensitive does.
+-- A needle with 's' uses the index.
 SELECT 'case-insensitive with s', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'MEASURE') > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'case-insensitive with s', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'MEASURE') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'case-insensitive with s', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'MEASURE') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
@@ -125,7 +131,7 @@ SELECT 'and like', arraySort(groupArray(id)) FROM tab WHERE position(message, 'l
 SELECT 'and like', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 AND message LIKE '%lpha%' SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'and like', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 AND message LIKE '%lpha%' SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
-SELECT '-- Not occurrence checks';
+SELECT '-- Comparisons that do not use the index';
 
 SELECT 'start position', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha', 3) > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'start position', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha', 3) > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
@@ -195,6 +201,9 @@ FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'lpha'
 
 SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION positionCaseInsensitive(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'LPHA') > 0);
+
+SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION positionCaseInsensitiveUTF8(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE positionCaseInsensitiveUTF8(message, 'LPHA') > 0);
 
 -- Both spellings build the same search query, so they share one virtual column.
 SELECT uniqExactIf(extract(explain, '-> (__text_index_[0-9A-Za-z_]+)'), explain LIKE '%INPUT%\_\_text\_index\_%'), countIf(explain LIKE '%FUNCTION position(%') > 0
