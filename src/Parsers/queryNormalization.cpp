@@ -1,18 +1,16 @@
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
-#include <Common/checkStackSize.h>
-
-#include <algorithm>
-#include <utility>
-#include <vector>
 
 
 namespace DB
 {
 
+namespace
+{
+
+/// looks generated: has whitespace, more than two digits, or is 36+ bytes long
 bool isComplexIdentifier(const char * begin, const char * end)
 {
     if (end - begin >= 36)
@@ -35,10 +33,10 @@ bool isComplexIdentifier(const char * begin, const char * end)
     return false;
 }
 
-
-UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names)
+/// passes to emit the units normalizedQueryHash hashes, in the order of the query
+template <typename Emit>
+void forEachNormalizedUnit(const char * begin, const char * end, bool keep_names, bool stop_at_error, Emit && emit)
 {
-    SipHash hash;
     Lexer lexer(begin, end);
 
     /// Coalesce a list of comma separated literals.
@@ -56,7 +54,7 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
         if (token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
         {
             if (0 == num_literals_in_sequence)
-                hash.update("\x00", 1);
+                emit("\x00", 1);
             ++num_literals_in_sequence;
             prev_comma = false;
             continue;
@@ -72,10 +70,10 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
         else
         {
             if (num_literals_in_sequence > 1)
-                hash.update("\x00", 1);
+                emit("\x00", 1);
 
             if (prev_comma)
-                hash.update(",", 1);
+                emit(",", 1);
 
             num_literals_in_sequence = 0;
             prev_comma = false;
@@ -89,20 +87,37 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
         {
             /// Explicitly ask to keep identifier names
             if (keep_names || !isComplexIdentifier(token.begin, token.end))
-                hash.update(token.begin, token.size());
+                emit(token.begin, token.size());
             else
-                hash.update("\x01", 1);
+                emit("\x01", 1);
 
             continue;
         }
 
-        if (token.isEnd() || token.isError())
+        if (token.isEnd() || (stop_at_error && token.isError()))
             break;
 
-        hash.update(token.begin, token.size());
+        emit(token.begin, token.size());
     }
+}
 
+}
+
+
+UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names)
+{
+    SipHash hash;
+    forEachNormalizedUnit(begin, end, keep_names, /*stop_at_error=*/ true, [&](const char * data, size_t size) { hash.update(data, size); });
     return hash.get64();
+}
+
+UInt64 normalizedQueryHashUnordered(const char * begin, const char * end)
+{
+    /// a sum does not depend on the order, and unlike xor a repeated token does not cancel out
+    UInt64 sum = 0;
+    forEachNormalizedUnit(begin, end, /*keep_names=*/ false, /*stop_at_error=*/ false,
+        [&](const char * data, size_t size) { sum += sipHash64(data, size); });
+    return sum;
 }
 
 UInt64 normalizedQueryHash(const String & query, bool keep_names)
@@ -215,52 +230,6 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 
         res_data.insert(token.begin, token.end);
     }
-}
-
-namespace
-{
-
-/// normalized first, so that elements erased to the same placeholder end up adjacent, then the plain text,
-/// because a tie on the normalized form alone would leave two elements the final hash separates in input order
-std::pair<String, String> sortKey(const IAST & ast)
-{
-    String text = ast.formatWithSecretsOneLine();
-
-    PaddedPODArray<UInt8> normalized;
-    normalizeQueryToPODArray(text.data(), text.data() + text.size(), normalized, /*keep_names=*/ false);
-    return {String(normalized.begin(), normalized.end()), std::move(text)};
-}
-
-void sortExpressionLists(IAST & ast)
-{
-    checkStackSize();
-
-    for (const auto & child : ast.children)
-        sortExpressionLists(*child);
-
-    if (!ast.as<ASTExpressionList>())
-        return;
-
-    std::vector<std::pair<std::pair<String, String>, ASTPtr>> sorted;
-    sorted.reserve(ast.children.size());
-    for (const auto & element : ast.children)
-        sorted.emplace_back(sortKey(*element), element);
-
-    std::sort(sorted.begin(), sorted.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
-
-    for (size_t i = 0; i < sorted.size(); ++i)
-        ast.children[i] = sorted[i].second;
-}
-
-}
-
-UInt64 unorderedQueryHash(const IAST & ast)
-{
-    ASTPtr sorted = ast.clone();
-    sortExpressionLists(*sorted);
-
-    /// the plain text, not the normalized one - normalizing twice would read the placeholders back as SQL
-    return normalizedQueryHash(sorted->formatWithSecretsOneLine(), /*keep_names=*/ false);
 }
 
 }
