@@ -38,6 +38,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/setThreadName.h>
 
@@ -112,6 +113,7 @@
 #include <Core/SettingsEnums.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
@@ -120,10 +122,6 @@
 
 #include <memory>
 #include <filesystem>
-
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
-
 
 namespace fs = std::filesystem;
 
@@ -194,6 +192,7 @@ namespace DistributedSetting
     extern const DistributedSettingsUInt64 bytes_to_delay_insert;
     extern const DistributedSettingsUInt64 bytes_to_throw_insert;
     extern const DistributedSettingsBool flush_on_detach;
+    extern const DistributedSettingsBool fsync_directories;
     extern const DistributedSettingsUInt64 max_delay_to_insert;
 }
 
@@ -1543,6 +1542,11 @@ Strings StorageDistributed::getDataPaths() const
     return paths;
 }
 
+/// Prefix of a subdirectory renamed by renameUnrecognizedDirectoryQueue()
+static constexpr std::string_view unrecognized_directory_queue_prefix = "unrecognized_";
+/// File in such a subdirectory that holds its name before the rename
+static constexpr std::string_view unrecognized_directory_queue_original_name_file = "original_name";
+
 void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     /// For a `Distributed` storage, `TRUNCATE` only clears the on-disk async-insert spool. A table of
@@ -1564,6 +1568,46 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
         it->second.directory_queue->shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
+
+    /// A directory quarantined by initializeDirectoryQueuesForDisk() has no directory queue, so it
+    /// is not in `cluster_nodes_data`, but its files are still part of the on-disk spool this
+    /// statement drops. Removing them here is the only way to get rid of them from SQL.
+    if (!relative_data_path.empty())
+        for (const DiskPtr & disk : data_volume->getDisks())
+            removeUnrecognizedDirectoryQueues(disk);
+}
+
+void StorageDistributed::removeUnrecognizedDirectoryQueues(const DiskPtr & disk) const
+{
+    const std::filesystem::path path(disk->getPath() + relative_data_path);
+    if (!std::filesystem::exists(path))
+        return;
+
+    /// Taken before the loop below removes an entry of `path`, which would let the iterator skip
+    /// or repeat the entries around it.
+    std::vector<std::filesystem::path> dir_paths;
+    for (std::filesystem::directory_iterator it(path), end; it != end; ++it)
+        if (it->is_directory() && it->path().filename().string().starts_with(unrecognized_directory_queue_prefix))
+            dir_paths.push_back(it->path());
+
+    if (dir_paths.empty())
+        return;
+
+    /// Like the removal of a directory queue, so that with `fsync_directories` the directories
+    /// do not come back after a crash that follows `TRUNCATE TABLE`.
+    auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path);
+    for (const auto & dir_path : dir_paths)
+    {
+        LOG_DEBUG(log, "Removing {}, which holds files of an async INSERT that cannot be sent", dir_path.string());
+        std::filesystem::remove_all(dir_path);
+    }
+}
+
+SyncGuardPtr StorageDistributed::getDirectorySyncGuard(const DiskPtr & disk, const std::string & relative_path) const
+{
+    if ((*distributed_settings)[DistributedSetting::fsync_directories])
+        return disk->getDirectorySyncGuard(relative_path);
+    return nullptr;
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
@@ -1571,37 +1615,94 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
     return storage_policy;
 }
 
+/// A queue directory is named after its single destination: `shardN_replicaM` or `shardN_all_replicas`,
+/// exactly what `DistributedSink` writes. Anything looser (for example, several names joined with a
+/// comma, which no writer produces) is treated as unrecognized, so a stray directory cannot make the
+/// queue send its files to a destination the sink never chose.
+static bool isDirectoryQueueName(const std::string & name)
+{
+    return Cluster::Address::tryParseFullString(name).has_value();
+}
+
+void StorageDistributed::renameUnrecognizedDirectoryQueue(const DiskPtr & disk, const std::filesystem::path & dir_path) const
+{
+    /// The name is not one `DistributedSink` writes, so it names no destination and the files in
+    /// it can never be sent. Renaming keeps it from being taken for a directory queue on every
+    /// start; the files are left for the administrator to inspect or remove.
+    const auto parent_path = dir_path.parent_path();
+    const auto old_name = dir_path.filename().string();
+
+    /// The new name is a hash, because the old one may hold a password (a server older than 26.9
+    /// named the directory after `user:password@host:port`) and the new one is logged and shown.
+    /// The old name is the only record of where the files were meant to be sent, so it is kept in
+    /// a file next to them: a downgrade or a manual recovery needs it to replay them. Written
+    /// before the rename, so an interrupted start leaves the directory with its old name, and the
+    /// next start writes the file again.
+    {
+        auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path + old_name);
+        WriteBufferFromFile out((dir_path / unrecognized_directory_queue_original_name_file).string());
+        writeString(old_name, out);
+        out.finalize();
+        out.sync();
+    }
+
+    const auto new_name = fmt::format("{}{}", unrecognized_directory_queue_prefix, sipHash128String(old_name));
+    {
+        auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path);
+        std::filesystem::rename(dir_path, parent_path / new_name);
+    }
+    /// Logged as a warning and not as an error: a server upgraded from a version that still wrote
+    /// the old directory names meets this on the first start of every table with a non-empty
+    /// queue, and it is the expected handling of it, not a failure of the server.
+    LOG_WARNING(log, "Renamed an unrecognized subdirectory of {} to {}, the files in it will not be sent. "
+                     "A subdirectory used for async INSERT is named 'shardN_replicaM' or 'shardN_all_replicas'. "
+                     "Its old name is kept in the file '{}' in it",
+                     parent_path.string(), new_name, unrecognized_directory_queue_original_name_file);
+}
+
 void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 {
     const std::string path(disk->getPath() + relative_data_path);
     fs::create_directories(path);
 
-    std::filesystem::directory_iterator begin(path);
-    std::filesystem::directory_iterator end;
-    for (auto it = begin; it != end; ++it)
+    /// Taken before anything below removes or renames an entry of `path`, which would let the
+    /// iterator skip or repeat the entries around it.
+    std::vector<std::filesystem::path> dir_paths;
+    for (std::filesystem::directory_iterator it(path), end; it != end; ++it)
+        if (std::filesystem::is_directory(it->path()))
+            dir_paths.push_back(it->path());
+
+    for (const auto & dir_path : dir_paths)
     {
-        const auto & dir_path = it->path();
-        if (std::filesystem::is_directory(dir_path))
+        /// Created by DistributedSink
+        const auto tmp_path = dir_path / "tmp";
+        if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
+            std::filesystem::remove(tmp_path);
+
+        const auto broken_path = dir_path / "broken";
+        if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
+            std::filesystem::remove(broken_path);
+
+        const auto dir_name = dir_path.filename().string();
+
+        if (std::filesystem::is_empty(dir_path))
         {
-            /// Created by DistributedSink
-            const auto & tmp_path = dir_path / "tmp";
-            if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
-                std::filesystem::remove(tmp_path);
-
-            const auto & broken_path = dir_path / "broken";
-            if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
-                std::filesystem::remove(broken_path);
-
-            if (std::filesystem::is_empty(dir_path))
-            {
-                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
-                /// Will be created by DistributedSink on demand.
-                std::filesystem::remove(dir_path);
-            }
-            else
-            {
-                getDirectoryQueue(disk, dir_path.filename().string());
-            }
+            LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
+            /// Will be created by DistributedSink on demand.
+            std::filesystem::remove(dir_path);
+        }
+        else if (dir_name.starts_with(unrecognized_directory_queue_prefix))
+        {
+            /// Renamed by an earlier start, left for the administrator.
+            LOG_WARNING(log, "{} holds files of an async INSERT that cannot be sent", dir_path.string());
+        }
+        else if (!isDirectoryQueueName(dir_name))
+        {
+            renameUnrecognizedDirectoryQueue(disk, dir_path);
+        }
+        else
+        {
+            getDirectoryQueue(disk, dir_name);
         }
     }
 }
@@ -1648,44 +1749,43 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
     const auto & shards_info = cluster->getShardsInfo();
     const auto & shards_addresses = cluster->getShardsAddresses();
 
-    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+    auto address = Cluster::Address::tryParseFullString(name);
+
+    /// Unreachable: initializeDirectoryQueuesForDisk() renames a name it does not recognize
+    /// instead of starting a queue for it, and DistributedSink generates the name it passes.
+    /// Returned empty rather than thrown on so a stray name cannot keep the table from attaching.
+    if (!address)
     {
-        const std::string & dirname = boost::copy_range<std::string>(*it);
-        Cluster::Address address = Cluster::Address::fromFullString(dirname);
-
-        /// Check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1).
-        if (address.shard_index)
-        {
-            if (address.shard_index > shards_info.size())
-            {
-                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
-                continue;
-            }
-
-            const auto & replicas_addresses = shards_addresses[address.shard_index - 1];
-            size_t replicas = replicas_addresses.size();
-
-            if (dirname.ends_with("_all_replicas"))
-            {
-                for (const auto & replica_address : replicas_addresses)
-                    addresses.push_back(replica_address);
-                continue;
-            }
-
-            if (address.replica_index == 0 || address.replica_index > replicas)
-            {
-                LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
-                               "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
-                                address.replica_index, dirname, replicas, address.shard_index);
-                continue;
-            }
-
-            addresses.push_back(replicas_addresses[address.replica_index - 1]);
-        }
-        else
-            addresses.push_back(address);
+        LOG_ERROR(log, "Unrecognized name of a directory queue of {}", getStorageID().getNameForLogs());
+        return addresses;
     }
+
+    if (address->shard_index > shards_info.size())
+    {
+        LOG_ERROR(log, "No shard with shard_index={} ({})", address->shard_index, name);
+        return addresses;
+    }
+
+    const auto & replicas_addresses = shards_addresses[address->shard_index - 1];
+    size_t replicas = replicas_addresses.size();
+
+    /// shardN_all_replicas
+    if (address->replica_index == 0)
+    {
+        for (const auto & replica_address : replicas_addresses)
+            addresses.push_back(replica_address);
+        return addresses;
+    }
+
+    if (address->replica_index > replicas)
+    {
+        LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
+                       "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
+                        address->replica_index, name, replicas, address->shard_index);
+        return addresses;
+    }
+
+    addresses.push_back(replicas_addresses[address->replica_index - 1]);
     return addresses;
 }
 

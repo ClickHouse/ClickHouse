@@ -10,6 +10,8 @@
 
 #include <pcg_random.hpp>
 
+#include <filesystem>
+
 namespace DB
 {
 
@@ -159,6 +161,18 @@ private:
 
     /// create directory monitors for each existing subdirectory
     void initializeDirectoryQueuesForDisk(const DiskPtr & disk);
+
+    /// Rename a subdirectory whose name is not one `DistributedSink` writes, so that it is not
+    /// taken for a directory queue. The files in it are left untouched, and the old name is saved
+    /// in a file next to them.
+    void renameUnrecognizedDirectoryQueue(const DiskPtr & disk, const std::filesystem::path & dir_path) const;
+
+    /// Remove the subdirectories quarantined by renameUnrecognizedDirectoryQueue(). They have no
+    /// directory queue, so `TRUNCATE TABLE` has to drop them separately.
+    void removeUnrecognizedDirectoryQueues(const DiskPtr & disk) const;
+
+    /// A guard that syncs the directory on destruction if `fsync_directories` is set, nullptr otherwise.
+    SyncGuardPtr getDirectorySyncGuard(const DiskPtr & disk, const std::string & relative_path) const;
 
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
