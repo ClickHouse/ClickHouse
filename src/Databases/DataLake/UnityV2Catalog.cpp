@@ -676,7 +676,6 @@ std::shared_ptr<IStorageCredentials> UnityV2Catalog::parseAzureCredentials(const
     return std::make_shared<AzureCredentials>(creds_object->get("sas_token").extract<String>());
 }
 
-/// Only S3 refreshes credentials: `StorageAzureConfiguration::createObjectStorage` discards the callback.
 ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfigurationCallback(
     const DB::StorageID & table_id, const TableMetadata & table_metadata)
 {
@@ -703,11 +702,11 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfiguration
             "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    return [this, unity_table_id = *table_uuid]() -> std::shared_ptr<IStorageCredentials>
+    return [this, unity_table_id = *table_uuid, storage_type = table_metadata.getStorageType()]() -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
-        return getDeltaCredentials(unity_table_id, StorageType::S3);
+        return getDeltaCredentials(unity_table_id, storage_type);
     };
 }
 
