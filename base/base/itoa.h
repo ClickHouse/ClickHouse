@@ -12,17 +12,20 @@
     M(UInt32) \
     M(UInt64) \
     M(UInt128) \
-    M(UInt256) \
     M(int8_t) \
     M(Int8) \
     M(Int16) \
     M(Int32) \
     M(Int64) \
-    M(Int128) \
-    M(Int256)
+    M(Int128)
 
 #define INSTANTIATION(T) char * NO_SANITIZE_UNSIGNED_OVERFLOW itoa(T i, char * p);
 FOR_INTEGER_TYPES(INSTANTIATION)
+
+/// The 256-bit types are taken by reference. By value they are `byval` aggregates holding an array, and
+/// that alone puts a `-fstack-protector-strong` canary on the function.
+char * itoa(const UInt256 & i, char * p);
+char * itoa(const Int256 & i, char * p);
 
 /// `long` is not covered by the list above where it is a distinct type.
 /// Naming the type is the whole point here, so `google-runtime-int` has nothing to suggest.
@@ -45,7 +48,7 @@ static_assert(
 
 char * writeFixedDigits(UInt64 value, UInt32 width, char * p);
 char * writeFixedDigits(UInt128 value, UInt32 width, char * p);
-char * writeFixedDigits(UInt256 value, UInt32 width, char * p);
+char * writeFixedDigits(const UInt256 & value, UInt32 width, char * p);
 
 void setUseAVX512ItoaForTests(bool value);
 bool getUseAVX512ItoaForTests();

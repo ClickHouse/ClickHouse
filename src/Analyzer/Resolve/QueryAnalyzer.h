@@ -314,6 +314,9 @@ private:
     /// CTEs that are currently in resolve process
     QueryTreeNodePtrWithHashSet ctes_in_resolve_process;
 
+    /// Same as `ctes_in_resolve_process` but by identity: structural comparison cannot tell identical redefinitions apart.
+    std::unordered_set<const IQueryTreeNode *> cte_definitions_in_resolve_process;
+
     /// Window definitions that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
 

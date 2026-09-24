@@ -613,7 +613,7 @@ private:
         };
 
         auto sample_block = indexAnalysisSampleBlock();
-        Epoll readers_epoll;
+        Epoll readers_epoll{EpollNesting::PipelinePoller};
         std::vector<ReplicaReader> readers;
         std::unordered_map<int, size_t> fd_to_reader;
 

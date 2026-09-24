@@ -139,6 +139,22 @@ private:
         return nullptr;
     }
 
+    /// Out of line so ThinLTO cannot inline it into `executeImpl`, where surrounding code decides the
+    /// loop's alignment. The value comes from the index, not an accumulator: ranges here are short, so
+    /// the vectoriser's scalar remainder dominates and independent values fill it better. `iotaWithStep`
+    /// keeps an accumulator because its caller generates whole blocks, where a multiply would cost more.
+    template <typename T>
+    static NO_INLINE void fillConstStartStep(T * out, size_t n, T start, T step)
+    {
+        /// Same as in `iota`: a portable AArch64 build keeps LLVM's default interleave factor of 2,
+        /// while x86-64-v3 is already at 4.
+#if defined(__aarch64__) && !defined(OS_DARWIN)
+#pragma clang loop interleave_count(4)
+#endif
+        for (size_t idx = 0; idx < n; ++idx)
+            out[idx] = static_cast<T>(start + idx * step);
+    }
+
     template <typename T>
     ColumnPtr executeConstStartStep(
             const IColumn * end_arg, const T start, const T step, const size_t input_rows_count) const
@@ -189,19 +205,8 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            /// Last iteration is peeled to avoid a trailing `value += step` that would
-            /// overflow for valid runs at the high end of the range (e.g. start = Int64::max - 1,
-            /// step = 2 emits one element and would then signed-overflow). Inner loop stays
-            /// branchless so the compiler can keep vectorising it.
-            T value = start;
-            size_t n = row_length[row_idx];
-            for (size_t idx = 0; idx + 1 < n; ++idx)
-            {
-                out_data[offset + idx] = value;
-                value += step;
-            }
-            if (n > 0)
-                out_data[offset + n - 1] = value;
+            const size_t n = row_length[row_idx];
+            fillConstStartStep(out_data.data() + offset, n, start, step);
             offset += n;
             out_offsets[row_idx] = offset;
         }

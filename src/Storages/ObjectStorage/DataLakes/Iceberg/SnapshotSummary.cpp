@@ -2,6 +2,7 @@
 
 #if USE_AVRO
 
+#include <limits>
 #include <type_traits>
 #include <unordered_map>
 #include <IO/ReadHelpers.h>
@@ -18,6 +19,54 @@ namespace DB::ErrorCodes
 
 namespace DB::Iceberg
 {
+
+namespace
+{
+
+struct TotalsDeltas
+{
+    struct TotalDelta
+    {
+        UInt64 & value;
+        std::string_view name;
+
+        void operator-=(UInt64 delta)
+        {
+            if (delta > value)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Iceberg snapshot summary field '{}' cannot subtract {} from {}", name, delta, value);
+
+            value -= delta;
+        }
+
+        void operator+=(UInt64 delta)
+        {
+            if (delta > std::numeric_limits<UInt64>::max() - value)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg snapshot summary field '{}' overflows", name);
+
+            value += delta;
+        }
+    };
+
+    TotalDelta records;
+    TotalDelta files_size;
+    TotalDelta data_files;
+    TotalDelta delete_files;
+    TotalDelta position_deletes;
+    TotalDelta equality_deletes;
+
+    explicit TotalsDeltas(SnapshotSummaryTotals & totals)
+        : records{.value = totals.records, .name = Iceberg::f_total_records}
+        , files_size{.value = totals.files_size, .name = Iceberg::f_total_files_size}
+        , data_files{.value = totals.data_files, .name = Iceberg::f_total_data_files}
+        , delete_files{.value = totals.delete_files, .name = Iceberg::f_total_delete_files}
+        , position_deletes{.value = totals.position_deletes, .name = Iceberg::f_total_position_deletes}
+        , equality_deletes{.value = totals.equality_deletes, .name = Iceberg::f_total_equality_deletes}
+    {
+    }
+};
+
+}
 
 SnapshotSummaryOperation SnapshotSummary::getOperation() const
 {
@@ -58,47 +107,60 @@ NO_SANITIZE_UNSIGNED_OVERFLOW SnapshotSummary::SnapshotSummary(
     else if (getOperation() != SnapshotSummaryOperation::APPEND)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No parent snapshot for DELETE/OVERWRITE/REPLACE");
 
+    TotalsDeltas totals_deltas(totals);
+
     switch (getOperation())
     {
         case SnapshotSummaryOperation::APPEND:
         {
             const auto & u = std::get<SnapshotSummaryUpdateAppend>(update);
-            totals.records += u.added_records;
-            totals.files_size += u.added_files_size;
-            totals.data_files += u.added_files;
+            totals_deltas.records += u.added_records;
+            totals_deltas.files_size += u.added_files_size;
+            totals_deltas.data_files += u.added_files;
             break;
         }
         case SnapshotSummaryOperation::OVERWRITE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateOverwrite>(update);
-            totals.records += u.added_records - u.removed_records;
-            totals.files_size += u.added_files_size - u.removed_files_size;
-            totals.data_files += u.added_files - u.deleted_data_files;
-            totals.delete_files += u.added_delete_files;
-            totals.position_deletes += u.added_position_deletes;
-            totals.equality_deletes += u.added_equality_deletes;
+
+            totals_deltas.records -=  u.removed_records;
+            totals_deltas.records +=  u.added_records;
+            totals_deltas.files_size -=  u.removed_files_size;
+            totals_deltas.files_size +=  u.added_files_size;
+            totals_deltas.data_files -=  u.deleted_data_files;
+            totals_deltas.data_files +=  u.added_files;
+            totals_deltas.delete_files +=  u.added_delete_files;
+            totals_deltas.position_deletes +=  u.added_position_deletes;
+            totals_deltas.equality_deletes +=  u.added_equality_deletes;
             break;
         }
         case SnapshotSummaryOperation::DELETE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateDelete>(update);
-            totals.records -= u.removed_records;
-            totals.files_size -= u.removed_files_size;
-            totals.data_files -= u.deleted_data_files;
-            totals.delete_files -= u.removed_position_delete_files + u.removed_equality_delete_files;
-            totals.position_deletes -= u.removed_position_deletes;
-            totals.equality_deletes -= u.removed_equality_deletes;
+            totals_deltas.records -=  u.removed_records;
+            totals_deltas.files_size -=  u.removed_files_size;
+            totals_deltas.data_files -=  u.deleted_data_files;
+            totals_deltas.delete_files -=  u.removed_position_delete_files;
+            totals_deltas.delete_files -=  u.removed_equality_delete_files;
+            totals_deltas.position_deletes -=  u.removed_position_deletes;
+            totals_deltas.equality_deletes -=  u.removed_equality_deletes;
             break;
         }
         case SnapshotSummaryOperation::REPLACE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateReplace>(update);
-            totals.records += u.added_records - u.removed_records;
-            totals.files_size += u.added_files_size - u.removed_files_size;
-            totals.data_files += u.added_files - u.deleted_data_files;
-            totals.delete_files += u.added_delete_files - u.removed_delete_files;
-            totals.position_deletes += u.added_position_deletes - u.removed_position_deletes;
-            totals.equality_deletes += u.added_equality_deletes - u.removed_equality_deletes;
+            totals_deltas.records -=  u.removed_records;
+            totals_deltas.records +=  u.added_records;
+            totals_deltas.files_size -=  u.removed_files_size;
+            totals_deltas.files_size +=  u.added_files_size;
+            totals_deltas.data_files -=  u.deleted_data_files;
+            totals_deltas.data_files +=  u.added_files;
+            totals_deltas.delete_files -=  u.removed_delete_files;
+            totals_deltas.delete_files +=  u.added_delete_files;
+            totals_deltas.position_deletes -=  u.removed_position_deletes;
+            totals_deltas.position_deletes +=  u.added_position_deletes;
+            totals_deltas.equality_deletes -=  u.removed_equality_deletes;
+            totals_deltas.equality_deletes +=  u.added_equality_deletes;
             break;
         }
     }
@@ -130,7 +192,8 @@ Map SnapshotSummary::toMap() const
     return result;
 }
 
-SnapshotSummary::Expected SnapshotSummary::fromJSON(const Poco::JSON::Object & obj, bool with_extra_fields)
+SnapshotSummary::Expected SnapshotSummary::fromJSON(
+    const Poco::JSON::Object & obj, bool with_extra_fields, bool require_totals)
 {
     std::unordered_set<std::string_view> parsed;
 
@@ -163,6 +226,21 @@ SnapshotSummary::Expected SnapshotSummary::fromJSON(const Poco::JSON::Object & o
     };
 
     SnapshotSummary result;
+
+    if (require_totals)
+    {
+        for (const auto * field : {
+                 Iceberg::f_total_records,
+                 Iceberg::f_total_files_size,
+                 Iceberg::f_total_data_files,
+                 Iceberg::f_total_delete_files,
+                 Iceberg::f_total_position_deletes,
+                 Iceberg::f_total_equality_deletes})
+        {
+            if (!obj.has(field))
+                return std::unexpected(fmt::format("Missing required snapshot summary field '{}'", field));
+        }
+    }
 
     const auto operation_str = get_string(Iceberg::f_operation);
     if (operation_str == Iceberg::f_append)
