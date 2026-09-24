@@ -204,6 +204,13 @@ public:
 
     UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
 
+    /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
+    /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join
+    /// stands such a column - NULL where it is Nullable, the default otherwise - so a `Nullable` column
+    /// passed through here tells which rows matched. Only the expressions change: the caller updates the
+    /// input headers once it has passed what it needs.
+    void addPassThroughColumn(const ColumnWithTypeAndName & column, JoinTableSide side);
+
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 

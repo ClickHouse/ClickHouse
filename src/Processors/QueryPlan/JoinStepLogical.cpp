@@ -695,6 +695,13 @@ JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & unneeded_output
     return result;
 }
 
+void JoinStepLogical::addPassThroughColumn(const ColumnWithTypeAndName & column, JoinTableSide side)
+{
+    const auto * input = expression_actions.addInput(column.name, column.type, side == JoinTableSide::Left ? 0 : 1).getNode();
+    actions_after_join.push_back(input);
+    expression_actions.getActionsDAG()->getOutputs().push_back(input);
+}
+
 void JoinStepLogical::updateOutputHeader()
 {
     auto actions_dag = expression_actions.getActionsDAG();
