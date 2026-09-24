@@ -19,10 +19,9 @@ REGISTER_FUNCTION(TryBase58Decode)
     FunctionDocumentation::Description description = R"(
 Like [`base58Decode`](#base58Decode), but returns an empty string in case of error.
 )";
-    FunctionDocumentation::Syntax syntax = "tryBase58Decode(encoded[, expected_size])";
+    FunctionDocumentation::Syntax syntax = "tryBase58Decode(encoded)";
     FunctionDocumentation::Arguments arguments = {
-        {"encoded", "String column or constant. If the string is not valid Base58-encoded, returns an empty string in case of error.", {"String"}},
-        {"expected_size", "Optional. Required decoded size in bytes: an input that decodes to any other size is rejected. `0` places no requirement.", {"UInt8, UInt16, UInt32, or UInt64"}}
+        {"encoded", "String column or constant. If the string is not valid Base58-encoded, returns an empty string in case of error.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the decoded value of the argument.", {"String"}};
     FunctionDocumentation::Examples examples = {

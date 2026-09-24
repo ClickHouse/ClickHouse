@@ -3,22 +3,10 @@
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
-#include <Common/FieldAccurateComparison.h>
 #include <Common/SipHash.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
-#include <Common/IntervalKind.h>
-#include <Core/Field.h>
-#include <Core/ProtocolDefines.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <DataTypes/DataTypeNullable.h>
-
-#include <string_view>
-#include <unordered_set>
 
 #include "config.h"
 
@@ -33,13 +21,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int SUPPORT_IS_DISABLED;
+    extern const int NOT_IMPLEMENTED;
 }
 
-void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings)
+void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
 {
-    auto & out = settings.out;
     bool first = true;
 
     for (const auto & desc : description)
@@ -48,7 +34,7 @@ void dumpSortDescription(const SortDescription & description, ExplainFormatSetti
             out << ", ";
         first = false;
 
-        out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(desc.column_name, settings.pretty_names) : desc.column_name);
+        out << desc.column_name;
 
         if (desc.direction > 0)
             out << " ASC";
@@ -83,6 +69,22 @@ bool SortDescription::hasPrefix(const SortDescription & prefix) const
     return true;
 }
 
+bool SortDescription::hasPrefix(const Names & prefix) const
+{
+    if (prefix.empty())
+        return true;
+
+    if (prefix.size() > size())
+        return false;
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+    {
+        if ((*this)[i].column_name != prefix[i])
+            return false;
+    }
+    return true;
+}
+
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs)
 {
     size_t i = 0;
@@ -97,108 +99,28 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     return res;
 }
 
-namespace
-{
-
-/// Values that comparison declares equal while hash equality - the equality of `GROUP BY`, `DISTINCT`,
-/// `LIMIT BY` and `IN` - keeps apart: `-0.0` and `0.0`, and the `NaN` payloads. `Dynamic`, `Variant`
-/// and `Object` are only known at run time and may hold such a value.
-bool comparisonCanMergeDistinctValues(const IDataType & type)
-{
-    auto is_ambiguous = [](const IDataType & subtype)
-    {
-        WhichDataType which(subtype);
-        return which.isFloat() || which.isDynamic() || which.isVariant() || which.isObject();
-    };
-
-    if (is_ambiguous(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child) { result = result || is_ambiguous(child); });
-    return result;
-}
-
-}
-
-SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header)
-{
-    std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
-
-    SortDescription prefix;
-    for (const auto & sort_column_desc : description)
-    {
-        if (!column_set.contains(sort_column_desc.column_name))
-            break;
-
-        /// A collated column is ordered by its collation key, not by value, so equal values are not
-        /// adjacent; in-order grouping (DISTINCT / LIMIT BY) cannot rely on it. Stop the prefix here.
-        if (sort_column_desc.collator)
-            break;
-
-        /// A group taken from the sort order is a range of rows that compare equal, and comparison
-        /// merges `-0.0` with `0.0`. The hash grouping the same steps use otherwise - and `GROUP BY` -
-        /// keeps them apart, so a float in the prefix would make the answer depend on which variant the
-        /// plan picks. The column keeps being grouped, just by hash.
-        const auto * column_in_header = header.findByName(sort_column_desc.column_name);
-        if (!column_in_header || !column_in_header->type || comparisonCanMergeDistinctValues(*column_in_header->type))
-            break;
-
-        prefix.emplace_back(sort_column_desc);
-    }
-
-    return prefix;
-}
-
 #if USE_EMBEDDED_COMPILER
 
-namespace
+static CHJIT & getJITInstance()
 {
-    std::mutex sort_description_jit_mutex;
-    /// See `aggregator_jit_instance` in `Aggregator.cpp` for the rationale of `shared_ptr` ownership.
-    std::shared_ptr<CHJIT> sort_description_jit_instance;
-}
-
-static std::shared_ptr<CHJIT> getJITInstancePtr()
-{
-    std::lock_guard lock(sort_description_jit_mutex);
-    if (!sort_description_jit_instance)
-        sort_description_jit_instance = std::make_shared<CHJIT>();
-    return sort_description_jit_instance;
-}
-
-void resetSortDescriptionJITInstance()
-{
-    std::lock_guard lock(sort_description_jit_mutex);
-    sort_description_jit_instance.reset();
+    static CHJIT jit;
+    return jit;
 }
 
 class CompiledSortDescriptionFunctionHolder final : public CompiledExpressionCacheEntry
 {
 public:
-    explicit CompiledSortDescriptionFunctionHolder(CompiledSortDescriptionFunction compiled_function_, std::shared_ptr<CHJIT> jit_owner_)
+    explicit CompiledSortDescriptionFunctionHolder(CompiledSortDescriptionFunction compiled_function_)
         : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
         , compiled_sort_description_function(compiled_function_)
-        , jit_owner(std::move(jit_owner_))
     {}
 
     ~CompiledSortDescriptionFunctionHolder() override
     {
-        try
-        {
-            /// Use the JIT instance that compiled this module (see `CompiledAggregateFunctionsHolder`).
-            jit_owner->deleteCompiledModule(compiled_sort_description_function.compiled_module);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        getJITInstance().deleteCompiledModule(compiled_sort_description_function.compiled_module);
     }
 
     CompiledSortDescriptionFunction compiled_sort_description_function;
-
-private:
-    std::shared_ptr<CHJIT> jit_owner;
 };
 
 static std::string getSortDescriptionDump(const SortDescription & description, const DataTypes & header_types)
@@ -226,24 +148,17 @@ static LoggerPtr getLogger()
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)
 {
-    static UnorderedMapWithMemoryTracking<UInt128, UInt64, UInt128Hash> counter;
+    static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
     static std::mutex mutex;
 
     if (!description.compile_sort_description || sort_description_types.empty())
         return;
 
-    for (size_t i = 0; i < description.size(); ++i)
+    for (const auto & type : sort_description_types)
     {
-        auto nested_type = removeNullable(sort_description_types[i]);
-        if (!sort_description_types[i]->createColumn()->isComparatorCompilable() ||
-            (!canBeNativeType(*sort_description_types[i]) && !WhichDataType(nested_type).isString() && !WhichDataType(nested_type).isFixedString()))
-            return;
-
-        /// JIT comparator does not support collation-aware comparison
-        if (description[i].collator)
+        if (!type->createColumn()->isComparatorCompilable() || !canBeNativeType(*type))
             return;
     }
-
 
     auto description_dump = getSortDescriptionDump(description, sort_description_types);
 
@@ -270,9 +185,8 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
         {
             LOG_TRACE(getLogger(), "Compile sort description {}", description_dump);
 
-            auto jit_owner = getJITInstancePtr();
-            auto compiled_sort_description = compileSortDescription(*jit_owner, description, sort_description_types, description_dump);
-            return std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description), std::move(jit_owner));
+            auto compiled_sort_description = compileSortDescription(getJITInstance(), description, sort_description_types, description_dump);
+            return std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description));
         });
 
         compiled_sort_description_holder = std::static_pointer_cast<CompiledSortDescriptionFunctionHolder>(compiled_function_cache_entry);
@@ -280,9 +194,8 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     else
     {
         LOG_TRACE(getLogger(), "Compile sort description {}", description_dump);
-        auto jit_owner = getJITInstancePtr();
-        auto compiled_sort_description = compileSortDescription(*jit_owner, description, sort_description_types, description_dump);
-        compiled_sort_description_holder = std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description), std::move(jit_owner));
+        auto compiled_sort_description = compileSortDescription(getJITInstance(), description, sort_description_types, description_dump);
+        compiled_sort_description_holder = std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description));
     }
 
     auto comparator_function = compiled_sort_description_holder->compiled_sort_description_function.comparator_function;
@@ -304,9 +217,7 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 std::string dumpSortDescription(const SortDescription & description)
 {
     WriteBufferFromOwnString wb;
-    ExplainFormatSettings settings{.out = wb, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
-
-    dumpSortDescription(description, settings);
+    dumpSortDescription(description, wb);
     return wb.str();
 }
 
@@ -323,155 +234,7 @@ JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
     return json_array;
 }
 
-namespace
-{
-
-/// A step or staleness bound has to be a number the fill arithmetic can advance by; `getStepFunction`
-/// otherwise reaches `Field::safeGet` with the wrong type.
-bool isFillArithmeticValue(const Field & value)
-{
-    switch (value.getType())
-    {
-        case Field::Types::UInt64:
-        case Field::Types::Int64:
-        case Field::Types::Float64:
-        case Field::Types::UInt128:
-        case Field::Types::Int128:
-        case Field::Types::UInt256:
-        case Field::Types::Int256:
-        case Field::Types::Decimal32:
-        case Field::Types::Decimal64:
-        case Field::Types::Decimal128:
-        case Field::Types::Decimal256:
-            return true;
-        default:
-            return false;
-    }
-}
-
-}
-
-String checkFillDescription(const FillColumnDescription & fill, int direction)
-{
-    /// The planners always set a step (`+1`/`-1` when the query gives none), so this only rejects a
-    /// forged description. A `Null` step passes every comparison below, hence the explicit check.
-    if (!isFillArithmeticValue(fill.fill_step))
-        return "WITH FILL STEP value must be a number";
-
-    if (accurateEquals(fill.fill_step, Field{0}))
-        return "WITH FILL STEP value cannot be zero";
-
-    if (!fill.fill_staleness.isNull() && !isFillArithmeticValue(fill.fill_staleness))
-        return "WITH FILL STALENESS value must be a number";
-
-    if (fill.staleness_kind && fill.fill_staleness.isNull())
-        return "WITH FILL STALENESS interval requires a value";
-
-    if (!fill.fill_staleness.isNull() && !fill.fill_from.isNull())
-        return "WITH FILL STALENESS cannot be used together with WITH FILL FROM";
-
-    if (direction > 0)
-    {
-        if (accurateLess(fill.fill_step, Field{0}))
-            return "WITH FILL STEP value cannot be negative for sorting in ascending direction";
-
-        if (accurateLess(fill.fill_staleness, Field{0}))
-            return "WITH FILL STALENESS value cannot be negative for sorting in ascending direction";
-
-        if (!fill.fill_from.isNull() && !fill.fill_to.isNull() && accurateLess(fill.fill_to, fill.fill_from))
-            return "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction";
-    }
-    else
-    {
-        if (accurateLess(Field{0}, fill.fill_step))
-            return "WITH FILL STEP value cannot be positive for sorting in descending direction";
-
-        if (accurateLess(Field{0}, fill.fill_staleness))
-            return "WITH FILL STALENESS value cannot be positive for sorting in descending direction";
-
-        if (!fill.fill_from.isNull() && !fill.fill_to.isNull() && accurateLess(fill.fill_from, fill.fill_to))
-            return "WITH FILL FROM value cannot be less than TO value for sorting in descending direction";
-    }
-
-    return {};
-}
-
-namespace
-{
-
-/// The plan may be client-supplied (`TCPHandler::receiveQueryPlan`), so an out-of-range enum value has
-/// to be rejected instead of cast into the enum: `FillingTransform::getStepFunction` switches on it
-/// without a default case.
-IntervalKind readIntervalKind(ReadBuffer & in)
-{
-    UInt8 kind = 0;
-    readIntBinary(kind, in);
-    return IntervalKind::fromBinary(kind);
-}
-
-/// The `WITH FILL` bounds of one column. `step_func`/`staleness_step_func` are not written: they are
-/// rebuilt from the bounds and the column type by `FillingTransform`, which is where they are set.
-void serializeFillColumnDescription(const FillColumnDescription & fill, WriteBuffer & out)
-{
-    UInt8 flags = 0;
-    if (fill.fill_from_type)
-        flags |= 1;
-    if (fill.fill_to_type)
-        flags |= 2;
-    if (fill.step_kind)
-        flags |= 4;
-    if (fill.staleness_kind)
-        flags |= 8;
-
-    writeIntBinary(flags, out);
-
-    writeFieldBinary(fill.fill_from, out);
-    if (fill.fill_from_type)
-        encodeDataType(fill.fill_from_type, out);
-
-    writeFieldBinary(fill.fill_to, out);
-    if (fill.fill_to_type)
-        encodeDataType(fill.fill_to_type, out);
-
-    writeFieldBinary(fill.fill_step, out);
-    if (fill.step_kind)
-        writeIntBinary(fill.step_kind->toBinary(), out);
-
-    writeFieldBinary(fill.fill_staleness, out);
-    if (fill.staleness_kind)
-        writeIntBinary(fill.staleness_kind->toBinary(), out);
-}
-
-void deserializeFillColumnDescription(FillColumnDescription & fill, ReadBuffer & in, size_t max_type_complexity)
-{
-    UInt8 flags = 0;
-    readIntBinary(flags, in);
-    /// Reject a flag bit we do not understand before reading the rest of the payload, so that a
-    /// malformed stream fails closed instead of desynchronizing (as `NegativeLimitStep` does).
-    if (flags & ~UInt8(0x0F))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unsupported flags {0:#04x} in a serialized WITH FILL description", UInt64(flags));
-
-    fill.fill_from = readFieldBinary(in);
-    if (flags & 1)
-        fill.fill_from_type = decodeDataType(in, max_type_complexity);
-
-    fill.fill_to = readFieldBinary(in);
-    if (flags & 2)
-        fill.fill_to_type = decodeDataType(in, max_type_complexity);
-
-    fill.fill_step = readFieldBinary(in);
-    if (flags & 4)
-        fill.step_kind = readIntervalKind(in);
-
-    fill.fill_staleness = readFieldBinary(in);
-    if (flags & 8)
-        fill.staleness_kind = readIntervalKind(in);
-}
-
-}
-
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version)
+void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out)
 {
     writeVarUInt(sort_description.size(), out);
     for (const auto & desc : sort_description)
@@ -494,22 +257,11 @@ void serializeSortDescription(const SortDescription & sort_description, WriteBuf
             writeStringBinary(desc.collator->getLocale(), out);
 
         if (desc.with_fill)
-        {
-            if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Serialization of a WITH FILL sort description requires query plan serialization version >= {}; "
-                    "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP);
-
-            /// The alias travels for the `INTERPOLATE` conflict check in `FillingTransform`, which rejects
-            /// a fill column that is also an interpolate output under either of its names.
-            writeStringBinary(desc.alias, out);
-            serializeFillColumnDescription(desc.fill_description, out);
-        }
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH FILL is not supported in serialized sort description");
     }
 }
 
-void deserializeSortDescription(
-    SortDescription & sort_description, ReadBuffer & in, UInt64 version, size_t max_type_complexity)
+void deserializeSortDescription(SortDescription & sort_description, ReadBuffer & in)
 {
     size_t size = 0;
     readVarUInt(size, in);
@@ -519,9 +271,6 @@ void deserializeSortDescription(
         readStringBinary(desc.column_name, in);
         UInt8 flags = 0;
         readIntBinary(flags, in);
-        if (flags & ~UInt8(0x0F))
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Unsupported flags {0:#04x} in a serialized sort description", UInt64(flags));
 
         desc.direction = (flags & 1) ? 1 : -1;
         desc.nulls_direction = (flags & 2) ? 1 : -1;
@@ -534,23 +283,8 @@ void deserializeSortDescription(
                 desc.collator = std::make_shared<Collator>(collator_locale);
         }
 
-        desc.with_fill = (flags & 8);
-        if (desc.with_fill)
-        {
-            if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Deserialization of a WITH FILL sort description requires query plan serialization version >= {}; "
-                    "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP);
-
-            readStringBinary(desc.alias, in);
-            deserializeFillColumnDescription(desc.fill_description, in, max_type_complexity);
-
-            /// The planners reject these before building a description, so a legitimate plan always
-            /// passes; a forged one would make the filling generate rows without end.
-            if (const auto reason = checkFillDescription(desc.fill_description, desc.direction); !reason.empty())
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Invalid WITH FILL description for column '{}': {}", desc.column_name, reason);
-        }
+        if (flags & 8)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH FILL is not supported in deserialized sort description");
     }
 }
 
