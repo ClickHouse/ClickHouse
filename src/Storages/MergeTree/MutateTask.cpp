@@ -3626,7 +3626,15 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
-    if (auto alter = command.ast(); alter && alter->partition)
+    if (command.resolved_partition_ids)
+    {
+        /// The partition scope of the command was resolved when the mutation was created and
+        /// persisted with it, so the partition literals must not be resolved again here: they may
+        /// no longer parse against the current partition key (see `resolved_partition_ids`).
+        if (!command.resolved_partition_ids->contains(part->info.getPartitionId()))
+            return true;
+    }
+    else if (auto alter = command.ast(); alter && alter->partition)
     {
         auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         if (part->info.getPartitionId() != command_partition_id)

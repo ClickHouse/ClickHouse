@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -805,7 +806,7 @@ public:
     DataPartsVector getVisibleDataPartsVectorInPartition(MergeTreeTransaction * txn, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
     DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id, const DataPartsAnyLock & lock) const;
     DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
-    DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
+    DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const PartitionIds & partition_ids) const;
 
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
@@ -1124,6 +1125,13 @@ public:
     /// Return mapping unfinished mutation name -> Mutation command
     virtual std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const = 0;
 
+    /// Names of the mutation entries created by an older server version whose `IN PARTITION <value>`
+    /// scope is still persisted in the original literal form and cannot be recovered without
+    /// decoding the literals through the current partition key (see `rewritePartitionScopeToIds`
+    /// and `pinPartitionScopeOfLegacyCommands`). A partition key type change is refused while such
+    /// entries exist, because they would become undecodable after it.
+    virtual Strings getMutationsWithLegacyPartitionScope() const = 0;
+
     /// Checks if the Mutation can be performed.
     /// (currently no additional checks: always ok)
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
@@ -1256,7 +1264,45 @@ public:
 
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsLock * acquired_lock = nullptr) const;
-    std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
+    PartitionIds getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
+
+    /// Rewrites the `IN PARTITION <value>` (or `IN PARTITION <value1>, <value2>, ...`) clause of
+    /// every partition-scoped command into the `IN PARTITION ID '<id>'` form, resolving the
+    /// partition values through the current table metadata once, pins the resolved ids into
+    /// `MutationCommand::resolved_partition_ids` and returns the union of the partitions affected
+    /// by the mutation as a whole. The returned set is empty when at least one command is not
+    /// partition-scoped, i.e. when the mutation affects all partitions.
+    /// Unlike a partition value, a partition id is decoded without the partition key, so the
+    /// rewritten command can be serialized, re-parsed and executed after a key-safe partition
+    /// key type change (e.g. `Enum8 -> Int8`) that makes the original value literal
+    /// unparseable. Mutation entries persist their commands only in the serialized text form,
+    /// so this keeps their on-disk (and ZooKeeper) shape unchanged while making the scope
+    /// survive such a change.
+    PartitionIds rewritePartitionScopeToIds(MutationCommands & commands, ContextPtr query_context) const;
+
+    /// Does any command still carry an `IN PARTITION <value>` literal (in either the single- or
+    /// the multi-partition form), i.e. a scope that has not been rewritten into the
+    /// `IN PARTITION ID` form yet (a legacy mutation entry)?
+    static bool hasUnresolvedPartitionScope(const MutationCommands & commands);
+
+    /// Pins `MutationCommand::resolved_partition_ids` for partition-scoped commands of a legacy
+    /// `ReplicatedMergeTree` mutation entry, i.e. one whose znode was written before
+    /// `rewritePartitionScopeToIds` existed and therefore still carries `IN PARTITION <value>`
+    /// literals. When the entry is scoped to a single partition, the id is recovered from the
+    /// block numbers allocated at the creation of the entry, without decoding the literals
+    /// through the current partition key; otherwise the literals are decoded through it (and
+    /// the commands are left unpinned if that fails, e.g. after a partition key type change).
+    void pinPartitionScopeOfLegacyCommands(
+        MutationCommands & commands, const std::map<String, Int64> & block_numbers, ContextPtr query_context) const;
+
+    /// Can the partition scope of a legacy `ReplicatedMergeTree` mutation entry (see above) be
+    /// recovered from its block numbers, without decoding the literals through the partition key?
+    /// That is the case when every command is partition-scoped and the entry allocated a block
+    /// number in a single partition, so all the commands resolved to that very partition.
+    static bool isLegacyPartitionScopeRecoverableFromBlockNumbers(
+        const MutationCommands & commands, const std::map<String, Int64> & block_numbers);
+
     /// Returns the set of partition IDs affected by mutation commands.
     /// nullopt means all partitions are affected. An empty set means zero partitions are affected.
     /// `commands_run_in_background` tells how the commands will be interpreted: an ALTER mutation
@@ -1287,7 +1333,7 @@ public:
         std::unordered_set<String> * analyzed_partition_ids) const;
 
     /// Returns set of partition_ids of all Active parts
-    std::unordered_set<String> getAllPartitionIds() const;
+    PartitionIds getAllPartitionIds() const;
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM

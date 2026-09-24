@@ -1,0 +1,4 @@
+(CLEAR COLUMN n IN PARTITION ID \'1\')
+1	1
+a	0
+b	2

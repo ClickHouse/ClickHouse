@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/IPartsCollector.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/logger_useful.h>

@@ -1,0 +1,6 @@
+after	1	121
+after	2	11
+Deadlock detected
+INVALID_TRANSACTION
+after deadlock	1	101
+after deadlock	2	1

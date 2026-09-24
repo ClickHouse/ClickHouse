@@ -58,6 +58,7 @@ static MutationCommand createCommandWithUpdatedColumns(
     res.max_parser_depth = command.max_parser_depth;
     res.max_parser_backtracks = command.max_parser_backtracks;
     res.ast_text = command.ast_text;
+    res.resolved_partition_ids = command.resolved_partition_ids;
 
     auto handle = res.mutateAst();
     auto new_assignments = make_intrusive<ASTExpressionList>();
@@ -115,6 +116,7 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
 
+    mutation_command->resolved_partition_ids = command.resolved_partition_ids;
     return *mutation_command;
 }
 
@@ -170,6 +172,11 @@ bool AlterConversions::isSupportedAlterMutation(MutationCommand::Type type)
 
 bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
 {
+    /// `CLEAR COLUMN` is represented as a `DROP_COLUMN` command with `clear` set. Like `DROP COLUMN` and
+    /// `RENAME COLUMN`, its effect (the column reads back as default values) must always be reflected on the
+    /// fly, so it is a metadata mutation and is included in the snapshot regardless of the snapshot parameters.
+    /// Partition scoping of `CLEAR COLUMN IN PARTITION` is handled separately via the mutation's partition ids,
+    /// so it does not need to be excluded from the metadata mutations here.
     return type == MutationCommand::RENAME_COLUMN
         || type == MutationCommand::DROP_COLUMN;
 }
