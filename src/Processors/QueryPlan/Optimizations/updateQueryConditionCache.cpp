@@ -124,6 +124,14 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
                 return;
 
+            /// The hash describes `filter_actions_dag`, which is frozen at index analysis while the steps
+            /// above the read keep being merged and widened. A step that DAG was not built from applies
+            /// conjuncts the hash does not cover, so a granule it empties may still hold rows the hashed
+            /// condition matches. The reverse inclusion is sound and common: the DAG also describes this
+            /// read's PREWHERE and row-level filter, neither of which is a conjunct of the step.
+            if (!read_from_merge_tree->filterActionsDAGWasBuiltFrom(filter_step->getFilterColumnName()))
+                return;
+
             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
             /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
             size_t condition_hash = queryConditionCacheHash(

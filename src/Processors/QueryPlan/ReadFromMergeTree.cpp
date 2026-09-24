@@ -3259,6 +3259,12 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, node_name_to_input);
         filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
 
+        /// Recorded together with the DAG and never apart from it. This runs once, because `indexes`
+        /// caches index analysis, so both describe the filter conditions as they were at that point.
+        filter_actions_dag_conditions.clear();
+        for (const auto * node : added_filter_nodes.nodes)
+            filter_actions_dag_conditions.insert(node->result_name);
+
         /// NOTE: Currently we store two DAGs for analysis:
         /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure they are consistent.
         /// TODO: Get rid of filter_actions_dag in query_info after we move analysis of
