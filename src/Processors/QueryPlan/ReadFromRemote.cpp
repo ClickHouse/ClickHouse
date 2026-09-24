@@ -1192,7 +1192,15 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     /// exactly as the distributed path above does it. The setting that used to gate this was a switch
     /// for a filter push-down that could leave the initiator reading in a different order than the
     /// replicas; that is prevented directly now, by withholding the ordering rather than the condition.
-    if (filter_actions_dag)
+    ///
+    /// Not when the replicas are being sent a plan. This query text is still their fallback:
+    /// `RemoteQueryExecutor::sendQuery` drops the plan and sends the text instead to a replica too old
+    /// to receive a plan carrying execution limits. The initiator has withheld the ordering by then,
+    /// having answered that a fragment shipped as a plan carries no pushed condition, so a replica that
+    /// read the condition out of the fallback text would fix a column the initiator did not and announce
+    /// `WithOrder` against its `Default`. Through an upgrade window that replica filters late; the
+    /// coordination mode is not negotiable.
+    if (filter_actions_dag && !query_plan)
         addFilters(
             &external_tables,
             context,
