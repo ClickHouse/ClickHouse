@@ -13,11 +13,11 @@
 namespace DB
 {
 
-class CompressedReadBufferFromFile;
+class MergeTreeReaderStreamSingleColumnWholePart;
 class IMergeTreeReader;
 
-/// Point-reads a fixed-size `CODEC(NONE)` `Array` column for exact row offsets, fetching row `r`'s single compressed
-/// block at `r * (25 + row_size)`. Other lazy columns are read by a standard `MergeTreeReaderWide` and merged in.
+/// Point-reads a fixed-size `CODEC(NONE)` `Array` column using exact row offsets, fetching row `r`'s single uncompressed
+/// block at `r * (25 + row_size)`. Other lazy columns in the query are read by a standard `MergeTreeReaderWide` and merged in.
 class MergeTreePointReadSource final : public ISource
 {
 public:
@@ -37,7 +37,7 @@ public:
 
     String getName() const override { return "MergeTreePointReadSource"; }
 
-    /// True if `column` is stored one vector per compressed block, so point reads are exact.
+    /// True if `column` is stored one value per compressed block, so point reads are exact.
     static bool isEligible(const RangesInDataPart & part, const NameAndTypePair & column, size_t dimensions);
 
 protected:
@@ -45,6 +45,7 @@ protected:
 
 private:
     void initialize();
+
     /// Point-read `vector_column` for the current batch of offsets into `dst_column`.
     void readVectorColumn(size_t base, size_t batch, IColumn & dst_column);
     /// Read `other_columns` for the current batch of offsets (via the standard reader) into `dst_columns`.
@@ -62,8 +63,6 @@ private:
     size_t max_block_size;
 
     size_t element_size = 0; /// bytes per vector element
-    size_t row_size = 0;     /// dimensions * element_size
-    size_t block_stride = 0; /// framing + row_size
 
     bool initialized = false;
     size_t next_offset_index = 0;
@@ -74,7 +73,7 @@ private:
     UInt64 next_unread_row = 0;
 
     std::shared_ptr<IMergeTreeDataPartInfoForReader> part_info;
-    std::unique_ptr<CompressedReadBufferFromFile> vector_buffer;
+    std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> vector_stream;
     std::unique_ptr<IMergeTreeReader> other_reader;
 };
 

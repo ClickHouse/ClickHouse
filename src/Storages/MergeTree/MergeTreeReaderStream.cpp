@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <Compression/CompressionInfo.h>
 #include <IO/ReadPipeline.h>
 
 #include <base/getThreadId.h>
@@ -19,6 +21,25 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+constexpr size_t COMPRESSED_BLOCK_FRAMING = 16 + COMPRESSED_BLOCK_HEADER_SIZE;
+
+}
+
+std::optional<FixedWidthPointReadLayout> FixedWidthPointReadLayout::tryDetect(size_t file_size, size_t rows, size_t value_size)
+{
+    if (!file_size || !rows || !value_size)
+        return {};
+
+    const size_t block_stride = COMPRESSED_BLOCK_FRAMING + value_size;
+    if (file_size != rows * block_stride)
+        return {};
+
+    return FixedWidthPointReadLayout{value_size, block_stride};
 }
 
 MergeTreeReaderStream::MergeTreeReaderStream(
@@ -198,6 +219,18 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
 
         plain_file_buffer->seek(mark.offset_in_compressed_file, SEEK_SET);
     }
+}
+
+void MergeTreeReaderStream::seekToOffsetInFile(size_t offset_in_file)
+{
+    init();
+
+    if (compressed_data_buffer)
+        compressed_data_buffer->seek(offset_in_file, 0);
+    else if (plain_file_buffer)
+        plain_file_buffer->seek(offset_in_file, SEEK_SET);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeReaderStream is not initialized for reading");
 }
 
 namespace
@@ -441,6 +474,42 @@ std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumnWholePart::estimateMa
 void MergeTreeReaderStreamSingleColumnWholePart::seekToMark(size_t)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeReaderStreamSingleColumnWholePart cannot seek to marks");
+}
+
+void MergeTreeReaderStreamSingleColumnWholePart::readFixedWidthPointByRowOffset(UInt64 row, char * dst)
+{
+    if (!fixed_width_layout)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fixed-width point read layout is not set");
+
+    seekToOffsetInFile(row * fixed_width_layout->block_stride);
+    getDataBuffer()->readStrict(dst, fixed_width_layout->value_size);
+}
+
+std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> MergeTreeReaderStreamSingleColumnWholePart::createForFixedWidthPointRead(
+    DataPartStoragePtr storage,
+    const String & stream_name,
+    size_t data_file_size,
+    FixedWidthPointReadLayout layout,
+    const MergeTreeReaderSettings & reader_settings)
+{
+    static constexpr size_t marks_count = 1;
+    MarkRanges whole_part{{0, marks_count}};
+
+    auto stream = std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
+        std::move(storage),
+        stream_name,
+        IMergeTreeDataPart::DATA_FILE_EXTENSION,
+        marks_count,
+        whole_part,
+        reader_settings,
+        /*uncompressed_cache=*/ nullptr,
+        data_file_size,
+        /*marks_loader=*/ nullptr,
+        ReadBufferFromFileBase::ProfileCallback{},
+        CLOCK_MONOTONIC_COARSE);
+
+    stream->fixed_width_layout = layout;
+    return stream;
 }
 
 size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position)

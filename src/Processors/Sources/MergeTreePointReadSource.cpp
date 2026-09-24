@@ -2,8 +2,6 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
-#include <Compression/CompressedReadBufferFromFile.h>
-#include <Compression/CompressionInfo.h>
 #include <Core/Block.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
@@ -15,6 +13,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Common/assert_cast.h>
 
@@ -31,9 +30,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// On-disk framing per compressed block: 16-byte checksum + 9-byte header (see CompressedReadBufferBase).
-constexpr size_t COMPRESSED_BLOCK_FRAMING = 16 + COMPRESSED_BLOCK_HEADER_SIZE;
-
 const IDataType * getFixedArrayElementType(const IDataType & type)
 {
     const auto * array_type = typeid_cast<const DataTypeArray *>(&type);
@@ -42,6 +38,7 @@ const IDataType * getFixedArrayElementType(const IDataType & type)
 
 struct ElementStreamInfo
 {
+    String stream_name;
     String file_name;
     size_t element_size = 0;
     size_t row_size = 0;
@@ -66,6 +63,7 @@ std::optional<ElementStreamInfo> resolveElementStream(const RangesInDataPart & p
     if (!stream_name)
         return {};
 
+    info.stream_name = *stream_name;
     info.file_name = *stream_name + ".bin";
     return info;
 }
@@ -98,7 +96,7 @@ char * extendAndGetWriteDstByType(TypeIndex element_type_id, IColumn & nested, s
 bool MergeTreePointReadSource::isEligible(const RangesInDataPart & part, const NameAndTypePair & column, size_t dimensions)
 {
     /// The point read memcpy's the stored bytes straight into the column, bypassing `SerializationNumber`, which
-    /// converts numeric substreams from their little-endian on-disk form on big-endian targets. Read by granule there.
+    /// converts numeric substreams from their little-endian on-disk form on big-endian targets.
     if constexpr (std::endian::native == std::endian::big)
         return false;
 
@@ -108,8 +106,8 @@ bool MergeTreePointReadSource::isEligible(const RangesInDataPart & part, const N
 
     const size_t file_size = part.data_part->getFileSizeOrZero(info->file_name);
     const size_t rows = part.data_part->rows_count;
-    /// Exactly one vector per compressed block iff the whole element stream is `rows` blocks of `framing + row_size`.
-    return file_size != 0 && file_size == rows * (COMPRESSED_BLOCK_FRAMING + info->row_size);
+
+    return FixedWidthPointReadLayout::tryDetect(file_size, rows, info->row_size).has_value();
 }
 
 MergeTreePointReadSource::MergeTreePointReadSource(
@@ -146,12 +144,14 @@ void MergeTreePointReadSource::initialize()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreePointReadSource: column {} is not a fixed-size Array stream", vector_column.name);
 
     element_size = info->element_size;
-    row_size = info->row_size;
-    block_stride = COMPRESSED_BLOCK_FRAMING + row_size;
 
-    auto buf = part.data_part->getDataPartStorage().readFile(
-        info->file_name, reader_settings.read_settings, part.data_part->getFileSizeOrZero(info->file_name));
-    vector_buffer = std::make_unique<CompressedReadBufferFromFile>(std::move(buf), /*allow_different_codecs=*/ true);
+    const size_t file_size = part.data_part->getFileSizeOrZero(info->file_name);
+    auto layout = FixedWidthPointReadLayout::tryDetect(file_size, part.data_part->rows_count, info->row_size);
+    if (!layout)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreePointReadSource: column {} is not a fixed-width point-read stream", vector_column.name);
+
+    vector_stream = MergeTreeReaderStreamSingleColumnWholePart::createForFixedWidthPointRead(
+        part.data_part->getDataPartStoragePtr(), info->stream_name, file_size, *layout, reader_settings);
 
     if (!other_columns.empty())
     {
@@ -186,9 +186,8 @@ void MergeTreePointReadSource::readVectorColumn(size_t base, size_t batch, IColu
     for (size_t i = 0; i < batch; ++i)
     {
         const UInt64 row = row_offsets[base + i];
-        vector_buffer->seek(row * block_stride, /*offset_in_decompressed_block=*/ 0);
         char * dst = extendAndGetWriteDstByType(element_type_id, nested, dimensions);
-        vector_buffer->readStrict(dst, row_size);
+        vector_stream->readFixedWidthPointByRowOffset(row, dst);
         offsets.push_back(nested.size());
     }
 }
@@ -264,7 +263,7 @@ Chunk MergeTreePointReadSource::generate()
     if (!other_columns.empty())
         readOtherColumns(next_offset_index, batch, other_result);
 
-    /// Assemble in `header` order: the vector column from the point read, the rest from `other_result` (same order).
+    /// Assemble all columns together
     ColumnPtr vector_col_ptr = std::move(vector_col);
     Columns result;
     result.reserve(header->columns());

@@ -5,6 +5,9 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 
+#include <memory>
+#include <optional>
+
 
 namespace DB
 {
@@ -89,6 +92,7 @@ private:
 protected:
     void init();
     void loadMarks();
+    void seekToOffsetInFile(size_t offset_in_file);
 
     const MergeTreeReaderSettings settings;
     const size_t marks_count;
@@ -96,6 +100,15 @@ protected:
 
     const MergeTreeMarksLoaderPtr marks_loader;
     MergeTreeMarksGetterPtr marks_getter;
+};
+
+/// One row = one on-disk block: `rows * (framing + value_size) == file_size`.
+struct FixedWidthPointReadLayout
+{
+    size_t value_size = 0;
+    size_t block_stride = 0;
+
+    static std::optional<FixedWidthPointReadLayout> tryDetect(size_t file_size, size_t rows, size_t value_size);
 };
 
 /// Class for reading a single column (or index) from file
@@ -126,6 +139,19 @@ public:
     size_t getRightOffset(size_t right_mark_non_included) override;
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override;
+
+    /// Row-level point read by absolute file offset, not mark index.
+    void readFixedWidthPointByRowOffset(UInt64 row, char * dst);
+
+    static std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> createForFixedWidthPointRead(
+        DataPartStoragePtr storage,
+        const String & stream_name,
+        size_t data_file_size,
+        FixedWidthPointReadLayout layout,
+        const MergeTreeReaderSettings & reader_settings);
+
+private:
+    std::optional<FixedWidthPointReadLayout> fixed_width_layout;
 };
 
 /// Base class for reading from file that contains multiple columns.
