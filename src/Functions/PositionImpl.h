@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <string>
 #include <vector>
-#include <Poco/UTF8String.h>
 #include <Common/Volnitsky.h>
 
 namespace DB
@@ -51,10 +50,6 @@ struct PositionCaseSensitiveASCII
 
     /// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
     static size_t countChars(const char * begin, const char * end) { return end - begin; }
-
-    /// Convert string to lowercase. Only for case-insensitive search.
-    /// Implementation is permitted to be inefficient because it is called for single string.
-    static void toLowerIfNeed(std::string &) { }
 };
 
 
@@ -87,8 +82,6 @@ struct PositionCaseInsensitiveASCII
     }
 
     static size_t countChars(const char * begin, const char * end) { return end - begin; }
-
-    static void toLowerIfNeed(std::string & s) { std::transform(std::begin(s), std::end(s), std::begin(s), tolower); }
 };
 
 
@@ -135,8 +128,6 @@ struct PositionCaseSensitiveUTF8
                 ++res;
         return res;
     }
-
-    static void toLowerIfNeed(std::string &) {}
 };
 
 
@@ -172,8 +163,6 @@ struct PositionCaseInsensitiveUTF8
         // reuse implementation that doesn't depend on case
         return PositionCaseSensitiveUTF8::countChars(begin, end);
     }
-
-    static void toLowerIfNeed(std::string & s) { Poco::UTF8::toLowerInPlace(s); }
 };
 
 
@@ -308,11 +297,13 @@ struct PositionImpl
         }
 
         size_t start_byte = Impl::advancePos(data.data(), data.data() + data.size(), start - 1) - data.data();
-        res = data.find(needle, start_byte);
-        if (res == std::string::npos)
-            res = 0;
-        else
-            res = 1 + Impl::countChars(data.data(), data.data() + res);
+
+        /// Use the same searcher as for a column, so a constant gives the same result.
+        auto searcher = Impl::createSearcherInSmallHaystack(needle.data(), needle.size());
+        const auto * begin = reinterpret_cast<const UInt8 *>(data.data());
+        const auto * end = begin + data.size();
+        const auto * found = searcher.search(begin + start_byte, end);
+        res = found == end ? 0 : 1 + Impl::countChars(data.data(), reinterpret_cast<const char *>(found));
     }
 
     /// Search for substring in string starting from different positions.
@@ -325,9 +316,6 @@ struct PositionImpl
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
         chassert(!res_null);
-
-        Impl::toLowerIfNeed(data);
-        Impl::toLowerIfNeed(needle);
 
         if (start_pos == nullptr)
         {
