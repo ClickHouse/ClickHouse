@@ -129,6 +129,36 @@ def test_main_http_prefixed_query_range_api():
     assert metric_name in data
 
 
+def test_main_http_prefixed_buildinfo_api_without_table():
+    url = (
+        f"http://{node.ip_address}:{MAIN_HTTP_PORT}"
+        "/prometheus_no_table/api/v1/status/buildinfo"
+    )
+    response = get_response_to_http_api(url)
+    assert response.status_code == 200, response.text
+
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]["version"] == node.query("SELECT version()").strip()
+    assert data["data"]["revision"] == node.query(
+        "SELECT value FROM system.build_options WHERE name = 'GIT_HASH'"
+    ).strip()
+    assert data["data"]["branch"] == ""
+    assert data["data"]["buildUser"] == ""
+    assert data["data"]["buildDate"] == ""
+    assert data["data"]["goVersion"] == ""
+    assert "features" not in data["data"]
+
+
+def test_main_http_prefixed_buildinfo_does_not_match_nested_path():
+    url = (
+        f"http://{node.ip_address}:{MAIN_HTTP_PORT}"
+        "/prometheus/api/v1/extra/api/v1/status/buildinfo"
+    )
+    response = get_response_to_http_api(url)
+    assert response.status_code == 404, response.text
+
+
 def test_main_http_prefixed_metadata_api():
     metric_name = "main_http_prefixed_metadata_target"
     help_text = "Metadata routed through the main HTTP port"
