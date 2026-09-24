@@ -1,8 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the EXPLAIN output below differs with parallel replicas.
--- Tests that the text index serves `position(s, 'needle') > 0` and the comparisons equivalent to it as
--- `s LIKE '%needle%'`, and leaves alone the forms that are not a pure occurrence check. Every query is
--- run without the index, with the index, and with direct read from the index.
+-- The text index serves `position(s, 'needle') > 0` and the equivalent comparisons as `s LIKE '%needle%'`, nothing else.
+-- Every query runs without the index, with the index, and with direct read from the index.
 
 SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
