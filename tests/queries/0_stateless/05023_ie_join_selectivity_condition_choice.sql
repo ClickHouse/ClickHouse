@@ -147,6 +147,38 @@ SELECT extract(explain, 'Conditions: .*') FROM (
     ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
 ) WHERE explain LIKE '%Conditions:%';
 
+SELECT '-- group-by limit: order-dependent keys make ranges non-representative';
+SELECT extract(explain, 'Conditions: .*') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_sel_l AS l JOIN
+    (
+        SELECT b1, b2, b3
+        FROM t_sel_r
+        GROUP BY b1, b2, b3
+        SETTINGS max_rows_to_group_by = 50, group_by_overflow_mode = 'any'
+    ) AS r
+    ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+) WHERE explain LIKE '%Conditions:%';
+
+SELECT count(), sum(a1 + a2 + a3 + b1 + b2 + b3) FROM t_sel_l AS l JOIN
+(
+    SELECT b1, b2, b3
+    FROM t_sel_r
+    GROUP BY b1, b2, b3
+    SETTINGS max_rows_to_group_by = 50, group_by_overflow_mode = 'any'
+) AS r
+ON l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3;
+
+SELECT count(), sum(a1 + a2 + a3 + b1 + b2 + b3) FROM t_sel_l AS l,
+(
+    SELECT b1, b2, b3
+    FROM t_sel_r
+    GROUP BY b1, b2, b3
+    SETTINGS max_rows_to_group_by = 50, group_by_overflow_mode = 'any'
+) AS r
+WHERE l.a1 < r.b1 AND l.a2 < r.b2 AND l.a3 < r.b3
+SETTINGS join_algorithm = 'hash';
+
 DROP TABLE t_sel_l;
 DROP TABLE t_sel_r;
 DROP TABLE t_sel_band;

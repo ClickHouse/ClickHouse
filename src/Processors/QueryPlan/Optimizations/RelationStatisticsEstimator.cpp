@@ -28,6 +28,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -116,6 +117,11 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
 
     if (aggregating_step.isGroupingSets() || aggregator_params.overflow_row)
         addTransformation(aggregation_stats.column_stats, Unsupported);
+
+    /// `max_rows_to_group_by` with overflow mode ANY keeps the first keys seen and BREAK stops reading:
+    /// either way the output key set is an order-dependent subset of the input's distinct keys.
+    if (aggregator_params.max_rows_to_group_by && aggregator_params.group_by_overflow_mode != OverflowMode::THROW)
+        addTransformation(aggregation_stats.column_stats, NonUniformRowSubset);
 
     return aggregation_stats;
 }
@@ -333,9 +339,14 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         const bool has_masking_policy = reading->getMergeTreeData().hasEnabledMaskingPolicies(reading->getContext());
         /// These transformations can rewrite values, so the on-disk NDVs and ranges are no longer bounds.
         const bool has_unsupported_value_changes = has_on_fly_data_changes || has_masking_policy;
+        /// Predicates cover explicit, deferred and row-policy filters; query modifiers cover `FINAL`,
+        /// `SAMPLE`, stream reads and trivial limits; deleted rows, vector-index selection and the
+        /// top-k skip-index threshold can prune rows without a filter step in the plan. A transaction
+        /// snapshot is deliberately absent: the visible parts are the exact input for that read.
         const bool has_row_subset = filter || prewhere_info || reading->getRowLevelFilter() || reading->getFilterActionsDAG()
             || reading->getDeferredPrewhereInfo() || reading->getDeferredRowLevelFilter() || query_info.isFinal() || query_info.isStream()
-            || query_info.trivial_limit || has_lightweight_deleted_rows
+            || query_info.trivial_limit || has_lightweight_deleted_rows || reading->getVectorSearchParameters().has_value()
+            || reading->isSelectedForTopKFilterOptimization()
             || (query_info.table_expression_modifiers && query_info.table_expression_modifiers->hasSampleSizeRatio());
         const bool has_inexact_row_count = has_row_subset || has_on_fly_data_changes;
 

@@ -123,6 +123,58 @@ std::unique_ptr<AggregatingStep> makeAggregationStep(
         false);
 }
 
+std::unique_ptr<AggregatingStep> makeAggregationStepWithGroupLimit(
+    const SharedHeader & header,
+    size_t max_rows_to_group_by,
+    OverflowMode overflow_mode)
+{
+    Aggregator::Params params(
+        Names{"k"},
+        AggregateDescriptions{},
+        false,
+        max_rows_to_group_by,
+        overflow_mode,
+        0,
+        0,
+        0,
+        false,
+        {},
+        1,
+        0,
+        false,
+        0,
+        65536,
+        false,
+        false,
+        false,
+        0.5f,
+        StatsCollectingParams{},
+        true,
+        false,
+        false,
+        true,
+        false,
+        0,
+        0);
+
+    return std::make_unique<AggregatingStep>(
+        header,
+        std::move(params),
+        GroupingSetsParamsList{},
+        true,
+        65536,
+        0,
+        1,
+        1,
+        false,
+        false,
+        SortDescription{},
+        SortDescription{},
+        false,
+        false,
+        false);
+}
+
 JoinExpressionActions makeJoinExpressionActions(const Block & left_header, const Block & right_header)
 {
     JoinExpressionActions expression_actions(left_header, right_header);
@@ -557,6 +609,32 @@ TEST(ColumnStatsProvenance, AggregationPreservesPlainKeysAndRejectsGroupingSetsA
     EXPECT_TRUE(overflow->column_stats.at("k").ndv_provenance.has(Unsupported));
     EXPECT_TRUE(overflow->column_stats.at("k").range_provenance.has(Unsupported));
     EXPECT_FALSE(isRepresentativeValueRange(overflow->column_stats.at("k").range_provenance));
+}
+
+TEST(ColumnStatsProvenance, AggregationWithGroupByLimitRecordsNonUniformSubset)
+{
+    const auto header = makeHeader();
+    for (const auto mode : {OverflowMode::ANY, OverflowMode::BREAK})
+    {
+        SCOPED_TRACE(static_cast<UInt64>(mode));
+        const auto step = makeAggregationStepWithGroupLimit(header, 1, mode);
+        const auto stats = estimateUnaryStepStats(*step, inputRelationStats());
+        ASSERT_TRUE(stats.has_value());
+        EXPECT_TRUE(stats->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
+        EXPECT_TRUE(stats->column_stats.at("k").range_provenance.has(NonUniformRowSubset));
+    }
+
+    const auto throwing_step = makeAggregationStepWithGroupLimit(header, 1, OverflowMode::THROW);
+    const auto throwing = estimateUnaryStepStats(*throwing_step, inputRelationStats());
+    ASSERT_TRUE(throwing.has_value());
+    EXPECT_FALSE(throwing->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
+    EXPECT_FALSE(throwing->column_stats.at("k").range_provenance.has(NonUniformRowSubset));
+
+    const auto unlimited_step = makeAggregationStepWithGroupLimit(header, 0, OverflowMode::ANY);
+    const auto unlimited = estimateUnaryStepStats(*unlimited_step, inputRelationStats());
+    ASSERT_TRUE(unlimited.has_value());
+    EXPECT_FALSE(unlimited->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
+    EXPECT_FALSE(unlimited->column_stats.at("k").range_provenance.has(NonUniformRowSubset));
 }
 
 TEST(ColumnStatsProvenance, JoinEstimatesArePropagatedOnlyOnRequest)

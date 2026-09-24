@@ -21,3 +21,7 @@ Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 -- overflow rows: generated default keys make ranges non-representative
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- group-by limit: order-dependent keys make ranges non-representative
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+5654	18438200
+5654	18438200
