@@ -891,6 +891,26 @@ spec:
 * [YAML configuration examples](/concepts/features/configuration/server-config/configuration-files#example-1)
 * [All server settings](/reference/settings/server-settings/settings)
 
+### Reloadable extra configuration {#reloadable-extra-configuration}
+
+Any change to `extraConfig` restarts the ClickHouse pods, because the operator cannot know which settings apply at runtime. For settings ClickHouse reloads on the fly — `named_collections` is the common case — use `extraReloadableConfig` instead. The operator applies its changes through a configuration reload, without restarting pods:
+
+```yaml
+spec:
+  settings:
+    extraReloadableConfig:
+      named_collections:
+        customers:
+          url: "http://my-service.my-ns.svc:5400/Customers"
+          format: "JSONEachRow"
+```
+
+Keep each top-level section in exactly one of `extraConfig` and `extraReloadableConfig`; the operator warns when both set the same section.
+
+<Note>
+By using `extraReloadableConfig` you assert its settings are reload-safe. A restart-only setting placed here takes effect only at the next restart, without any error.
+</Note>
+
 ### Embedded extra users configuration {#embedded-extra-users-configuration}
 
 You can also specify additional ClickHouse users configuration using `extraUsersConfig`. This is useful for defining users, profiles, quotas, and grants directly in the cluster specification.
@@ -1005,4 +1025,16 @@ The interval is controlled by the operator's `RESYNC_PERIOD` environment variabl
 env:
 - name: RESYNC_PERIOD
   value: "1m"
+```
+
+The operator reconciles clusters concurrently; the number of parallel reconciles per controller is set by `MAX_CONCURRENT_RECONCILES` (default `4`).
+
+## Pausing reconciliation {#pausing-reconciliation}
+
+Set the `clickhouse.com/pause-reconciliation: "true"` annotation on a `ClickHouseCluster` or `KeeperCluster` to stop the operator from reconciling it. The operator reports `ReconcileSucceeded=False` with reason `ReconciliationPaused` on the paused resource and otherwise leaves it untouched — useful for manual intervention when the operator would fight your changes. While paused, the operator reports all state conditions (including `Ready` and `Healthy`) as `Unknown` with reason `ReconciliationPaused` — it does not observe the cluster. Remove the annotation to resume; the pending spec changes are applied on the next reconciliation.
+
+```bash
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation=true
+# ... manual surgery ...
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation-
 ```
