@@ -1,0 +1,17 @@
+<clickhouse>
+    <profiles>
+        <prometheus_timeout_profile>
+            <max_execution_time>5</max_execution_time>
+        </prometheus_timeout_profile>
+    </profiles>
+    <users>
+        <prometheus_timeout_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>prometheus_timeout_profile</profile>
+            <quota>default</quota>
+        </prometheus_timeout_user>
+    </users>
+</clickhouse>
