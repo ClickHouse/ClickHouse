@@ -657,9 +657,13 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
         ///    The last operation replays the recorded changes on top of the latest fs, which may have been advanced
         ///    by concurrent transactions on unrelated paths in the meantime, and publishes the result.
         operations.commit();
-    }
 
-    operations.finalize();
+        /// 4. Remove the temporary objects left by the operations (copies of unlinked and moved files under random
+        ///    root paths, `prefix.path` objects of removed directories). This must happen under the locks as well:
+        ///    otherwise a full reload (`dropCache`), which takes the lock of the root, could list these objects and
+        ///    ingest them as ordinary metadata. The locks are per path, so this does not delay unrelated transactions.
+        operations.finalize();
+    }
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedPath(const std::string & path)
