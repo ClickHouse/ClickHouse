@@ -791,7 +791,7 @@ void optimizeTreeSecondPass(
             {
                 /// The merged-DAG path handles only some shapes so far, and says so by returning false,
                 /// in which case the older one is asked the same question.
-                const bool applied = (optimization_settings.lazy_materialization_from_merged_dag
+                const bool applied = (optimization_settings.lazy_materialization_for_join
                         && optimizeLazyMaterialization3(
                             *frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                     || optimizeLazyMaterialization2(
