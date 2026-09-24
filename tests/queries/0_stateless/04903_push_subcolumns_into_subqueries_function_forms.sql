@@ -95,7 +95,8 @@ CREATE TABLE t_push_subcolumns_dotted_tuple
     id UInt32,
     t Tuple(`a.b` UInt32, a Tuple(b UInt32))
 )
-ENGINE = MergeTree ORDER BY id;
+-- `MergeTree` rejects this type: the streams of the elements `a.b` and `a`.`b` collide in the file name `t%2Ea%2Eb`.
+ENGINE = Memory;
 
 SELECT 'tupleElement dotted name stays unoptimized';
 SELECT trimLeft(explain) FROM
