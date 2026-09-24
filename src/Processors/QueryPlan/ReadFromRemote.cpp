@@ -316,6 +316,16 @@ ASTPtr tryBuildAdditionalFilterAST(
             continue;
         }
 
+        /// An `IgnoreSet` call has no set operand, so it cannot be written back as IN syntax.
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && isNameOfInFunction(node->function_base->getName())
+            && node->function_base->getName().ends_with("IgnoreSet"))
+        {
+            node_to_ast[node] = nullptr;
+            stack.pop();
+            continue;
+        }
+
         /// Support for IN. The stored AST from the Set is taken.
         if (WhichDataType(node->result_type).isSet())
         {
