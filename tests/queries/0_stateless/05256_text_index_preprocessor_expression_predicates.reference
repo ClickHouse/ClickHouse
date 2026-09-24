@@ -1,0 +1,110 @@
+-- Predicates on lower(s) return the same rows with and without the index
+NOT hasToken	[2,3,6]
+endsWith	[4]
+equals	[5]
+equals, mixed case	[]
+hasAllTokens	[4,5]
+hasAllTokens, mixed case	[]
+hasAnyTokens	[3,4,5]
+hasAnyTokens, array, mixed case	[3]
+hasAnyTokens, tokenizer argument	[3,4,5]
+hasPhrase	[4]
+hasPhrase, mixed case	[]
+hasToken	[1,4,5]
+hasToken, mixed case	[]
+ilike	[3]
+in	[2]
+like	[1,4,5]
+like, mixed case	[]
+match	[6]
+startsWith	[1,4]
+NOT hasToken	[2,3,6]
+endsWith	[4]
+equals	[5]
+equals, mixed case	[]
+hasAllTokens	[4,5]
+hasAllTokens, mixed case	[]
+hasAnyTokens	[3,4,5]
+hasAnyTokens, array, mixed case	[3]
+hasAnyTokens, tokenizer argument	[3,4,5]
+hasPhrase	[4]
+hasPhrase, mixed case	[]
+hasToken	[1,4,5]
+hasToken, mixed case	[]
+ilike	[3]
+in	[2]
+like	[1,4,5]
+like, mixed case	[]
+match	[6]
+startsWith	[1,4]
+NOT hasToken	[2,3,6]
+endsWith	[4]
+equals	[5]
+equals, mixed case	[]
+hasAllTokens	[4,5]
+hasAllTokens, mixed case	[]
+hasAnyTokens	[3,4,5]
+hasAnyTokens, array, mixed case	[3]
+hasAnyTokens, tokenizer argument	[3,4,5]
+hasPhrase	[4]
+hasPhrase, mixed case	[]
+hasToken	[1,4,5]
+hasToken, mixed case	[]
+ilike	[3]
+in	[2]
+like	[1,4,5]
+like, mixed case	[]
+match	[6]
+startsWith	[1,4]
+NOT hasToken	[2,3,6]
+endsWith	[4]
+equals	[5]
+equals, mixed case	[]
+hasAllTokens	[4,5]
+hasAllTokens, mixed case	[]
+hasAnyTokens	[3,4,5]
+hasAnyTokens, array, mixed case	[3]
+hasAnyTokens, tokenizer argument	[3,4,5]
+hasPhrase	[4]
+hasPhrase, mixed case	[]
+hasToken	[1,4,5]
+hasToken, mixed case	[]
+ilike	[3]
+in	[2]
+like	[1,4,5]
+like, mixed case	[]
+match	[6]
+startsWith	[1,4]
+3
+0
+-- The needle is not preprocessed in the SELECT list either
+4	0	0	1
+5	0	0	1
+-- The index prunes granules
+Granules: 6/6
+Name: idx
+Granules: 3/6
+Granules: 6/6
+Name: idx
+Granules: 0/6
+Granules: 6/6
+Name: idx
+Granules: 3/6
+-- Direct read replaces the predicate
+1
+-- A predicate on the column itself is unchanged
+[1,4,5]
+[3,4,5]
+[4]
+-- A different expression does not use the index
+[1,4,5]
+-- upper preprocessor
+[1,4,5]
+[1,4,5]
+[]
+[]
+Granules: 6/6
+Name: idx
+Granules: 3/6
+-- An index with a postprocessor is not used
+[1,4,5]

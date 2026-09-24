@@ -162,7 +162,9 @@ private:
 
     using RPN = std::vector<RPNElement>;
 
+    /// Tries the index column first, then the preprocessor expression (see `preprocessed_expression_condition`).
     bool traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const;
+    bool traverseIndexColumnAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const;
 
     /// Whether the function accepts a tokenizer definition as its third argument and the given node
     /// is a constant one that denotes the index tokenizer.
@@ -251,6 +253,9 @@ private:
     bool has_postprocessor;
     /// Whether the index has position data for phrase queries.
     bool has_positions = false;
+    /// The dictionary holds exactly the tokens of the preprocessor expression, so this condition of an index without a
+    /// preprocessor on that expression answers predicates on it, e.g. `hasToken(lower(s), 'x')`. Null if not applicable.
+    std::shared_ptr<const MergeTreeIndexConditionText> preprocessed_expression_condition;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index

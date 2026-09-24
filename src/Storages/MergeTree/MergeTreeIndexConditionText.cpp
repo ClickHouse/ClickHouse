@@ -181,6 +181,18 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , has_positions(has_positions_)
 {
+    /// Over an array the preprocessor runs per element inside `arrayMap`, which is not an expression a query spells.
+    if (has_preprocessor && !has_postprocessor && !isArray(header.getByPosition(0).type))
+    {
+        /// Named as the query side names its nodes, like the index expression in `header`.
+        const auto * expression = preprocessor->getOriginalActionsDAG().getOutputs().front();
+        RPNBuilderTreeContext tree_context(context_);
+        Block expression_header{ColumnWithTypeAndName(expression->result_type, RPNBuilderTreeNode(expression, tree_context).getColumnName())};
+
+        preprocessed_expression_condition = std::make_shared<MergeTreeIndexConditionText>(
+            nullptr, context_, expression_header, std::nullopt, tokenizer, nullptr, nullptr, has_positions, NameSet{});
+    }
+
     if (!predicate)
     {
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
@@ -684,6 +696,23 @@ bool MergeTreeIndexConditionText::hasSearchPatterns() const
 
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
 {
+    if (traverseIndexColumnAtomNode(node, out))
+        return true;
+
+    if (!preprocessed_expression_condition)
+        return false;
+
+    /// A declined traversal may leave `out` partially filled.
+    RPNElement element;
+    if (!preprocessed_expression_condition->traverseAtomNode(node, element))
+        return false;
+
+    out = std::move(element);
+    return true;
+}
+
+bool MergeTreeIndexConditionText::traverseIndexColumnAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
+{
     {
         Field const_value;
         DataTypePtr const_type;
@@ -949,7 +978,7 @@ String escapeForLikePattern(std::string_view needle)
 std::vector<OptimizedRegularExpression>
 MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns) const
 {
-    const String value = preprocessor->processConstant(field.safeGet<String>());
+    const String value = has_preprocessor ? preprocessor->processConstant(field.safeGet<String>()) : field.safeGet<String>();
     if (value.empty())
         return {};
 
@@ -1520,7 +1549,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Function 'hasPhrase' is not supported on a text index that uses the 'splitByRegexp' tokenizer and a postprocessor");
 
-        const String value = preprocessor->processConstant(value_field.safeGet<String>());
+        const String value = has_preprocessor ? preprocessor->processConstant(value_field.safeGet<String>()) : value_field.safeGet<String>();
 
         /// When positions are available, use phrase search with positional intersection.
         if (has_positions)

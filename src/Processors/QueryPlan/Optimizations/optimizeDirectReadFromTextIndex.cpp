@@ -102,15 +102,13 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
-/// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
+/// Check if a node with the given canonical name exists strictly below `node`. The preprocessor expression itself
+/// is already preprocessed, and the index answers a predicate on it with the needle as is.
 bool hasSubexpression(const ActionsDAG::Node * node, const String & subexpression_name)
 {
-    if (getNameWithoutAliases(node) == subexpression_name)
-        return true;
-
     for (const auto * child : node->children)
     {
-        if (hasSubexpression(child, subexpression_name))
+        if (getNameWithoutAliases(child) == subexpression_name || hasSubexpression(child, subexpression_name))
             return true;
     }
 
