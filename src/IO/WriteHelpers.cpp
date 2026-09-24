@@ -131,6 +131,13 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
         /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which
         /// re-parses as a subquery (SELECT [x]) with a different structure.
         && !isCaseInsensitiveEqual(s, "select")
+        /// CUBE and ROLLUP are parsed as GROUP BY modifiers when left unquoted, so identifiers
+        /// with these names must stay quoted to survive formatting and re-parsing.
+        && !isCaseInsensitiveEqual(s, "cube")
+        && !isCaseInsensitiveEqual(s, "rollup")
+        /// RECURSIVE is parsed as the WITH RECURSIVE keyword when left unquoted, so a CTE named
+        /// `recursive` must stay quoted to survive formatting and re-parsing.
+        && !isCaseInsensitiveEqual(s, "recursive")
         /// These keywords cause parsing ambiguity when used as function or identifier names
         /// because the parser consumes them as clause-starting keywords.
         && !isCaseInsensitiveEqual(s, "from")
