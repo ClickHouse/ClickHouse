@@ -60,21 +60,43 @@ public:
 private:
     void updateOutputHeader() override;
 
+    /// What one column of the step's input header is to the step once the unused columns are gone.
+    enum class InputColumn : uint8_t
+    {
+        ReadAndNeeded,      /// an input reads it, and what that input feeds is still needed
+        ReadNotNeeded,      /// an input reads it, and nothing needs that input any more
+        PassesThroughNeeded, /// no input reads it, and the caller asked for the column itself
+        PassesThroughDropped, /// no input reads it, and nobody asked for it
+    };
+
     /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
     /// removeUnusedColumns and getRequiredColumns so their answers cannot differ.
+    ///
+    /// The analysis behind it asks the DAG alone; `remove_inputs` says what to make of the answer, and
+    /// is applied when this is turned into a `RemoveUnusedColumnsResult`.
     struct RequiredColumnsPlan
     {
-        RemoveUnusedColumnsResult result;
-
         /// Whether inputs may be removed, after the prevent_input_removal override.
         bool remove_inputs = false;
-        /// Positions in the DAG outputs to keep, and their nodes.
+        /// The positions the caller asked for, which are also the outputs that survive.
+        std::vector<size_t> required_output_positions;
+        /// Positions in the DAG outputs to keep.
         std::vector<size_t> required_dag_positions;
-        /// Input header positions of the pass-through columns to keep, and of those to drop.
-        std::vector<size_t> required_passthrough_header_positions;
-        std::vector<size_t> dropped_passthrough_header_positions;
-        /// Whether removeUnusedActions would erase any node.
-        bool removes_any_action = false;
+        /// One entry per column of the input header, in header order.
+        std::vector<InputColumn> input_columns;
+        /// Whether any output goes away, and whether removeUnusedActions would erase any node. The
+        /// second answer depends on `remove_inputs`, since an unread input is only erased when inputs
+        /// may go, so both answers are kept.
+        bool removes_any_output = false;
+        bool removes_any_action_keeping_inputs = false;
+        bool removes_any_action_removing_inputs = false;
+
+        bool removesAnyAction() const;
+        bool changesAnything() const;
+        /// Input header positions of the pass-through columns nobody asked for. The apply step turns
+        /// these into DAG inputs when the inputs themselves may not be removed.
+        std::vector<size_t> droppedPassThroughPositions() const;
+        RemoveUnusedColumnsResult toResult() const;
     };
 
     RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const;

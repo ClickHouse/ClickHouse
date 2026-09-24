@@ -656,31 +656,33 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
     return result;
 }
 
-InputHeaderPositions mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
-    /// Positions are pushed in reverse so that the front-most one is taken first.
-    std::unordered_map<std::string_view, std::vector<size_t>> name_to_positions;
-    for (size_t position = header.columns(); position != 0; --position)
-        name_to_positions[header.getByPosition(position - 1).name].push_back(position - 1);
+    /// Input positions are pushed in reverse so that the front-most one is taken first, which pairs the
+    /// n-th input of a name with the n-th header column of that name.
+    std::unordered_map<std::string_view, std::vector<size_t>> name_to_inputs;
+    for (size_t position = inputs.size(); position != 0; --position)
+        name_to_inputs[inputs[position - 1]->result_name].push_back(position - 1);
 
-    InputHeaderPositions result;
-    result.matched.reserve(inputs.size());
+    HeaderColumnsToInputs result;
+    result.read_by.resize(header.columns(), HeaderColumnsToInputs::passes_through);
 
-    std::vector<bool> is_consumed(header.columns(), false);
-    for (const auto * input : inputs)
+    size_t read_columns = 0;
+    for (size_t position = 0; position < header.columns(); ++position)
     {
-        auto & positions = name_to_positions[input->result_name];
-        if (positions.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown identifier: '{}'", input->result_name);
+        auto it = name_to_inputs.find(header.getByPosition(position).name);
+        if (it == name_to_inputs.end() || it->second.empty())
+            continue;
 
-        result.matched.push_back(positions.back());
-        is_consumed[positions.back()] = true;
-        positions.pop_back();
+        result.read_by[position] = it->second.back();
+        it->second.pop_back();
+        ++read_columns;
     }
 
-    for (size_t position = 0; position < header.columns(); ++position)
-        if (!is_consumed[position])
-            result.passthrough.push_back(position);
+    if (read_columns != inputs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "The header [{}] has a column for only {} of the DAG's {} inputs",
+            header.dumpNames(), read_columns, inputs.size());
 
     return result;
 }
