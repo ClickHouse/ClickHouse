@@ -59,6 +59,12 @@ or	[1,3,4,14]
 and not	[14]
 and not	[14]
 and not	[14]
+not position = 0	[1,3,4]
+not position = 0	[1,3,4]
+not position = 0	[1,3,4]
+and like	[1,3,4]
+and like	[1,3,4]
+and like	[1,3,4]
 -- Not occurrence checks
 start position	[]
 start position	[]
@@ -95,6 +101,7 @@ Granules: 2/15
 -- Direct read replaces the predicate when the index answers it exactly
 1	0
 1	0
+1	0
 1	1
 0
 0
@@ -105,6 +112,15 @@ position > 0	[1,5]
 and not	[4]
 and not	[4]
 and not	[4]
+not position > 0	[3,4]
+not position > 0	[3,4]
+not position > 0	[3,4]
+not position = 0	[1,5]
+not position = 0	[1,5]
+not position = 0	[1,5]
+not not position = 0	[3,4]
+not not position = 0	[3,4]
+not not position = 0	[3,4]
 -- Array tokenizer: the needle is matched literally inside the whole value
 needle with % and _	[1]
 needle with % and _	[1]
@@ -122,3 +138,30 @@ Description: text GRANULARITY 100000000
 Parts: 1/1
 Granules: 1/6
 1	0
+-- A part without the index: the reader evaluates the replaced comparison
+part without the index	[1,3]
+part without the index	[1,3]
+part without the index	[1,3]
+1	0
+-- Preprocessor and postprocessor
+regexp preprocessor	[1]
+regexp preprocessor	[1]
+regexp preprocessor	[1]
+0
+lower preprocessor	[1]
+lower preprocessor	[1]
+lower preprocessor	[1]
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 2/3
+postprocessor	[1]
+postprocessor	[1]
+postprocessor	[1]
+0
+-- A needle cut inside a UTF-8 character
+cut needle	[2,3]
+cut needle	[2,3]
+cut needle	[2,3]
+whole character	[2,3]
+whole character	[2,3]
+whole character	[2,3]

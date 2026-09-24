@@ -1846,8 +1846,9 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
     else
         return false;
 
-    /// A third argument is the start position, which `LIKE` cannot express. The dictionary scan does not support a postprocessor.
-    if (search_function.getArgumentsSize() != 2 || has_postprocessor)
+    /// A third argument is the start position, which `LIKE` cannot express. Only an ASCII `lower`/`upper` preprocessor
+    /// leaves the `%`, `_` and `\` added below intact; an index with a postprocessor is not served.
+    if (search_function.getArgumentsSize() != 2 || has_postprocessor || (has_preprocessor && !preprocessor->isASCIILowerOrUpper()))
         return false;
 
     Field needle;
@@ -1855,13 +1856,14 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
     if (!search_function.getArgumentAt(1).tryGetConstant(needle, needle_type) || needle.getType() != Field::Types::String)
         return false;
 
-    /// `position(s, '')` is 1 for every row.
+    /// `position(s, '')` is 1 for every row. A needle cut inside a UTF-8 character does not tokenize like the row does.
     const auto & needle_string = needle.safeGet<String>();
-    if (needle_string.empty())
+    if (needle_string.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle_string.data()), needle_string.size()))
         return false;
 
     Field pattern("%" + escapeForLikePattern(needle_string) + "%");
-    return traverseFunctionNode(like_function_name, search_function.getArgumentAt(0), std::make_shared<DataTypeString>(), std::move(pattern), out);
+    return traverseFunctionNode(
+        like_function_name, search_function.getArgumentAt(0), std::make_shared<DataTypeString>(), std::move(pattern), out);
 }
 
 /// Whether the sub-DAG may be evaluated on a default value to decide if a missing map key or JSON path

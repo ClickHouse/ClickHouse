@@ -117,6 +117,15 @@ SELECT 'and not', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'so
 SELECT 'and not', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'soup') AND NOT (position(message, 'lpha') > 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'and not', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'soup') AND NOT (position(message, 'lpha') > 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
+-- Pushing the NOT down turns it into `position != 0`, which is an occurrence check.
+SELECT 'not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') = 0) SETTINGS use_skip_indexes = 0;
+SELECT 'not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') = 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') = 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT 'and like', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 AND message LIKE '%lpha%' SETTINGS use_skip_indexes = 0;
+SELECT 'and like', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 AND message LIKE '%lpha%' SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'and like', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 AND message LIKE '%lpha%' SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
 SELECT '-- Not occurrence checks';
 
 SELECT 'start position', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha', 3) > 0 SETTINGS use_skip_indexes = 0;
@@ -188,6 +197,10 @@ FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'lpha'
 SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION positionCaseInsensitive(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'LPHA') > 0);
 
+-- Both spellings build the same search query, so they share one virtual column.
+SELECT uniqExactIf(extract(explain, '-> (__text_index_[0-9A-Za-z_]+)'), explain LIKE '%INPUT%\_\_text\_index\_%'), countIf(explain LIKE '%FUNCTION position(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'lpha') > 0 AND message LIKE '%lpha%');
+
 -- A hint: the original predicate stays.
 SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION position(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'foo bar baz') > 0);
@@ -221,6 +234,19 @@ SELECT 'position > 0', arraySort(groupArray(id)) FROM tab WHERE position(message
 SELECT 'and not', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'soup') AND NOT (position(message, 'lpha') > 0) SETTINGS use_skip_indexes = 0;
 SELECT 'and not', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'soup') AND NOT (position(message, 'lpha') > 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'and not', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'soup') AND NOT (position(message, 'lpha') > 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+-- The NULL row must stay out of every negated form.
+SELECT 'not position > 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') > 0) SETTINGS use_skip_indexes = 0;
+SELECT 'not position > 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') > 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'not position > 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') > 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT 'not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') = 0) SETTINGS use_skip_indexes = 0;
+SELECT 'not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') = 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (position(message, 'lpha') = 0) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT 'not not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (NOT (position(message, 'lpha') = 0)) SETTINGS use_skip_indexes = 0;
+SELECT 'not not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (NOT (position(message, 'lpha') = 0)) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'not not position = 0', arraySort(groupArray(id)) FROM tab WHERE NOT (NOT (position(message, 'lpha') = 0)) SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE tab;
 
@@ -262,5 +288,128 @@ LIMIT 2, 3;
 
 SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION position(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, '50%_off') > 0);
+
+DROP TABLE tab;
+
+SELECT '-- A part without the index: the reader evaluates the replaced comparison';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+SYSTEM STOP MERGES tab;
+INSERT INTO tab VALUES (1, 'alpha bravo'), (2, 'charlie delta');
+ALTER TABLE tab ADD INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha);
+INSERT INTO tab VALUES (3, 'alphabet soup'), (4, 'soup kitchen');
+
+SELECT 'part without the index', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'part without the index', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'part without the index', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION position(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'lpha') > 0);
+
+DROP TABLE tab;
+
+SELECT '-- Preprocessor and postprocessor';
+
+-- The preprocessor would also strip the `%` around the needle and make 'p' and 'q' complete tokens.
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, preprocessor = replaceRegexpAll(message, '[^a-z ]', ''))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'xp ab qx'), (2, 'zz');
+
+SELECT 'regexp preprocessor', arraySort(groupArray(id)) FROM tab WHERE position(message, 'p ab q') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'regexp preprocessor', arraySort(groupArray(id)) FROM tab WHERE position(message, 'p ab q') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'regexp preprocessor', arraySort(groupArray(id)) FROM tab WHERE position(message, 'p ab q') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT count() FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE position(message, 'p ab q') > 0
+) WHERE explain LIKE '%Name: idx%';
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(message))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'XP AB QX'), (2, 'xp ab qx'), (3, 'zz');
+
+SELECT 'lower preprocessor', arraySort(groupArray(id)) FROM tab WHERE position(message, 'P AB Q') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'lower preprocessor', arraySort(groupArray(id)) FROM tab WHERE position(message, 'P AB Q') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'lower preprocessor', arraySort(groupArray(id)) FROM tab WHERE position(message, 'P AB Q') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE position(message, 'P AB Q') > 0
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(message))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'foo bar baz'), (2, 'bar none'), (3, 'FOO BAR BAZ'), (4, 'zz');
+
+SELECT 'postprocessor', arraySort(groupArray(id)) FROM tab WHERE position(message, 'foo bar baz') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'postprocessor', arraySort(groupArray(id)) FROM tab WHERE position(message, 'foo bar baz') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'postprocessor', arraySort(groupArray(id)) FROM tab WHERE position(message, 'foo bar baz') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT count() FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE position(message, 'foo bar baz') > 0
+) WHERE explain LIKE '%Name: idx%';
+
+DROP TABLE tab;
+
+SELECT '-- A needle cut inside a UTF-8 character';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = asciiCJK)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'hello world'), (2, 'x你好y'), (3, '你 hello');
+
+-- The continuation bytes of '你'.
+SELECT 'cut needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '\xBD\xA0') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'cut needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '\xBD\xA0') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'cut needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '\xBD\xA0') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+
+SELECT 'whole character', arraySort(groupArray(id)) FROM tab WHERE position(message, '你') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'whole character', arraySort(groupArray(id)) FROM tab WHERE position(message, '你') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'whole character', arraySort(groupArray(id)) FROM tab WHERE position(message, '你') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE tab;

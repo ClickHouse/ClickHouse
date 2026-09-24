@@ -1461,9 +1461,10 @@ The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'v
 This is the path most `value%` and `%value` patterns actually take, because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (enabled by default) rewrites `col LIKE 'value%'` into `startsWith(col, 'value')` and `col LIKE '%value'` into `endsWith(col, 'value')`.
 Needles that span several tokens keep using the complete tokens of the needle and do not need a dictionary scan.
 
-A comparison that only tests whether a constant needle occurs in the column is evaluated exactly as `col LIKE '%value%'`, with `%`, `_` and `\` in the needle escaped: `position(col, 'value') > 0`, `!= 0`, `>= 1` and the mirrored forms such as `0 < position(col, 'value')`, and the same comparisons of [positionUTF8](/reference/functions/regular-functions/string-search-functions#positionUTF8) and [countSubstrings](/reference/functions/regular-functions/string-search-functions#countSubstrings).
+A comparison that only tests whether a constant needle occurs in the column is evaluated as `col LIKE '%value%'`, with `%`, `_` and `\` in the needle escaped: `position(col, 'value') > 0`, `!= 0`, `>= 1` and the mirrored forms such as `0 < position(col, 'value')`, and the same comparisons of [positionUTF8](/reference/functions/regular-functions/string-search-functions#positionUTF8) and [countSubstrings](/reference/functions/regular-functions/string-search-functions#countSubstrings).
 [positionCaseInsensitive](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitive) (alias `instr`) and [countSubstringsCaseInsensitive](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitive) are evaluated as `col ILIKE '%value%'`: like the dictionary scan, they fold ASCII letters only.
-The form with a start position, an empty needle, other comparisons, the `...CaseInsensitiveUTF8` variants and an index with a postprocessor do not use the index.
+The form with a start position, an empty needle, a needle that is not valid UTF-8, other comparisons and the `...CaseInsensitiveUTF8` variants do not use the index.
+Neither does an index with a postprocessor, or with a preprocessor other than `lower` or `upper`.
 
 As a special case, if the index tokenizer is `array`, then _any_ pattern qualifies for the optimization: anchors, punctuation, `_` wildcards, several `%`-separated needles and escaped metacharacters.
 
