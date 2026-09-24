@@ -39,6 +39,11 @@ WHERE _part_offset = 1
 SETTINGS optimize_use_projections = 0;
 
 SELECT 'stream';
+-- `prefer_optimize_projection` takes the commit-order projection regardless of its estimated
+-- cost, and `_part_offset` then numbers the projection's rows rather than the parent part's,
+-- which is the very mapping this test checks. The base-table query above is pinned for the
+-- same reason, with `optimize_use_projections = 0`.
 SELECT payload
 FROM repro_offsets STREAM BOUNDED
-WHERE _part_offset = 1;
+WHERE _part_offset = 1
+SETTINGS prefer_optimize_projection = 0;

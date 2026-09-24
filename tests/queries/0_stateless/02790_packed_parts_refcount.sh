@@ -28,6 +28,9 @@ SETTINGS
 INSERT INTO t_packed_refcount VALUES (1, 10), (2, 20);
 
 SET mutations_sync = 2;
+-- Pinned because the part names below depend on it: the randomizer turning it off mutates
+-- partition 0 too, bumping its part to 0_0_0_0_1.
+SET optimize_mutations_with_partition_pruning = 1;
 -- The predicate matches the partition key, so partition pruning
 -- (optimize_mutations_with_partition_pruning) leaves partition 0 unmutated: its part keeps the
 -- name 0_0_0_0 while partition 1 gets the mutated part 1_0_0_0_1.
