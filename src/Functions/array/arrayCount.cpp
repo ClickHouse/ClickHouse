@@ -124,7 +124,8 @@ If `func` is not specified, it returns the number of non-zero elements in the ar
 
 :::note Use setting `array_count_legacy_uint32_result` to return `UInt32`
 Version 26.10 introduced a backward-incompatible change: `arrayCount` returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements.
-To retain the previous behavior, set setting `array_count_legacy_uint32_result` (default: `false`) to `true`.
+The constness of the result also changed: for a non-constant array and a predicate that folds to a constant false or `NULL`, the result was a constant column before 26.10 (`isConstant(arrayCount(...))` returned `1`), and now it is a full column (`isConstant` returns `0`), matching `length(arrayFilter(...))`.
+To retain the previous behavior (both the `UInt32` result type and the result constness), set setting `array_count_legacy_uint32_result` (default: `false`) to `true`.
 
 During a rolling upgrade of a cluster, a distributed query initiated by a not-yet-upgraded server does not forward this setting, so type-sensitive expressions evaluated locally on already-upgraded shards (for example, `byteSize(arrayCount(...))`) observe `UInt64` there. To keep such queries fully unchanged until the whole cluster is upgraded, set `array_count_legacy_uint32_result = 1` on the upgraded servers for the users under which shard-side queries execute, and remove it after the upgrade is complete. Which user that is depends on the cluster configuration: with an interserver `secret` configured, the shard runs the query as the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.
 :::
