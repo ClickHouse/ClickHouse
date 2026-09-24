@@ -10,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <Client/ClientApplicationBase.h>
@@ -1524,7 +1525,9 @@ void Connection::initBlockInput()
     if (!block_in)
     {
         initMaybeCompressedInput();
-        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
+        /// The server may send marshalled result blocks; their consumers convert them back.
+        block_in = std::make_unique<NativeReader>(
+            *maybe_compressed_in, server_revision, format_settings, ISerialization::KindSet::all());
     }
 }
 

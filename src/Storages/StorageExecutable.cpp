@@ -35,6 +35,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_executable_tables;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSeconds max_execution_time;
 }
@@ -56,6 +57,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -150,6 +152,12 @@ void StorageExecutable::read(
     size_t max_block_size,
     size_t /*threads*/)
 {
+    if (!context->getSettingsRef()[Setting::allow_executable_tables])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The `executable` table function and the `Executable` and `ExecutablePool` table "
+            "engines are disabled. Set `allow_executable_tables` setting to enable them");
+
     auto & script_name = settings->script_name;
 
     auto user_scripts_path = context->getUserScriptsPath();

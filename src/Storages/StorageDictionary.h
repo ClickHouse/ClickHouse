@@ -83,6 +83,7 @@ public:
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
 
     bool isDictionary() const override { return true; }
+    bool supportsTruncate() const override { return false; }
     void shutdown(bool is_drop) override;
     void startup() override;
 
