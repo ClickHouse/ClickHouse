@@ -126,6 +126,10 @@ SELECT dist_mixed.k, dim.s FROM dist_mixed JOIN dim ON dist_mixed.k = dim.k ORDE
 SELECT dist_mixed.k, dim.s FROM dist_mixed GLOBAL JOIN dim ON dist_mixed.k = dim.k ORDER BY dim.s DESC, dist_mixed.k DESC LIMIT 2;
 -- ... while sorting by this table's `s` through the join stays refused.
 SELECT dist_mixed.k FROM dist_mixed JOIN dim ON dist_mixed.k = dim.k ORDER BY dist_mixed.s DESC LIMIT 2 SETTINGS distributed_product_mode = 'local'; -- { serverError INCOMPATIBLE_COLUMNS }
+-- A `JOIN USING` key is traced to the columns of both sides: `k` does not read the retyped `s` ...
+SELECT k FROM dist_mixed JOIN dim USING (k) ORDER BY k DESC LIMIT 2 SETTINGS distributed_product_mode = 'local';
+-- ... and `s` reads it through the left side.
+SELECT s FROM dist_mixed JOIN dim USING (s) ORDER BY s DESC LIMIT 2 SETTINGS distributed_product_mode = 'local'; -- { serverError INCOMPATIBLE_COLUMNS }
 -- A lambda argument named like the column is a value of the array, not the column.
 SELECT k FROM dist_mixed ORDER BY arrayMap(s -> s + 1, [k]) DESC LIMIT 2;
 -- A subquery over the table sorted by an unrelated column, with an outer sort by the retyped one, is

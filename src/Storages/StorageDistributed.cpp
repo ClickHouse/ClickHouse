@@ -56,6 +56,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -286,7 +287,11 @@ SortedByColumns getSortedByColumns(const SelectQueryInfo & query_info)
 
     if (!query_info.query_tree)
     {
-        result.unknown = true;
+        /// Internal reads (e.g. of external tables) come with an empty `SelectQueryInfo`, and the old
+        /// interpreter still fills only the AST. Without an ORDER BY nothing relies on the shards'
+        /// order; with one, its source columns cannot be traced from the AST, so check all of them.
+        const auto * select = query_info.query ? query_info.query->as<ASTSelectQuery>() : nullptr;
+        result.unknown = select && select->orderBy();
         return result;
     }
 
@@ -340,8 +345,11 @@ SortedByColumns getSortedByColumns(const SelectQueryInfo & query_info)
             }
             else if (source->getNodeType() == QueryTreeNodeType::JOIN)
             {
-                /// A column of a JOIN itself (not of one of its sides) cannot be attributed to a table.
-                result.unknown = true;
+                /// A `JOIN USING` key keeps the columns of both sides as a list in its expression (see
+                /// `CollectSourceColumnsVisitor`); they are collected below as the column's children.
+                /// Any other column of a JOIN itself cannot be attributed to a table.
+                if (!column_node->hasExpression() || !column_node->getExpression()->as<ListNode>())
+                    result.unknown = true;
             }
             /// A column of another table expression, or a lambda's argument, does not cross this
             /// table's cast: nothing to check for it. An ALIAS column of this table keeps its
