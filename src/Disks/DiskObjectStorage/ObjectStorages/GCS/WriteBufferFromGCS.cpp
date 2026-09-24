@@ -30,16 +30,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-/// A conditional write is a compare-and-swap request; performing an unconditional write instead
-/// would silently discard one of two concurrent writers. GCS expresses both halves through
-/// generation preconditions: `IfGenerationMatch(0)` succeeds only if the object does not exist
-/// (If-None-Match: `*`), and `IfGenerationMatch(generation)` only if the live generation matches
-/// (If-Match, since this backend's etag *is* the generation — see `toObjectMetadata`).
-/// A default-constructed option is not set, so the unconditional path stays a single code path.
-gcs::IfGenerationMatch makeWritePrecondition(const WriteSettings & write_settings, const String & bucket, const String & key)
+gcs::IfGenerationMatch makeGCSWritePrecondition(const WriteSettings & write_settings, const String & bucket, const String & key)
 {
     const auto & if_none_match = write_settings.object_storage_write_if_none_match;
     const auto & if_match = write_settings.object_storage_write_if_match;
@@ -68,8 +59,6 @@ gcs::IfGenerationMatch makeWritePrecondition(const WriteSettings & write_setting
     return {};
 }
 
-}
-
 WriteBufferFromGCS::WriteBufferFromGCS(
     std::shared_ptr<gcs::Client> client_,
     const String & bucket_,
@@ -92,7 +81,7 @@ WriteBufferFromGCS::WriteBufferFromGCS(
     if (for_disk)
         ProfileEvents::increment(ProfileEvents::DiskGCSWriteObject);
 
-    auto precondition = makeWritePrecondition(write_settings, bucket, key);
+    auto precondition = makeGCSWritePrecondition(write_settings, bucket, key);
 
     if (attributes && !attributes->empty())
     {

@@ -2,7 +2,9 @@
 
 #if USE_GOOGLE_CLOUD
 
+#include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/WriteBufferFromGCS.h>
+#include <IO/ReadSettings.h>
 #include <Common/Exception.h>
 #include <gtest/gtest.h>
 
@@ -27,7 +29,7 @@ namespace DB::ErrorCodes
 namespace
 {
 
-std::shared_ptr<gcs::Client> makeOfflineClient()
+google::cloud::Options makeOfflineClientOptions()
 {
     /// Insecure credentials and an unreachable endpoint: client construction performs no I/O, and
     /// the rejection paths throw before any request is issued.
@@ -38,7 +40,12 @@ std::shared_ptr<gcs::Client> makeOfflineClient()
         .set<google::cloud::UnifiedCredentialsOption>(google::cloud::MakeInsecureCredentials())
         .set<gcs::RestEndpointOption>("http://127.0.0.1:1")
         .set<gcs::RetryPolicyOption>(gcs::LimitedErrorCountRetryPolicy(0).clone());
-    return std::make_shared<gcs::Client>(std::move(options));
+    return options;
+}
+
+std::shared_ptr<gcs::Client> makeOfflineClient()
+{
+    return std::make_shared<gcs::Client>(makeOfflineClientOptions());
 }
 
 int conditionalWriteErrorCode(const WriteSettings & write_settings)
@@ -54,6 +61,68 @@ int conditionalWriteErrorCode(const WriteSettings & write_settings)
     }
 }
 
+/// A server-side copy creates its destination just like an upload does, so it must reject the same
+/// untranslatable preconditions instead of turning them into an unconditional `RewriteObject`.
+int conditionalCopyErrorCode(const WriteSettings & write_settings)
+{
+    GCSObjectStorageSettings settings;
+    settings.bucket = "bucket";
+    GCSObjectStorage storage(
+        std::make_unique<gcs::Client>(makeOfflineClientOptions()),
+        std::move(settings),
+        "http://127.0.0.1:1/bucket/",
+        createObjectStorageKeyGeneratorByPrefix(""),
+        "disk");
+    try
+    {
+        storage.copyObject(StoredObject("from"), StoredObject("to"), ReadSettings{}, write_settings);
+        return 0;
+    }
+    catch (const Exception & e)
+    {
+        return e.code();
+    }
+}
+
+}
+
+TEST(GCSConditionalWrite, PreconditionTranslation)
+{
+    EXPECT_FALSE(makeGCSWritePrecondition(WriteSettings{}, "bucket", "key").has_value());
+    {
+        WriteSettings write_settings;
+        write_settings.object_storage_write_if_none_match = "*";
+        auto precondition = makeGCSWritePrecondition(write_settings, "bucket", "key");
+        ASSERT_TRUE(precondition.has_value());
+        EXPECT_EQ(precondition.value(), 0);
+    }
+    {
+        WriteSettings write_settings;
+        write_settings.object_storage_write_if_match = "12345";
+        auto precondition = makeGCSWritePrecondition(write_settings, "bucket", "key");
+        ASSERT_TRUE(precondition.has_value());
+        EXPECT_EQ(precondition.value(), 12345);
+    }
+}
+
+TEST(GCSConditionalWrite, CopyRejectsUntranslatablePreconditions)
+{
+    {
+        WriteSettings write_settings;
+        write_settings.object_storage_write_if_none_match = "some-etag";
+        EXPECT_EQ(conditionalCopyErrorCode(write_settings), ErrorCodes::BAD_ARGUMENTS);
+    }
+    {
+        WriteSettings write_settings;
+        write_settings.object_storage_write_if_none_match = "*";
+        write_settings.object_storage_write_if_match = "123";
+        EXPECT_EQ(conditionalCopyErrorCode(write_settings), ErrorCodes::BAD_ARGUMENTS);
+    }
+    {
+        WriteSettings write_settings;
+        write_settings.object_storage_write_if_match = "not-a-generation";
+        EXPECT_EQ(conditionalCopyErrorCode(write_settings), ErrorCodes::BAD_ARGUMENTS);
+    }
 }
 
 TEST(GCSConditionalWrite, BothPreconditionsRejected)

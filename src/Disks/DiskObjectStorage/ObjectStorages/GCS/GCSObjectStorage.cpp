@@ -423,9 +423,13 @@ void GCSObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings &,
-    const WriteSettings &,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
+    /// The copy creates `object_to`, so a conditional write must stay conditional here too; the
+    /// precondition of `RewriteObject` applies to the destination.
+    auto precondition = makeGCSWritePrecondition(write_settings, bucket, object_to.remote_path);
+
     auto snapshot = getClientWithSettings();
     auto client_ptr = snapshot->client;
     countRequest(ProfileEvents::GCSCopyObject, ProfileEvents::DiskGCSCopyObject, snapshot->settings.for_disk);
@@ -437,11 +441,12 @@ void GCSObjectStorage::copyObject( /// NOLINT
         for (const auto & [name, value] : *object_to_attributes)
             new_metadata.upsert_metadata(name, value);
         result = client_ptr->RewriteObjectBlocking(
-            bucket, object_from.remote_path, bucket, object_to.remote_path, gcs::WithObjectMetadata(std::move(new_metadata)));
+            bucket, object_from.remote_path, bucket, object_to.remote_path, precondition,
+            gcs::WithObjectMetadata(std::move(new_metadata)));
     }
     else
     {
-        result = client_ptr->RewriteObjectBlocking(bucket, object_from.remote_path, bucket, object_to.remote_path);
+        result = client_ptr->RewriteObjectBlocking(bucket, object_from.remote_path, bucket, object_to.remote_path, precondition);
     }
 
     if (!result)
@@ -472,6 +477,7 @@ void GCSObjectStorage::copyObjectToAnotherObjectStorage( /// NOLINT
     auto source_snapshot = getClientWithSettings();
     if (dest_gcs != nullptr && source_snapshot->settings.describesSameClientAs(dest_gcs->getClientWithSettings()->settings))
     {
+        auto precondition = makeGCSWritePrecondition(write_settings, dest_gcs->bucket, object_to.remote_path);
         countRequest(ProfileEvents::GCSCopyObject, ProfileEvents::DiskGCSCopyObject, source_snapshot->settings.for_disk);
         google::cloud::StatusOr<gcs::ObjectMetadata> result;
         if (object_to_attributes && !object_to_attributes->empty())
@@ -480,15 +486,22 @@ void GCSObjectStorage::copyObjectToAnotherObjectStorage( /// NOLINT
             for (const auto & [name, value] : *object_to_attributes)
                 new_metadata.upsert_metadata(name, value);
             result = source_snapshot->client->RewriteObjectBlocking(
-                bucket, object_from.remote_path, dest_gcs->bucket, object_to.remote_path, gcs::WithObjectMetadata(std::move(new_metadata)));
+                bucket, object_from.remote_path, dest_gcs->bucket, object_to.remote_path, precondition,
+                gcs::WithObjectMetadata(std::move(new_metadata)));
         }
         else
         {
             result = source_snapshot->client->RewriteObjectBlocking(
-                bucket, object_from.remote_path, dest_gcs->bucket, object_to.remote_path);
+                bucket, object_from.remote_path, dest_gcs->bucket, object_to.remote_path, precondition);
         }
         if (result)
             return;
+        /// A failed precondition is the answer to the conditional write, not a transport problem: the
+        /// buffer copy would only repeat the same conditional write against the same object.
+        if (result.status().code() == google::cloud::StatusCode::kFailedPrecondition)
+            throwFromGCSStatus(result.status(),
+                fmt::format("while copying '{}' in bucket '{}' to '{}' in bucket '{}'",
+                    object_from.remote_path, bucket, object_to.remote_path, dest_gcs->bucket));
         LOG_WARNING(log, "GCS server-side copy from bucket {} to bucket {} failed ({}), falling back to buffer copy",
             bucket, dest_gcs->bucket, result.status().message());
     }

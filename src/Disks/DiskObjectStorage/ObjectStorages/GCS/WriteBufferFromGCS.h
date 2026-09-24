@@ -18,6 +18,17 @@
 namespace DB
 {
 
+/// A conditional write (`object_storage_write_if_none_match` / `object_storage_write_if_match`) is a
+/// compare-and-swap request; performing an unconditional write instead would silently discard one of
+/// two concurrent writers. GCS expresses both halves through generation preconditions:
+/// `IfGenerationMatch(0)` succeeds only if the object does not exist (If-None-Match: `*`), and
+/// `IfGenerationMatch(generation)` only if the live generation matches (If-Match, since this backend's
+/// etag *is* the generation — see `toObjectMetadata`). A default-constructed option is not set, so the
+/// unconditional path stays a single code path. Every request that creates an object — an upload and a
+/// server-side `RewriteObject` copy alike — must carry it.
+google::cloud::storage::IfGenerationMatch makeGCSWritePrecondition(
+    const WriteSettings & write_settings, const String & bucket, const String & key);
+
 /// Writes a GCS object through the native google-cloud-cpp storage client.
 ///
 /// Backed by a `google::cloud::storage::ObjectWriteStream` (a std::ostream). The SDK transparently
