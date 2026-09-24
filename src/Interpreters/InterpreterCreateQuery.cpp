@@ -2243,14 +2243,29 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "Table COMMENT is not supported by DataLakeCatalog table creation "
                 "(note: CREATE TABLE ... AS inherits the comment from the source table)");
 
-        if (!ignore_unsupported_source_properties && !as_table_saved.empty() && create.storage)
+        if (!ignore_unsupported_source_properties && !as_table_saved.empty())
         {
-            if (const char * inherited_clause = findUnsupportedDatalakeStorageClause(*create.storage, false))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Source table {}.{} has {}, which a DataLakeCatalog table cannot represent; "
-                    "CREATE TABLE ... AS supports only columns, PARTITION BY, and ORDER BY",
-                    backQuoteIfNeed(getContext()->resolveDatabase(as_database_saved)),
-                    backQuoteIfNeed(as_table_saved), inherited_clause);
+            const ASTStorage * source_storage = create.storage;
+            ASTPtr source_create_ptr;
+            if (engine_user_specified)
+            {
+                const String as_database_name = getContext()->resolveDatabase(as_database_saved);
+                source_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_saved, getContext());
+                const auto & source_create = source_create_ptr->as<ASTCreateQuery &>();
+                source_storage = source_create.is_materialized_view
+                    ? source_create.getTargetInnerEngine(ViewTarget::To)
+                    : source_create.storage;
+            }
+
+            if (source_storage)
+            {
+                if (const char * inherited_clause = findUnsupportedDatalakeStorageClause(*source_storage, false))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Source table {}.{} has {}, which a DataLakeCatalog table cannot represent; "
+                        "CREATE TABLE ... AS supports only columns, PARTITION BY, and ORDER BY",
+                        backQuoteIfNeed(getContext()->resolveDatabase(as_database_saved)),
+                        backQuoteIfNeed(as_table_saved), inherited_clause);
+            }
         }
 
         if (ignore_unsupported_source_properties)

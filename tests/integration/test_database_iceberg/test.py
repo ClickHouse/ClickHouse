@@ -2009,6 +2009,21 @@ def test_create_table_as_rejects_source_storage_clauses(started_cluster):
         )
         assert f"has {clause_name}, which a DataLakeCatalog table cannot represent" in err
 
+        explicit_table = f"dst_explicit_{src_suffix}"
+        explicit_engine = (
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{explicit_table}/', "
+            f"'{minio_access_key}', '{minio_secret_key}')"
+        )
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{namespace}.{explicit_table}` "
+            f"AS default.{src_table} {explicit_engine}",
+            settings={
+                "allow_database_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+        )
+        assert f"has {clause_name}, which a DataLakeCatalog table cannot represent" in err
+
         ignored_table = f"dst_ignored_{src_suffix}"
         node.query(
             f"CREATE TABLE {CATALOG_NAME}.`{namespace}.{ignored_table}` AS default.{src_table}",
@@ -2025,6 +2040,20 @@ def test_create_table_as_rejects_source_storage_clauses(started_cluster):
         ]
         node.query(
             f"DROP TABLE {CATALOG_NAME}.`{namespace}.{ignored_table}`",
+            settings={"allow_database_iceberg": 1},
+        )
+
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{namespace}.{explicit_table}` "
+            f"AS default.{src_table} {explicit_engine}",
+            settings={
+                "allow_database_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+                "datalake_create_table_as_ignore_unsupported_source_properties": 1,
+            },
+        )
+        node.query(
+            f"DROP TABLE {CATALOG_NAME}.`{namespace}.{explicit_table}`",
             settings={"allow_database_iceberg": 1},
         )
         node.query(f"DROP TABLE default.{src_table}")
