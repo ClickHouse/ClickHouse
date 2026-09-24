@@ -31,6 +31,7 @@
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
+#include <Processors/Formats/Impl/PuffinCommon.h>
 #include <IO/ReadBufferFromMemory.h>
 
 #include <IO/ReadHelpers.h>
@@ -47,17 +48,12 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
 constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
 constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
 constexpr size_t PUFFIN_FOOTER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
 constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
 constexpr size_t PUFFIN_DV_MAX_BLOB_SIZE = 2ULL * 1024 * 1024 * 1024;
-constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
-constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
-constexpr Int32 DELETION_VECTOR_MAX_KEY = std::numeric_limits<Int32>::max() - 1;
-constexpr const char * PUFFIN_DELETION_VECTOR_BLOB_TYPE = "deletion-vector-v1";
 
 UInt64 positionFromKeyAndSubPosition(UInt32 key, UInt32 sub_position)
 {
@@ -1045,7 +1041,7 @@ Pair with the `Puffin` format to read `deletion-vector-v1` blob payloads.
         .description = R"DOCS_MD(
 ## Description {#description}
 
-Input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) files.
+Format for reading and writing [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) files.
 
 The format exposes deleted row positions from `deletion-vector-v1` blobs. It is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
 If a puffin file contains multiple `deletion-vector-v1` blobs, the format outputs one row per such blob.
@@ -1053,6 +1049,8 @@ If a puffin file contains multiple `deletion-vector-v1` blobs, the format output
 Fixed output columns:
 - `referenced_data_file` (`String`) - location of the data file the deletion vector applies to (`referenced-data-file` blob property)
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
+
+When used as an output format, the file contains exactly one `deletion-vector-v1` blob. The input must consist of exactly one column with deleted row positions: either an integer (one position per row) or an array of integers (for example `deleted_rows` produced by this format when reading). Positions from all rows are merged into one deletion vector, deduplicated and sorted; negative positions and positions above the Iceberg deletion vector limit are rejected. The location of the data file the deletion vector applies to is taken from the required setting `output_format_puffin_referenced_data_file`. Blob metadata is written the way Apache Iceberg writes it by default: `fields` is `[2147483645]` (the `_pos` metadata column id), `snapshot-id` and `sequence-number` are `-1`; these three values can be changed with the settings `output_format_puffin_field_ids`, `output_format_puffin_snapshot_id` and `output_format_puffin_sequence_number`. The `referenced-data-file` and `cardinality` properties are always written and the footer is uncompressed, so the resulting file can be registered in an Iceberg v3 table as a deletion vector delete file and read by other engines such as Apache Spark. Use `PuffinMetadata` on the written file to obtain `offset` and `length` of the blob for the `content_offset` and `content_size_in_bytes` manifest fields.
 
 Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected when `deleted_rows` is requested. Footer `deletion-vector-v1` properties (including that `cardinality` parses as an unsigned integer) are always validated. Selecting only `referenced_data_file` skips on-disk payload I/O and therefore also skips envelope, CRC, roaring deserialize, and the materialization ceiling — intentionally, so a path-only projection does not read up to the blob-size cap.
 
@@ -1081,6 +1079,14 @@ ORDER BY referenced_data_file, row_number;
 ```
 
 Use `PuffinMetadata` to inspect footer blob descriptors before reading deletion vectors.
+
+Write a deletion vector for a data file:
+
+```sql
+INSERT INTO FUNCTION file('deletes.puffin', Puffin)
+SELECT arrayJoin([2, 5, 7, 100, 65536])::UInt64 AS position
+SETTINGS output_format_puffin_referenced_data_file = 's3://bucket/warehouse/db/table/data/00000-0-data.parquet';
+```
 )DOCS_MD",
         .related = {"PuffinMetadata"},
     });

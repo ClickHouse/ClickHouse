@@ -43,6 +43,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"output_format_puffin_referenced_data_file", "", "", "New setting: data file location written into the `referenced-data-file` property by the new Puffin output format."},
+            {"output_format_puffin_snapshot_id", -1, -1, "New setting: `snapshot-id` written into deletion vector blob metadata by the new Puffin output format."},
+            {"output_format_puffin_sequence_number", -1, -1, "New setting: `sequence-number` written into deletion vector blob metadata by the new Puffin output format."},
+            {"output_format_puffin_field_ids", "2147483645", "2147483645", "New setting: `fields` written into deletion vector blob metadata by the new Puffin output format."},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},

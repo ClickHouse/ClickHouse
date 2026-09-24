@@ -412,6 +412,14 @@ struct FormatSettings
         size_t max_dictionary_size = 1024 * 1024;
     } parquet{};
 
+    struct Puffin
+    {
+        String referenced_data_file;
+        Int64 snapshot_id = -1;
+        Int64 sequence_number = -1;
+        String field_ids = "2147483645";
+    } puffin{};
+
     struct Pretty
     {
         UInt64 max_rows = 10000;

@@ -1,0 +1,27 @@
+--- same deletion vector as Spark: blob bytes are identical ---
+1
+deletion-vector-v1	-1	-1	[2147483645]	4	58		{'cardinality':'5','referenced-data-file':'/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet'}
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	[2,5,7,100,65536]
+--- multiple blobs, unsorted duplicates, positions above 2^32, empty vector ---
+4	90	{'cardinality':'5','referenced-data-file':'data/a.parquet'}
+94	20	{'cardinality':'0','referenced-data-file':'data/b.parquet'}
+114	42	{'cardinality':'1','referenced-data-file':'data/c.parquet'}
+data/a.parquet	[0,2,5,4294967301,12884901888]
+data/b.parquet	[]
+data/c.parquet	[9223372030412324864]
+--- dense range round trip ---
+1	1
+--- other integer array types ---
+data/d.parquet	[1,2,3]
+data/e.parquet	[7,4294967296]
+--- written to stdout, read from stdin ---
+data/f.parquet	[10,20,30]
+--- errors ---
+Puffin output format requires exactly two columns
+Column referenced_data_file must have type String
+Column deleted_rows must have type Array of integers
+Column deleted_rows must have type Array of integers
+referenced_data_file must not be empty
+Deleted row position -1 is negative
+Deleted row position 9223372030412324865 exceeds the maximum deletion vector position
+Deleted row position 9223372036854775807 exceeds the maximum deletion vector position
