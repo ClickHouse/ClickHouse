@@ -939,7 +939,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             "make_distributed_plan error: plan became unsupported for distributed execution after optimization: {}.",
             reason->text);
     if (const auto & used = optimization_settings.distributed_plan_local_object)
-        if (const auto & entry = used->get())
+        if (const auto entry = used->get())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "make_distributed_plan error: the query resolved {} {} of the initiator after the plan was accepted for distributed execution.",
                 DistributedPlanLocalObject::kindName(entry->kind), entry->name);

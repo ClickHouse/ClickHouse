@@ -107,13 +107,12 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
     }
 
     const auto & used = optimization_settings.distributed_plan_local_object;
-    if (used && used->get().has_value())
-    {
-        const auto &entry = used->get();
+    if (!used)
+        return std::nullopt;
+    if (const auto entry = used->get())
         return PreformattedMessage::create(
             "make_distributed_plan does not support {} {}: it is an object of the initiator, used by a column default of table {}",
             DistributedPlanLocalObject::kindName(entry->kind), entry->name, read.getStorageID().getFullTableName());
-    }
     return std::nullopt;
 }
 
@@ -479,7 +478,7 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
         LOG_TRACE(getLogger("makeDistributedPlan"), "No record of the server-local objects the query resolved; assuming none");
         return std::nullopt;
     }
-    if (const auto & entry = used->get())
+    if (const auto entry = used->get())
         return PreformattedMessage::create(
             "make_distributed_plan does not support {} {}: it is an object of the initiator",
             DistributedPlanLocalObject::kindName(entry->kind), entry->name);
