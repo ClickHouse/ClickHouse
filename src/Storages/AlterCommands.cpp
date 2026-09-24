@@ -1945,6 +1945,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 {
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
+    NameSet projection_names;
+    for (const auto & projection : metadata.projections)
+        projection_names.insert(projection.name);
 
     /// Used to tell whether a command restates the definition the table already has, so it must not
     /// depend on whether the redundant parentheses were written on one side and not on the other.
@@ -2078,6 +2081,14 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
             if (has_column && command.if_not_exists)
                 command.ignore = true;
         }
+        else if (command.type == AlterCommand::ADD_PROJECTION)
+        {
+            if (command.if_not_exists && projection_names.contains(command.projection_name))
+                command.ignore = true;
+            projection_names.insert(command.projection_name);
+        }
+        else if (command.type == AlterCommand::DROP_PROJECTION && !command.partition && !command.clear)
+            projection_names.erase(command.projection_name);
         else if (command.type == AlterCommand::DROP_COLUMN
                 || command.type == AlterCommand::COMMENT_COLUMN
                 || command.type == AlterCommand::RENAME_COLUMN)
