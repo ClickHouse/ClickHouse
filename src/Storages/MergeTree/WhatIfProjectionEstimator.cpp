@@ -656,8 +656,7 @@ bool tryEstimateProjection(
             = fmt::format("the same {} would be read, and {}", marks_text(projection_marks), describe(sort_help));
     }
 
-    /// `prefer_optimize_projection` makes the optimizer take a usable projection whatever it costs,
-    /// including where it would not look at one: no parts to read, nothing to filter or sort
+    /// with `prefer_optimize_projection` the optimizer takes any usable projection
     const bool nothing_to_serve = !has_filter && sort_help != SortOrderHelp::Helps;
     if (query_settings[Setting::prefer_optimize_projection] && (result.verdict != "chosen" || nothing_to_serve || baseline_parts.empty()))
     {
@@ -774,7 +773,7 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    /// `prefer_optimize_projection` lifts this gate and the no-filter one below, as in the optimizer
+    /// lifted by `prefer_optimize_projection`, as in the optimizer
     const bool prefer_projection = context->getSettingsRef()[Setting::prefer_optimize_projection];
     if (baseline_parts.empty() && !prefer_projection)
     {
