@@ -54,11 +54,11 @@ CREATE TABLE ts_good_bounds ENGINE = TimeSeries SETTINGS aggregate_min_time_and_
     TAGS MIN MAX INNER ENGINE = AggregatingMergeTree ORDER BY (metric_name, id);
 INSERT INTO ts_good_bounds (metric_name, tags, samples) VALUES ('m', {'job':'api'}, [(toDateTime64(1000, 3), 1)]);
 INSERT INTO ts_good_bounds (metric_name, tags, samples) VALUES ('m', {'job':'api'}, [(toDateTime64(2000, 3), 2)]);
-SELECT min_time, max_time FROM timeSeriesTagsMinMax(ts_good_bounds) FINAL;
+SELECT min_time, max_time FROM timeSeriesTagsMinMax(currentDatabase(), 'ts_good_bounds') FINAL;
 CREATE TABLE ts_good_bounds_copy AS ts_good_bounds;
 INSERT INTO ts_good_bounds_copy (metric_name, tags, samples) VALUES ('m', {'job':'api'}, [(toDateTime64(1000, 3), 1)]);
 INSERT INTO ts_good_bounds_copy (metric_name, tags, samples) VALUES ('m', {'job':'api'}, [(toDateTime64(2000, 3), 2)]);
-SELECT min_time, max_time FROM timeSeriesTagsMinMax(ts_good_bounds_copy) FINAL;
+SELECT min_time, max_time FROM timeSeriesTagsMinMax(currentDatabase(), 'ts_good_bounds_copy') FINAL;
 DROP TABLE ts_good_bounds_copy;
 DROP TABLE ts_good_bounds;
 
