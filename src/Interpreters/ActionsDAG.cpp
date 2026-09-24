@@ -4206,7 +4206,6 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
         const Node * rejected = nullptr;
-        /// Set while `rejected` is still the freshly built conjunction of the surviving conjuncts.
         bool rejected_is_surviving_and = false;
         if (new_children.size() == 1)
             rejected = new_children.front();
@@ -4233,8 +4232,7 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         if (rejected_is_surviving_and)
         {
             /// `getConjunctionNodes` descends only through a node that is itself a function `and`, so an
-            /// alias here would hide the whole remainder from a later split of this filter. The node
-            /// `addFunction` appended is left unreferenced and collected by `removeUnusedActions` below.
+            /// alias here would hide the whole remainder from a later split of this filter.
             node = *rejected;
             node.result_name = predicate->result_name;
         }
