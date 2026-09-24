@@ -171,7 +171,7 @@ SMALL_PR_WORKFLOW = "PR"
 _STRESS_AND_FUZZER_JOB_PREFIXES = (
     JobNames.STRESS,
     JobNames.ASTFUZZER,
-    JobNames.BUZZHOUSE,
+    JobNames.LACASADELDOLOR,
     JobNames.SQL_LOGIC_TEST,
     JobNames.SQL_STORM_TEST,
 )
@@ -219,7 +219,7 @@ def _stress_and_fuzzer_paths():
     for job in (
         *JobConfigs.stress_test_jobs,
         *JobConfigs.ast_fuzzer_jobs,
-        *JobConfigs.buzz_fuzzer_jobs,
+        *JobConfigs.lacasadeldolor_jobs,
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.sqlstorm_test_job,
     ):
