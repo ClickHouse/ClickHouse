@@ -430,12 +430,8 @@ def main():
 
     args = parse_args()
 
-    deb_image = DockerImage.get_docker_image(DEB_IMAGE).pull_image(
-        timeout_s=120, retries=2
-    )
-    rpm_image = DockerImage.get_docker_image(RPM_IMAGE).pull_image(
-        timeout_s=120, retries=2
-    )
+    deb_image = DockerImage.get_docker_image(DEB_IMAGE).pull_image(timeout_s=120)
+    rpm_image = DockerImage.get_docker_image(RPM_IMAGE).pull_image(timeout_s=120)
 
     Shell.check(f"chmod +x {Utils.cwd()}/ci/tmp/clickhouse", verbose=True, strict=True)
 

@@ -213,10 +213,23 @@ namespace
                  /* needs_cast_to_float64 = */ true,
              }},
 
-            /// TODO:
-            /// stddev_over_time
-            /// stdvar_over_time
-            /// mad_over_time
+            {"mad_over_time",
+             {
+                 "timeSeriesMadToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stddev_over_time",
+             {
+                 "timeSeriesStddevToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stdvar_over_time",
+             {
+                 "timeSeriesStdvarToGrid",
+                 /* drop_metric_name = */ true,
+             }},
         };
 
         auto it = impl_map.find(function_name);
