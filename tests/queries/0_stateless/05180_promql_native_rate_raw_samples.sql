@@ -5,13 +5,19 @@
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
+-- The native admission checks below are bypassed by serialized-plan SQL fallback.
+SET serialize_query_plan = 0;
 
 DROP TABLE IF EXISTS promql_native_rate_raw_samples;
 
 -- Keep same-bucket rows from separate INSERTs in distinct level-zero parts.
 CREATE TABLE promql_native_rate_raw_samples ENGINE = TimeSeries
 SETTINGS samples_bucket_step_seconds = 60, samples_index_granularity = 1, recent_samples_ttl_seconds = 0
-SAMPLES INNER ENGINE = AggregatingMergeTree SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
+SAMPLES INNER ENGINE = AggregatingMergeTree
+SETTINGS
+    max_bytes_to_merge_at_max_space_in_pool = 1,
+    min_bytes_for_wide_part = 0,
+    ratio_of_defaults_for_sparse_serialization = 0;
 
 -- Timestamps 0.001 and 40 are the inclusive selector boundaries for the query
 -- below. Duplicate lower-bound timestamps and samples immediately outside the
@@ -291,6 +297,61 @@ FROM
     SELECT tags, samples FROM root_rate_sql_oracle
     EXCEPT ALL
     SELECT tags, samples FROM root_rate_raw_native
+);
+
+-- The `bucket` column must be read as a sparse physical column by the serial
+-- native `rate` path. One-row blocks also cross the series boundary.
+SELECT count() > 0, min(dumpColumnStructure(bucket) LIKE '%Sparse%')
+FROM timeSeriesSamples(promql_native_rate_raw_samples)
+SETTINGS max_threads = 1, max_block_size = 1;
+
+CREATE TEMPORARY TABLE sparse_serial_root_rate_native AS
+SELECT tags, samples
+FROM prometheusQueryRange(
+    promql_native_rate_raw_samples,
+    'rate(reads[20s])',
+    20, 40, 20)
+SETTINGS
+    enable_promql_native_plan = 1,
+    enable_promql_native_raw_samples = 1,
+    enable_promql_native_parallel_processing = 0,
+    max_threads = 1,
+    max_block_size = 1;
+
+SELECT countIf(explain LIKE '%(PromQLRangeRate)%')
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT *
+    FROM prometheusQueryRange(
+        promql_native_rate_raw_samples,
+        'rate(reads[20s])',
+        20, 40, 20)
+    SETTINGS
+        enable_promql_native_plan = 1,
+        enable_promql_native_raw_samples = 1,
+        enable_promql_native_parallel_processing = 0,
+        max_threads = 1,
+        max_block_size = 1
+);
+
+SELECT count(), sum(length(samples))
+FROM sparse_serial_root_rate_native;
+
+SELECT count()
+FROM
+(
+    SELECT tags, samples FROM sparse_serial_root_rate_native
+    EXCEPT ALL
+    SELECT tags, samples FROM root_rate_sql_oracle
+);
+
+SELECT count()
+FROM
+(
+    SELECT tags, samples FROM root_rate_sql_oracle
+    EXCEPT ALL
+    SELECT tags, samples FROM sparse_serial_root_rate_native
 );
 
 -- The raw reader must reject an oversized physical row from `samples.size0`

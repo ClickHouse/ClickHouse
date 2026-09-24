@@ -6,6 +6,8 @@
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
+-- This test asserts native plan steps, which cannot use serialized query plans.
+SET serialize_query_plan = 0;
 -- This test certifies the ordered-read storage-fusion path. The random-settings
 -- limits above keep its route-defining settings fixed while all unrelated
 -- settings remain randomized by the stateless runner.
@@ -102,6 +104,51 @@ SETTINGS
     enable_promql_native_parallel_processing = 1;
 
 SET enable_promql_native_raw_samples = 0;
+
+-- Exercise the serial native two-rate transform with one input stream. This read
+-- keeps the storage-owned `Sparse(DateTime64)` bucket column and crosses the
+-- transform's input-chunk boundary for the same physical series.
+SET max_threads = 1;
+
+CREATE TEMPORARY TABLE d06_serial AS
+SELECT tags, samples
+FROM prometheusQueryRange(
+    promql_native_d06_two_rate_sum,
+    'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
+    300, 420, 60)
+SETTINGS enable_promql_native_plan = 1, enable_promql_native_parallel_processing = 1;
+
+SELECT
+    countIf(explain LIKE '%PromQLTwoRangeRates%' AND explain NOT LIKE '%MergingTransform%') > 0,
+    countIf(explain LIKE '%PromQLTwoRangeRatesMergingTransform%') = 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT *
+    FROM prometheusQueryRange(
+        promql_native_d06_two_rate_sum,
+        'ceil(sum by(namespace,pod)(rate(reads[5m])+rate(writes[5m])))',
+        300, 420, 60)
+    SETTINGS enable_promql_native_plan = 1, enable_promql_native_parallel_processing = 1
+);
+
+SELECT count()
+FROM
+(
+    SELECT tags, samples FROM d06_sql
+    EXCEPT ALL
+    SELECT tags, samples FROM d06_serial
+);
+
+SELECT count()
+FROM
+(
+    SELECT tags, samples FROM d06_serial
+    EXCEPT ALL
+    SELECT tags, samples FROM d06_sql
+);
+
+SET max_threads = 8;
 
 -- Both rate branches and their default one-to-one addition must be installed
 -- as one fused native plan step. This positive

@@ -5,6 +5,9 @@
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
+-- The distributed-plan shard enables serialization by default. Native PromQL
+-- plan steps are deliberately not serializable, so keep this test on its native path.
+SET serialize_query_plan = 0;
 
 DROP TABLE IF EXISTS promql_native_range_sum_by;
 

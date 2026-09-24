@@ -1,4 +1,5 @@
 #include <Processors/Transforms/PromQLRangeRateTransform.h>
+#include <Processors/Transforms/PromQLColumnHelpers.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -340,8 +341,8 @@ void PromQLRangeRateTransform::checkAndRememberInputOrder(
         last_input_bucket->popBack(1);
     }
 
-    last_input_id->insertFrom(id_column, row);
-    last_input_bucket->insertFrom(bucket_column, row);
+    insertPromQLColumnValue(*last_input_id, id_column, row);
+    insertPromQLColumnValue(*last_input_bucket, bucket_column, row);
 }
 
 void PromQLRangeRateTransform::startSeries(
@@ -352,8 +353,8 @@ void PromQLRangeRateTransform::startSeries(
     chassert(current_id->empty());
     chassert(current_bucket->empty());
 
-    current_id->insertFrom(id_column, row);
-    current_bucket->insertFrom(bucket_column, row);
+    insertPromQLColumnValue(*current_id, id_column, row);
+    insertPromQLColumnValue(*current_bucket, bucket_column, row);
     current_output_group = collector->removeTag(full_group, TimeSeriesTagNames::MetricName);
     if (!output_groups->tryRegister(current_output_group))
         throw Exception(
@@ -385,7 +386,7 @@ void PromQLRangeRateTransform::updateCurrentBucket(const IColumn & bucket_column
 {
     chassert(current_bucket->size() == 1);
     current_bucket->popBack(1);
-    current_bucket->insertFrom(bucket_column, row);
+    insertPromQLColumnValue(*current_bucket, bucket_column, row);
 }
 
 void PromQLRangeRateTransform::destroyRateState() noexcept

@@ -1,4 +1,5 @@
 #include <Processors/Transforms/PromQLTwoRangeRatesTransform.h>
+#include <Processors/Transforms/PromQLColumnHelpers.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -599,8 +600,8 @@ void PromQLTwoRangeRatesTransform::checkAndRememberInputOrder(
         last_input_bucket->popBack(1);
     }
 
-    last_input_id->insertFrom(id_column, row);
-    last_input_bucket->insertFrom(bucket_column, row);
+    insertPromQLColumnValue(*last_input_id, id_column, row);
+    insertPromQLColumnValue(*last_input_bucket, bucket_column, row);
 }
 
 void PromQLTwoRangeRatesTransform::startSeries(const IColumn & id_column, size_t row, Group full_group)
@@ -609,7 +610,7 @@ void PromQLTwoRangeRatesTransform::startSeries(const IColumn & id_column, size_t
     chassert(!rate_state_created);
     chassert(current_id->empty());
 
-    current_id->insertFrom(id_column, row);
+    insertPromQLColumnValue(*current_id, id_column, row);
     current_full_group = full_group;
     rate_function->create(rate_place.data());
     rate_state_created = true;
