@@ -9246,7 +9246,7 @@ Does not apply to `LIKE`, `ILIKE`, `startsWith` and `endsWith`, and the tokens t
 If more tokens match, the dictionary scan is abandoned and every pattern predicate on the index (a `LIKE` next to these functions included)
 is evaluated on the column, which is faster than collecting the postings of that many tokens. 0 means no limit.
 The default is the measured break-even: on a part of 10 million rows, the dictionary scan and the postings of about 20000 matching tokens
-cost as much as evaluating the predicate on the column with several threads, and a pattern that matches 1 million tokens is 50 times slower than the column scan.
+cost as much as evaluating the predicate on the column with several threads, and a pattern that matches 1 million tokens is more than 30 times slower than the column scan.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
