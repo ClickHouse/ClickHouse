@@ -1,3 +1,5 @@
+P0 plan	1	0
+P0 plain	0	1
 P1 dist	31	99	78
 P1 plain	31	99	78
 P2 dist	4	10	10
@@ -10,8 +12,11 @@ P5 dist	27	89	68
 P5 plain	27	89	68
 P6 dist	1	Nullable(UInt8)	31
 P6 plain	1	Nullable(UInt8)	31
+P7 plan	1
 N1 dist	50
 N1 plain	50
+N1b dist	1	Nullable(UInt8)	50
+N1b plain	1	Nullable(UInt8)	50
 N2 dist	4
 N2 plain	4
 N3 dist	6
@@ -26,3 +31,7 @@ N7 dist	true	Bool	89
 N7 plain	true	Bool	89
 N8 dist	1	Nullable(UInt8)	79
 N8 plain	1	Nullable(UInt8)	79
+N9 dist	true	Bool	35
+N9 plain	true	Bool	35
+N10 dist	1	UInt8	35
+N10 plain	1	UInt8	35

@@ -4206,6 +4206,8 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
         const Node * rejected = nullptr;
+        /// Set while `rejected` is still the freshly built conjunction of the surviving conjuncts.
+        bool rejected_is_surviving_and = false;
         if (new_children.size() == 1)
             rejected = new_children.front();
         else
@@ -4213,17 +4215,33 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             FunctionOverloadResolverPtr func_builder_and
                 = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             rejected = &addFunction(func_builder_and, std::move(new_children), {});
+            rejected_is_surviving_and = true;
         }
 
         /// Preserve the original type if the column is needed in the result.
         if (!removes_filter)
-            rejected = &addBooleanCondition(*rejected, predicate->result_type, nullptr);
+        {
+            const auto * converted = &addBooleanCondition(*rejected, predicate->result_type, nullptr);
+            rejected_is_surviving_and &= converted == rejected;
+            rejected = converted;
+        }
 
         Node node;
-        node.type = ActionType::ALIAS;
-        node.result_name = predicate->result_name;
-        node.result_type = rejected->result_type;
-        node.children = {rejected};
+        if (rejected_is_surviving_and)
+        {
+            /// `getConjunctionNodes` descends only through a node that is itself a function `and`, so an
+            /// alias here would hide the whole remainder from a later split of this filter. The node
+            /// `addFunction` appended is left unreferenced and collected by `removeUnusedActions` below.
+            node = *rejected;
+            node.result_name = predicate->result_name;
+        }
+        else
+        {
+            node.type = ActionType::ALIAS;
+            node.result_name = predicate->result_name;
+            node.result_type = rejected->result_type;
+            node.children = {rejected};
+        }
         *predicate = std::move(node);
     }
 
