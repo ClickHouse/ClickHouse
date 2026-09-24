@@ -1,0 +1,23 @@
+aggregation
+0	10
+aggregation, negated
+0	10
+all eight variants
+0	0	0	0	0	0	0	0	4
+result type
+UInt8	4
+explain
+1
+inside a lambda
+[0,0]	3
+virtual column filter
+0
+prewhere
+0
+plain IN
+0	7
+1	3
+0	3
+1	7
+1
+2
