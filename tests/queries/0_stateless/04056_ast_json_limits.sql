@@ -91,17 +91,3 @@ SELECT formatQueryFromJSON('{"type":"RefreshStrategy","schedule_kind":"EVERY"}')
 -- `clickhouse_json` client/server entry points (so a huge shallow document is rejected before Poco
 -- materializes it). Here `parseQueryToJSON('SELECT 1')` is well over 10 bytes.
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1')) SETTINGS max_query_size = 10; -- { serverError SYNTAX_ERROR }
-
--- Reading an AST back from JSON descends over the document, so raising `max_ast_depth` must not turn
--- a deep payload into a stack overflow: each shape below must fail with a controlled error, never
--- crash. The depths sit far past every bound so that holds in any build; which of the descents
--- reports it first follows the build's stack budget, so no arm asserts a particular one.
--- A chain of nested AST nodes.
-SELECT formatQueryFromJSON(concat(repeat('{"type":"ExpressionList","children":[', 20000), '{"type":"Literal","value":{"field_type":"UInt64","value":1}}', repeat(']}', 20000))) SETTINGS max_ast_depth = 100000, max_ast_elements = 0, max_query_size = 100000000; -- { serverError TOO_DEEP_RECURSION }
-
--- A nested `field_type` value inside a single literal, which adds no AST nodes of its own.
-SELECT formatQueryFromJSON(concat('{"type":"Literal","value":', repeat('{"field_type":"Array","value":[', 25000), '{"field_type":"UInt64","value":1}', repeat(']}', 25000), '}')) SETTINGS max_ast_depth = 200000, max_ast_elements = 0, max_query_size = 100000000; -- { serverError TOO_DEEP_RECURSION }
-
--- The JSON text is parsed before any AST node exists, so a deep member that the reader never descends
--- into still has to be bounded while the text itself is being read.
-SELECT formatQueryFromJSON(concat('{"type":"Literal","value":{"field_type":"UInt64","value":1},"junk":', repeat('[', 200000), repeat(']', 200000), '}')) SETTINGS max_ast_depth = 100000, max_ast_elements = 0, max_query_size = 100000000; -- { serverError TOO_DEEP_RECURSION }

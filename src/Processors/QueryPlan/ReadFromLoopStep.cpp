@@ -2,7 +2,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/QueryExecutionCounters.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -27,6 +27,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -69,10 +70,20 @@ namespace
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false);
 
-        InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
-        if (query_info.storage_limits)
-            interpreter.addStorageLimits(*query_info.storage_limits);
-        plan = std::move(interpreter).extractQueryPlan();
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
+            if (query_info.storage_limits)
+                interpreter.addStorageLimits(*query_info.storage_limits);
+            plan = std::move(interpreter).extractQueryPlan();
+        }
+        else
+        {
+            InterpreterSelectWithUnionQuery interpreter(select_ast, context, options, column_names);
+            if (query_info.storage_limits)
+                interpreter.addStorageLimits(*query_info.storage_limits);
+            interpreter.buildQueryPlan(plan);
+        }
     }
 }
 
@@ -89,8 +100,7 @@ public:
             StoragePtr inner_storage_,
             ASTPtr inner_table_function_ast_,
             size_t max_block_size_,
-            size_t num_streams_,
-            String repeated_build_scope_name_)
+            size_t num_streams_)
             : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)))
             , column_names(column_names_)
             , query_info(query_info_)
@@ -101,7 +111,6 @@ public:
             , inner_table_function_ast(std::move(inner_table_function_ast_))
             , max_block_size(max_block_size_)
             , num_streams(num_streams_)
-            , repeated_build_scope_name(std::move(repeated_build_scope_name_))
     {
     }
 
@@ -146,17 +155,11 @@ public:
 
         if (plan.isInitialized())
         {
-            /// Mark the region, so that the joins of the looped relation are counted once instead of
-            /// once per pass. The name was taken while the pipeline holding this `loop` was assembled, so
-            /// it is the same on every rebuild of that pipeline, see `makeScopeForPipelineBuiltLater`.
-            QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(repeated_build_scope_name);
-
             auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
             query_pipeline = QueryPipeline(std::move(pipe));
             query_pipeline.addResources(std::move(resources));
-            query_pipeline.disableProfileEventUpdate();
             executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
         }
         loop = true;
@@ -209,8 +212,6 @@ private:
     ASTPtr inner_table_function_ast;
     size_t max_block_size;
     size_t num_streams;
-    /// Names this `loop` for the deduplication of the joins it rebuilds, see `initLoop`.
-    String repeated_build_scope_name;
     ContextPtr inner_context;
     // add retries. If inner_storage failed to pull X times in a row we'd better to fail here not to hang
     size_t retries_count = 0;
@@ -256,8 +257,7 @@ ReadFromLoopStep::ReadFromLoopStep(
 Pipe ReadFromLoopStep::makePipe()
 {
     return Pipe(std::make_shared<LoopSource>(
-            column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, inner_table_function_ast, max_block_size,
-            num_streams, QueryExecutionCounters::makeScopeForPipelineBuiltLater("loop")));
+            column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, inner_table_function_ast, max_block_size, num_streams));
 }
 
 void ReadFromLoopStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

@@ -190,44 +190,9 @@ inline void writeString(std::string_view ref, WriteBuffer & buf)
  */
 inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
 {
-    /// A byte with a nonzero entry never gets copied verbatim; it always reaches the switch below.
-    /// 0xE2 needs an entry because it leads U+2028 and U+2029: a bulk copy would swallow the lead byte and
-    /// emit the sequence raw. Their continuation bytes need none, being written unchanged either way.
-    static constexpr auto stop_tables = []
-    {
-        std::array<std::array<UInt8, 256>, 2> tables{};
-        for (auto & table : tables)
-        {
-            for (size_t i = 0; i <= 0x1F; ++i)
-                table[i] = 1;
-            table['"'] = 1;
-            table['\\'] = 1;
-            table[0xE2] = 1;
-        }
-        tables[true]['/'] = 1;
-        return tables;
-    }();
-    const auto & stop = stop_tables[settings.json.escape_forward_slashes];
-
     writeChar('"', buf);
-
-    const char * it = begin;
-
-    while (true)
+    for (const char * it = begin; it != end; ++it)
     {
-        const char * run_end = it;
-        while (run_end != end && !stop[static_cast<UInt8>(*run_end)])
-            ++run_end;
-
-        if (run_end != it)
-        {
-            buf.write(it, static_cast<size_t>(run_end - it));
-            it = run_end;
-        }
-
-        if (it == end)
-            break;
-
         switch (*it)
         {
             case '\b':
@@ -296,10 +261,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                 else
                     writeChar(*it, buf);
         }
-
-        ++it;
     }
-
     writeChar('"', buf);
 }
 
@@ -680,34 +642,6 @@ inline void writeQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
-/// SQLite identifiers: a " is escaped by doubling it; every other byte, backslash included, is literal.
-inline void writeDoubleQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
-{
-    writeChar('"', buf);
-    for (char c : ref)
-    {
-        if (c == '"')
-            writeChar('"', buf);
-        writeChar(c, buf);
-    }
-    writeChar('"', buf);
-}
-
-/// PostgreSQL quoted identifiers: a `"` is escaped by doubling it, and every other byte, backslash
-/// included, is literal. `writeDoubleQuotedString` instead emits an embedded `"` as `\"`, which
-/// PostgreSQL reads as the end of the identifier followed by SQL, and doubles a real backslash.
-inline void writeDoubleQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
-{
-    writeChar('"', buf);
-    for (char c : ref)
-    {
-        if (c == '"')
-            writeChar('"', buf);
-        writeChar(c, buf);
-    }
-    writeChar('"', buf);
-}
-
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
@@ -736,7 +670,6 @@ inline void writeBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
 /// Write quoted if the string doesn't look like and identifier.
 void writeProbablyBackQuotedString(std::string_view s, WriteBuffer & buf);
 void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf);
-void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer & buf);
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf);
 
 
@@ -906,7 +839,7 @@ inline void writeDateTime64FractionalText(typename DecimalType::NativeType fract
                 last_non_zero_pos = pos;
             }
         }
-        size_t new_scale = ((last_non_zero_pos / 3) + 1) * 3;
+        size_t new_scale = (last_non_zero_pos >= 3) ? 6 : 3;
         writeString(&data[0], new_scale, buf);
     }
     else
@@ -1130,7 +1063,7 @@ inline void writeTime64FractionalText(typename DecimalType::NativeType fractiona
                 last_non_zero_pos = pos;
             }
         }
-        size_t new_scale = ((last_non_zero_pos / 3) + 1) * 3;
+        size_t new_scale = (last_non_zero_pos >= 3) ? 6 : 3;
         writeString(&data[0], new_scale, buf);
     }
     else

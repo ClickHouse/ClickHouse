@@ -12,7 +12,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 
 
 namespace DB
@@ -50,18 +49,6 @@ ColumnsDescription PredicateStatisticsLogElement::getColumnsDescription()
             lc_string,
             codecZSTD(1),
             "Hostname of the server executing the query."
-        },
-        {
-            "clickhouse_version",
-            lc_string,
-            codecZSTD(1),
-            "Version of the ClickHouse server that produced the row."
-        },
-        {
-            "system_processor",
-            lc_string,
-            codecZSTD(1),
-            "CPU architecture of the ClickHouse server that produced the row."
         },
         {
             "event_date",
@@ -175,8 +162,6 @@ void PredicateStatisticsLogElement::appendToBlock(MutableColumns & columns) cons
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(event_date);
     columns[i++]->insert(event_time);
     columns[i++]->insert(database);

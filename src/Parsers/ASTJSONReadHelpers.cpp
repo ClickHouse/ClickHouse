@@ -4,9 +4,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTPartition.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Common/checkStackSize.h>
 #include <IO/ReadHelpers.h>
 
 #include <algorithm>
@@ -62,64 +59,6 @@ ASTPtr JSONObjectReader::readSpecialFunctionChild(const char * key, const char *
     return child;
 }
 
-namespace
-{
-
-void rejectArgumentlessFunctions(const IAST & ast, const char * key)
-{
-    checkStackSize();
-
-    const auto * function = ast.as<ASTFunction>();
-    if (function && !function->arguments)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Function '{}' for key '{}' has no 'arguments' list during AST JSON deserialization, "
-            "which the SQL parser produces only outside an expression", function->name, key);
-
-    /// A nested query is walked too: `ParserSubquery` accepts only a SELECT, which has no such slot.
-    for (const auto & child : ast.children)
-    {
-        if (child)
-            rejectArgumentlessFunctions(*child, key);
-    }
-}
-
-}
-
-ASTPtr JSONObjectReader::readExpressionChild(const char * key) const
-{
-    ASTPtr child = readChild(key);
-    if (child)
-        rejectArgumentlessFunctions(*child, key);
-    return child;
-}
-
-ASTs JSONObjectReader::readExpressionChildren() const
-{
-    ASTs result = readChildren();
-    for (const auto & child : result)
-    {
-        if (child)
-            rejectArgumentlessFunctions(*child, "children");
-    }
-    return result;
-}
-
-ASTPtr JSONObjectReader::readFunctionChildWithExpressionArguments(const char * key) const
-{
-    ASTPtr child = readChildOfType<ASTFunction>(key);
-    if (child)
-    {
-        if (const auto & arguments = child->as<ASTFunction &>().arguments)
-            rejectArgumentlessFunctions(*arguments, key);
-    }
-    return child;
-}
-
-void JSONObjectReader::screenArgumentlessFunctions(const IAST & ast, const char * key)
-{
-    rejectArgumentlessFunctions(ast, key);
-}
-
 ASTPtr JSONObjectReader::readStringLiteralChild(const char * key) const
 {
     ASTPtr child = readChild(key);
@@ -129,30 +68,6 @@ ASTPtr JSONObjectReader::readStringLiteralChild(const char * key) const
     if (!literal || literal->value.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Expected a string literal for key '{}' during AST JSON deserialization", key);
-    return child;
-}
-
-ASTPtr JSONObjectReader::readPartitionListChild(const char * key) const
-{
-    ASTPtr child = readChild(key);
-    if (!child)
-        return nullptr;
-
-    if (!child->as<ASTExpressionList>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Expected a list of partitions for key '{}' during AST JSON deserialization", key);
-
-    /// A single-element `IN PARTITION` list is collapsed into the `partition` slot by the parser, so a
-    /// one-element (or empty) list here is a shape the SQL parser can never produce.
-    if (child->children.size() < 2)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'{}' (IN PARTITION) must contain at least two partitions during AST JSON deserialization", key);
-
-    for (const auto & partition : child->children)
-        if (!partition || !partition->as<ASTPartition>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'{}' (IN PARTITION) must contain only partitions during AST JSON deserialization", key);
-
     return child;
 }
 
@@ -212,9 +127,6 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Structured Field value exceeds maximum AST depth limit ({}) during JSON AST deserialization",
             max_depth);
-
-    /// The limit above counts `Field` levels, which is not a stack budget at any value.
-    checkStackSize();
 
     /// Count every `Field` value (scalar or structured) against the element-count budget too, so a
     /// wide literal payload (e.g. one huge `Array`) cannot bypass `max_ast_elements` while adding no

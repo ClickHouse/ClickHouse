@@ -31,6 +31,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTForeignKeyDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
@@ -57,7 +58,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
-#include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTStreamSettings.h>
@@ -78,14 +78,12 @@
 #include <Parsers/Lexer.h>
 
 #include <Common/Exception.h>
-#include <Common/checkStackSize.h>
 
 #include <base/scope_guard.h>
 
 #include <Poco/Exception.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
-#include <Poco/JSON/ParseHandler.h>
 #include <Poco/JSON/Parser.h>
 
 #include <unordered_map>
@@ -204,7 +202,6 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"SystemQuery", [] { return make_intrusive<ASTSystemQuery>(); }},
         {"ShowTablesQuery", [] { return make_intrusive<ASTShowTablesQuery>(); }},
         {"ShowColumnsQuery", [] { return make_intrusive<ASTShowColumnsQuery>(); }},
-        {"ShowIndexesQuery", [] { return make_intrusive<ASTShowIndexesQuery>(); }},
         {"KillQueryQuery", [] { return make_intrusive<ASTKillQueryQuery>(); }},
         {"OptimizeQuery", [] { return make_intrusive<ASTOptimizeQuery>(); }},
         {"DeleteQuery", [] { return make_intrusive<ASTDeleteQuery>(); }},
@@ -226,6 +223,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"Assignment", [] { return make_intrusive<ASTAssignment>(); }},
         {"TableOverride", [] { return make_intrusive<ASTTableOverride>(); }},
         {"TableOverrideList", [] { return make_intrusive<ASTTableOverrideList>(); }},
+        {"ForeignKeyDeclaration", [] { return make_intrusive<ASTForeignKeyDeclaration>(); }},
         {"IdentifierTypePair", [] { return make_intrusive<ASTIdentifierTypePair>(); }},
     };
 
@@ -311,27 +309,14 @@ size_t computeJSONNestingDepth(const String & json)
     return max_depth;
 }
 
-/// `Poco::JSON::Parser` descends recursively over the whole document before any AST node is built.
-class StackCheckingParseHandler : public Poco::JSON::ParseHandler
-{
-public:
-    void startObject() override
-    {
-        checkStackSize();
-        Poco::JSON::ParseHandler::startObject();
-    }
-
-    void startArray() override
-    {
-        checkStackSize();
-        Poco::JSON::ParseHandler::startArray();
-    }
-};
-
 }
 
 ASTPtr IAST::createFromJSON(const String & json)
 {
+    /// `Poco::JSON::Parser::setDepth` does not actually bound recursion in our Poco fork
+    /// (`ParserImpl` stores `_depth` but `handle`/`handleObject`/`handleArray` never read it),
+    /// so a hostile deeply-nested payload would recurse through the parser and overflow the
+    /// stack before any AST-level depth check runs. Enforce a raw-text bracket budget first.
     /// The budget is a safe multiple of the effective depth limit (the JSON encoding adds bracket
     /// levels per AST/`Field` level), not the limit itself, so a valid serialized AST is never
     /// rejected here — the constructed AST depth is still bounded by the counter check below.
@@ -343,18 +328,13 @@ ASTPtr IAST::createFromJSON(const String & json)
             "JSON nesting depth exceeds the limit derived from max_ast_depth ({}) during JSON AST deserialization", json_nesting_budget);
 
     Poco::JSON::Parser parser;
-    parser.setHandler(new StackCheckingParseHandler);
-    /// Poco's own default bound is 1000 levels (JSON_DEFAULT_DEPTH).
+    /// Also request the parser-level bound (kept for forward compatibility if the fork starts
+    /// honouring it); the pre-scan above is the actual enforcement.
     parser.setDepth(json_nesting_budget);
     Poco::Dynamic::Var result;
     try
     {
         result = parser.parse(json);
-    }
-    /// `DB::Exception` derives from `Poco::Exception`, so this clause must precede the one below.
-    catch (const Exception &)
-    {
-        throw;
     }
     catch (const Poco::Exception & e)
     {
@@ -384,9 +364,6 @@ ASTPtr IAST::createFromJSON(const Poco::JSON::Object & json)
     if (const size_t max_depth = effectiveJSONDeserializationMaxDepth(); json_deser_current_depth >= max_depth)
         throw Exception(ErrorCodes::TOO_DEEP_AST,
             "JSON AST deserialization exceeded maximum depth limit ({})", max_depth);
-
-    /// The limit above counts nodes, which is not a stack budget at any value.
-    checkStackSize();
 
     /// Check element count limit.
     if (json_deser_max_elements && json_deser_current_elements >= json_deser_max_elements)
