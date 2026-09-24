@@ -37,6 +37,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -1160,15 +1161,95 @@ static bool tryNormalizeNeedlePadding(Field & value, const DataTypePtr & value_t
     return tryNormalizeNeedlePadding(value.safeGet<String>(), isFixedString(inner_type), context);
 }
 
+namespace
+{
+
+/// Whether converting a value of type `from` to type `to` never changes it and never throws.
+/// `LowCardinality` may be added or dropped and `Nullable` may be added, at any depth of `Array`.
+/// `Nullable` cannot be dropped, because it may throw on NULL.
+bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to)
+{
+    auto from_type = removeLowCardinality(from);
+    auto to_type = removeLowCardinality(to);
+
+    if (to_type->isNullable())
+    {
+        from_type = removeNullable(from_type);
+        to_type = removeNullable(to_type);
+    }
+    else if (from_type->isNullable())
+    {
+        return false;
+    }
+
+    if (from_type->equals(*to_type))
+        return true;
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
+    return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType());
+}
+
+/// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` with a lossless conversion (see above).
+bool isLosslessConversionFunction(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
+
+    const auto function_name = node.function_base->getName();
+    const size_t arguments_size = node.children.size();
+
+    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments_size == 2;
+    const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments_size == 1;
+
+    if (!is_cast && !is_wrapper)
+        return false;
+
+    return isLosslessConversion(node.children.front()->result_type, node.result_type);
+}
+
+/// Strips lossless conversions from the node (see above).
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return node;
+
+    /// Only the DAG form carries the types; the AST form is left as is.
+    const auto function = node.toFunctionNode();
+    const auto * function_dag_node = function.getDAGNode();
+
+    if (!function_dag_node || !isLosslessConversionFunction(*function_dag_node))
+        return node;
+
+    return unwrapLosslessConversion(function.getArgumentAt(0));
+}
+
+}
+
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node)
+{
+    const auto * node_without_alias = node;
+    while (node_without_alias->type == ActionsDAG::ActionType::ALIAS)
+        node_without_alias = node_without_alias->children.front();
+
+    if (!isLosslessConversionFunction(*node_without_alias))
+        return node;
+
+    return unwrapLosslessConversion(node_without_alias->children.front());
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
-    const RPNBuilderTreeNode & index_column_node,
+    const RPNBuilderTreeNode & argument_node,
     DataTypePtr value_type,
     Field value_field,
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
+
+    /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
+    const auto index_column_node = unwrapLosslessConversion(argument_node);
 
     /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
     /// path. Partition hard, so none of them can emit a token in the pair format.
@@ -1225,14 +1306,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
-
-    auto stripped_value_type = removeLowCardinality(value_type);
-    if (!value_field.isNull())
-        stripped_value_type = removeNullable(stripped_value_type);
-    /// Only a String needle is unwrapped. A FixedString one is tokenized together with its NUL
-    /// padding, which string equality ignores, so the index would discard matching granules.
-    if (WhichDataType(stripped_value_type).isString())
-        value_type = stripped_value_type;
 
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
@@ -1432,50 +1505,30 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        // hasToken and hasTokenOrNull are legacy functions which assume splitByNonAlpha as
-        /// tokenizer. The text index can answer it only correctly if this is the index tokenizer.
-        /// In all other cases, bypass the index.
+        /// `hasToken` splits by non-alphanumeric characters, so only an index with the same tokenizer can answer it.
         if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
             return false;
 
-        /// Unlike hasToken, hasTokenOrNull is never rewritten to direct-read, so the pre/postprocessor
-        /// is also not applied to its needle. Using the index here (where stringToTokens does apply them,
-        /// e.g. mapping a dropped token to the empty sentinel that prunes every granule) would disagree
-        /// with the scan result. Bail out so the index is not used for hasTokenOrNull when a
-        /// pre/postprocessor is configured; the plain index path is unaffected.
+        /// `hasTokenOrNull` is never rewritten to a direct read, so its needle never goes through the
+        /// pre/postprocessor, while `stringToTokens` applies them. The index would disagree with the scan.
         if (function_name == "hasTokenOrNull" && (has_preprocessor || has_postprocessor))
             return false;
 
-        /// A needle containing a token separator is invalid for `hasToken` and the brute-force scan raises
-        /// BAD_ARGUMENTS for this. hasToken uses Exact direct read, so the index would tokenize the needle and
-        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception.
-        /// Therefore bypass the index and do a brute-force scan. hasTokenOrNull is not affected: it returns NULL
-        ///
-        /// A separator is any ASCII non-alphanumeric character.
-        if (function_name == "hasToken"
-            && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
+        /// The scan raises BAD_ARGUMENTS for a needle with a separator, and the exact direct read of `hasToken`
+        /// would replace the predicate and hide it. `hasTokenOrNull` returns NULL for such a needle instead.
+        if (function_name == "hasToken" && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
             return false;
 
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
         {
+            /// A needle without a word character is invalid: leave it to the scan, which raises or returns NULL.
+            /// Otherwise the pre/postprocessor dropped the needle (e.g. a stop word), so it is not in the index:
+            /// push the empty sentinel to prune every granule.
             const String & string_needle = value_field.safeGet<String>();
-            if (!string_needle.empty())
-            {
-                /// hasToken uses splitByNonAlpha as its tokenizer, so:
-                ///  - A needle without any word character (alphanumeric or non-ASCII) is invalid.
-                ///  - Bypass the index in that case so the row-level evaluation throws BAD_ARGUMENTS (or returns NULL for hasTokenOrNull)
-                ///  -- Consistent with the no-index behaviour.
-                /// If the needle does contain word characters (e.g. "abc" with ngrams(4)):
-                ///  - It is valid but too short for the index's tokenizer:
-                ///  -- Fall through to push "" so all granules are pruned and the query returns 0 rows.
-                /// If the postprocessor filters the needle (e.g. stop-word):
-                ///  -- The needle is not in the index; push "" sentinel so the condition evaluates to false.
-                if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
-                    return false;
-            }
-            /// - If the needle does contain word characters (e.g. "abc" with ngrams(4)), it is valid but too short for the index's tokenizer:
-            ///   Fall through but push "" so all granules are pruned and the query returns 0 rows.
+            if (!string_needle.empty() && std::ranges::all_of(string_needle, isTokenSeparator))
+                return false;
+
             tokens.push_back("");
         }
 
@@ -1849,9 +1902,13 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     /// It can be an arbitrary function that returns 0 for the default value of the map value type.
     /// It is true because `arrayElement` (and the equivalent subcolumn access) returns default value if key doesn't exist in the map,
     /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
+    /// The result may be `Nullable` or `LowCardinality`, e.g. for a `Nullable` key: NULL reads as false below, as in WHERE.
 
     const auto * dag_node = function_node.getDAGNode();
-    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic() || !WhichDataType(dag_node->result_type).isUInt8())
+    if (!dag_node
+        || !dag_node->function_base
+        || !dag_node->isDeterministic()
+        || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -1891,19 +1948,14 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
                     return false;
 
-                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN)
+                /// A NULL key is declined: `arrayElement` returns NULL for it, not the default value.
+                Field key_field;
+                DataTypePtr key_type;
+                if (!RPNBuilderTreeNode(const_key_argument, function_node.getTreeContext()).tryGetConstant(key_field, key_type)
+                    || key_field.getType() != Field::Types::String)
                     return false;
 
-                const bool key_is_null = const_key_argument->column->isNullAt(0);
-                auto unwrapped_result_type = removeLowCardinality(const_key_argument->result_type);
-
-                if (!key_is_null)
-                    unwrapped_result_type = removeNullable(unwrapped_result_type);
-
-                if (key_is_null || !isStringOrFixedString(unwrapped_result_type))
-                    return false;
-
-                key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+                key_const_value = key_field.safeGet<String>();
             }
             else
             {
@@ -2061,8 +2113,10 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     /// Similar to traverseMapElementKeyNode but for JSON subcolumns.
 
     const auto * dag_node = function_node.getDAGNode();
-    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
-        || !WhichDataType(removeNullable(dag_node->result_type)).isUInt8())
+    if (!dag_node
+        || !dag_node->function_base
+        || !dag_node->isDeterministic()
+        || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -2110,8 +2164,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 {
     std::optional<size_t> set_key_position;
 
-    auto has_index = [&](const RPNBuilderTreeNode & node)
+    auto has_index = [&](const RPNBuilderTreeNode & argument)
     {
+        const auto node = unwrapLosslessConversion(argument);
         return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
@@ -2161,7 +2216,18 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (*set_key_position >= columns.size())
         return false;
 
-    const auto & set_column = *columns[*set_key_position];
+    const IColumn * set_column_ptr = columns[*set_key_position].get();
+    if (const auto * nullable_set_column = checkAndGetColumn<ColumnNullable>(set_column_ptr))
+    {
+        /// The set keeps NULL elements only with `transform_null_in`, and then `IN` matches NULL rows, which have no tokens.
+        const auto & null_map = nullable_set_column->getNullMapData();
+        if (!memoryIsZero(null_map.data(), 0, null_map.size()))
+            return false;
+
+        set_column_ptr = &nullable_set_column->getNestedColumn();
+    }
+
+    const auto & set_column = *set_column_ptr;
     if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
         return false;
 

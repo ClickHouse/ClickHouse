@@ -1,0 +1,30 @@
+-- results are correct and independent of the key type wrapper
+2
+2
+2
+2
+0
+0
+0
+-- mapValues index prunes granules for a wrapped constant key, arrayElement form
+1
+1
+1
+-- mapValues index prunes granules for a wrapped constant key, subcolumn form
+1
+1
+1
+-- mapKeys index prunes granules for a wrapped constant key, arrayElement form
+1
+1
+1
+-- mapKeys index prunes granules for a wrapped constant key, subcolumn form
+1
+1
+1
+-- a NULL constant key does not use the mapKeys index: arrayElement returns NULL, not the default
+0
+-- FixedString cast on the value does not use the mapValues index, Nullable cast does
+2
+0
+1

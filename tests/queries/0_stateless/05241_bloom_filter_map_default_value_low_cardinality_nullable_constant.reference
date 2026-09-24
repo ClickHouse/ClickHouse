@@ -1,0 +1,20 @@
+-- { echo }
+
+SELECT count() FROM t_map_keys WHERE m['k'] = '';
+5
+SELECT count() FROM t_map_keys WHERE m['k'] = CAST('' AS Nullable(String));
+5
+SELECT count() FROM t_map_keys WHERE m['k'] = CAST('' AS LowCardinality(String));
+5
+SELECT count() FROM t_map_keys WHERE m['k'] = CAST('' AS LowCardinality(Nullable(String)));
+5
+SELECT count() FROM t_map_keys WHERE m['k'] = CAST('' AS LowCardinality(Nullable(String))) SETTINGS use_skip_indexes = 0;
+5
+SELECT count() FROM t_map_values WHERE m['k'] = CAST('' AS LowCardinality(Nullable(String)));
+5
+SELECT count() FROM t_map_values WHERE m['k'] = CAST('' AS LowCardinality(Nullable(String))) SETTINGS use_skip_indexes = 0;
+5
+SELECT count() FROM t_map_keys_tokenbf WHERE m['k'] = CAST('' AS LowCardinality(Nullable(String)));
+5
+SELECT count() FROM t_map_keys_tokenbf WHERE m['k'] = CAST('' AS LowCardinality(Nullable(String))) SETTINGS use_skip_indexes = 0;
+5

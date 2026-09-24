@@ -4900,13 +4900,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         /// decline index analysis (fall back to a full scan). A wider-or-equal
                         /// `FixedString(M)` key (M >= N) pads the constant into exactly one key value,
                         /// so pruning stays correct and is left untouched.
-                        /// Strip `LowCardinality` and `Nullable` first: a wrapped constant such as
-                        /// `toFixedString(x, N)` with a non-literal length (`LowCardinality(FixedString(N))`)
-                        /// or `CAST(... AS LowCardinality(Nullable(FixedString(N))))` carries the same padded
-                        /// bytes and comparison semantics. `tryGetConstant` only peels an outer `Nullable`, so
-                        /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
-                        /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
-                        /// type is already `LowCardinality`/`Nullable`-stripped above).
+                        /// `tryGetConstant` keeps `Nullable` for a NULL constant; strip it as the key type is stripped above.
                         const auto const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
                         if (WhichDataType(const_type_unwrapped).isFixedString() && isStringOrFixedString(key_expr_type_not_null))
                         {

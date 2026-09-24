@@ -1,0 +1,36 @@
+-- { echo }
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(s, 'Foo') SETTINGS query_plan_direct_read_from_text_index = 1;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(s, 'Foo') SETTINGS query_plan_direct_read_from_text_index = 0;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(toNullable(s), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 1;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(toNullable(s), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 0;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(CAST(s, 'Nullable(String)'), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 1;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(CAST(s, 'Nullable(String)'), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 0;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(toLowCardinality(s), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 1;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(toLowCardinality(s), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 0;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(toNullable(s), 'Foo Qux') SETTINGS query_plan_direct_read_from_text_index = 1;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(toNullable(s), 'Foo Qux') SETTINGS query_plan_direct_read_from_text_index = 0;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(toNullable(s), 'Foo Bar') SETTINGS query_plan_direct_read_from_text_index = 1;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(toNullable(s), 'Foo Bar') SETTINGS query_plan_direct_read_from_text_index = 0;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab_postprocessor WHERE hasToken(toNullable(s), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 1;
+[1,2]
+SELECT arraySort(groupArray(id)) FROM tab_postprocessor WHERE hasToken(toNullable(s), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 0;
+[1,2]
+-- A part without the materialized index evaluates the row-level function.
+INSERT INTO tab SETTINGS materialize_skip_indexes_on_insert = 0 VALUES (4, 'Foo qux'), (5, 'foo qux');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(toNullable(s), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 1;
+[1,2,4,5]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(toNullable(s), 'Foo') SETTINGS query_plan_direct_read_from_text_index = 0;
+[1,2,4,5]

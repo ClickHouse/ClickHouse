@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
-#include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
@@ -606,14 +605,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         }
     }
 
-    auto stripped_value_type = removeLowCardinality(value_type);
-    if (!value_field.isNull())
-        stripped_value_type = removeNullable(stripped_value_type);
-    /// Only a String needle is unwrapped. A FixedString one is tokenized together with its NUL
-    /// padding, which string equality ignores, so the index would discard matching granules.
-    auto unwrapped_value_type = WhichDataType(stripped_value_type).isString() ? stripped_value_type : value_type;
-
-    auto value_data_type = WhichDataType(unwrapped_value_type);
+    auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
@@ -651,8 +643,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where map key does not exist.
               */
-            /// Unwrapped default: LC(Nullable(String)) default is NULL, but arrayElement returns '' for a missing key.
-            if (value_field == unwrapped_value_type->getDefault())
+            if (const_value == value_type->getDefault())
                 return false;
 
             auto first_argument = key_function_node.getArgumentAt(0);
@@ -666,11 +657,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 {
                     key_index = map_keys_index;
 
-                    auto unwrapped_const_type = removeLowCardinality(const_type);
-                    if (!const_value.isNull())
-                        unwrapped_const_type = removeNullable(unwrapped_const_type);
-
-                    auto const_data_type = WhichDataType(unwrapped_const_type);
+                    auto const_data_type = WhichDataType(const_type);
                     if (const_value.isNull() || (!const_data_type.isStringOrFixedString() && !const_data_type.isArray()))
                         return false;
 
@@ -702,8 +689,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
-            /// Unwrapped default: LC(Nullable(String)) default is NULL, but the subcolumn returns '' for a missing key.
-            if (value_field == unwrapped_value_type->getDefault())
+            if (const_value == value_type->getDefault())
                 return false;
 
             if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
@@ -736,14 +722,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
         function_name.starts_with("hasToken") && ((!is_has_token_case_insensitive && key_index) || is_case_insensitive_scenario))
     {
-        /// A separator-bearing needle is invalid for the throwing `hasToken` variants, which raise during
-        /// the scan, so the unwrapping above must not let such a needle prune the granule that owes the
-        /// exception. `value_field` is the needle; `const_value` may hold a map key here.
-        if (WhichDataType(value_type).isLowCardinality() && !function_name.ends_with("OrNull")
-            && value_field.getType() == Field::Types::String
-            && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
-            return false;
-
         out.key_column = is_case_insensitive_scenario ? *lowercase_key_index : *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);

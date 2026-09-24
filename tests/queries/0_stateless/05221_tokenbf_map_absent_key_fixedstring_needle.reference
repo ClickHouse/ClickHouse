@@ -1,0 +1,14 @@
+-- absent key, empty FixedString needle: all rows match
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+1024
+-- present key, padded FixedString needle: the index is used and the row is found
+1	500
+1
+1	500
+1
