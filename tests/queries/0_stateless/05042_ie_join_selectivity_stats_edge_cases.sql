@@ -9,6 +9,10 @@ SET materialize_statistics_on_insert = 1;
 -- The printed conditions are mirrored when the join order optimizer swaps the sides
 -- (e.g. under randomized `query_plan_optimize_join_order_randomize`); disable it to keep them stable.
 SET query_plan_optimize_join_order_limit = 0;
+-- Keep the ORDER BY/LIMIT subqueries as explicit plan steps. An injected `__topKFilter`
+-- is itself a row-subset transformation, so its provenance intentionally invalidates value ranges.
+SET use_top_k_dynamic_filtering = 0;
+SET use_skip_indexes_for_top_k = 0;
 
 DROP TABLE IF EXISTS t_sel_edge_l;
 DROP TABLE IF EXISTS t_sel_edge_r;
