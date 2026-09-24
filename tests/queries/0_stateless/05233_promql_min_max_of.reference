@@ -74,7 +74,7 @@ nan
 8
 -- argument count and type errors
 -- Float32 samples
-Float32	-3.5
-Float32	2
+Float64	-3.5
+Float64	2
 ['nan','-inf','nan','nan','nan','nan','nan','-inf','-inf','-inf','-inf','-inf','-inf','-inf','nan','-inf','-3.5','-3.5','-3.5','-3.5','-3.5','nan','-inf','-3.5','-0','-0','-0','-0','nan','-inf','-3.5','-0','0','0','0','nan','-inf','-3.5','-0','0','3.5','3.5','nan','-inf','-3.5','-0','0','3.5','inf']
 ['nan','nan','nan','nan','nan','nan','inf','nan','-inf','-3.5','-0','0','3.5','inf','nan','-3.5','-3.5','-0','0','3.5','inf','nan','-0','-0','-0','0','3.5','inf','nan','0','0','0','0','3.5','inf','nan','3.5','3.5','3.5','3.5','3.5','inf','inf','inf','inf','inf','inf','inf','inf']
