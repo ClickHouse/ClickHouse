@@ -37,7 +37,8 @@ class TableJoin;
   * with the probe side. Probe rows are joined and passed on at once. Nothing on the probe side
   * is buffered.
   *
-  * Fill stores right-side blocks per lane and records a 16-bit route plus a HyperLogLog sketch.
+  * Fill stores right-side blocks per lane and records a 16-bit route. A HyperLogLog sketch sizes a
+  * cold build; a cached distinct count lets a warm build skip the sketch.
   * Nothing is inserted yet. The barrier sizes the table at 50% max fill and picks the partition
   * count. The partition count is the smallest power of two whose range fits private L2, at least
   * one range per worker.
@@ -154,6 +155,7 @@ public:
     void setAmacEnabledForTests(bool value) { clause.setAmacEnabledForTests(value); }
     void setL1CacheSizeForTests(size_t bytes) { clause.setL1CacheSizeForTests(bytes); }
     void setPartitionBitsForTests(size_t value) { clause.setPartitionBitsForTests(value); }
+    double getFillSketchEstimateForTests();
 
 private:
     friend class NotJoinedPartitioned;
@@ -241,9 +243,10 @@ private:
     /// An estimated build below `parallel_hash_join_threshold` runs on one fill thread, which inserts
     /// into the table as the blocks arrive.
     bool single_fill_thread = false;
-    /// Distinct-key statistics for the next run of this query (join reordering, runtime filters). Never
-    /// read to size this build: the sketch sizes the table and a grow corrects it, and a cached count
-    /// would not depend on the data.
+    /// The previous build's count is captured before parallel fill starts. Only a parallel build
+    /// uses it; the single-fill and delegated paths keep their own table sizing.
+    std::optional<size_t> cached_distinct_keys;
+    /// Distinct-key statistics for this and the next run of the query.
     StatsCollectingParams stats_collecting_params;
     /// The matched-row statistics the planner's row store decision reads.
     StatsCollectingParams match_stats_collecting_params;

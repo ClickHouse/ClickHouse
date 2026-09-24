@@ -39,6 +39,7 @@ extern const int MEMORY_LIMIT_EXCEEDED;
 namespace ProfileEvents
 {
 extern const Event QueryMemoryLimitExceeded;
+extern const Event HashJoinPreallocatedElementsInHashTables;
 }
 
 namespace
@@ -728,38 +729,68 @@ TEST(PartitionedHashJoin, RangeCrossingWraparound)
         }
 }
 
-/// The statistics cache receives every build's exact distinct count. No later build under the same
-/// key sizes its table from that count.
-TEST(PartitionedHashJoin, PublishesStatisticsWithoutConsuming)
+TEST(PartitionedHashJoin, ReusesCachedDistinctCountWithoutSketching)
 {
-    /// The count serves the planner's other consumers. A five times larger build under the same key
-    /// must still estimate its own count from the sketch and size the table for it.
     static std::atomic<UInt64> key_counter{0};
     const UInt64 key = 0xC1D15117C4C4E000ULL + key_counter.fetch_add(1);
     const StatsCollectingParams params(
         key, /*enable_=*/true, /*max_entries_for_hash_table_stats_=*/1024, /*max_size_to_preallocate_=*/1ULL << 40);
+    const StatsCollectingParams capped_params(
+        key, /*enable_=*/true, /*max_entries_for_hash_table_stats_=*/1024, /*max_size_to_preallocate_=*/100000);
 
     constexpr size_t small_keys = 50000;
     constexpr size_t large_keys = 250000;
+    constexpr size_t later_keys = 100000;
+    auto & events = CurrentThread::getProfileEvents();
+    const auto preallocated_before = events[ProfileEvents::HashJoinPreallocatedElementsInHashTables];
 
     BuildOptions options;
     options.stats_collecting_params = &params;
-    auto small = buildJoin(small_keys, /*duplicates=*/1, options);
+    options.partition_bits_for_tests = 4;
+    auto small = makeJoin(options);
+    addBuildBlocks(*small.join, small_keys, /*duplicates=*/1, options);
+    EXPECT_GT(small.join->getFillSketchEstimateForTests(), 0.0);
+    finishBuild(small);
     expectTableInvariants(small.join->getBuildStats(), small_keys, small_keys);
+    EXPECT_EQ(events[ProfileEvents::HashJoinPreallocatedElementsInHashTables], preallocated_before);
     const auto published = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
     ASSERT_TRUE(published.has_value());
     EXPECT_EQ(published->ht_size, small_keys);
 
+    /// A warm build still hashes every row into the same routes, including when it scatters across
+    /// partitions. Its barrier uses the previous exact count instead of the lane sketches.
+    auto warm = makeJoin(options);
+    addBuildBlocks(*warm.join, small_keys, /*duplicates=*/2, options);
+    EXPECT_EQ(warm.join->getFillSketchEstimateForTests(), 0.0);
+    warm.join->onBuildPhaseFinish();
+    EXPECT_EQ(events[ProfileEvents::HashJoinPreallocatedElementsInHashTables], preallocated_before + small_keys);
+    warm.join->runPostBuildPhase();
+    expectTableInvariants(warm.join->getBuildStats(), small_keys, 2 * small_keys);
+    EXPECT_EQ(warm.join->getBuildStats().hll_estimate, static_cast<double>(small_keys));
+    EXPECT_EQ(warm.join->getBuildStats().bits, 4u);
+    probeAndCheck(warm, small_keys, /*duplicates=*/2, /*misses=*/1000);
+
+    /// The cache can be stale when data grows. The table must grow and still insert every key.
     auto large = buildJoin(large_keys, /*duplicates=*/1, options);
     const auto large_stats = large.join->getBuildStats();
-    EXPECT_NEAR(large_stats.hll_estimate, static_cast<double>(large_keys), 0.05 * static_cast<double>(large_keys))
-        << "the sketch must have run; a cached count would read 50000";
+    EXPECT_EQ(large_stats.hll_estimate, static_cast<double>(small_keys));
+    EXPECT_GT(large_stats.table_resizes, 0u);
+    EXPECT_EQ(events[ProfileEvents::HashJoinPreallocatedElementsInHashTables], preallocated_before + 2 * small_keys);
     expectTableInvariants(large_stats, large_keys, large_keys);
     probeAndCheck(large, large_keys, /*duplicates=*/1, /*misses=*/1000);
 
     const auto republished = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
     ASSERT_TRUE(republished.has_value());
     EXPECT_EQ(republished->ht_size, large_keys);
+
+    /// A count above the configured cap is not consumed, so this build takes the cold sketch path.
+    options.stats_collecting_params = &capped_params;
+    auto capped = buildJoin(later_keys, /*duplicates=*/1, options);
+    const auto capped_stats = capped.join->getBuildStats();
+    EXPECT_NEAR(capped_stats.hll_estimate, static_cast<double>(later_keys), 0.05 * static_cast<double>(later_keys));
+    EXPECT_EQ(events[ProfileEvents::HashJoinPreallocatedElementsInHashTables], preallocated_before + 2 * small_keys);
+    expectTableInvariants(capped_stats, later_keys, later_keys);
+    probeAndCheck(capped, later_keys, /*duplicates=*/1, /*misses=*/1000);
 }
 
 /// A single-partition insert grows its table mid-way. Growth happens at the last free cell and at
