@@ -313,10 +313,8 @@ bool MergeTreeIndexConditionText::isPerTokenPatternFunction(const String & funct
 bool MergeTreeIndexConditionText::perTokenPatternFunctionAppliesPreprocessor(
     const String & function_name, const MergeTreeIndexTextPreprocessor & preprocessor)
 {
-    /// Applying the preprocessor to the needle is correct only if it maps a prefix of a token to a prefix of the mapped
-    /// token. That holds for ASCII `lower` and `upper`, but not for e.g. `lowerUTF8`, whose final sigma depends on the
-    /// context. A LIKE pattern or a regexp cannot be preprocessed at all: `lower` would turn `\D` into `\d`.
-    /// Otherwise the preprocessor is not applied, the function sees the raw input, and the index cannot be used.
+    /// Only ASCII `lower`/`upper` map a token prefix to a prefix of the mapped token (`lowerUTF8` does not), and a LIKE
+    /// pattern or a regexp cannot be preprocessed (`lower` turns `\D` into `\d`), so only `hasTokenPrefix` applies them.
     return function_name == "hasTokenPrefix" && preprocessor.hasActions() && preprocessor.isASCIILowerOrUpper();
 }
 
@@ -1810,17 +1808,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (isPerTokenPatternFunction(function_name))
     {
-        /// A NULL needle: the result is NULL whatever the tokenizer.
-        /// A map element or a JSON path (`m['key']` with an index on `mapValues(m)`) is not the indexed expression, so the
-        /// function would not be rewritten there (see `optimizeDirectReadFromTextIndex`) and keeps its own tokenizer.
+        /// A NULL needle gives NULL whatever the tokenizer. A map element or a JSON path is not the indexed expression,
+        /// so the function is not rewritten there (see `optimizeDirectReadFromTextIndex`) and keeps its own tokenizer.
         if (!value_data_type.isString() || !candidate_for_exact_mode)
             return false;
 
-        /// Whenever the column has this index, `optimizeDirectReadFromTextIndex` rewrites the function to use the index
-        /// tokenizer (if the argument is omitted) and, for `hasTokenPrefix`, a `lower` or `upper` preprocessor (see
-        /// `perTokenPatternFunctionAppliesPreprocessor`). That rewrite defines the result, so it must not depend on whether the
-        /// index can be used below, on settings, or on the needle: in every such case a query without patterns is returned,
-        /// which only carries the rewrite and does not prune anything.
+        /// With this index the function is always rewritten to the index tokenizer and preprocessor, so the result must not
+        /// depend on index use, settings or the needle: those cases return a query without patterns that only carries the rewrite.
         auto rewrite_only = [&]
         {
             out.function = RPNElement::FUNCTION_UNKNOWN;
@@ -1844,10 +1838,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         else
             patterns.emplace_back(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
 
-        /// Unlike `like`, the needle is applied to each token and not to the whole value, so the dictionary tokens matching
-        /// it are exactly the tokens the function looks for, and the index answer is exact. That requires that the rewritten
-        /// function sees the tokens the index stores: no postprocessor, and a preprocessor only if it is applied as well.
-        /// An empty needle matches either every token or none, a dictionary scan does not help.
+        /// The needle applies to each token, so the matching dictionary tokens are exactly the ones the function looks for,
+        /// if it sees the stored tokens (no postprocessor, no unapplied preprocessor). An empty needle gains nothing.
         if (has_postprocessor || (has_preprocessor && !apply_preprocessor) || needle.empty()
             || !settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
             return rewrite_only();
