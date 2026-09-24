@@ -11,6 +11,9 @@ fixed-width keys: kept-keys cutoff, no top-K
 0
 string key with the heap disabled: kept-keys cutoff
 0
+string key with max_rows_to_group_by set: kept-keys cutoff
+0
 05224_fixed_width_key	1	0
 05224_string_key	0	1
 05224_string_key_heap_off	1	0
+05224_string_key_max_rows_set	1	0

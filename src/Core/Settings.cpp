@@ -5097,7 +5097,7 @@ With no aggregate functions in the projection, the cap is applied by setting `ma
 
 The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), and when the user has already set a tighter `max_rows_to_group_by`.
 
-The aggregate-function form excludes the `GROUP BY` top-K heap of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization) on the same query, so the two are arbitrated by the key types: the cutoff is applied when all keys are fixed-width values (numbers, dates, `UUID`, `IPv4`/`IPv6`, enums, decimals, also `Nullable` and `LowCardinality` of them), where it is several times faster; `String`-like keys are left to the top-K heap when it applies, because it is faster on them.
+The aggregate-function form excludes the `GROUP BY` top-K heap of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization) on the same query, so the two are arbitrated by the key types: the cutoff is applied when all keys are fixed-width values (numbers, dates, `UUID`, `IPv4`/`IPv6`, enums, decimals, also `Nullable` and `LowCardinality` of them), where it is several times faster; `String`-like keys are left to the top-K heap when it applies (it does not apply when `max_rows_to_group_by` is set), because it is faster on them.
 
 Possible values:
 
