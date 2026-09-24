@@ -158,10 +158,14 @@ public:
     void scheduleOrThrowOnError(Job job, Priority priority = {});
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
-    [[nodiscard]] bool trySchedule(Job job, Priority priority = {}, uint64_t wait_microseconds = 0) noexcept;
+    /// The timeout is signed, because it is fed by settings such as `lock_acquire_timeout`, whose value is an
+    /// Int64 count of microseconds and can be negative. A negative timeout means "already expired", i.e. give up
+    /// immediately if there is no free thread, the same as `wait_microseconds = 0`.
+    [[nodiscard]] bool trySchedule(Job job, Priority priority = {}, Int64 wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    void scheduleOrThrow(Job job, Priority priority = {}, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
+    /// See trySchedule() above about the sign of `wait_microseconds`.
+    void scheduleOrThrow(Job job, Priority priority = {}, Int64 wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
 
     /// Schedules a job that occupies its worker for the whole lifetime of that worker, i.e. the job
     /// *is* a thread (see `ThreadFromGlobalPoolImpl`). Such a job must be handed a worker slot at
@@ -276,7 +280,7 @@ private:
     ReturnType scheduleImpl(
         Job job,
         Priority priority,
-        std::optional<uint64_t> wait_microseconds,
+        std::optional<Int64> wait_microseconds,
         bool propagate_opentelemetry_tracing_context = true,
         bool job_occupies_thread = false);
 
