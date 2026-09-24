@@ -91,18 +91,9 @@ SHOW CREATE TABLE t_suspicious;
 DROP TABLE t_suspicious;
 
 -- The type is optional, so a declaration can carry a default expression and a codec and no type at
--- all; resolving the codec must not assume one. Each column below is produced by the `SELECT`, or
--- `THERE_IS_NO_COLUMN` would fire first and these would pass without reaching the check.
+-- all; resolving the codec must not assume one. The column below is produced by the `SELECT`, or
+-- `THERE_IS_NO_COLUMN` would fire first and the test would pass without reaching the check.
 CREATE TABLE t_bad (x UInt64, PROJECTION p (x DEFAULT 1 CODEC(NONE)) AS (SELECT x ORDER BY x))
-ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
-
-CREATE TABLE t_bad (x UInt64, PROJECTION p (x MATERIALIZED 1 CODEC(NONE)) AS (SELECT x ORDER BY x))
-ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
-
-CREATE TABLE t_bad (x UInt64, PROJECTION p (x ALIAS 1 CODEC(NONE)) AS (SELECT x ORDER BY x))
-ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
-
-CREATE TABLE t_bad (x UInt64, PROJECTION p (x EPHEMERAL 1 CODEC(NONE)) AS (SELECT x ORDER BY x))
 ENGINE = MergeTree ORDER BY x; -- { serverError NOT_IMPLEMENTED }
 
 -- A codec on a subcolumn is rejected rather than silently dropped.

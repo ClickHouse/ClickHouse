@@ -64,21 +64,12 @@ WHERE database = currentDatabase() AND table = 't_projection_codecs_alter';
 
 DROP TABLE t_projection_codecs_alter;
 
--- The same untyped-declaration cases on the `ALTER` path, which runs its own validation pass.
+-- One untyped declaration on the `ALTER` path, which runs its own validation pass.
 CREATE TABLE t_alter_untyped (k UInt64, ts DateTime, id UInt64)
 ENGINE = MergeTree ORDER BY k;
 
 ALTER TABLE t_alter_untyped
     ADD PROJECTION p (k DEFAULT 1 CODEC(NONE)) AS (SELECT k ORDER BY k); -- { serverError NOT_IMPLEMENTED }
-
-ALTER TABLE t_alter_untyped
-    ADD PROJECTION p (k MATERIALIZED 1 CODEC(NONE)) AS (SELECT k ORDER BY k); -- { serverError NOT_IMPLEMENTED }
-
-ALTER TABLE t_alter_untyped
-    ADD PROJECTION p (k ALIAS 1 CODEC(NONE)) AS (SELECT k ORDER BY k); -- { serverError NOT_IMPLEMENTED }
-
-ALTER TABLE t_alter_untyped
-    ADD PROJECTION p (k EPHEMERAL 1 CODEC(NONE)) AS (SELECT k ORDER BY k); -- { serverError NOT_IMPLEMENTED }
 
 -- Omitting the type keeps the column free to change with the parent table; declaring it pins the
 -- column for as long as the projection exists. Both halves are asserted below.

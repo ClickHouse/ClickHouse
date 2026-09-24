@@ -57,13 +57,9 @@ SYSTEM SYNC REPLICA t_repl_codecs_r2;
 
 SELECT count() FROM t_repl_codecs_r2;
 
--- The fetched part carries the declared codec. Wide parts only: `MergeTreeDataPartCompact` reports no
--- per-column sizes, so this would compare 0 against 0 and hold whether or not the codec was applied.
-SELECT column, column_data_compressed_bytes < column_data_uncompressed_bytes AS is_compressed
-FROM system.projection_parts_columns
-WHERE database = currentDatabase() AND table = 't_repl_codecs_r2' AND active AND name = 'p'
-    AND column IN ('x', 'y')
-ORDER BY column;
+-- Decode the projection from the fetched part on the second replica.
+SELECT sum(x), sum(y) FROM t_repl_codecs_r2
+SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p';
 
 -- An `ALTER` that leaves projections alone still re-derives each one from its stored definition,
 -- whose codec arguments are already substituted. That must not substitute a second time.

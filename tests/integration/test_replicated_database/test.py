@@ -318,6 +318,38 @@ def test_simple_alter_table(started_cluster, engine):
     competing_node.query(f"DROP DATABASE {database} SYNC")
 
 
+def test_projection_codec_alter_replay_uses_initiator_settings(started_cluster):
+    database = "projection_codec_alter_replay"
+    main_node.query(
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica1')"
+    )
+    dummy_node.query(
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica2')"
+    )
+
+    main_node.query(
+        f"CREATE TABLE {database}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    main_node.query(
+        f"ALTER TABLE {database}.t ADD PROJECTION p "
+        "(x CODEC(Delta, Delta)) AS (SELECT x ORDER BY x)",
+        settings={"allow_suspicious_codecs": 1},
+    )
+
+    # The secondary uses its profile default (allow_suspicious_codecs = 0). It must replay metadata
+    # accepted by the initiator instead of revalidating the codec with its own session settings.
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    assert_eq_with_retry(
+        dummy_node,
+        "SELECT codecs FROM system.projections "
+        f"WHERE database = '{database}' AND table = 't' AND name = 'p'",
+        "{'x':'CODEC(Delta(8), Delta(8))'}\n",
+    )
+
+    main_node.query(f"DROP DATABASE {database} SYNC")
+    dummy_node.query(f"DROP DATABASE {database} SYNC")
+
+
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
 def test_delete_from_table(started_cluster, engine):
     database = f"delete_from_table_{engine}"

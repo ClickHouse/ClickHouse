@@ -26,12 +26,10 @@ SHOW CREATE TABLE t_agg_codecs;
 SELECT name, codecs FROM system.projections
 WHERE database = currentDatabase() AND table = 't_agg_codecs';
 
--- Both projection columns are physically compressed. The effective codec is asserted above; comparing
--- byte sizes against another codec is not stable because the winner depends on the data and block layout.
-SELECT column, column_data_compressed_bytes < column_data_uncompressed_bytes AS is_compressed
-FROM system.projection_parts_columns
-WHERE database = currentDatabase() AND table = 't_agg_codecs' AND active AND name = 'p'
-ORDER BY column;
+-- Exercise the aggregate projection's stored state. A generic compressed-size comparison would pass
+-- with the default codec too and would not prove anything about this declaration.
+SELECT id, max(v) FROM t_agg_codecs GROUP BY id ORDER BY id LIMIT 3
+SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p';
 
 -- The declaration survives a round trip.
 DETACH TABLE t_agg_codecs;
