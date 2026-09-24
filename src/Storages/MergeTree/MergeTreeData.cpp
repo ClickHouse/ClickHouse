@@ -140,6 +140,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/Increment.h>
 #include <base/sleep.h>
@@ -183,6 +184,7 @@
 
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
+#include <Poco/JSON/JSONException.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -412,6 +414,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
+    extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int BACKUP_DAMAGED;
+    extern const int BACKUP_VERSION_NOT_SUPPORTED;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_PARTITION_VALUE;
@@ -447,6 +452,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_SIZE_LIMIT_EXCEEDED;
     extern const int ILLEGAL_PROJECTION;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
 namespace FailPoints
@@ -461,6 +467,9 @@ namespace FailPoints
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
+    /// Throws a `CANNOT_WRITE_TO_FILE_DESCRIPTOR` error with `ENOSPC` while loading a part restored from a backup,
+    /// after its files have been read. Used to test that a failure of the destination is not reported as a damaged backup.
+    extern const char restore_part_inject_no_space_error[];
 }
 
 namespace ErrorCodes
@@ -9659,6 +9668,89 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         restored_parts_holder->increaseNumBrokenParts();
 }
 
+namespace
+{
+
+/// Whether the error describes the disk or the configuration of this server rather than the contents of
+/// the backup. The files of the part have already been copied from the backup to the destination disk, so
+/// an OS-level failure while accessing them is a failure of that disk (no space, readonly filesystem,
+/// permissions, I/O error, ...) - except for a missing file, which means the backup does not contain it.
+/// `UNIQUE_KEY_DENSE_INDEX_UNREADABLE` means that `unique_key_index.sst` could not be validated on the
+/// destination disk and was left in place for a retry (a corrupt one is rebuilt instead), so it says
+/// nothing about the backup either.
+bool isDestinationSideError(const Exception & e)
+{
+    if (const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e))
+        return errno_exception->getErrno() != ENOENT;
+    return e.code() == ErrorCodes::NOT_ENOUGH_SPACE || e.code() == ErrorCodes::SUPPORT_IS_DISABLED
+        || e.code() == ErrorCodes::UNIQUE_KEY_DENSE_INDEX_UNREADABLE;
+}
+
+/// Whether a non-`DB::Exception` error comes from parsing the metadata files of a part with Poco
+/// (`Poco::JSON::Parser`, `Poco::Dynamic::Var` conversions), i.e. describes the contents of the files.
+bool isPartMetadataParseError(const Poco::Exception & e)
+{
+    return dynamic_cast<const Poco::JSON::JSONException *>(&e)
+        || dynamic_cast<const Poco::DataException *>(&e)
+        || dynamic_cast<const Poco::BadCastException *>(&e)
+        || dynamic_cast<const Poco::RangeException *>(&e)
+        || dynamic_cast<const Poco::InvalidAccessException *>(&e);
+}
+
+/// Assigns the final error code to a failure that happened while loading a part restored from a backup,
+/// and records it in `system.errors` (the load runs under `Exception::SuppressErrorCodesScope`, so nothing
+/// has been recorded for it yet).
+///
+/// A retryable failure (network, timeouts, ...) says nothing about the backup and keeps its original code.
+/// So does a failure of the destination (see `isDestinationSideError`): restoring a valid backup onto a full
+/// or readonly disk must not tell the user that the backup is damaged. Everything else means the backup
+/// cannot be read: either it was written by a newer server whose format this one does not understand
+/// (`BACKUP_VERSION_NOT_SUPPORTED`), or its contents are malformed (`BACKUP_DAMAGED`).
+///
+/// A failure that is not a `DB::Exception` has no code to reassign. If it is positively identified as a
+/// failure to parse the metadata of the part (see `isPartMetadataParseError`, e.g. a truncated or malformed
+/// `serialization.json`), `error` is replaced with a fresh `BACKUP_DAMAGED` exception carrying its text.
+/// Any other such failure (`std::bad_alloc`, `Poco::IOException` of the local filesystem, ...) says nothing
+/// about the backup: it is left as is and is not attributed to a broken part.
+///
+/// `in_local_step` is set if the failure happened in a step that only writes to the destination.
+/// Returns whether the failure is attributed to the part in the backup being broken.
+bool classifyAndRecordRestoreError(std::exception_ptr & error, bool retryable, bool in_local_step)
+{
+    try
+    {
+        std::rethrow_exception(error);
+    }
+    catch (...)
+    {
+        /// Ok: nothing is swallowed here. The caller still owns `error` and rethrows it after this call;
+        /// this block only reaches into the exception object to assign and record its final code.
+        Exception * e = current_exception_cast<Exception *>();
+        if (!e)
+        {
+            const auto * poco_exception = current_exception_cast<const Poco::Exception *>();
+            if (retryable || in_local_step || !poco_exception || !isPartMetadataParseError(*poco_exception))
+                return false;
+
+            /// The constructor records the new exception in `system.errors`.
+            error = std::make_exception_ptr(Exception(ErrorCodes::BACKUP_DAMAGED, "{}", poco_exception->displayText()));
+            return true;
+        }
+
+        bool part_is_broken = !retryable && !in_local_step && !isDestinationSideError(*e);
+        if (part_is_broken)
+        {
+            e->resetCode(
+                e->code() == ErrorCodes::UNKNOWN_FORMAT_VERSION ? ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED : ErrorCodes::BACKUP_DAMAGED);
+        }
+
+        e->recordToSystemErrors();
+        return part_is_broken;
+    }
+}
+
+}
+
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
 {
     MutableDataPartPtr part;
@@ -9675,15 +9767,26 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     String parent_part_dir = full_part_dir.parent_path();
     String part_dir_name = full_part_dir.filename();
 
+    /// Set while `load_part` runs a step that only writes to the destination, so that its failure is not
+    /// attributed to the backup.
+    bool in_local_step = false;
+
     /// Load this part from the directory `temp_part_dir`.
     auto load_part = [&]
     {
         MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings(), PartDirIntent::OpenExisting);
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
+        in_local_step = true;
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
+        in_local_step = false;
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
+        fiu_do_on(FailPoints::restore_part_inject_no_space_error,
+        {
+            ErrnoException::throwWithErrno(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, ENOSPC,
+                "Injected failure to write a file of part {} restored from backup", part_name);
+        });
         /// UNIQUE KEY: a restored part may not ship its `unique_key_index.sst`
         /// (older backup, or one taken before UK). Build it here so the part is
         /// usable; a failure throws and routes the part to `mark_broken` below
@@ -9714,8 +9817,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     {
         std::exception_ptr error;
         bool retryable = false;
+        in_local_step = false;
         try
         {
+            /// A failure to load a restored part is a property of the backup, not of this server, so it is
+            /// reported below with a backup-level error code. Suppress the recording of error codes while the
+            /// part is being loaded so that the failure is accounted in `system.errors` exactly once, under
+            /// that final code - otherwise a damaged backup keeps incrementing `CORRUPTED_DATA`, which is
+            /// reserved for corruption of the data this server owns and is alerted on as such.
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             load_part();
         }
         catch (const Poco::Net::NetException &)
@@ -9737,13 +9847,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         if (!error)
             return part;
 
-        if (!retryable && detach_if_broken)
+        bool part_is_broken = classifyAndRecordRestoreError(error, retryable, in_local_step);
+
+        /// A failure of the destination is not a broken part: it is not detached and fails the `RESTORE`.
+        if (part_is_broken && detach_if_broken)
         {
             mark_broken(error);
             return nullptr;
         }
 
-        if (!retryable)
+        if (part_is_broken)
         {
             LOG_ERROR(log,
                       "Failed to restore part {} because it's broken. You can skip broken parts while restoring by setting "
