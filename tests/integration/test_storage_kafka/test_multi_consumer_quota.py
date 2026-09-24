@@ -334,8 +334,7 @@ def test_multi_consumer_with_partition_affinity(kafka_cluster):
 
     Only upper bounds are asserted. A replica may legitimately hold nothing for a while --
     its shard peer can hold node_quota permanent locks plus one temporary lock per consumer
-    and release them slowly -- so requiring every replica to hold a partition is a race,
-    and asserting it is what made this test flaky at ~0.06% (#119632).
+    and release them slowly.
 
     That ceiling, node_quota + num_consumers = 6, is below the shard's 8, which is what
     makes it worth asserting: on master a replica takes all 8 and trips it. At 8 partitions
