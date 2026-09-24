@@ -6,6 +6,8 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# shellcheck source=helpers/native_cancel.sh
+. "$CUR_DIR"/helpers/native_cancel.sh
 
 set -euo pipefail
 
@@ -15,10 +17,7 @@ CLIENT_ERR=""
 
 cleanup()
 {
-    if [[ -n "$CLIENT_PID" ]]; then
-        kill -KILL "$CLIENT_PID" 2>/dev/null || true
-        wait "$CLIENT_PID" 2>/dev/null || true
-    fi
+    native_cancel_cleanup_client
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FAILPOINT" 2>/dev/null || true
     if [[ -n "$CLIENT_ERR" ]]; then
         rm -f "$CLIENT_ERR"
@@ -44,10 +43,10 @@ run_cancelled_global_subquery()
         --query "$query" > /dev/null 2> "$CLIENT_ERR" &
     CLIENT_PID=$!
 
-    if ! timeout 60 $CLICKHOUSE_CLIENT --query \
-        "SYSTEM WAIT FAILPOINT $FAILPOINT PAUSE" > /dev/null 2>&1; then
-        echo "$label did not start filling the external table"
-        cat "$CLIENT_ERR"
+    if ! native_cancel_wait_for_failpoint \
+        "$FAILPOINT" \
+        "$label did not start filling the external table" \
+        "$CLIENT_ERR"; then
         return 1
     fi
 
@@ -67,22 +66,10 @@ run_cancelled_global_subquery()
         return 1
     fi
 
-    local rejected_without_finish=0
-    for _ in {1..100}; do
-        $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-        rejected_without_finish=$($CLICKHOUSE_CLIENT --query "
-            SELECT count() = 1
-                AND countIf(type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing') AND exception_code = 394) = 1
-                AND countIf(type = 'QueryFinish') = 0
-            FROM system.query_log WHERE current_database = currentDatabase()
-                AND query_id = '$query_id' AND type != 'QueryStart'")
-        if [[ "$rejected_without_finish" == 1 ]]; then
-            break
-        fi
-        sleep 0.1
-    done
-
-    if [[ "$rejected_without_finish" != 1 ]]; then
+    if ! native_cancel_wait_for_query_log "$query_id" \
+        "count() = 1
+            AND countIf(type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing') AND exception_code = 394) = 1
+            AND countIf(type = 'QueryFinish') = 0"; then
         echo "$label reached an unexpected terminal state"
         cat "$CLIENT_ERR"
         return 1

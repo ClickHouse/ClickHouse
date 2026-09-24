@@ -7,6 +7,7 @@ import random
 import re
 import threading
 import time
+import uuid
 from datetime import datetime, timedelta
 
 import pytest
@@ -17,7 +18,8 @@ from azure.storage.blob import (
 )
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_logs_contain_with_retry
+from helpers.partial_read_cancellation import PausedReadCancellation
+from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain_with_retry
 from helpers.utility import SafeThread
 
 
@@ -1629,6 +1631,62 @@ def test_parallel_read(cluster):
     )
     assert int(res) == 10000
     assert_logs_contain_with_retry(node, "AzureBlobStorage readBigAt read bytes")
+
+
+@pytest.mark.parametrize("phase", ["download", "read"])
+def test_read_big_at_cancellation_is_not_reported_as_azure_error(cluster, phase):
+    node = cluster.instances["node"]
+    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    failpoint = f"azure_read_big_at_before_{phase}"
+    query_id = f"azure_read_big_at_cancel_{uuid.uuid4().hex}"
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{connection_string}', 'cont', "
+        "'test_read_big_at_cancel.parquet') "
+        "SELECT number FROM numbers(10000) SETTINGS azure_truncate_on_insert=1",
+    )
+
+    query = (
+        f"SELECT sum(number) FROM azureBlobStorage('{connection_string}', 'cont', "
+        "'test_read_big_at_cancel.parquet') SETTINGS remote_filesystem_read_method='read', "
+        "log_queries=1, log_queries_probability=1, log_queries_min_query_duration_ms=0"
+    )
+    with PausedReadCancellation(
+        node,
+        query,
+        query_id,
+        failpoint,
+        query_timeout=120,
+        cancel_failpoint=None,
+    ) as cancellation:
+        profile_events_at_cancellation = node.query(
+            "SELECT ProfileEvents['AzureGetObject'], "
+            "ProfileEvents['ReadBufferFromAzureRequestsErrors'] FROM system.processes "
+            f"WHERE query_id='{query_id}'"
+        ).strip()
+
+        node.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+        assert_eq_with_retry(
+            node,
+            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+        )
+        cancellation.resume()
+
+        answer, _ = cancellation.get_answer_and_error()
+        assert answer == "", answer
+
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        node.query(
+            "SELECT ProfileEvents['AzureGetObject'], "
+            "ProfileEvents['ReadBufferFromAzureRequestsErrors'] FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type IN "
+            "('ExceptionBeforeStart', 'ExceptionWhileProcessing')"
+        ).strip()
+        == profile_events_at_cancellation
+    )
 
 
 def test_respect_object_existence_on_partitioned_write(cluster):

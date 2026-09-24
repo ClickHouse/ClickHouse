@@ -18,7 +18,6 @@ public:
     std::string getName() const override;
 
     Status prepare() override;
-    void cancel(CancelReason reason) noexcept override;
 
 #if defined(OS_LINUX)
     int schedule() override;

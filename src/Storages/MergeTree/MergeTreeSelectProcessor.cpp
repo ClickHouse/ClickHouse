@@ -498,6 +498,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 void MergeTreeSelectProcessor::cancel() noexcept
 {
     is_cancelled = true;
+    pool->cancelReading();
 
     if (merge_tree_index_build_context)
         merge_tree_index_build_context->index_reader_pool->cancel();

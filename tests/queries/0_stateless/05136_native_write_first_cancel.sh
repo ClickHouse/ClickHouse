@@ -3,6 +3,8 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# shellcheck source=helpers/native_cancel.sh
+. "$CUR_DIR"/helpers/native_cancel.sh
 
 set -euo pipefail
 
@@ -12,10 +14,7 @@ CLIENT_ERR="${CLICKHOUSE_TMP}/write_first_cancel.err"
 
 cleanup()
 {
-    if [[ -n "$CLIENT_PID" ]]; then
-        kill -KILL "$CLIENT_PID" 2>/dev/null || true
-        wait "$CLIENT_PID" 2>/dev/null || true
-    fi
+    native_cancel_cleanup_client
     $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC"
     rm -f "$CLIENT_ERR"
 }
@@ -40,7 +39,6 @@ run_cancelled_query()
 {
     local name="$1" query="$2" expected_exception_code="${3:-735}"
     local query_id="${DB}_${name}"
-    local ready=0
 
     $CLICKHOUSE_CLIENT --query_id "$query_id" \
         --partial_result_on_first_cancel=1 \
@@ -54,21 +52,11 @@ run_cancelled_query()
 
     # `PARALLEL WITH` does not aggregate the operands' read counters into the root.
     # Its million-row sleeping sources cannot finish during this bounded wait.
-    for _ in {1..200}; do
-        if [[ "$($CLICKHOUSE_CLIENT --query "
-            SELECT count() FROM system.processes WHERE query_id='$query_id'
-            AND (read_rows >= 1000 OR ('$name' = 'parallel' AND elapsed > 1))")" == 1 ]]; then
-            ready=1
-            break
-        fi
-        if ! kill -0 "$CLIENT_PID" 2>/dev/null; then
-            break
-        fi
-        sleep 0.1
-    done
-    if [[ "$ready" != 1 ]]; then
-        echo "Query did not reach cancellation boundary: $name"
-        cat "$CLIENT_ERR"
+    if ! native_cancel_wait_for_process \
+        "$query_id" \
+        "read_rows >= 1000 OR ('$name' = 'parallel' AND elapsed > 1)" \
+        "Query did not reach cancellation boundary: $name" \
+        "$CLIENT_ERR"; then
         return 1
     fi
 
@@ -78,14 +66,9 @@ run_cancelled_query()
 
     # The client can swallow the exception after its own `SIGINT`. Check the
     # server's terminal record, including cancellation during query analysis.
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-    local cancelled
-    cancelled=$($CLICKHOUSE_CLIENT --query "
-        SELECT count() = 1 AND countIf(exception_code = $expected_exception_code
-            AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')) = 1
-        FROM system.query_log WHERE current_database = currentDatabase()
-            AND query_id='$query_id' AND type != 'QueryStart'")
-    if [[ "$cancelled" != 1 ]]; then
+    if ! native_cancel_wait_for_query_log "$query_id" \
+        "count() = 1 AND countIf(exception_code = $expected_exception_code
+            AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')) = 1"; then
         echo "Query did not report full cancellation: $name"
         cat "$CLIENT_ERR"
         return 1

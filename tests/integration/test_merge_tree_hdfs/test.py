@@ -1,6 +1,5 @@
 import logging
 import os
-import signal
 import time
 import uuid
 
@@ -8,6 +7,7 @@ import pytest
 from pyhdfs import HdfsClient
 
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.partial_read_cancellation import PausedReadCancellation
 from helpers.test_tools import assert_eq_with_retry
 from helpers.utility import generate_values
 from helpers.wait_for_helpers import (
@@ -201,7 +201,6 @@ def test_remote_read_stops_after_partial_result_cancel(
 ):
     node = cluster.instances["node"]
     query_id = uuid.uuid4().hex
-    pool_cancel_failpoint = "merge_tree_read_pool_pause_after_cancel"
 
     create_table(cluster, "hdfs_test", additional_settings="min_rows_for_wide_part=0")
     node.query(
@@ -209,24 +208,19 @@ def test_remote_read_stops_after_partial_result_cancel(
         "repeat('x', 1024) FROM numbers(4096)"
     )
 
-    node.query(f"SYSTEM ENABLE FAILPOINT {read_failpoint}")
-    node.query(f"SYSTEM ENABLE FAILPOINT {pool_cancel_failpoint}")
-    query_request = node.get_query_request(
+    query = (
         "SELECT sum(id) FROM hdfs_test SETTINGS max_threads=1, "
         f"remote_filesystem_read_method='{read_method}', "
         "remote_filesystem_read_prefetch=0, enable_hdfs_pread=0, "
         "enable_filesystem_cache=0, use_uncompressed_cache=0, "
         "enable_blob_storage_log_for_read_operations=1, "
-        "partial_result_on_first_cancel=1, optimize_trivial_count_query=0",
-        query_id=query_id,
+        "partial_result_on_first_cancel=1, optimize_trivial_count_query=0"
     )
 
-    try:
-        node.query(f"SYSTEM WAIT FAILPOINT {read_failpoint} PAUSE", timeout=60)
-        query_request.process.send_signal(signal.SIGINT)
-        node.query(
-            f"SYSTEM WAIT FAILPOINT {pool_cancel_failpoint} PAUSE", timeout=60
-        )
+    with PausedReadCancellation(
+        node, query, query_id, read_failpoint
+    ) as cancellation:
+        cancellation.cancel()
 
         assert_eq_with_retry(
             node,
@@ -234,19 +228,11 @@ def test_remote_read_stops_after_partial_result_cancel(
             "0",
         )
 
-        node.query(f"SYSTEM NOTIFY FAILPOINT {read_failpoint}")
-        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
+        cancellation.resume()
 
-        answer, error = query_request.get_answer_and_error()
+        answer, error = cancellation.get_answer_and_error()
         assert answer.strip() == "0", answer
         assert error == "", error
-    finally:
-        node.query(f"SYSTEM NOTIFY FAILPOINT {read_failpoint}")
-        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
-        node.query(f"SYSTEM DISABLE FAILPOINT {read_failpoint}")
-        node.query(f"SYSTEM DISABLE FAILPOINT {pool_cancel_failpoint}")
-        if query_request.process.poll() is None:
-            query_request.process.kill()
 
     node.query("SYSTEM FLUSH LOGS")
     assert (

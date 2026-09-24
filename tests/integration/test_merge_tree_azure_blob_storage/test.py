@@ -1,6 +1,5 @@
 import logging
 import os
-import signal
 import time
 import uuid
 
@@ -9,6 +8,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
+from helpers.partial_read_cancellation import PausedReadCancellation
 from helpers.test_tools import assert_eq_with_retry
 from helpers.utility import generate_values, replace_config
 from test_storage_azure_blob_storage.test import azure_query
@@ -148,7 +148,6 @@ def test_remote_read_stops_after_partial_result_cancel(
     node = cluster.instances[NODE_NAME]
     table = "azure_partial_cancel"
     query_id = uuid.uuid4().hex
-    pool_cancel_failpoint = "merge_tree_read_pool_pause_after_cancel"
 
     create_table(node, table, min_rows_for_wide_part=0)
     azure_query(
@@ -157,47 +156,36 @@ def test_remote_read_stops_after_partial_result_cancel(
         "repeat('x', 1024) FROM numbers(4096)",
     )
 
-    node.query(f"SYSTEM ENABLE FAILPOINT {read_failpoint}")
-    node.query(f"SYSTEM ENABLE FAILPOINT {pool_cancel_failpoint}")
-    query_request = node.get_query_request(
+    query = (
         f"SELECT sum(id) FROM {table} SETTINGS max_threads=1, "
         f"remote_filesystem_read_method='{read_method}', "
         "remote_filesystem_read_prefetch=0, enable_filesystem_cache=0, "
         "use_uncompressed_cache=0, partial_result_on_first_cancel=1, "
-        "optimize_trivial_count_query=0",
-        query_id=query_id,
+        "optimize_trivial_count_query=0"
     )
 
     try:
-        node.query(f"SYSTEM WAIT FAILPOINT {read_failpoint} PAUSE", timeout=60)
-        query_request.process.send_signal(signal.SIGINT)
-        node.query(
-            f"SYSTEM WAIT FAILPOINT {pool_cancel_failpoint} PAUSE", timeout=60
-        )
+        with PausedReadCancellation(
+            node, query, query_id, read_failpoint
+        ) as cancellation:
+            cancellation.cancel()
 
-        assert_eq_with_retry(
-            node,
-            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
-            "0",
-        )
-        get_objects_at_cancellation = node.query(
-            "SELECT ProfileEvents['AzureGetObject'] FROM system.processes "
-            f"WHERE query_id='{query_id}'"
-        ).strip()
+            assert_eq_with_retry(
+                node,
+                f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+                "0",
+            )
+            get_objects_at_cancellation = node.query(
+                "SELECT ProfileEvents['AzureGetObject'] FROM system.processes "
+                f"WHERE query_id='{query_id}'"
+            ).strip()
 
-        node.query(f"SYSTEM NOTIFY FAILPOINT {read_failpoint}")
-        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
+            cancellation.resume()
 
-        answer, error = query_request.get_answer_and_error()
-        assert answer.strip() == "0", answer
-        assert error == "", error
+            answer, error = cancellation.get_answer_and_error()
+            assert answer.strip() == "0", answer
+            assert error == "", error
     finally:
-        node.query(f"SYSTEM NOTIFY FAILPOINT {read_failpoint}")
-        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
-        node.query(f"SYSTEM DISABLE FAILPOINT {read_failpoint}")
-        node.query(f"SYSTEM DISABLE FAILPOINT {pool_cancel_failpoint}")
-        if query_request.process.poll() is None:
-            query_request.process.kill()
         azure_query(node, f"DROP TABLE IF EXISTS {table} SYNC")
 
     node.query("SYSTEM FLUSH LOGS")

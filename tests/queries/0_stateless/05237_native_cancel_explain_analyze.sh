@@ -3,6 +3,8 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# shellcheck source=helpers/native_cancel.sh
+. "$CUR_DIR"/helpers/native_cancel.sh
 
 set -euo pipefail
 
@@ -13,10 +15,7 @@ CLIENT_PID=""
 
 cleanup()
 {
-    if [[ -n "$CLIENT_PID" ]]; then
-        kill -KILL "$CLIENT_PID" 2>/dev/null || true
-        wait "$CLIENT_PID" 2>/dev/null || true
-    fi
+    native_cancel_cleanup_client
     rm -f "$CLIENT_OUT" "$CLIENT_ERR"
 }
 trap cleanup EXIT
@@ -31,23 +30,11 @@ $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" \
         WHERE sleepEachRow(0.00001) = 0" > "$CLIENT_OUT" 2> "$CLIENT_ERR" &
 CLIENT_PID=$!
 
-query_started=0
-for _ in {1..200}; do
-    if [[ "$($CLICKHOUSE_CLIENT --query "
-        SELECT count() FROM system.processes
-        WHERE query_id='$QUERY_ID' AND read_rows >= 1000")" == 1 ]]; then
-        query_started=1
-        break
-    fi
-    if ! kill -0 "$CLIENT_PID" 2>/dev/null; then
-        break
-    fi
-    sleep 0.1
-done
-
-if [[ "$query_started" != 1 ]]; then
-    echo "EXPLAIN ANALYZE did not start reading"
-    cat "$CLIENT_ERR"
+if ! native_cancel_wait_for_process \
+    "$QUERY_ID" \
+    "read_rows >= 1000" \
+    "EXPLAIN ANALYZE did not start reading" \
+    "$CLIENT_ERR"; then
     exit 1
 fi
 
@@ -61,23 +48,10 @@ if [[ -s "$CLIENT_OUT" ]]; then
     exit 1
 fi
 
-cancelled_without_finish=0
-for _ in {1..100}; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-    cancelled_without_finish=$($CLICKHOUSE_CLIENT --query "
-        SELECT count() = 1
-            AND countIf(type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing') AND exception_code = 735) = 1
-            AND countIf(type = 'QueryFinish') = 0
-        FROM system.query_log
-        WHERE current_database = currentDatabase()
-            AND query_id='$QUERY_ID' AND type != 'QueryStart'")
-    if [[ "$cancelled_without_finish" == 1 ]]; then
-        break
-    fi
-    sleep 0.1
-done
-
-if [[ "$cancelled_without_finish" != 1 ]]; then
+if ! native_cancel_wait_for_query_log "$QUERY_ID" \
+    "count() = 1
+        AND countIf(type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing') AND exception_code = 735) = 1
+        AND countIf(type = 'QueryFinish') = 0"; then
     echo "EXPLAIN ANALYZE did not report full cancellation"
     cat "$CLIENT_ERR"
     exit 1

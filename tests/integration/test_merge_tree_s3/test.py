@@ -10,6 +10,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers, start_s3_mock
+from helpers.partial_read_cancellation import PausedReadCancellation
 from helpers.test_tools import assert_eq_with_retry
 from helpers.utility import generate_values, replace_config
 from helpers.blobs import wait_blobs_count_synchronization
@@ -441,26 +442,18 @@ def test_prefetch_stops_after_partial_result_cancel(
     node, table = s3_cancellation_table
     query_id = uuid.uuid4().hex
     s3_failpoint = "s3_read_before_get_object"
-    pool_cancel_failpoint = "merge_tree_read_pool_pause_after_cancel"
 
-    node.query(f"SYSTEM ENABLE FAILPOINT {s3_failpoint}")
-    node.query(f"SYSTEM ENABLE FAILPOINT {pool_cancel_failpoint}")
-    query_request = node.get_query_request(
-        make_s3_cancellation_query(
-            table,
-            predicate,
-            extra_settings=f"{index_settings}, allow_prefetched_read_pool_for_remote_filesystem=1, "
-            "partial_result_on_first_cancel=1",
-        ),
-        query_id=query_id,
+    query = make_s3_cancellation_query(
+        table,
+        predicate,
+        extra_settings=f"{index_settings}, allow_prefetched_read_pool_for_remote_filesystem=1, "
+        "partial_result_on_first_cancel=1",
     )
 
-    try:
-        node.query(f"SYSTEM WAIT FAILPOINT {s3_failpoint} PAUSE", timeout=60)
-        query_request.process.send_signal(signal.SIGINT)
-        node.query(
-            f"SYSTEM WAIT FAILPOINT {pool_cancel_failpoint} PAUSE", timeout=60
-        )
+    with PausedReadCancellation(
+        node, query, query_id, s3_failpoint
+    ) as cancellation:
+        cancellation.cancel()
 
         assert node.query(
             "SELECT is_cancelled FROM system.processes "
@@ -472,19 +465,11 @@ def test_prefetch_stops_after_partial_result_cancel(
             f"WHERE query_id='{query_id}'"
         ).strip()
 
-        node.query(f"SYSTEM NOTIFY FAILPOINT {s3_failpoint}")
-        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
+        cancellation.resume()
 
-        answer, error = query_request.get_answer_and_error()
+        answer, error = cancellation.get_answer_and_error()
         assert answer.strip() == "0", answer
         assert error == "", error
-    finally:
-        node.query(f"SYSTEM NOTIFY FAILPOINT {s3_failpoint}")
-        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
-        node.query(f"SYSTEM DISABLE FAILPOINT {s3_failpoint}")
-        node.query(f"SYSTEM DISABLE FAILPOINT {pool_cancel_failpoint}")
-        if query_request.process.poll() is None:
-            query_request.process.kill()
 
     node.query("SYSTEM FLUSH LOGS")
     assert (
@@ -538,8 +523,8 @@ def test_partial_cancel_in_s3_subquery(s3_cancellation_table, subquery_kind, fin
         request.process.send_signal(signal.SIGINT)
         if subquery_kind == "scalar":
             wait_until_query_is_cancelled(node, query_id)
-        else:
-            node.query(f"SYSTEM WAIT FAILPOINT {cancel_failpoint} PAUSE", timeout=60)
+        node.query(f"SYSTEM WAIT FAILPOINT {cancel_failpoint} PAUSE", timeout=60)
+        if subquery_kind != "scalar":
             assert node.query(
                 f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'"
             ).strip() == "0"
@@ -548,10 +533,10 @@ def test_partial_cancel_in_s3_subquery(s3_cancellation_table, subquery_kind, fin
             "ProfileEvents['ReadBufferFromS3RequestsErrors'] FROM system.processes "
             f"WHERE query_id='{query_id}'"
         ).strip()
+        # Let the callback return while the S3 reader is still paused, so the
+        # executor must keep polling and observe a subsequent full cancellation.
+        node.query(f"SYSTEM NOTIFY FAILPOINT {cancel_failpoint}")
         if subquery_kind != "scalar":
-            # Let the callback return while the S3 reader is still paused, so the
-            # executor must keep polling and observe a subsequent full cancellation.
-            node.query(f"SYSTEM NOTIFY FAILPOINT {cancel_failpoint}")
             if finish == "second-cancel":
                 request.process.send_signal(signal.SIGINT)
             elif finish == "kill":

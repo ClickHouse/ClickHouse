@@ -7,6 +7,8 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# shellcheck source=helpers/native_cancel.sh
+. "$CUR_DIR"/helpers/native_cancel.sh
 
 set -euo pipefail
 
@@ -17,10 +19,7 @@ CLIENT_ERR=""
 
 cleanup()
 {
-    if [[ -n "$CLIENT_PID" ]]; then
-        kill -KILL "$CLIENT_PID" 2>/dev/null || true
-        wait "$CLIENT_PID" 2>/dev/null || true
-    fi
+    native_cancel_cleanup_client
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FAILPOINT" 2>/dev/null || true
     rm -f "$CLIENT_OUT" "$CLIENT_ERR"
 }
@@ -41,10 +40,10 @@ $CLICKHOUSE_CLIENT --query_id "$query_id" \
     > "$CLIENT_OUT" 2> "$CLIENT_ERR" &
 CLIENT_PID=$!
 
-if ! timeout 60 $CLICKHOUSE_CLIENT --query \
-    "SYSTEM WAIT FAILPOINT $FAILPOINT PAUSE" > /dev/null 2>&1; then
-    echo "EXISTS subquery did not produce its first row"
-    cat "$CLIENT_ERR"
+if ! native_cancel_wait_for_failpoint \
+    "$FAILPOINT" \
+    "EXISTS subquery did not produce its first row" \
+    "$CLIENT_ERR"; then
     exit 1
 fi
 
@@ -60,20 +59,8 @@ if [[ "$(tr -d '[:space:]' < "$CLIENT_OUT")" != "1" ]]; then
     exit 1
 fi
 
-finished=0
-for _ in {1..100}; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-    finished=$($CLICKHOUSE_CLIENT --query "
-        SELECT count() = 1 AND countIf(type = 'QueryFinish' AND exception_code = 0) = 1
-        FROM system.query_log WHERE current_database = currentDatabase()
-            AND query_id = '$query_id' AND type != 'QueryStart'")
-    if [[ "$finished" == 1 ]]; then
-        break
-    fi
-    sleep 0.1
-done
-
-if [[ "$finished" != 1 ]]; then
+if ! native_cancel_wait_for_query_log "$query_id" \
+    "count() = 1 AND countIf(type = 'QueryFinish' AND exception_code = 0) = 1"; then
     echo "EXISTS partial cancellation did not finish successfully"
     cat "$CLIENT_ERR"
     exit 1
