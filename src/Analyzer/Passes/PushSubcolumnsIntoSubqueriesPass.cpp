@@ -6,6 +6,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
@@ -16,6 +17,7 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -81,8 +83,14 @@ enum class ReplacementKind
     NotEqualsZero,
     /// `isNotNull(x)` -> `not(x.null)`.
     Not,
-    /// `mapContainsKey(x, key)` -> `has(x.keys, key)`.
+    /// `mapContainsKey(x, key)` / `has(x, key)` -> `has(x.keys, key)`,
+    /// `mapContainsValue(x, value)` -> `has(x.values, value)`.
     Has,
+    /// `notHas(x, key)` -> `notHas(x.keys, key)`.
+    NotHas,
+    /// `mapContainsKeyLike(x, pattern)` -> `arrayExists(e -> like(e, pattern), x.keys)`,
+    /// `mapContainsValueLike(x, pattern)` -> `arrayExists(e -> like(e, pattern), x.values)`.
+    ArrayExistsLike,
     /// `count(x)` -> `sum(not(x.null))`.
     SumNot,
     /// The chained `Dynamic`/JSON-array access
@@ -615,11 +623,17 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
     else if (function_name == "isNull" && function_arguments.size() == 1 && column_node->getColumnType()->getTypeId() == TypeIndex::Nullable)
     {
         const auto & nullable_type = assert_cast<const DataTypeNullable &>(*column_node->getColumnType());
-        if (nullable_type.getNestedType()->hasSubcolumn("null")
-            || !function_node.getResultType()->equals(*std::make_shared<DataTypeUInt8>()))
+        if (nullable_type.getNestedType()->hasSubcolumn("null") || !result_is_boolean())
             return {};
 
+        /// A null map byte only has to be non-zero to mean NULL while `isNull` returns 0 or 1,
+        /// so the subcolumn is compared with zero instead of being read as is.
         subcolumn_path = "null";
+        subcolumn_type_override = declared_subcolumn_type(subcolumn_path, std::make_shared<DataTypeUInt8>());
+        if (!subcolumn_type_override)
+            return {};
+
+        replacement_kind = ReplacementKind::NotEqualsZero;
     }
     else if (function_name == "length" && function_arguments.size() == 1)
     {
@@ -738,6 +752,65 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
             return {};
 
         replacement_kind = ReplacementKind::Has;
+    }
+    else if (
+        (function_name == "has" || function_name == "notHas" || function_name == "mapContainsValue") && function_arguments.size() == 2
+        && column_node->getColumnType()->getTypeId() == TypeIndex::Map)
+    {
+        if (!result_is_boolean())
+            return {};
+
+        /// Same as for `mapContainsKey`: a Nullable argument could change the result type of the
+        /// function over the array subcolumn.
+        const auto & argument_type = function_arguments[1]->getResultType();
+        if (!argument_type || argument_type->isNullable() || argument_type->isLowCardinalityNullable())
+            return {};
+
+        const auto & map_type = assert_cast<const DataTypeMap &>(*column_node->getColumnType());
+        bool over_values = function_name == "mapContainsValue";
+
+        /// The Map implementation of `has` / `notHas` removes LowCardinality before comparing keys,
+        /// while the function over `Array(LowCardinality)` does not, like in `FunctionToSubcolumnsPass`.
+        if (!over_values && WhichDataType(map_type.getKeyType()).isLowCardinality())
+            return {};
+
+        subcolumn_path = over_values ? "values" : "keys";
+        subcolumn_type_override = declared_subcolumn_type(
+            subcolumn_path, std::make_shared<DataTypeArray>(over_values ? map_type.getValueType() : map_type.getKeyType()));
+        if (!subcolumn_type_override)
+            return {};
+
+        replacement_kind = function_name == "notHas" ? ReplacementKind::NotHas : ReplacementKind::Has;
+    }
+    else if (
+        (function_name == "mapContainsKeyLike" || function_name == "mapContainsValueLike") && function_arguments.size() == 2
+        && column_node->getColumnType()->getTypeId() == TypeIndex::Map)
+    {
+        if (!result_is_boolean())
+            return {};
+
+        /// Only constant patterns: an arbitrary expression would be moved into the lambda and
+        /// evaluated once per Map element instead of once per row. Like in `FunctionToSubcolumnsPass`,
+        /// the Map LIKE adapter removes LowCardinality and propagates a NULL pattern, while
+        /// `arrayExists` treats a NULL lambda result as false, so such types are skipped.
+        const auto * pattern_node = function_arguments[1]->as<ConstantNode>();
+        if (!pattern_node)
+            return {};
+
+        const auto & map_type = assert_cast<const DataTypeMap &>(*column_node->getColumnType());
+        bool over_values = function_name == "mapContainsValueLike";
+        const auto & element_type = over_values ? map_type.getValueType() : map_type.getKeyType();
+        const auto & pattern_type = pattern_node->getResultType();
+        if (WhichDataType(element_type).isLowCardinality() || WhichDataType(pattern_type).isLowCardinality()
+            || WhichDataType(pattern_type).isNullable())
+            return {};
+
+        subcolumn_path = over_values ? "values" : "keys";
+        subcolumn_type_override = declared_subcolumn_type(subcolumn_path, std::make_shared<DataTypeArray>(element_type));
+        if (!subcolumn_type_override)
+            return {};
+
+        replacement_kind = ReplacementKind::ArrayExistsLike;
     }
     else if (
         function_name == "count" && function_arguments.size() == 1 && function_node.isAggregateFunction()
@@ -1573,6 +1646,22 @@ QueryTreeNodePtr buildReplacementNode(const CandidateMatch & match, const Pushdo
             return make_function("not", {std::move(subcolumn_node)}, true);
         case ReplacementKind::Has:
             return make_function("has", {std::move(subcolumn_node), function_node.getArguments().getNodes()[1]}, false);
+        case ReplacementKind::NotHas:
+            return make_function("notHas", {std::move(subcolumn_node), function_node.getArguments().getNodes()[1]}, false);
+        case ReplacementKind::ArrayExistsLike:
+        {
+            const auto & element_type = assert_cast<const DataTypeArray &>(*group.subcolumn_type).getNestedType();
+
+            auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"x"});
+            lambda_arguments->resolve(DataTypes{element_type});
+            auto lambda_element = std::make_shared<ColumnNode>(NameAndTypePair{"x", element_type}, lambda_arguments);
+
+            auto like_function = make_function("like", {std::move(lambda_element), function_node.getArguments().getNodes()[1]}, true);
+            auto lambda_type = std::make_shared<DataTypeFunction>(DataTypes{element_type}, like_function->getResultType());
+            auto lambda = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(like_function), true, std::move(lambda_type));
+
+            return make_function("arrayExists", {std::move(lambda), std::move(subcolumn_node)}, false);
+        }
         case ReplacementKind::ArrayElement:
         {
             auto element_node = make_function("arrayElement", {std::move(subcolumn_node), match.array_index_node}, false);

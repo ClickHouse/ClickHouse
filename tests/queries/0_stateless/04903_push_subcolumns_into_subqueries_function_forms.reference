@@ -22,7 +22,7 @@ composed tupleElement
 Output: nested.a.b
 Output: nested.a.b
 isNull
-Output: n.null
+Output: n.null != 0
 Output: n.null
 0
 1
