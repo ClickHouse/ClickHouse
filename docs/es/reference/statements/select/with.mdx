@@ -10,7 +10,9 @@ doc_type: 'reference'
 
 ClickHouse admite expresiones de tabla comunes ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), expresiones escalares comunes y consultas recursivas.
 
-## Expresiones de tabla comunes {#common-table-expressions}
+<div id="common-table-expressions">
+  ## Expresiones de tabla comunes
+</div>
 
 Las expresiones de tabla comunes representan subconsultas con nombre.
 Se puede hacer referencia a ellas por su nombre en cualquier parte de una consulta `SELECT` donde se permita una expresión de tabla.
@@ -21,13 +23,17 @@ La recursión se evita ocultando la CTE actual del proceso de resolución de ide
 
 Tenga en cuenta que las CTE no garantizan los mismos resultados en todos los lugares donde se usan, porque la consulta se vuelve a ejecutar en cada caso.
 
-### Sintaxis {#common-table-expressions-syntax}
+<div id="common-table-expressions-syntax">
+  ### Sintaxis
+</div>
 
 ```sql
 WITH <identifier> AS [MATERIALIZED] <subquery expression>
 ```
 
-### Ejemplo {#common-table-expressions-example}
+<div id="common-table-expressions-example">
+  ### Ejemplo
+</div>
 
 Un ejemplo de cuándo se vuelve a ejecutar una subconsulta:
 
@@ -49,26 +55,31 @@ Si las CTE devolvieran exactamente los resultados y no solo un fragmento de cód
 
 Sin embargo, como hacemos referencia a `cte_numbers` dos veces, se generan números aleatorios cada vez y, por lo tanto, vemos resultados aleatorios distintos, `280501, 392454, 261636, 196227`, y así sucesivamente...
 
-## Expresiones de tabla comunes materializadas {#materialized-common-table-expressions}
+<div id="materialized-common-table-expressions">
+  ## Expresiones de tabla comunes materializadas
+</div>
 
-De forma predeterminada, ClickHouse inserta en línea la subconsulta de una CTE en cada punto en el que se hace referencia a ella, volviéndola a ejecutar cada vez.
+De forma predeterminada, ClickHouse expande en línea la subconsulta de una CTE en cada punto en el que se hace referencia a ella, volviéndola a ejecutar cada vez.
 Agregar la palabra clave `MATERIALIZED` indica a ClickHouse que ejecute la subconsulta de la CTE **exactamente una vez**, almacene los resultados en una tabla temporal y resuelva todas las referencias a partir de esa tabla.
 Esto resulta especialmente útil cuando se hace referencia a la misma CTE varias veces en una consulta (p. ej., en autouniones o en varias subconsultas `IN`), porque el cálculo subyacente solo se realiza una vez.
 
 <Note>
   Las CTE materializadas son una característica **experimental**.
-  Requieren que la configuración `enable_materialized_cte` esté habilitada.
-  Si la configuración está deshabilitada, se ignora la palabra clave `MATERIALIZED`: la CTE se inserta en línea en cada referencia como una CTE normal y se registra una advertencia.
+  Requieren que el [analizador](/es/guides/clickhouse/performance-and-monitoring/analyzer) y la configuración `enable_materialized_cte` estén habilitados.
 </Note>
 
-### Sintaxis {#materialized-common-table-expressions-syntax}
+<div id="common-table-expressions-syntax">
+  ### Sintaxis
+</div>
 
 ```sql
 WITH <identifier> AS MATERIALIZED (<subquery>)
 SELECT ...
 ```
 
-### Cuándo usar {#materialized-cte-when-to-use}
+<div id="materialized-cte-when-to-use">
+  ### Cuándo usar
+</div>
 
 Los CTE materializados son más útiles cuando:
 
@@ -82,7 +93,9 @@ Los CTE materializados son más útiles cuando:
   Si un CTE materializado solo se referencia una vez, ClickHouse lo integra automáticamente como una subconsulta normal para evitar una sobrecarga innecesaria.
 </Tip>
 
-### Ejemplos {#materialized-common-table-expressions-examples}
+<div id="materialized-common-table-expressions-examples">
+  ### Ejemplos
+</div>
 
 **Ejemplo 1:** Autounión en una CTE materializada
 
@@ -164,13 +177,18 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 └─────────┘
 ```
 
-### Restricciones {#materialized-cte-restrictions}
+<div id="materialized-cte-restrictions">
+  ### Restricciones
+</div>
 
-* **Se requiere una configuración experimental**: La configuración `enable_materialized_cte` debe estar habilitada. Si está deshabilitada, se ignora la palabra clave `MATERIALIZED`: el CTE se inserta en línea en cada referencia como un CTE normal y se registra una advertencia.
+* **Se requiere una configuración experimental**: La configuración `enable_materialized_cte` debe estar habilitada.
+* **Se requiere el analizador**: Los CTE materializados solo funcionan con el [analizador](/es/guides/clickhouse/performance-and-monitoring/analyzer) habilitado (`enable_analyzer = 1`).
 * **No compatible con `RECURSIVE`**: No se permite combinar las palabras clave `MATERIALIZED` y `RECURSIVE`, y ello da lugar a una excepción `UNSUPPORTED_METHOD`.
 * **Los CTE correlacionados no están permitidos**: Un CTE materializado no puede hacer referencia a columnas de ámbitos externos de la consulta.
 
-## Expresiones escalares comunes {#common-scalar-expressions}
+<div id="common-scalar-expressions">
+  ## Expresiones escalares comunes
+</div>
 
 ClickHouse le permite declarar alias para expresiones escalares arbitrarias en la cláusula `WITH`.
 Las expresiones escalares comunes pueden usarse en cualquier parte de la consulta.
@@ -178,16 +196,20 @@ Las expresiones escalares comunes pueden usarse en cualquier parte de la consult
 <Note>
   Si una expresión escalar común hace referencia a algo distinto de un literal constante, puede dar lugar a la presencia de [variables libres](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables).
   ClickHouse resuelve cualquier identificador en el ámbito más cercano posible, lo que significa que las variables libres pueden hacer referencia a entidades inesperadas en caso de conflictos de nombres o dar lugar a una subconsulta correlacionada.
-  Se recomienda definir CSE como una [función lambda](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda), vinculando todos los identificadores usados para lograr un comportamiento más predecible en la resolución de los identificadores de la expresión.
+  Se recomienda definir CSE como una [función lambda](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda) (solo es posible con el [analizador](/es/guides/clickhouse/performance-and-monitoring/analyzer) habilitado), vinculando todos los identificadores usados para lograr un comportamiento más predecible en la resolución de los identificadores de la expresión.
 </Note>
 
-### Sintaxis {#common-scalar-expressions-syntax}
+<div id="common-table-expressions-syntax">
+  ### Sintaxis
+</div>
 
 ```sql
 WITH <expression> AS <identifier>
 ```
 
-### Ejemplos {#common-scalar-expressions-examples}
+<div id="materialized-common-table-expressions-examples">
+  ### Ejemplos
+</div>
 
 **Ejemplo 1:** Uso de una expresión constante a modo de &quot;variable&quot;
 
@@ -298,7 +320,9 @@ FROM
 └──────────────────┘
 ```
 
-## Consultas recursivas {#recursive-queries}
+<div id="recursive-queries">
+  ## Consultas recursivas
+</div>
 
 El modificador opcional `RECURSIVE` permite que una consulta `WITH` haga referencia a sus propios resultados. Ejemplo:
 
@@ -320,7 +344,8 @@ SELECT sum(number) FROM test_table;
 ```
 
 <Note>
-  Los CTE recursivos dependen del [analizador de consultas](/es/guides/clickhouse/performance-and-monitoring/analyzer), introducido en la versión **`24.3`**, que es el predeterminado desde esa versión y obligatorio desde la **`26.9`**. En versiones anteriores en las que el analizador siga deshabilitado en la instancia, el rol o el perfil, un CTE recursivo genera una excepción **`(UNKNOWN_TABLE)`** o **`(UNSUPPORTED_METHOD)`**; habilita allí la configuración `enable_analyzer` o actualiza la versión.
+  Los CTE recursivos dependen del [analizador de consultas](/es/guides/clickhouse/performance-and-monitoring/analyzer), introducido en la versión **`24.3`**. Si usas la versión **`24.3+`** y aparece una excepción **`(UNKNOWN_TABLE)`** o **`(UNSUPPORTED_METHOD)`**, esto sugiere que el analizador está deshabilitado en tu instancia, rol o perfil. Para activar el analizador, habilita la configuración **`allow_experimental_analyzer`** o actualiza la configuración **`compatibility`** a una versión más reciente.
+  A partir de la versión `24.8`, el analizador se ha promovido completamente a producción, y la configuración `allow_experimental_analyzer` ha pasado a llamarse `enable_analyzer`.
 </Note>
 
 La forma general de una consulta `WITH` recursiva consta siempre de un término no recursivo, luego `UNION ALL` y, después, un término recursivo, donde solo el término recursivo puede contener una referencia a la propia salida de la consulta. Una consulta CTE recursiva se ejecuta de la siguiente manera:
@@ -374,7 +399,9 @@ SELECT * FROM search_tree;
 └────┴───────────┴───────────┘
 ```
 
-### Orden de búsqueda {#search-order}
+<div id="search-order">
+  ### Orden de búsqueda
+</div>
 
 Para crear un orden de recorrido en profundidad, calculamos, para cada fila de resultado, un Array de filas que ya hemos visitado:
 
@@ -428,7 +455,9 @@ SELECT * FROM search_tree ORDER BY depth;
 └────┴──────┴───────────┴─────────┴───────┘
 ```
 
-### Detección de ciclos {#cycle-detection}
+<div id="cycle-detection">
+  ### Detección de ciclos
+</div>
 
 Primero, vamos a crear la tabla del grafo:
 
@@ -511,7 +540,9 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 └──────┴────┴────────┴──────────┴───────────────────────────┘
 ```
 
-### Consultas infinitas {#infinite-queries}
+<div id="infinite-queries">
+  ### Consultas infinitas
+</div>
 
 También es posible usar consultas CTE recursivas infinitas si la consulta externa usa `LIMIT`:
 
@@ -532,7 +563,9 @@ SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
 └─────────────┘
 ```
 
-## Coma final {#trailing-comma}
+<div id="trailing-comma">
+  ## Coma final
+</div>
 
 Se permite una coma después del último elemento de la cláusula `WITH`:
 

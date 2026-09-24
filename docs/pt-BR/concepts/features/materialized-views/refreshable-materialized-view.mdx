@@ -21,7 +21,7 @@ Você também pode assistir ao vídeo a seguir:
 </Frame>
 
 <div id="when-should-refreshable-materialized-views-be-used">
-  ## Quando as views materializadas atualizáveis devem ser usadas? {#when-should-refreshable-materialized-views-be-used}
+  ## Quando as views materializadas atualizáveis devem ser usadas?
 </div>
 
 As views materializadas incrementais do ClickHouse são extremamente poderosas e, em geral, escalam muito melhor do que a abordagem usada pelas views materializadas atualizáveis, especialmente nos casos em que é necessário executar uma agregação sobre uma única tabela. Como a agregação é calculada apenas em cada bloco de dados à medida que ele é inserido, e os estados incrementais são mesclados na tabela final, a consulta sempre é executada sobre apenas um subconjunto dos dados. Esse método pode escalar para petabytes de dados e, em geral, é o preferido.
@@ -30,7 +30,9 @@ No entanto, há casos de uso em que esse processo incremental não é necessári
 
 > As views materializadas atualizáveis podem executar processos em lote para realizar tarefas como desnormalização. É possível criar dependências entre views materializadas atualizáveis, de modo que uma view dependa dos resultados de outra e só seja executada depois que ela for concluída. Isso pode substituir fluxos de trabalho agendados ou DAGs simples, como um job do [dbt](https://www.getdbt.com/). Para saber mais sobre como definir dependências entre views materializadas atualizáveis, acesse [CREATE VIEW](/pt-BR/reference/statements/create/view#refresh-dependencies), na seção `Dependencies`.
 
-## Como atualizar uma view materializada atualizável? {#how-do-you-refresh-a-refreshable-materialized-view}
+<div id="how-do-you-refresh-a-refreshable-materialized-view">
+  ## Como atualizar uma view materializada atualizável?
+</div>
 
 Views materializadas atualizáveis são atualizadas automaticamente no intervalo definido durante a criação.
 Por exemplo, a seguinte visão materializada é atualizada a cada minuto:
@@ -50,12 +52,8 @@ SYSTEM REFRESH VIEW table_name_mv;
 Você também pode cancelar, interromper ou iniciar uma view.
 Para mais detalhes, consulte a documentação sobre [como gerenciar views materializadas atualizáveis](/pt-BR/reference/statements/system#managing-refreshable-materialized-views).
 
-<Warning>
-  Views materializadas atualizáveis cujas atualizações não são coordenadas pelo ClickHouse Keeper não registram quando foram atualizadas pela última vez; por isso, após uma reinicialização do servidor, todas elas podem ser atualizadas ao mesmo tempo. Consulte [O que acontece com views materializadas atualizáveis quando o servidor é reiniciado](/pt-BR/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) para saber quais views são afetadas e como iniciá-las novamente, uma de cada vez.
-</Warning>
-
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## Quando uma view materializada atualizável foi atualizada pela última vez? {#when-was-a-refreshable-materialized-view-last-refreshed}
+  ## Quando uma view materializada atualizável foi atualizada pela última vez?
 </div>
 
 Para descobrir quando uma view materializada atualizável foi atualizada pela última vez, você pode consultar a tabela de sistema [`system.view_refreshes`](/pt-BR/reference/system-tables/view_refreshes), como mostrado abaixo:
@@ -74,7 +72,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## Como posso alterar a frequência de atualização? {#how-can-i-change-the-refresh-rate}
+  ## Como posso alterar a frequência de atualização?
 </div>
 
 Para alterar a frequência de atualização de uma view materializada atualizável, use a sintaxe [`ALTER TABLE...MODIFY REFRESH`](/pt-BR/reference/statements/alter/view#alter-table--modify-refresh-statement).
@@ -93,7 +91,7 @@ Depois de fazer isso, você pode usar a consulta [Quando uma view materializada 
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## Usando `APPEND` para adicionar novas linhas {#using-append-to-add-new-rows}
+  ## Usando `APPEND` para adicionar novas linhas
 </div>
 
 A funcionalidade `APPEND` permite adicionar novas linhas ao final da tabela, em vez de substituir toda a view.
@@ -199,13 +197,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## Exemplos {#examples}
+  ## Exemplos
 </div>
 
 Agora, vamos ver como usar views materializadas atualizáveis com alguns conjuntos de dados de exemplo.
 
 <div id="stack-overflow">
-  ### Stack Overflow {#stack-overflow}
+  ### Stack Overflow
 </div>
 
 O guia de [desnormalização de dados](/pt-BR/guides/clickhouse/data-modelling/denormalization) mostra várias técnicas para desnormalizar dados usando um conjunto de dados do Stack Overflow. Carregamos dados nas seguintes tabelas: `votes`, `users`, `badges`, `posts` e `postlinks`.
@@ -257,7 +255,7 @@ A view será executada imediatamente e, em seguida, a cada hora, conforme config
 </Note>
 
 <div id="imdb">
-  ### IMDb {#imdb}
+  ### IMDb
 </div>
 
 No [guia de integração do dbt com o ClickHouse](/pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/index), populamos um conjunto de dados do IMDb com as seguintes tabelas: `actors`, `directors`, `genres`, `movie_directors`, `movies` e `roles`.

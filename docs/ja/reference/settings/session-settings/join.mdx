@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## join_algorithm {#join_algorithm}
+<div id="join_algorithm">
+  ## join_algorithm
+</div>
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -22,8 +24,6 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 使用する [JOIN](/ja/reference/statements/select/join) アルゴリズムを指定します。
 
 複数のアルゴリズムを指定できます。特定のクエリでは、kind/strictness とテーブルエンジンに基づいて、利用可能なアルゴリズムが選択されます。
-
-ハッシュベースのアルゴリズムがディスクにスピルするかどうかは、この選択には含まれません。[`max_bytes_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) はこれらすべてに共通のスピル threshold であり (この 2 つのいずれかがゼロ以外になると、メモリ逼迫時に `enable_adaptive_memory_spill_scheduler` によってさらに早く join をスピルさせることもできます) 、[`max_rows_in_join`](/ja/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_join) はすべてに共通のハードな上限です。ただし `legacy_join_size_limits_trigger_spilling` によって、この 2 つの上限を再びディスクへのスピルの trigger に戻すことができます。選択した値によって、join のスピルの仕方が決まります。`grace_hash` は最初の block から右テーブルをパーティション分割し、`hash` と `parallel_hash` はメモリ上に収集し、threshold を超えた時点で切り替えます。
 
 ほとんどのアルゴリズムは、クエリに対して選択された場合にのみ影響します。ただし、一部は、最終的に選択されない低優先度のフォールバックとして列挙されているだけでも、アルゴリズムの選択前に決定が行われるため、プランニングを変更します。このような影響は 2 つあります。
 
@@ -36,33 +36,31 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 * grace&#95;hash
 
-[Grace hash join](https://en.wikipedia.org/wiki/Hash_join) を使用します。Grace hash は、メモリ使用量を抑えつつ、複雑な結合を高い性能で実行できるアルゴリズムです。
+[Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) を使用します。Grace hash は、メモリ使用量を抑えつつ、複雑な結合を高い性能で実行できるアルゴリズムです。
 
-`grace_hash` は最初の block から外部処理になります。右テーブルは直ちにパーティション分割されますが、`hash` と `parallel_hash` はまずメモリ上に収集し、スピル threshold を超えた時点で初めてパーティション分割します。右側がメモリに収まらないことが既に分かっており、インメモリのフェーズを省略したい場合に選択してください。スピル threshold 自体は、すべての hash アルゴリズムが使用するものと同じ [`max_bytes_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) であり、`legacy_join_size_limits_trigger_spilling` が有効でない限り、この 2 つのいずれかがゼロ以外である必要があります。threshold がない場合、`grace_hash` はスキップされてリスト内の次のアルゴリズムが使用され、唯一のアルゴリズムである場合は拒否されます。
-
-grace join の第 1 フェーズでは、右テーブルを読み取り、キーカラムの hash 値に応じて N 個の bucket に分割します (初期状態では、N は `grace_hash_join_initial_buckets` です)。これは、各 bucket を独立して処理できるように行われます。最初の bucket の行はメモリ内 hash table に追加され、その他はディスクに保存されます。hash table がスピル threshold を超えて増大すると、各行に割り当てられた bucket とともに bucket 数が増加します。現在の bucket に属さない行はすべてフラッシュされ、再割り当てされます。
+grace join の最初のフェーズでは、右テーブルを読み取り、キーカラムの hash 値に応じて N 個の buckets に分割します (初期値の N は `grace_hash_join_initial_buckets` です) 。これは、各 bucket を独立して処理できるようにするためです。最初の bucket の行はインメモリの hash table に追加され、それ以外はディスクに保存されます。hash table がメモリ制限 (たとえば [`max_bytes_in_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_join) で設定) を超えるまで大きくなった場合は、bucket 数が増やされ、各行の割り当て先 bucket が変更されます。現在の bucket に属さない行はフラッシュされ、再割り当てされます。
 
 `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN` をサポートします。
 
 * hash
 
-[Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) が使用されます。kind と strictness のすべての組み合わせ、および `JOIN ON` 句で `OR` によって結合される複数の結合キーをサポートする、最も汎用的な実装です。
+[ハッシュ結合アルゴリズム](https://en.wikipedia.org/wiki/Hash_join) を使用します。kind と strictness のすべての組み合わせに加え、`JOIN ON` 句で `OR` によって結合された複数の結合キーをサポートする、最も汎用的な実装です。
 
 `hash` アルゴリズムを使用する場合、`JOIN` の右側は RAM に読み込まれます。
 
 * parallel&#95;hash
 
-`hash` join のバリエーションで、データを bucket に分割し、このプロセスを高速化するために 1 つではなく複数の hashtable を同時に構築します。
+`hash` join の一種で、データを buckets に分割し、1 つではなく複数の hashtables を並行して構築することで、この処理を高速化します。
 
 `parallel_hash` アルゴリズムを使用する場合、`JOIN` の右側は RAM に読み込まれます。
 
 * partial&#95;merge
 
-右テーブルのみを完全にソートする [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) のバリエーションです。
+[sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) の一種で、右テーブルのみを完全にソートします。
 
-`RIGHT JOIN` と `FULL JOIN` は、`ALL` strictness でのみサポートされます (`SEMI`、`ANTI`、`ANY`、`ASOF` はサポートされません)。
+`RIGHT JOIN` と `FULL JOIN` は `ALL` strictness の場合にのみサポートされます (`SEMI`、`ANTI`、`ANY`、`ASOF` はサポートされません) 。
 
-`partial_merge` アルゴリズムを使用する場合、ClickHouse はデータをソートしてディスクに書き出します。ClickHouse の `partial_merge` アルゴリズムは、従来の実装とは若干異なります。まず、ClickHouse は右テーブルを結合キーで block 単位にソートし、ソート済み block に対する min-max 索引を作成します。次に、左テーブルの part を `結合キー` でソートし、右テーブルに対して結合します。min-max 索引は、不要な右テーブル block をスキップするためにも使用されます。
+`partial_merge` アルゴリズムを使用する場合、ClickHouse はデータをソートしてディスクに書き出します。ClickHouse の `partial_merge` アルゴリズムは、従来の実装とは若干異なります。まず、ClickHouse は右テーブルを結合キーで block 単位にソートし、ソート済み block に対する min-max 索引を作成します。次に、左テーブルの part を `join key` でソートし、右テーブルに対して結合します。min-max 索引は、不要な右テーブル block をスキップするためにも使用されます。
 
 * direct
 
@@ -85,32 +83,34 @@ MergeTree テーブルでは、このアルゴリズムは結合キーフィル�
 
 結合対象テーブルの式間に 2 つの不等比較 (`<`、`<=`、`>`、`>=`) を含む `ON` 句を持つ `JOIN` 向けの、ソートベースの [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) アルゴリズムです。`ALL INNER/LEFT/RIGHT/FULL JOIN` および `SEMI`/`ANTI` `LEFT/RIGHT JOIN` をサポートします。
 
-リスト内の位置で優先順位が決まります。デフォルト値のように他のアルゴリズムの後に記載した場合、IEJoin はそれらが適用されない場合にのみ使用されます (`ON` 句に等価条件がない場合)。先頭に記載した場合、`ON` 句に 2 つの不等条件があれば常に使用されます。残りの条件 (等価条件を含む) は、`ALL INNER JOIN` では結合結果に対するフィルタとして適用され、その他の kind ではマッチングに影響する残余条件として operator 内で評価されます。`ON` 句に適格な不等条件が 3 つ以上ある場合、アルゴリズムで使用する 2 つはカラムの min/max 統計から推定した選択性に基づいて選択されます ([Column statistics](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) の `basic` 型を参照)。推定値を使用できない場合 (統計がない、または [`use_statistics`](/ja/reference/settings/session-settings/use-statistics#use_statistics) が無効になっている場合) は、構文上の順序で先頭の 2 つが使用されます。リストに `ie_join` がない場合、不等条件のみを持つ `INNER JOIN` はフィルタ付きの `CROSS JOIN` として実行され、その他の kind はサポートされません。
+リスト内の位置で優先順位が決まります。デフォルト値のように他のアルゴリズムの後に記載した場合、IEJoin はそれらが適用されない場合にのみ使用されます (`ON` 句に等価条件がない場合)。先頭に記載した場合、`ON` 句に 2 つの不等条件があれば常に使用されます。残りの条件 (等価条件を含む) は、`ALL INNER JOIN` では結合結果に対するフィルタとして適用され、その他の kind ではマッチングに影響する残余条件として operator 内で評価されます。リストに `ie_join` がない場合、不等条件のみを持つ `INNER JOIN` はフィルタ付きの `CROSS JOIN` として実行され、その他の kind はサポートされません。
 
-両方の入力は join 前にメモリに蓄積されます。[`max_rows_in_join`](/ja/reference/settings/session-settings/max-rows#max_rows_in_join) と [`max_bytes_in_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_join) は、両側の蓄積された入力の合計を制限します (右側だけではありません) 。オーバーフロー時の動作は [`join_overflow_mode`](/ja/reference/settings/session-settings/join#join_overflow_mode) で設定します。蓄積された入力に対して演算子が構築するソート索引は、この制限には含まれません。join 演算子自体は単一スレッドで実行されます。並列化されるのは、入力に対する join 前のソートのみです。
+結合前に両方の入力がメモリに蓄積されます。[`max_rows_in_join`](/ja/reference/settings/session-settings/max-rows#max_rows_in_join) と [`max_bytes_in_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_join) は、両側の蓄積された入力の合計を制限します (右側のみではありません)。overflow 時の動作は [`join_overflow_mode`](/ja/reference/settings/session-settings/join#join_overflow_mode) で設定します。operator が蓄積された入力上に構築するソート索引は、この制限にカウントされません。結合 operator 自体は単一スレッドで実行されます。並列化されるのは、入力の結合前ソートのみです。
 
 * parallel&#95;full&#95;sorting&#95;merge
 
-`full_sorting_merge` と同じですが、hash 互換の等価 join は、単一の merge join ではなく、結合キーの hash によって独立した分片ごとの merge join に分割され、それらが並列に実行されます (`max_threads` まで) 。これにより、すべてのスレッドを使用しながら merge join の低いストリーミングメモリ使用量を維持できますが、結果は順序付けられません。
+`full_sorting_merge` と同じですが、hash と互換性のある等価結合は、単一の merge join ではなく、結合キーの hash によって独立した分片ごとの merge join に分割され、並列に実行されます (最大 `max_threads`)。これにより、すべてのスレッドを使用しながら merge join の低いストリーミングメモリ使用量を維持しますが、結果は順序付けられません。
 
-結合キーによる hash 分片化は、hash が merge join の比較と一致するキー型の単純な等価 join にのみ適用され、どちらの側もすでにソートされていない場合に限られます。次の場合はスキップされます。
+結合キーによる hash 分片化は、hash が merge join の比較と一致するキー型での単純な等価結合にのみ適用され、どちらの側もすでにソートされていない場合に限られます。以下の場合はスキップされます:
 
 * `ASOF` joins、および浮動小数点 / `JSON` / `Object` / `Dynamic` キー型: これらの hash は merge join の比較と一貫しないため、等しいキーが異なる分片に配置される可能性があります。
 * すでにソートされている側 (順序どおりの MergeTree 読み取り、または事前にソートされた入力): 分片ごとの merge への順序保持 scatter により、パイプラインがデッドロックする可能性があります。代わりに、順序どおりの読み取りとその `read_in_order_use_virtual_row` 最適化が維持されます。
 * initiator が distributed プラン (`make_distributed_plan`) を構築する場合: scatter されたソートはリモート実行用にシリアライズできないためです。ローカルの単一フラグメント プラン と worker ごとのフラグメントは、その設定を無効にして再最適化されるため、引き続き分片化できます。
 
-これをスキップしても無効になるのはこの書き換えのみで、並列度全般が無効になるわけではありません。join は単一の `full_sorting_merge` として実行され、順序どおりに読み取る MergeTree 側は、`query_plan_join_shard_by_pk_ranges` が有効な場合、primary key の範囲によってソース側で分片化できます (これらは join が使用するのと同じ比較で順序付けられるため、等しいキーはまとまったままになります)。
+これをスキップしても無効になるのはこの書き換えのみであり、一般的な並列性は無効になりません。結合は単一の `full_sorting_merge` として実行され、順序どおりに読み取る MergeTree 側は、`query_plan_join_shard_by_pk_ranges` が有効な場合、プライマリキー範囲によってソースで引き続き分片化できます (この範囲は結合で使用される比較と同じ比較で順序付けられるため、等しいキーは同じ場所に保持されます)。
 
 * prefer&#95;partial&#95;merge
 
-ClickHouse は可能な限り常に `partial_merge` join を使用しようとし、それができない場合は hash を使用します。*非推奨* で、`partial_merge,hash` と同じです。
+ClickHouse は、可能であれば常に `partial_merge` join を使用し、そうでない場合は `hash` を使用します。*非推奨*であり、`partial_merge,hash` と同じです。
 
-* default (非推奨)
+* default (deprecated)
 
-レガシーな値であり、今後は使用しないでください。
-`direct,hash` と同じで、direct join と ハッシュ結合 を (この順序で) 使用しようとします。
+従来の値のため、今後は使用しないでください。
+`direct,hash` と同じです。つまり、direct join と ハッシュ結合 をこの順で使用しようとします。
 
-## join_any_take_last_row {#join_any_take_last_row}
+<div id="join_any_take_last_row">
+  ## join_any_take_last_row
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +133,9 @@ ClickHouse は可能な限り常に `partial_merge` join を使用しようと�
 * [Join テーブルエンジン](/ja/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/ja/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness {#join_default_strictness}
+<div id="join_default_strictness">
+  ## join_default_strictness
+</div>
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +148,9 @@ ClickHouse は可能な限り常に `partial_merge` join を使用しようと�
 * `ASOF` — あいまいな一致条件で数列を結合する場合に使用します。
 * `Empty string` — クエリで `ALL` または `ANY` が指定されていない場合、ClickHouse では例外がスローされます。
 
-## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
+<div id="join_on_disk_max_files_to_merge">
+  ## join_on_disk_max_files_to_merge
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +162,9 @@ MergeJoin がディスク上で実行される場合に、並列ソートで使�
 
 * 2以上の任意の正の整数。
 
-## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
+<div id="join_output_by_rowlist_perkey_rows_threshold">
+  ## join_output_by_rowlist_perkey_rows_threshold
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +172,9 @@ MergeJoin がディスク上で実行される場合に、並列ソートで使�
 
 ハッシュ結合で行リストで出力するかどうかを判断するための、右テーブルにおけるキーごとの平均行数の下限。
 
-## join_overflow_mode {#join_overflow_mode}
+<div id="join_overflow_mode">
+  ## join_overflow_mode
+</div>
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -175,13 +183,11 @@ join が次のいずれかの制限に達したときに、ClickHouse がどの�
 * [max&#95;bytes&#95;in&#95;join](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 * [max&#95;rows&#95;in&#95;join](/ja/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-ハッシュベースの [`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm)
-の値はすべて、ディスクへスピルするものも含めてこの設定に従います。つまり、制限に達すると
-スピルがトリガーされるのではなくクエリが停止します。例外は
-`legacy_join_size_limits_trigger_spilling` で、これを有効にすると、すでにディスク上で
-実行されている join の部分は、この設定に従うのではなくさらにスピルします。
-`ie_join` も、両側から蓄積した入力に対してこの設定に従います。`partial_merge` は依然として
-戦略の切り替えによってこれらの制限を処理します。詳しくは
+この設定が適用されるのは、[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) の値が
+`hash`、`parallel_hash`、または `ie_join` の場合のみです。その他の
+アルゴリズム (たとえば `partial_merge`、`grace_hash`、`auto`) では、これらの
+制限は異なる方法で処理されます。たとえば、ディスクへのスピル、再パーティション化、または
+戦略の切り替えです。詳しくは
 [`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) を参照してください。
 
 設定可能な値:
@@ -196,7 +202,9 @@ join が次のいずれかの制限に達したときに、ClickHouse がどの�
 * [JOIN 句](/ja/reference/statements/select/join)
 * [Join テーブルエンジン](/ja/reference/engines/table-engines/special/join)
 
-## join_use_nulls {#join_use_nulls}
+<div id="join_use_nulls">
+  ## join_use_nulls
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

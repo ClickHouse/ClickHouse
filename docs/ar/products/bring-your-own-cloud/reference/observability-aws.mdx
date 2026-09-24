@@ -9,10 +9,10 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-تتضمن عمليات النشر من نوع BYOC إمكانات شاملة لـ observability، ما يتيح لك مراقبة خدمات ClickHouse عبر حزمة مراقبة Prometheus مخصصة، ونقاط نهاية مباشرة للمقاييس من خوادم ClickHouse. وتبقى بيانات المراقبة داخل حسابك السحابي، مما يمنحك تحكمًا كاملًا في البنية التحتية للمراقبة. وتُعد بيانات الاستخدام وتيليمتري الحالة الصحية المحدودة المذكورة في [حدود الشبكة](/ar/products/bring-your-own-cloud/reference/network-security#outbound-connections) بيانات المراقبة الوحيدة التي تُصدَّر إلى ClickHouse؛ وبشكل منفصل، يمكن للوحات معلومات ClickHouse، وعند الموافقة على التصعيد لمهندسيها، الاستعلام عن هذه الحزمة في مكانها عبر Tailscale، دون الاحتفاظ بأي شيء على جانب ClickHouse — راجع [الوصول إلى بيانات ClickHouse](/ar/products/bring-your-own-cloud/reference/clickhouse-data-access).
+تتضمن عمليات النشر من نوع BYOC إمكانات شاملة لـ observability، ما يتيح لك مراقبة خدمات ClickHouse عبر حزمة مراقبة Prometheus مخصصة، ونقاط نهاية مباشرة للمقاييس من خوادم ClickHouse. وتبقى جميع بيانات observability داخل حسابك السحابي، مما يمنحك تحكمًا كاملًا في البنية التحتية للمراقبة.
 
 <div id="prometheus-monitoring">
-  ## أساليب المراقبة باستخدام Prometheus {#prometheus-monitoring}
+  ## أساليب المراقبة باستخدام Prometheus
 </div>
 
 يوفّر BYOC طريقتين رئيسيتين لجمع المقاييس وعرضها باستخدام Prometheus:
@@ -21,7 +21,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 2. **جمع مقاييس ClickHouse مباشرةً**: وجّه نشر Prometheus لديك إلى نقطة النهاية `/metrics_all` التي توفّرها كل خدمة ClickHouse.
 
 <div id="monitoring-approaches-comparison">
-  ### مقارنة أساليب المراقبة {#monitoring-approaches-comparison}
+  ### مقارنة أساليب المراقبة
 </div>
 
 | الإمكانية                    | حزمة Prometheus المضمّنة                                                      | الجمع المباشر للمقاييس من خدمات ClickHouse                                           |
@@ -37,7 +37,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 **التوصية**: بالنسبة إلى معظم حالات الاستخدام، نوصي بالتكامل مع حزمة Prometheus المضمّنة، لأنها توفّر مقاييس شاملة من جميع المكوّنات في نشر BYOC لديك (خدمات ClickHouse، وعنقود Kubernetes، والخدمات الداعمة)، بدلًا من الاكتفاء بمقاييس خادم ClickHouse فقط.
 
 <div id="builtin-prometheus-stack">
-  ## حزمة Prometheus المدمجة في BYOC {#builtin-prometheus-stack}
+  ## حزمة Prometheus المدمجة في BYOC
 </div>
 
 ينشر ClickHouse BYOC حزمة مراقبة Prometheus متكاملة داخل عنقود Kubernetes لديك، بما في ذلك Prometheus وGrafana وAlertManager، وThanos اختياريًا لتخزين المقاييس على المدى الطويل. تجمع هذه الحزمة المقاييس من:
@@ -46,7 +46,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * عنقود Kubernetes ومكونات النظام
 * عُقد البنية التحتية الأساسية
 
-### الوصول إلى Prometheus Stack {#accessing-prometheus-stack}
+<div id="accessing-prometheus-stack">
+  ### الوصول إلى Prometheus Stack
+</div>
 
 للاتصال بحزمة Prometheus المضمّنة:
 
@@ -68,7 +70,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="prometheus-stack-integration">
-  ### التكامل مع أدوات المراقبة لديك {#prometheus-stack-integration}
+  ### التكامل مع أدوات المراقبة لديك
 </div>
 
 يمكنك الاستفادة من حزمة Prometheus الخاصة بـ BYOC ضمن بيئة المراقبة لديك بعدة طرق:
@@ -107,12 +109,14 @@ scrape_configs:
 ```
 
 <div id="direct-prometheus-integration">
-  ## تكامل Prometheus مع خدمة ClickHouse {#direct-prometheus-integration}
+  ## تكامل Prometheus مع خدمة ClickHouse
 </div>
 
 توفّر خدمات ClickHouse نقطة نهاية للمقاييس متوافقة مع Prometheus، ويمكنك جمع المقاييس منها مباشرةً باستخدام مثيل Prometheus الخاص بك. يوفّر هذا النهج مقاييس خاصة بـ ClickHouse، لكنه لا يشمل مقاييس Kubernetes أو مقاييس الخدمات المساندة.
 
-### الوصول إلى نقطة نهاية المقاييس {#metrics-endpoint}
+<div id="metrics-endpoint">
+  ### الوصول إلى نقطة نهاية المقاييس
+</div>
 
 تتوفّر نقطة نهاية المقاييس على المسار `/metrics_all` في نقطة نهاية خدمة ClickHouse الخاصة بك:
 
@@ -135,7 +139,7 @@ ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj
 ```
 
 <div id="authentication">
-  ### المصادقة {#authentication}
+  ### المصادقة
 </div>
 
 تتطلب نقطة نهاية المقاييس المصادقة باستخدام بيانات اعتماد ClickHouse. نوصي باستخدام المستخدم `default` أو إنشاء مستخدم مخصص بأقل الأذونات اللازمة خصيصًا لكشط المقاييس.
@@ -167,7 +171,9 @@ GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO 
 GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
 ```
 
-### تهيئة Prometheus {#configuring-prometheus}
+<div id="configuring-prometheus">
+  ### تهيئة Prometheus
+</div>
 
 هيّئ مثيل Prometheus لديك لجمع المقاييس من نقطة نهاية مقاييس ClickHouse:
 
@@ -193,12 +199,14 @@ scrape_configs:
 * `<username>` و `<password>` ببيانات اعتماد مستخدم scraping الخاص بك
 
 <div id="clickhouse-mixin">
-  ## ClickHouse Mixin {#clickhouse-mixin}
+  ## ClickHouse Mixin
 </div>
 
 للفرق التي تريد مجموعة جاهزة من لوحات المعلومات، يوفّر ClickHouse ‏**ClickHouse Mixin** لـ Prometheus. وهي لوحة معلومات Grafana جاهزة ومصممة خصيصًا لمراقبة عناقيد ClickHouse.
 
-### إعداد Grafana واستيراد ClickHouse Mix-in {#setup-grafana-mixin}
+<div id="setup-grafana-mixin">
+  ### إعداد Grafana واستيراد ClickHouse Mix-in
+</div>
 
 بمجرد دمج مثيل Prometheus لديك مع حزمة مراقبة ClickHouse، يمكنك عرض المقاييس في Grafana باتباع الخطوات التالية:
 

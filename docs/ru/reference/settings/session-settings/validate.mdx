@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
+<div id="validate_enum_literals_in_operators">
+  ## validate_enum_literals_in_operators
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -21,30 +23,21 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если настройка включена, литералы enum в операторах `IN`, `NOT IN`, `==`, `!=` проверяются на соответствие типу enum; если литерал не является допустимым значением enum, генерируется исключение.
 
-## validate_group_by_all_key_types {#validate_group_by_all_key_types}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Проверка типов ключей, в которые `GROUP BY ALL` разворачивает выражения `SELECT`, сохраняется под `compatibility` с 26.7 или 26.8: предыдущее значение намеренно совпадает с новым, поскольку эти версии уже отклоняли такой ключ, и лишь `compatibility` с версией до 26.7 возвращает прежнее поведение, при котором он принимался."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "1"},{"label": "Новая настройка, управляющая проверкой типов ключей, в которые `GROUP BY ALL` разворачивает выражения `SELECT`. Начиная с 26.7 ключ типа `Variant`\/`Dynamic` в этом случае отклоняется, тогда как более ранние версии принимали его при включённом анализаторе (`enable_analyzer = 1`, значение по умолчанию; старый анализатор отклонял такой ключ и до 26.7), поэтому предыдущее значение — `false`, а `compatibility` с версией до 26.7 возвращает прежнее поведение, при котором он принимался."}]}]} />
-
-Определяет, проверяются ли ключи группировки, в которые `GROUP BY ALL` разворачивает выражения `SELECT`, на соответствие настройке [allow&#95;suspicious&#95;types&#95;in&#95;group&#95;by](/ru/reference/settings/session-settings/allow-suspicious#allow_suspicious_types_in_group_by). Отключите её, чтобы вернуть поведение версий до 26.7, которые принимали ключ типа [Variant](/ru/reference/data-types/variant) или [Dynamic](/ru/reference/data-types/dynamic), записанный как `GROUP BY ALL`, — например, ключ группировки, представляющий собой нетипизированный подпуть JSON. Работает только при включённом анализаторе (`enable_analyzer = 1`, значение по умолчанию); со старым анализатором такой ключ отклонялся и до 26.7, поэтому там восстанавливать нечего. На явный `GROUP BY` настройка не влияет: он в любом случае продолжает отклонять такой ключ, так что это более узкая мера, чем настройка `allow_suspicious_types_in_group_by`, которая разрешает такие ключи и в явном `GROUP BY`.
-
-Возможные значения:
-
-* 0 — типы ключей, в которые разворачивается `GROUP BY ALL`, не проверяются.
-* 1 — они проверяются так же, как явный `GROUP BY` проверяет свои ключи.
-
-## validate_mutation_query {#validate_mutation_query}
+<div id="validate_mutation_query">
+  ## validate_mutation_query
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "Новая настройка: по умолчанию проверять запросы мутации."}]}]} />
 
-Проверять запросы мутации перед их принятием. Мутации выполняются в фоновом режиме, и запуск некорректного запроса может привести к тому, что мутации зависнут и потребуется ручное вмешательство.
+Проверять запросы мутации перед их принятием. Мутации выполняются в фоновом режиме, и запуск некорректного запроса приведёт к тому, что мутации зависнут и потребуется ручное вмешательство.
 
 Изменяйте эту настройку только если столкнулись с ошибкой, нарушающей обратную совместимость.
 
-## validate_polygons {#validate_polygons}
+<div id="validate_polygons">
+  ## validate_polygons
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

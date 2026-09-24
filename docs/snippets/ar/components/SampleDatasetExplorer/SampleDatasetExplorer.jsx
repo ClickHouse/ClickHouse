@@ -15,36 +15,36 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "اختبار أداء البيانات الضخمة AMPLab",
-          href: "/get-started/sample-datasets/amplab-benchmark",
+          href: "/ar/get-started/sample-datasets/amplab-benchmark",
           imgLight: "/images/sample-datasets-grid/amplab-benchmark-light.jpg",
           imgDark: "/images/sample-datasets-grid/amplab-benchmark-dark.jpg"
         },
         {
           title: "اختبار أداء جامعة براون",
-          href: "/get-started/sample-datasets/brown-benchmark",
+          href: "/ar/get-started/sample-datasets/brown-benchmark",
           imgLight: "/images/sample-datasets-grid/brown-benchmark-light.jpg",
           imgDark: "/images/sample-datasets-grid/brown-benchmark-dark.jpg"
         },
         {
           title: "سجلات نقرات Criteo بحجم تيرابايت",
-          href: "/get-started/sample-datasets/criteo",
+          href: "/ar/get-started/sample-datasets/criteo",
           imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
           imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
         },
         {
           title: "اختبار أداء JOB",
-          href: "/get-started/sample-datasets/job",
+          href: "/ar/get-started/sample-datasets/job",
           imgLight: "/images/sample-datasets-grid/benchmarks-light.jpg",
           imgDark: "/images/sample-datasets-grid/benchmarks-dark.jpg"
         },
         {
           title: "Star Schema Benchmark (SSB)",
-          href: "/get-started/sample-datasets/star-schema",
+          href: "/ar/get-started/sample-datasets/star-schema",
           imgLight: "/images/sample-datasets-grid/star-schema-light.jpg",
           imgDark: "/images/sample-datasets-grid/star-schema-dark.jpg"
         },
-        { title: "TPC-DS", href: "/get-started/sample-datasets/tpcds", imgLight: "/images/sample-datasets-grid/tpcds-light.jpg", imgDark: "/images/sample-datasets-grid/tpcds-dark.jpg" },
-        { title: "TPC-H", href: "/get-started/sample-datasets/tpch", imgLight: "/images/sample-datasets-grid/tpch-light.jpg", imgDark: "/images/sample-datasets-grid/tpch-dark.jpg" }
+        { title: "TPC-DS", href: "/ar/get-started/sample-datasets/tpcds", imgLight: "/images/sample-datasets-grid/tpcds-light.jpg", imgDark: "/images/sample-datasets-grid/tpcds-dark.jpg" },
+        { title: "TPC-H", href: "/ar/get-started/sample-datasets/tpch", imgLight: "/images/sample-datasets-grid/tpch-light.jpg", imgDark: "/images/sample-datasets-grid/tpch-dark.jpg" }
       ]
     },
     {
@@ -56,19 +56,19 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "أبراج الاتصال (OpenCelliD)",
-          href: "/get-started/sample-datasets/cell-towers",
+          href: "/ar/get-started/sample-datasets/cell-towers",
           imgLight: "/images/sample-datasets-grid/cell-towers-light.jpg",
           imgDark: "/images/sample-datasets-grid/cell-towers-dark.jpg"
         },
         {
           title: "أماكن Foursquare",
-          href: "/get-started/sample-datasets/foursquare-os-places",
+          href: "/ar/get-started/sample-datasets/foursquare-os-places",
           imgLight: "/images/sample-datasets-grid/foursquare-places-light.jpg",
           imgDark: "/images/sample-datasets-grid/foursquare-places-dark.jpg"
         },
         {
           title: "بيانات سيارات الأجرة في نيويورك",
-          href: "/get-started/sample-datasets/nyc-taxi",
+          href: "/ar/get-started/sample-datasets/nyc-taxi",
           imgLight: "/images/sample-datasets-grid/nyc-taxi-light.jpg",
           imgDark: "/images/sample-datasets-grid/nyc-taxi-dark.jpg"
         }
@@ -83,31 +83,31 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "البيانات المفتوحة لـ COVID-19",
-          href: "/get-started/sample-datasets/covid19",
+          href: "/ar/get-started/sample-datasets/covid19",
           imgLight: "/images/sample-datasets-grid/covid19-light.jpg",
           imgDark: "/images/sample-datasets-grid/covid19-dark.jpg"
         },
         {
           title: "ماذا في القائمة؟ (NYPL)",
-          href: "/get-started/sample-datasets/menus",
+          href: "/ar/get-started/sample-datasets/menus",
           imgLight: "/images/sample-datasets-grid/menus-light.jpg",
           imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
         },
         {
           title: "بيانات شكاوى شرطة نيويورك",
-          href: "/get-started/sample-datasets/nypd-complaint-data",
+          href: "/ar/get-started/sample-datasets/nypd-complaint-data",
           imgLight: "/images/sample-datasets-grid/nypd-complaint-data-light.jpg",
           imgDark: "/images/sample-datasets-grid/nypd-complaint-data-dark.jpg"
         },
         {
           title: "OnTime (رحلات الطيران)",
-          href: "/get-started/sample-datasets/ontime",
+          href: "/ar/get-started/sample-datasets/ontime",
           imgLight: "/images/sample-datasets-grid/ontime-light.jpg",
           imgDark: "/images/sample-datasets-grid/ontime-dark.jpg"
         },
         {
           title: "أسعار العقارات في المملكة المتحدة",
-          href: "/get-started/sample-datasets/uk-price-paid",
+          href: "/ar/get-started/sample-datasets/uk-price-paid",
           imgLight: "/images/sample-datasets-grid/uk-price-paid-light.jpg",
           imgDark: "/images/sample-datasets-grid/uk-price-paid-dark.jpg"
         }
@@ -122,23 +122,23 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "بيانات أجهزة الاستشعار البيئية",
-          href: "/get-started/sample-datasets/environmental-sensors",
+          href: "/ar/get-started/sample-datasets/environmental-sensors",
           imgLight: "/images/sample-datasets-grid/environmental-sensors-light.jpg",
           imgDark: "/images/sample-datasets-grid/environmental-sensors-dark.jpg"
         },
         {
           title: "شبكة NOAA للمناخ التاريخي العالمي",
-          href: "/get-started/sample-datasets/noaa",
+          href: "/ar/get-started/sample-datasets/noaa",
           imgLight: "/images/sample-datasets-grid/noaa-light.jpg",
           imgDark: "/images/sample-datasets-grid/noaa-dark.jpg"
         },
         {
           title: "بيانات الطقس التاريخية لتايوان",
-          href: "/get-started/sample-datasets/tw-weather",
+          href: "/ar/get-started/sample-datasets/tw-weather",
           imgLight: "/images/sample-datasets-grid/tw-weather-light.jpg",
           imgDark: "/images/sample-datasets-grid/tw-weather-dark.jpg"
         },
-        { title: "WikiStat", href: "/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" }
+        { title: "WikiStat", href: "/ar/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" }
       ]
     },
     {
@@ -150,25 +150,25 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "dbpedia dataset",
-          href: "/get-started/sample-datasets/dbpedia",
+          href: "/ar/get-started/sample-datasets/dbpedia",
           imgLight: "/images/sample-datasets-grid/dbpedia-light.jpg",
           imgDark: "/images/sample-datasets-grid/dbpedia-dark.jpg"
         },
         {
           title: "Hacker News vector search",
-          href: "/get-started/sample-datasets/hacker-news-vector-search",
+          href: "/ar/get-started/sample-datasets/hacker-news-vector-search",
           imgLight: "/images/sample-datasets-grid/hacker-news-vector-search-light.jpg",
           imgDark: "/images/sample-datasets-grid/hacker-news-vector-search-dark.jpg"
         },
         {
           title: "مجموعة بيانات Laion-400M",
-          href: "/get-started/sample-datasets/laion",
+          href: "/ar/get-started/sample-datasets/laion",
           imgLight: "/images/sample-datasets-grid/laion-400m-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion-400m-dark.jpg"
         },
         {
           title: "LAION 5B dataset",
-          href: "/get-started/sample-datasets/laion5b",
+          href: "/ar/get-started/sample-datasets/laion5b",
           imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
         }
@@ -183,43 +183,43 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "مراجعات عملاء Amazon",
-          href: "/get-started/sample-datasets/amazon-reviews",
+          href: "/ar/get-started/sample-datasets/amazon-reviews",
           imgLight: "/images/sample-datasets-grid/amazon-reviews-light.jpg",
           imgDark: "/images/sample-datasets-grid/amazon-reviews-dark.jpg"
         },
         {
           title: "تحليلات الويب المجهولة الهوية",
-          href: "/get-started/sample-datasets/anon-web-analytics-metrica",
+          href: "/ar/get-started/sample-datasets/anon-web-analytics-metrica",
           imgLight: "/images/sample-datasets-grid/anon-web-analytics-light.jpg",
           imgDark: "/images/sample-datasets-grid/anon-web-analytics-dark.jpg"
         },
         {
           title: "الاستعلام عن بيانات GitHub",
-          href: "/get-started/sample-datasets/github",
+          href: "/ar/get-started/sample-datasets/github",
           imgLight: "/images/sample-datasets-grid/github-light.jpg",
           imgDark: "/images/sample-datasets-grid/github-dark.jpg"
         },
         {
           title: "مجموعة بيانات أحداث GitHub",
-          href: "/get-started/sample-datasets/github-events",
+          href: "/ar/get-started/sample-datasets/github-events",
           imgLight: "/images/sample-datasets-grid/github-events-light.jpg",
           imgDark: "/images/sample-datasets-grid/github-events-dark.jpg"
         },
         {
           title: "Hacker News dataset",
-          href: "/get-started/sample-datasets/hacker-news",
+          href: "/ar/get-started/sample-datasets/hacker-news",
           imgLight: "/images/sample-datasets-grid/hacker-news-light.jpg",
           imgDark: "/images/sample-datasets-grid/hacker-news-dark.jpg"
         },
         {
           title: "تحليل بيانات Stack Overflow",
-          href: "/get-started/sample-datasets/stackoverflow",
+          href: "/ar/get-started/sample-datasets/stackoverflow",
           imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
           imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
         },
         {
           title: "مجموعة بيانات التفاعلات السلبية على YouTube",
-          href: "/get-started/sample-datasets/youtube-dislikes",
+          href: "/ar/get-started/sample-datasets/youtube-dislikes",
           imgLight: "/images/sample-datasets-grid/youtube-dislikes-light.jpg",
           imgDark: "/images/sample-datasets-grid/youtube-dislikes-dark.jpg"
         }
@@ -247,7 +247,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
       aria-label={item.title}
       style={{
         "--sde-image-light-mode": `url("${webpFor(item.imgDark)}")`,
-        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`
+        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`,
       }}
     />
   )
@@ -258,6 +258,15 @@ export const SampleDatasetExplorer = ({ categories }) => {
       <style
         dangerouslySetInnerHTML={{
           __html: `
+        @keyframes sde-pop {
+          from { opacity: 0; transform: translateY(14px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes sde-fade {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        .sde-view { animation: sde-fade 0.25s ease both; }
         .sde-tile {
           display: block;
           width: 100%;
@@ -266,6 +275,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
           background: transparent;
           text-align: left;
           cursor: pointer;
+          animation: sde-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+          transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
         }
         .sde-tile:hover { transform: translateY(-4px) scale(1.015); }
         .sde-tile:active { transform: translateY(-1px) scale(0.995); }
@@ -279,6 +290,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           border-radius: 8px;
           overflow: hidden;
           box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+          transition: box-shadow 0.25s ease;
         }
         .dark .sde-root .sde-tile-media { border-color: #3c3c3c; }
         .sde-tile:hover .sde-tile-media { box-shadow: 0 12px 28px rgba(0,0,0,0.22); }
@@ -309,6 +321,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           backdrop-filter: blur(6px);
           -webkit-backdrop-filter: blur(6px);
           opacity: 0;
+          transition: opacity 0.25s ease;
           pointer-events: none;
         }
         .sde-tile:hover .sde-tile-hint { opacity: 1; }
@@ -336,6 +349,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           align-items: center;
           gap: 4px;
         }
+        .sde-child { animation: sde-pop 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
         .sde-back {
           display: inline-flex;
           align-items: center;
@@ -348,6 +362,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           opacity: 0.5;
           font-size: 0.875rem;
           font-weight: 500;
+          transition: opacity 0.2s ease;
         }
         .sde-back:hover { opacity: 1; }
         .sde-detail-title {
@@ -355,6 +370,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           font-weight: 600;
           line-height: 1.3;
           margin: 0 0 1.25rem 0;
+          animation: sde-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
         }
       `
         }}
@@ -363,8 +379,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
       {!selected ? (
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-            {cats.map((cat) => (
-              <button key={cat.id} type="button" className="sde-tile" onClick={() => setSelectedId(cat.id)} aria-label={`استكشاف مجموعات بيانات ${cat.title}`}>
+            {cats.map((cat, i) => (
+              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`استكشاف مجموعات بيانات ${cat.title}`}>
                 <span className="sde-tile-media">
                   <Banner cat={cat} />
                   <span className="sde-tile-hint">
@@ -398,8 +414,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
           <h2 className="sde-detail-title">{selected.title}</h2>
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-            {selected.datasets.map((ds) => (
-              <a key={ds.href} href={ds.href} className="sde-tile">
+            {selected.datasets.map((ds, i) => (
+              <a key={ds.href} href={ds.href} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
                 <span className="sde-tile-media">
                   {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">

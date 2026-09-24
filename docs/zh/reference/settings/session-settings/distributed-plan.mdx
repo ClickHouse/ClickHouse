@@ -11,11 +11,12 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
+<div id="distributed_plan_default_reader_bucket_count">
+  ## distributed_plan_default_reader_bucket_count
+</div>
 
 <ExperimentalBadge />
 
@@ -26,7 +27,9 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 用于分布式查询并行读取的默认任务数。任务会分配到各个副本之间。
 由基于规则的分布式查询计划器使用。基于成本的优化器会根据估算成本选择读取扇出，不使用此设置。
 
-## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
+<div id="distributed_plan_default_shuffle_join_bucket_count">
+  ## distributed_plan_default_shuffle_join_bucket_count
+</div>
 
 <ExperimentalBadge />
 
@@ -37,7 +40,9 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 分布式 shuffle-hash join 的默认桶数。
 由基于规则的分布式查询计划器使用。基于成本的优化器会根据估算成本选择扇出，不使用此设置。
 
-## distributed_plan_execute_locally {#distributed_plan_execute_locally}
+<div id="distributed_plan_execute_locally">
+  ## distributed_plan_execute_locally
+</div>
 
 <ExperimentalBadge />
 
@@ -47,17 +52,9 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 在本地运行分布式查询计划的所有任务。适用于测试和调试。
 
-## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：当计划无法分布式执行时回退到本地执行（仅在 `make_distributed_plan` 下生效）。"}]}]} />
-
-当查询计划中包含不支持分布式执行的步骤时，记录原因并在 initiator 上执行该查询，而不是抛出异常。禁用后则会抛出异常。
-
-仅在启用 `make_distributed_plan` (私有预览) 时生效。
-
-## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
+<div id="distributed_plan_force_exchange_kind">
+  ## distributed_plan_force_exchange_kind
+</div>
 
 <ExperimentalBadge />
 
@@ -71,7 +68,9 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 * &#39;Persisted&#39; - 使用对象存储中的临时 File，
 * &#39;Streaming&#39; - 通过网络流式传输 Exchange 数据。
 
-## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
+<div id="distributed_plan_force_shuffle_aggregation">
+  ## distributed_plan_force_shuffle_aggregation
+</div>
 
 <ExperimentalBadge />
 
@@ -80,9 +79,10 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "新的 Experimental 设置"}]}]} />
 
 在分布式查询计划中，采用 Shuffle 聚合策略，而不是 PartialAggregation + Merge。
-在 Shuffle 策略无法产生正确结果的场景下会被忽略，例如 `GROUPING SETS`，或者聚合必须按桶顺序产生结果时。
 
-## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
+<div id="distributed_plan_max_rows_to_broadcast">
+  ## distributed_plan_max_rows_to_broadcast
+</div>
 
 <ExperimentalBadge />
 
@@ -93,7 +93,9 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 在分布式查询计划中，使用 broadcast join 而非 shuffle join 的最大行数。
 这是基于规则的分布式查询计划器使用的启发式规则。启用基于成本的优化器后，broadcast 与 shuffle 的选择由估算成本决定，此设置不起作用。
 
-## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
+<div id="distributed_plan_optimize_exchanges">
+  ## distributed_plan_optimize_exchanges
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -101,9 +103,11 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 移除分布式查询计划中不必要的 exchange。调试时请禁用此设置。
 
-## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
+<div id="distributed_plan_prefer_replicas_over_workers">
+  ## distributed_plan_prefer_replicas_over_workers
+</div>
 
-<PrivatePreviewBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -111,21 +115,11 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 将分布式查询计划序列化后在副本上执行。
 
-## distributed_plan_read_in_order {#distributed_plan_read_in_order}
+<div id="distributed_plan_workers_num">
+  ## distributed_plan_workers_num
+</div>
 
 <ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，用于在分布式查询计划中为 `ORDER BY` 启用 read-in-order 优化，使按表 sorting key 进行的有序读取可以跳过排序并提前结束。默认关闭：目前仅当读取与排序之间不残留 exchange 的形态下才是安全的。"}]}]} />
-
-允许在分布式查询计划中为 `ORDER BY` 启用 read-in-order 优化，使按表 sorting key 进行的有序读取可以跳过排序并提前结束，而无需先扫描再排序。
-
-默认关闭：将排序分布式化的 rewrite 假定其所包裹的排序不依赖输入本身已经有序，而这类依赖有序输入的排序有可能通过不保序的 exchange 获取行。目前仅当读取与排序之间不残留 exchange 的形态下才是安全的。
-
-## distributed_plan_workers_num {#distributed_plan_workers_num}
-
-<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -133,13 +127,15 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 用于执行此查询的无状态工作线程数量。0 会禁用分布式查询计划的无状态工作线程租用。
 
-## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
+<div id="distributed_plan_workers_provisioning_timeout_ms">
+  ## distributed_plan_workers_provisioning_timeout_ms
+</div>
 
-<PrivatePreviewBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "10000"},{"label": "用于限制查询在执行前等待租用的无状态工作线程变为可达状态的最长时间的新设置。"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "10000"},{"label": "用于限制查询在执行前等待租用的无状态工作线程变为可达状态的最长时间的新设置；将 `compatibility` 设为低于 26.8 可恢复此前的不等待行为。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "10000"},{"label": "用于限制查询在执行前等待租用的无状态工作线程变为可达状态的最长时间的新设置；将 `compatibility` 设为低于 26.9 可恢复此前不等待的行为。"}]}]} />
 
 查询在执行前可用于预配无状态工作线程的总挂钟时间，单位为毫秒：包括从 discovery 服务租用工作线程并验证其是否可达。查询最多会在此时间预算内阻塞，等待租用的工作线程就绪；时间耗尽后，查询将使用截至此时已验证的工作线程继续执行；如果没有任何工作线程可用，则查询失败。设为零时，仅等待首次租用和验证 (不重试) 。
 

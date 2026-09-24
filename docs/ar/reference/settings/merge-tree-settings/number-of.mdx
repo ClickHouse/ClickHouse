@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-## number_of_free_entries_in_pool_to_execute_mutation {#number_of_free_entries_in_pool_to_execute_mutation}
+<div id="number_of_free_entries_in_pool_to_execute_mutation">
+  ## number_of_free_entries_in_pool_to_execute_mutation
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
@@ -32,7 +34,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 و[`background_merges_mutations_concurrency_ratio`](/ar/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 وإلا، فسيطرح ClickHouse استثناءً.
 
-## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
+<div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
+  ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
@@ -46,12 +50,16 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 * عدد صحيح موجب.
 
-يجب ألا تتجاوز قيمة الإعداد `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
-حاصل ضرب [`background_pool_size`](/ar/reference/settings/server-settings/settings/background#background_pool_size)
-و[`background_merges_mutations_concurrency_ratio`](/ar/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
-وإلا، يطرح ClickHouse استثناء.
+يجب أن تكون قيمة الإعداد `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
+أقل من قيمة
+[background&#95;pool&#95;size](/ar/reference/settings/server-settings/settings/background#background_pool_size)
 
-## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number_of_free_entries_in_pool_to_lower_max_size_of_merge}
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/ar/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
+  وإلا، يطرح ClickHouse استثناء.
+
+<div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">
+  ## number_of_free_entries_in_pool_to_lower_max_size_of_merge
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
@@ -65,7 +73,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 * أي عدد صحيح موجب.
 
-## number_of_mutations_to_delay {#number_of_mutations_to_delay}
+<div id="number_of_mutations_to_delay">
+  ## number_of_mutations_to_delay
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -73,14 +83,18 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 على الأقل من عمليات mutations غير المكتملة، فستُبطَّأ عمليات mutations الخاصة بالجدول اصطناعيًا.
 يُعطَّل إذا ضُبطت القيمة على 0
 
-## number_of_mutations_to_throw {#number_of_mutations_to_throw}
+<div id="number_of_mutations_to_throw">
+  ## number_of_mutations_to_throw
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 إذا كان الجدول يحتوي على هذا العدد أو أكثر من عمليات mutations غير المكتملة، فسيُطرَح الاستثناء &#39;Too many mutations&#39;
 يُعطَّل إذا ضُبط على 0
 
-## number_of_partitions_to_consider_for_merge {#number_of_partitions_to_consider_for_merge}
+<div id="number_of_partitions_to_consider_for_merge">
+  ## number_of_partitions_to_consider_for_merge
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

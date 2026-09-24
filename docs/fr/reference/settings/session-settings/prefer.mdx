@@ -14,59 +14,45 @@ import { CloudOnlyBadge } from "/snippets/fr/components/CloudOnlyBadge/CloudOnly
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## prefer_column_name_to_alias {#prefer_column_name_to_alias}
+<div id="prefer_column_name_to_alias">
+  ## prefer_column_name_to_alias
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Active ou désactive l’utilisation des noms de colonnes d’origine à la place des alias dans les expressions et clauses de requête. Ce paramètre est particulièrement important lorsque l’alias est identique au nom de la colonne ; voir [Alias d’expression](/fr/reference/syntax#notes-on-usage). Activez ce paramètre pour rendre les règles de syntaxe des alias dans ClickHouse plus compatibles avec celles de la plupart des autres moteurs de base de données.
+Active ou désactive l’utilisation des noms de colonnes d’origine à la place des alias dans les expressions et clauses de requête. Ce paramètre est particulièrement important lorsque l’alias est identique au nom de la colonne ; voir [Alias d’expression](/fr/reference/syntax#notes-on-usage). Activez ce paramètre pour rendre les règles de syntaxe des alias dans ClickHouse plus compatibles avec celles de la plupart des autres moteurs de base de données.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * 0 — Le nom de la colonne est remplacé par l’alias.
 * 1 — Le nom de la colonne n’est pas remplacé par l’alias.
 
-Si le nom de la colonne est ambigu entre les tables jointes et qu’un alias du même nom existe, l’alias est utilisé :
-
-```sql
-SET prefer_column_name_to_alias = 1;
-SELECT t1.id + 10 AS id, id AS x
-FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
-```
-
-```text
-┌─id─┬──x─┐
-│ 11 │ 11 │
-└────┴────┘
-```
-
-Ici, `id` dans `id AS x` est une colonne à la fois de `t1` et de `t3`, il est donc résolu vers l’alias `t1.id + 10`.
-
 **Exemple**
 
-Différence entre l’état activé et désactivé :
+Différence entre l’état activé et désactivé :
 
-Requête :
+Requête :
 
 ```sql
 SET prefer_column_name_to_alias = 0;
 SELECT avg(number) AS number, max(number) FROM numbers(10);
 ```
 
-Résultat :
+Résultat :
 
 ```text
 Received exception from server (version 21.5.1):
 Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
 ```
 
-Requête :
+Requête :
 
 ```sql
 SET prefer_column_name_to_alias = 1;
 SELECT avg(number) AS number, max(number) FROM numbers(10);
 ```
 
-Résultat :
+Résultat :
 
 ```text
 ┌─number─┬─max(number)─┐
@@ -74,7 +60,9 @@ Résultat :
 └────────┴─────────────┘
 ```
 
-## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
+<div id="prefer_external_sort_block_bytes">
+  ## prefer_external_sort_block_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -82,7 +70,9 @@ Résultat :
 
 Préférer des blocs de taille maximale pour le tri externe afin de réduire l’utilisation mémoire lors de la fusion.
 
-## prefer_global_in_and_join {#prefer_global_in_and_join}
+<div id="prefer_global_in_and_join">
+  ## prefer_global_in_and_join
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -105,7 +95,9 @@ Un autre cas d&#39;usage de `prefer_global_in_and_join` est l&#39;accès à des 
 
 * [Sous-requêtes distribuées](/fr/reference/statements/in#distributed-subqueries) pour plus d&#39;informations sur l&#39;utilisation de `GLOBAL IN`/`GLOBAL JOIN`
 
-## prefer_localhost_replica {#prefer_localhost_replica}
+<div id="prefer_localhost_replica">
+  ## prefer_localhost_replica
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,22 +114,9 @@ Valeurs possibles :
   S’il est utilisé sur un cluster comportant un seul shard et plusieurs répliques, désactiver ce paramètre aura des effets négatifs.
 </Note>
 
-## prefer_optimize_projection {#prefer_optimize_projection}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre : choisit une projection utilisable quel que soit son coût estimé, comme `force_optimize_projection`, mais sans faire échouer la requête lorsqu'aucune projection n'est utilisée."}]}]} />
-
-Indique à l&#39;optimisation des projections de privilégier les [projections](/fr/reference/engines/table-engines/mergetree-family/mergetree#projections) par rapport à la table dans les requêtes `SELECT`, lorsque l&#39;optimisation des projections est activée (voir le paramètre [optimize&#95;use&#95;projections](/fr/reference/settings/session-settings/optimize-use#optimize_use_projections)).
-
-Lorsqu&#39;il est activé, une projection pouvant répondre à la requête est utilisée même si elle nécessite la lecture de plus de marques que la table elle-même, comme avec [force&#95;optimize&#95;projection](/fr/reference/settings/session-settings/force-optimize#force_optimize_projection), mais la requête n&#39;échoue pas lorsqu&#39;aucune projection ne peut être utilisée.
-
-Valeurs possibles :
-
-* 0 — Les projections sont choisies en fonction de leur coût estimé.
-* 1 — Une projection utilisable est choisie quel que soit son coût estimé.
-
-## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
+<div id="prefer_warmed_unmerged_parts_seconds">
+  ## prefer_warmed_unmerged_parts_seconds
+</div>
 
 <CloudOnlyBadge />
 

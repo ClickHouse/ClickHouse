@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## lightweight_delete_mode {#lightweight_delete_mode}
+<div id="lightweight_delete_mode">
+  ## lightweight_delete_mode
+</div>
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -27,7 +29,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * `lightweight_update` - 可能であれば論理更新を実行し、できない場合は `ALTER UPDATE` を実行します。
 * `lightweight_update_force` - 可能であれば論理更新を実行し、できない場合は例外をスローします。
 
-## lightweight_deletes_sync {#lightweight_deletes_sync}
+<div id="lightweight_deletes_sync">
+  ## lightweight_deletes_sync
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -37,12 +41,12 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 設定可能な値:
 
-| 値   | 説明                                                           |
-| --- | ------------------------------------------------------------ |
-| `0` | ミューテーションは非同期で実行されます。                                         |
-| `1` | クエリは、現在のサーバー上で論理削除が完了するまで待機します。                              |
-| `2` | クエリは、すべてのレプリカ (存在する場合) で論理削除が完了するまで待機します。                    |
-| `3` | クエリは、アクティブなレプリカのみを待機します。非アクティブなレプリカは、アクティブになった時点で論理削除を適用します。 |
+| 値   | 説明                                                                                                                  |
+| --- | ------------------------------------------------------------------------------------------------------------------- |
+| `0` | ミューテーションは非同期で実行されます。                                                                                                |
+| `1` | クエリは、現在のサーバー上で論理削除が完了するまで待機します。                                                                                     |
+| `2` | クエリは、すべてのレプリカ (存在する場合) で論理削除が完了するまで待機します。                                                                           |
+| `3` | クエリは、アクティブなレプリカでの完了のみを待機します。`SharedMergeTree` でのみサポートされます。`ReplicatedMergeTree` では `mutations_sync = 2` と同じ動作になります。 |
 
 **関連項目**
 

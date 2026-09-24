@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested {#analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested}
+<div id="analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested">
+  ## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -21,15 +23,19 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Разрешает добавлять составные идентификаторы в Nested. Это настройка совместимости, поскольку она меняет результат запроса. Когда она отключена, `SELECT a.b.c FROM table ARRAY JOIN a` не работает, а `SELECT a FROM table` не включает столбец `a.b.c` в результат `Nested a`.
 
-## analyzer_compatibility_allow_non_aggregate_in_having {#analyzer_compatibility_allow_non_aggregate_in_having}
+<div id="analyzer_compatibility_allow_non_aggregate_in_having">
+  ## analyzer_compatibility_allow_non_aggregate_in_having
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Новая настройка совместимости. Если она включена, анализатор имитирует прежнее преобразование `HAVING` в `WHERE` для неагрегатных AND-конъюнктов вместо выдачи `NOT_AN_AGGREGATE`."}]}]} />
 
-Если параметр включен, анализатор имитирует прежнее поведение, при котором неагрегатные AND-конъюнкты переносятся из `HAVING` в предложение WHERE вместо выдачи `NOT_AN_AGGREGATE`. Отклонение в соответствии со стандартом используется по умолчанию; эта настройка помогает при миграции запросов, которые молча принимал механизм анализа запросов, использовавшийся в ClickHouse до версии 24.3. Конъюнкты, содержащие агрегатные функции, `grouping` или недетерминированные функции, остаются в `HAVING`. Если хотя бы один конъюнкт содержит window function или функцию с сохранением состояния (например, `rowNumberInBlock`), преобразование отключается для всего `HAVING`, что соответствует прежнему поведению `PredicateExpressionsOptimizer`. Эта настройка также игнорируется, если в `GROUP BY` используются `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` или `GROUPING SETS`.
+Если параметр включен, анализатор имитирует прежнее поведение, при котором неагрегатные AND-конъюнкты переносятся из `HAVING` в предложение WHERE вместо выдачи `NOT_AN_AGGREGATE`. Отклонение в соответствии со стандартом используется по умолчанию; эта настройка помогает при миграции запросов, которые старый анализатор (`enable_analyzer = 0`) молча принимал. Конъюнкты, содержащие агрегатные функции, `grouping` или недетерминированные функции, остаются в `HAVING`. Если хотя бы один конъюнкт содержит window function или функцию с сохранением состояния (например, `rowNumberInBlock`), преобразование отключается для всего `HAVING`, что соответствует прежнему поведению `PredicateExpressionsOptimizer`. Эта настройка также игнорируется, если в `GROUP BY` используются `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` или `GROUPING SETS`.
 
-## analyzer_compatibility_apply_final_to_all_joined_tables {#analyzer_compatibility_apply_final_to_all_joined_tables}
+<div id="analyzer_compatibility_apply_final_to_all_joined_tables">
+  ## analyzer_compatibility_apply_final_to_all_joined_tables
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -42,7 +48,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — `FINAL` применяется только к таблице, для которой он указан.
 * 1 — `FINAL` для самой левой таблицы в JOIN применяется ко всем таблицам в JOIN.
 
-## analyzer_compatibility_join_using_top_level_identifier {#analyzer_compatibility_join_using_top_level_identifier}
+<div id="analyzer_compatibility_join_using_top_level_identifier">
+  ## analyzer_compatibility_join_using_top_level_identifier
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,7 +58,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Принудительно разрешать идентификатор в JOIN USING по проекции (например, в `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` JOIN будет выполняться по условию `t1.a + 1 = t2.b`, а не `t1.b = t2.b`). Также учитываются псевдонимы, определённые для подвыражений внутри списка SELECT (например, в `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` JOIN выполняется по условию `t1.a + 1 = t2.b`). Если соответствующий псевдоним определён для подвыражения внутри списка SELECT, а не как псевдоним верхнего уровня, для запроса отключаются параллельные реплики. Для запросов, отправляемых на удалённые серверы (таблицы `Distributed`, табличная функция `remote`), такой запрос отклоняется с исключением, только если идентификатор вообще не может быть разрешён на удалённом сервере; если псевдоним затеняет реальный столбец левой таблицы, удалённый сервер вместо этого выполняет JOIN по этому столбцу, поэтому результаты могут отличаться от локального выполнения.
 
-## analyzer_compatibility_multiple_joins_qualify_column_names {#analyzer_compatibility_multiple_joins_qualify_column_names}
+<div id="analyzer_compatibility_multiple_joins_qualify_column_names">
+  ## analyzer_compatibility_multiple_joins_qualify_column_names
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -68,7 +78,11 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
 ```
 
-## analyzer_compatibility_prefer_alias_over_subcolumn {#analyzer_compatibility_prefer_alias_over_subcolumn}
+Действует, только если включен анализатор (`enable_analyzer = 1`).
+
+<div id="analyzer_compatibility_prefer_alias_over_subcolumn">
+  ## analyzer_compatibility_prefer_alias_over_subcolumn
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

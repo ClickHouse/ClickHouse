@@ -1,138 +1,144 @@
 ---
 title: 'Referencia de la CLI'
 sidebarTitle: 'CLI'
-description: 'Referencia de los comandos de clicklink clctl: init, preflight, sesiones de soporte, confianza del gateway, auditoría, aprovisionamiento de acceso, servicios gestionados y aprobación de la plataforma'
+description: 'Referencia de los comandos de clicklink clctl: init, preflight, sesiones de soporte, confianza del gateway, auditoría y aprovisionamiento de acceso'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
 doc_type: 'reference'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+El conector se distribuye como un único binario llamado `clicklink`; los comandos que se ejecutan se encuentran en `clicklink clctl`. Esta página abarca los comandos utilizados durante la instalación y el funcionamiento diario. Ejecute cualquier comando con `--help` para consultar el texto de ayuda completo. Los indicadores de los subárboles `troubleshoot` y `preflight` también se pueden proporcionar mediante las variables de entorno `CLCTL_*` (cuyo nombre se indica en la salida de ayuda de cada indicador) o `~/.clicklink/clctl.yaml`.
 
-<PrivatePreviewBadge />
+<div id="init">
+  ## clicklink clctl init
+</div>
 
-El conector se distribuye como un único binario llamado `clicklink`; los comandos que se ejecutan se encuentran en `clicklink clctl`. Esta página abarca los comandos utilizados durante la instalación y el funcionamiento diario. Ejecute cualquier comando con `--help` para consultar el texto de ayuda completo.
+Inicializa el conector a partir de un token de inscripción, un paquete de inscripción guardado o un certificado firmado fuera de banda. Una sola invocación prepara la configuración, aprovisiona el acceso a ClickHouse, obtiene el certificado mTLS del client, despliega (un gráfico de Helm o unidades systemd) y verifica el estado. Es seguro volver a ejecutarlo: se conservan la configuración y el UUID del clúster, las credenciales se sobrescriben de forma atómica y se reutiliza una clave de client existente, a menos que se indique `--force`. Consulta [onboarding](/es/products/bring-your-own-cloud/connector/onboarding) para ver el flujo completo.
 
-Los indicadores de los subárboles `troubleshoot`, `scraper`, `preflight`, `executor`, `instances create` y `platform`, además de los globales `--endpoint` y `--cluster`, también pueden provenir de las variables de entorno `CLCTL_*` (cuyo nombre se indica en la salida de ayuda de cada indicador) o de `~/.clicklink/clctl.yaml`. El indicador global `-v` registra en el log las solicitudes a la API de administración que realiza un comando; `-vv` añade los cuerpos de las solicitudes.
+<div id="init-entry-points">
+  ### Puntos de entrada
+</div>
 
-Los comandos `instances` y `commands`, así como `executor teardown`, leen la API local del executor. Dos indicadores globales la seleccionan: `--endpoint <url>` (valor predeterminado `http://127.0.0.1:9999`, variable de entorno `CLCTL_ENDPOINT`) y `--cluster <name>` (variable de entorno `CLCTL_CLUSTER`), que indica el nombre del cluster gestionado cuando un comando lo necesita. En Kubernetes, abra primero un `kubectl port-forward` hacia la Implementación del executor; consulte [servicios gestionados](/es/products/bring-your-own-cloud/connector/managed-services#status).
+Se requiere exactamente uno de los tres puntos de entrada; son mutuamente excluyentes.
 
-## clicklink clctl init {#init}
+| Indicador              | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--enroll <url>`       | El flujo estándar. Usa el endpoint del conector de su org (`https://<subdomain>.<connector domain>`), canjea un token de inscripción de un solo uso (se solicita sin eco en una terminal; de lo contrario, se lee de la primera línea de stdin), escribe el paquete resultante en `handoff.yaml` (modo 0600) y continúa como `--handoff handoff.yaml`. El token nunca llega a la línea de comandos, al disco ni a los logs. |
+| `--handoff <path>`     | Se inicia a partir de un paquete de inscripción guardado. Las nuevas ejecuciones y la recuperación usan esta opción una vez que existe `handoff.yaml`.                                                                                                                                                                                                                                                                       |
+| `--signed-cert <path>` | Fase 2 del flujo aislado: instala un certificado de Client firmado fuera de banda y completa la instalación por etapas. `--chain <path>` puede reemplazar opcionalmente la cadena de CA asociada.                                                                                                                                                                                                                            |
 
-Inicializa el conector a partir de un token de inscripción, un paquete de inscripción guardado o un certificado firmado fuera de banda. Una sola invocación prepara la configuración, aprovisiona el acceso a ClickHouse, obtiene el certificado mTLS del client, despliega (un gráfico de Helm o unidades systemd) y verifica el estado. Con `--managed` también habilita el executor para el EKS cluster que detecte y le concede al executor el acceso a todo el cluster. Es seguro volver a ejecutarlo: `init` conserva la configuración y el UUID del cluster, sobrescribe las credenciales de forma atómica y reutiliza una clave de client existente, a menos que se indique `--force`. Consulta [onboarding](/es/products/bring-your-own-cloud/connector/onboarding) para ver el flujo completo y [managed services](/es/products/bring-your-own-cloud/connector/managed-services) para saber qué hace el executor.
+<div id="init-common-flags">
+  ### Indicadores comunes
+</div>
 
-### Puntos de entrada {#init-entry-points}
+| Indicador                   | Descripción                                                                                                                                                                                                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--target <shape>`          | Tipo de implementación: `systemd` (predeterminado; inicializa la VM en la que se ejecuta) o `helm` (prepara el chart `clicklink-connector` desde una estación de trabajo con un kubeconfig).                                                                          |
+| `--instance <spec>`         | Instancia de ClickHouse como pares `key=value` separados por comas (`name`, `host`, `port`, `secure`, `database`, `namespace`, `cluster`); se puede repetir. Omite las solicitudes interactivas de instancia.                                                         |
+| `--operators <emails>`      | Correos electrónicos de operadores, separados por comas, autorizados a abrir sesiones de soporte; habilita el gateway de sesión y omite la solicitud.                                                                                                      |
+| `--no-gateway`              | Deshabilita el gateway de sesión (sin sesiones gestionadas por OIDC); omite la solicitud. En una VM, el usuario root del host aún puede gestionar las sesiones mediante el archivo de sesión local.                                                        |
+| `--force`                   | Sobrescribe una configuración o superposición existente y regenera la clave del client; también confirma la sustitución de un certificado autofirmado no expirado. El UUID del clúster se conserva incluso con `--force`.                                             |
+| `--skip-provision`          | Solo preparación: omite el aprovisionamiento de acceso a ClickHouse por rol (y, en el destino systemd, la habilitación y verificación de la unidad). Ejecute `clicklink clctl {scraper,troubleshoot} access provision` por separado.                                  |
+| `--ch-user-suffix <suffix>` | Sufijo opcional para los nombres de usuario aprovisionados de ClickHouse (`pcm_scraper` pasa a ser `pcm_scraper_<suffix>`), de modo que una segunda implementación del conector pueda compartir una instancia sin entrar en conflicto con los usuarios de la primera. |
+| `--ch-admin-password-stdin` | Lee la contraseña del administrador de ClickHouse desde stdin cuando el aprovisionamiento mediante SQL la requiere; de lo contrario, se solicita durante una ejecución en terminal.                                                                                   |
 
-Se requiere exactamente un punto de entrada.
-
-| Indicador              | Descripción                                                                                                                                                                                                                                                                                                                                                                                           |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--enroll <url>`       | El flujo estándar. Usa el endpoint del conector (`https://<subdomain>.<connector-domain>`) y canjea un token de inscripción de un solo uso, que se solicita sin eco en una terminal o se lee de la primera línea de stdin. Escribe el paquete resultante en `handoff.yaml` (modo 0600) y continúa como `--handoff handoff.yaml`. El token nunca llega a la línea de comandos, al disco ni a los logs. |
-| `--handoff <path>`     | Se inicia a partir de un paquete de inscripción guardado. Las nuevas ejecuciones y la recuperación usan esta opción una vez que existe `handoff.yaml`.                                                                                                                                                                                                                                                |
-| `--signed-cert <path>` | Fase 2 del flujo aislado: instala un certificado de Client firmado fuera de banda y completa la instalación por etapas. `--chain <path>` puede reemplazar opcionalmente la cadena de CA asociada.                                                                                                                                                                                                     |
-
-### Indicadores comunes {#init-common-flags}
-
-| Indicador                   | Descripción                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--target <shape>`          | Modalidad de despliegue: `systemd` (predeterminada; realiza el bootstrap de la VM en la que se encuentra) o `helm` (prepara el chart `clicklink-connector` desde una workstation con un kubeconfig).                                                                                                                                                                                   |
-| `--instance <spec>`         | Instancia de ClickHouse que usted mismo ejecuta, indicada como pares `key=value` separados por comas (`name`, `host`, `port`, `secure`, `database`, `namespace`, `cluster`); admite repetición. Omite los prompts interactivos de la instancia. Se rechaza en modo gestionado sobre Kubernetes: una implementación independiente instalada con `--no-managed` observa dicha instancia. |
-| `--env <label>`             | Etiqueta de entorno inyectada en cada métrica emitida como `scraper.labels.env` (`production` por omisión). Pase `staging` para una instalación de staging.                                                                                                                                                                                                                            |
-| `--operators <emails>`      | Correos electrónicos de operadores, separados por comas, autorizados a abrir sesiones de soporte; habilita el gateway de sesión y omite el prompt.                                                                                                                                                                                                                                     |
-| `--no-gateway`              | Deshabilita el gateway de sesión (sin sesiones gestionadas por OIDC); omite el prompt. En una VM, root en el host sigue pudiendo administrar sesiones mediante el archivo de sesión local.                                                                                                                                                                                             |
-| `--managed`                 | Habilita el modo gestionado: ejecuta el executor para que ClickHouse Cloud gestione el ciclo de vida de los servicios de ClickHouse en este cluster; omite el prompt. Requiere un cluster de Amazon EKS.                                                                                                                                                                               |
-| `--no-managed`              | Deja desactivado el modo gestionado (el executor); omite el prompt.                                                                                                                                                                                                                                                                                                                    |
-| `--force`                   | Sobrescribe una configuración u overlay existentes y regenera la client key; también confirma la sustitución de un certificado autofirmado aún vigente. El UUID del cluster se conserva incluso con `--force`.                                                                                                                                                                         |
-| `--skip-provision`          | Solo preparación: omite el aprovisionamiento de acceso a ClickHouse por rol (y, en el destino systemd, la habilitación y verificación de la unidad). Ejecute `clicklink clctl {scraper,troubleshoot} access provision` por separado. Con `--target helm` se sigue aplicando el permiso del executor; en una VM también se omite.                                                       |
-| `--ch-user-suffix <suffix>` | Sufijo opcional para los nombres de usuario de ClickHouse aprovisionados (`pcm_scraper` pasa a ser `pcm_scraper_<suffix>`), de modo que una segunda implementación del conector pueda compartir una instancia sin colisionar con los usuarios de la primera.                                                                                                                          |
-| `--ch-admin-password-stdin` | Lee la contraseña del administrador de ClickHouse desde stdin cuando el aprovisionamiento SQL la requiere; en una ejecución en terminal, se solicita de forma interactiva.                                                                                                                                                                                                             |
-
-### Indicadores de firma (solo en la fase 1) {#init-signing-flags}
+<div id="init-signing-flags">
+  ### Indicadores de firma (solo en la fase 1)
+</div>
 
 | Indicador               | Descripción                                                                                                                                                       |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--no-auto-sign`        | Solo en esta etapa: omite la firma automática de la CSR a través del endpoint de inscripción, para flujos de firma aislados o fuera de banda.                     |
 | `--sign-endpoint <url>` | Sobrescribe el endpoint de firma de inscripción (predeterminado: se deriva del endpoint del paquete insertando la etiqueta DNS `enroll`). Debe ser una URL HTTPS. |
 
-### Indicadores exclusivos de Kubernetes {#init-kubernetes-flags}
+<div id="init-kubernetes-flags">
+  ### Indicadores exclusivos de Kubernetes
+</div>
 
 Válidos solo con `--target helm`.
 
-| Indicador                   | Descripción                                                                                                                                                                                                                                                                                                                            |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--target-namespace <ns>`   | Espacio de nombres en el que se instala el chart y donde se crean sus secretos (predeterminado: `clicklink`; se solicita en una terminal).                                                                                                                                                                                             |
-| `--instance-namespace <ns>` | Espacio de nombres de la instancia de ClickHouse de destino; sirve de base para la detección del Service nativo y las solicitudes de la instancia. Se rechaza con `--managed`: una instalación gestionada no registra ninguna instancia existente.                                                                                     |
-| `--storage-class <name>`    | Clase de almacenamiento para los volúmenes de estado del solucionador de problemas y del executor (predeterminada: la StorageClass predeterminada del cluster; se solicita o es obligatoria si el cluster no tiene ninguna marcada).                                                                                                   |
-| `--values <path>`           | Ruta de la superposición de values preparada (predeterminada: `clicklink-values.yaml`).                                                                                                                                                                                                                                                |
-| `--chart <ref>`             | Chart que se va a desplegar: un nombre resuelto en `--chart-repo` o una referencia directa `oci://`, URL o local para instalaciones replicadas (predeterminado: `clicklink-connector`).                                                                                                                                                |
-| `--chart-repo <url>`        | Repositorio de Helm en el que se resuelve el nombre del chart (predeterminado: `https://releases.clicklink.clickhouse.com/charts`); se ignora para referencias directas de `--chart`.                                                                                                                                                  |
-| `--chart-version <ver>`     | Versión del chart que se va a desplegar (predeterminada: la versión de lanzamiento de este binario).                                                                                                                                                                                                                                   |
-| `--ch-pod <ref>`            | pod de Kubernetes de ClickHouse para los pasos de aprovisionamiento dentro del pod de Kubernetes, como nombre o selector de etiquetas `k=v` (predeterminado: un pod de Kubernetes en ejecución que respalda el Service de cada instancia).                                                                                             |
-| `--api-private-ca`          | Tu endpoint del conector sirve un certificado emitido por la CA del paquete de inscripción: prepara `api.tls.caFile` para que apunte a la cadena de CA montada, que se añade a las raíces del sistema.                                                                                                                                 |
-| `--egress-cidrs <cidrs>`    | CIDR separados por comas de tu endpoint del conector para la NetworkPolicy de denegación predeterminada del chart: la prepara habilitada con estos valores como `networkPolicy.allowEgressCIDRs` (se solicita en una terminal en modo gestionado). Sin ellos, la política se prepara deshabilitada para que la habilites más adelante. |
+| Indicador                   | Descripción                                                                                                                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--target-namespace <ns>`   | Espacio de nombres en el que se instala el chart y donde se crean sus secretos (predeterminado: `clicklink`; se solicita en una terminal).                                                                         |
+| `--instance-namespace <ns>` | Espacio de nombres de la instancia de ClickHouse de destino; sirve de base para la detección del Service nativo y las solicitudes de la instancia.                                                                 |
+| `--storage-class <name>`    | Clase de almacenamiento para el volumen de estado del solucionador de problemas (predeterminada: la StorageClass predeterminada del clúster; se solicita o es obligatoria si el clúster no tiene ninguna marcada). |
+| `--values <path>`           | Ruta de la superposición de values preparada (predeterminada: `clicklink-values.yaml`).                                                                                                                            |
+| `--chart <ref>`             | Chart que se va a desplegar: un nombre resuelto en `--chart-repo` o una referencia directa `oci://`, URL o local para instalaciones replicadas (predeterminado: `clicklink-connector`).                            |
+| `--chart-repo <url>`        | Repositorio de Helm en el que se resuelve el nombre del chart (predeterminado: `https://releases.clicklink.clickhouse.com/charts`); se ignora para referencias directas de `--chart`.                              |
+| `--chart-version <ver>`     | Versión del chart que se va a desplegar (predeterminada: la versión de lanzamiento de este binario).                                                                                                               |
+| `--ch-pod <ref>`            | pod de Kubernetes de ClickHouse para los pasos de aprovisionamiento dentro del pod de Kubernetes, como nombre o selector de etiquetas `k=v` (predeterminado: un pod de Kubernetes en ejecución que respalda el Service de cada instancia).     |
+| `--api-private-ca`          | El endpoint de la API sirve un certificado emitido por la CA del paquete de inscripción: prepara `api.tls.caFile` para que apunte a la cadena de CA montada en lugar de a las raíces del sistema.                  |
 
-### Indicadores exclusivos para VM {#init-vm-flags}
+<div id="init-vm-flags">
+  ### Indicadores exclusivos para VM
+</div>
 
 Válidos únicamente con `--target systemd`.
 
-| Indicador               | Descripción                                                                                                                                                    |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--server <url>`        | URL del servidor de la API de Kubernetes al que apuntan los paquetes de acceso (predeterminado: kubeconfig de este host; de lo contrario, se solicita).        |
-| `--ca-data <base64>`    | `certificate-authority-data` codificado en Base64 para `--server` (predeterminado: kubeconfig de este host; de lo contrario, se solicita).                     |
-| `--cluster-name <name>` | Nombre del cluster de EKS que controla el modo gestionado (predeterminado: el único cluster de EKS en el kubeconfig de este host; se solicita en un terminal). |
-| `--no-instance`         | Comienza con un registry de instancias vacío y omite las solicitudes de instancia.                                                                             |
+| Indicador            | Descripción                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--server <url>`     | URL del servidor de la API de Kubernetes al que apuntan los paquetes de acceso (predeterminado: kubeconfig de este host; de lo contrario, se solicita). |
+| `--ca-data <base64>` | `certificate-authority-data` codificado en Base64 para `--server` (predeterminado: kubeconfig de este host; de lo contrario, se solicita).              |
 
-### Conflictos entre indicadores {#init-flag-conflicts}
+<div id="init-flag-conflicts">
+  ### Conflictos entre indicadores
+</div>
 
 * `--handoff`, `--enroll` y `--signed-cert` son mutuamente excluyentes; se debe especificar exactamente uno.
-* Los indicadores exclusivos de Kubernetes se rechazan salvo que se use `--target helm`; `--server`, `--ca-data`, `--cluster-name` y `--no-instance` se rechazan con `--target helm` (el flujo de Helm lee el kubeconfig de la estación de trabajo y detecta la instancia dentro del cluster).
-* `--no-instance` e `--instance` son mutuamente excluyentes.
-* `--managed` y `--no-managed` son mutuamente excluyentes, y `--cluster-name` se rechaza con `--no-managed`. Con `--target helm`, `--instance` e `--instance-namespace` se rechazan con `--managed`.
-* `--no-auto-sign` y `--sign-endpoint` son mutuamente excluyentes, y ambos (junto con `--api-private-ca`, `--managed`, `--no-managed` y `--cluster-name`) se rechazan con `--signed-cert`.
+* Los indicadores exclusivos de Kubernetes se rechazan salvo que se use `--target helm`; `--server` y `--ca-data` se rechazan con `--target helm` (el flujo de Helm lee el kubeconfig de la estación de trabajo).
+* `--no-auto-sign` y `--sign-endpoint` son mutuamente excluyentes, y ambos (junto con `--api-private-ca`) se rechazan con `--signed-cert`.
 * `--operators` y `--no-gateway` son mutuamente excluyentes.
 * `--skip-provision` rechaza `--ch-pod`, `--ch-user-suffix`, `--server`, `--ca-data` y `--ch-admin-password-stdin` (no se aprovisiona nada).
 
-## clicklink clctl preflight {#preflight}
+<div id="preflight">
+  ## clicklink clctl preflight
+</div>
 
-Ejecuta el conjunto de comprobaciones del conector, agrupadas por categoría: configuración, archivos, red, clickhouse, systemd, acceso, disco y redacción. Cada comprobación indica si se superó, generó una advertencia, falló o se omitió. El código de salida 0 indica que todas las comprobaciones se superaron (las advertencias no bloquean); el código de salida 2 indica que al menos una falló.
+Ejecuta el conjunto de comprobaciones del conector, agrupadas por categoría: configuración, archivos, red, clickhouse, systemd, acceso, disco y redacción. Cada comprobación indica si se superó, generó una advertencia, falló o se omitió. El código de salida 0 indica que todas las comprobaciones se superaron (las advertencias no bloquean); el código de salida 2 indica que una o más comprobaciones fallaron.
 
 De forma predeterminada, el comando se ejecuta localmente. Con `--k8s-namespace`, ejecuta el propio binario del pod de Kubernetes del conector mediante `kubectl exec` y muestra el informe localmente (las comprobaciones de systemd siempre se omiten en los pods de Kubernetes). Con los [indicadores de canal remoto](#channel-flags), ejecuta en su lugar el binario instalado en una VM remota.
 
-| Indicador                | Descripción                                                                                                                           |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `--config <path>`        | Ruta al archivo de configuración del conector; para un destino remoto, la ruta en ese host.                                           |
-| `--output <fmt>`, `-o`   | Formato de salida: `text` (predeterminado) o `json`.                                                                                  |
-| `--timeout <dur>`        | Tiempo de espera total para todas las comprobaciones (predeterminado: `30s`).                                                         |
-| `--skip-systemd`         | Omite las comprobaciones del estado de las unidades de systemd (hosts sin systemd).                                                   |
+| Indicador                | Descripción                                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `--config <path>`        | Ruta al archivo de configuración del conector; para un destino remoto, la ruta en ese host.                             |
+| `--output <fmt>`, `-o`   | Formato de salida: `text` (predeterminado) o `json`.                                                                    |
+| `--timeout <dur>`        | Tiempo de espera total para todas las comprobaciones (predeterminado: `30s`).                                           |
+| `--skip-systemd`         | Omite las comprobaciones del estado de las unidades de systemd (hosts sin systemd).                                     |
 | `--k8s-namespace <ns>`   | Espacio de nombres del chart del conector; ejecuta preflight dentro del pod de Kubernetes del conector mediante `kubectl exec`.       |
 | `--k8s-component <name>` | pod de Kubernetes del conector en el que se ejecutará: `scraper` (predeterminado) o `troubleshooter`.                                 |
 | `--k8s-pod <ref>`        | Nombre del pod de Kubernetes o sobrescritura del selector de etiquetas `k=v` (predeterminado: las etiquetas de componente del chart). |
-| `--k8s-container <name>` | Contenedor en el que ejecutar el comando (predeterminado: el nombre del componente).                                                  |
+| `--k8s-container <name>` | Contenedor en el que ejecutar el comando (predeterminado: el nombre del componente).                                    |
 
 Los indicadores `--k8s-*` y los indicadores de canal remoto son mutuamente excluyentes; elija un único destino.
 
-## clicklink clctl troubleshoot session {#troubleshoot-session}
+<div id="troubleshoot-session">
+  ## clicklink clctl troubleshoot session
+</div>
 
-Habilita, deshabilita e inspecciona la sesión de soporte: la ventana de tiempo durante la cual el solucionador de problemas acepta comandos. Sin una sesión activa, el demonio rechaza todos los comandos, aunque su WebSocket esté conectado. Consulte las [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions).
+Habilita, deshabilita e inspecciona la sesión de soporte: la ventana de tiempo durante la cual el solucionador de problemas acepta comandos. Cuando no hay ninguna sesión activa, el demonio rechaza todos los comandos, aunque su WebSocket esté conectado. Consulte las [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions).
 
-Los comandos se ejecutan en uno de dos modos:
+Los comandos funcionan en uno de dos modos:
 
 * **Archivo local** (predeterminado): lee y escribe el archivo de estado de la sesión en el host donde se ejecuta el solucionador de problemas (de forma predeterminada, `/var/lib/clicklink/session.json`).
 * **Gateway**: con `--gateway-url`, obtiene un token de ID de OIDC y, desde su estación de trabajo, llama en su lugar al gateway de sesiones del solucionador de problemas.
 
-### Indicadores compartidos {#session-shared-flags}
+<div id="session-shared-flags">
+  ### Indicadores compartidos
+</div>
 
-| Indicador                  | Descripción                                                                                                                                                                                                                            |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--session-file <path>`    | Ruta del archivo de estado de la sesión (predeterminado: `/var/lib/clicklink/session.json`).                                                                                                                                           |
-| `--config <path>`          | Archivo de configuración del conector; obtiene la ruta del archivo de sesión de la sección `troubleshooter`.                                                                                                                           |
-| `--gateway-url <url>`      | URL base del gateway de sesión. Cuando se especifica, el comando obtiene un token Bearer OIDC y llama al gateway en lugar de acceder al archivo de estado local. Es mutuamente excluyente con `--session-file` y `--config`.           |
-| `--gateway-audience <aud>` | Claim de audiencia al que está vinculado el token OIDC (predeterminado: `clicklink-clctl`, que coincide con el valor predeterminado del gateway). Especifíquelo solo si se ha reconfigurado la audiencia del gateway.                  |
-| `--gateway-issuer <url>`   | Emisor OIDC que valida el gateway. Si está vacío, se selecciona el flujo de Google; especifíquelo junto con `--oidc-client-id` para ejecutar el flujo de código de dispositivo con un proveedor de identidad distinto de Google.       |
-| `--oidc-client-id <id>`    | ID de client OIDC público para el flujo de código de dispositivo, registrado en `--gateway-issuer` con la concesión de dispositivo habilitada.                                                                                         |
-| `--token-file <path>`      | Archivo que contiene un token de ID OIDC preemitido, utilizado como token Bearer y que omite los demás proveedores de tokens.                                                                                                          |
-| `--gateway-ca <path>`      | Paquete de CA para verificar el certificado del gateway (certificado propio). Si no se especifica, el comando usa un certificado fijado mediante `gateway trust`; un gateway autofirmado sin certificado fijado falla de forma segura. |
+| Indicador                  | Descripción                                                                                                                                                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--session-file <path>`    | Ruta del archivo de estado de la sesión (predeterminado: `/var/lib/clicklink/session.json`).                                                                                                                                     |
+| `--config <path>`          | Archivo de configuración del conector; obtiene la ruta del archivo de sesión de la sección `troubleshooter`.                                                                                                                     |
+| `--gateway-url <url>`      | URL base del gateway de sesión. Cuando se especifica, el comando obtiene un token Bearer OIDC y llama al gateway en lugar de acceder al archivo de estado local. Es mutuamente excluyente con `--session-file` y `--config`.     |
+| `--gateway-audience <aud>` | Claim de audiencia al que está vinculado el token OIDC (predeterminado: `clicklink-clctl`, que coincide con el valor predeterminado del gateway). Especifíquelo solo si se ha reconfigurado la audiencia del gateway.            |
+| `--gateway-issuer <url>`   | Emisor OIDC que valida el gateway. Si está vacío, se selecciona el flujo de Google; especifíquelo junto con `--oidc-client-id` para ejecutar el flujo de código de dispositivo con un proveedor de identidad distinto de Google. |
+| `--oidc-client-id <id>`    | ID de client OIDC público para el flujo de código de dispositivo, registrado en `--gateway-issuer` con la concesión de dispositivo habilitada.                                                                                   |
+| `--token-file <path>`      | Archivo que contiene un token de ID OIDC preemitido, utilizado como token Bearer y que omite los demás proveedores de tokens.                                                                                                    |
+| `--gateway-ca <path>`      | Paquete de CA para verificar el certificado del gateway (certificado propio). Si no se especifica, se usa un certificado fijado mediante `gateway trust`; un gateway autofirmado sin certificado fijado falla de forma segura.   |
 
-### habilitar sesión {#session-enable}
+<div id="session-enable">
+  ### habilitar sesión
+</div>
 
 | Indicador          | Descripción                                                                                                                                                                                                 |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -142,11 +148,15 @@ Los comandos se ejecutan en uno de dos modos:
 
 La habilitación falla si ya hay una sesión activa; deshabilítela primero o espere a que expire.
 
-### desactivar sesión {#session-disable}
+<div id="session-disable">
+  ### desactivar sesión
+</div>
 
 Desactiva la sesión de inmediato. No tiene ningún efecto si no hay una sesión activa.
 
-### estado de la sesión {#session-status}
+<div id="session-status">
+  ### estado de la sesión
+</div>
 
 Muestra si la sesión está activa, quién la habilitó y cuándo expira. `--output` (`-o`) permite seleccionar `table` (predeterminado) o `json`.
 
@@ -160,18 +170,20 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-## clicklink clctl troubleshoot gateway trust {#gateway-trust}
+<div id="gateway-trust">
+  ## clicklink clctl troubleshoot gateway trust
+</div>
 
 En una VM, el gateway de sesión utiliza un certificado TLS autofirmado. Este comando registra la huella SHA-256 del certificado en `~/.clicklink/clctl.yaml` para que los comandos de `session` puedan verificarlo; si una huella fijada deja de coincidir, la operación falla de forma segura. La confianza se establece fuera de banda de una de estas dos formas:
 
-* Con los [indicadores del canal remoto](#channel-flags), el comando lee el certificado desde la VM a través del canal ya autenticado y lo fija.
-* Sin un canal, pase `--gateway-fingerprint` con el valor SHA-256 que el conector registró al generar el certificado; el comando solo fija el certificado obtenido si coincide. Si omite el indicador, se muestra la huella presentada sin fijar nada.
+* Con los [indicadores del canal remoto](#channel-flags), el certificado se lee directamente desde la VM a través del canal ya autenticado y se fija.
+* Sin un canal, pase `--gateway-fingerprint` con el valor SHA-256 que el conector registró al generar el certificado; el certificado obtenido solo se fija si coincide. Si omite el indicador, se muestra la huella presentada sin fijar nada.
 
-| Indicador                        | Descripción                                                                                                                              |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `--gateway-url <url>`            | URL base del gateway en el que se confiará (obligatoria), por ejemplo, `https://<vm-host>:8443`. Debe ser `https://`.                    |
+| Indicador                        | Descripción                                                                                                                               |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--gateway-url <url>`            | URL base del gateway en el que se confiará (obligatoria), por ejemplo, `https://<vm-host>:8443`.                                          |
 | `--gateway-fingerprint <sha256>` | Huella SHA-256 esperada del registro del conector, verificada antes de fijarla. Se ignoran los dos puntos y las mayúsculas y minúsculas. |
-| `--remote-cert-file <path>`      | Ruta al certificado del gateway en la VM, leída a través del canal (valor predeterminado: `/var/lib/clicklink/gateway/tls/server.crt`).  |
+| `--remote-cert-file <path>`      | Ruta al certificado del gateway en la VM, leída a través del canal (valor predeterminado: `/var/lib/clicklink/gateway/tls/server.crt`).   |
 
 ```bash
 clicklink clctl troubleshoot gateway trust \
@@ -181,9 +193,11 @@ clicklink clctl troubleshoot gateway trust \
 
 En Kubernetes, no se usa el pinning: exponga el gateway mediante un Ingreso con un certificado emitido por una CA o utilice un reenvío de puertos.
 
-## clicklink clctl troubleshoot audit tail {#audit-tail}
+<div id="audit-tail">
+  ## clicklink clctl troubleshoot audit tail
+</div>
 
-Imprime las últimas entradas del registro de auditoría del solucionador de problemas: JSON delimitado por saltos de línea, una entrada por cada comando que el daemon aceptó o bloqueó. Abre el registro en modo de solo lectura.
+Imprime las últimas entradas del registro de auditoría del solucionador de problemas: JSON delimitado por saltos de línea, una entrada por cada comando que el daemon aceptó o bloqueó. El comando abre el registro en modo de solo lectura y nunca lo modifica.
 
 | Indicador           | Descripción                                                                                                         |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -197,34 +211,35 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-## Aprovisionamiento de acceso {#access-provision}
+<div id="access-provision">
+  ## Aprovisionamiento de acceso
+</div>
 
 `clicklink clctl scraper access provision` y `clicklink clctl troubleshoot access provision` crean y, con `--force`, rotan el paquete de acceso por instancia de un componente: el usuario de ClickHouse de solo lectura y sus permisos, además de la ServiceAccount, RBAC y el token de Kubernetes que utiliza el componente. `init` realiza esta operación integrada durante la instalación; los comandos independientes permiten volver a ejecutarla y rotar las credenciales.
 
-| Indicador                                                            | Descripción                                                                                                                                                                                                                                                                             |
+| Indicador                                                               | Descripción                                                                                                                                                                                                                                                                             |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--instance <name>`                                                  | Nombre de la instancia de la configuración (obligatorio).                                                                                                                                                                                                                               |
 | `--server <url>`                                                     | URL del servidor de la API de Kubernetes (obligatorio).                                                                                                                                                                                                                                 |
-| `--ca-data <base64>`                                                 | Certificado de CA del cluster codificado en Base64 para el kubeconfig generado.                                                                                                                                                                                                         |
+| `--ca-data <base64>`                                                 | Certificado de CA del clúster codificado en Base64 para el kubeconfig generado.                                                                                                                                                                                                         |
 | `--config <path>`                                                    | Archivo de configuración del conector del que se lee la instancia.                                                                                                                                                                                                                      |
-| `--target <shape>`                                                   | `systemd` (predeterminado: envía el paquete a una VM a través de un canal remoto o lo genera localmente con `--provider local`) o `helm` (envía el paquete como un secreto de Kubernetes para el chart).                                                                                |
-| `--target-namespace <ns>`                                            | Espacio de nombres donde se crea el secreto del paquete (obligatorio con `--target helm`).                                                                                                                                                                                              |
-| `--instance-namespace <ns>`                                          | Espacio de nombres de la instancia de ClickHouse de destino; con él, el comando no necesita una entrada de registry para `--instance`.                                                                                                                                                  |
+| `--target <shape>`                                                   | `systemd` (predeterminado: envía el paquete a una VM a través de un canal remoto o lo genera localmente con `--provider local`) o `helm` (envía el paquete como un secreto de Kubernetes para el chart).                                                                                 |
+| `--target-namespace <ns>`                                            | Espacio de nombres donde se crea el secreto del paquete (obligatorio con `--target helm`).                                                                                                                                                                                               |
+| `--instance-namespace <ns>`                                          | (`--target helm`) Espacio de nombres de la instancia de ClickHouse de destino.                                                                                                                                                                                                          |
 | `--force`                                                            | Sobrescribe un paquete existente: permite volver a ejecutarlo y rotar las credenciales.                                                                                                                                                                                                 |
-| `--secret-name <name>`                                               | Sobrescribe el nombre del secreto del paquete (predeterminado: `clicklink-connector-<component>-access-<instance>`).                                                                                                                                                                    |
-| `--output-dir <path>`                                                | (`--target helm` o `--provider local`) Directorio raíz donde se crea el paquete (predeterminado: `./<component>/` en el directorio de trabajo para `helm`, el directorio de acceso del componente para `local`).                                                                        |
-| `--audit-log <path>`                                                 | Log de auditoría del aprovisionamiento, en NDJSON, con escritura incremental (predeterminado: `clctl-audit.log` junto al directorio de salida del paquete; `none` lo desactiva).                                                                                                        |
+| `--secret-name <name>`                                               | Sobrescribe el nombre del secreto del paquete (predeterminado: `clicklink-connector-<component>-access-<instance>`).                                                                                                                                                                     |
+| `--output-dir <path>`                                                | (`--target helm` o `--provider local`) Directorio raíz donde se crea el paquete.                                                                                                                                                                                                        |
 | `--ch-admin-user <name>`                                             | Usuario administrador de ClickHouse para aplicar permisos (predeterminado: `default`).                                                                                                                                                                                                  |
 | `--ch-admin-password-stdin`                                          | Lee la contraseña del administrador de ClickHouse desde stdin.                                                                                                                                                                                                                          |
 | `--ch-user-suffix <suffix>`                                          | Sufijo opcional para el nombre de usuario de ClickHouse aprovisionado.                                                                                                                                                                                                                  |
 | `--ch-user-via <mode>`                                               | Cómo se aprovisiona el usuario de ClickHouse: `sql` (predeterminado; aplica los permisos generados como `--ch-admin-user`) o `cr` (escribe el usuario en el recurso personalizado de la instancia, para instancias administradas por operadores sin un administrador con acceso a SQL). |
-| `--apply-ch-grants`                                                  | (`--target helm`) Aplica los permisos generados dentro del pod de Kubernetes mediante `kubectl exec` en lugar de dejarlos para que los aplique usted.                                                                                                                                   |
+| `--apply-ch-grants`                                                  | (`--target helm`) Aplica los permisos generados dentro del pod de Kubernetes mediante `kubectl exec` en lugar de dejarlos para que los aplique usted.                                                                                                                                                 |
 | `--ch-pod <ref>`, `--ch-pod-namespace <ns>`, `--ch-container <name>` | (`--target helm` con `--apply-ch-grants` o `--ch-user-via cr`) Selecciona el pod de Kubernetes de ClickHouse y el contenedor en los que se ejecutarán los comandos.                                                                                                                     |
 | `--token-duration <dur>`                                             | Vida útil del token de ServiceAccount (predeterminado: `2160h`, 90 días; EKS limita la duración concedida a 24 horas).                                                                                                                                                                  |
 | `--skip-restart`                                                     | Omite reiniciar el componente después del aprovisionamiento.                                                                                                                                                                                                                            |
 | `--dry-run`                                                          | Imprime el plan y sale; no realiza escrituras en Kubernetes, sistemas remotos ni ClickHouse.                                                                                                                                                                                            |
 
-Rote las credenciales de un componente para una instancia:
+Rote las credenciales de una instancia para un componente:
 
 ```bash
 clicklink clctl scraper access provision --target helm \
@@ -235,183 +250,15 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-## clicklink clctl executor access {#executor-access}
+<div id="channel-flags">
+  ## Indicadores de canales remotos
+</div>
 
-`init --managed` aplica el grant a todo el cluster del executor con tus credentials. Cuando no puede hacerlo, `init` muestra los commands que debes ejecutar desde un kubeconfig con permisos de admin del cluster: `access apply` por sí solo en una VM (el bundle ya está preparado) o `access grant` seguido de `access apply` en Kubernetes. Consulta el [onboarding](/es/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
+`preflight`, `gateway trust` y `access provision` aceptan un conjunto común de indicadores que determinan cómo se accede a una VM de destino:
 
-### executor access grant {#executor-access-grant}
-
-Genera el paquete de acceso a nivel de cluster del executor en `<output-dir>/_cluster/`: un ServiceAccount, un Rol de clúster y un ClusterRoleBinding, y una ValidatingAdmissionPolicy que limita el ServiceAccount a los espacios de nombres que cuelgan del prefijo de espacio de nombres del executor. Revise el RBAC generado antes de aplicarlo.
-
-| Indicador                              | Descripción                                                                                                                                                                   |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--cluster`                            | Genera el paquete a nivel de cluster (necesario para este uso; sin él, el comando genera un paquete por servicio para `--instance`).                                          |
-| `--config <path>`                      | Archivo de configuración del connector (variable de entorno `CLCTL_EXECUTOR_CONFIG`).                                                                                         |
-| `--sa-namespace <ns>`                  | Espacio de nombres principal del ServiceAccount del executor (valor predeterminado `clicklink-system`; el espacio de nombres del connector en una instalación de Kubernetes). |
-| `--context <name>`                     | Contexto de kubeconfig del cluster gestionado, igual que para `prepare`.                                                                                                      |
-| `--server <url>`, `--ca-data <base64>` | URL del Kubernetes API server y CA que se integrarán en el kubeconfig (valor predeterminado: los del contexto de kube).                                                       |
-| `--output-dir <path>`                  | Raíz de salida (valor predeterminado `/etc/clicklink/access/executor`; variable de entorno `CLCTL_EXECUTOR_OUTPUT_DIR`).                                                      |
-| `--force`                              | Sobrescribe un paquete existente.                                                                                                                                             |
-| `--dry-run`                            | Imprime el plan sin escribir archivos.                                                                                                                                        |
-
-### executor access apply {#executor-access-apply}
-
-Aplica el paquete `grant` renderizado a nivel de cluster: el Espacio de nombres principal de la ServiceAccount, la ServiceAccount, el Rol de clúster y el ClusterRoleBinding, y la política de admission, y a continuación genera el token de la ServiceAccount dentro del paquete. No registra ningún service.
-
-| Indicador                | Descripción                                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `--cluster`              | Aplica el paquete a nivel de cluster desde `<output-dir>/_cluster/` (obligatorio para este uso).                         |
-| `--config <path>`        | Archivo de configuración del connector (variable de entorno `CLCTL_EXECUTOR_CONFIG`).                                    |
-| `--context <name>`       | Context del kubeconfig del cluster gestionado, igual que para `prepare`.                                                 |
-| `--output-dir <path>`    | Raíz de salida (valor predeterminado `/etc/clicklink/access/executor`; variable de entorno `CLCTL_EXECUTOR_OUTPUT_DIR`). |
-| `--token-duration <dur>` | Duración del token de la ServiceAccount (valor predeterminado `2160h`, 90 días).                                         |
-| `--dry-run`              | Muestra lo que se aplicaría sin llegar a ejecutarlo.                                                                     |
-
-```bash
-clicklink clctl executor access grant --cluster --sa-namespace <connector-namespace> --server <kubernetes-api-server-url> --output-dir <dir>
-clicklink clctl executor access apply --cluster --output-dir <dir>
-```
-
-## clicklink clctl executor prepare {#executor-prepare}
-
-Prepara todo lo necesario de tu lado para crear un managed service, en una única ejecución idempotente que se detiene ante el primer fallo. Elige o valida el nombre del service y crea los buckets de datos y de copia de seguridad y el IAM role (o verifica el role que aportes). En una VM también genera y aplica el paquete de acceso del executor para el espacio de nombres del service; en Kubernetes omite el paquete porque el executor se ejecuta con el ServiceAccount de su pod. A continuación genera la contraseña del usuario `default` (que se muestra una sola vez) y escribe el cuerpo de creación para [`instances create`](#instances-create). Consulta [managed services](/es/products/bring-your-own-cloud/connector/managed-services#create-a-service).
-
-En una VM se ejecuta en el host del connector. En una instalación de Kubernetes se ejecuta en una workstation con credenciales de AWS y un contexto de kube para el cluster gestionado. Esa workstation también necesita una copia de la configuración del connector (`--config`), un reenvío de puertos a la API local del executor y un `--output-dir` con permisos de escritura.
-
-| Flag                                             | Descripción                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--config <path>`                                | Archivo de configuración del connector (obligatorio; variable de entorno `CLCTL_EXECUTOR_CONFIG`). A partir de él se genera el paquete de acceso, y el contexto de kube debe coincidir con su `executor.cluster`.                                                            |
-| `--instance <name>`                              | Nombre del service (variable de entorno `CLCTL_EXECUTOR_INSTANCE`). Valor predeterminado: un nombre generado, registrado en `<output-dir>/_prepare/<eks-cluster-name>.name` y reutilizado por la siguiente ejecución.                                                        |
-| `--new-name`                                     | Ignora el nombre registrado por una ejecución anterior y elige uno nuevo.                                                                                                                                                                                                    |
-| `--context <name>`                               | Contexto de kubeconfig del cluster gestionado: un nombre o un patrón (si hay una sola coincidencia se toma esa; si hay varias, se solicita elegir); variable de entorno `CLCTL_CONTEXT`. Valor predeterminado: el único contexto disponible; en caso contrario, un selector. |
-| `--server <url>`, `--ca-data <base64>`           | URL y CA del Kubernetes API server que se incorporarán al kubeconfig del executor (valor predeterminado: los del contexto de kube).                                                                                                                                          |
-| `--data-bucket <name>`, `--backup-bucket <name>` | Buckets que se deben verificar o crear (valores predeterminados `<cluster>-clickhouse-data-<rand>` y `<cluster>-clickhouse-backup-<rand>`).                                                                                                                                  |
-| `--role-name <name>`                             | Nombre del IAM role (valor predeterminado `CH-S3-<instance>-<region>-00-Role`).                                                                                                                                                                                              |
-| `--role-arn <arn>`                               | Aporta tu propio IAM role: verifica su relación de confianza y sus permisos sobre S3, y nunca crea ni modifica IAM.                                                                                                                                                          |
-| `--restore-from <name>`                          | Service a partir de cuyas copias de seguridad se restaura este; el IAM role también obtiene acceso de lectura a su bucket de copias de seguridad.                                                                                                                            |
-| `--region <region>`                              | Región de AWS (valor predeterminado: la región del cluster al que apunta el contexto de kube).                                                                                                                                                                               |
-| `--token-duration <dur>`                         | Duración del token del ServiceAccount (valor predeterminado `2160h`, 90 días).                                                                                                                                                                                               |
-| `--force`                                        | Regenera un paquete de acceso completo en lugar de reutilizarlo.                                                                                                                                                                                                             |
-| `--output-dir <path>`                            | Raíz de salida (valor predeterminado `/etc/clicklink/access/executor`; variable de entorno `CLCTL_EXECUTOR_OUTPUT_DIR`).                                                                                                                                                     |
-| `--output <fmt>`                                 | `text` (predeterminado) o `json`. Ninguno incluye la contraseña.                                                                                                                                                                                                             |
-| `--dry-run`                                      | Ejecuta todos los pasos en modo dry-run; no se crea ni se escribe nada.                                                                                                                                                                                                      |
-
-## clicklink clctl executor teardown {#executor-teardown}
-
-Elimina lo que `prepare` creó para un servicio que ClickHouse Cloud ha borrado. Es decir, el IAM role, el nombre registrado y el registro del servicio en el executor; en una VM, también el Rol de clúster y el ClusterRoleBinding del servicio, el paquete de acceso local y la entrada del registry. El executor debe estar en ejecución y el servicio debe estar `terminated` (o `stale`); la ejecución se rechaza mientras el espacio de nombres del servicio siga alojando un cluster de ClickHouse. Los buckets que creó `prepare`, con sus datos y copias de seguridad, se conservan salvo que solicite su eliminación, y los buckets conservados se vuelven a etiquetar como `clicklink:retained-from=<name>`. El comando lo lee todo antes de borrar nada. Consulte [Delete a service](/es/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
-
-| Indicador                                        | Descripción                                                                                                                                                                                                |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--instance <name>`                              | Nombre del servicio (variable de entorno `CLCTL_EXECUTOR_INSTANCE`).                                                                                                                                       |
-| `--config <path>`                                | Archivo de configuración del connector (variable de entorno `CLCTL_EXECUTOR_CONFIG`); si se omite, se lee desde `/etc/clicklink/config.yaml` en el host del connector. Proporciona `delete_instance_data`. |
-| `--context <name>`                               | Contexto del kubeconfig del cluster gestionado, igual que para `prepare`.                                                                                                                                  |
-| `--delete-data`                                  | Elimina los datos del servicio incluso cuando `delete_instance_data` está desactivado. Requiere `--yes`.                                                                                                   |
-| `--delete-backups`                               | Elimina el bucket de copias de seguridad y las copias de seguridad que contiene (se conservan de forma predeterminada). Requiere `--yes`.                                                                  |
-| `--yes`                                          | Confirma `--delete-data` y `--delete-backups`; sin este indicador, la ejecución se detiene tras el paso de registro e indica los nombres de los buckets que vaciaría.                                      |
-| `--data-bucket <name>`, `--backup-bucket <name>` | Sobrescriben los buckets del registro del executor (predeterminado: los vinculados al role del servicio o etiquetados para él).                                                                            |
-| `--role-name <name>`                             | Nombre del IAM role (predeterminado `CH-S3-<instance>-<region>-00-Role`).                                                                                                                                  |
-| `--region <region>`                              | Región de AWS (predeterminado: la del cluster).                                                                                                                                                            |
-| `--namespace-prefix <prefix>`                    | Prefijo del espacio de nombres del servicio (predeterminado `ns-`); debe coincidir con una configuración cargada.                                                                                          |
-| `--output-dir <path>`                            | Raíz de salida (predeterminado `/etc/clicklink/access/executor`).                                                                                                                                          |
-| `--output <fmt>`                                 | `text` (predeterminado) o `json`.                                                                                                                                                                          |
-| `--dry-run`                                      | Muestra lo que se eliminaría y termina sin borrar nada.                                                                                                                                                    |
-
-## clicklink clctl instances {#instances}
-
-### instances create {#instances-create}
-
-Envía una creación preparada a ClickHouse Cloud a través del endpoint del connector, con las credenciales propias del connector. La creación se habilita por entorno; consulta [crear un service](/es/products/bring-your-own-cloud/connector/managed-services#create-a-service). Imprime el nombre hablado que asignó ClickHouse Cloud, el estado y una sugerencia `watch:` que usa el nombre de tu service. El cuerpo de la creación proviene del archivo que escribió `prepare`, o bien de los cuatro indicadores `--deployed-name`, `--data-bucket`, `--backup-bucket` e `--irsa-role-arn` en conjunto. Un reintento con las mismas entradas devuelve la primera creación.
-
-| Indicador                                                                                           | Descripción                                                                                                                                                                                                                                                                                                               |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--from-prepare <path>`                                                                             | Cuerpo de la creación escrito por `executor prepare` (`<output-dir>/_prepare/<instance>.create.json`), incluidos los hash de la contraseña del usuario `default`. Mutuamente excluyente con `--deployed-name` y `--default-user-password-file`.                                                                           |
-| `--deployed-name <name>`, `--data-bucket <name>`, `--backup-bucket <name>`, `--irsa-role-arn <arn>` | Las entradas preparadas, en forma de indicadores; obligatorios en conjunto.                                                                                                                                                                                                                                               |
-| `--default-user-password-file <path>`                                                               | Archivo que contiene la contraseña del usuario `default` (primera línea), para la vía de los indicadores. Si se omite, el comando genera una contraseña y la muestra una sola vez; un reintento deberá entonces pasarla mediante este archivo, o el service conservará la primera contraseña aunque se muestre una nueva. |
-| `--config <path>`                                                                                   | Archivo de configuración del connector (variable de entorno `CLCTL_EXECUTOR_CONFIG`; por defecto `/etc/clicklink/config.yaml` cuando existe). Proporciona el endpoint, sus credenciales y la identidad del entorno.                                                                                                       |
-| `--connector-namespace <ns>`                                                                        | Solo en Kubernetes, cuando este host no tiene archivos de configuración ni de credenciales del connector: el espacio de nombres del connector cuyos ConfigMap y Secrets los proporcionan (por defecto `clicklink`). Se anuncia cada lectura del cluster.                                                                  |
-| `--connector-configmap <name>`                                                                      | ConfigMap que contiene el `config.yaml` del executor en ese espacio de nombres (por defecto `clicklink-connector-executor`).                                                                                                                                                                                              |
-| `--hmac-secret-name <name>`, `--mtls-secret-name <name>`                                            | Secretos que contienen las credenciales de la API y el certificado de cliente cuando los archivos no están presentes (por defecto `clicklink-hmac` y `clicklink-mtls`). El par de certificados se mantiene en memoria.                                                                                                    |
-| `--context <name>`                                                                                  | Contexto de Kube para esas lecturas (variable de entorno `CLCTL_CONTEXT`); un patrón o el selector interactivo, igual que en los comandos `executor`.                                                                                                                                                                     |
-| `--idempotency-key <key>`                                                                           | Clave que un reintento reutiliza para recuperar la primera creación (por defecto: derivada del entorno y del nombre del service).                                                                                                                                                                                         |
-| `--wait`                                                                                            | Sondea la API local del executor hasta que el service esté `running`. Falla de inmediato ante una creación fallida para ese nombre, o cuando el service pasa a `terminating`, `terminated` o `stale`.                                                                                                                     |
-| `--wait-timeout <dur>`                                                                              | Cuánto tiempo sondea `--wait` antes de fallar (por defecto `30m`).                                                                                                                                                                                                                                                        |
-
-### instances list {#instances-list}
-
-Imprime en formato JSON todos los servicios que conoce el executor. `--cluster <name>` filtra por cluster gestionado.
-
-### instances get {#instances-get}
-
-Imprime un service, en formato JSON, con el storage con el que se creó. `--name <name>` es obligatorio, y el cluster también: pasa `--cluster`, define `CLCTL_CLUSTER` o inclúyelo en `~/.clicklink/clctl.yaml`.
-
-Los tres subcomandos siguientes envían comandos directamente a la API local del executor, omitiendo ClickHouse Cloud. Ejecútalos únicamente cuando tu account team te lo indique. Cada uno requiere `--name <name>` y el cluster (`--cluster`, `CLCTL_CLUSTER` o `~/.clicklink/clctl.yaml`), e imprime el comando en formato JSON. Pasa su `id` a [`commands get`](#commands-get) para hacerle seguimiento; el `result` de un comando fallido contiene su error.
-
-### instances scale {#instances-scale}
-
-Establece el número de réplicas de servidor de un service mediante un `ScalingOverride`. `--server-replicas <n>` es obligatorio y debe ser mayor que cero. El executor informa el comando como en ejecución mientras aplica la sobrescritura y como completado cuando las réplicas están listas.
-
-### instances patch {#instances-patch}
-
-Modifica un servicio in situ. `--create-nlb` es el único patch disponible; sin él, el comando se rechaza con `nothing to patch`. Aprovisiona un NLB interno, en forma de `Service` de Kubernetes, solo en AWS, para que un scraper externo al cluster pueda alcanzar los servidores. El executor completa por backfill el host del scraper a partir del balanceador de carga en su siguiente sincronización.
-
-### instances delete {#instances-delete}
-
-Elimina un service del cluster. Detiene el service y espera al shutdown ordenado del operator. A continuación, desinstala el workload, elimina el espacio de nombres `ns-<name>` y los artifacts del scraper, espera a que el espacio de nombres desaparezca y marca el service como `terminated`. Los buckets y el IAM role del service se conservan; [`executor teardown`](#executor-teardown) los elimina con tus credentials. Reintentar una eliminación ya completada es un no-op. La vía habitual es eliminar el service en ClickHouse Cloud; consulta [eliminar un service](/es/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
-
-## Comandos de clicklink clctl {#commands}
-
-### commands list {#commands-list}
-
-Imprime los comandos que ha registrado el executor, en formato JSON y empezando por los más recientes. El campo `result` de un comando fallido contiene su error; en el caso de una sincronización de plataforma pendiente de aprobación, ahí se indica el comando `platform approve` exacto.
-
-| Indicador           | Descripción                                                         |
-| ------------------- | ------------------------------------------------------------------- |
-| `--status <status>` | Filtro: `pending`, `running`, `completed` o `failed`.               |
-| `--action <action>` | Filtra por acción, por ejemplo `create_instance` o `sync_platform`. |
-| `--cluster <name>`  | Filtra por cluster gestionado.                                      |
-
-### commands get {#commands-get}
-
-`clicklink clctl commands get <id>` imprime un comando, con su stage y su resultado.
-
-## clicklink clctl platform approve {#platform-approve}
-
-Autoriza un cambio de plataforma con tus propias credenciales del cluster. Lee el paquete que preparó el executor, calcula su hash y renderiza cada chart que contiene exactamente igual que lo hará el executor. Aplica la mitad de permisos con el contexto de kube que elijas, crea la identidad `pcm-platform` del executor si es necesario y emite su token. No realiza ninguna petición a tu endpoint del connector. La mitad de permisos comprende Espacios de nombres, CustomResourceDefinitions, ServiceAccounts, Roles de clúster y sus bindings, Roles y sus bindings, configuraciones de webhook y admission, PriorityClasses y la clase de almacenamiento. Después, el executor aplica únicamente la mitad de workload, y solo mientras ese token siga siendo válido. Consulta [actualizaciones de plataforma](/es/products/bring-your-own-cloud/connector/platform-updates).
-
-Para acceder directamente al registry de ClickHouse, ejecuta la aprobación en la VM EC2 del connector: la CLI usa su perfil de instancia para asumir el rol de descarga de solo lectura, con independencia de las credenciales de tu kubeconfig. Otros registries de charts en ECR utilizan las AWS credentials del entorno. Consulta [credenciales del registry](/es/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
-
-| Flag                      | Descripción                                                                                                                                                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--config <path>`         | Archivo de configuración del connector (variable de entorno `CLCTL_EXECUTOR_CONFIG`). Proporciona el prefijo del espacio de nombres; en una workstation, una copia de la configuración del connector.                        |
-| `--context <name>`        | Contexto de kubeconfig del cluster gestionado, con derechos de cluster-admin; un nombre o un patrón (variable de entorno `CLCTL_CONTEXT`). Valor predeterminado: el único contexto disponible; en caso contrario, un picker. |
-| `--ttl <dur>`             | Duración del token de plataforma (valor predeterminado `2h`). El executor nunca lo renueva.                                                                                                                                  |
-| `--output-dir <path>`     | Raíz de acceso: desde ella se lee el paquete preparado y bajo ella se escribe el token, en `_platform` (valor predeterminado `/etc/clicklink/access/executor`; variable de entorno `CLCTL_EXECUTOR_OUTPUT_DIR`).             |
-| `--secret-namespace <ns>` | Instalaciones de Kubernetes: lee el paquete preparado desde la API local del executor y entrega el paquete del token como un secreto en este espacio de nombres (el del connector) en lugar de en `<output-dir>/_platform`.  |
-| `--secret-name <name>`    | Nombre del secreto para `--secret-namespace` (valor predeterminado `clicklink-platform-bundle`); debe coincidir con `executor.platformBundleSecret` del chart.                                                               |
-| `--endpoint <url>`        | Instalaciones de Kubernetes: la API local del executor, accesible mediante un `kubectl port-forward` (valor predeterminado `http://127.0.0.1:9999`; variable de entorno `CLCTL_ENDPOINT`).                                   |
-| `--bundle <path>`         | Sobrescritura: un manifiesto de plataforma ya renderizado y entregado por otra vía, que se lee en lugar del paquete preparado. Normalmente se omite.                                                                         |
-| `--dry-run`               | Renderiza y lista la mitad de permisos sin aplicarla ni emitir el token.                                                                                                                                                     |
-
-## clicklink clctl platform reset {#platform-reset}
-
-Para clusters de prueba sin servicios: desinstala los releases de la plataforma en orden inverso de dependencias y elimina el paquete de tokens de plataforma del executor, de modo que se pueda volver a probar la primera instalación. Antes de modificar nada, lista los ClickHouse clusters de los espacios de nombres que pertenecen a este connector y rechaza la operación si existe alguno. Las CustomResourceDefinitions, el RBAC y la clase de almacenamiento se conservan. Ejecute `platform approve` de nuevo antes de la siguiente sincronización de la plataforma.
-
-| Indicador                                         | Descripción                                                                                                                                                                      |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--bundle <path>`                                 | Ruta al manifiesto de plataforma renderizado (obligatorio, se lee tras la comprobación de cluster vacío).                                                                        |
-| `--config <path>`                                 | Archivo de configuración del connector (variable de entorno `CLCTL_EXECUTOR_CONFIG`).                                                                                            |
-| `--context <name>`                                | Contexto de kubeconfig del cluster gestionado, con permisos de cluster-admin.                                                                                                    |
-| `--output-dir <path>`                             | Raíz de acceso cuyo paquete `_platform` se elimina (valor predeterminado `/etc/clicklink/access/executor`).                                                                      |
-| `--secret-namespace <ns>`, `--secret-name <name>` | Instalaciones en Kubernetes: elimina en su lugar el Secret del paquete de plataforma en el espacio de nombres del connector (nombre predeterminado `clicklink-platform-bundle`). |
-| `--dry-run`                                       | Comprueba si hay servicios e imprime el plan de restablecimiento sin modificar el cluster.                                                                                       |
-
-## Indicadores de canales remotos {#channel-flags}
-
-`preflight`, `gateway trust` y `access provision` comparten un conjunto de indicadores que determinan cómo se accede a una VM de destino:
-
-| Indicador                                                                                   | Descripción                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--provider <name>`                                                                         | Canal de ejecución: `ssh`, `aws` (SSM) o `gcp` (IAP) para VM remotas, o `local` cuando se ejecuta en la propia VM de destino. Se infiere a partir de los indicadores específicos de cada proveedor si no se establece; de forma predeterminada se usa `aws` cuando no se establece ninguno. `local` nunca se infiere, por lo que en la propia VM siempre debes pasar `--provider local`. |
-| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | Datos de conexión SSH (`--provider ssh`); el usuario, el puerto y la clave toman de forma predeterminada los valores de tu configuración SSH.                                                                                                                                                                                                                                            |
-| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | Instancia EC2, región (predeterminada `us-east-1`) y perfil de configuración compartida para SSM (`--provider aws`).                                                                                                                                                                                                                                                                     |
-| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | Proyecto, zona e instancia para la tunelización mediante IAP (`--provider gcp`).                                                                                                                                                                                                                                                                                                         |
+| Indicador                                                                                   | Descripción                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--provider <name>`                                                                         | Canal de ejecución: `ssh`, `aws` (SSM) o `gcp` (IAP) para VM remotas, o `local` cuando se ejecuta en la propia VM de destino. Se infiere a partir de los indicadores específicos de cada proveedor si no se establece explícitamente; `local` nunca se infiere. |
+| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | Datos de conexión SSH (`--provider ssh`); el usuario, el puerto y la clave toman de forma predeterminada los valores de tu configuración SSH.                                                                                                                   |
+| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | Instancia EC2, región y perfil de configuración compartida para SSM (`--provider aws`).                                                                                                                                                                         |
+| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | Proyecto, zona e instancia para la tunelización mediante IAP (`--provider gcp`).                                                                                                                                                                                |

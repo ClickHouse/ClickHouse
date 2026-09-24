@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## short_circuit_function_evaluation {#short_circuit_function_evaluation}
+<div id="short_circuit_function_evaluation">
+  ## short_circuit_function_evaluation
+</div>
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
@@ -25,7 +27,9 @@ Valores possíveis:
 * `force_enable` — Habilita a avaliação de função em curto-circuito para todas as funções.
 * `disable` — Desabilita a avaliação de função em curto-circuito.
 
-## short_circuit_function_evaluation_for_nulls {#short_circuit_function_evaluation_for_nulls}
+<div id="short_circuit_function_evaluation_for_nulls">
+  ## short_circuit_function_evaluation_for_nulls
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -33,9 +37,9 @@ Valores possíveis:
 
 Otimiza a avaliação de funções que retornam NULL quando qualquer argumento é NULL. Quando a porcentagem de valores NULL nos argumentos da função excede short&#95;circuit&#95;function&#95;evaluation&#95;for&#95;nulls&#95;threshold, o sistema deixa de avaliar a função linha por linha. Em vez disso, retorna NULL imediatamente para todas as linhas, evitando processamento desnecessário.
 
-Esta configuração controla apenas uma otimização. Funções que não podem ser executadas sobre o valor default de seus argumentos — como `parseDateTime`, `IPv4StringToNum` ou `intDiv` — sempre ignoram as linhas que contêm NULL, independentemente desta configuração, porque o valor armazenado por trás de um NULL é o valor default do tipo do argumento e executá-las sobre ele lançaria uma exceção em dados que, de outra forma, seriam válidos.
-
-## short_circuit_function_evaluation_for_nulls_threshold {#short_circuit_function_evaluation_for_nulls_threshold}
+<div id="short_circuit_function_evaluation_for_nulls_threshold">
+  ## short_circuit_function_evaluation_for_nulls_threshold
+</div>
 
 <SettingsInfoBlock type="Double" default_value="1" />
 

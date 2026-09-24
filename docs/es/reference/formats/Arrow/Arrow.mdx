@@ -15,13 +15,17 @@ doc_type: 'reference'
 | ------- | ------ | ----- |
 | ✔       | ✔      |       |
 
-## Descripción {#description}
+<div id="description">
+  ## Descripción
+</div>
 
 [Apache Arrow](https://arrow.apache.org/) incluye dos formatos integrados de almacenamiento columnar.
 ClickHouse admite operaciones de lectura y escritura en estos formatos.
 `Arrow` es el formato de Apache Arrow en &quot;modo de archivo&quot;, diseñado para el acceso aleatorio en memoria.
 
-## Correspondencia entre tipos de datos {#data-types-matching}
+<div id="data-types-matching">
+  ## Correspondencia entre tipos de datos
+</div>
 
 La siguiente tabla muestra los tipos de datos admitidos y cómo se corresponden con los [tipos de datos](/es/reference/data-types/index) de ClickHouse en las consultas `INSERT` y `SELECT`.
 
@@ -66,12 +70,16 @@ Tipos de datos de Arrow no compatibles:
 
 Los tipos de datos de las columnas de la tabla de ClickHouse no tienen que coincidir con los campos de datos de Arrow correspondientes. Al insertar datos, ClickHouse interpreta los tipos de datos según la tabla anterior y luego [convierte](/es/reference/functions/regular-functions/type-conversion-functions#CAST) los datos al tipo de dato definido para la columna de la tabla de ClickHouse.
 
-## Ejemplo de uso {#example-usage}
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
 
 En el ejemplo siguiente, usamos el conjunto de datos `forex` disponible en el
 [Playground de SQL de ClickHouse](https://sql.clickhouse.com).
 
-### Selección de datos {#selecting-data}
+<div id="selecting-data">
+  ### Selección de datos
+</div>
 
 Seleccionamos un día de cotizaciones de `EUR/USD` del Playground de SQL y lo guardamos
 en un archivo local `forex_eurusd.arrow`. Consultamos el Playground de SQL a través de la interfaz HTTP,
@@ -95,7 +103,9 @@ curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
         SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
 ```
 
-### Leer de nuevo el archivo {#reading-data}
+<div id="reading-data">
+  ### Leer de nuevo el archivo
+</div>
 
 Ahora podemos volver a leer el archivo Arrow local con
 [`clickhouse-local`](/es/concepts/features/tools-and-utilities/clickhouse-local) usando la
@@ -121,7 +131,9 @@ clickhouse-local --query "
    └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
 ```
 
-### Insertar datos {#inserting-data}
+<div id="inserting-data">
+  ### Insertar datos
+</div>
 
 Para cargar un archivo Arrow en una tabla de ClickHouse, páselo por una tubería a `clickhouse-client`
 con `FORMAT Arrow`:
@@ -130,23 +142,22 @@ con `FORMAT Arrow`:
 cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-## Configuración del formato {#format-settings}
+<div id="format-settings">
+  ## Configuración del formato
+</div>
 
-| Configuración                                                                | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                            | Predeterminado |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `input_format_arrow_allow_missing_columns`                                   | Permite columnas ausentes al leer formatos de entrada Arrow                                                                                                                                                                                                                                                                                                                                                                            | `1`            |
-| `input_format_arrow_case_insensitive_column_matching`                        | Ignora las mayúsculas y minúsculas al hacer coincidir columnas de Arrow con columnas de CH.                                                                                                                                                                                                                                                                                                                                            | `0`            |
-| `input_format_arrow_import_nested`                                           | Configuración obsoleta; no hace nada.                                                                                                                                                                                                                                                                                                                                                                                                  | `0`            |
-| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Omite las columnas con tipos no compatibles durante la inferencia de esquema para el formato Arrow                                                                                                                                                                                                                                                                                                                                     | `0`            |
-| `output_format_arrow_compression_method`                                     | Método de compresión para el formato de salida Arrow. Codecs compatibles: lz4&#95;frame, zstd, none (sin comprimir)                                                                                                                                                                                                                                                                                                                    | `lz4_frame`    |
-| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | Usa el tipo Arrow FIXED&#95;SIZE&#95;BINARY en lugar de Binary para columnas FixedString.                                                                                                                                                                                                                                                                                                                                              | `1`            |
-| `output_format_arrow_low_cardinality_as_dictionary`                          | Habilita la salida del tipo LowCardinality como tipo Diccionario de Arrow                                                                                                                                                                                                                                                                                                                                                              | `0`            |
-| `output_format_arrow_record_batch_size`                                      | Número objetivo de filas por record batch al combinar bloques pequeños. El almacenamiento en búfer puede aumentar el uso de memoria y retrasar el primer batch hasta que finalice la consulta. `0` desactiva el objetivo de filas.                                                                                                                                                                                                     | `0`            |
-| `output_format_arrow_record_batch_size_bytes`                                | Número objetivo de bytes de datos de bloque acumulados por record batch. El almacenamiento en búfer puede aumentar el uso de memoria y retrasar el primer batch hasta que finalice la consulta. `0` desactiva el objetivo de bytes.                                                                                                                                                                                                    | `0`            |
-| `output_format_arrow_string_as_string`                                       | Usa el tipo Arrow String en lugar de Binary para columnas String                                                                                                                                                                                                                                                                                                                                                                       | `1`            |
-| `output_format_arrow_unsupported_types`                                      | Qué escribir para un tipo que no tiene equivalente en Arrow (por ejemplo, `JSON`, `Dynamic`, `QBit`, `AggregateFunction`): `throw`, `text` (un valor `serializeText` por fila, en el tipo Arrow que usaría una columna `String`) o `binary` (un valor `serializeBinary` por fila, como `Binary` de Arrow). Un `AggregateFunction` también es `Binary` en modo `text`, ya que su forma textual es el estado de agregación sin procesar. | `binary`       |
-| `output_format_arrow_unsupported_types_as_binary`                            | Reemplazada por `output_format_arrow_unsupported_types`: `0` significa `throw`, `1` significa `binary`. Solo se tiene en cuenta mientras esa configuración conserve su valor predeterminado.                                                                                                                                                                                                                                           | `1`            |
-| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Usa siempre enteros de 64 bits para los índices de diccionario en formato Arrow                                                                                                                                                                                                                                                                                                                                                        | `0`            |
-| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Usa enteros con signo para los índices de diccionario en formato Arrow                                                                                                                                                                                                                                                                                                                                                                 | `1`            |
+| Configuración                                                                | Descripción                                                                                                                                                                   | Predeterminado |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `input_format_arrow_allow_missing_columns`                                   | Permite columnas ausentes al leer formatos de entrada Arrow                                                                                                                   | `1`            |
+| `input_format_arrow_case_insensitive_column_matching`                        | Ignora las mayúsculas y minúsculas al hacer coincidir columnas de Arrow con columnas de CH.                                                                                   | `0`            |
+| `input_format_arrow_import_nested`                                           | Configuración obsoleta; no hace nada.                                                                                                                                         | `0`            |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Omite las columnas con tipos no compatibles durante la inferencia de esquema para el formato Arrow                                                                            | `0`            |
+| `output_format_arrow_compression_method`                                     | Método de compresión para el formato de salida Arrow. Codecs compatibles: lz4&#95;frame, zstd, none (sin comprimir)                                                           | `lz4_frame`    |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | Usa el tipo Arrow FIXED&#95;SIZE&#95;BINARY en lugar de Binary para columnas FixedString.                                                                                     | `1`            |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | Habilita la salida del tipo LowCardinality como tipo Diccionario de Arrow                                                                                                     | `0`            |
+| `output_format_arrow_string_as_string`                                       | Usa el tipo Arrow String en lugar de Binary para columnas String                                                                                                              | `1`            |
+| `output_format_arrow_unsupported_types_as_binary`                            | Genera como datos binarios sin procesar un tipo que no tiene equivalente en Arrow (por ejemplo, `BFloat16`, `AggregateFunction`). Si es false, ese tipo genera una excepción. | `1`            |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Usa siempre enteros de 64 bits para los índices de diccionario en formato Arrow                                                                                               | `0`            |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Usa enteros con signo para los índices de diccionario en formato Arrow                                                                                                        | `1`            |
 
 {/*AUTOGENERATED_END*/}

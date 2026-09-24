@@ -14,15 +14,21 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 这些设置用于配置 ClickHouse 服务器，且由 ClickHouse 源代码自动生成。
 
-## abort_on_logical_error {#abort_on_logical_error}
+<div id="abort_on_logical_error">
+  ## abort_on_logical_error
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />发生 LOGICAL&#95;ERROR 异常时使服务器崩溃。仅供专家使用。
 
-## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
+<div id="allowed_disks_for_table_engines">
+  ## allowed_disks_for_table_engines
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />允许用于 Iceberg 的磁盘列表
 
-## auth_use_forwarded_address {#auth_use_forwarded_address}
+<div id="auth_use_forwarded_address">
+  ## auth_use_forwarded_address
+</div>
 
 对于通过代理连接的客户端，使用源地址进行身份验证。
 
@@ -32,7 +38,9 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
   由于转发地址很容易被伪造，因此使用此设置时应格外谨慎——接受此类身份验证的服务器不应允许直接访问，而应仅通过受信任的代理访问。
 </Note>
 
-## bcrypt_workfactor {#bcrypt_workfactor}
+<div id="bcrypt_workfactor">
+  ## bcrypt_workfactor
+</div>
 
 使用 [Bcrypt 算法](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/) 的 `bcrypt_password` 身份验证类型的工作因子。
 工作因子定义了计算哈希值并验证密码所需的计算量和时间。
@@ -49,7 +57,9 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
   计算开销，建议考虑使用其他身份验证方法。
 </Warning>
 
-## blob_storage_log {#blob_storage_log}
+<div id="blob_storage_log">
+  ## blob_storage_log
+</div>
 
 [`blob_storage_log`](/zh/reference/system-tables/blob_storage_log) 系统表的相关设置。
 
@@ -59,15 +69,17 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 ```xml
 <blob_storage_log>
-    <database>system</database>
-    <table>blob_storage_log</table>
+    <database>system</database
+    <table>blob_storage_log</table
     <partition_by>toYYYYMM(event_date)</partition_by>
-    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds
     <ttl>event_date + INTERVAL 30 DAY</ttl>
 </blob_storage_log>
 ```
 
-## builtin_dictionaries_reload_interval {#builtin_dictionaries_reload_interval}
+<div id="builtin_dictionaries_reload_interval">
+  ## builtin_dictionaries_reload_interval
+</div>
 
 重新加载内置字典之前的时间间隔 (以秒为单位) 。
 
@@ -79,15 +91,21 @@ ClickHouse 每隔 x 秒重新加载一次内置字典。因此，无需重启服
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-## cache_size_to_ram_max_ratio {#cache_size_to_ram_max_ratio}
+<div id="cache_size_to_ram_max_ratio">
+  ## cache_size_to_ram_max_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />设置缓存大小占 RAM 的最大比率。可在低内存系统上减小缓存大小。
 
-## cannot_allocate_thread_fault_injection_probability {#cannot_allocate_thread_fault_injection_probability}
+<div id="cannot_allocate_thread_fault_injection_probability">
+  ## cannot_allocate_thread_fault_injection_probability
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0" changeable_without_restart="No" />仅用于测试。
 
-## cgroups_memory_usage_observer_wait_time {#cgroups_memory_usage_observer_wait_time}
+<div id="cgroups_memory_usage_observer_wait_time">
+  ## cgroups_memory_usage_observer_wait_time
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="15" changeable_without_restart="No" />
 
@@ -95,7 +113,9 @@ ClickHouse 每隔 x 秒重新加载一次内置字典。因此，无需重启服
 
 要禁用 cgroup 观察器，请将该值设置为 `0`。
 
-## 压缩 {#compression}
+<div id="compression">
+  ## 压缩
+</div>
 
 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 引擎表的数据压缩设置。
 
@@ -131,10 +151,10 @@ ClickHouse 每隔 x 秒重新加载一次内置字典。因此，无需重启服
 **满足条件时的操作**：
 
 * 如果某个数据分区片段匹配某组条件，ClickHouse 会使用指定的压缩方法。
-* 如果某个数据分区片段匹配多组条件，ClickHouse 会使用最后一个匹配到的条件集 (`<case>` 部分会按顺序检查，每个匹配项都会覆盖之前的选择) 。
+* 如果某个数据分区片段匹配多组条件，ClickHouse 会使用第一个匹配到的条件集。
 
 <Note>
-  如果某个数据分区片段不满足任何条件，ClickHouse 会使用与大小相关的内置默认值：小于 100 MB 时使用 `LZ4`，等于或大于该值时使用 `ZSTD(3)`。与上述 `min_part_size` 条件一样，这里的大小是在选择编解码器时 (即数据写入之前) 已知的大小：刚插入的 part 为 `0`，merge 或 mutation 则为源 parts 的大小。因此，会使输入变小的重写操作 (例如 `TTL DELETE` 或 collapsing merge) 是按输入大小来归类的，可能产生一个低于阈值却仍使用 `ZSTD(3)` 的 part。
+  如果某个数据分区片段不满足任何条件，ClickHouse 会使用 `lz4` 压缩。
 </Note>
 
 **示例**
@@ -145,22 +165,28 @@ ClickHouse 每隔 x 秒重新加载一次内置字典。因此，无需重启服
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>10</level>
+        <level>1</level>
     </case>
 </compression>
 ```
 
-## 配置文件 {#config-file}
+<div id="config-file">
+  ## 配置文件
+</div>
 
 <SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />指定服务器配置文件。
 
-## config_reload_interval_ms {#config_reload_interval_ms}
+<div id="config_reload_interval_ms">
+  ## config_reload_interval_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Yes" />
 
 ClickHouse 重新加载配置并检查是否有新更改的频率
 
-## core_dump {#core_dump}
+<div id="core_dump">
+  ## core_dump
+</div>
 
 配置 core dump 文件大小的软限制。
 
@@ -176,7 +202,9 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 </core_dump>
 ```
 
-## crash_log {#crash_log}
+<div id="crash_log">
+  ## crash_log
+</div>
 
 [crash&#95;log](/zh/reference/system-tables/crash_log) 系统表操作的相关设置。
 
@@ -213,7 +241,9 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 </crash_log>
 ```
 
-## create_union_system_log_tables {#create_union_system_log_tables}
+<div id="create_union_system_log_tables">
+  ## create_union_system_log_tables
+</div>
 
 请求在系统日志表旁创建 `all_...` 表 (例如，`system.query_log` 对应 `system.all_query_log`，`system.text_log` 对应 `system.all_text_log`) 。这类表将相应的日志表、其轮转版本 (`query_log_0`、`query_log_1`、……) 和/或集群中所有副本上的同名表合并在一起，让您无需记住 `clusterAllReplicas(default, merge(system, '^query_log'))` 之类的写法即可一次查询所有这些表。
 
@@ -241,14 +271,18 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 </create_union_system_log_tables>
 ```
 
-## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
+<div id="database_atomic_delay_before_drop_table_sec">
+  ## database_atomic_delay_before_drop_table_sec
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="480" changeable_without_restart="No" />
 
 表被删除后，在这段延迟时间内可使用 [`UNDROP`](/zh/reference/statements/undrop) 语句将其恢复。如果执行 `DROP TABLE` 时使用了 `SYNC` 修饰符，则会忽略此设置。
 此设置的默认值为 `480` (8 分钟) 。
 
-## dead_letter_queue {#dead_letter_queue}
+<div id="dead_letter_queue">
+  ## dead_letter_queue
+</div>
 
 用于 &#39;dead&#95;letter&#95;queue&#39; 系统表的设置。
 
@@ -265,18 +299,24 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 </dead_letter_queue>
 ```
 
-## dictionary_background_reconnect_interval {#dictionary_background_reconnect_interval}
+<div id="dictionary_background_reconnect_interval">
+  ## dictionary_background_reconnect_interval
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />已启用 `background_reconnect` 的失败 MySQL 和 Postgres 字典进行重连尝试的时间间隔，单位为毫秒。
 
-## disk_transaction_wait_for_blob_removal {#disk_transaction_wait_for_blob_removal}
+<div id="disk_transaction_wait_for_blob_removal">
+  ## disk_transaction_wait_for_blob_removal
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 每个 disk 的 `wait_for_blob_removal` 设置的默认值。
 启用后，server 会在确认该操作前等待后台 blob 删除完成。
 
-## display_secrets_in_show_and_select {#display_secrets_in_show_and_select}
+<div id="display_secrets_in_show_and_select">
+  ## display_secrets_in_show_and_select
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -292,7 +332,9 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 * `0` — 禁用。
 * `1` — 启用。
 
-## dns_max_consecutive_failures {#dns_max_consecutive_failures}
+<div id="dns_max_consecutive_failures">
+  ## dns_max_consecutive_failures
+</div>
 
 <SettingsInfoBlock type="UInt32" default_value="5" changeable_without_restart="No" />
 
@@ -302,7 +344,9 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 
 * [`SYSTEM DROP DNS CACHE`](/zh/reference/statements/system#drop-dns-cache)
 
-## dynamic_user_defined_executable_functions_path {#dynamic_user_defined_executable_functions_path}
+<div id="dynamic_user_defined_executable_functions_path">
+  ## dynamic_user_defined_executable_functions_path
+</div>
 
 <SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/dynamic_user_defined_executable_functions/" changeable_without_restart="No" />
 
@@ -315,7 +359,9 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
 ```
 
-## 加密 {#encryption}
+<div id="encryption">
+  ## 加密
+</div>
 
 配置用于获取密钥的命令，供[加密编解码器](/zh/reference/statements/create/table/codec#encryption-codecs)使用。密钥 (或多个密钥) 应写入环境变量，或在配置文件中设置。
 
@@ -397,13 +443,17 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
   上述所有内容都适用于 `aes_256_gcm_siv` (但密钥长度必须为 32 字节) 。
 </Note>
 
-## enforce_keeper_component_tracking {#enforce_keeper_component_tracking}
+<div id="enforce_keeper_component_tracking">
+  ## enforce_keeper_component_tracking
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 如果启用，则每个 ZooKeeper 请求都必须通过 `Coordination::setCurrentComponent` 设置组件名称。如果缺少该组件，则会抛出 `LOGICAL_ERROR` 异常。
 
-## error_log {#error_log}
+<div id="error_log">
+  ## error_log
+</div>
 
 默认情况下处于禁用状态。
 
@@ -438,7 +488,9 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 
 <SystemLogParameters />
 
-## filesystem_caches_path {#filesystem_caches_path}
+<div id="filesystem_caches_path">
+  ## filesystem_caches_path
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
@@ -450,7 +502,9 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
 ```
 
-## google_protos_path {#google_protos_path}
+<div id="google_protos_path">
+  ## google_protos_path
+</div>
 
 <SettingsInfoBlock type="String" default_value="/usr/share/clickhouse/protos/" changeable_without_restart="No" />
 
@@ -462,15 +516,21 @@ ClickHouse 重新加载配置并检查是否有新更改的频率
 <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
 ```
 
-## handshake_timeout_milliseconds {#handshake_timeout_milliseconds}
+<div id="handshake_timeout_milliseconds">
+  ## handshake_timeout_milliseconds
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />整个 TCP 握手阶段 (Hello + Addendum) 的挂钟时间超时时间，以毫秒为单位。限制未经身份验证的连接占用线程的最长时间。设为 0 可禁用。
 
-## hdfs.libhdfs3_conf {#hdfs.libhdfs3_conf}
+<div id="hdfs.libhdfs3_conf">
+  ## hdfs.libhdfs3_conf
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />将 libhdfs3 指向其配置的正确位置。
 
-## hsts_max_age {#hsts_max_age}
+<div id="hsts_max_age">
+  ## hsts_max_age
+</div>
 
 HSTS 的过期时间，单位为秒。
 
@@ -484,17 +544,15 @@ HSTS 的过期时间，单位为秒。
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## iceberg_background_schedule_pool_size {#iceberg_background_schedule_pool_size}
+<div id="iceberg_background_schedule_pool_size">
+  ## iceberg_background_schedule_pool_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />用于异步从远程 Iceberg catalog 拉取最新元数据的线程池大小；所有活跃表共享该线程池。
 
-## iceberg_manifest_decode_thread_pool_queue_size {#iceberg_manifest_decode_thread_pool_queue_size}
-
-<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
-
-可在用于解码 Iceberg 数据 manifest 文件的线程池上调度的最大作业数。
-
-## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
+<div id="ignore_empty_sql_security_in_create_view_query">
+  ## ignore_empty_sql_security_in_create_view_query
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -508,7 +566,9 @@ HSTS 的过期时间，单位为秒。
   更改此设置仅影响之后创建的视图；现有视图已存储的定义保持不变。
 </Note>
 
-## include_from {#include_from}
+<div id="include_from">
+  ## include_from
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
@@ -525,11 +585,15 @@ HSTS 的过期时间，单位为秒。
 <include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
-## insert_deduplication_version {#insert_deduplication_version}
+<div id="insert_deduplication_version">
+  ## insert_deduplication_version
+</div>
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />已弃用的迁移保护设置。ClickHouse 26.7 及更高版本仅支持统一的插入去重哈希 (`new_unified_hash`) ；如果存在此设置且值为任何其他值 (例如 `old_separate_hashes` 或 `compatible_double_hashes`) ，服务器将拒绝启动。升级前，请先在上一版本中运行 `compatible_double_hashes` 完成去重迁移 (该模式会同时写入旧版哈希和统一哈希) 。对于复制表，请至少运行 `replicated_deduplication_window_seconds` 对应的时长 (默认一小时) ；默认窗口会保留该窗口内所有 insert 的统一哈希，通常足以覆盖 insert 重试循环。对于 `non_replicated_deduplication_window` &gt; 0 的非复制表，该窗口按计数而非按时间计算，因此升级前请至少运行 `compatible_double_hashes` 达到相同数量的 insert。
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />已弃用的迁移保护设置。此版本仅支持统一的插入去重哈希 (`new_unified_hash`) ；如果存在此设置且值为任何其他值 (例如 `old_separate_hashes` 或 `compatible_double_hashes`) ，服务器将拒绝启动。升级前，请先在上一版本中运行 `compatible_double_hashes` 完成去重迁移 (该模式会同时写入旧版哈希和统一哈希) 。对于复制表，请至少运行 `replicated_deduplication_window_seconds` 对应的时长 (默认一小时) ；默认窗口会保留该窗口内所有 insert 的统一哈希，通常足以覆盖 insert 重试循环。对于 `non_replicated_deduplication_window` &gt; 0 的非复制表，该窗口按计数而非按时间计算，因此升级前请至少运行 `compatible_double_hashes` 达到相同数量的 insert。
 
-## io_thread_pool_queue_size {#io_thread_pool_queue_size}
+<div id="io_thread_pool_queue_size">
+  ## io_thread_pool_queue_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 
@@ -539,7 +603,9 @@ HSTS 的过期时间，单位为秒。
   值为 `0` 表示不受限制。
 </Note>
 
-## keep_alive_timeout {#keep_alive_timeout}
+<div id="keep_alive_timeout">
+  ## keep_alive_timeout
+</div>
 
 <SettingsInfoBlock type="秒" default_value="30" changeable_without_restart="No" />
 
@@ -551,7 +617,9 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
 <keep_alive_timeout>30</keep_alive_timeout>
 ```
 
-## ldap_servers {#ldap_servers}
+<div id="ldap_servers">
+  ## ldap_servers
+</div>
 
 在此处列出 LDAP 服务器及其连接参数，以便：
 
@@ -618,7 +686,9 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
 </my_ad_server>
 ```
 
-## 日志记录器 {#logger}
+<div id="logger">
+  ## 日志记录器
+</div>
 
 日志消息的位置和格式。
 
@@ -811,55 +881,81 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
 
 可以通过将相应属性注释掉来省略日志属性。例如，如果你不希望日志输出 `query_id`，可以将 `<query_id>` 标签注释掉。
 
-## logger.count {#logger.count}
+<div id="logger.count">
+  ## logger.count
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />轮转策略：最多保留多少个 ClickHouse 历史日志文件。
 
-## logger.errorlog {#logger.errorlog}
+<div id="logger.errorlog">
+  ## logger.errorlog
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />错误日志文件的路径。
 
-## logger.formatting.type {#logger.formatting.type}
+<div id="logger.formatting.type">
+  ## logger.formatting.type
+</div>
 
 <SettingsInfoBlock type="String" default_value="json" changeable_without_restart="No" />控制台输出的日志格式。目前仅支持 `<json>`。
 
-## logger.level {#logger.level}
+<div id="logger.level">
+  ## logger.level
+</div>
 
 <SettingsInfoBlock type="String" default_value="trace" changeable_without_restart="No" />日志级别。可接受的值：`<none>` (关闭日志) 、`<fatal>`、`<critical>`、`<error>`、`<warning>`、`<notice>`、`<information>`、`<debug>`、`<trace>`、`<test>`。
 
-## logger.log {#logger.log}
+<div id="logger.log">
+  ## logger.log
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />日志文件路径。
 
-## logger.rotation {#logger.rotation}
+<div id="logger.rotation">
+  ## logger.rotation
+</div>
 
 <SettingsInfoBlock type="String" default_value="100M" changeable_without_restart="No" />轮转策略：用于控制日志文件何时进行轮转。轮转可基于大小、时间，或两者结合。示例：100M、daily、100M,daily。日志文件一旦超过指定大小，或达到指定时间间隔时，就会被重命名并归档，同时创建新的日志文件。
 
-## logger.shutdown_level {#logger.shutdown_level}
+<div id="logger.shutdown_level">
+  ## logger.shutdown_level
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Shutdown level 用于在服务器关闭时设置根日志记录器的级别。
 
-## logger.size {#logger.size}
+<div id="logger.size">
+  ## logger.size
+</div>
 
 <SettingsInfoBlock type="String" default_value="100M" changeable_without_restart="No" />轮转策略：日志文件的最大大小 (单位为字节) 。一旦日志文件大小超过此阈值，该文件会被重命名并归档，同时创建一个新的日志文件。
 
-## logger.startup_level {#logger.startup_level}
+<div id="logger.startup_level">
+  ## logger.startup_level
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />启动级别用于在服务器启动时设置根日志记录器的级别。启动完成后，日志级别会恢复为 `<level>` 设置。
 
-## logger.stream_compress {#logger.stream_compress}
+<div id="logger.stream_compress">
+  ## logger.stream_compress
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />使用 LZ4 压缩日志消息。将其设置为 `<1>` 或 `<true>` 以启用。
 
-## logger.syslog_level {#logger.syslog_level}
+<div id="logger.syslog_level">
+  ## logger.syslog_level
+</div>
 
 <SettingsInfoBlock type="String" default_value="trace" changeable_without_restart="No" />写入 syslog 的日志级别。
 
-## logger.use_syslog {#logger.use_syslog}
+<div id="logger.use_syslog">
+  ## logger.use_syslog
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />同时将日志输出转发到 syslog。
 
-## macros {#macros}
+<div id="macros">
+  ## macros
+</div>
 
 用于复制表的参数替换。
 
@@ -873,11 +969,15 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
 <macros incl="macros" optional="true" />
 ```
 
-## message_queue_disable_insertion {#message_queue_disable_insertion}
+<div id="message_queue_disable_insertion">
+  ## message_queue_disable_insertion
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />禁用消息队列引擎 (Kafka、RabbitMQ、NATS) 向已附加的 materialized view 进行插入
 
-## metric_log {#metric_log}
+<div id="metric_log">
+  ## metric_log
+</div>
 
 默认情况下，它是禁用的。
 
@@ -912,7 +1012,9 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
 
 <SystemLogParameters />
 
-## mmap_cache_size {#mmap_cache_size}
+<div id="mmap_cache_size">
+  ## mmap_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1024" changeable_without_restart="Yes" />
 
@@ -929,7 +1031,9 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
   此设置可在运行时修改，并会立即生效。
 </Note>
 
-## mutation_workload {#mutation_workload}
+<div id="mutation_workload">
+  ## mutation_workload
+</div>
 
 <SettingsInfoBlock type="String" default_value="default" changeable_without_restart="Yes" />
 
@@ -939,7 +1043,9 @@ ClickHouse 在关闭连接前，针对 HTTP 协议等待传入请求的秒数。
 
 * [Workload Scheduling](/zh/concepts/features/configuration/server-config/workload-scheduling)
 
-## named_collections_storage.type {#named_collections_storage.type}
+<div id="named_collections_storage.type">
+  ## named_collections_storage.type
+</div>
 
 <SettingsInfoBlock type="String" default_value="local" changeable_without_restart="No" />
 
@@ -947,42 +1053,44 @@ named collections 的存储类型。可选值为 `local`、`local_encrypted`、`
 `keeper_encrypted`、`zookeeper` 和 `zookeeper_encrypted`。
 配置为 `named_collections_storage.type` (在 XML 中为 `<named_collections_storage><type>`) 。
 
-## oom_score {#oom_score}
+<div id="oom_score">
+  ## oom_score
+</div>
 
 <SettingsInfoBlock type="Int32" default_value="0" changeable_without_restart="No" />在 Linux 系统中，此设置可控制 OOM killer 的行为。
 
-## openSSL {#openssl}
+<div id="openssl">
+  ## openSSL
+</div>
 
 SSL 客户端/服务器配置。
 
 `libpoco` 库提供了对 SSL 的支持。可用的配置选项说明见 [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)。默认值可在 [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp) 中找到。
 
-`certificateFile`、`privateKeyFile` 和 `caConfig` 所引用的文件在发生变更时或执行 `SYSTEM RELOAD CONFIG` 时会被重新加载，无需重启。新建立的连接使用重新加载后的证书，已建立的连接不受影响。
-
 服务器/客户端设置项：
 
-| 选项                            | 说明                                                                                                                                                                                                                                                                                                                                                                             | 默认值                                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `cacheSessions`               | 启用或禁用会话缓存。必须与 `sessionIdContext` 搭配使用。可选值：`true`、`false`。                                                                                                                                                                                                                                                                                                                      | `false`                                                                                    |
-| `caConfig`                    | 包含受信任 CA 证书的文件或目录路径。如果指向的是文件，则该文件必须为 PEM 格式，并且可以包含多个 CA 证书。如果指向的是目录，则其中每个 CA 证书都必须对应一个 .pem 文件。文件名会根据 CA subject name 哈希值进行查找。详情请参阅 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html) 的 man page。与 `certificateFile` 和 `privateKeyFile` 一样，当文件发生变化或执行 `SYSTEM RELOAD CONFIG` 时，CA 证书会在无需重启的情况下重新加载。 |                                                                                            |
-| `certificateFile`             | PEM 格式的客户端/服务器证书文件路径。如果 `privateKeyFile` 中包含该证书，则可省略。                                                                                                                                                                                                                                                                                                                          |                                                                                            |
-| `cipherList`                  | 支持的 OpenSSL 加密套件。                                                                                                                                                                                                                                                                                                                                                              | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
-| `disableProtocols`            | 禁止使用的协议。                                                                                                                                                                                                                                                                                                                                                                       |                                                                                            |
-| `extendedVerification`        | 如果启用，则验证证书的 CN 或 SAN 是否与对端主机名匹配。                                                                                                                                                                                                                                                                                                                                               | `openSSL.client` 为 `true`，`openSSL.server` 为 `false`                                       |
-| `fips`                        | 启用 OpenSSL FIPS 模式。如果该库使用的 OpenSSL 版本支持 FIPS，则此功能受支持。                                                                                                                                                                                                                                                                                                                          | `false`                                                                                    |
-| `invalidCertificateHandler`   | 用于验证无效证书的处理程序类 (CertificateHandler 的子类) 。例如：`<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>`。                                                                                                                                                                                                                                  | `RejectCertificateHandler`                                                                 |
-| `loadDefaultCAFile`           | 是否使用 OpenSSL 的内置 CA 证书。ClickHouse 认为，内置 CA 证书位于文件 `/etc/ssl/cert.pem` (或目录 `/etc/ssl/certs`) 中，或者位于环境变量 `SSL_CERT_FILE` (或 `SSL_CERT_DIR`) 指定的文件 (或目录) 中。                                                                                                                                                                                                                      | `true`                                                                                     |
-| `preferServerCiphers`         | 优先使用客户端选择的服务器密码套件。                                                                                                                                                                                                                                                                                                                                                             | `false`                                                                                    |
-| `privateKeyFile`              | 包含 PEM 证书私钥的文件路径。该文件也可以同时包含私钥和证书。                                                                                                                                                                                                                                                                                                                                              |                                                                                            |
-| `privateKeyPassphraseHandler` | 用于获取访问私钥所需口令的类 (PrivateKeyPassphraseHandler 的子类) 。例如：`<privateKeyPassphraseHandler>`、`<name>KeyFileHandler</name>`、`<options><password>test</password></options>`、`</privateKeyPassphraseHandler>`。                                                                                                                                                                            | `KeyConsoleHandler`                                                                        |
-| `requireTLSv1`                | 要求使用 TLSv1 连接。可选值：`true`、`false`。                                                                                                                                                                                                                                                                                                                                              | `false`                                                                                    |
-| `requireTLSv1_1`              | 要求使用 TLSv1.1 连接。可选值：`true`、`false`。                                                                                                                                                                                                                                                                                                                                            | `false`                                                                                    |
-| `requireTLSv1_2`              | 要求使用 TLSv1.2 连接。可接受的值：`true`、`false`。                                                                                                                                                                                                                                                                                                                                          | `false`                                                                                    |
-| `sessionCacheSize`            | 服务器可缓存的最大会话数。值为 `0` 表示会话数不受限制。                                                                                                                                                                                                                                                                                                                                                 | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
-| `sessionIdContext`            | 一组唯一的随机字符，服务器会将其附加到每个生成的标识符上。该字符串的长度不得超过 `SSL_MAX_SSL_SESSION_ID_LENGTH`。始终建议设置此参数，因为无论是服务器缓存了会话，还是客户端请求了缓存，它都有助于避免出现问题。                                                                                                                                                                                                                                                       | `$\{application.name\}`                                                                    |
-| `sessionTimeout`              | 服务器缓存会话的时长 (单位：小时) 。                                                                                                                                                                                                                                                                                                                                                           | `2`                                                                                        |
-| `verificationDepth`           | 验证链的最大长度。如果证书链长度超过设定值，验证会失败。                                                                                                                                                                                                                                                                                                                                                   | `9`                                                                                        |
-| `verificationMode`            | 用于验证节点证书的方法。详见 [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) 类的说明。可能的值：`none`、`relaxed`、`strict`、`once`。                                                                                                                                                                                                          | `relaxed`                                                                                  |
+| 选项                            | 说明                                                                                                                                                                                                                                                                           | 默认值                                                                                        |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `cacheSessions`               | 启用或禁用会话缓存。必须与 `sessionIdContext` 搭配使用。可选值：`true`、`false`。                                                                                                                                                                                                                    | `false`                                                                                    |
+| `caConfig`                    | 包含受信任 CA 证书的文件或目录路径。如果指向的是文件，则该文件必须为 PEM 格式，并且可以包含多个 CA 证书。如果指向的是目录，则其中每个 CA 证书都必须对应一个 .pem 文件。文件名会根据 CA subject name 哈希值进行查找。详情请参阅 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html) 的 man page。 |                                                                                            |
+| `certificateFile`             | PEM 格式的客户端/服务器证书文件路径。如果 `privateKeyFile` 中包含该证书，则可省略。                                                                                                                                                                                                                        |                                                                                            |
+| `cipherList`                  | 支持的 OpenSSL 加密套件。                                                                                                                                                                                                                                                            | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
+| `disableProtocols`            | 禁止使用的协议。                                                                                                                                                                                                                                                                     |                                                                                            |
+| `extendedVerification`        | 如果启用，则验证证书的 CN 或 SAN 是否与对端主机名匹配。                                                                                                                                                                                                                                             | `false`                                                                                    |
+| `fips`                        | 启用 OpenSSL FIPS 模式。如果该库使用的 OpenSSL 版本支持 FIPS，则此功能受支持。                                                                                                                                                                                                                        | `false`                                                                                    |
+| `invalidCertificateHandler`   | 用于验证无效证书的处理程序类 (CertificateHandler 的子类) 。例如：`<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>`。                                                                                                                                | `RejectCertificateHandler`                                                                 |
+| `loadDefaultCAFile`           | 是否使用 OpenSSL 的内置 CA 证书。ClickHouse 认为，内置 CA 证书位于文件 `/etc/ssl/cert.pem` (或目录 `/etc/ssl/certs`) 中，或者位于环境变量 `SSL_CERT_FILE` (或 `SSL_CERT_DIR`) 指定的文件 (或目录) 中。                                                                                                                    | `true`                                                                                     |
+| `preferServerCiphers`         | 优先使用客户端选择的服务器密码套件。                                                                                                                                                                                                                                                           | `false`                                                                                    |
+| `privateKeyFile`              | 包含 PEM 证书私钥的文件路径。该文件也可以同时包含私钥和证书。                                                                                                                                                                                                                                            |                                                                                            |
+| `privateKeyPassphraseHandler` | 用于获取访问私钥所需口令的类 (PrivateKeyPassphraseHandler 的子类) 。例如：`<privateKeyPassphraseHandler>`、`<name>KeyFileHandler</name>`、`<options><password>test</password></options>`、`</privateKeyPassphraseHandler>`。                                                                          | `KeyConsoleHandler`                                                                        |
+| `requireTLSv1`                | 要求使用 TLSv1 连接。可选值：`true`、`false`。                                                                                                                                                                                                                                            | `false`                                                                                    |
+| `requireTLSv1_1`              | 要求使用 TLSv1.1 连接。可选值：`true`、`false`。                                                                                                                                                                                                                                          | `false`                                                                                    |
+| `requireTLSv1_2`              | 要求使用 TLSv1.2 连接。可接受的值：`true`、`false`。                                                                                                                                                                                                                                        | `false`                                                                                    |
+| `sessionCacheSize`            | 服务器可缓存的最大会话数。值为 `0` 表示会话数不受限制。                                                                                                                                                                                                                                               | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
+| `sessionIdContext`            | 一组唯一的随机字符，服务器会将其附加到每个生成的标识符上。该字符串的长度不得超过 `SSL_MAX_SSL_SESSION_ID_LENGTH`。始终建议设置此参数，因为无论是服务器缓存了会话，还是客户端请求了缓存，它都有助于避免出现问题。                                                                                                                                                     | `$\{application.name\}`                                                                    |
+| `sessionTimeout`              | 服务器缓存会话的时长 (单位：小时) 。                                                                                                                                                                                                                                                         | `2`                                                                                        |
+| `verificationDepth`           | 验证链的最大长度。如果证书链长度超过设定值，验证会失败。                                                                                                                                                                                                                                                 | `9`                                                                                        |
+| `verificationMode`            | 用于验证节点证书的方法。详见 [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) 类的说明。可能的值：`none`、`relaxed`、`strict`、`once`。                                                                                                        | `relaxed`                                                                                  |
 
 **设置示例：**
 
@@ -1014,131 +1122,195 @@ SSL 客户端/服务器配置。
 </openSSL>
 ```
 
-## openSSL.client.caConfig {#openssl.client.caconfig}
+<div id="openssl.client.caconfig">
+  ## openSSL.client.caConfig
+</div>
 
-<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />指向包含受信任 CA 证书的文件或目录的 path。如果指向文件，则该文件必须为 PEM 格式，并且可以包含多个 CA 证书。如果指向目录，则目录中必须为每个 CA 证书提供一个 .pem 文件。文件名会根据 CA subject name 的哈希值进行查找。详见 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/) 的 man page。当文件发生变化或执行 `SYSTEM RELOAD CONFIG` 时，CA 证书会在无需重启的情况下重新加载；新建立的连接将使用重新加载后的证书进行验证。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />指向包含受信任 CA 证书的文件或目录的 path。如果指向文件，则该文件必须为 PEM 格式，并且可以包含多个 CA 证书。如果指向目录，则目录中必须为每个 CA 证书提供一个 .pem 文件。文件名会根据 CA subject name 的哈希值进行查找。详见 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/) 的 man page。
 
-## openSSL.client.cacheSessions {#openssl.client.cachesessions}
+<div id="openssl.client.cachesessions">
+  ## openSSL.client.cacheSessions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用或禁用会话缓存。必须与 `<sessionIdContext>` 配合使用。可选值：`<true>`、`<false>`。
 
-## openSSL.client.certificateFile {#openssl.client.certificatefile}
+<div id="openssl.client.certificatefile">
+  ## openSSL.client.certificateFile
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />PEM 格式的客户端/服务器证书文件的路径。如果 `<privateKeyFile>` 中已包含该证书，则可省略此项。
 
-## openSSL.client.cipherList {#openssl.client.cipherlist}
+<div id="openssl.client.cipherlist">
+  ## openSSL.client.cipherList
+</div>
 
 <SettingsInfoBlock type="String" default_value="ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" changeable_without_restart="No" />支持的 OpenSSL 加密套件列表。
 
-## openSSL.client.disableProtocols {#openssl.client.disableprotocols}
+<div id="openssl.client.disableprotocols">
+  ## openSSL.client.disableProtocols
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />禁止使用的协议。
 
-## openSSL.client.extendedVerification {#openssl.client.extendedverification}
+<div id="openssl.client.extendedverification">
+  ## openSSL.client.extendedVerification
+</div>
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />启用后，会验证证书的 CN 或 SAN 是否与对端主机名一致。
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用后，会验证证书的 CN 或 SAN 是否与对端主机名一致。
 
-## openSSL.client.fips {#openssl.client.fips}
+<div id="openssl.client.fips">
+  ## openSSL.client.fips
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用 OpenSSL FIPS 模式。仅当该库使用的 OpenSSL 版本支持 FIPS 时，此设置才受支持。
 
-## openSSL.client.invalidCertificateHandler.name {#openssl.client.invalidcertificatehandler.name}
+<div id="openssl.client.invalidcertificatehandler.name">
+  ## openSSL.client.invalidCertificateHandler.name
+</div>
 
 <SettingsInfoBlock type="String" default_value="RejectCertificateHandler" changeable_without_restart="No" />用于校验无效证书的类 (CertificateHandler 的子类) 。例如：`<<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>>`。
 
-## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
+<div id="openssl.client.loaddefaultcafile">
+  ## openSSL.client.loadDefaultCAFile
+</div>
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />确定是否使用默认 CA 证书。ClickHouse 会在文件 `</etc/ssl/cert.pem>` (或目录 `</etc/ssl/certs>`) 、环境变量 `<SSL_CERT_FILE>` (或 `<SSL_CERT_DIR>`) 指定的文件 (或目录) ，以及各发行版的其他常见位置中查找这些证书。如果文件系统中未找到 CA 证书、未显式配置 `caConfig`，且二进制文件构建时嵌入了 CA 证书 (默认如此，由 `ENABLE_EMBEDDED_CA_CERTIFICATES` 构建选项控制) ，则会改用嵌入式证书。因此，即使在没有任何文件的最小化环境中 (例如“从零开始”构建的容器) ，TLS 也能正常工作。如果构建中未嵌入 CA 证书，则在这种情况下会引发错误。
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />确定是否使用 OpenSSL 的内置 CA 证书。ClickHouse 假定内置 CA 证书位于文件 `</etc/ssl/cert.pem>` (相应地，也可能位于目录 `</etc/ssl/certs>`) 中，或者位于环境变量 `<SSL_CERT_FILE>` (相应地，`<SSL_CERT_DIR>`) 指定的文件 (或目录) 中。
 
-## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
+<div id="openssl.client.preferserverciphers">
+  ## openSSL.client.preferServerCiphers
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />优先使用服务器端的密码套件。
 
-## openSSL.client.privateKeyFile {#openssl.client.privatekeyfile}
+<div id="openssl.client.privatekeyfile">
+  ## openSSL.client.privateKeyFile
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />包含 PEM 证书私钥的文件的路径。该文件也可以同时包含私钥和证书。
 
-## openSSL.client.privateKeyPassphraseHandler.name {#openssl.client.privatekeypassphrasehandler.name}
+<div id="openssl.client.privatekeypassphrasehandler.name">
+  ## openSSL.client.privateKeyPassphraseHandler.name
+</div>
 
 <SettingsInfoBlock type="String" default_value="KeyConsoleHandler" changeable_without_restart="No" />用于请求访问私钥所需口令短语的类 (PrivateKeyPassphraseHandler 的子类) 。例如：`<<privateKeyPassphraseHandler>>`, `<<name>KeyFileHandler</name>>`, `<<options><password>test</password></options>>`, `<</privateKeyPassphraseHandler>>`
 
-## openSSL.client.verificationDepth {#openssl.client.verificationdepth}
+<div id="openssl.client.verificationdepth">
+  ## openSSL.client.verificationDepth
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="9" changeable_without_restart="No" />证书验证链的最大长度。若证书链长度超过设定值，验证将失败。
 
-## openSSL.client.verificationMode {#openssl.client.verificationmode}
+<div id="openssl.client.verificationmode">
+  ## openSSL.client.verificationMode
+</div>
 
 <SettingsInfoBlock type="String" default_value="relaxed" changeable_without_restart="No" />用于验证节点证书的方式。详见 [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) 类的说明。可能的值：`<none>`、`<relaxed>`、`<strict>`、`<once>`。
 
-## openSSL.server.caConfig {#openssl.server.caconfig}
+<div id="openssl.server.caconfig">
+  ## openSSL.server.caConfig
+</div>
 
-<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />指向包含受信任 CA 证书的文件或目录的路径。如果这里指向一个文件，则该文件必须采用 PEM 格式，并且可以包含多个 CA 证书。如果这里指向一个目录，则该目录中必须为每个 CA 证书提供一个 .pem 文件。文件名通过 CA subject name 的哈希值查找。详细信息请参见 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/) 的 man page。当文件发生变化或执行 `SYSTEM RELOAD CONFIG` 时，CA 证书会在不重启的情况下重新加载；新的连接将使用重新加载后的证书进行验证。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />指向包含受信任 CA 证书的文件或目录的路径。如果这里指向一个文件，则该文件必须采用 PEM 格式，并且可以包含多个 CA 证书。如果这里指向一个目录，则该目录中必须为每个 CA 证书提供一个 .pem 文件。文件名通过 CA subject name 的哈希值查找。详细信息请参见 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/) 的 man page。
 
-## openSSL.server.cacheSessions {#openssl.server.cachesessions}
+<div id="openssl.server.cachesessions">
+  ## openSSL.server.cacheSessions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用或禁用会话缓存。必须与 `<sessionIdContext>` 配合使用。可接受值：`<true>`、`<false>`。
 
-## openSSL.server.certificateFile {#openssl.server.certificatefile}
+<div id="openssl.server.certificatefile">
+  ## openSSL.server.certificateFile
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />PEM 格式的客户端/服务器证书文件的路径。如果 `<privateKeyFile>` 中包含该证书，则可省略此项。
 
-## openSSL.server.cipherList {#openssl.server.cipherlist}
+<div id="openssl.server.cipherlist">
+  ## openSSL.server.cipherList
+</div>
 
 <SettingsInfoBlock type="String" default_value="ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" changeable_without_restart="No" />支持的 OpenSSL 加密套件。
 
-## openSSL.server.disableProtocols {#openssl.server.disableprotocols}
+<div id="openssl.server.disableprotocols">
+  ## openSSL.server.disableProtocols
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />禁止使用的协议。
 
-## openSSL.server.extendedVerification {#openssl.server.extendedverification}
+<div id="openssl.server.extendedverification">
+  ## openSSL.server.extendedVerification
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />如果启用，将验证证书的 CN 或 SAN 是否与对端主机名匹配。
 
-## openSSL.server.fips {#openssl.server.fips}
+<div id="openssl.server.fips">
+  ## openSSL.server.fips
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用 OpenSSL FIPS 模式。仅当该库使用的 OpenSSL 版本支持 FIPS 时，此功能才受支持。
 
-## openSSL.server.invalidCertificateHandler.name {#openssl.server.invalidcertificatehandler.name}
+<div id="openssl.server.invalidcertificatehandler.name">
+  ## openSSL.server.invalidCertificateHandler.name
+</div>
 
 <SettingsInfoBlock type="String" default_value="RejectCertificateHandler" changeable_without_restart="No" />用于校验无效证书的类 (CertificateHandler 的子类) 。例如：`<<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>>`。
 
-## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
+<div id="openssl.server.loaddefaultcafile">
+  ## openSSL.server.loadDefaultCAFile
+</div>
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />决定是否使用默认 CA 证书。ClickHouse 会在文件 `</etc/ssl/cert.pem>` (或目录 `</etc/ssl/certs>`) 中、环境变量 `<SSL_CERT_FILE>` (或 `<SSL_CERT_DIR>`) 所指定的文件 (或目录) 中，以及各发行版的其他常见位置中查找这些证书。如果在文件系统上未找到 CA 证书，也未显式配置 `caConfig`，且二进制文件构建时启用了嵌入式 CA 证书 (默认行为，由 `ENABLE_EMBEDDED_CA_CERTIFICATES` 构建选项控制) ，则会改用嵌入式证书，因此即使在没有任何文件的极简环境中 (例如以 &quot;从零开始&quot; 构建的容器中) ，TLS 仍可正常工作。而在未嵌入式 CA 证书的构建中，这种情况下会抛出错误。
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />确定是否使用 OpenSSL 内置的 CA 证书。ClickHouse 假定内置 CA 证书位于文件 `</etc/ssl/cert.pem>` (或目录 `</etc/ssl/certs>`) 中，或者位于由环境变量 `<SSL_CERT_FILE>` (或 `<SSL_CERT_DIR>`) 指定的文件 (或目录) 中。
 
-## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
+<div id="openssl.server.preferserverciphers">
+  ## openSSL.server.preferServerCiphers
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />优先使用服务器端密码套件，而非客户端偏好的密码套件。
 
-## openSSL.server.privateKeyFile {#openssl.server.privatekeyfile}
+<div id="openssl.server.privatekeyfile">
+  ## openSSL.server.privateKeyFile
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />包含 PEM 证书私钥的文件的路径。该文件也可以同时包含私钥和证书。
 
-## openSSL.server.privateKeyPassphraseHandler.name {#openssl.server.privatekeypassphrasehandler.name}
+<div id="openssl.server.privatekeypassphrasehandler.name">
+  ## openSSL.server.privateKeyPassphraseHandler.name
+</div>
 
 <SettingsInfoBlock type="String" default_value="KeyConsoleHandler" changeable_without_restart="No" />用于请求访问私钥所需口令短语的类 (PrivateKeyPassphraseHandler 的子类) 。例如：`<<privateKeyPassphraseHandler>>`, `<<name>KeyFileHandler</name>>`, `<<options><password>test</password></options>>`, `<</privateKeyPassphraseHandler>>`
 
-## openSSL.server.sessionCacheSize {#openssl.server.sessioncachesize}
+<div id="openssl.server.sessioncachesize">
+  ## openSSL.server.sessionCacheSize
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="20480" changeable_without_restart="No" />服务器可缓存的最大会话数。值为 0 表示会话数不受限制。
 
-## openSSL.server.sessionIdContext {#openssl.server.sessionidcontext}
+<div id="openssl.server.sessionidcontext">
+  ## openSSL.server.sessionIdContext
+</div>
 
 <SettingsInfoBlock type="String" default_value="application.name" changeable_without_restart="No" />一串唯一的随机字符，服务器会将其附加到每个生成的标识符中。该字符串的长度不得超过 `<SSL_MAX_SSL_SESSION_ID_LENGTH>`。始终建议设置此参数，因为无论是服务器缓存了会话，还是客户端请求了缓存，它都有助于避免出现问题。
 
-## openSSL.server.sessionTimeout {#openssl.server.sessiontimeout}
+<div id="openssl.server.sessiontimeout">
+  ## openSSL.server.sessionTimeout
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2" changeable_without_restart="No" />在服务器上缓存会话的时长 (以小时为单位) 。
 
-## openSSL.server.verificationDepth {#openssl.server.verificationdepth}
+<div id="openssl.server.verificationdepth">
+  ## openSSL.server.verificationDepth
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="9" changeable_without_restart="No" />证书验证链的最大长度。若证书链长度超过该设置值，验证将失败。
 
-## openSSL.server.verificationMode {#openssl.server.verificationmode}
+<div id="openssl.server.verificationmode">
+  ## openSSL.server.verificationMode
+</div>
 
 <SettingsInfoBlock type="String" default_value="relaxed" changeable_without_restart="No" />检查节点证书的方式。详见 [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) 类的说明。可能的值：`<none>`、`<relaxed>`、`<strict>`、`<once>`。
 
-## opentelemetry_span_log {#opentelemetry_span_log}
+<div id="opentelemetry_span_log">
+  ## opentelemetry_span_log
+</div>
 
 [`opentelemetry_span_log`](/zh/reference/system-tables/opentelemetry_span_log) 系统表的设置。
 
@@ -1163,7 +1335,9 @@ SSL 客户端/服务器配置。
 </opentelemetry_span_log>
 ```
 
-## part_log {#part_log}
+<div id="part_log">
+  ## part_log
+</div>
 
 记录与 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 相关的日志事件，例如添加或合并数据。你可以使用这些日志来模拟合并算法并比较其特性，也可以将合并过程可视化。
 
@@ -1186,7 +1360,9 @@ SSL 客户端/服务器配置。
 </part_log>
 ```
 
-## path {#path}
+<div id="path">
+  ## path
+</div>
 
 <SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/" changeable_without_restart="No" />
 
@@ -1202,13 +1378,17 @@ SSL 客户端/服务器配置。
 <path>/var/lib/clickhouse/</path>
 ```
 
-## per_cpu_untracked_memory_thread_buffer {#per_cpu_untracked_memory_thread_buffer}
+<div id="per_cpu_untracked_memory_thread_buffer">
+  ## per_cpu_untracked_memory_thread_buffer
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="Yes" />
 
 每个线程在不占用每 CPU 共享预算的情况下，可保留的未跟踪内存量，单位为字节。它通过在小额内存分配时分摊每 CPU 记账开销来降低成本；在最坏情况下，还会作为额外余量叠加到 `max_per_cpu_untracked_memory * number_of_cpus` 之上。值为 `0` 时会移除这部分余量：每次 allocation 都会更新共享的每 CPU 计数器 (精度最高，但 contention 也更高) 。仅限 Linux。
 
-## point_in_polygon_cache_size {#point_in_polygon_cache_size}
+<div id="point_in_polygon_cache_size">
+  ## point_in_polygon_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
 
@@ -1221,7 +1401,9 @@ SSL 客户端/服务器配置。
   此设置可在运行时修改，并会立即生效。
 </Note>
 
-## prefixes_deserialization_thread_pool_thread_pool_queue_size {#prefixes_deserialization_thread_pool_thread_pool_queue_size}
+<div id="prefixes_deserialization_thread_pool_thread_pool_queue_size">
+  ## prefixes_deserialization_thread_pool_thread_pool_queue_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 
@@ -1231,13 +1413,17 @@ SSL 客户端/服务器配置。
   值为 `0` 表示无限制。
 </Note>
 
-## prepare_system_log_tables_on_startup {#prepare_system_log_tables_on_startup}
+<div id="prepare_system_log_tables_on_startup">
+  ## prepare_system_log_tables_on_startup
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 如果为 true，ClickHouse 会在启动前创建所有已配置的 `system.*_log` 表。如果某些启动脚本依赖这些表，此设置会很有帮助。
 
-## process_query_plan_packet {#process_query_plan_packet}
+<div id="process_query_plan_packet">
+  ## process_query_plan_packet
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -1250,7 +1436,9 @@ SSL 客户端/服务器配置。
 <process_query_plan_packet>true</process_query_plan_packet>
 ```
 
-## processors_profile_log {#processors_profile_log}
+<div id="processors_profile_log">
+  ## processors_profile_log
+</div>
 
 [`processors_profile_log`](/zh/reference/system-tables/processors_profile_log) 系统表的相关设置。
 
@@ -1271,7 +1459,9 @@ SSL 客户端/服务器配置。
 </processors_profile_log>
 ```
 
-## prometheus {#prometheus}
+<div id="prometheus">
+  ## prometheus
+</div>
 
 暴露供 [Prometheus](https://prometheus.io) 抓取的指标数据。
 
@@ -1281,9 +1471,9 @@ SSL 客户端/服务器配置。
 * `port` – `endpoint` 的端口。
 * `metrics` – 暴露来自 [system.metrics](/zh/reference/system-tables/metrics) 表的指标。
 * `events` – 暴露来自 [system.events](/zh/reference/system-tables/events) 表的指标。
-* `asynchronous_metrics` – 暴露来自 [system.asynchronous&#95;metrics](/zh/reference/system-tables/asynchronous_metrics) 表的当前指标值。键值指标 (即按 CPU 核心、块设备、网络接口或磁盘细分的指标) 会为每个键暴露一个样本，并将键作为标记携带：`ClickHouseAsyncMetrics_BlockReadBytes{device="sda"}`。[`asynchronous_metrics_key_values_mode`](/zh/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) 服务器设置可改为以 26.8 之前的拼接名称暴露它们 (`ClickHouseAsyncMetrics_BlockReadBytes_sda`) ，或同时以两种方式暴露。
+* `asynchronous_metrics` – 暴露来自 [system.asynchronous&#95;metrics](/zh/reference/system-tables/asynchronous_metrics) 表的当前指标值。
 * `errors` - 暴露自上次服务器重启以来按错误代码统计的错误数量。此信息也可从 [system.errors](/zh/reference/system-tables/errors) 获取。
-* `labels` – 添加到每个暴露指标的固定标记。每个子元素定义一个标记：元素名称为标记名称 (必须匹配 `[a-zA-Z_][a-zA-Z0-9_]*`) ，元素值为标记值。标记值支持标准配置替换，例如 `from_env` 属性。如果标记名称以 `__` 开头 (Prometheus 保留) ，或与此端点在某个已启用部分中写入的标记冲突，则会被拒绝——否则同一样本会携带两个同名标记。因此，保留标记集取决于端点当前启用的导出内容：启用 `histograms` 时为 `le`；启用 `info` 时为 `ClickHouse_Info` 标记 (`name`、`version`、`version_describe`、`version_major`、`version_minor`、`version_patch`) ；启用 `asynchronous_metrics` 且键值异步指标以键值形式发布时 (这由 [`asynchronous_metrics_key_values_mode`](/zh/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) 服务器设置决定) ，为这些指标的键标记 (`channel`、`cpu`、`device`、`disk`、`interface`、`mc`、`sensor`) ；启用 `histograms`/`dimensional_metrics` 时，则包括由暴露的直方图或维度指标族使用的所有标记 (例如 `group`、`direction` 或 `operation_type`) 。由于这取决于端点实际暴露的内容，某个名称在一个端点上可能有效，但在另一个端点上会被拒绝——例如，Keeper `keeper_metrics_only` 端点仅暴露 `keeper_*` 指标族，因此仅由服务器指标族使用的标记可在该端点上使用。加载配置时 (包括执行 `SYSTEM RELOAD CONFIG` 时) 会按同一规则校验这些固定标记：如果某次重新加载会导致固定标记冲突 (无论是新增了此类标记，还是修改了 `asynchronous_metrics_key_values_mode` 使得键标记开始被写入) ，该次重新加载会在生效前被整体拒绝，而不会导致同一标记被暴露两次。若该模式的修改被接受，则会重新创建暴露这些指标的端点，从而使同一配置的新形式与标记一并发布。
+* `labels` – 添加到每个暴露指标的固定标记。每个子元素定义一个标记：元素名称为标记名称 (必须匹配 `[a-zA-Z_][a-zA-Z0-9_]*`) ，元素值为标记值。标记值支持标准配置替换，例如 `from_env` 属性。如果标记名称以 `__` 开头 (Prometheus 保留) ，或与此端点在某个已启用部分中写入的标记冲突，则会被拒绝——否则同一样本会携带两个同名标记。因此，保留标记集取决于端点当前启用的导出内容：启用 `histograms` 时为 `le`；启用 `info` 时为 `ClickHouse_Info` 标记 (`name`、`version`、`version_describe`、`version_major`、`version_minor`、`version_patch`) ；启用 `histograms`/`dimensional_metrics` 时，则包括由暴露的直方图或维度指标族使用的所有标记 (例如 `group`、`direction` 或 `operation_type`) 。由于这取决于端点实际暴露的内容，某个名称在一个端点上可能有效，但在另一个端点上会被拒绝——例如，Keeper `keeper_metrics_only` 端点仅暴露 `keeper_*` 指标族，因此仅由服务器指标族使用的标记可在该端点上使用。
 
 **示例**
 
@@ -1313,11 +1503,15 @@ SSL 客户端/服务器配置。
 curl 127.0.0.1:9363/metrics
 ```
 
-## prometheus.keeper_metrics_only {#prometheus.keeper_metrics_only}
+<div id="prometheus.keeper_metrics_only">
+  ## prometheus.keeper_metrics_only
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />暴露与 Keeper 相关的指标
 
-## 代理 {#proxy}
+<div id="proxy">
+  ## 代理
+</div>
 
 为 HTTP 和 HTTPS 请求定义代理服务器。目前 S3 存储、S3 表函数和 URL 函数支持此功能。
 
@@ -1452,7 +1646,9 @@ ClickHouse 会检查与请求协议对应的最高优先级解析器类型。如
 则会继续检查优先级次高的解析器类型，直到环境解析器为止。
 这也意味着可以混合使用多种解析器类型。
 
-## remap_executable {#remap_executable}
+<div id="remap_executable">
+  ## remap_executable
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -1468,7 +1664,9 @@ ClickHouse 会检查与请求协议对应的最高优先级解析器类型。如
 <remap_executable>false</remap_executable>
 ```
 
-## replica_group_name {#replica_group_name}
+<div id="replica_group_name">
+  ## replica_group_name
+</div>
 
 Replicated 数据库的副本组名称。
 
@@ -1483,7 +1681,9 @@ DDL 查询只会等待同一组中的副本。
 <replica_group_name>backups</replica_group_name>
 ```
 
-## replicated_merge_tree {#replicated_merge_tree}
+<div id="replicated_merge_tree">
+  ## replicated_merge_tree
+</div>
 
 用于 [ReplicatedMergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表的细化调整。此设置的优先级更高。
 
@@ -1497,11 +1697,15 @@ DDL 查询只会等待同一组中的副本。
 </replicated_merge_tree>
 ```
 
-## restore_threads {#restore_threads}
+<div id="restore_threads">
+  ## restore_threads
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16" changeable_without_restart="No" />用于执行 RESTORE 请求的最大线程数。
 
-## send_crash_reports {#send_crash_reports}
+<div id="send_crash_reports">
+  ## send_crash_reports
+</div>
 
 用于向 ClickHouse 核心开发团队发送崩溃报告的设置。
 
@@ -1523,13 +1727,17 @@ DDL 查询只会等待同一组中的副本。
 </send_crash_reports>
 ```
 
-## series_keeper_path {#series_keeper_path}
+<div id="series_keeper_path">
+  ## series_keeper_path
+</div>
 
 <SettingsInfoBlock type="String" default_value="/clickhouse/series" changeable_without_restart="No" />
 
 Keeper 中的路径，用于存放由 `generateSerialID` 函数生成的自增编号。每个序列都会成为该路径下的一个节点。
 
-## ssh_server {#ssh_server}
+<div id="ssh_server">
+  ## ssh_server
+</div>
 
 首次连接时，主机密钥的公钥部分会写入 SSH 客户端上的 known&#95;hosts 文件。
 
@@ -1546,7 +1754,9 @@ Host Key Configurations 默认未启用。
 </ssh_server>
 ```
 
-## table_engines_require_grant {#table_engines_require_grant}
+<div id="table_engines_require_grant">
+  ## table_engines_require_grant
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -1558,7 +1768,9 @@ Host Key Configurations 默认未启用。
   默认情况下，出于向后兼容考虑，使用特定表引擎创建表时会忽略该权限；不过，你可以将此项设置为 true 来更改这一行为。
 </Note>
 
-## tcp_ssh_port {#tcp_ssh_port}
+<div id="tcp_ssh_port">
+  ## tcp_ssh_port
+</div>
 
 SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端以交互方式连接并执行查询。
 
@@ -1568,7 +1780,9 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
-## text_log {#text_log}
+<div id="text_log">
+  ## text_log
+</div>
 
 用于记录文本消息的系统表 [text&#95;log](/zh/reference/system-tables/text_log) 的设置。
 
@@ -1599,7 +1813,9 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
 </clickhouse>
 ```
 
-## thread_pool_queue_size {#thread_pool_queue_size}
+<div id="thread_pool_queue_size">
+  ## thread_pool_queue_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />
 
@@ -1615,7 +1831,9 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
-## throw_on_unknown_workload {#throw_on_unknown_workload}
+<div id="throw_on_unknown_workload">
+  ## throw_on_unknown_workload
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
 
@@ -1634,7 +1852,9 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
 
 * [工作负载调度](/zh/concepts/features/configuration/server-config/workload-scheduling)
 
-## 时区 {#timezone}
+<div id="timezone">
+  ## 时区
+</div>
 
 服务器的时区。
 
@@ -1652,7 +1872,9 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
 
 * [session&#95;timezone](/zh/reference/settings/session-settings/other#session_timezone)
 
-## trace_log {#trace_log}
+<div id="trace_log">
+  ## trace_log
+</div>
 
 [trace&#95;log](/zh/reference/system-tables/trace_log) 系统表的运行设置。
 
@@ -1674,7 +1896,9 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
 </trace_log>
 ```
 
-## url_scheme_mappers {#url_scheme_mappers}
+<div id="url_scheme_mappers">
+  ## url_scheme_mappers
+</div>
 
 用于将缩写或符号形式的 URL 前缀转换为完整 URL 的配置。
 
@@ -1694,7 +1918,9 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
 </url_scheme_mappers>
 ```
 
-## validate_tcp_client_information {#validate_tcp_client_information}
+<div id="validate_tcp_client_information">
+  ## validate_tcp_client_information
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />确定在接收到 Query 数据包时，是否启用对客户端信息的验证。
 
@@ -1704,7 +1930,9 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
 <validate_tcp_client_information>false</validate_tcp_client_information>
 ```
 
-## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
+<div id="wait_dictionaries_load_at_startup">
+  ## wait_dictionaries_load_at_startup
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -1726,11 +1954,15 @@ SSH 服务器使用的端口，允许用户通过 PTY 使用嵌入式客户端�
 <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 ```
 
-## webassembly_udf_engine {#webassembly_udf_engine}
+<div id="webassembly_udf_engine">
+  ## webassembly_udf_engine
+</div>
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />用于执行 WebAssembly UDF 的引擎。唯一支持的取值为 &#39;wasmtime&#39;。
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />用于执行 WebAssembly UDF 的引擎。支持的取值为 &#39;wasmtime&#39; 和 &#39;wasmedge&#39;。
 
-## webterminal_allowed_origins {#webterminal_allowed_origins}
+<div id="webterminal_allowed_origins">
+  ## webterminal_allowed_origins
+</div>
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />允许打开 `/webterminal` WebSocket 会话的完整来源 (scheme + host + 可选 port) 列表，多个值以逗号分隔。为空时，将严格执行同源策略 (Origin 必须与请求的 scheme、host 和 port 匹配) 。如果部署位于执行 TLS 终止的反向代理之后，且浏览器使用的是 `https`，但 `request.isSecure()` 为 `false`，请设置此项。示例：`https://example.com,https://app.example.com:8443`。
 

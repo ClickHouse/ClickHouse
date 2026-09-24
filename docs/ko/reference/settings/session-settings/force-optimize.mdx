@@ -12,20 +12,22 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-## force_optimize_projection {#force_optimize_projection}
+<div id="force_optimize_projection">
+  ## force_optimize_projection
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 PROJECTION 최적화가 활성화된 경우([optimize&#95;use&#95;projections](/ko/reference/settings/session-settings/optimize-use#optimize_use_projections) 설정 참조), `SELECT` 쿼리에서 [PROJECTION](/ko/reference/engines/table-engines/mergetree-family/mergetree#projections)을 반드시 사용하도록 할지 설정합니다.
-
-활성화하면 테이블 자체보다 더 많은 마크를 읽어야 하는 경우에도 쿼리를 처리할 수 있는 PROJECTION이 사용되며, 사용할 수 있는 PROJECTION이 없으면 쿼리는 `PROJECTION_NOT_USED` 오류와 함께 실패합니다.
 
 가능한 값:
 
 * 0 — PROJECTION 최적화 사용은 필수가 아닙니다.
 * 1 — PROJECTION 최적화 사용은 필수입니다.
 
-## force_optimize_projection_name {#force_optimize_projection_name}
+<div id="force_optimize_projection_name">
+  ## force_optimize_projection_name
+</div>
 
 비어 있지 않은 문자열로 설정하면, 이 PROJECTION이 쿼리에서 최소 한 번 이상 사용되는지 확인합니다.
 
@@ -33,7 +35,9 @@ PROJECTION 최적화가 활성화된 경우([optimize&#95;use&#95;projections](/
 
 * string: 쿼리에서 사용되는 PROJECTION 이름
 
-## force_optimize_skip_unused_shards {#force_optimize_skip_unused_shards}
+<div id="force_optimize_skip_unused_shards">
+  ## force_optimize_skip_unused_shards
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -45,7 +49,9 @@ PROJECTION 최적화가 활성화된 경우([optimize&#95;use&#95;projections](/
 * 1 — 활성화됨. 테이블에 세그먼트 분할 키가 있는 경우에만 쿼리 실행이 비활성화됩니다.
 * 2 — 활성화됨. 테이블에 세그먼트 분할 키가 테이블에 정의되어 있는지와 관계없이 쿼리 실행이 비활성화됩니다.
 
-## force_optimize_skip_unused_shards_nesting {#force_optimize_skip_unused_shards_nesting}
+<div id="force_optimize_skip_unused_shards_nesting">
+  ## force_optimize_skip_unused_shards_nesting
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

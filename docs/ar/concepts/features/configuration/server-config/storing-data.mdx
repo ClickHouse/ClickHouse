@@ -27,7 +27,9 @@ doc_type: 'guide'
   3. للعمل مع البيانات الموجودة في نظام ملفات Hadoop الموزّع (غير مدعوم)، استخدم محرك الجداول [HDFS](/ar/reference/engines/table-engines/integrations/hdfs).
 </Note>
 
-## تهيئة التخزين الخارجي {#configuring-external-storage}
+<div id="configuring-external-storage">
+  ## تهيئة التخزين الخارجي
+</div>
 
 يمكن لمحركات الجداول من عائلتي [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) و[`Log`](/ar/reference/engines/table-engines/log-family/log)
 تخزين البيانات في `S3` و`AzureBlobStorage` و`HDFS` (غير مدعوم) باستخدام قرص من الأنواع `s3`،
@@ -179,7 +181,9 @@ ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
 
-## refresh_parts_interval and table_disk {#refresh-parts-interval-and-table-disk}
+<div id="refresh-parts-interval-and-table-disk">
+  ## refresh_parts_interval and table_disk
+</div>
 
 هذا الإعداد مخصّص لجداول MergeTree غير المكررة، حيث قد تُكتب الأجزاء خارجيًا ويستلزم الأمر تحديث اكتشاف البيانات الوصفية من التخزين.
 
@@ -199,7 +203,9 @@ SETTINGS disk = 's3';
   ولا ينطبق هذا الإعداد إلا على جداول MergeTree غير المكررة التي تُكتب أجزاؤها خارجيًا ويكون فيها تحديث البيانات الوصفية مطلوبًا.
 </Note>
 
-## التهيئة الديناميكية {#dynamic-configuration}
+<div id="dynamic-configuration">
+  ## التهيئة الديناميكية
+</div>
 
 يمكن أيضًا تحديد تهيئة التخزين من دون قرص مُعرَّف مسبقًا في ملف التهيئة، على أن تُضبط ضمن إعدادات استعلام `CREATE`/`ATTACH`.
 
@@ -321,9 +327,13 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </storage_configuration>
 ```
 
-### استخدام S3 للتخزين {#s3-storage}
+<div id="s3-storage">
+  ### استخدام S3 للتخزين
+</div>
 
-#### المعلمات المطلوبة {#required-parameters-s3}
+<div id="required-parameters-s3">
+  #### المعلمات المطلوبة
+</div>
 
 | المعلمة             | الوصف                                                                                                                                                                                        |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -331,41 +341,45 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `access_key_id`     | معرّف مفتاح الوصول إلى S3 المستخدم للمصادقة.                                                                                                                                                 |
 | `secret_access_key` | مفتاح الوصول السري إلى S3 المستخدم للمصادقة.                                                                                                                                                 |
 
-#### المعلمات الاختيارية {#optional-parameters-s3}
+<div id="optional-parameters-s3">
+  #### المعلمات الاختيارية
+</div>
 
 | Parameter                                       | Description                                                                                                                                                                                                                                                                                                              | Default Value                            |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
 | `region`                                        | اسم Region الخاصة بـ S3.                                                                                                                                                                                                                                                                                                 | -                                        |
 | `support_batch_delete`                          | يحدد ما إذا كان يجب التحقق من دعم الحذف على دفعات. اضبطه على `false` عند استخدام Google Cloud Storage ‏(GCS)، لأن GCS لا يدعم الحذف على دفعات.                                                                                                                                                                           | `true`                                   |
-| `use_environment_credentials`                   | يقرأ بيانات الاعتماد الخاصة بـ AWS من متغيرات البيئة: `AWS_ACCESS_KEY_ID` و`AWS_SECRET_ACCESS_KEY` و`AWS_SESSION_TOKEN` إذا كانت موجودة. ملاحظة: تتم مشاركة بيانات اعتماد البيئة بين جميع أقراص S3. لاستخدام بيانات اعتماد مختلفة لأقراص مختلفة، حدِّد بدلًا من ذلك `access_key_id` و`secret_access_key` صراحةً لكل قرص. | `false`                                  |
+| `use_environment_credentials`                   | يقرأ بيانات الاعتماد الخاصة بـ AWS من متغيرات البيئة: `AWS_ACCESS_KEY_ID` و`AWS_SECRET_ACCESS_KEY` و`AWS_SESSION_TOKEN` إذا كانت موجودة. ملاحظة: تتم مشاركة بيانات اعتماد البيئة بين جميع أقراص S3. لاستخدام بيانات اعتماد مختلفة لأقراص مختلفة، حدِّد بدلًا من ذلك `access_key_id` و`secret_access_key` صراحةً لكل قرص. | `false`                                  |
 | `use_insecure_imds_request`                     | إذا كانت القيمة `true`، يستخدم طلب IMDS غير آمن عند الحصول على بيانات الاعتماد من EC2 metadata الخاصة بـ Amazon.                                                                                                                                                                                                         | `false`                                  |
 | `expiration_window_seconds`                     | فترة سماح (بالثواني) للتحقق مما إذا كانت بيانات الاعتماد المعتمدة على انتهاء الصلاحية قد انتهت.                                                                                                                                                                                                                          | `120`                                    |
 | `proxy`                                         | إعداد proxy لنقطة نهاية S3. يجب أن يحتوي كل عنصر `uri` داخل كتلة `proxy` على عنوان URL للـ proxy.                                                                                                                                                                                                                        | -                                        |
 | `connect_timeout_ms`                            | مهلة اتصال socket بالمللي ثانية.                                                                                                                                                                                                                                                                                         | `10000` (10 ثوانٍ)                       |
 | `request_timeout_ms`                            | مهلة الطلب بالمللي ثانية.                                                                                                                                                                                                                                                                                                | `5000` (5 ثوانٍ)                         |
-| `s3_retry_attempts`                             | عدد محاولات إعادة المحاولة للطلبات الفاشلة.                                                                                                                                                                                                                                                                              | `500`                                    |
-| `s3_max_single_read_retries`                    | عدد محاولات إعادة المحاولة عند انقطاع الاتصال أثناء القراءة.                                                                                                                                                                                                                                                             | `4`                                      |
+| `retry_attempts`                                | عدد محاولات إعادة المحاولة للطلبات الفاشلة.                                                                                                                                                                                                                                                                              | `10`                                     |
+| `single_read_retries`                           | عدد محاولات إعادة المحاولة عند انقطاع الاتصال أثناء القراءة.                                                                                                                                                                                                                                                             | `4`                                      |
 | `min_bytes_for_seek`                            | الحد الأدنى لعدد البايتات لاستخدام عملية seek بدلًا من القراءة التسلسلية.                                                                                                                                                                                                                                                | `1 MB`                                   |
-| `metadata_path`                                 | مسار نظام الملفات المحلي لتخزين ملفات البيانات الوصفية الخاصة بـ S3.                                                                                                                                                                                                                                                     | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `metadata_path`                                 | مسار نظام الملفات المحلي لتخزين ملفات البيانات الوصفية الخاصة بـ S3.                                                                                                                                                                                                                                                    | `/var/lib/clickhouse/disks/<disk_name>/` |
 | `skip_access_check`                             | إذا كانت القيمة `true`، يتخطى فحوصات الوصول إلى القرص أثناء بدء التشغيل.                                                                                                                                                                                                                                                 | `false`                                  |
 | `header`                                        | يضيف HTTP header المحدد إلى الطلبات. ويمكن تحديده عدة مرات.                                                                                                                                                                                                                                                              | -                                        |
 | `server_side_encryption_customer_key_base64`    | الترويسات المطلوبة للوصول إلى كائنات S3 المشفرة باستخدام SSE-C.                                                                                                                                                                                                                                                          | -                                        |
 | `server_side_encryption_kms_key_id`             | الترويسات المطلوبة للوصول إلى كائنات S3 باستخدام [تشفير SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html). تؤدي السلسلة الفارغة إلى استخدام مفتاح S3 المُدار من AWS.                                                                                                               | -                                        |
 | `server_side_encryption_kms_encryption_context` | ترويسة سياق التشفير لـ SSE-KMS (تُستخدم مع `server_side_encryption_kms_key_id`).                                                                                                                                                                                                                                         | -                                        |
-| `server_side_encryption_kms_bucket_key_enabled` | يفعّل مفاتيح S3 حاوية لـ SSE-KMS (يُستخدم مع `server_side_encryption_kms_key_id`).                                                                                                                                                                                                                                      | يطابق الإعداد على مستوى حاوية           |
+| `server_side_encryption_kms_bucket_key_enabled` | يفعّل مفاتيح S3 bucket لـ SSE-KMS (يُستخدم مع `server_side_encryption_kms_key_id`).                                                                                                                                                                                                                                      | يطابق الإعداد على مستوى bucket           |
 | `s3_max_put_rps`                                | الحد الأقصى لطلبات PUT في الثانية قبل تطبيق throttling.                                                                                                                                                                                                                                                                  | `0` (غير محدود)                          |
 | `s3_max_put_burst`                              | الحد الأقصى لطلبات PUT المتزامنة قبل بلوغ حد RPS.                                                                                                                                                                                                                                                                        | مثل `s3_max_put_rps`                     |
 | `s3_max_get_rps`                                | الحد الأقصى لطلبات GET في الثانية قبل تطبيق throttling.                                                                                                                                                                                                                                                                  | `0` (غير محدود)                          |
 | `s3_max_get_burst`                              | الحد الأقصى لطلبات GET المتزامنة قبل بلوغ حد RPS.                                                                                                                                                                                                                                                                        | مثل `s3_max_get_rps`                     |
-| `key_template`                                  | يحدد تنسيق إنشاء مفتاح الكائن باستخدام صياغة [re2](https://github.com/google/re2/wiki/Syntax). ويتطلب العلامة `storage_metadata_write_full_object_key`. وهو غير متوافق مع `المسار الجذر` في `endpoint`. كما يتطلب `key_compatibility_prefix`.                                                                               | -                                        |
-| `key_compatibility_prefix`                      | مطلوب مع `key_template`. يحدد `المسار الجذر` السابق من `endpoint` لقراءة إصدارات metadata الأقدم.                                                                                                                                                                                                                           | -                                        |
+| `key_template`                                  | يحدد تنسيق إنشاء مفتاح الكائن باستخدام صياغة [re2](https://github.com/google/re2/wiki/Syntax). ويتطلب العلامة `storage_metadata_write_full_object_key`. وهو غير متوافق مع `root path` في `endpoint`. كما يتطلب `key_compatibility_prefix`.                                                                               | -                                        |
+| `key_compatibility_prefix`                      | مطلوب مع `key_template`. يحدد `root path` السابق من `endpoint` لقراءة إصدارات metadata الأقدم.                                                                                                                                                                                                                           | -                                        |
 | `read_only`                                     | يتيح القراءة من القرص فقط.                                                                                                                                                                                                                                                                                               | -                                        |
 
 <Note>
   Google Cloud Storage ‏(GCS) مدعوم أيضًا باستخدام النوع `s3`. راجع [GCS backed MergeTree](/ar/integrations/connectors/data-sources/gcs).
 </Note>
 
-### استخدام التخزين البسيط {#plain-storage}
+<div id="plain-storage">
+  ### استخدام التخزين البسيط
+</div>
 
 في `22.10` أُضيف نوع قرص جديد `s3_plain` يوفّر تخزينًا للكتابة مرة واحدة.
 ومَعلَمات التهيئة الخاصة به هي نفسها الخاصة بنوع القرص `s3`.
@@ -406,7 +420,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </s3_plain>
 ```
 
-### استخدام تخزين S3 Plain Rewritable {#s3-plain-rewritable-storage}
+<div id="s3-plain-rewritable-storage">
+  ### استخدام تخزين S3 Plain Rewritable
+</div>
 
 تم تقديم نوع القرص `s3_plain_rewritable` في `24.4`.
 وكما هو الحال مع نوع القرص `s3_plain`، فإنه لا يتطلب مساحة تخزين إضافية لملفات
@@ -446,7 +462,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 اعتبارًا من `24.5`، أصبح بالإمكان إعداد أي قرص تخزين كائني
 (`s3`, `azure`, `local`) باستخدام نوع البيانات الوصفية `plain_rewritable`.
 
-### استخدام Azure Blob Storage {#azure-blob-storage}
+<div id="azure-blob-storage">
+  ### استخدام Azure Blob Storage
+</div>
 
 يمكن لمحركات الجداول من عائلة `MergeTree` تخزين البيانات في [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/)
 باستخدام قرص من النوع `azure_blob_storage`.
@@ -464,6 +482,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
+            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
@@ -471,7 +490,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </storage_configuration>
 ```
 
-#### معلمات الاتصال {#azure-blob-storage-connection-parameters}
+<div id="azure-blob-storage-connection-parameters">
+  #### معلمات الاتصال
+</div>
 
 | المعلمة                       | الوصف                                                                                                                                                                             | القيمة الافتراضية   |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
@@ -487,18 +508,22 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `account_name`      | للمصادقة باستخدام Shared Key (تُستخدم مع `account_key`).  |
 | `account_key`       | للمصادقة باستخدام Shared Key (تُستخدم مع `account_name`). |
 
-#### معلمات الحد {#azure-blob-storage-limit-parameters}
+<div id="azure-blob-storage-limit-parameters">
+  #### معلمات الحد
+</div>
 
-| المعلمة                           | الوصف                                                                  |
-| --------------------------------- | ---------------------------------------------------------------------- |
-| `max_single_part_upload_size`     | الحد الأقصى لحجم رفع كتلة واحدة إلى Blob Storage.                      |
-| `min_bytes_for_seek`              | الحد الأدنى لحجم نطاق يمكن إجراء seek داخله.                           |
-| `max_single_read_retries`         | الحد الأقصى لعدد محاولات قراءة جزء من البيانات من Blob Storage.        |
-| `max_single_download_retries`     | الحد الأقصى لعدد محاولات تنزيل مخزن مؤقت قابل للقراءة من Blob Storage. |
-| `thread_pool_size`                | الحد الأقصى لعدد سلاسل التنفيذ اللازمة لإنشاء مثيلات `IDiskRemote`.    |
-| `max_inflight_parts_for_one_file` | الحد الأقصى لعدد طلبات PUT المتزامنة لكائن واحد.                       |
+| المعلمة                              | الوصف                                                                  |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `s3_max_single_part_upload_size`     | الحد الأقصى لحجم رفع كتلة واحدة إلى Blob Storage.                      |
+| `min_bytes_for_seek`                 | الحد الأدنى لحجم نطاق يمكن إجراء seek داخله.                           |
+| `max_single_read_retries`            | الحد الأقصى لعدد محاولات قراءة جزء من البيانات من Blob Storage.        |
+| `max_single_download_retries`        | الحد الأقصى لعدد محاولات تنزيل مخزن مؤقت قابل للقراءة من Blob Storage. |
+| `thread_pool_size`                   | الحد الأقصى لعدد سلاسل التنفيذ اللازمة لإنشاء مثيلات `IDiskRemote`.    |
+| `s3_max_inflight_parts_for_one_file` | الحد الأقصى لعدد طلبات PUT المتزامنة لكائن واحد.                       |
 
-#### معلمات أخرى {#azure-blob-storage-other-parameters}
+<div id="azure-blob-storage-other-parameters">
+  #### معلمات أخرى
+</div>
 
 | المعلمة                          | الوصف                                                                                 | القيمة الافتراضية                        |
 | -------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -514,7 +539,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   يكون النسخ المتماثل من دون نسخ معطّلًا افتراضيًا في ClickHouse الإصدار 22.8 وما بعده. لا يُنصح باستخدام هذه الميزة في بيئات الإنتاج.
 </Info>
 
-## استخدام مساحة تخزين HDFS (غير مدعوم) {#using-hdfs-storage-unsupported}
+<div id="using-hdfs-storage-unsupported">
+  ## استخدام مساحة تخزين HDFS (غير مدعوم)
+</div>
 
 في هذا الإعداد النموذجي:
 
@@ -555,7 +582,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 ضع في اعتبارك أن HDFS قد لا يعمل في بعض الحالات النادرة.
 
-### استخدام تشفير البيانات {#encrypted-virtual-file-system}
+<div id="encrypted-virtual-file-system">
+  ### استخدام تشفير البيانات
+</div>
 
 يمكنك تشفير البيانات المخزنة على الأقراص الخارجية [S3](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)، أو [HDFS](#using-hdfs-storage-unsupported) (غير مدعوم)، أو على قرص محلي. لتفعيل وضع التشفير، يجب عليك في ملف الإعدادات تعريف قرص من النوع `encrypted` واختيار القرص الذي ستُحفَظ عليه البيانات. يقوم قرص `encrypted` بتشفير جميع الملفات المكتوبة لحظيًا، وعند قراءة الملفات من قرص `encrypted` يفك تشفيرها تلقائيًا. لذلك يمكنك التعامل مع قرص `encrypted` كما لو كان قرصًا عاديًا.
 
@@ -580,7 +609,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 وعند كتابة الملف نفسه على `disk2`، فسيُكتَب فعليًا على القرص الفعلي في المسار `/path1/path2/store/all_1_1_0/data.bin` بصيغة مشفّرة.
 
-### المعلمات المطلوبة {#required-parameters-encrypted-disk}
+<div id="required-parameters-encrypted-disk">
+  ### المعلمات المطلوبة
+</div>
 
 | المعلمة | النوع  | الوصف                                                                                                                                |
 | ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -588,7 +619,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `disk`  | String | نوع القرص المستخدم في طبقة التخزين الأساسية.                                                                                         |
 | `key`   | Uint64 | المفتاح المستخدم للتشفير وفك التشفير. يمكن تحديده بصيغة سداسية عشرية باستخدام `key_hex`. ويمكن تحديد عدة مفاتيح باستخدام السمة `id`. |
 
-### المعلمات الاختيارية {#optional-parameters-encrypted-disk}
+<div id="optional-parameters-encrypted-disk">
+  ### المعلمات الاختيارية
+</div>
 
 | المعلمة          | النوع  | الافتراضي     | الوصف                                                                                                                                                        |
 | ---------------- | ------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -596,7 +629,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `current_key_id` | String | -             | معرّف المفتاح المستخدم للتشفير. ويمكن استخدام جميع المفاتيح المحددة لفك التشفير.                                                                             |
 | `algorithm`      | Enum   | `AES_128_CTR` | خوارزمية التشفير. الخيارات: <br />- `AES_128_CTR` (مفتاح بحجم 16 بايت) <br />- `AES_192_CTR` (مفتاح بحجم 24 بايت) <br />- `AES_256_CTR` (مفتاح بحجم 32 بايت) |
 
-مثال على إعدادات القرص:
+مثال على تهيئة القرص:
 
 ```xml
 <clickhouse>
@@ -619,14 +652,16 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </clickhouse>
 ```
 
-### استخدام ذاكرة التخزين المؤقت المحلية {#using-local-cache}
+<div id="using-local-cache">
+  ### استخدام ذاكرة التخزين المؤقت المحلية
+</div>
 
 يمكن تهيئة ذاكرة تخزين مؤقت محلية فوق الأقراص في إعدادات التخزين بدءًا من الإصدار 22.3.
 بالنسبة إلى الإصدارات من 22.3 إلى 22.7، لا تكون ذاكرة التخزين المؤقت مدعومة إلا لنوع القرص `s3`. وبالنسبة إلى الإصدارات &gt;= 22.8، تكون ذاكرة التخزين المؤقت مدعومة لأي نوع من الأقراص: S3 وAzure وLocal وEncrypted وغيرها.
 بالنسبة إلى الإصدارات &gt;= 23.5، لا تكون ذاكرة التخزين المؤقت مدعومة إلا لأنواع الأقراص البعيدة: S3 وAzure وHDFS (غير مدعوم).
 تستخدم ذاكرة التخزين المؤقت سياسة `LRU`.
 
-مثال على التهيئة للإصدارات الأحدث من 22.8 أو المساوية له:
+مثال على الإعداد للإصدارات الأحدث من 22.8 أو المساوية له:
 
 ```xml
 <clickhouse>
@@ -657,7 +692,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </clickhouse>
 ```
 
-مثال على تهيئة الإصدارات الأقدم من 22.8:
+مثال على إعدادات الإصدارات الأقدم من 22.8:
 
 ```xml
 <clickhouse>
@@ -688,54 +723,65 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 يجب تعريف هذه الإعدادات في قسم تهيئة القرص.
 
-| المعلمة                               | النوع   | القيمة الافتراضية | الوصف                                                                                                                                                                            |
-| ------------------------------------- | ------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                                | String  | -                 | **مطلوب**. المسار إلى الدليل الذي سيُخزَّن فيه التخزين المؤقت.                                                                                                                   |
-| `max_size`                            | Size    | -                 | **مطلوب**. الحجم الأقصى للتخزين المؤقت بالبايت أو بصيغة مقروءة (مثل `10Gi`). تُزال الملفات وفق سياسة LRU عند بلوغ الحد الأقصى. ويدعم التنسيقات `ki` و`Mi` و`Gi` (منذ v22.10).    |
-| `cache_on_write_operations`           | Boolean | `false`           | يفعّل التخزين المؤقت بالكتابة المباشرة لاستعلامات `INSERT` وعمليات الدمج في الخلفية. ويمكن تجاوز هذا الإعداد لكل استعلام باستخدام `enable_filesystem_cache_on_write_operations`. |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`           | يفعّل حدود حجم التخزين المؤقت لكل استعلام استنادًا إلى `filesystem_cache_max_download_size`.                                                                                     |
-| `cache_hits_threshold`                | Integer | `0`               | تم إهماله؛ ليس له أي تأثير.                                                                                                                                                      |
-| `enable_bypass_cache_with_threshold`  | Boolean | `false`           | يتجاوز التخزين المؤقت لنطاقات القراءة الكبيرة.                                                                                                                                   |
-| `bypass_cache_threshold`              | Size    | `256Mi`           | حجم نطاق القراءة الذي يؤدي إلى تجاوز التخزين المؤقت (يتطلب `enable_bypass_cache_with_threshold`).                                                                                |
-| `max_file_segment_size`               | Size    | `8Mi`             | الحجم الأقصى لملف تخزين مؤقت واحد بالبايت أو بصيغة مقروءة.                                                                                                                       |
-| `max_elements`                        | Integer | `10000000`        | الحد الأقصى لعدد ملفات التخزين المؤقت.                                                                                                                                           |
-| `load_metadata_threads`               | Integer | `16`              | عدد الخيوط المستخدمة لتحميل البيانات الوصفية للتخزين المؤقت عند بدء التشغيل.                                                                                                     |
-| `use_split_cache`                     | Boolean | `false`           | يستخدم فصل الملفات إلى system/data.                                                                                                                                              |
-| `split_cache_ratio`                   | Double  | `0.1`             | نسبة مقطع النظام إلى الحجم الإجمالي للتخزين المؤقت في split&#95;cache.                                                                                                           |
+| المعلمة                               | النوع   | القيمة الافتراضية | الوصف                                                                                                                                                                          |
+| ------------------------------------- | ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`                                | String  | -                 | **مطلوب**. المسار إلى الدليل الذي سيُخزَّن فيه التخزين المؤقت.                                                                                                                 |
+| `max_size`                            | Size    | -                 | **مطلوب**. الحجم الأقصى للتخزين المؤقت بالبايت أو بصيغة مقروءة (مثل `10Gi`). تُزال الملفات وفق سياسة LRU عند بلوغ الحد الأقصى. ويدعم التنسيقات `ki` و`Mi` و`Gi` (منذ v22.10).  |
+| `cache_on_write_operations`           | Boolean | `false`           | يفعّل التخزين المؤقت بالكتابة المباشرة لاستعلامات `INSERT` وعمليات الدمج في الخلفية. ويمكن تجاوز هذا الإعداد لكل query باستخدام `enable_filesystem_cache_on_write_operations`. |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`           | يفعّل حدود حجم التخزين المؤقت لكل query استنادًا إلى `max_query_cache_size`.                                                                                                   |
+| `enable_cache_hits_threshold`         | Boolean | `false`           | عند تفعيله، لا تُخزَّن البيانات مؤقتًا إلا بعد قراءتها عدة مرات.                                                                                                               |
+| `cache_hits_threshold`                | Integer | `0`               | عدد عمليات القراءة المطلوبة قبل تخزين البيانات مؤقتًا (يتطلب `enable_cache_hits_threshold`).                                                                                   |
+| `enable_bypass_cache_with_threshold`  | Boolean | `false`           | يتجاوز التخزين المؤقت لنطاقات القراءة الكبيرة.                                                                                                                                 |
+| `bypass_cache_threshold`              | Size    | `256Mi`           | حجم نطاق القراءة الذي يؤدي إلى تجاوز التخزين المؤقت (يتطلب `enable_bypass_cache_with_threshold`).                                                                              |
+| `max_file_segment_size`               | Size    | `8Mi`             | الحجم الأقصى لملف تخزين مؤقت واحد بالبايت أو بصيغة مقروءة.                                                                                                                     |
+| `max_elements`                        | Integer | `10000000`        | الحد الأقصى لعدد ملفات التخزين المؤقت.                                                                                                                                         |
+| `load_metadata_threads`               | Integer | `16`              | عدد الخيوط المستخدمة لتحميل البيانات الوصفية للتخزين المؤقت عند بدء التشغيل.                                                                                                   |
+| `use_split_cache`                     | Boolean | `false`           | يستخدم فصل الملفات إلى system/data.                                                                                                                                            |
+| `split_cache_ratio`                   | Double  | `0.1`             | نسبة مقطع النظام إلى الحجم الإجمالي للتخزين المؤقت في split&#95;cache.                                                                                                         |
 
 > **ملاحظة**: تدعم قيم الحجم وحدات مثل `ki` و`Mi` و`Gi` وغيرها (مثل `10Gi`).
 
-## إعدادات الاستعلام/الملف التعريفي لـ File Cache {#file-cache-query-profile-settings}
+<div id="file-cache-query-profile-settings">
+  ## إعدادات الاستعلام/الملف التعريفي لـ File Cache
+</div>
 
-| الإعداد                                                                 | النوع   | القيمة الافتراضية        | الوصف                                                                                                                                                                        |
-| ----------------------------------------------------------------------- | ------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enable_filesystem_cache`                                               | Boolean | `true`                   | يفعّل/يعطّل استخدام ذاكرة التخزين المؤقت لكل استعلام، حتى عند استخدام نوع القرص `cache`.                                                                                     |
-| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | Boolean | `false`                  | عند تفعيله، تُستخدم ذاكرة التخزين المؤقت فقط إذا كانت البيانات موجودة؛ أما البيانات الجديدة فلن تُخزَّن مؤقتًا.                                                              |
-| `enable_filesystem_cache_on_write_operations`                           | Boolean | `false` (Cloud: `true`)  | يفعّل التخزين المؤقت بالكتابة المباشرة. ويتطلب `cache_on_write_operations` في إعدادات `cache`.                                                                               |
-| `enable_filesystem_cache_log`                                           | Boolean | `false`                  | يفعّل تسجيلًا تفصيليًا لاستخدام ذاكرة التخزين المؤقت في `system.filesystem_cache_log`.                                                                                       |
-| `filesystem_cache_allow_background_download`                            | Boolean | `true`                   | يسمح بإكمال المقاطع التي نُزِّلت جزئيًا في الخلفية. عطّله للإبقاء على التنزيلات ضمن الاستعلام/الجلسة الحالية بدلًا من متابعتها في الخلفية.                                   |
-| `filesystem_cache_max_download_size`                                    | UInt64  | `137438953472` (128 GiB) | الحد الأقصى لحجم البيانات من ذاكرة التخزين المؤقت لنظام الملفات البعيد التي يمكن تنزيلها في استعلام واحد. ويتطلب `enable_filesystem_query_cache_limit` في إعدادات `cache`.   |
-| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`                   | يحدد السلوك عند بلوغ `filesystem_cache_max_download_size`: <br />- `true`: يوقف تنزيل البيانات الجديدة <br />- `false`: يزيل البيانات القديمة لإفساح المجال للبيانات الجديدة |
+| الإعداد                                                                 | النوع   | القيمة الافتراضية       | الوصف                                                                                                                                                          |
+| ----------------------------------------------------------------------- | ------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enable_filesystem_cache`                                               | Boolean | `true`                  | يفعّل/يعطّل استخدام ذاكرة التخزين المؤقت لكل استعلام، حتى عند استخدام نوع القرص `cache`.                                                                       |
+| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | Boolean | `false`                 | عند تفعيله، تُستخدم ذاكرة التخزين المؤقت فقط إذا كانت البيانات موجودة؛ أما البيانات الجديدة فلن تُخزَّن مؤقتًا.                                                |
+| `enable_filesystem_cache_on_write_operations`                           | Boolean | `false` (Cloud: `true`) | يفعّل التخزين المؤقت بالكتابة المباشرة. ويتطلب `cache_on_write_operations` في إعدادات `cache`.                                                                 |
+| `enable_filesystem_cache_log`                                           | Boolean | `false`                 | يفعّل تسجيلًا تفصيليًا لاستخدام ذاكرة التخزين المؤقت في `system.filesystem_cache_log`.                                                                         |
+| `filesystem_cache_allow_background_download`                            | Boolean | `true`                  | يسمح بإكمال المقاطع التي نُزِّلت جزئيًا في الخلفية. عطّله للإبقاء على التنزيلات ضمن الاستعلام/الجلسة الحالية بدلًا من متابعتها في الخلفية.                     |
+| `max_query_cache_size`                                                  | Size    | `false`                 | الحد الأقصى لحجم ذاكرة التخزين المؤقت لكل استعلام. ويتطلب `enable_filesystem_query_cache_limit` في إعدادات `cache`.                                            |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`                  | يحدد السلوك عند بلوغ `max_query_cache_size`: <br />- `true`: يوقف تنزيل البيانات الجديدة <br />- `false`: يزيل البيانات القديمة لإفساح المجال للبيانات الجديدة |
 
 <Warning>
   تتوافق إعدادات تهيئة `cache` وإعدادات استعلام `cache` مع أحدث إصدار من ClickHouse،
   وقد لا تكون بعض هذه الميزات مدعومة في الإصدارات الأقدم.
 </Warning>
 
-#### جداول النظام لذاكرة التخزين المؤقت لنظام الملفات {#cache-system-tables-file-cache}
+<div id="cache-system-tables-file-cache">
+  #### جداول النظام لذاكرة التخزين المؤقت لنظام الملفات
+</div>
 
 | اسم الجدول                    | الوصف                                                             | المتطلبات                                  |
 | ----------------------------- | ----------------------------------------------------------------- | ------------------------------------------ |
 | `system.filesystem_cache`     | يعرض الحالة الحالية لذاكرة التخزين المؤقت لنظام الملفات.          | لا توجد                                    |
 | `system.filesystem_cache_log` | يوفّر إحصاءات مفصّلة عن استخدام ذاكرة التخزين المؤقت لكل استعلام. | يتطلب `enable_filesystem_cache_log = true` |
 
-#### أوامر ذاكرة التخزين المؤقت {#cache-commands-file-cache}
+<div id="cache-commands-file-cache">
+  #### أوامر ذاكرة التخزين المؤقت
+</div>
 
-##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-clear-filesystem-cache-on-cluster}
+<div id="system-clear-filesystem-cache-on-cluster">
+  ##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
+</div>
 
 هذا الأمر مدعوم فقط عند عدم تحديد `<cache_name>`
 
-##### `SHOW FILESYSTEM CACHES` {#show-filesystem-caches}
+<div id="show-filesystem-caches">
+  ##### `SHOW FILESYSTEM CACHES`
+</div>
 
 اعرض قائمة بذاكرات التخزين المؤقت لنظام الملفات التي تم إعدادها على الخادم.
 (في الإصدارات الأقدم من `22.8` أو المساوية له، يكون اسم الأمر `SHOW CACHES`)
@@ -750,7 +796,9 @@ SHOW FILESYSTEM CACHES
 └───────────┘
 ```
 
-##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'` {#describe-filesystem-cache}
+<div id="describe-filesystem-cache">
+  ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
+</div>
 
 اعرض إعدادات ذاكرة التخزين المؤقت لنظام الملفات وبعض الإحصاءات العامة لذاكرة تخزين مؤقت محددة.
 يمكن أخذ اسم ذاكرة التخزين المؤقت من الأمر `SHOW FILESYSTEM CACHES`. (بالنسبة إلى الإصدارات الأقدم
@@ -773,7 +821,9 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 |                                     |                                           | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
 |                                     |                                           | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
 
-### استخدام تخزين Web الثابت (للقراءة فقط) {#web-storage}
+<div id="web-storage">
+  ### استخدام تخزين Web الثابت (للقراءة فقط)
+</div>
 
 هذا قرص للقراءة فقط. تُقرأ بياناته فقط ولا تُعدَّل مطلقًا. يُحمَّل جدول جديد
 إلى هذا القرص عبر استعلام `ATTACH TABLE` (انظر المثال أدناه). ولا يُستخدم القرص المحلي
@@ -1038,16 +1088,24 @@ SAMPLE BY intHash32(UserID)
 SETTINGS storage_policy='web';
 ```
 
-#### المعلمات المطلوبة {#static-web-storage-required-parameters}
+<div id="required-parameters-s3">
+  #### المعلمات المطلوبة
+</div>
 
 | Parameter  | Description                                                                                                            |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `type`     | `web`. وإلا فلن يتم إنشاء القرص.                                                                                       |
 | `endpoint` | عنوان URL لنقطة النهاية بتنسيق `path`. ويجب أن يتضمن عنوان URL لنقطة النهاية مسار جذر لتخزين البيانات التي رُفعت إليه. |
 
-#### المعلمات الاختيارية {#optional-parameters-web}
+<div id="optional-parameters-s3">
+  #### المعلمات الاختيارية
+</div>
 
-تقرأ واجهة التخزين الكائني `web` معلمة `endpoint` فقط. لا توجد معلمات اختيارية إضافية خاصة بـ web؛ وما زالت خيارات القرص العامة سارية.
+| المعلمة                             | الوصف                                                                    | القيمة الافتراضية |
+| ----------------------------------- | ------------------------------------------------------------------------ | ----------------- |
+| `min_bytes_for_seek`                | الحد الأدنى لعدد البايتات لاستخدام عملية seek بدلًا من القراءة التسلسلية | `1` MB            |
+| `remote_fs_read_backoff_threashold` | الحد الأقصى لوقت الانتظار عند محاولة قراءة البيانات من القرص البعيد      | `10000` ثانية     |
+| `remote_fs_read_backoff_max_tries`  | الحد الأقصى لعدد محاولات القراءة باستخدام backoff                        | `5`               |
 
 إذا فشل استعلام مع الاستثناء `DB:Exception Unreachable URL`، فيمكنك محاولة ضبط الإعدادات التالية: [http&#95;connection&#95;timeout](/ar/reference/settings/session-settings/http#http_connection_timeout)، و[http&#95;receive&#95;timeout](/ar/reference/settings/session-settings/http#http_receive_timeout)، و[keep&#95;alive&#95;timeout](/ar/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
@@ -1058,9 +1116,11 @@ SETTINGS storage_policy='web';
 
 إذا تعذر الوصول إلى URL عند تحميل القرص أثناء بدء الخادم للجداول، فستُلتقط جميع الأخطاء. وإذا حدثت أخطاء في هذه الحالة، فيمكن إعادة تحميل الجداول (لتصبح مرئية) عبر `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name`. وإذا جرى تحميل البيانات الوصفية بنجاح عند بدء تشغيل الخادم، فستكون الجداول متاحة مباشرةً.
 
-استخدم [`http_max_tries`](/ar/reference/settings/session-settings/http-max#http_max_tries) لتقييد عدد محاولات قراءة HTTP، بما في ذلك المحاولة الأولى. استخدم [`http_retry_initial_backoff_ms`](/ar/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) و[`http_retry_max_backoff_ms`](/ar/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms) لتهيئة التأخيرات الأولية والقصوى بين محاولات إعادة المحاولة.
+استخدم الإعداد [http&#95;max&#95;single&#95;read&#95;retries](/ar/concepts/features/configuration/server-config/storing-data#web-storage) لتقييد الحد الأقصى لعدد retries أثناء عملية قراءة HTTP واحدة.
 
-### النسخ المتماثل دون نسخ (غير جاهز لبيئة الإنتاج) {#zero-copy}
+<div id="zero-copy">
+  ### النسخ المتماثل دون نسخ (غير جاهز لبيئة الإنتاج)
+</div>
 
 يمكن استخدام النسخ المتماثل دون نسخ، لكنه غير موصى به، مع الأقراص `S3` و`HDFS` (غير مدعومة). ويعني النسخ المتماثل دون نسخ أنه إذا كانت البيانات مخزنة عن بُعد على عدة أجهزة وتحتاج إلى المزامنة، فلا تُنسخ متماثلًا إلا البيانات الوصفية (مسارات أجزاء البيانات)، وليس البيانات نفسها.
 

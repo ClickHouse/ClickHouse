@@ -23,16 +23,18 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 Создает таблицу ClickHouse с начальным дампом данных из таблицы PostgreSQL и запускает процесс репликации, то есть выполняет фоновую задачу, применяющую новые изменения по мере их появления в таблице PostgreSQL в удаленной базе данных PostgreSQL.
 
 <Note>
-  Этот движок таблицы является экспериментальным. Чтобы использовать его, установите `enable_materialized_postgresql_table` в значение 1 в файлах конфигурации или с помощью команды `SET`:
+  Этот движок таблицы является экспериментальным. Чтобы использовать его, установите `allow_experimental_materialized_postgresql_table` в значение 1 в файлах конфигурации или с помощью команды `SET`:
 
   ```sql
-  SET enable_materialized_postgresql_table=1
+  SET allow_experimental_materialized_postgresql_table=1
   ```
 </Note>
 
 Если требуется реплицировать несколько таблиц, настоятельно рекомендуется использовать движок базы данных [MaterializedPostgreSQL](/ru/reference/engines/database-engines/materialized-postgresql) вместо движка таблицы и параметр `materialized_postgresql_tables_list`, который задает таблицы для репликации (также появится возможность добавить `schema` базы данных). Это значительно эффективнее с точки зрения нагрузки на CPU, количества соединений и числа слотов репликации в удаленной базе данных PostgreSQL.
 
-## Создание таблицы {#creating-a-table}
+<div id="creating-a-table">
+  ## Создание таблицы
+</div>
 
 ```sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
@@ -48,7 +50,9 @@ PRIMARY KEY key;
 * `user` — пользователь PostgreSQL.
 * `password` — пароль пользователя.
 
-## TLS/SSL {#tls-ssl}
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
 
 Параметры TLS/SSL передаются в `libpq` и могут быть заданы через [именованную коллекцию](/ru/concepts/features/configuration/server-config/named-collections) или в качестве завершающих аргументов движка в формате ключ-значение: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` или `verify-full`; если не задан, используется значение `prefer` по умолчанию в `libpq`), а также сертификаты и ключ в одном из двух вариантов. `sslrootcert` (CA‑сертификат), `sslcert` (клиентский сертификат) и `sslkey` (закрытый ключ клиента) — это пути к локальным файлам сервера; они принимаются только из именованной коллекции, определённой в файле конфигурации сервера. Вместо них `sslrootcert_pem`, `sslcert_pem` и `sslkey_pem` принимают буквальное содержимое соответствующего файла, могут быть указаны в SQL и маскируются в журналах и запросах `SHOW` так же, как пароль.
 
@@ -63,7 +67,9 @@ PRIMARY KEY key;
 
 Параметры TLS/SSL входят в параметры подключения к PostgreSQL и задаются при создании таблицы.
 
-## Требования {#requirements}
+<div id="requirements">
+  ## Требования
+</div>
 
 1. Параметр [wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) должен иметь значение `logical`, а параметр `max_replication_slots` — значение не менее `2` в конфигурационном файле PostgreSQL.
 
@@ -73,7 +79,9 @@ PRIMARY KEY key;
 
 4. Движок таблицы `MaterializedPostgreSQL` работает только с PostgreSQL версии &gt;= 11, поскольку для его реализации требуется функция PostgreSQL [pg&#95;replication&#95;slot&#95;advance](https://pgpedia.info/p/pg_replication_slot_advance.html).
 
-## Виртуальные столбцы {#virtual-columns}
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
 
 * `_version` — Счётчик транзакций. Тип: [UInt64](/ru/reference/data-types/int-uint).
 

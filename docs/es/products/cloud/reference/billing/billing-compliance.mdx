@@ -10,7 +10,7 @@ doc_type: 'guide'
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <div id="billing-compliance">
-  ## Cumplimiento de facturación {#billing-compliance}
+  ## Cumplimiento de facturación
 </div>
 
 El uso de ClickHouse Cloud requiere que su organización tenga configurado un
@@ -36,14 +36,15 @@ interrupciones del servicio. Consulte a continuación más información sobre el
 cumplimiento de pagos según el método de facturación que haya elegido.
 
 <div id="direct-payg">
-  ### Facturación de pago por uso con tarjeta de crédito {#direct-payg}
+  ### Facturación de pago por uso con tarjeta de crédito
 </div>
 
 Puede pagar el uso de ClickHouse Cloud mensualmente a mes vencido con una tarjeta de crédito.
 Para añadir una tarjeta de crédito, siga estas [instrucciones](#add-credit-card).
 
-Su ciclo de facturación mensual para las nuevas organizaciones de ClickHouse comienza el primer día del mes.
-Las organizaciones existentes pueden conservar un ciclo de facturación que comience en otro día del mes.
+Su ciclo de facturación mensual de ClickHouse comienza el día en que se selecciona el nivel de la organización
+(Basic, Scale o Enterprise) y se crea el primer servicio dentro de
+la organización.
 
 Normalmente, el cargo a la tarjeta de crédito registrada se realizará al final de su ciclo de facturación
 mensual, pero el cobro se adelantará si el importe adeudado dentro del ciclo
@@ -64,22 +65,27 @@ de la organización se detendrán. Si al final de este período de 30 días aún
 servicios asociados con su organización se eliminarán.
 
 <div id="cloud-marketplace-payg">
-  ### Facturación de pago por uso a través del marketplace en la nube {#cloud-marketplace-payg}
+  ### Facturación de pago por uso a través del marketplace en la nube
 </div>
 
 La facturación de pago por uso también puede configurarse para facturar a una organización a través de uno de nuestros marketplaces en la nube compatibles
-(AWS, GCP o Azure). Para registrarse en la facturación PAYG de marketplace, siga estas
+(AWS, GCP o Azure). Para registrarse en la facturación PAYG de Marketplace, siga estas
 [instrucciones](#marketplace-payg).
 
-Al igual que con Direct PAYG, el ciclo de facturación mensual de las nuevas organizaciones de ClickHouse en PAYG de marketplace comienza el primer día del mes.
+Al igual que con la facturación mediante Direct PAYG, su ciclo de facturación mensual con ClickHouse
+en Marketplace PAYG comienza el día en que se selecciona el nivel de la organización (Basic, Scale
+o Enterprise) y se crea el primer servicio dentro de la
+organización.
 
 Sin embargo, debido a los requisitos de los marketplaces, reportamos los cargos
 por su uso de pago por uso por horas. Se le
 facturará de acuerdo con los términos de su acuerdo con ese marketplace; normalmente,
 según un ciclo de facturación mensual por calendario.
 
-Las organizaciones existentes pueden tener un ciclo de facturación que comienza en un día distinto del mes.
-Para estas organizaciones, las fechas de los estados de uso de ClickHouse Cloud pueden diferir de las de las facturas del marketplace.
+Por ejemplo, si crea el primer servicio de su organización el 18 de enero, su
+primer ciclo de uso facturable en ClickHouse Cloud irá del 18 de enero hasta el
+final del día del 17 de febrero. Sin embargo, es posible que reciba su primera factura del
+marketplace en la nube a comienzos de febrero.
 
 No obstante, si su suscripción PAYG del marketplace se cancela o no se renueva
 automáticamente, la facturación pasará a cargarse a la tarjeta de crédito registrada de la
@@ -89,7 +95,7 @@ restricciones por factura impaga descritas anteriormente para [Direct PAYG](#dir
 incluye la suspensión del servicio y la posterior eliminación de datos.
 
 <div id="committed-spend-contract">
-  ### Facturación por contrato comprometido {#committed-spend-contract}
+  ### Facturación por contrato comprometido
 </div>
 
 Puede comprar créditos para su organización mediante un contrato comprometido de las siguientes maneras:
@@ -106,7 +112,8 @@ Puede comprar créditos para su organización mediante un contrato comprometido 
 Los créditos aplicados a una organización (p. ej., mediante contratos comprometidos o reembolsos) están
 disponibles para su uso durante el plazo especificado en el formulario de pedido o en la
 oferta privada aceptada.
-Los créditos se consumen a partir del día en que se conceden. En el caso de las organizaciones nuevas, los períodos de facturación mensuales comienzan el primer día del mes. Las organizaciones existentes pueden conservar períodos de facturación basados en la fecha en que se seleccionó su primer nivel de la organización.
+Los créditos se consumen a partir del día en que se conceden, en períodos de facturación
+basados en la fecha en que se selecciona el primer nivel de la organización (Basic, Scale o Enterprise).
 
 Si una organización **no** tiene un contrato comprometido a través de un marketplace en la nube y se queda
 sin créditos o estos vencen, la organización pasará automáticamente
@@ -130,7 +137,9 @@ tras ningún período de tiempo.
 Si desea agregar créditos adicionales antes de que los actuales venzan o se
 agoten, [contáctenos](https://clickhouse.com/company/contact).
 
-### Cómo pagar con una tarjeta de crédito {#add-credit-card}
+<div id="add-credit-card">
+  ### Cómo pagar con una tarjeta de crédito
+</div>
 
 Ve a la sección Facturación de la UI de ClickHouse Cloud y haz clic en el botón &quot;Agregar tarjeta de crédito&quot;
 (mostrado a continuación) para completar la configuración. Si tienes alguna pregunta, [contacta con soporte](/es/resources/about/support) para obtener ayuda.
@@ -138,7 +147,7 @@ Ve a la sección Facturación de la UI de ClickHouse Cloud y haz clic en el bot�
 <Image img="/images/cloud/manage/billing_compliance.webp" size="md" alt="Cómo agregar una tarjeta de crédito" />
 
 <div id="marketplace-payg">
-  ## Cómo pagar a través de marketplaces {#marketplace-payg}
+  ## Cómo pagar a través de marketplaces
 </div>
 
 Si quieres pagar a través de uno de nuestros marketplaces compatibles (AWS, GCP o Azure),

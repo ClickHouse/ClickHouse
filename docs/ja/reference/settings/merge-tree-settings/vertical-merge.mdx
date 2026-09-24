@@ -13,27 +13,35 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で確認でき、ClickHouse のソースコードから自動生成されています。
 
-## vertical_merge_algorithm_min_bytes_to_activate {#vertical_merge_algorithm_min_bytes_to_activate}
+<div id="vertical_merge_algorithm_min_bytes_to_activate">
+  ## vertical_merge_algorithm_min_bytes_to_activate
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Vertical merge アルゴリズムを有効化するために必要な、
 マージ対象パーツの最小 (概算) 非圧縮サイズ (バイト単位) 。
 
-## vertical_merge_algorithm_min_columns_to_activate {#vertical_merge_algorithm_min_columns_to_activate}
+<div id="vertical_merge_algorithm_min_columns_to_activate">
+  ## vertical_merge_algorithm_min_columns_to_activate
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="11" />
 
 Vertical merge アルゴリズムを有効にするために必要な、PK 以外のカラムの最小数。
 
-## vertical_merge_algorithm_min_rows_to_activate {#vertical_merge_algorithm_min_rows_to_activate}
+<div id="vertical_merge_algorithm_min_rows_to_activate">
+  ## vertical_merge_algorithm_min_rows_to_activate
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
 Vertical merge アルゴリズムを有効にするために必要な、
 マージ対象のパーツに含まれる行数の最小合計値 (概算) 。
 
-## vertical_merge_optimize_lightweight_delete {#vertical_merge_optimize_lightweight_delete}
+<div id="vertical_merge_optimize_lightweight_delete">
+  ## vertical_merge_optimize_lightweight_delete
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,16 +49,20 @@ Vertical merge アルゴリズムを有効にするために必要な、
 
 true の場合、Vertical merge アルゴリズム における論理削除が最適化されます。
 
-## vertical_merge_optimize_ttl_delete {#vertical_merge_optimize_ttl_delete}
+<div id="vertical_merge_optimize_ttl_delete">
+  ## vertical_merge_optimize_ttl_delete
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "有効期限 (TTL) により期限切れになった行を削除する必要があるマージに対して、Vertical merge アルゴリズムを許可します"}]}]} />
 
-true の場合、行の TTL 削除は `MergeTree` テーブルに限り Vertical merge で最適化されます。horizontal merge を強制する代わりに、
+true の場合、行の TTL 削除は Vertical merge で最適化されます。horizontal merge を強制する代わりに、
 TTL filter が評価され、行ソース内の skip フラグを設定するマージアルゴリズムに渡されます。
 
-## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
+<div id="vertical_merge_remote_filesystem_prefetch">
+  ## vertical_merge_remote_filesystem_prefetch
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

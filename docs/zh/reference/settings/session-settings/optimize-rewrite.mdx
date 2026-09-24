@@ -13,14 +13,22 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## optimize_rewrite_aggregate_function_with_if {#optimize_rewrite_aggregate_function_with_if}
+<div id="optimize_rewrite_aggregate_function_with_if">
+  ## optimize_rewrite_aggregate_function_with_if
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 当逻辑上等价时，将以 if 表达式作为参数的聚合函数重写为等效形式。
 例如，`avg(if(cond, col, null))` 可以重写为 `avgOrNullIf(cond, col)`。这可能会提升性能。
 
-## optimize_rewrite_array_exists_to_has {#optimize_rewrite_array_exists_to_has}
+<Note>
+  仅在启用 analyzer 时受支持 (`enable_analyzer = 1`) 。
+</Note>
+
+<div id="optimize_rewrite_array_exists_to_has">
+  ## optimize_rewrite_array_exists_to_has
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,7 +36,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 当逻辑上等价时，将 arrayExists() 函数重写为 has()。例如，arrayExists(x -&gt; x = 1, arr) 可重写为 has(arr, 1)
 
-## optimize_rewrite_has_to_in {#optimize_rewrite_has_to_in}
+<div id="optimize_rewrite_has_to_in">
+  ## optimize_rewrite_has_to_in
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -36,7 +46,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 当第一个参数为常量数组时，将 `has` 函数重写为 `IN`。例如，`has([1, 2, 3], x)` 可重写为 `x IN [1, 2, 3]`，从而在处理常量数组时获得更好的性能
 
-## optimize_rewrite_like_perfect_affix {#optimize_rewrite_like_perfect_affix}
+<div id="optimize_rewrite_like_perfect_affix">
+  ## optimize_rewrite_like_perfect_affix
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -44,7 +56,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 将具有精确前缀或后缀的 LIKE 表达式 (例如 `col LIKE 'ClickHouse%'`) 重写为 startsWith 或 endsWith 函数 (例如 `startsWith(col, 'ClickHouse')`) 。
 
-## optimize_rewrite_regexp_functions {#optimize_rewrite_regexp_functions}
+<div id="optimize_rewrite_regexp_functions">
+  ## optimize_rewrite_regexp_functions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -52,7 +66,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 将与正则表达式相关的函数重写为更简单、更高效的形式
 
-## optimize_rewrite_sum_if_to_count_if {#optimize_rewrite_sum_if_to_count_if}
+<div id="optimize_rewrite_sum_if_to_count_if">
+  ## optimize_rewrite_sum_if_to_count_if
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

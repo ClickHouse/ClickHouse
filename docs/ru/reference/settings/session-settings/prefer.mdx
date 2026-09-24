@@ -14,7 +14,9 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## prefer_column_name_to_alias {#prefer_column_name_to_alias}
+<div id="prefer_column_name_to_alias">
+  ## prefer_column_name_to_alias
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,22 +26,6 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 * 0 — Имя столбца заменяется псевдонимом.
 * 1 — Имя столбца не заменяется псевдонимом.
-
-Если имя столбца неоднозначно среди соединяемых таблиц и существует псевдоним с таким же именем, используется псевдоним:
-
-```sql
-SET prefer_column_name_to_alias = 1;
-SELECT t1.id + 10 AS id, id AS x
-FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
-```
-
-```text
-┌─id─┬──x─┐
-│ 11 │ 11 │
-└────┴────┘
-```
-
-Здесь `id` в `id AS x` является столбцом и `t1`, и `t3`, поэтому он разрешается в псевдоним `t1.id + 10`.
 
 **Пример**
 
@@ -74,7 +60,9 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 └────────┴─────────────┘
 ```
 
-## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
+<div id="prefer_external_sort_block_bytes">
+  ## prefer_external_sort_block_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -82,7 +70,9 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 Предпочитать максимальный размер блока в байтах для внешней сортировки, чтобы уменьшить использование памяти при слиянии.
 
-## prefer_global_in_and_join {#prefer_global_in_and_join}
+<div id="prefer_global_in_and_join">
+  ## prefer_global_in_and_join
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -105,7 +95,9 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 * [Распределённые подзапросы](/ru/reference/statements/in#distributed-subqueries) — дополнительная информация об использовании `GLOBAL IN`/`GLOBAL JOIN`
 
-## prefer_localhost_replica {#prefer_localhost_replica}
+<div id="prefer_localhost_replica">
+  ## prefer_localhost_replica
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,22 +114,9 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   Если она используется в кластере с одним сегментом и несколькими репликами, отключение этой настройки приведёт к нежелательным последствиям.
 </Note>
 
-## prefer_optimize_projection {#prefer_optimize_projection}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Новая настройка: выбирать подходящую проекцию независимо от её оценочной стоимости, как `force_optimize_projection`, но без завершения запроса ошибкой, если ни одна проекция не используется."}]}]} />
-
-Заставляет оптимизацию проекций отдавать предпочтение [проекциям](/ru/reference/engines/table-engines/mergetree-family/mergetree#projections), а не самой таблице, в запросах `SELECT`, если оптимизация проекций включена (см. настройку [optimize&#95;use&#95;projections](/ru/reference/settings/session-settings/optimize-use#optimize_use_projections)).
-
-Если настройка включена, проекция, способная обслужить запрос, используется даже тогда, когда для этого требуется прочитать больше marks, чем при чтении самой таблицы — так же, как при [force&#95;optimize&#95;projection](/ru/reference/settings/session-settings/force-optimize#force_optimize_projection), но запрос не завершается ошибкой, если ни одна проекция не может быть использована.
-
-Возможные значения:
-
-* 0 — проекции выбираются по их оценочной стоимости.
-* 1 — подходящая проекция выбирается независимо от её оценочной стоимости.
-
-## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
+<div id="prefer_warmed_unmerged_parts_seconds">
+  ## prefer_warmed_unmerged_parts_seconds
+</div>
 
 <CloudOnlyBadge />
 

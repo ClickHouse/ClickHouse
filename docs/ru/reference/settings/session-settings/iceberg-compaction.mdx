@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_compaction_commit_batch_size {#iceberg_compaction_commit_batch_size}
+<div id="iceberg_compaction_commit_batch_size">
+  ## iceberg_compaction_commit_batch_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -26,7 +28,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 публикацию только после того, как у компактации закончатся кандидаты. Это состояние никогда не достигается, пока таблица продолжает
 получать новые файлы данных, поэтому каждый слитый результат записывается в объектное хранилище, но никогда не включается в снимок.
 
-## iceberg_compaction_data_cleanup {#iceberg_compaction_data_cleanup}
+<div id="iceberg_compaction_data_cleanup">
+  ## iceberg_compaction_data_cleanup
+</div>
 
 <SettingsInfoBlock type="Секунды" default_value="10800" />
 
@@ -34,7 +38,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Промежуток времени, по истечении которого данные будут удалены.
 
-## iceberg_compaction_delay_bias {#iceberg_compaction_delay_bias}
+<div id="iceberg_compaction_delay_bias">
+  ## iceberg_compaction_delay_bias
+</div>
 
 <SettingsInfoBlock type="Секунды" default_value="10800" />
 
@@ -42,27 +48,24 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Минимальная задержка между двумя фоновыми операциями компактации.
 
-## iceberg_compaction_max_bytes_in_data_file {#iceberg_compaction_max_bytes_in_data_file}
+<div id="iceberg_compaction_max_bytes_in_data_file">
+  ## iceberg_compaction_max_bytes_in_data_file
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="536870912" />
+<SettingsInfoBlock type="UInt64" default_value="18446744073709551615" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "Новая настройка для максимального размера в байтах файла данных Iceberg, создаваемого при компактации, независимая от ограничения при вставке. Значение по умолчанию согласовано с документированным значением по умолчанию свойства таблицы Iceberg `write.target-file-size-bytes` (512 MiB), см. https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/. Ранее компактация объединяла все подходящие файлы партиции в один выходной файл."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "Новая настройка для максимального размера в байтах файла данных Iceberg, создаваемого при компактации, независимая от ограничения при вставке."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "Новая настройка для максимального размера в байтах файла данных Iceberg, создаваемого при компактации, независимая от ограничения при вставке."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "Новая настройка максимального размера в байтах файла данных Iceberg, создаваемого при компактации, отдельная от ограничения при вставке."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "Новая настройка максимального размера в байтах файла данных Iceberg, создаваемого при компактации, отдельная от ограничения при вставке."}]}]} />
 
-Максимальный размер в байтах файла данных Parquet Iceberg, создаваемого при компактации.
+Максимальный размер в байтах файла данных Parquet Iceberg, создаваемого при компактации. По умолчанию задано максимальное значение, чтобы при компактации подходящие файлы объединялись в минимально возможное число выходных файлов.
 
-Значение по умолчанию соответствует документированному значению по умолчанию свойства таблицы Iceberg `write.target-file-size-bytes` (512 MiB),
-см. https://iceberg.apache.org/docs/1.5.2/configuration/. Задавайте его выше, чем
-`iceberg_data_file_size_lower_threshold_compaction`, иначе каждый выходной файл будет оказываться ниже нижнего порога
-и снова попадать в компактацию.
-
-## iceberg_compaction_max_rows_in_data_file {#iceberg_compaction_max_rows_in_data_file}
+<div id="iceberg_compaction_max_rows_in_data_file">
+  ## iceberg_compaction_max_rows_in_data_file
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "Новая настройка максимального числа строк в файле данных Iceberg, создаваемом при компактации, отдельно от ограничения при вставке."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "Новая настройка максимального числа строк в файле данных Iceberg, создаваемом при компактации, отдельно от ограничения при вставке."}]}]} />
 
-Максимальное число строк в файле данных Parquet Iceberg, создаваемом при компактации. По умолчанию задано максимальное значение, поэтому только ограничение по размеру
-`iceberg_compaction_max_bytes_in_data_file` определяет, сколько данных попадает в выходной файл, — так же, как
-в Iceberg нет аналога `write.target-file-size-bytes` для числа строк.
+Максимальное число строк в файле данных Parquet Iceberg, создаваемом при компактации. По умолчанию задано максимальное значение, чтобы компактация объединяла подходящие файлы в минимально возможное число выходных файлов. Если установить значение выше размера, который компактация может фактически создать, каждый выходной файл будет оставаться меньше `iceberg_data_file_size_lower_threshold_compaction` и бесконечно выбираться повторно.
 
 {/*AUTOGENERATED_END*/}

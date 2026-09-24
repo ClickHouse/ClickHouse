@@ -29,7 +29,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 وعلى عكس ReplicatedMergeTree، لا يتطلب SharedMergeTree أن تتواصل replicas مع بعضها البعض. وبدلًا من ذلك، تتم جميع الاتصالات عبر التخزين المشترك وclickhouse-keeper. ويعتمد SharedMergeTree على replication غير متزامن ومن دون leader، ويستخدم clickhouse-keeper لأغراض coordination وmetadata storage. وهذا يعني أن البيانات الوصفية لا تحتاج إلى replication مع توسع خدمتك أو تقليصها. ويؤدي ذلك إلى تسريع replication وmutation وmerges وعمليات scale-up. كما يتيح SharedMergeTree وجود مئات replicas لكل table، مما يجعل التوسع الديناميكي ممكنًا من دون shards. ويُستخدم نهج distributed query execution في ClickHouse Cloud للاستفادة من مزيد من موارد compute للاستعلام.
 
-## الاستبطان {#introspection}
+<div id="introspection">
+  ## الاستبطان
+</div>
 
 تتوفّر في SharedMergeTree معظم جداول النظام المستخدمة لاستبطان ReplicatedMergeTree، باستثناء `system.replication_queue` و`system.replicated_fetches`، إذ لا يحدث فيها أي replication للبيانات أو البيانات الوصفية. ومع ذلك، يوفّر SharedMergeTree بدائل مقابلة لهذين الجدولين.
 
@@ -41,7 +43,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يُعد هذا الجدول البديل عن `system.replicated_fetches` في SharedMergeTree. ويحتوي على معلومات عن عمليات الجلب الجارية حاليًا للمفاتيح الأساسية وقيم التحقّق إلى الذاكرة.
 
-## تمكين SharedMergeTree {#enabling-sharedmergetree}
+<div id="enabling-sharedmergetree">
+  ## تمكين SharedMergeTree
+</div>
 
 يكون `SharedMergeTree` مفعّلًا افتراضيًا.
 
@@ -94,7 +98,9 @@ ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica
 ORDER BY key
 ```
 
-## الإعدادات {#settings}
+<div id="settings">
+  ## الإعدادات
+</div>
 
 تغيّر سلوك بعض الإعدادات بشكل ملحوظ:
 
@@ -102,7 +108,9 @@ ORDER BY key
 * `insert_quorum_parallel` -- جميع عمليات insert إلى SharedMergeTree هي quorum inserts (تُكتب إلى التخزين المشترك)، لذا لا حاجة إلى هذا الإعداد عند استخدام محرك الجدول SharedMergeTree.
 * `select_sequential_consistency` -- لا يتطلب quorum inserts، لكنه يفرض حملاً إضافيًا على clickhouse-keeper عند تنفيذ استعلامات `SELECT`
 
-## الاتساق {#consistency}
+<div id="consistency">
+  ## الاتساق
+</div>
 
 يوفّر SharedMergeTree اتساقًا lightweight أفضل من ReplicatedMergeTree. عند إجراء `insert` في SharedMergeTree، لا تحتاج إلى تحديد إعدادات مثل `insert_quorum` أو `insert_quorum_parallel`. تكون عمليات الإدراج من نوع quorum inserts، ما يعني أن البيانات الوصفية ستُخزَّن في ClickHouse-Keeper، وستُكرَّر إلى ما لا يقل عن النصاب من مثيلات ClickHouse-Keeper. وسيجلب كل replica في الـ cluster لديك المعلومات الجديدة بشكل غير متزامن من ClickHouse-Keeper.
 
@@ -113,11 +121,3 @@ ORDER BY key
 2. إذا كنت تكتب إلى replica وتقرأ من أخرى، فيمكنك استخدام `SYSTEM SYNC REPLICA LIGHTWEIGHT` لإجبار الـ replica على جلب البيانات الوصفية من ClickHouse-Keeper.
 
 3. استخدم `select_sequential_consistency` كإعداد ضمن `query` الخاصة بك.
-
-## `ALTER` ومدى ظهور عمليات التعديل {#alter-and-mutation-visibility}
-
-ينسّق `SharedMergeTree` تغييرات البيانات الوصفية عبر ClickHouse Keeper. وتجلب النسخ المتماثلة البيانات الوصفية المُعدَّلة بشكل غير متزامن، لذا قد لا يظهر تغيير البيانات الوصفية فورًا على كل نسخة متماثلة. أما عمليات القراءة ضمن session نفسها وعلى العقدة نفسها، فتستخدم البيانات الوصفية المحدَّثة أصلًا. وإذا تعيّن تنفيذ عملية قراءة على نسخة متماثلة أخرى مباشرةً بعد تغيير البيانات الوصفية، فاستخدم `SYSTEM SYNC REPLICA LIGHTWEIGHT` لإجبار تلك النسخة المتماثلة على جلب البيانات الوصفية من ClickHouse Keeper.
-
-تُنفِّذ عمليات `ALTER` التي تُنتج تعديلات عملًا في الخلفية يُنشئ أجزاء بيانات جديدة في التخزين المشترك، ثم تُنسِّق ظهورها عبر ClickHouse Keeper. ولا يتعلق الأمر هنا بعملية إعادة كتابة أو نقل بيانات على مستوى كل نسخة متماثلة على حدة، كما هو الحال في `ReplicatedMergeTree`.
-
-في ClickHouse Cloud، تكون القيمة الافتراضية للإعداد [`alter_sync`](/ar/reference/settings/session-settings/alter#alter_sync) هي `0`؛ لذا اضبطه عندما يحتاج العميل إلى انتظار اكتمال عمليات البيانات الوصفية، أو عمليات إعادة الكتابة الناتجة عن `MODIFY COLUMN` التي لا تقتصر على البيانات الوصفية. أما عمليات `UPDATE` و`DELETE` و`MATERIALIZE ...`، فاستخدم معها [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync) للتحكم في الانتظار، وتابع تقدّمها في [`system.mutations`](/ar/reference/system-tables/mutations).

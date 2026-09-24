@@ -11,14 +11,18 @@ keywords: ['ClickHouse Cloud', 'тарификация', 'биллинг', 'об
 В ClickHouse Cloud тарификация зависит от использования вычислительных ресурсов, хранилища, [передачи данных](/ru/products/cloud/reference/billing/network-data-transfer) (исходящий интернет-трафик и передача данных между регионами) и [ClickPipes](/ru/integrations/clickpipes/home).
 Чтобы понять, что влияет на сумму счёта и как управлять расходами, читайте далее.
 
-## Пример для Amazon Web Services (AWS) {#amazon-web-services-aws-example}
+<div id="amazon-web-services-aws-example">
+  ## Пример для Amazon Web Services (AWS)
+</div>
 
 <Note>
   * Цены указаны по тарифам AWS для региона us-east-1.
   * Сведения о действующих тарифах на передачу данных см. [здесь](/ru/products/cloud/reference/billing/network-data-transfer).
 </Note>
 
-### Basic: от $66.52 в месяц {#basic-from-6652-per-month}
+<div id="basic-from-6652-per-month">
+  ### Basic: от $66.52 в месяц
+</div>
 
 Лучше всего подходит для: задач уровня отдела с меньшими объемами данных, где не требуются строгие гарантии надежности.
 
@@ -81,7 +85,9 @@ keywords: ['ClickHouse Cloud', 'тарификация', 'биллинг', 'об
   </tbody>
 </table>
 
-### Scale (всегда активно, автомасштабирование): от $499.38 в месяц {#scale-always-on-auto-scaling-from-49938-per-month}
+<div id="scale-always-on-auto-scaling-from-49938-per-month">
+  ### Scale (всегда активно, автомасштабирование): от $499.38 в месяц
+</div>
 
 Лучше всего подходит для: рабочих нагрузок, которым требуются повышенные SLA (сервисы с 2+ репликами), масштабируемость и расширенные функции безопасности.
 
@@ -143,7 +149,9 @@ keywords: ['ClickHouse Cloud', 'тарификация', 'биллинг', 'об
   </tbody>
 </table>
 
-### Enterprise: Стартовые цены различаются {#enterprise-starting-prices-vary}
+<div id="enterprise-starting-prices-vary">
+  ### Enterprise: Стартовые цены различаются
+</div>
 
 Лучше всего подходит для: крупномасштабных, критически важных развертываний со строгими требованиями к безопасности и соответствию нормативным требованиям
 
@@ -202,9 +210,13 @@ keywords: ['ClickHouse Cloud', 'тарификация', 'биллинг', 'об
   </tbody>
 </table>
 
-## Часто задаваемые вопросы {#faqs}
+<div id="faqs">
+  ## Часто задаваемые вопросы
+</div>
 
-### Что такое ClickHouse Credit (CHC)? {#what-is-chc}
+<div id="what-is-chc">
+  ### Что такое ClickHouse Credit (CHC)?
+</div>
 
 ClickHouse Credit — это кредитная единица, засчитываемая в оплату использования ClickHouse Cloud клиентом, эквивалентная одному (1) доллару США и применяемая в соответствии с опубликованным ClickHouse на тот момент прайс-листом.
 
@@ -212,27 +224,37 @@ ClickHouse Credit — это кредитная единица, засчитыв
   Если вам выставляют счета через Stripe, в счете от Stripe вы увидите, что 1 CHC равен $0.01 USD. Это сделано для обеспечения точного биллинга в Stripe, поскольку Stripe не поддерживает выставление счетов за дробные количества нашего стандартного SKU, где 1 CHC = $1 USD.
 </Note>
 
-### Где найти архивные тарифы? {#find-legacy-pricing}
+<div id="find-legacy-pricing">
+  ### Где найти архивные тарифы?
+</div>
 
 Информация об архивных тарифах доступна [здесь](https://clickhouse.com/pricing?legacy=true).
 
-### Как тарифицируются вычислительные ресурсы? {#how-is-compute-metered}
+<div id="how-is-compute-metered">
+  ### Как тарифицируются вычислительные ресурсы?
+</div>
 
 В ClickHouse Cloud вычислительные ресурсы тарифицируются поминутно, блоками по 8 ГБ оперативной памяти.
 Стоимость вычислительных ресурсов зависит от уровня, региона и облачного провайдера.
 
-### Как рассчитывается объём хранения на диске? {#how-is-storage-on-disk-calculated}
+<div id="how-is-storage-on-disk-calculated">
+  ### Как рассчитывается объём хранения на диске?
+</div>
 
 ClickHouse Cloud использует облачное объектное хранилище, а потребление тарифицируется по сжатому объёму данных, хранящихся в таблицах ClickHouse.
 Стоимость хранения одинакова на всех уровнях и зависит от региона и облачного провайдера.
 
-### Учитываются ли резервные копии в общем объеме хранилища? {#do-backups-count-toward-total-storage}
+<div id="do-backups-count-toward-total-storage">
+  ### Учитываются ли резервные копии в общем объеме хранилища?
+</div>
 
 Объем хранилища и резервные копии учитываются при расчете стоимости хранения и тарифицируются отдельно.
 Для всех сервисов по умолчанию создается одна резервная копия, которая хранится один день.
 Пользователи, которым нужны дополнительные резервные копии, могут настроить дополнительные [резервные копии](/ru/products/cloud/guides/backups/review-and-restore-backups) на вкладке настроек в консоли Cloud.
 
-### Как оценить сжатие? {#how-do-i-estimate-compression}
+<div id="how-do-i-estimate-compression">
+  ### Как оценить сжатие?
+</div>
 
 Степень сжатия может различаться от одного набора данных к другому.
 Насколько большой будет разница, зависит от того, насколько хорошо данные в принципе сжимаются (например, от количества полей с высокой и низкой мощностью),
@@ -249,12 +271,16 @@ FROM system.tables
 WHERE name = <your table name>
 ```
 
-### Какие инструменты ClickHouse предлагает для оценки стоимости работы сервиса в облаке, если у меня самоуправляемое развертывание? {#what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment}
+<div id="what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment">
+  ### Какие инструменты ClickHouse предлагает для оценки стоимости работы сервиса в облаке, если у меня самоуправляемое развертывание?
+</div>
 
 В журнале запросов ClickHouse сохраняются [ключевые метрики](/ru/reference/system-tables/query_log), которые можно использовать для оценки стоимости выполнения рабочей нагрузки в ClickHouse Cloud.
 Чтобы перейти с самоуправляемого ClickHouse на ClickHouse Cloud, используйте [`remoteSecure`](/ru/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) или [`BACKUP` и `RESTORE`](/ru/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore). Если у вас останутся дополнительные вопросы, обратитесь в [службу поддержки ClickHouse Cloud](https://console.clickhouse.cloud/support).
 
-### Какие варианты оплаты доступны для ClickHouse Cloud? {#what-billing-options-are-available-for-clickhouse-cloud}
+<div id="what-billing-options-are-available-for-clickhouse-cloud">
+  ### Какие варианты оплаты доступны для ClickHouse Cloud?
+</div>
 
 ClickHouse Cloud поддерживает следующие варианты оплаты:
 
@@ -266,25 +292,33 @@ ClickHouse Cloud поддерживает следующие варианты о
   ClickHouse Cloud Credits для PAYG выставляются в счёте с шагом $0.01, что позволяет нам взимать плату за дробные ClickHouse Credits в зависимости от фактического использования. Это отличается от ClickHouse Credits для контрактов с фиксированными обязательствами по расходам, которые приобретаются заранее целыми единицами по $1.
 </Note>
 
-### Могу ли я удалить свою кредитную карту? {#can-i-delete-my-credit-card}
+<div id="can-i-delete-my-credit-card">
+  ### Могу ли я удалить свою кредитную карту?
+</div>
 
 Вы не можете удалить кредитную карту в интерфейсе Billing, но можете обновить её в любое время. Это помогает обеспечить, чтобы у вашей организации всегда был действительный способ оплаты. Если вам нужно удалить свою кредитную карту, обратитесь в [службу поддержки ClickHouse Cloud](https://console.clickhouse.cloud/support).
 
-### Где можно увидеть свои возвраты? {#where-can-i-see-my-refunds}
+<div id="where-can-i-see-my-refunds">
+  ### Где можно увидеть свои возвраты?
+</div>
 
 Перейдите в раздел Organization &gt; Billing в консоли ClickHouse Cloud. Раздел Refunds находится ниже Invoices и Credits. Для его просмотра у вас должна быть роль Organization Admin или Billing Admin.
 
-### Сколько времени занимает отображение возврата средств? {#how-long-does-it-take-for-a-refund-to-appear}
+<div id="how-long-does-it-take-for-a-refund-to-appear">
+  ### Сколько времени занимает отображение возврата средств?
+</div>
 
 Возврат средств отображается после того, как мы его обработаем. Возврат на кредитную карту может появиться в выписке позже — это зависит от вашего банка.
 
-### Каков расчетный период? {#how-long-is-the-billing-cycle}
+<div id="how-long-is-the-billing-cycle">
+  ### Каков расчетный период?
+</div>
 
-Оплата осуществляется по ежемесячному расчетному периоду. Для новых организаций расчетный период всегда начинается в первый день месяца.
-У существующих организаций расчетный период может начинаться в другой день месяца.
-Чтобы изменить расчетный период, обратитесь в [службу поддержки ClickHouse Cloud](https://console.clickhouse.cloud/support).
+Оплата осуществляется по ежемесячному расчетному периоду, а его началом считается дата создания организации ClickHouse Cloud.
 
-### Если у меня есть активная подписка через маркетплейс PAYG, а затем я заключаю контракт с обязательствами, будут ли сначала расходоваться кредиты по контракту? {#committed-credits-consumed-first-with-active-payg-subscription}
+<div id="committed-credits-consumed-first-with-active-payg-subscription">
+  ### Если у меня есть активная подписка через маркетплейс PAYG, а затем я заключаю контракт с обязательствами, будут ли сначала расходоваться кредиты по контракту?
+</div>
 
 Да. Расходы списываются с использованием следующих способов оплаты и в таком порядке:
 
@@ -292,30 +326,42 @@ ClickHouse Cloud поддерживает следующие варианты о
 * Подписка через маркетплейс (PAYG)
 * Кредитная карта
 
-### Какие инструменты предлагает ClickHouse Cloud для управления затратами на сервисы Scale и Enterprise? {#what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-scale-and-enterprise-services}
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-scale-and-enterprise-services">
+  ### Какие инструменты предлагает ClickHouse Cloud для управления затратами на сервисы Scale и Enterprise?
+</div>
 
 * Клиенты Trial и Annual Commit автоматически получают уведомления по электронной почте, когда их потребление достигает определённых пороговых значений: `50%`, `75%` и `90%`. Это позволяет заранее контролировать использование ресурсов.
 * ClickHouse Cloud позволяет задать максимальный лимит автомасштабирования для ваших вычислительных ресурсов с помощью [Расширенного управления масштабированием](/ru/products/cloud/features/autoscaling/overview), которые являются одним из основных факторов затрат для аналитических рабочих нагрузок.
 * [Расширенное управление масштабированием](/ru/products/cloud/features/autoscaling/overview) позволяет задавать лимиты памяти, а также управлять поведением при паузе/переходе в режим простоя в периоды неактивности.
 
-### Какие инструменты ClickHouse Cloud предлагает для управления затратами на сервисы Basic? {#what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-basic-services}
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-basic-services">
+  ### Какие инструменты ClickHouse Cloud предлагает для управления затратами на сервисы Basic?
+</div>
 
 * [Расширенное управление масштабированием](/ru/products/cloud/features/autoscaling/overview) позволяет управлять поведением сервиса при приостановке/переходе в режим простоя в периоды неактивности. Настройка объёма памяти для сервисов Basic не поддерживается.
 * Обратите внимание: по умолчанию сервис приостанавливается после периода неактивности.
 
-### Если у меня несколько сервисов, я получу отдельный счет по каждому сервису или единый счет? {#if-i-have-multiple-services-do-i-get-an-invoice-per-service-or-a-consolidated-invoice}
+<div id="if-i-have-multiple-services-do-i-get-an-invoice-per-service-or-a-consolidated-invoice">
+  ### Если у меня несколько сервисов, я получу отдельный счет по каждому сервису или единый счет?
+</div>
 
 Единый счет выставляется по всем сервисам организации за расчетный период.
 
-### Если я добавлю свою кредитную карту и перейду на платный тариф до окончания пробного периода и до исчерпания кредитов, будет ли с меня взиматься плата? {#if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged}
+<div id="if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged">
+  ### Если я добавлю свою кредитную карту и перейду на платный тариф до окончания пробного периода и до исчерпания кредитов, будет ли с меня взиматься плата?
+</div>
 
 Когда пользователь добавляет кредитную карту во время пробного периода, мы продолжаем расходовать пробные кредиты, пока они не будут исчерпаны или не истекут — в зависимости от того, что наступит раньше. Срок действия пробных кредитов истекает в конце 30-дневного пробного периода, даже после добавления способа оплаты. После исчерпания или истечения срока действия пробных кредитов средства будут списываться с сохранённой кредитной карты. Вы можете проверить дату истечения срока действия пробных кредитов на странице Billing в консоли ClickHouse Cloud.
 
-### Как отслеживать свои расходы? {#how-can-i-keep-track-of-my-spending}
+<div id="how-can-i-keep-track-of-my-spending">
+  ### Как отслеживать свои расходы?
+</div>
 
 В консоли ClickHouse Cloud есть раздел Usage, где приводится подробная информация об использовании по каждому сервису. Эта разбивка по параметрам использования помогает понять, какие затраты связаны с каждой тарифицируемой единицей.
 
-### Как получить доступ к счетам по моей подписке на сервис ClickHouse Cloud? {#how-do-i-access-my-invoice-for-my-subscription-to-the-clickhouse-cloud-service}
+<div id="how-do-i-access-my-invoice-for-my-subscription-to-the-clickhouse-cloud-service">
+  ### Как получить доступ к счетам по моей подписке на сервис ClickHouse Cloud?
+</div>
 
 Для прямых подписок с оплатой кредитной картой:
 
@@ -325,30 +371,39 @@ ClickHouse Cloud поддерживает следующие варианты о
 
 Все подписки через маркетплейс оплачиваются и выставляются через него. Просмотреть свой счет можно напрямую в маркетплейсе соответствующего облачного провайдера.
 
-### Почему даты в отчетах об использовании не совпадают с моим счетом AWS Marketplace? {#why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice}
+<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
+  ### Почему даты в отчетах об использовании не совпадают с моим счетом AWS Marketplace?
+</div>
 
 Тарификация в AWS Marketplace привязана к календарному месяцу.
 Например, для использования в период с 01-Dec-2024 по 01-Jan-2025
 счет выставляется в период с 3-Jan по 5-Jan-2025.
 
-Для некоторых существующих организаций отчеты об использовании ClickHouse Cloud формируются по расчетному периоду, который начинается не с первого числа месяца. Для новых организаций используется месячный расчетный период, начинающийся с первого числа месяца.
+Отчеты об использовании ClickHouse Cloud формируются по другому расчетному периоду: использование учитывается
+и отражается за 30 дней, начиная со дня регистрации.
 
 Если эти даты не совпадают, даты использования и даты в счете будут различаться. Поскольку отчеты об использовании показывают использование по дням для конкретного сервиса, по ним можно увидеть детализацию затрат.
 
-### Есть ли какие-либо ограничения на использование предоплаченных кредитов? {#are-there-any-restrictions-around-the-usage-of-prepaid-credits}
+<div id="are-there-any-restrictions-around-the-usage-of-prepaid-credits">
+  ### Есть ли какие-либо ограничения на использование предоплаченных кредитов?
+</div>
 
 Предоплаченные кредиты ClickHouse Cloud (как при прямой покупке через ClickHouse, так и через маркетплейс облачного провайдера)
 можно использовать только в течение срока действия контракта.
 Это означает, что их можно применить с даты принятия условий или с более поздней даты, но не за какие-либо предыдущие периоды.
 Любое превышение, не покрытое предоплаченными кредитами, должно оплачиваться кредитной картой или через ежемесячный биллинг маркетплейса.
 
-### Есть ли разница в ценах ClickHouse Cloud при оплате через маркетплейс облачного провайдера или напрямую в ClickHouse? {#is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse}
+<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
+  ### Есть ли разница в ценах ClickHouse Cloud при оплате через маркетплейс облачного провайдера или напрямую в ClickHouse?
+</div>
 
 Разницы в цене между оплатой через маркетплейс и прямой регистрацией в ClickHouse нет.
 В обоих случаях использование ClickHouse Cloud учитывается в ClickHouse Cloud Credits (CHCs),
 которые рассчитываются одинаково и тарифицируются соответствующим образом.
 
-### Как тарифицируется compute-compute separation? {#how-is-compute-compute-separation-billed}
+<div id="how-is-compute-compute-separation-billed">
+  ### Как тарифицируется compute-compute separation?
+</div>
 
 При создании сервиса в дополнение к уже существующему
 вы можете выбрать, должен ли новый сервис использовать те же данные, что и существующий.
@@ -432,6 +487,8 @@ ClickHouse Cloud поддерживает следующие варианты о
 Без хранилищ вам пришлось бы платить за тот объём памяти, который нужен инженеру по данным для его запросов.
 Однако объединение двух сервисов в хранилище и перевод одного из них в простой помогают сэкономить.
 
-## Стоимость ClickPipes {#clickpipes-pricing}
+<div id="clickpipes-pricing">
+  ## Стоимость ClickPipes
+</div>
 
 Информацию об оплате ClickPipes см. в специальном разделе [«ClickPipes»](/ru/products/cloud/reference/billing/clickpipes/index).

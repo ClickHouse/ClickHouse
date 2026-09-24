@@ -44,7 +44,6 @@
           "expanded": false,
           "group": "Compute and storage",
           "pages": [
-            "es/products/cloud/features/infrastructure/on-demand-compute",
             "es/products/cloud/features/large-single-replica-services",
             "es/products/cloud/features/infrastructure/parallel-replicas",
             "es/products/cloud/features/infrastructure/replica-aware-routing",
@@ -341,7 +340,6 @@
         "es/products/cloud/reference/billing/payment-thresholds",
         "es/products/cloud/reference/billing/spend-alerts",
         "es/products/cloud/reference/billing/managing-payment-methods",
-        "es/products/cloud/reference/billing/self-service-prepaid-credit-management",
         "es/products/cloud/reference/billing/billing-compliance"
       ]
     },

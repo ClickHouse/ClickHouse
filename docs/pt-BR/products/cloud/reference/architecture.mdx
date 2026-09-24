@@ -8,12 +8,11 @@ doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
-import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Arquitetura da Cloud" />
 
 <div id="storage-backed-by-object-store">
-  ## Armazenamento baseado em armazenamento de objetos {#storage-backed-by-object-store}
+  ## Armazenamento baseado em armazenamento de objetos
 </div>
 
 * Armazenamento praticamente ilimitado
@@ -21,7 +20,7 @@ import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBa
 * Custo significativamente menor para armazenar dados, especialmente os acessados com menos frequência
 
 <div id="compute">
-  ## Computação {#compute}
+  ## Computação
 </div>
 
 * Escalonamento e inatividade automáticos: não é necessário dimensionar com antecedência nem superprovisionar para picos de uso
@@ -29,30 +28,30 @@ import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBa
 * Seguro e com HA por padrão
 
 <div id="administration">
-  ## Administração {#administration}
+  ## Administração
 </div>
 
 * A configuração, o monitoramento, os backups e a cobrança são gerenciados para você.
 * Os controles de custo vêm habilitados por padrão e podem ser ajustados por você no console do Cloud.
 
 <div id="service-isolation">
-  ## Isolamento de serviço {#service-isolation}
+  ## Isolamento de serviço
 </div>
 
 <div id="network-isolation">
-  ### Isolamento de rede {#network-isolation}
+  ### Isolamento de rede
 </div>
 
 Todos os serviços são isolados no nível de rede.
 
 <div id="compute-isolation">
-  ### Isolamento de computação {#compute-isolation}
+  ### Isolamento de computação
 </div>
 
 Todos os serviços são implantados em pods separados em seus respectivos namespaces do Kubernetes, com isolamento em nível de rede.
 
 <div id="storage-isolation">
-  ### Isolamento do armazenamento {#storage-isolation}
+  ### Isolamento do armazenamento
 </div>
 
 Todos os serviços usam um subcaminho separado de um bucket compartilhado (AWS, GCP) ou de um contêiner de armazenamento (Azure).
@@ -62,22 +61,14 @@ Na AWS, o acesso ao armazenamento é controlado via AWS IAM, e cada IAM role é 
 No GCP e no Azure, os serviços têm isolamento de armazenamento de objetos (todos os serviços têm seus próprios buckets ou contêineres de armazenamento).
 
 <div id="compute-compute-separation">
-  ## computação-computação separation {#compute-compute-separation}
+  ## computação-computação separation
 </div>
 
 [computação-computação separation](/pt-BR/products/cloud/features/infrastructure/warehouses) permite criar vários grupos de nós de computação, cada um com sua própria URL de serviço, que usam o mesmo armazenamento de objetos compartilhado. Isso permite isolar a computação para diferentes casos de uso, como separar leituras de gravações, mantendo os mesmos dados compartilhados. Também resulta em um uso mais eficiente dos recursos, ao permitir o escalonamento independente dos grupos de computação conforme necessário.
 
-## On-Demand Compute {#on-demand-compute}
-
-<PrivatePreviewBadge />
-
-O On-Demand Compute atribui temporariamente **workers** de um pool gerenciado pela ClickHouse a workloads compatíveis por meio do seu ClickHouse Cloud serviço já existente. Seu serviço autentica e coordena a consulta, enquanto os workers atribuídos executam a maior parte do trabalho elegível de scan, join e aggregation fora da computação do serviço. O pool é compartilhado entre os serviços do ClickHouse Cloud, mas cada worker atende a apenas um serviço por vez.
-
-Durante o private preview, o On-Demand Compute é compatível apenas com consultas `SELECT` elegíveis. A disponibilidade é de melhor esforço, o desempenho varia e os SLOs e SLAs do ClickHouse Cloud não se aplicam.
-
-[Termos de serviço do Private Preview](https://clickhouse.com/legal/agreements/private-preview-terms-of-service)
-
-## Limites de concorrência {#concurrency-limits}
+<div id="concurrency-limits">
+  ## Limites de concorrência
+</div>
 
 Não há limite para o número de consultas por segundo (QPS) no seu serviço ClickHouse Cloud. No entanto, há um limite de 1000 consultas simultâneas por réplica. Em última instância, o QPS depende do tempo médio de execução das consultas e do número de réplicas no seu serviço.
 

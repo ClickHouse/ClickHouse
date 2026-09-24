@@ -13,20 +13,19 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
+<div id="iceberg_insert_max_bytes_in_data_file">
+  ## iceberg_insert_max_bytes_in_data_file
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="536870912" />
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "Приведено в соответствие с документированным значением по умолчанию свойства таблицы Iceberg `write.target-file-size-bytes` (512 МиБ), см. https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "Новая настройка."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "Новая настройка"}]}]} />
 
-Максимальный размер в байтах файла данных Parquet Iceberg при выполнении вставки.
+Максимальный размер файла данных Parquet в Iceberg при выполнении операции вставки.
 
-Значение по умолчанию повторяет документированное значение по умолчанию свойства таблицы Iceberg `write.target-file-size-bytes` (512 МиБ),
-см. https://iceberg.apache.org/docs/1.5.2/configuration/. Обратите внимание, что ClickHouse сравнивает это ограничение с несжатым
-размером данных, записанных в файл к текущему моменту, тогда как свойство Iceberg задаёт целевой размер
-итогового файла; кроме того, `iceberg_insert_max_rows_in_data_file` ограничивает файл независимо от его размера.
-
-## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
+<div id="iceberg_insert_max_partitions">
+  ## iceberg_insert_max_partitions
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -34,7 +33,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Максимально допустимое количество партиций для одной операции вставки в движке таблицы Iceberg.
 
-## iceberg_insert_max_rows_in_data_file {#iceberg_insert_max_rows_in_data_file}
+<div id="iceberg_insert_max_rows_in_data_file">
+  ## iceberg_insert_max_rows_in_data_file
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 

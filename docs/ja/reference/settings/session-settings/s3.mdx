@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## s3_base {#s3_base}
+<div id="s3_base">
+  ## s3_base
+</div>
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "s3テーブル関数およびS3テーブルエンジンで相対URLを解決するためのベースURLを指定する新しい設定。"}]}]} />
 
@@ -25,13 +27,17 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 ベースURLには、`s3`テーブル関数で受け入れられる任意の形式を使用できます。たとえば、`s3://bucket/`、`https://bucket.s3.amazonaws.com/`、`https://endpoint/bucket/`です。
 
-## s3_check_objects_after_upload {#s3_check_objects_after_upload}
+<div id="s3_check_objects_after_upload">
+  ## s3_check_objects_after_upload
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 アップロードが正常に完了したことを確認するため、S3 にアップロードされた各オブジェクトを HEAD リクエストで確認します
 
-## s3_connect_timeout_ms {#s3_connect_timeout_ms}
+<div id="s3_connect_timeout_ms">
+  ## s3_connect_timeout_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -39,7 +45,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 S3 ディスクのホストへの接続タイムアウト。
 
-## s3_create_new_file_on_insert {#s3_create_new_file_on_insert}
+<div id="s3_create_new_file_on_insert">
+  ## s3_create_new_file_on_insert
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -54,7 +62,17 @@ initial: `data.Parquet.gz` -&gt; `data.1.Parquet.gz` -&gt; `data.2.Parquet.gz`, 
 
 詳細は[こちら](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)を参照してください。
 
-## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
+<div id="s3_disable_checksum">
+  ## s3_disable_checksum
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+ファイルを S3 に送信する際にチェックサムを計算しません。これにより、ファイルに対する過剰な処理パスを避け、書き込みを高速化できます。MergeTree テーブルのデータはどうせ ClickHouse 側でチェックサムが計算されるため、通常は問題ありません。また、S3 へのアクセスに HTTPS を使用している場合は、ネットワーク経由での転送中の整合性は TLS レイヤーですでに確保されます。ただし、S3 で追加のチェックサムを使用すると、多層防御になります。
+
+<div id="s3_ignore_file_doesnt_exist">
+  ## s3_ignore_file_doesnt_exist
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -67,19 +85,25 @@ initial: `data.Parquet.gz` -&gt; `data.1.Parquet.gz` -&gt; `data.2.Parquet.gz`, 
 * 1 — `SELECT` は空の結果を返します。
 * 0 — `SELECT` は例外をスローします。
 
-## s3_list_object_keys_size {#s3_list_object_keys_size}
+<div id="s3_list_object_keys_size">
+  ## s3_list_object_keys_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 ListObject リクエストで一度に返されるファイルの最大数
 
-## s3_min_upload_part_size {#s3_min_upload_part_size}
+<div id="s3_min_upload_part_size">
+  ## s3_min_upload_part_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
 S3 へのマルチパートアップロード時にアップロードする各パートの最小サイズです。
 
-## s3_path_filter_limit {#s3_path_filter_limit}
+<div id="s3_path_filter_limit">
+  ## s3_path_filter_limit
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -88,13 +112,17 @@ S3 へのマルチパートアップロード時にアップロードする各�
 glob による一覧取得の代わりにファイルの反復処理で使用するため、クエリフィルターから抽出できる `_path` 値の最大数です。
 0 は無効を意味します。
 
-## s3_request_timeout_ms {#s3_request_timeout_ms}
+<div id="s3_request_timeout_ms">
+  ## s3_request_timeout_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
 S3 との間でデータを送受信する際のアイドルタイムアウトです。1 回の TCP read または write 呼び出しがこの時間以上ブロックされると、失敗します。
 
-## s3_skip_empty_files {#s3_skip_empty_files}
+<div id="s3_skip_empty_files">
+  ## s3_skip_empty_files
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -107,7 +135,9 @@ S3 との間でデータを送受信する際のアイドルタイムアウト�
 * 0 — 空のファイルが要求されたフォーマットと互換性がない場合、`SELECT` は例外をスローします。
 * 1 — 空のファイルに対して、`SELECT` は空の結果を返します。
 
-## s3_slow_all_threads_after_network_error {#s3_slow_all_threads_after_network_error}
+<div id="s3_slow_all_threads_after_network_error">
+  ## s3_slow_all_threads_after_network_error
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -118,19 +148,25 @@ S3 との間でデータを送受信する際のアイドルタイムアウト�
 すべて速度が抑制されます。
 `false` に設定すると、各スレッドは他のスレッドとは独立して S3 リクエストのバックオフを処理します。
 
-## s3_strict_upload_part_size {#s3_strict_upload_part_size}
+<div id="s3_strict_upload_part_size">
+  ## s3_strict_upload_part_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 S3 への マルチパートアップロード 時にアップロードする パート の厳密なサイズです (実装によっては、可変サイズの パート をサポートしていません) 。
 
-## s3_throw_on_zero_files_match {#s3_throw_on_zero_files_match}
+<div id="s3_throw_on_zero_files_match">
+  ## s3_throw_on_zero_files_match
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 ListObjects リクエストで一致するファイルが1つもない場合、エラーを発生させます
 
-## s3_truncate_on_insert {#s3_truncate_on_insert}
+<div id="s3_truncate_on_insert">
+  ## s3_truncate_on_insert
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -143,7 +179,9 @@ S3 エンジンテーブルで、INSERT 前に truncate するかどうかを有
 
 詳しくは[こちら](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)を参照してください。
 
-## s3_uri_style {#s3_uri_style}
+<div id="s3_uri_style">
+  ## s3_uri_style
+</div>
 
 <SettingsInfoBlock type="S3UriStyle" default_value="auto" />
 
@@ -151,7 +189,9 @@ S3 エンジンテーブルで、INSERT 前に truncate するかどうかを有
 
 S3エンドポイントのスタイルを強制します。設定可能な値: auto、virtual&#95;hosted、path。
 
-## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
+<div id="s3_use_adaptive_timeouts">
+  ## s3_use_adaptive_timeouts
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

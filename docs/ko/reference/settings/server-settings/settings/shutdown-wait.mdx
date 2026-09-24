@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하는 항목이며 ClickHouse 소스에서 자동 생성됩니다.
 
-## shutdown_wait_backups_and_restores {#shutdown_wait_backups_and_restores}
+<div id="shutdown_wait_backups_and_restores">
+  ## shutdown_wait_backups_and_restores
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />true로 설정하면 ClickHouse는 종료되기 전에 실행 중인 백업 및 복원 작업이 완료될 때까지 기다립니다.
 
-## shutdown_wait_unfinished {#shutdown_wait_unfinished}
+<div id="shutdown_wait_unfinished">
+  ## shutdown_wait_unfinished
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />shutdown 시 완료되지 않은 쿼리를 기다릴 지연 시간(초)입니다. `shutdown_wait_backups_and_restores`가 비활성화된 경우, 실행 중인 백업 및 복원 작업의 대기 시간도 이 값으로 제한됩니다.
+<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />완료되지 않은 쿼리를 기다릴 지연 시간(초)
 
-## shutdown_wait_unfinished_queries {#shutdown_wait_unfinished_queries}
+<div id="shutdown_wait_unfinished_queries">
+  ## shutdown_wait_unfinished_queries
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />true로 설정하면 ClickHouse는 종료되기 전에 실행 중인 쿼리가 완료될 때까지 기다립니다.
 

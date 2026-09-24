@@ -29,7 +29,9 @@ Como puede ver, aunque los datos almacenados en ReplicatedMergeTree están en al
 
 A diferencia de ReplicatedMergeTree, SharedMergeTree no requiere que las réplicas se comuniquen entre sí. En su lugar, toda la comunicación se realiza a través del almacenamiento compartido y clickhouse-keeper. SharedMergeTree implementa replicación asíncrona sin líder y utiliza clickhouse-keeper para la coordinación y el almacenamiento de metadatos. Esto significa que los metadatos no necesitan replicarse a medida que el servicio escala y reduce su tamaño. Esto se traduce en operaciones más rápidas de replicación, mutación, fusión y escalado. SharedMergeTree permite cientos de réplicas por tabla, lo que hace posible escalar dinámicamente sin segmentos. En ClickHouse Cloud se utiliza un enfoque de ejecución distribuida de consultas para aprovechar más recursos de cómputo en una consulta.
 
-## Introspección {#introspection}
+<div id="introspection">
+  ## Introspección
+</div>
 
 La mayoría de las tablas del sistema usadas para la introspección de ReplicatedMergeTree también existen en SharedMergeTree, excepto `system.replication_queue` y `system.replicated_fetches`, ya que no se produce replicación de datos ni de metadatos. Sin embargo, SharedMergeTree tiene alternativas equivalentes para estas dos tablas.
 
@@ -41,7 +43,9 @@ Esta tabla sirve como alternativa a `system.replication_queue` para SharedMergeT
 
 Esta tabla es la alternativa a `system.replicated_fetches` para SharedMergeTree. Contiene información sobre los fetches actualmente en curso de claves primarias y checksums en memoria.
 
-## Activación de SharedMergeTree {#enabling-sharedmergetree}
+<div id="enabling-sharedmergetree">
+  ## Activación de SharedMergeTree
+</div>
 
 `SharedMergeTree` está habilitado de forma predeterminada.
 
@@ -94,7 +98,9 @@ ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica
 ORDER BY key
 ```
 
-## Configuración {#settings}
+<div id="settings">
+  ## Configuración
+</div>
 
 El comportamiento de algunas opciones de configuración cambia de forma significativa:
 
@@ -102,7 +108,9 @@ El comportamiento de algunas opciones de configuración cambia de forma signific
 * `insert_quorum_parallel` -- todas las inserciones en SharedMergeTree son inserciones con cuórum (se escriben en almacenamiento compartido), por lo que esta configuración no es necesaria al usar el motor de tabla SharedMergeTree.
 * `select_sequential_consistency` -- no requiere inserciones con cuórum y generará carga adicional en clickhouse-keeper en las consultas `SELECT`
 
-## Consistencia {#consistency}
+<div id="consistency">
+  ## Consistencia
+</div>
 
 SharedMergeTree proporciona una consistencia ligera mejor que ReplicatedMergeTree. Al insertar en SharedMergeTree, no es necesario especificar ajustes como `insert_quorum` o `insert_quorum_parallel`. Las inserciones se realizan con cuórum, lo que significa que los metadatos se almacenan en ClickHouse-Keeper y se replican al menos al cuórum de nodos de ClickHouse-Keeper. Cada réplica del clúster recuperará de forma asíncrona la información nueva desde ClickHouse-Keeper.
 
@@ -113,11 +121,3 @@ La mayoría de las veces, no debería usar `select_sequential_consistency` ni `S
 2. Si escribe en una réplica y lee desde otra, puede usar `SYSTEM SYNC REPLICA LIGHTWEIGHT` para forzar a la réplica a recuperar los metadatos desde ClickHouse-Keeper.
 
 3. Use `select_sequential_consistency` como ajuste de la consulta.
-
-## Visibilidad de `ALTER` y de las mutaciones {#alter-and-mutation-visibility}
-
-`SharedMergeTree` coordina los cambios de metadata a través de ClickHouse Keeper. Las réplicas obtienen la metadata modificada de forma asíncrona, por lo que un cambio de metadata no tiene por qué ser visible de inmediato en todas las réplicas. Las lecturas realizadas en la misma sesión y en el mismo nodo ya utilizan la metadata actualizada. Si una lectura debe ejecutarse en otra réplica justo después de un cambio de metadata, utilice `SYSTEM SYNC REPLICA LIGHTWEIGHT` para que esa réplica obtenga la metadata desde ClickHouse Keeper.
-
-Las operaciones `ALTER` que generan mutaciones ejecutan en segundo plano un proceso que crea nuevas partes en el almacenamiento compartido y coordina su visibilidad a través de ClickHouse Keeper. No se trata de un proceso de reescritura o de transferencia de datos por réplica, como ocurre en `ReplicatedMergeTree`.
-
-En ClickHouse Cloud, [`alter_sync`](/es/reference/settings/session-settings/alter#alter_sync) tiene el valor predeterminado `0`; configúrelo cuando un client deba esperar a que finalicen las operaciones de metadata o una reescritura `MODIFY COLUMN` que no afecte únicamente a la metadata. Para las operaciones `UPDATE`, `DELETE` y `MATERIALIZE ...`, utilice [`mutations_sync`](/es/reference/settings/session-settings/mutations#mutations_sync) para controlar la espera y supervise el progreso en [`system.mutations`](/es/reference/system-tables/mutations).

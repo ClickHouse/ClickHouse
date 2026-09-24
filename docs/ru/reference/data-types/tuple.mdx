@@ -14,7 +14,9 @@ Tuple используются для временной группировки 
 
 Tuple могут быть результатом запроса. В этом случае в текстовых форматах, кроме JSON, значения разделяются запятыми в `()`. В форматах JSON Tuple выводятся как массивы (в `[]`).
 
-## Создание Tuple {#creating-tuples}
+<div id="creating-tuples">
+  ## Создание Tuple
+</div>
 
 Для создания Tuple можно использовать функцию:
 
@@ -62,7 +64,9 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-## Определение типов данных {#data-type-detection}
+<div id="data-type-detection">
+  ## Определение типов данных
+</div>
 
 При создании Tuple на лету ClickHouse определяет типы аргументов Tuple как минимальные типы, в которые помещаются переданные значения. Если значение — [NULL](/ru/reference/settings/formats/input-format#input_format_null_as_default), тип определяется как [Nullable](/ru/reference/data-types/nullable).
 
@@ -78,7 +82,9 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └───────────┴─────────────────────────────────┘
 ```
 
-## Обращение к элементам Tuple {#referring-to-tuple-elements}
+<div id="referring-to-tuple-elements">
+  ## Обращение к элементам Tuple
+</div>
 
 К элементам Tuple можно обращаться по имени или индексу:
 
@@ -102,7 +108,9 @@ SELECT a.2 FROM named_tuples; -- по индексу
 └────────────────────┘
 ```
 
-## Операции сравнения с Tuple {#comparison-operations-with-tuple}
+<div id="comparison-operations-with-tuple">
+  ## Операции сравнения с Tuple
+</div>
 
 Два значения Tuple сравниваются последовательно: их элементы сопоставляются слева направо. Если элемент первого Tuple больше (меньше), чем соответствующий элемент второго Tuple, то первый Tuple больше (меньше) второго; в противном случае (если оба элемента равны) сравнивается следующий элемент.
 
@@ -180,7 +188,16 @@ ORDER BY key ASC;
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
 
-## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
+<div id="nullable-tuple">
+  ## Nullable(Tuple(T1, T2, ...))
+</div>
+
+<Info>
+  **Бета-возможность**
+
+  Требуется `SET enable_nullable_tuple_type = 1`
+  Это бета-возможность.
+</Info>
 
 Позволяет всему Tuple принимать значение `NULL`, в отличие от `Tuple(Nullable(T1), Nullable(T2), ...)`, где значение `NULL` могут принимать только отдельные элементы.
 
@@ -192,6 +209,8 @@ ORDER BY key ASC;
 Пример:
 
 ```sql
+SET enable_nullable_tuple_type = 1;
+
 CREATE TABLE test (
     id UInt32,
     data Nullable(Tuple(String, Int64))

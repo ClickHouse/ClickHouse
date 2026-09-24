@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки автоматически сгенерированы на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-## input_format_allow_errors_num {#input_format_allow_errors_num}
+<div id="input_format_allow_errors_num">
+  ## input_format_allow_errors_num
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -27,7 +29,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если превышены значения и `input_format_allow_errors_num`, и `input_format_allow_errors_ratio`, ClickHouse генерирует исключение.
 
-## input_format_allow_errors_ratio {#input_format_allow_errors_ratio}
+<div id="input_format_allow_errors_ratio">
+  ## input_format_allow_errors_ratio
+</div>
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -42,7 +46,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если превышены оба порога — `input_format_allow_errors_num` и `input_format_allow_errors_ratio`, ClickHouse генерирует исключение.
 
-## input_format_allow_seeks {#input_format_allow_seeks}
+<div id="input_format_allow_seeks">
+  ## input_format_allow_seeks
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,7 +59,9 @@ ClickHouse может читать только нужные диапазоны 
 некоторые модули чтения могут переключаться на загрузку всего файла в память.
 Включено по умолчанию.
 
-## input_format_arrow_allow_missing_columns {#input_format_arrow_allow_missing_columns}
+<div id="input_format_arrow_allow_missing_columns">
+  ## input_format_arrow_allow_missing_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -61,31 +69,41 @@ ClickHouse может читать только нужные диапазоны 
 
 Разрешить отсутствие столбцов при чтении входных форматов Arrow
 
-## input_format_arrow_case_insensitive_column_matching {#input_format_arrow_case_insensitive_column_matching}
+<div id="input_format_arrow_case_insensitive_column_matching">
+  ## input_format_arrow_case_insensitive_column_matching
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Игнорировать регистр при сопоставлении столбцов Arrow со столбцами ClickHouse.
 
-## input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference {#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference}
+<div id="input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference">
+  ## input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Пропускать столбцы с неподдерживаемыми типами при определении схемы для формата Arrow
 
-## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
+<div id="input_format_avro_allow_missing_fields">
+  ## input_format_avro_allow_missing_fields
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Для формата Avro/AvroConfluent: если поле отсутствует в схеме, использовать значение по умолчанию вместо ошибки
 
-## input_format_avro_null_as_default {#input_format_avro_null_as_default}
+<div id="input_format_avro_null_as_default">
+  ## input_format_avro_null_as_default
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Для форматов Avro/AvroConfluent: использовать значение по умолчанию в случае NULL и для столбцов без типа Nullable
 
-## input_format_binary_decode_types_in_binary_format {#input_format_binary_decode_types_in_binary_format}
+<div id="input_format_binary_decode_types_in_binary_format">
+  ## input_format_binary_decode_types_in_binary_format
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -93,7 +111,9 @@ ClickHouse может читать только нужные диапазоны 
 
 Считывать типы данных в бинарном формате вместо имён типов во входном формате RowBinaryWithNamesAndTypes
 
-## input_format_binary_max_type_complexity {#input_format_binary_max_type_complexity}
+<div id="input_format_binary_max_type_complexity">
+  ## input_format_binary_max_type_complexity
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -101,7 +121,9 @@ ClickHouse может читать только нужные диапазоны 
 
 Максимальное количество узлов типа при декодировании бинарных типов (не глубина, а общее число). `Map(String, UInt32)` = 3 узла. Защищает от вредоносных входных данных. 0 = без ограничений.
 
-## input_format_binary_read_json_as_string {#input_format_binary_read_json_as_string}
+<div id="input_format_binary_read_json_as_string">
+  ## input_format_binary_read_json_as_string
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -109,19 +131,25 @@ ClickHouse может читать только нужные диапазоны 
 
 Считывать значения типа данных [JSON](/ru/reference/data-types/newjson) как [String](/ru/reference/data-types/string)-значения, содержащие JSON, во входном формате RowBinary.
 
-## input_format_bson_skip_fields_with_unsupported_types_in_schema_inference {#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference}
+<div id="input_format_bson_skip_fields_with_unsupported_types_in_schema_inference">
+  ## input_format_bson_skip_fields_with_unsupported_types_in_schema_inference
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Пропускать поля с неподдерживаемыми типами при определении схемы для формата BSON.
 
-## input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference {#input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference}
+<div id="input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference">
+  ## input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Пропускать столбцы с неподдерживаемыми типами при определении схемы для формата CapnProto
 
-## input_format_column_name_matching_mode {#input_format_column_name_matching_mode}
+<div id="input_format_column_name_matching_mode">
+  ## input_format_column_name_matching_mode
+</div>
 
 <SettingsInfoBlock type="InputFormatColumnMatchingCaseSensitivity" default_value="auto" />
 
@@ -134,7 +162,9 @@ ClickHouse может читать только нужные диапазоны 
   * ignore&#95;case: сопоставлять без учёта регистра
   * auto: сначала пытается сопоставлять с учётом регистра; если не удаётся, пытается сопоставлять без учёта регистра.
 
-## input_format_connection_handling {#input_format_connection_handling}
+<div id="input_format_connection_handling">
+  ## input_format_connection_handling
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -146,31 +176,41 @@ ClickHouse может читать только нужные диапазоны 
   Включение этого параметра отключает параллельный разбор и делает дедупликацию невозможной
 </Note>
 
-## input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
+<div id="input_format_csv_allow_cr_end_of_line">
+  ## input_format_csv_allow_cr_end_of_line
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Если задано значение true, \r будет разрешён в конце строки, за которым не следует \n
+Если задано значение true, \r будет разрешён в конце строки, за которым не следует
 
-## input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
+<div id="input_format_csv_allow_variable_number_of_columns">
+  ## input_format_csv_allow_variable_number_of_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Игнорировать лишние столбцы во входных CSV-данных (если в файле столбцов больше, чем ожидается) и обрабатывать отсутствующие поля во входных CSV-данных как значения по умолчанию
 
-## input_format_csv_allow_whitespace_or_tab_as_delimiter {#input_format_csv_allow_whitespace_or_tab_as_delimiter}
+<div id="input_format_csv_allow_whitespace_or_tab_as_delimiter">
+  ## input_format_csv_allow_whitespace_or_tab_as_delimiter
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Разрешает использовать пробелы и символы табуляции (\t) в качестве разделителей полей в строках CSV
 
-## input_format_csv_arrays_as_nested_csv {#input_format_csv_arrays_as_nested_csv}
+<div id="input_format_csv_arrays_as_nested_csv">
+  ## input_format_csv_arrays_as_nested_csv
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 При чтении Array из CSV предполагается, что его элементы были сериализованы во вложенный CSV, а затем помещены в строку. Пример: &quot;[&quot;&quot;Hello&quot;&quot;, &quot;&quot;world&quot;&quot;, &quot;&quot;42&quot;&quot;&quot;&quot; TV&quot;&quot;]&quot;. Скобки вокруг массива можно опустить.
 
-## input_format_csv_deserialize_separate_columns_into_tuple {#input_format_csv_deserialize_separate_columns_into_tuple}
+<div id="input_format_csv_deserialize_separate_columns_into_tuple">
+  ## input_format_csv_deserialize_separate_columns_into_tuple
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -182,7 +222,9 @@ ClickHouse может читать только нужные диапазоны 
 
 Поскольку обычный `Tuple` занимает по одному полю на элемент, `\N` в поле непосредственного элемента верхнего уровня относится к этому элементу, а не ко всему столбцу, поэтому [input&#95;format&#95;null&#95;as&#95;default](/ru/reference/settings/formats/input-format#input_format_null_as_default) применяется к этому элементу. Строка, содержащая одно поле для всего кортежа, не содержит полей для оставшихся элементов и отклоняется вместо использования значения столбца по умолчанию. Установите для этой настройки значение `0`, чтобы снова считывать такое поле как весь столбец. `\N` в поле элемента вложенного `Tuple` по-прежнему считывается как весь этот вложенный элемент.
 
-## input_format_csv_detect_header {#input_format_csv_detect_header}
+<div id="input_format_csv_detect_header">
+  ## input_format_csv_detect_header
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -190,19 +232,25 @@ ClickHouse может читать только нужные диапазоны 
 
 Автоматически определять заголовок с именами и типами в формате CSV
 
-## input_format_csv_empty_as_default {#input_format_csv_empty_as_default}
+<div id="input_format_csv_empty_as_default">
+  ## input_format_csv_empty_as_default
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Считать пустые поля во входных данных CSV значениями по умолчанию.
 
-## input_format_csv_enum_as_number {#input_format_csv_enum_as_number}
+<div id="input_format_csv_enum_as_number">
+  ## input_format_csv_enum_as_number
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Считать вставляемые значения `enum` в форматах CSV индексами enum
 
-## input_format_csv_missing_nullable_as_empty_string {#input_format_csv_missing_nullable_as_empty_string}
+<div id="input_format_csv_missing_nullable_as_empty_string">
+  ## input_format_csv_missing_nullable_as_empty_string
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -210,25 +258,33 @@ ClickHouse может читать только нужные диапазоны 
 
 Определяет, как читать `Nullable(String)` при отсутствии значения в CSV. Отсутствующее значение — это пустое место между запятыми, перед ними или после них, не заключенное в кавычки. Если эта настройка включена, то независимо от значения `input_format_csv_empty_as_default` отсутствующее значение `Nullable(String)` будет интерпретироваться как пустой `String`, а не как NULL.
 
-## input_format_csv_skip_first_lines {#input_format_csv_skip_first_lines}
+<div id="input_format_csv_skip_first_lines">
+  ## input_format_csv_skip_first_lines
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Пропускать указанное количество строк в начале данных в формате CSV
 
-## input_format_csv_skip_trailing_empty_lines {#input_format_csv_skip_trailing_empty_lines}
+<div id="input_format_csv_skip_trailing_empty_lines">
+  ## input_format_csv_skip_trailing_empty_lines
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Пропускать пустые строки в конце в формате CSV
 
-## input_format_csv_trim_whitespaces {#input_format_csv_trim_whitespaces}
+<div id="input_format_csv_trim_whitespaces">
+  ## input_format_csv_trim_whitespaces
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Удаляет пробелы и символы табуляции (\t) в начале и конце строк CSV
 
-## input_format_csv_try_infer_numbers_from_strings {#input_format_csv_try_infer_numbers_from_strings}
+<div id="input_format_csv_try_infer_numbers_from_strings">
+  ## input_format_csv_try_infer_numbers_from_strings
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -237,7 +293,9 @@ ClickHouse может читать только нужные диапазоны 
 
 По умолчанию отключено.
 
-## input_format_csv_try_infer_strings_from_quoted_tuples {#input_format_csv_try_infer_strings_from_quoted_tuples}
+<div id="input_format_csv_try_infer_strings_from_quoted_tuples">
+  ## input_format_csv_try_infer_strings_from_quoted_tuples
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -245,25 +303,33 @@ ClickHouse может читать только нужные диапазоны 
 
 Интерпретировать заключённые в кавычки Tuple во входных данных как значения типа `String`.
 
-## input_format_csv_use_best_effort_in_schema_inference {#input_format_csv_use_best_effort_in_schema_inference}
+<div id="input_format_csv_use_best_effort_in_schema_inference">
+  ## input_format_csv_use_best_effort_in_schema_inference
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Использовать дополнительные настройки и эвристики для определения схемы в формате CSV
 
-## input_format_csv_use_default_on_bad_values {#input_format_csv_use_default_on_bad_values}
+<div id="input_format_csv_use_default_on_bad_values">
+  ## input_format_csv_use_default_on_bad_values
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Позволяет устанавливать для столбца значение по умолчанию, если десериализация поля CSV завершается ошибкой из-за некорректного значения
 
-## input_format_custom_allow_variable_number_of_columns {#input_format_custom_allow_variable_number_of_columns}
+<div id="input_format_custom_allow_variable_number_of_columns">
+  ## input_format_custom_allow_variable_number_of_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Игнорировать лишние столбцы во входных данных CustomSeparated (если в файле столбцов больше, чем ожидается) и рассматривать отсутствующие поля во входных данных CustomSeparated как значения по умолчанию
 
-## input_format_custom_detect_header {#input_format_custom_detect_header}
+<div id="input_format_custom_detect_header">
+  ## input_format_custom_detect_header
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -271,13 +337,17 @@ ClickHouse может читать только нужные диапазоны 
 
 Автоматически определять заголовок с именами и типами в формате CustomSeparated
 
-## input_format_custom_skip_trailing_empty_lines {#input_format_custom_skip_trailing_empty_lines}
+<div id="input_format_custom_skip_trailing_empty_lines">
+  ## input_format_custom_skip_trailing_empty_lines
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Пропускать пустые строки в конце в формате CustomSeparated
 
-## input_format_defaults_for_omitted_fields {#input_format_defaults_for_omitted_fields}
+<div id="input_format_defaults_for_omitted_fields">
+  ## input_format_defaults_for_omitted_fields
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -294,7 +364,9 @@ ClickHouse может читать только нужные диапазоны 
 * 0 — Отключено.
 * 1 — Включено.
 
-## input_format_force_null_for_omitted_fields {#input_format_force_null_for_omitted_fields}
+<div id="input_format_force_null_for_omitted_fields">
+  ## input_format_force_null_for_omitted_fields
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -302,7 +374,9 @@ ClickHouse может читать только нужные диапазоны 
 
 Принудительно инициализировать пропущенные поля значениями NULL
 
-## input_format_geojson_unsupported_geometry_handling {#input_format_geojson_unsupported_geometry_handling}
+<div id="input_format_geojson_unsupported_geometry_handling">
+  ## input_format_geojson_unsupported_geometry_handling
+</div>
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
 
@@ -317,7 +391,9 @@ ClickHouse может читать только нужные диапазоны 
 
 Это применимо только тогда, когда столбец `geometry` материализован. Если он не запрошен как выходной столбец, такая геометрия проверяется на корректность, но эта обработка не срабатывает.
 
-## input_format_hive_text_allow_variable_number_of_columns {#input_format_hive_text_allow_variable_number_of_columns}
+<div id="input_format_hive_text_allow_variable_number_of_columns">
+  ## input_format_hive_text_allow_variable_number_of_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -325,25 +401,33 @@ ClickHouse может читать только нужные диапазоны 
 
 Игнорировать лишние столбцы во входных данных в формате Hive Text (если в файле больше столбцов, чем ожидается) и обрабатывать отсутствующие поля как значения по умолчанию
 
-## input_format_hive_text_collection_items_delimiter {#input_format_hive_text_collection_items_delimiter}
+<div id="input_format_hive_text_collection_items_delimiter">
+  ## input_format_hive_text_collection_items_delimiter
+</div>
 
 <SettingsInfoBlock type="Char" default_value="" />
 
 Разделитель между элементами коллекции (Array или Map) в Hive Text File
 
-## input_format_hive_text_fields_delimiter {#input_format_hive_text_fields_delimiter}
+<div id="input_format_hive_text_fields_delimiter">
+  ## input_format_hive_text_fields_delimiter
+</div>
 
 <SettingsInfoBlock type="Char" default_value="" />
 
 Разделитель полей в Hive Text File
 
-## input_format_hive_text_map_keys_delimiter {#input_format_hive_text_map_keys_delimiter}
+<div id="input_format_hive_text_map_keys_delimiter">
+  ## input_format_hive_text_map_keys_delimiter
+</div>
 
 <SettingsInfoBlock type="Char" default_value="" />
 
 Разделитель между ключом и значением в паре map в Hive Text File
 
-## input_format_import_nested_json {#input_format_import_nested_json}
+<div id="input_format_import_nested_json">
+  ## input_format_import_nested_json
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -362,7 +446,9 @@ ClickHouse может читать только нужные диапазоны 
 
 * [Использование структур Nested](/ru/guides/clickhouse/data-formats/json/formats#accessing-nested-json-objects) в формате `JSONEachRow`.
 
-## input_format_ipv4_default_on_conversion_error {#input_format_ipv4_default_on_conversion_error}
+<div id="input_format_ipv4_default_on_conversion_error">
+  ## input_format_ipv4_default_on_conversion_error
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -370,7 +456,9 @@ ClickHouse может читать только нужные диапазоны 
 
 По умолчанию отключено.
 
-## input_format_ipv6_default_on_conversion_error {#input_format_ipv6_default_on_conversion_error}
+<div id="input_format_ipv6_default_on_conversion_error">
+  ## input_format_ipv6_default_on_conversion_error
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -378,7 +466,9 @@ ClickHouse может читать только нужные диапазоны 
 
 По умолчанию отключено.
 
-## input_format_json_compact_allow_variable_number_of_columns {#input_format_json_compact_allow_variable_number_of_columns}
+<div id="input_format_json_compact_allow_variable_number_of_columns">
+  ## input_format_json_compact_allow_variable_number_of_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -387,7 +477,9 @@ ClickHouse может читать только нужные диапазоны 
 
 По умолчанию отключено.
 
-## input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
+<div id="input_format_json_defaults_for_missing_elements_in_named_tuple">
+  ## input_format_json_defaults_for_missing_elements_in_named_tuple
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -398,7 +490,9 @@ ClickHouse может читать только нужные диапазоны 
 
 Включен по умолчанию.
 
-## input_format_json_empty_as_default {#input_format_json_empty_as_default}
+<div id="input_format_json_empty_as_default">
+  ## input_format_json_empty_as_default
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -411,7 +505,9 @@ ClickHouse может читать только нужные диапазоны 
 * 0 — Отключено.
 * 1 — Включено.
 
-## input_format_json_ignore_unknown_keys_in_named_tuple {#input_format_json_ignore_unknown_keys_in_named_tuple}
+<div id="input_format_json_ignore_unknown_keys_in_named_tuple">
+  ## input_format_json_ignore_unknown_keys_in_named_tuple
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -421,7 +517,9 @@ ClickHouse может читать только нужные диапазоны 
 
 Включено по умолчанию.
 
-## input_format_json_ignore_unnecessary_fields {#input_format_json_ignore_unnecessary_fields}
+<div id="input_format_json_ignore_unnecessary_fields">
+  ## input_format_json_ignore_unnecessary_fields
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -429,7 +527,9 @@ ClickHouse может читать только нужные диапазоны 
 
 Игнорировать лишние поля и не разбирать их. При включении этого параметра исключения для JSON-строк с некорректным форматом или дублирующимися полями могут не генерироваться
 
-## input_format_json_infer_array_of_dynamic_from_array_of_different_types {#input_format_json_infer_array_of_dynamic_from_array_of_different_types}
+<div id="input_format_json_infer_array_of_dynamic_from_array_of_different_types">
+  ## input_format_json_infer_array_of_dynamic_from_array_of_different_types
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -463,7 +563,9 @@ DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
 
 Включено по умолчанию.
 
-## input_format_json_infer_incomplete_types_as_strings {#input_format_json_infer_incomplete_types_as_strings}
+<div id="input_format_json_infer_incomplete_types_as_strings">
+  ## input_format_json_infer_incomplete_types_as_strings
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -495,7 +597,9 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 
 Включено по умолчанию.
 
-## input_format_json_map_as_array_of_tuples {#input_format_json_map_as_array_of_tuples}
+<div id="input_format_json_map_as_array_of_tuples">
+  ## input_format_json_map_as_array_of_tuples
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -505,7 +609,9 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 
 По умолчанию отключено.
 
-## input_format_json_max_depth {#input_format_json_max_depth}
+<div id="input_format_json_max_depth">
+  ## input_format_json_max_depth
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -513,7 +619,9 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 
 Максимальная глубина поля в JSON. Это не жёсткое ограничение: его не обязательно соблюдать в точности.
 
-## input_format_json_max_object_size {#input_format_json_max_object_size}
+<div id="input_format_json_max_object_size">
+  ## input_format_json_max_object_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
@@ -521,7 +629,9 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 
 Максимально допустимый размер одного объекта JSON в байтах. Объекты, превышающие этот лимит, отклоняются как вероятно некорректные. Это защищает от исчерпания памяти, когда некорректный JSON-документ разбирается как единый объект. Этот лимит применяется как при параллельном, так и при непараллельном разборе. Установите 0, чтобы отключить проверку.
 
-## input_format_json_max_string_column_growth_step {#input_format_json_max_string_column_growth_step}
+<div id="input_format_json_max_string_column_growth_step">
+  ## input_format_json_max_string_column_growth_step
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -529,7 +639,9 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 
 При формировании внутренних буферов String JSON-столбца при разборе JSON из строки ограничивает рост по степеням двойки указанным числом байтов: когда зарезервированный размер достигает этого значения, буфер увеличивается на это значение вместо удвоения. Это ограничивает избыточное выделение памяти для больших JSON-столбцов. 0 означает отсутствие ограничений (чистое удвоение).
 
-## input_format_json_named_tuples_as_objects {#input_format_json_named_tuples_as_objects}
+<div id="input_format_json_named_tuples_as_objects">
+  ## input_format_json_named_tuples_as_objects
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -537,7 +649,9 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 
 Включено по умолчанию.
 
-## input_format_json_read_arrays_as_strings {#input_format_json_read_arrays_as_strings}
+<div id="input_format_json_read_arrays_as_strings">
+  ## input_format_json_read_arrays_as_strings
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -562,7 +676,9 @@ SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow
 
 Включено по умолчанию.
 
-## input_format_json_read_bools_as_numbers {#input_format_json_read_bools_as_numbers}
+<div id="input_format_json_read_bools_as_numbers">
+  ## input_format_json_read_bools_as_numbers
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -570,7 +686,9 @@ SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow
 
 Включено по умолчанию.
 
-## input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
+<div id="input_format_json_read_bools_as_strings">
+  ## input_format_json_read_bools_as_strings
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -580,7 +698,9 @@ SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow
 
 Включено по умолчанию.
 
-## input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
+<div id="input_format_json_read_numbers_as_strings">
+  ## input_format_json_read_numbers_as_strings
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -590,7 +710,9 @@ SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow
 
 Включено по умолчанию.
 
-## input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
+<div id="input_format_json_read_objects_as_strings">
+  ## input_format_json_read_objects_as_strings
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -617,7 +739,9 @@ SELECT * FROM test;
 
 Включено по умолчанию.
 
-## input_format_json_throw_on_bad_escape_sequence {#input_format_json_throw_on_bad_escape_sequence}
+<div id="input_format_json_throw_on_bad_escape_sequence">
+  ## input_format_json_throw_on_bad_escape_sequence
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -627,7 +751,9 @@ SELECT * FROM test;
 
 Включено по умолчанию.
 
-## input_format_json_try_infer_named_tuples_from_objects {#input_format_json_try_infer_named_tuples_from_objects}
+<div id="input_format_json_try_infer_named_tuples_from_objects">
+  ## input_format_json_try_infer_named_tuples_from_objects
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -653,7 +779,9 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 Включено по умолчанию.
 
-## input_format_json_try_infer_numbers_from_strings {#input_format_json_try_infer_numbers_from_strings}
+<div id="input_format_json_try_infer_numbers_from_strings">
+  ## input_format_json_try_infer_numbers_from_strings
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -664,7 +792,9 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 По умолчанию отключено.
 
-## input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects {#input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects}
+<div id="input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects">
+  ## input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -672,7 +802,9 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 Использовать тип String вместо исключения при неоднозначных путях в объектах JSON во время вывода именованных кортежей
 
-## input_format_json_validate_types_from_metadata {#input_format_json_validate_types_from_metadata}
+<div id="input_format_json_validate_types_from_metadata">
+  ## input_format_json_validate_types_from_metadata
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -681,7 +813,9 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 Включено по умолчанию.
 
-## input_format_max_block_size_bytes {#input_format_max_block_size_bytes}
+<div id="input_format_max_block_size_bytes">
+  ## input_format_max_block_size_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -690,7 +824,9 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 Ограничивает размер блоков в байтах, формируемых при разборе данных во входных форматах. Используется во входных форматах на основе строк, когда блок формируется на стороне ClickHouse.
 0 означает отсутствие ограничения по размеру в байтах.
 
-## input_format_max_block_wait_ms {#input_format_max_block_wait_ms}
+<div id="input_format_max_block_wait_ms">
+  ## input_format_max_block_wait_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -721,35 +857,47 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
       --min_insert_block_size_bytes 0
 ```
 
-## input_format_max_bytes_to_read_for_schema_inference {#input_format_max_bytes_to_read_for_schema_inference}
+<div id="input_format_max_bytes_to_read_for_schema_inference">
+  ## input_format_max_bytes_to_read_for_schema_inference
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="33554432" />
 
 Максимальный объём данных в байтах, который считывается для автоматического определения схемы.
 
-## input_format_max_rows_to_read_for_schema_inference {#input_format_max_rows_to_read_for_schema_inference}
+<div id="input_format_max_rows_to_read_for_schema_inference">
+  ## input_format_max_rows_to_read_for_schema_inference
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="25000" />
 
 Максимальное количество строк данных, считываемых для автоматического определения схемы.
 
-## input_format_msgpack_number_of_columns {#input_format_msgpack_number_of_columns}
+<div id="input_format_msgpack_number_of_columns">
+  ## input_format_msgpack_number_of_columns
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Количество столбцов во вставляемых данных MsgPack. Используется для автоматического определения схемы на основе данных.
 
-## input_format_mysql_dump_map_column_names {#input_format_mysql_dump_map_column_names}
+<div id="input_format_mysql_dump_map_column_names">
+  ## input_format_mysql_dump_map_column_names
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Сопоставлять столбцы таблицы из MySQL dump со столбцами таблицы ClickHouse по именам
 
-## input_format_mysql_dump_table_name {#input_format_mysql_dump_table_name}
+<div id="input_format_mysql_dump_table_name">
+  ## input_format_mysql_dump_table_name
+</div>
 
 Имя таблицы в дампе MySQL, из которой нужно читать данные
 
-## input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
+<div id="input_format_native_allow_types_conversion">
+  ## input_format_native_allow_types_conversion
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -757,7 +905,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Разрешить преобразование типов во входном формате Native
 
-## input_format_native_decode_types_in_binary_format {#input_format_native_decode_types_in_binary_format}
+<div id="input_format_native_decode_types_in_binary_format">
+  ## input_format_native_decode_types_in_binary_format
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -765,7 +915,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Читать типы данных в бинарном формате вместо имён типов во входном формате Native
 
-## input_format_null_as_default {#input_format_null_as_default}
+<div id="input_format_null_as_default">
+  ## input_format_null_as_default
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -783,7 +935,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 * 0 — Вставка `NULL` в столбец, не являющийся Nullable, вызывает исключение.
 * 1 — Поля со значением `NULL` инициализируются значениями столбца по умолчанию.
 
-## input_format_orc_allow_missing_columns {#input_format_orc_allow_missing_columns}
+<div id="input_format_orc_allow_missing_columns">
+  ## input_format_orc_allow_missing_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -791,13 +945,17 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Разрешить отсутствующие столбцы при чтении данных в формате ORC
 
-## input_format_orc_case_insensitive_column_matching {#input_format_orc_case_insensitive_column_matching}
+<div id="input_format_orc_case_insensitive_column_matching">
+  ## input_format_orc_case_insensitive_column_matching
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Игнорировать регистр при сопоставлении столбцов ORC со столбцами ClickHouse.
 
-## input_format_orc_dictionary_as_low_cardinality {#input_format_orc_dictionary_as_low_cardinality}
+<div id="input_format_orc_dictionary_as_low_cardinality">
+  ## input_format_orc_dictionary_as_low_cardinality
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -805,13 +963,17 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Рассматривать столбцы ORC, закодированные с помощью словаря, как столбцы LowCardinality при чтении файлов ORC.
 
-## input_format_orc_filter_push_down {#input_format_orc_filter_push_down}
+<div id="input_format_orc_filter_push_down">
+  ## input_format_orc_filter_push_down
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 При чтении файлов ORC позволяет пропускать целые страйп или группа строк на основе выражений WHERE/PREWHERE, статистики min/max или bloom-фильтра в метаданных ORC.
 
-## input_format_orc_reader_time_zone_name {#input_format_orc_reader_time_zone_name}
+<div id="input_format_orc_reader_time_zone_name">
+  ## input_format_orc_reader_time_zone_name
+</div>
 
 <SettingsInfoBlock type="String" default_value="GMT" />
 
@@ -819,19 +981,25 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Название часового пояса для построчного считывателя ORC; часовой пояс построчного считывателя ORC по умолчанию — GMT.
 
-## input_format_orc_row_batch_size {#input_format_orc_row_batch_size}
+<div id="input_format_orc_row_batch_size">
+  ## input_format_orc_row_batch_size
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="100000" />
 
 Размер батча при чтении страйпов ORC.
 
-## input_format_orc_skip_columns_with_unsupported_types_in_schema_inference {#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference}
+<div id="input_format_orc_skip_columns_with_unsupported_types_in_schema_inference">
+  ## input_format_orc_skip_columns_with_unsupported_types_in_schema_inference
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Пропускать столбцы с неподдерживаемыми типами при автоматическом определении схемы для формата ORC
 
-## input_format_parallel_parsing {#input_format_parallel_parsing}
+<div id="input_format_parallel_parsing">
+  ## input_format_parallel_parsing
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -842,7 +1010,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 * 1 — Включено.
 * 0 — Отключено.
 
-## input_format_parquet_allow_geoparquet_parser {#input_format_parquet_allow_geoparquet_parser}
+<div id="input_format_parquet_allow_geoparquet_parser">
+  ## input_format_parquet_allow_geoparquet_parser
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -850,7 +1020,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Использовать парсер геостолбцов для преобразования Array(UInt8) в типы Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
 
-## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
+<div id="input_format_parquet_allow_missing_columns">
+  ## input_format_parquet_allow_missing_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -858,7 +1030,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Разрешить отсутствие столбцов при чтении входного формата Parquet
 
-## input_format_parquet_bloom_filter_push_down {#input_format_parquet_bloom_filter_push_down}
+<div id="input_format_parquet_bloom_filter_push_down">
+  ## input_format_parquet_bloom_filter_push_down
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -866,13 +1040,17 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 При чтении файлов Parquet пропускать целые группы строк на основании выражений WHERE и bloom-фильтра в метаданных Parquet.
 
-## input_format_parquet_case_insensitive_column_matching {#input_format_parquet_case_insensitive_column_matching}
+<div id="input_format_parquet_case_insensitive_column_matching">
+  ## input_format_parquet_case_insensitive_column_matching
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Игнорировать регистр при сопоставлении столбцов Parquet со столбцами ClickHouse без учёта регистра.
 
-## input_format_parquet_dictionary_filter_push_down {#input_format_parquet_dictionary_filter_push_down}
+<div id="input_format_parquet_dictionary_filter_push_down">
+  ## input_format_parquet_dictionary_filter_push_down
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -880,7 +1058,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 При чтении файлов Parquet (с ридер v3) пропускает целые группы строк на основе выражений WHERE/PREWHERE и содержимого страниц словаря, если все страницы данных фрагмента столбца закодированы с использованием словаря. Значение — максимальный размер страницы словаря (в байтах), для которого применяется эта оптимизация; установите 0, чтобы отключить её. Если доступны оба механизма, эта настройка имеет приоритет над bloom-фильтром.
 
-## input_format_parquet_enable_json_parsing {#input_format_parquet_enable_json_parsing}
+<div id="input_format_parquet_enable_json_parsing">
+  ## input_format_parquet_enable_json_parsing
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -888,7 +1068,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 При чтении файлов Parquet разбирать JSON-столбцы как JSON-столбцы ClickHouse.
 
-## input_format_parquet_enable_row_group_prefetch {#input_format_parquet_enable_row_group_prefetch}
+<div id="input_format_parquet_enable_row_group_prefetch">
+  ## input_format_parquet_enable_row_group_prefetch
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -896,19 +1078,25 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Включает предварительную загрузку групп строк при парсинге Parquet. В настоящее время предварительная загрузка поддерживается только при однопоточном парсинге.
 
-## input_format_parquet_filter_push_down {#input_format_parquet_filter_push_down}
+<div id="input_format_parquet_filter_push_down">
+  ## input_format_parquet_filter_push_down
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 При чтении файлов Parquet пропускает целые группы строк на основании выражений WHERE/PREWHERE и статистики min/max в метаданных Parquet.
 
-## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
+<div id="input_format_parquet_local_file_min_bytes_for_seek">
+  ## input_format_parquet_local_file_min_bytes_for_seek
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="8192" />
 
 Минимальное количество байтов, необходимое при локальном чтении файла для выполнения seek вместо чтения с пропуском во входном формате Parquet
 
-## input_format_parquet_local_time_as_utc {#input_format_parquet_local_time_as_utc}
+<div id="input_format_parquet_local_time_as_utc">
+  ## input_format_parquet_local_time_as_utc
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -916,7 +1104,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Определяет тип данных, используемый при автоматическом определении схемы для временных меток Parquet с `isAdjustedToUTC=false`. Если true: DateTime64(..., &#39;UTC&#39;), если false: DateTime64(...). Ни один из вариантов не является полностью корректным, так как в ClickHouse нет типа данных для локального времени без привязки к часовому поясу. Как ни парадоксально, вариант `true`, вероятно, менее ошибочен, поскольку форматирование временной метки `'UTC'` как `String` даст корректное представление локального времени.
 
-## input_format_parquet_max_block_size {#input_format_parquet_max_block_size}
+<div id="input_format_parquet_max_block_size">
+  ## input_format_parquet_max_block_size
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65409" />
 
@@ -924,7 +1114,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Максимальный размер блока для ридера Parquet.
 
-## input_format_parquet_memory_high_watermark {#input_format_parquet_memory_high_watermark}
+<div id="input_format_parquet_memory_high_watermark">
+  ## input_format_parquet_memory_high_watermark
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="4294967296" />
 
@@ -932,7 +1124,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Приблизительный лимит памяти для ридера Parquet v3. Ограничивает количество групп строк или столбцов, которые можно читать параллельно. При чтении нескольких файлов в одном запросе ограничение применяется к суммарному использованию памяти для всех этих файлов.
 
-## input_format_parquet_memory_low_watermark {#input_format_parquet_memory_low_watermark}
+<div id="input_format_parquet_memory_low_watermark">
+  ## input_format_parquet_memory_low_watermark
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2097152" />
 
@@ -940,7 +1134,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Более агрессивно запускает операции предварительного чтения, если использование памяти ниже порога. Может быть полезно, например, если по сети нужно читать много небольших bloom-фильтров.
 
-## input_format_parquet_page_filter_push_down {#input_format_parquet_page_filter_push_down}
+<div id="input_format_parquet_page_filter_push_down">
+  ## input_format_parquet_page_filter_push_down
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -948,7 +1144,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Пропускать страницы на основе минимальных/максимальных значений из индекса столбца.
 
-## input_format_parquet_prefer_block_bytes {#input_format_parquet_prefer_block_bytes}
+<div id="input_format_parquet_prefer_block_bytes">
+  ## input_format_parquet_prefer_block_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -956,7 +1154,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Средний размер блока в байтах на выходе ридера Parquet
 
-## input_format_parquet_preserve_order {#input_format_parquet_preserve_order}
+<div id="input_format_parquet_preserve_order">
+  ## input_format_parquet_preserve_order
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -964,13 +1164,17 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Не меняйте порядок строк при чтении файлов Parquet. Не рекомендуется, так как порядок строк обычно не гарантируется, а другие части конвейера выполнения запроса могут его нарушить. Вместо этого используйте `ORDER BY _row_number`.
 
-## input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference {#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference}
+<div id="input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference">
+  ## input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Пропускать столбцы с неподдерживаемыми типами при автоматическом определении схемы для формата Parquet
 
-## input_format_parquet_spatial_filter_push_down {#input_format_parquet_spatial_filter_push_down}
+<div id="input_format_parquet_spatial_filter_push_down">
+  ## input_format_parquet_spatial_filter_push_down
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -978,7 +1182,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 При чтении файлов GeoParquet пропускайте целые группы строк и, при включённом `input_format_parquet_page_filter_push_down`, отдельные страницы на основе пространственных предикатов в предложении WHERE и статистики ограничивающего прямоугольника геометрии (столбцы `geospatial_statistics.bbox` или `covering.bbox`) в метаданных Parquet.
 
-## input_format_parquet_use_offset_index {#input_format_parquet_use_offset_index}
+<div id="input_format_parquet_use_offset_index">
+  ## input_format_parquet_use_offset_index
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -986,7 +1192,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Небольшое изменение в способе чтения страниц из файла Parquet, когда фильтрация страниц не используется.
 
-## input_format_parquet_verify_checksums {#input_format_parquet_verify_checksums}
+<div id="input_format_parquet_verify_checksums">
+  ## input_format_parquet_verify_checksums
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -994,13 +1202,17 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Проверять контрольные суммы страниц при чтении файлов Parquet.
 
-## input_format_protobuf_flatten_google_wrappers {#input_format_protobuf_flatten_google_wrappers}
+<div id="input_format_protobuf_flatten_google_wrappers">
+  ## input_format_protobuf_flatten_google_wrappers
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Включает wrappers Google для обычных невложенных столбцов, например `google.protobuf.StringValue 'str'` для столбца String `'str'`. Для столбцов с типом Nullable пустые wrappers распознаются как значения по умолчанию, а отсутствующие — как null
 
-## input_format_protobuf_oneof_presence {#input_format_protobuf_oneof_presence}
+<div id="input_format_protobuf_oneof_presence">
+  ## input_format_protobuf_oneof_presence
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1008,13 +1220,17 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Указывает, какое поле protobuf oneof было обнаружено, путём установки значения enum в специальном столбце
 
-## input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference {#input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference}
+<div id="input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference">
+  ## input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Пропускать поля с неподдерживаемыми типами при автоматическом определении схемы для формата Protobuf
 
-## input_format_read_datetime_number_as_raw_value {#input_format_read_datetime_number_as_raw_value}
+<div id="input_format_read_datetime_number_as_raw_value">
+  ## input_format_read_datetime_number_as_raw_value
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1039,11 +1255,15 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 `Template`/`CustomSeparated`/`Regexp`, настроенные с экранированием полей `Quoted`). На форматы с табличным разделением, CSV и другие
 экранированные/полнотекстовые форматы она не влияет: в них большое число `DateTime64` без кавычек по-прежнему считывается как тики.
 
-## input_format_record_errors_file_path {#input_format_record_errors_file_path}
+<div id="input_format_record_errors_file_path">
+  ## input_format_record_errors_file_path
+</div>
 
 Путь к файлу, используемому для записи ошибок при чтении текстовых форматов (CSV, TSV).
 
-## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
+<div id="input_format_skip_unknown_fields">
+  ## input_format_skip_unknown_fields
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1067,7 +1287,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 * 0 — Отключено.
 * 1 — Включено.
 
-## input_format_try_infer_dates {#input_format_try_infer_dates}
+<div id="input_format_try_infer_dates">
+  ## input_format_try_infer_dates
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1075,7 +1297,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Включено по умолчанию.
 
-## input_format_try_infer_datetimes {#input_format_try_infer_datetimes}
+<div id="input_format_try_infer_datetimes">
+  ## input_format_try_infer_datetimes
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1083,7 +1307,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Включено по умолчанию.
 
-## input_format_try_infer_datetimes_only_datetime64 {#input_format_try_infer_datetimes_only_datetime64}
+<div id="input_format_try_infer_datetimes_only_datetime64">
+  ## input_format_try_infer_datetimes_only_datetime64
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1091,7 +1317,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Когда включен параметр input&#95;format&#95;try&#95;infer&#95;datetimes, определять только DateTime64, а не типы DateTime
 
-## input_format_try_infer_exponent_floats {#input_format_try_infer_exponent_floats}
+<div id="input_format_try_infer_exponent_floats">
+  ## input_format_try_infer_exponent_floats
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1099,7 +1327,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Пытаться определять числа с плавающей точкой в экспоненциальной форме при автоматическом определении схемы в текстовых форматах (кроме JSON, где числа в экспоненциальной форме определяются всегда)
 
-## input_format_try_infer_integers {#input_format_try_infer_integers}
+<div id="input_format_try_infer_integers">
+  ## input_format_try_infer_integers
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1107,7 +1337,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Включено по умолчанию.
 
-## input_format_try_infer_variants {#input_format_try_infer_variants}
+<div id="input_format_try_infer_variants">
+  ## input_format_try_infer_variants
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1120,13 +1352,17 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 * 0 — Отключено.
 * 1 — Включено.
 
-## input_format_tsv_allow_variable_number_of_columns {#input_format_tsv_allow_variable_number_of_columns}
+<div id="input_format_tsv_allow_variable_number_of_columns">
+  ## input_format_tsv_allow_variable_number_of_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Игнорировать лишние столбцы во входных данных TSV (если в файле столбцов больше, чем ожидается) и считать отсутствующие поля во входных данных TSV значениями по умолчанию
 
-## input_format_tsv_crlf_end_of_line {#input_format_tsv_crlf_end_of_line}
+<div id="input_format_tsv_crlf_end_of_line">
+  ## input_format_tsv_crlf_end_of_line
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1134,7 +1370,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Если параметр имеет значение true, функция file будет читать формат TSV с окончанием строк \r\n вместо \n.
 
-## input_format_tsv_detect_header {#input_format_tsv_detect_header}
+<div id="input_format_tsv_detect_header">
+  ## input_format_tsv_detect_header
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1142,55 +1380,73 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 Автоматически определять заголовок с именами и типами в формате TSV
 
-## input_format_tsv_empty_as_default {#input_format_tsv_empty_as_default}
+<div id="input_format_tsv_empty_as_default">
+  ## input_format_tsv_empty_as_default
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Считать пустые поля во входных данных TSV значениями по умолчанию.
 
-## input_format_tsv_enum_as_number {#input_format_tsv_enum_as_number}
+<div id="input_format_tsv_enum_as_number">
+  ## input_format_tsv_enum_as_number
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Считать значения enum, вставляемые в форматах TSV, индексами enum.
 
-## input_format_tsv_skip_first_lines {#input_format_tsv_skip_first_lines}
+<div id="input_format_tsv_skip_first_lines">
+  ## input_format_tsv_skip_first_lines
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Пропускать указанное количество строк в начале данных в TSV format
 
-## input_format_tsv_skip_trailing_empty_lines {#input_format_tsv_skip_trailing_empty_lines}
+<div id="input_format_tsv_skip_trailing_empty_lines">
+  ## input_format_tsv_skip_trailing_empty_lines
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Пропускать пустые строки в конце в формате TSV
 
-## input_format_tsv_use_best_effort_in_schema_inference {#input_format_tsv_use_best_effort_in_schema_inference}
+<div id="input_format_tsv_use_best_effort_in_schema_inference">
+  ## input_format_tsv_use_best_effort_in_schema_inference
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Использовать дополнительные настройки и эвристики для автоматического определения схемы в формате TSV
 
-## input_format_values_accurate_types_of_literals {#input_format_values_accurate_types_of_literals}
+<div id="input_format_values_accurate_types_of_literals">
+  ## input_format_values_accurate_types_of_literals
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Для формата Values: при разборе и интерпретации выражений по шаблону проверяйте фактический тип литерала, чтобы избежать возможных проблем с переполнением и потерей точности.
 
-## input_format_values_deduce_templates_of_expressions {#input_format_values_deduce_templates_of_expressions}
+<div id="input_format_values_deduce_templates_of_expressions">
+  ## input_format_values_deduce_templates_of_expressions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Для формата Values: если поле не удалось разобрать потоковым парсером, запускается SQL-парсер, определяется шаблон SQL-выражения, затем с помощью этого шаблона выполняется попытка разобрать все строки, после чего выражение интерпретируется для всех строк.
 
-## input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
+<div id="input_format_values_interpret_expressions">
+  ## input_format_values_interpret_expressions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Для формата Values: если поле не удалось разобрать потоковым парсером, используется SQL-парсер, который пытается интерпретировать его как SQL-выражение.
 
-## input_format_with_names_use_header {#input_format_with_names_use_header}
+<div id="input_format_with_names_use_header">
+  ## input_format_with_names_use_header
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1220,7 +1476,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 * 0 — Отключено.
 * 1 — Включено.
 
-## input_format_with_types_use_header {#input_format_with_types_use_header}
+<div id="input_format_with_types_use_header">
+  ## input_format_with_types_use_header
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## use_text_index_header_cache {#use_text_index_header_cache}
+<div id="use_text_index_header_cache">
+  ## use_text_index_header_cache
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +24,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يحدد ما إذا كان سيتم تخزين رؤوس الفهرس النصي، بعد فك التسلسل، مؤقتًا في الذاكرة.
 يمكن أن يؤدي استخدام ذاكرة التخزين المؤقت لرؤوس الفهرس النصي إلى تقليل زمن الاستجابة بشكل ملحوظ وزيادة معدل النقل عند التعامل مع عدد كبير من استعلامات الفهرس النصي.
 
-## use_text_index_like_evaluation_by_dictionary_scan {#use_text_index_like_evaluation_by_dictionary_scan}
+<div id="use_text_index_like_evaluation_by_dictionary_scan">
+  ## use_text_index_like_evaluation_by_dictionary_scan
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +34,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 تفعيل تقييم استعلامات LIKE/ILIKE عبر فحص قاموس الفهرس النصي المعكوس.
 
-الأنماط المُسرَّعة هي `%value%` و`value%` و`%value`، إضافةً إلى استدعاءات `startsWith` و`endsWith` التي يعيد `optimize_rewrite_like_perfect_affix` كتابتها على هيئة `value%` و`%value`.
-
-## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
+<div id="use_text_index_negative_tokens_cache">
+  ## use_text_index_negative_tokens_cache
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,16 +45,20 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 ما إذا كانت رموز الفهرس النصي غير الموجودة في جزء بيانات تُخزَّن مؤقتًا.
 تستخدم ذاكرة التخزين المؤقت للرموز السلبية ذاكرة التخزين المؤقت لرموز الفهرس النصي، وتتجنب عمليات البحث المتكررة في القاموس عن الرموز غير الموجودة.
 
-## use_text_index_postings_cache {#use_text_index_postings_cache}
+<div id="use_text_index_postings_cache">
+  ## use_text_index_postings_cache
+</div>
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "تم تفعيل ذاكرة التخزين المؤقت لقوائم الإحالة الخاصة بالفهرس النصي على مستوى النظام. في السابق كان كل استعلام يستخدم ذاكرة تخزين مؤقت خاصة صغيرة، مما تسبب في إعادة حساب قوائم الإحالة ونتائج البحث عن العبارات داخل الاستعلام الواحد على الجداول الكبيرة."}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 ما إذا كان سيتم تخزين قوائم الإحالة الخاصة بالفهرس النصي مؤقتًا في الذاكرة بعد فك تسلسلها.
 يمكن أن تقلل ذاكرة التخزين المؤقت لقوائم الإحالة الخاصة بالفهرس النصي زمن الاستجابة بشكل كبير وتزيد معدل النقل عند العمل مع عدد كبير من استعلامات الفهرس النصي.
 
-## use_text_index_tokens_cache {#use_text_index_tokens_cache}
+<div id="use_text_index_tokens_cache">
+  ## use_text_index_tokens_cache
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -12,19 +12,21 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُستخدم هذه الإعدادات لتهيئة خادم ClickHouse، وقد أُنشئت تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-## database_catalog_drop_error_cooldown_sec {#database_catalog_drop_error_cooldown_sec}
+<div id="database_catalog_drop_error_cooldown_sec">
+  ## database_catalog_drop_error_cooldown_sec
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5" changeable_without_restart="No" />في حال تعذّر حذف الجدول، سينتظر ClickHouse هذه المهلة قبل إعادة محاولة العملية.
 
-## database_catalog_drop_table_concurrency {#database_catalog_drop_table_concurrency}
+<div id="database_catalog_drop_table_concurrency">
+  ## database_catalog_drop_table_concurrency
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />حجم مجمّع مؤشرات الترابط المستخدم لحذف الجداول.
 
-## database_catalog_shutdown_table_concurrency {#database_catalog_shutdown_table_concurrency}
-
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />حجم مجمّع خيوط المستخدم لإيقاف الجداول عند توقف الخادم. تعني القيمة صفر أن عدد الخيوط يساوي عدد الأنوية.
-
-## database_catalog_unused_dir_cleanup_period_sec {#database_catalog_unused_dir_cleanup_period_sec}
+<div id="database_catalog_unused_dir_cleanup_period_sec">
+  ## database_catalog_unused_dir_cleanup_period_sec
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="86400" changeable_without_restart="No" />
 
@@ -35,7 +37,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   القيمة `0` تعني &quot;أبدًا&quot;. وتقابل القيمة الافتراضية يومًا واحدًا.
 </Note>
 
-## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec}
+<div id="database_catalog_unused_dir_hide_timeout_sec">
+  ## database_catalog_unused_dir_hide_timeout_sec
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="No" />
 
@@ -49,7 +53,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   تعني القيمة `0` &quot;فورًا&quot;.
 </Note>
 
-## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
+<div id="database_catalog_unused_dir_rm_timeout_sec">
+  ## database_catalog_unused_dir_rm_timeout_sec
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2592000" changeable_without_restart="No" />
 

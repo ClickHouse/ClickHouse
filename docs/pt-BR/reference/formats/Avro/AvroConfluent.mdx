@@ -17,7 +17,9 @@ import DataTypesMatching from '/snippets/pt-BR/data-types-matching.mdx';
 | ------- | ----- | ----- |
 | ✔       | ✔     |       |
 
-## Descrição {#description}
+<div id="description">
+  ## Descrição
+</div>
 
 [Apache Avro](https://avro.apache.org/) é um formato de serialização orientado a linhas que usa codificação binária para o processamento eficiente de dados. O formato `AvroConfluent` oferece suporte à leitura e à gravação de mensagens codificadas em Avro usando o [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (ou serviços compatíveis com a API).
 
@@ -25,28 +27,36 @@ Cada mensagem usa o wire format da Confluent: um byte mágico (`0x00`), seguido 
 
 <a id="data-types-matching" />
 
-## Mapeamento de tipos de dados {#data-type-mapping}
+<div id="data-type-mapping">
+  ## Mapeamento de tipos de dados
+</div>
 
 <DataTypesMatching />
 
-## Configurações de formato {#format-settings}
+<div id="format-settings">
+  ## Configurações de formato
+</div>
 
 [//]: # "NOTA: Estas configurações podem ser definidas no nível da sessão, mas isso não é comum, e destacá-lo demais na documentação pode confundir os usuários."
 
-| Setting                                          | Description                                                                                                                                                                                                              | Default |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| `input_format_avro_allow_missing_fields`         | Se deve usar um valor padrão em vez de gerar um erro quando um campo não é encontrado no schema.                                                                                                                         | `0`     |
-| `input_format_avro_null_as_default`              | Se deve usar um valor padrão em vez de gerar um erro ao inserir um valor `null` em uma coluna que não é Nullable.                                                                                                        | `0`     |
-| `format_avro_schema_registry_url`                | A URL do Confluent Schema Registry. Para autenticação básica, credenciais codificadas em URL podem ser incluídas diretamente no caminho da URL.                                                                          |         |
-| `format_avro_schema_registry_connection_timeout` | Tempo limite de conexão, em segundos, para o cliente HTTP do Schema Registry (usado tanto para buscar schemas quanto para registrá-los). Deve ser maior que 0; um valor de 600 (10 minutos) ou mais é reduzido para 599. | `1`     |
-| `format_avro_schema_registry_send_timeout`       | Tempo limite de envio, em segundos, para o cliente HTTP do Schema Registry. Deve ser maior que 0; um valor de 600 (10 minutos) ou mais é reduzido para 599.                                                              | `1`     |
-| `format_avro_schema_registry_receive_timeout`    | Tempo limite de recebimento, em segundos, para o cliente HTTP do Schema Registry. Deve ser maior que 0; um valor de 600 (10 minutos) ou mais é reduzido para 599.                                                        | `1`     |
-| `output_format_avro_confluent_subject`           | Para saída: o nome do subject sob o qual o schema é registrado no Schema Registry. Obrigatório ao gravar.                                                                                                                |         |
-| `output_format_avro_string_column_pattern`       | Para saída: expressão regular das colunas String a serem serializadas como Avro `string` (o padrão é `bytes`).                                                                                                           |         |
+| Setting                                          | Description                                                                                                                                                                                 | Default |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `input_format_avro_allow_missing_fields`         | Se deve usar um valor padrão em vez de gerar um erro quando um campo não é encontrado no schema.                                                                                           | `0`     |
+| `input_format_avro_null_as_default`              | Se deve usar um valor padrão em vez de gerar um erro ao inserir um valor `null` em uma coluna que não é Nullable.                                                                           | `0`     |
+| `format_avro_schema_registry_url`                | A URL do Confluent Schema Registry. Para autenticação básica, credenciais codificadas para URL podem ser incluídas diretamente no caminho da URL.                                           |         |
+| `format_avro_schema_registry_connection_timeout` | Tempo limite de conexão, em segundos, para o cliente HTTP do Schema Registry (usado tanto para buscar schemas quanto para registrá-los). Deve ser maior que 0 e menor que 600 (10 minutos). | `1`     |
+| `format_avro_schema_registry_send_timeout`       | Tempo limite de envio, em segundos, para o cliente HTTP do Schema Registry. Deve ser maior que 0 e menor que 600 (10 minutos).                                                              | `1`     |
+| `format_avro_schema_registry_receive_timeout`    | Tempo limite de recebimento, em segundos, para o cliente HTTP do Schema Registry. Deve ser maior que 0 e menor que 600 (10 minutos).                                                        | `1`     |
+| `output_format_avro_confluent_subject`           | Para saída: o nome do subject sob o qual o schema é registrado no Schema Registry. Obrigatório ao gravar.                                                                                  |         |
+| `output_format_avro_string_column_pattern`       | Para saída: expressão regular das colunas String a serem serializadas como Avro `string` (o padrão é `bytes`).                                                                              |         |
 
-## Exemplos {#examples}
+<div id="examples">
+  ## Exemplos
+</div>
 
-### Lendo do Kafka {#reading-from-kafka}
+<div id="reading-from-kafka">
+  ### Lendo do Kafka
+</div>
 
 Para ler um tópico do Kafka codificado em Avro usando o [motor de tabela Kafka](/pt-BR/reference/engines/table-engines/integrations/kafka), use a configuração `format_avro_schema_registry_url` para informar a URL do schema registry.
 
@@ -67,7 +77,9 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 SELECT * FROM topic1_stream;
 ```
 
-### Gravando no Kafka {#writing-to-kafka}
+<div id="writing-to-kafka">
+  ### Gravando no Kafka
+</div>
 
 Para gravar mensagens AvroConfluent em um tópico do Kafka, defina a URL do schema registry e o nome do subject. O schema é registrado automaticamente no schema registry na primeira gravação.
 
@@ -88,7 +100,9 @@ output_format_avro_confluent_subject = 'topic1-value';
 INSERT INTO topic1_sink VALUES ('hello', 'world');
 ```
 
-#### Usando autenticação básica {#using-basic-authentication}
+<div id="using-basic-authentication">
+  #### Usando autenticação básica
+</div>
 
 Se o seu schema registry exigir autenticação básica (por exemplo, se você estiver usando o Confluent Cloud), você pode fornecer credenciais codificadas em URL na configuração `format_avro_schema_registry_url`.
 
@@ -107,7 +121,9 @@ kafka_format = 'AvroConfluent',
 format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
 ```
 
-## Solução de problemas {#troubleshooting}
+<div id="troubleshooting">
+  ## Solução de problemas
+</div>
 
 Para monitorar o progresso da ingestão e depurar erros no consumer do Kafka, você pode consultar a [tabela de sistema `system.kafka_consumers`](/pt-BR/reference/system-tables/kafka_consumers). Se a sua implantação tiver várias réplicas (por exemplo, no ClickHouse Cloud), será necessário usar a [função de tabela `clusterAllReplicas`](/pt-BR/reference/functions/table-functions/cluster).
 

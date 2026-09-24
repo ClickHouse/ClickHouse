@@ -9,7 +9,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <div id="introduction">
-  ## Introducción {#introduction}
+  ## Introducción
 </div>
 
 ClickHouse procesa las consultas con gran rapidez, pero ¿cómo se distribuyen y paralelizan estas consultas
@@ -19,7 +19,9 @@ entre varios servidores?
 > varios segmentos mediante tablas distribuidas, y luego cómo una consulta puede aprovechar
 > varias réplicas durante su ejecución.
 
-## Arquitectura segmentada {#sharded-architecture}
+<div id="sharded-architecture">
+  ## Arquitectura segmentada
+</div>
 
 En una arquitectura shared-nothing, los clústeres suelen dividirse en
 múltiples segmentos, y cada segmento contiene un subconjunto del total de datos. Una
@@ -63,7 +65,9 @@ Cuando añadimos réplicas a la ecuación, el proceso es bastante similar, con l
 diferencia de que solo una réplica de cada segmento ejecutará la consulta.
 Esto significa que luego pueden procesarse más consultas en paralelo.
 
-## Arquitectura sin segmentos {#non-sharded-architecture}
+<div id="non-sharded-architecture">
+  ## Arquitectura sin segmentos
+</div>
 
 ClickHouse Cloud tiene una arquitectura muy distinta de la presentada anteriormente.
 (Consulta [&quot;Arquitectura de ClickHouse Cloud&quot;](/es/products/cloud/reference/architecture)
@@ -85,7 +89,9 @@ Pero ¿cómo podemos distribuir ahora la ejecución de consultas entre varios se
 arquitectura con segmentos, era bastante obvio, ya que cada segmento podía
 ejecutar una consulta sobre un subconjunto de los datos. ¿Cómo funciona cuando no hay segmentación?
 
-## Introducción a las réplicas paralelas {#introducing-parallel-replicas}
+<div id="introducing-parallel-replicas">
+  ## Introducción a las réplicas paralelas
+</div>
 
 Para paralelizar la ejecución de consultas a través de varios servidores, primero necesitamos
 poder asignar uno de nuestros servidores como coordinador. El coordinador es quien
@@ -157,7 +163,9 @@ funcione a la perfección:
 
 En las siguientes secciones veremos cómo se superan estos factores.
 
-### Anuncios {#announcements}
+<div id="announcements">
+  ### Anuncios
+</div>
 
 Para abordar (1) y (2) de la lista anterior, introdujimos el concepto de
 anuncio. Veamos cómo funciona en la siguiente figura:
@@ -193,7 +201,9 @@ anuncio. Veamos cómo funciona en la siguiente figura:
   </li>
 </ol>
 
-### Coordinación dinámica {#dynamic-coordination}
+<div id="dynamic-coordination">
+  ### Coordinación dinámica
+</div>
 
 Para abordar el problema de la latencia de cola, añadimos coordinación dinámica. Esto significa
 que no todos los gránulos se envían a una réplica en una sola solicitud, sino que cada réplica
@@ -252,7 +262,7 @@ La figura siguiente muestra cómo funciona la coordinación dinámica:
 </ol>
 
 <div id="managing-cache-locality">
-  ### Gestión de la localidad de la caché {#managing-cache-locality}
+  ### Gestión de la localidad de la caché
 </div>
 
 El último problema potencial que queda es cómo manejamos la localidad de la caché. Si la consulta
@@ -305,14 +315,16 @@ usa sistemáticamente la misma réplica para ejecutar determinadas tareas. Si `m
 que el número de réplicas, entonces se eligen réplicas aleatorias para la ejecución de consultas.
 
 <div id="task-stealing">
-  ### Robo de tareas {#task-stealing}
+  ### Robo de tareas
 </div>
 
 si una réplica procesa tareas más lentamente que las demás, otras réplicas intentarán
 &#39;robar&#39; tareas que, en principio, pertenecen a esa réplica según el hash para reducir la
 latencia de cola.
 
-### Limitaciones {#limitations}
+<div id="limitations">
+  ### Limitaciones
+</div>
 
 Esta funcionalidad tiene limitaciones conocidas, y en esta sección se documentan
 las principales.
@@ -333,7 +345,7 @@ las principales.
 | Compatibilidad con el analizador                             | El analizador puede ralentizar o acelerar significativamente la ejecución de consultas en determinados escenarios.                                                                                                                                                                                                                                                                                                                                                                            |
 
 <div id="settings-related-to-parallel-replicas">
-  ## Configuración relacionada con las réplicas paralelas {#settings-related-to-parallel-replicas}
+  ## Configuración relacionada con las réplicas paralelas
 </div>
 
 | Setting                                            | Description                                                                                                                                                                                                                                                                              |
@@ -342,8 +354,11 @@ las principales.
 | `cluster_for_parallel_replicas`                    | El nombre del clúster que se usará para las réplicas paralelas; si usas ClickHouse Cloud, utiliza `default`.                                                                                                                                                                             |
 | `max_parallel_replicas`                            | Número máximo de réplicas que se usarán para ejecutar la consulta en múltiples réplicas; si se especifica un número inferior al de réplicas del clúster, los nodos se seleccionarán aleatoriamente. Este valor también puede sobreasignarse para tener en cuenta el escalado horizontal. |
 | `parallel_replicas_min_number_of_rows_per_replica` | Ayuda a limitar el número de réplicas utilizadas en función del número de filas que deben procesarse; el número de réplicas utilizadas se define mediante: <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                           |
+| `enable_analyzer`                                  | La ejecución de consultas con réplicas paralelas solo es compatible cuando el analizador está habilitado                                                                                                                                                                                   |
 
-## Investigar problemas con las réplicas paralelas {#investigating-issues-with-parallel-replicas}
+<div id="investigating-issues-with-parallel-replicas">
+  ## Investigar problemas con las réplicas paralelas
+</div>
 
 Puedes comprobar qué configuraciones se están usando para cada consulta en la
 tabla [`system.query_log`](/es/reference/system-tables/query_log). También puedes

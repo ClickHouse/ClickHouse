@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## max_rows_for_lazy_final {#max_rows_for_lazy_final}
+<div id="max_rows_for_lazy_final">
+  ## max_rows_for_lazy_final
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" />
 
@@ -21,13 +23,17 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 遅延実行 FINAL 最適化で使用する集合の最大行数です。これを超えると、通常の FINAL にフォールバックします。
 
-## max_rows_in_distinct {#max_rows_in_distinct}
+<div id="max_rows_in_distinct">
+  ## max_rows_in_distinct
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 DISTINCT 使用時の異なる行の最大数。
 
-## max_rows_in_join {#max_rows_in_join}
+<div id="max_rows_in_join">
+  ## max_rows_in_join
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -37,29 +43,26 @@ DISTINCT 使用時の異なる行の最大数。
 操作と [Join](/ja/reference/engines/table-engines/special/join) テーブルエンジンに適用されます。
 
 クエリに複数の JOIN が含まれている場合、ClickHouse は各
-中間結果に対してこの設定を確認します。これはハッシュベースのすべての `join_algorithm` に対する厳格な上限であり、制限に
-達すると、クエリは
-[`join_overflow_mode`](/ja/reference/settings/session-settings/join#join_overflow_mode) に従って throw または break します。
-この設定によって JOIN がディスクへスピルすることはありません。その判断は
-[`max_bytes_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
-および
-[`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)
-に委ねられています。
-例外は `legacy_join_size_limits_trigger_spilling` です。これを有効にすると、すでにディスク上で実行されている
-JOIN の部分では、この制限は上限ではなく追加のスピルのトリガーとして扱われます。
+中間結果に対してこの設定を確認します。制限に達した場合の動作は、
+選択した [`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) に依存します。アルゴリズムごとの挙動 (spill、再パーティション、切り替え、または
+[`join_overflow_mode`](/ja/reference/settings/session-settings/join#join_overflow_mode) に応じた throw/break) については、その設定を参照してください。
 
 設定可能な値:
 
 * 正の整数。
 * `0` — 行数は無制限。
 
-## max_rows_in_set {#max_rows_in_set}
+<div id="max_rows_in_set">
+  ## max_rows_in_set
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 サブクエリから作成される IN clause 内のデータセットの最大行数。
 
-## max_rows_in_set_to_optimize_join {#max_rows_in_set_to_optimize_join}
+<div id="max_rows_in_set_to_optimize_join">
+  ## max_rows_in_set_to_optimize_join
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -72,7 +75,9 @@ JOIN の部分では、この制限は上限ではなく追加のスピルのト
 * 0 — 無効。
 * 任意の正の整数。
 
-## max_rows_to_group_by {#max_rows_to_group_by}
+<div id="max_rows_to_group_by">
+  ## max_rows_to_group_by
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -84,7 +89,9 @@ GROUP BY による集約で、指定した数を超える
 既定では &#39;group&#95;by&#95;overflow&#95;mode&#39; の `throw` によって決まりますが、
 近似 GROUP BY モードに切り替えることもできます。
 
-## max_rows_to_read {#max_rows_to_read}
+<div id="max_rows_to_read">
+  ## max_rows_to_read
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -93,7 +100,9 @@ GROUP BY による集約で、指定した数を超える
 テーブル式にのみ適用されます。また、リモートサーバーから読み取る場合は、
 リモートサーバー上でのみチェックされます。
 
-## max_rows_to_read_leaf {#max_rows_to_read_leaf}
+<div id="max_rows_to_read_leaf">
+  ## max_rows_to_read_leaf
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -115,7 +124,9 @@ GROUP BY による集約で、指定した数を超える
   この設定は、`prefer_localhost_replica=1` と併用すると不安定です。
 </Note>
 
-## max_rows_to_sort {#max_rows_to_sort}
+<div id="max_rows_to_sort">
+  ## max_rows_to_sort
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -123,7 +134,9 @@ GROUP BY による集約で、指定した数を超える
 ORDER BY の処理で指定された数を超えるレコードを処理する必要がある場合、
 その動作は `sort_overflow_mode` によって決まり、デフォルトでは `throw` に設定されています。
 
-## max_rows_to_transfer {#max_rows_to_transfer}
+<div id="max_rows_to_transfer">
+  ## max_rows_to_transfer
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

@@ -15,11 +15,15 @@ doc_type: 'リファレンス'
 | -- | -- | ----- |
 | ✔  | ✔  |       |
 
-## 説明 {#description}
+<div id="description">
+  ## 説明
+</div>
 
 [Apache Parquet](https://parquet.apache.org/) は、Hadoop エコシステムで広く使われている列指向のストレージフォーマットです。ClickHouse は、このフォーマットの読み取りと書き込みをサポートしています。
 
-## データ型の対応 {#data-types-matching-parquet}
+<div id="data-types-matching-parquet">
+  ## データ型の対応
+</div>
 
 以下の表は、Parquet のデータ型が ClickHouse の[データ型](/ja/reference/data-types/index)にどのように対応しているかを示しています。
 
@@ -35,8 +39,7 @@ doc_type: 'リファレンス'
 | `UINT_64`                                   | [UInt64](/ja/reference/data-types/int-uint)                                     |
 | `INT_64`                                    | [Int64](/ja/reference/data-types/int-uint)                                      |
 | `DATE`                                      | [Date32](/ja/reference/data-types/date)                                         |
-| `TIMESTAMP`                                 | [DateTime64](/ja/reference/data-types/datetime64)                               |
-| `TIME`                                      | [Time64](/ja/reference/data-types/time64)                                       |
+| `TIMESTAMP`, `TIME`                         | [DateTime64](/ja/reference/data-types/datetime64)                               |
 | `FLOAT`                                     | [Float32](/ja/reference/data-types/float)                                       |
 | `DOUBLE`                                    | [Float64](/ja/reference/data-types/float)                                       |
 | `INT96`                                     | [DateTime64(9, &#39;UTC&#39;)](/ja/reference/data-types/datetime64)             |
@@ -76,7 +79,9 @@ Parquet ファイルへの書き込み時には、対応する Parquet 型がな
 
 Array はネストでき、引数として `Nullable` 型の値を取ることもできます。`Tuple` 型と `Map` 型もネストできます。
 
-### ワイド整数 {#wide-integers}
+<div id="wide-integers">
+  ### ワイド整数
+</div>
 
 デフォルトでは、ClickHouse は `Int128`、`UInt128`、`Int256`、`UInt256` を、リトルエンディアンの注釈なし `FIXED_LEN_BYTE_ARRAY(16/32)` 値として書き込みます。このレガシー表現は、古い ClickHouse バージョンでもファイルを読み取れるようにするため、引き続きデフォルトとして使用されます。
 
@@ -97,14 +102,19 @@ ClickHouse table のカラムのデータ型は、挿入される Parquet data �
 
 一部の Parquet 型には、厳密に対応する ClickHouse 型がありません。これらは次のように読み取られます。
 
-* `isAdjustedToUTC=false` の `TIMESTAMP` はローカルの wall-clock time (どの time zone がローカルと見なされるかにかかわらず、ローカル timezone における年、月、日、時、分、秒、および秒未満の各フィールドを持つ時刻) で、SQL `TIMESTAMP WITHOUT TIME ZONE` と同じです。しかし ClickHouse は、これを UTC の timestamp であるかのように読み取ります。例: `2025-09-29 18:42:13.000` (ローカルの時計の表示を表す値) は `2025-09-29 18:42:13.000` (時点を表す `DateTime64(3, 'UTC')`) になります。String に変換すると、年、月、日、時、分、秒、および秒未満の値は正しく表示されるため、それを UTC ではなく何らかのローカル timezone の値として解釈できます。直感に反しますが、型を `DateTime64(3, 'UTC')` から `DateTime64(3)` に変更しても改善しません。どちらの型も時計の表示ではなく時点を表すためです。ただし、`DateTime64(3)` はローカル timezone を使って誤ってフォーマットされます。
-* `INTERVAL` は現在、Parquet ファイルでエンコードされた時間間隔の生のバイナリ表現を持つ `FixedString(12)` として読み取られます。
+* `TIME` (時刻) は timestamp として読み取られます。例: `10:23:13.000` は `1970-01-01 10:23:13.000` になります。
+* `isAdjustedToUTC=false` の `TIMESTAMP`/`TIME` はローカルの wall-clock time (どの time zone がローカルと見なされるかにかかわらず、ローカル timezone における年、月、日、時、分、秒、および秒未満の各フィールドを持つ時刻) で、SQL `TIMESTAMP WITHOUT TIME ZONE` と同じです。しかし ClickHouse は、これを UTC の timestamp であるかのように読み取ります。例: `2025-09-29 18:42:13.000` (ローカルの時計の表示を表す値) は `2025-09-29 18:42:13.000` (時点を表す `DateTime64(3, 'UTC')`) になります。String に変換すると、年、月、日、時、分、秒、および秒未満の値は正しく表示されるため、それを UTC ではなく何らかのローカル timezone の値として解釈できます。直感に反しますが、型を `DateTime64(3, 'UTC')` から `DateTime64(3)` に変更しても改善しません。どちらの型も時計の表示ではなく時点を表すためです。ただし、`DateTime64(3)` はローカル timezone を使って誤ってフォーマットされます。
+* `INTERVAL` は現在、Parquet file でエンコードされた時間間隔の生のバイナリ表現を持つ `FixedString(12)` として読み取られます。
 
-## Geo types (GeoParquet) {#geo-types}
+<div id="geo-types">
+  ## Geo types (GeoParquet)
+</div>
 
 ClickHouse は、[GeoParquet](https://geoparquet.org/) 仕様に準拠した ジオメトリカラム の読み書きをサポートしています。ジオメトリカラム は、[WKB](https://libgeos.org/specifications/wkb/) (読み取り時は WKT) でエンコードされた `BYTE_ARRAY` ペイロードとして保存され、ファイルレベルの Parquet メタデータには、各 ジオメトリカラム のエンコーディング、ジオメトリ型、CRS を記述する JSON の `geo` キーが含まれます。
 
-### 読み取り時の挙動 {#read}
+<div id="read">
+  ### 読み取り時の挙動
+</div>
 
 読み取り時には、ジオメトリカラム は対応する ClickHouse の[Geo data types](/ja/reference/data-types/geo)にマッピングされます。
 
@@ -112,15 +122,21 @@ ClickHouse は、[GeoParquet](https://geoparquet.org/) 仕様に準拠した ジ
 * 複数の geometry types を持つカラム、または geometry type が不明なカラムは、サポートされているすべての Geo 型に対する `Variant` である [`Geometry`](/ja/reference/data-types/geo#geometry) 型として読み取られます。
 * 要求されたカラム型が `String` の場合、GeoParquet のメタデータは無視され、エンコード済みの生のジオメトリ ペイロード がそのまま返されます。返されるのは、GeoParquet カラムで宣言されているエンコードに応じた WKB または WKT のバイト列です。これは、設定 [`input_format_parquet_allow_geoparquet_parser`](/ja/reference/settings/formats/input-format#input_format_parquet_allow_geoparquet_parser) が `0` に設定されている場合も同様です。
 
-### 書き込み動作 {#write}
+<div id="write">
+  ### 書き込み動作
+</div>
 
 書き込み時には、型が `Point`、`MultiPoint`、`LineString`、`Polygon`、`MultiLineString`、または `MultiPolygon` のトップレベルのカラムは `BYTE_ARRAY` (WKB) としてエンコードされ、適切な `geo` JSON メタデータが Parquet ファイルのフッターに追加されます。トップレベルの [`Geometry`](/ja/reference/data-types/geo#geometry) `Variant` も WKB の `BYTE_ARRAY` ペイロード としてエンコードされます (その下位の値は WKB に変換され、`Nullable(String)` カラムとして保存されます) が、これについては `geo` メタデータが出力されないため、読み取り時に結果は GeoParquet のジオメトリカラムとして認識されません。[`Ring`](/ja/reference/data-types/geo#ring) などのその他の geo 関連型は、GeoParquet メタデータを付与せず、ネイティブな内部表現のまま書き込まれます。この動作は [`output_format_parquet_geometadata`](/ja/reference/settings/formats/output-format#output_format_parquet_geometadata) を `0` に設定することで完全に無効化できます。この場合、サポートされている geo 型であってもネイティブな内部表現 (`Point` は `Tuple(Float64, Float64)`、`LineString` は `Array(Point)`、`Polygon` は `Array(Array(Point))` など) を使って書き込まれ、GeoParquet メタデータも出力されません。
 
 ジオメトリカラムはスキーマのルートに置くか、`Tuple` (`struct`) の内側にネストする必要があります。`Array` や `Map` の内側にネストすることはサポートされていません。また、geo カラムに対する `Nullable` もサポートされていません。
 
-## 使用例 {#example-usage}
+<div id="example-usage">
+  ## 使用例
+</div>
 
-### データの挿入 {#inserting-data}
+<div id="inserting-data">
+  ### データの挿入
+</div>
 
 `football.parquet` という名前の、次のデータを含む Parquet ファイルを使用します。
 
@@ -152,7 +168,9 @@ ClickHouse は、[GeoParquet](https://geoparquet.org/) 仕様に準拠した ジ
 INSERT INTO football FROM INFILE 'football.parquet' FORMAT Parquet;
 ```
 
-### データの読み取り {#reading-data}
+<div id="reading-data">
+  ### データの読み取り
+</div>
 
 `Parquet`フォーマットを使用してデータを読み取ります。
 
@@ -169,7 +187,9 @@ FORMAT Parquet
 
 Hadoop とデータをやり取りするには、[`HDFS テーブルエンジン`](/ja/reference/engines/table-engines/integrations/hdfs) を使用できます。
 
-## フォーマット設定 {#format-settings}
+<div id="format-settings">
+  ## フォーマット設定
+</div>
 
 | 設定                                                                             | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | デフォルト                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

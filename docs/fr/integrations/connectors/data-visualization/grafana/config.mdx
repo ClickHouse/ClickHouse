@@ -22,7 +22,9 @@ Cette page présente la liste des options de configuration disponibles dans le p
 
 Pour un aperçu rapide de toutes les options, consultez la liste complète des options de configuration [ici](#all-yaml-options).
 
-## Paramètres communs {#common-settings}
+<div id="common-settings">
+  ## Paramètres communs
+</div>
 
 Exemple d’écran de configuration :
 
@@ -54,14 +56,16 @@ secureJsonData:
 
 Notez qu’une propriété `version` est ajoutée lorsque la configuration est enregistrée via l’UI. Cela indique la version du plugin utilisée lors de l’enregistrement de la configuration.
 
-### Protocole HTTP {#http-protocol}
+<div id="http-protocol">
+  ### Protocole HTTP
+</div>
 
 Des paramètres supplémentaires s’afficheront si vous choisissez de vous connecter via le protocole HTTP.
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Options de configuration HTTP supplémentaires" border />
 
 <div id="http-path">
-  #### Chemin HTTP {#http-path}
+  #### Chemin HTTP
 </div>
 
 Si votre serveur HTTP est exposé sous un chemin d’URL différent, vous pouvez l’indiquer ici.
@@ -73,7 +77,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### En-têtes HTTP personnalisés {#custom-http-headers}
+  #### En-têtes HTTP personnalisés
 </div>
 
 Vous pouvez ajouter des en-têtes personnalisés aux requêtes envoyées à votre serveur.
@@ -102,7 +106,9 @@ secureJsonData:
   secureHttpHeaders.X-Example-Secure-Header: secure header value
 ```
 
-## Paramètres supplémentaires {#additional-settings}
+<div id="additional-settings">
+  ## Paramètres supplémentaires
+</div>
 
 Ces paramètres supplémentaires sont facultatifs.
 
@@ -121,7 +127,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry {#opentelemetry}
+  ### OpenTelemetry
 </div>
 
 OpenTelemetry (OTel) est étroitement intégré au plugin.
@@ -130,7 +136,9 @@ Pour une utilisation optimale, il est recommandé de configurer OTel à la fois 
 
 Il est également nécessaire de configurer ces paramètres par défaut pour activer les [liens de données](/fr/integrations/connectors/data-visualization/grafana/query-builder#data-links), une fonctionnalité qui permet de mettre en place de puissants workflows d’observabilité.
 
-### Logs {#logs}
+<div id="logs">
+  ### Logs
+</div>
 
 Pour accélérer la [création de requêtes pour les logs](/fr/integrations/connectors/data-visualization/grafana/query-builder#logs), vous pouvez définir une base de données/table par défaut, ainsi que les colonnes de la requête de logs. Cela précharge le query builder avec une requête de logs exécutable, ce qui accélère la navigation dans la page Explore pour l’observabilité.
 
@@ -154,22 +162,15 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
-
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
 
-#### Désactivation des liens « View logs » {#disabling-view-logs-links}
-
-La section **Corrélation des ID de trace** de la configuration des logs contient le bouton bascule **Afficher les liens « View logs »**.
-Ce bouton bascule détermine si le plugin associe des [liens de données](/fr/integrations/connectors/data-visualization/grafana/query-builder#data-links) « View logs » aux champs d’ID de trace des résultat de la requête.
-Il est activé par défaut. Un lien « View logs » pour le même type de requête ne nécessite pas de valeurs par défaut pour les logs configurées, contrairement à un lien « View logs » inter-signal provenant des résultat de la requête de trace.
-Désactivez le bouton bascule ou définissez `showLogLinks: false` dans YAML pour masquer ces liens.
-
-### Traces {#traces}
+<div id="traces">
+  ### Traces
+</div>
 
 Pour accélérer la [création de requêtes pour les traces](/fr/integrations/connectors/data-visualization/grafana/query-builder#traces), vous pouvez définir une base de données/table par défaut, ainsi que les colonnes de la requête de trace. Le query builder sera alors préchargé avec une requête de recherche de traces exécutable, ce qui accélère la navigation dans la page Explore.
 
@@ -192,8 +193,6 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
-
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
     spanIdColumn:        <string>    # span ID column.
@@ -207,15 +206,8 @@ jsonData:
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
-#### Désactivation des liens « View trace » {#disabling-view-trace-links}
-
-La section **Corrélation des ID de trace** de la configuration des traces contient le bouton bascule **Afficher les liens « View trace »**.
-Ce bouton bascule détermine si le plugin ajoute des [liens de données](/fr/integrations/connectors/data-visualization/grafana/query-builder#data-links) « View trace » aux champs d’ID de trace dans les résultat de la requête.
-Le bouton bascule est activé par défaut. Un lien « View trace » pour le même type de requête ne nécessite pas de valeurs par défaut configurées pour les traces, contrairement à un lien « View trace » intersignal issu des résultat de la requête de log.
-Désactivez le bouton bascule ou définissez `showTraceLinks: false` dans le YAML pour les masquer.
-
 <div id="column-aliases">
-  ### Alias de colonnes {#column-aliases}
+  ### Alias de colonnes
 </div>
 
 L&#39;utilisation d&#39;alias de colonnes est un moyen pratique d&#39;interroger vos données sous différents noms et types.
@@ -229,7 +221,7 @@ Les alias peuvent vous être utiles si :
 * Vous appliquez souvent des fonctions pour transformer les colonnes que vous sélectionnez
 
 <div id="table-defined-alias-columns">
-  #### Colonnes ALIAS définies au niveau de la table {#table-defined-alias-columns}
+  #### Colonnes ALIAS définies au niveau de la table
 </div>
 
 ClickHouse prend en charge nativement les alias de colonnes et fonctionne avec Grafana sans configuration supplémentaire.
@@ -248,7 +240,9 @@ Les alias définis dans la table ne sont pas renvoyés avec `SELECT *`, mais cel
 
 Pour plus d’informations, consultez la documentation du type de colonne [ALIAS](/fr/reference/statements/create/table#alias).
 
-#### Tables d’alias de colonnes {#column-alias-tables}
+<div id="column-alias-tables">
+  #### Tables d’alias de colonnes
+</div>
 
 Par défaut, Grafana propose des suggestions de colonnes à partir de la réponse de `DESC table`.
 Dans certains cas, vous pouvez vouloir remplacer complètement les colonnes que Grafana voit.
@@ -290,7 +284,9 @@ Grafana verra alors les résultats de la table d’alias au lieu de ceux de `DES
 
 Les deux types d’alias peuvent être utilisés pour effectuer des conversions de types complexes ou extraire des champs JSON.
 
-## Toutes les options YAML {#all-yaml-options}
+<div id="all-yaml-options">
+  ## Toutes les options YAML
+</div>
 
 Voici toutes les options de configuration YAML proposées par le plugin.
 Certains champs comportent des valeurs d&#39;exemple, tandis que d&#39;autres indiquent simplement le type du champ.
@@ -327,7 +323,6 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
-        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -336,7 +331,6 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
-        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

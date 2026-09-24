@@ -13,14 +13,22 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## optimize_rewrite_aggregate_function_with_if {#optimize_rewrite_aggregate_function_with_if}
+<div id="optimize_rewrite_aggregate_function_with_if">
+  ## optimize_rewrite_aggregate_function_with_if
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Réécrit les fonctions d’agrégation dont l’argument est une expression if, lorsqu’elles sont logiquement équivalentes.
 Par exemple, `avg(if(cond, col, null))` peut être réécrit en `avgOrNullIf(cond, col)`. Cela peut améliorer les performances.
 
-## optimize_rewrite_array_exists_to_has {#optimize_rewrite_array_exists_to_has}
+<Note>
+  Pris en charge uniquement avec l’analyseur (`enable_analyzer = 1`).
+</Note>
+
+<div id="optimize_rewrite_array_exists_to_has">
+  ## optimize_rewrite_array_exists_to_has
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,7 +36,9 @@ Par exemple, `avg(if(cond, col, null))` peut être réécrit en `avgOrNullIf(con
 
 Réécrit les fonctions arrayExists() en has() lorsqu’elles sont logiquement équivalentes. Par exemple, arrayExists(x -&gt; x = 1, arr) peut être réécrit en has(arr, 1)
 
-## optimize_rewrite_has_to_in {#optimize_rewrite_has_to_in}
+<div id="optimize_rewrite_has_to_in">
+  ## optimize_rewrite_has_to_in
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -36,7 +46,9 @@ Réécrit les fonctions arrayExists() en has() lorsqu’elles sont logiquement �
 
 Réécrit les fonctions `has` en `IN` lorsque le premier argument est un tableau constant. Par exemple, `has([1, 2, 3], x)` peut être réécrit en `x IN [1, 2, 3]` afin d&#39;améliorer les performances avec des tableaux constants
 
-## optimize_rewrite_like_perfect_affix {#optimize_rewrite_like_perfect_affix}
+<div id="optimize_rewrite_like_perfect_affix">
+  ## optimize_rewrite_like_perfect_affix
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -44,7 +56,9 @@ Réécrit les fonctions `has` en `IN` lorsque le premier argument est un tableau
 
 Réécrit les expressions LIKE avec un préfixe ou un suffixe exact (par ex. `col LIKE 'ClickHouse%'`) en fonctions startsWith ou endsWith (par ex. `startsWith(col, 'ClickHouse')`).
 
-## optimize_rewrite_regexp_functions {#optimize_rewrite_regexp_functions}
+<div id="optimize_rewrite_regexp_functions">
+  ## optimize_rewrite_regexp_functions
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -52,7 +66,9 @@ Réécrit les expressions LIKE avec un préfixe ou un suffixe exact (par ex. `co
 
 Réécrit les fonctions liées aux expressions régulières sous une forme plus simple et plus efficace
 
-## optimize_rewrite_sum_if_to_count_if {#optimize_rewrite_sum_if_to_count_if}
+<div id="optimize_rewrite_sum_if_to_count_if">
+  ## optimize_rewrite_sum_if_to_count_if
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

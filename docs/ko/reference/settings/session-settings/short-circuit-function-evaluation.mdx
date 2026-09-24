@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-## short_circuit_function_evaluation {#short_circuit_function_evaluation}
+<div id="short_circuit_function_evaluation">
+  ## short_circuit_function_evaluation
+</div>
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
@@ -25,7 +27,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * `force_enable` — 모든 함수에 대해 short-circuit 함수 평가를 활성화합니다.
 * `disable` — short-circuit 함수 평가를 비활성화합니다.
 
-## short_circuit_function_evaluation_for_nulls {#short_circuit_function_evaluation_for_nulls}
+<div id="short_circuit_function_evaluation_for_nulls">
+  ## short_circuit_function_evaluation_for_nulls
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -33,9 +37,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 인수 중 하나라도 NULL이면 NULL을 반환하는 함수의 평가를 최적화합니다. 함수 인수의 NULL 값 비율이 short&#95;circuit&#95;function&#95;evaluation&#95;for&#95;nulls&#95;threshold를 초과하면 시스템은 함수를 행별로 평가하지 않습니다. 대신 모든 행에 대해 즉시 NULL을 반환하여 불필요한 계산을 줄입니다.
 
-이 설정은 최적화만 제어합니다. `parseDateTime`, `IPv4StringToNum`, `intDiv`와 같이 인수의 기본값으로는 실행할 수 없는 함수는 이 설정과 관계없이 항상 NULL이 포함된 행을 건너뜁니다. NULL 뒤에 저장된 값은 해당 인수 유형의 기본값이며, 그 값으로 실행하면 정상적인 데이터에 대해서도 예외가 발생하기 때문입니다.
-
-## short_circuit_function_evaluation_for_nulls_threshold {#short_circuit_function_evaluation_for_nulls_threshold}
+<div id="short_circuit_function_evaluation_for_nulls_threshold">
+  ## short_circuit_function_evaluation_for_nulls_threshold
+</div>
 
 <SettingsInfoBlock type="Double" default_value="1" />
 

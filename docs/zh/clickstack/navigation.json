@@ -109,58 +109,24 @@
             {
               "group": "2026",
               "pages": [
-                {
-                  "group": "September",
-                  "pages": [
-                    "zh/clickstack/demo-days/2026/2026-09-10",
-                    "zh/clickstack/demo-days/2026/2026-09-04"
-                  ]
-                },
-                {
-                  "group": "August",
-                  "pages": [
-                    "zh/clickstack/demo-days/2026/2026-08-28",
-                    "zh/clickstack/demo-days/2026/2026-08-21",
-                    "zh/clickstack/demo-days/2026/2026-08-15",
-                    "zh/clickstack/demo-days/2026/2026-08-07"
-                  ]
-                },
-                {
-                  "group": "July",
-                  "pages": [
-                    "zh/clickstack/demo-days/2026/2026-07-31",
-                    "zh/clickstack/demo-days/2026/2026-07-24",
-                    "zh/clickstack/demo-days/2026/2026-07-17",
-                    "zh/clickstack/demo-days/2026/2026-07-10",
-                    "zh/clickstack/demo-days/2026/2026-07-02"
-                  ]
-                },
-                {
-                  "group": "June",
-                  "pages": [
-                    "zh/clickstack/demo-days/2026/2026-06-26",
-                    "zh/clickstack/demo-days/2026/2026-06-18",
-                    "zh/clickstack/demo-days/2026/2026-06-12",
-                    "zh/clickstack/demo-days/2026/2026-06-05"
-                  ]
-                },
-                {
-                  "group": "May",
-                  "pages": [
-                    "zh/clickstack/demo-days/2026/2026-05-29",
-                    "zh/clickstack/demo-days/2026/2026-05-22",
-                    "zh/clickstack/demo-days/2026/2026-05-15",
-                    "zh/clickstack/demo-days/2026/2026-05-08"
-                  ]
-                },
-                {
-                  "group": "April",
-                  "pages": [
-                    "zh/clickstack/demo-days/2026/2026-04-17",
-                    "zh/clickstack/demo-days/2026/2026-04-10",
-                    "zh/clickstack/demo-days/2026/2026-04-03"
-                  ]
-                }
+                "zh/clickstack/demo-days/2026/2026-08-15",
+                "zh/clickstack/demo-days/2026/2026-08-07",
+                "zh/clickstack/demo-days/2026/2026-07-31",
+                "zh/clickstack/demo-days/2026/2026-07-24",
+                "zh/clickstack/demo-days/2026/2026-07-17",
+                "zh/clickstack/demo-days/2026/2026-07-10",
+                "zh/clickstack/demo-days/2026/2026-07-02",
+                "zh/clickstack/demo-days/2026/2026-06-26",
+                "zh/clickstack/demo-days/2026/2026-06-18",
+                "zh/clickstack/demo-days/2026/2026-06-12",
+                "zh/clickstack/demo-days/2026/2026-06-05",
+                "zh/clickstack/demo-days/2026/2026-05-29",
+                "zh/clickstack/demo-days/2026/2026-05-22",
+                "zh/clickstack/demo-days/2026/2026-05-15",
+                "zh/clickstack/demo-days/2026/2026-05-08",
+                "zh/clickstack/demo-days/2026/2026-04-17",
+                "zh/clickstack/demo-days/2026/2026-04-10",
+                "zh/clickstack/demo-days/2026/2026-04-03"
               ]
             }
           ]
@@ -175,7 +141,6 @@
         "zh/clickstack/managing/admin",
         "zh/clickstack/managing/config",
         "zh/clickstack/managing/estimating-resources",
-        "zh/clickstack/managing/isolating-read-write",
         "zh/clickstack/managing/materialized-views",
         "zh/clickstack/managing/performance-tuning",
         "zh/clickstack/managing/production",
@@ -278,8 +243,7 @@
         "zh/clickstack/integration-partners/index",
         "zh/clickstack/integration-partners/bindplane",
         "zh/clickstack/integration-partners/bitdrift",
-        "zh/clickstack/integration-partners/odigos",
-        "zh/clickstack/integration-partners/telflo"
+        "zh/clickstack/integration-partners/odigos"
       ]
     },
     {

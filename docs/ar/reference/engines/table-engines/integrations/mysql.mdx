@@ -10,7 +10,9 @@ doc_type: 'مرجع'
 
 يتيح لك محرك MySQL تنفيذ استعلامات `SELECT` و`INSERT` على البيانات المخزّنة على خادم MySQL بعيد.
 
-## إنشاء جدول {#creating-a-table}
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +58,9 @@ SETTINGS
 
 أما بقية الشروط وقيد أخذ العينات `LIMIT`، فلا تُنفَّذ إلا في ClickHouse بعد اكتمال الاستعلام إلى MySQL.
 
-## TLS/SSL {#tls-ssl}
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
 
 تُمرَّر بيانات اعتماد الاتصال المشفّر بـ MySQL كمفاتيح في مجموعة مسمّاة (أو كوسيطات مفتاح-قيمة):
 
@@ -82,9 +86,11 @@ SETTINGS
 </named_collections>
 ```
 
-## تمرير استعلام بدلًا من اسم جدول {#passing-a-query}
+<div id="passing-a-query">
+  ## تمرير استعلام بدلًا من اسم جدول
+</div>
 
-بدلًا من اسم الجدول، يمكن أن تكون وسيطة `table` استعلام `SELECT` يُمرَّر إلى MySQL كما هو. ويُستدل على هيكل الجدول من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما كاستعلام فرعي أو بتغليفه داخل الدالة `query`:
+بدلًا من اسم الجدول، يمكن أن يكون المعامل `table` استعلام `SELECT` يُمرَّر إلى MySQL كما هو. ويُستدل على بنية الجدول من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما كاستعلام فرعي أو بتغليفه داخل الدالة `query`:
 
 ```sql
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
@@ -96,7 +102,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 <Note>
   يُحلَّل شكل الاستعلام الفرعي `(SELECT ...)` بواسطة ClickHouse ويُعاد تسلسله وفق لهجة MySQL ‏(باستخدام علامات الاقتباس الخلفية للمعرّفات) قبل إرساله إلى الخادم. لذلك يجب أن يكون استعلام ClickHouse SQL صالحًا. ولتمرير صياغة خاصة بـ MySQL لا يحلّلها ClickHouse، استخدم صيغة `query('...')`، إذ يُرسَل نصها إلى MySQL كما هو.
 
-  أي `WHERE` أو `LIMIT` خارجي، أو تجميع، وما إلى ذلك، في استعلام ClickHouse المحيط **لا** يُدفَع إلى داخل الاستعلام الممرَّر، بل يُطبَّق في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من MySQL، ضع عامل التصفية داخل الاستعلام الممرَّر. عند استخدام [`external_table_strict_query = 1`](/ar/reference/settings/session-settings/external-table#external_table_strict_query)، يُرفَض عامل تصفية خارجي على أعمدة الجدول مع استثناء بدلًا من تطبيقه محليًا، لأنه لا يمكن دفعه إلى الاستعلام الممرَّر. يشمل التحقق مسند `WHERE` ذي المستوى الأعلى وكل رابط في `AND` ذي المستوى الأعلى. لا تُعد `PREWHERE` على أعمدة هذا الجدول حالةً لهذا الإعداد: إذ لا يدعم محرك الجدول هذا `PREWHERE`، ويُرفَض هذا الاستعلام باستخدام `ILLEGAL_PREWHERE` بغض النظر عن الإعداد. لا يُنفَّذ التحقق إلا حيث يمكن دفع عامل تصفية أصلًا: عندما يكون هذا الجدول هو الجدول الوحيد في الاستعلام، أو على أي من جانبي `INNER JOIN`، أو على الجانب المُحتفَظ به من الربط الخارجي (الجانب الأيسر من `LEFT JOIN`، والجانب الأيمن من `RIGHT JOIN`). على الجانب غير المُحتفَظ به من `LEFT`/`RIGHT JOIN` وعلى أي من جانبي `FULL JOIN`، لا يُدفَع أي شيء ولا يُتحقَّق من أي شيء، لذلك يُطبَّق عامل تصفية على أعمدة هذا الجدول محليًا بعد الربط حتى في الوضع الصارم. حيثما يُنفَّذ التحقق، لا يُدفَع المسند الذي يشير إلى جداول أخرى مربوطة في الاستعلام المحيط ويُستثنى من التحقق، سواء أشار إلى الجانب المربوط فقط أو مزجه مع هذا الجدول ضمن تعبير واحد غير `AND` (مثل `OR`)؛ ويحتفظ هذا المسند بنقطة تقييمه المعتادة في ClickHouse ‏(`WHERE` بعد الربط، و`PREWHERE` قبله) ولا يُرفَض.
+  أي `WHERE` أو `LIMIT` خارجي، أو تجميع، وما إلى ذلك، في استعلام ClickHouse المحيط **لا** يُدفَع إلى داخل الاستعلام الممرَّر، بل يُطبَّق في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من MySQL، ضع عامل التصفية داخل الاستعلام الممرَّر. عند استخدام [`external_table_strict_query = 1`](/ar/reference/settings/session-settings/external-table#external_table_strict_query)، يُرفَض أي عامل تصفية خارجي لا يمكن دفعه ويُرجع استثناءً بدلًا من تطبيقه محليًا.
 </Note>
 
 يدعم عدة نُسخ متماثلة يجب إدراجها باستخدام `|`. على سبيل المثال:
@@ -105,7 +111,9 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## مثال للاستخدام {#usage-example}
+<div id="usage-example">
+  ## مثال للاستخدام
+</div>
 
 أنشئ جدولًا في MySQL:
 
@@ -170,11 +178,15 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## الإعدادات {#mysql-settings}
+<div id="mysql-settings">
+  ## الإعدادات
+</div>
 
 الإعدادات الافتراضية ليست فعّالة جدًا، إذ إنها لا تعيد استخدام الاتصالات حتى. تتيح لك هذه الإعدادات زيادة عدد الاستعلامات التي ينفّذها الخادوم في الثانية.
 
-### `connection_auto_close` {#connection-auto-close}
+<div id="connection-auto-close">
+  ### `connection_auto_close`
+</div>
 
 يسمح بإغلاق الاتصال تلقائيًا بعد تنفيذ الاستعلام، أي بتعطيل إعادة استخدام الاتصال.
 
@@ -185,7 +197,9 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `1`.
 
-### `connection_max_tries` {#connection-max-tries}
+<div id="connection-max-tries">
+  ### `connection_max_tries`
+</div>
 
 يحدد عدد مرات إعادة المحاولة لمجمع الاتصالات مع التبديل التلقائي عند التعطل.
 
@@ -196,7 +210,9 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `3`.
 
-### `connection_pool_size` {#connection-pool-size}
+<div id="connection-pool-size">
+  ### `connection_pool_size`
+</div>
 
 حجم مجمع الاتصالات (إذا كانت جميع الاتصالات قيد الاستخدام، فسوف ينتظر الاستعلام حتى يتحرر أحد الاتصالات).
 
@@ -206,7 +222,9 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `16`.
 
-### `connection_wait_timeout` {#connection-wait-timeout}
+<div id="connection-wait-timeout">
+  ### `connection_wait_timeout`
+</div>
 
 مهلة الانتظار (بالثواني) حتى يتوفر اتصال متاح (إذا كان هناك بالفعل `connection_pool_size` من الاتصالات النشطة)، 0 - لا تنتظر.
 
@@ -216,7 +234,9 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `5`.
 
-### `connect_timeout` {#connect-timeout}
+<div id="connect-timeout">
+  ### `connect_timeout`
+</div>
 
 مهلة الاتصال (بالثواني).
 
@@ -226,7 +246,9 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `10`.
 
-### `read_write_timeout` {#read-write-timeout}
+<div id="read-write-timeout">
+  ### `read_write_timeout`
+</div>
 
 مهلة القراءة/الكتابة (بالثواني).
 
@@ -236,7 +258,9 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `300`.
 
-### `enable_compression` {#enable-compression}
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
 
 يُمكّن الضغط لاتصال بروتوكول MySQL.
 
@@ -265,7 +289,9 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-## انظر أيضًا {#see-also}
+<div id="see-also">
+  ## انظر أيضًا
+</div>
 
 * [دالة الجدول MySQL](/ar/reference/functions/table-functions/mysql)
 * [استخدام MySQL كمصدر للقاموس](/ar/reference/statements/create/dictionary/sources/mysql)

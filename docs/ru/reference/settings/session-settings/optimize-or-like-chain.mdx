@@ -13,19 +13,23 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## optimize_or_like_chain {#optimize_or_like_chain}
+<div id="optimize_or_like_chain">
+  ## optimize_or_like_chain
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Включено по умолчанию: оптимизирует цепочки OR из LIKE\/ILIKE\/match в multiSearchAny (шаблоны типа «чистая подстрока») или multiMatchAny (другие шаблоны, если разрешён Hyperscan\/Vectorscan); если ни один быстрый путь не применим, исходная цепочка OR остаётся без изменений."}]}]} />
 
-Оптимизирует несколько предикатов `OR LIKE/ILIKE/match` для одного и того же выражения в один вызов `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (для шаблонов `%needle%` типа `чистая подстрока`) или `multiMatchAny` (для других шаблонов, если разрешён Hyperscan/Vectorscan). Если ни один быстрый путь не применим — например, если Hyperscan отключён или недоступен, либо шаблоны представляют собой необработанные regexp `match`, не являются корректным UTF-8, содержат встроенный NUL, привязаны к концу строки (не оканчиваются неэкранированным `%`; Vectorscan сопоставляет `$` перед завершающим символом новой строки, поэтому переписывание расширило бы фильтр) или искомая строка имеет тип `FixedString`/`Enum`, — исходная цепочка `OR` остаётся без изменений, поскольку объединённая альтернатива `match` на базе RE2 стабильно работает медленнее, чем исходный `OR` с коротким замыканием.
+Оптимизирует несколько предикатов `OR LIKE/ILIKE/match` для одного и того же выражения в один вызов `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (для шаблонов `%needle%` типа `чистая подстрока`) или `multiMatchAny` (для других шаблонов, если разрешён Hyperscan/Vectorscan). Если ни один быстрый путь не применим — например, если Hyperscan отключён или недоступен, либо шаблоны представляют собой необработанные регулярные выражения `match`, не являются корректным UTF-8, содержат встроенный NUL или искомая строка имеет тип `FixedString`/`Enum`, — исходная цепочка `OR` остаётся без изменений, поскольку объединённая альтернатива `match` на базе RE2 стабильно работает медленнее, чем исходный `OR` с коротким замыканием.
 
-Для чистых цепочек `OR` из `LIKE`/`ILIKE`/`match` исходные выражения сохраняются в `indexHint()`, чтобы была возможна проверка индексов; смешанные цепочки `OR`, включающие не-`LIKE` ветви, намеренно не оборачиваются в `indexHint()`, чтобы диапазоны, соответствующие только не-`LIKE` ветви, не отсекались. Переписывание в `multiMatchAny` учитывает `allow_hyperscan`, `max_hyperscan_regexp_length`, `max_hyperscan_regexp_total_length` и `reject_expensive_hyperscan_regexps`.
+Оптимизация применяется только с анализатором (`enable_analyzer = 1`, по умолчанию); со старым анализатором (`enable_analyzer = 0`) цепочка `OR` остаётся без изменений. Для чистых цепочек `OR` из `LIKE`/`ILIKE`/`match` исходные выражения сохраняются в `indexHint()`, чтобы была возможна проверка индексов; смешанные цепочки `OR`, включающие не-`LIKE` ветви, намеренно не оборачиваются в `indexHint()`, чтобы диапазоны, соответствующие только не-`LIKE` ветви, не отсекались. Переписывание в `multiMatchAny` учитывает `allow_hyperscan`, `max_hyperscan_regexp_length`, `max_hyperscan_regexp_total_length` и `reject_expensive_hyperscan_regexps`.
 
 Цепочка переписывается только тогда, когда в ней достаточно ветвей с одинаковым выражением в левой части, чтобы такое переписывание гарантированно работало быстрее, чем вычисление `OR` с коротким замыканием: не менее `optimize_or_like_chain_min_substrings` ветвей для пути `multiSearchAny` и не менее `optimize_or_like_chain_min_patterns` ветвей для пути `multiMatchAny`.
 
-## optimize_or_like_chain_min_patterns {#optimize_or_like_chain_min_patterns}
+<div id="optimize_or_like_chain_min_patterns">
+  ## optimize_or_like_chain_min_patterns
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -33,7 +37,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Минимальное число ветвей `LIKE`/`ILIKE`/`match`, не относящихся к чистой подстроке (шаблоны prefix/suffix/regexp) и использующих одно и то же выражение в левой части, необходимое для того, чтобы `optimize_or_like_chain` переписал цепочку в `multiMatchAny`. Порог откалиброван на наборе данных `hits` (см. `tests/performance/optimize_or_like_chain_hits.xml`): переписывание цепочек `LIKE` с шаблонами prefix/regexp в `multiMatchAny` (Hyperscan) начинает работать быстрее, чем вычисление `OR` с коротким замыканием, только примерно с девяти ветвей, поэтому более короткие цепочки оставляются без изменений, чтобы не ухудшать их производительность. Значение 0 или 1 отключает этот порог. Не действует, если `optimize_or_like_chain` отключён. См. также `optimize_or_like_chain_min_substrings` для варианта с чистой подстрокой (`multiSearchAny`).
 
-## optimize_or_like_chain_min_substrings {#optimize_or_like_chain_min_substrings}
+<div id="optimize_or_like_chain_min_substrings">
+  ## optimize_or_like_chain_min_substrings
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 

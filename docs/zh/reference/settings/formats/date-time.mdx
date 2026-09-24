@@ -13,14 +13,18 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置由[源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)自动生成。
 
-## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
+<div id="date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands">
+  ## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-动态去除 `DateTime64` 值中末尾的零，将输出标度向上舍入为可保留所有有效数字的下一个
-3 的倍数：[0, 3, 6, 9]。如果小数部分全为零，则将其省略。
+动态去除 datetime64 值中末尾的零，将输出标度调整为 [0, 3, 6]，
+分别对应“秒”“毫秒”和“微秒”
 
-## date_time_input_format {#date_time_input_format}
+<div id="date_time_input_format">
+  ## date_time_input_format
+</div>
 
 <SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
 
@@ -47,7 +51,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * [DateTime 数据类型。](/zh/reference/data-types/datetime)
 * [处理日期和时间的函数。](/zh/reference/functions/regular-functions/date-time-functions)
 
-## date_time_output_format {#date_time_output_format}
+<div id="date_time_output_format">
+  ## date_time_output_format
+</div>
 
 <SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
 
@@ -72,11 +78,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * [DateTime 数据类型。](/zh/reference/data-types/datetime)
 * [用于处理日期和时间的函数。](/zh/reference/functions/regular-functions/date-time-functions)
 
-## date_time_overflow_behavior {#date_time_overflow_behavior}
+<div id="date_time_overflow_behavior">
+  ## date_time_overflow_behavior
+</div>
 
 <SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
 
-定义将 [Date](/zh/reference/data-types/date)、[Date32](/zh/reference/data-types/date32)、[DateTime](/zh/reference/data-types/datetime)、[DateTime64](/zh/reference/data-types/datetime64) 或整数转换为 Date、Date32、DateTime 或 DateTime64 时，如果该值无法用结果类型表示，系统应采取的行为。该设置同样适用于从文本中解析 `Date` 或 `DateTime` 的场景，包括通过输入格式解析。
+定义将 [Date](/zh/reference/data-types/date)、[Date32](/zh/reference/data-types/date32)、[DateTime](/zh/reference/data-types/datetime)、[DateTime64](/zh/reference/data-types/datetime64) 或整数转换为 Date、Date32、DateTime 或 DateTime64 时，如果该值无法用结果类型表示，系统应采取的行为。
 
 可能的值：
 

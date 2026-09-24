@@ -18,7 +18,7 @@ No centro do ClickStack está uma ideia simples, mas poderosa: todos os dados de
 O ClickStack foi desenvolvido para lidar com workloads de alta cardinalidade com eficiência, aproveitando a arquitetura orientada a colunas do ClickHouse, o esquema flexível para atributos de alta cardinalidade e o mecanismo de execução totalmente paralelizado. Isso permite consultas em menos de um segundo em datasets massivos, agregações rápidas em amplos intervalos de tempo e inspeção detalhada de traces individuais.
 
 <div id="features">
-  ## Recursos {#features}
+  ## Recursos
 </div>
 
 A stack inclui vários recursos importantes projetados para depuração e análise de causa raiz:
@@ -39,7 +39,7 @@ A stack inclui vários recursos importantes projetados para depuração e análi
 * Abra páginas do ClickStack diretamente com [links diretos](/pt-BR/clickstack/url-parameters) usando parâmetros de consulta de URL
 
 <div id="components">
-  ## Componentes {#components}
+  ## Componentes
 </div>
 
 O ClickStack é composto por três componentes principais:
@@ -55,48 +55,50 @@ Também há uma versão da interface do HyperDX hospedada no navegador, permitin
 Para começar, consulte o [guia de primeiros passos](/pt-BR/clickstack/getting-started/index) antes de carregar um [conjunto de dados de exemplo](/pt-BR/clickstack/example-datasets/index). Você também pode explorar a documentação sobre [opções de implantação](/pt-BR/clickstack/deployment/overview) e [boas práticas para produção](/pt-BR/clickstack/managing/production).
 
 <div id="clickstack-principles">
-  ## Princípios {#clickstack-principles}
+  ## Princípios
 </div>
 
 O ClickStack foi projetado com um conjunto de princípios fundamentais que priorizam a facilidade de uso, o desempenho e a flexibilidade em todas as camadas da stack de observabilidade:
 
 <div id="clickstack-easy-to-setup">
-  ### Fácil de configurar em minutos {#clickstack-easy-to-setup}
+  ### Fácil de configurar em minutos
 </div>
 
 O ClickStack funciona de imediato com qualquer instância e esquema do ClickHouse, exigindo configuração mínima. Seja para começar do zero ou integrar com uma configuração existente, você pode colocá-lo em funcionamento em poucos minutos.
 
 <div id="user-friendly-purpose-built">
-  ### Fácil de usar e desenvolvida especificamente para isso {#user-friendly-purpose-built}
+  ### Fácil de usar e desenvolvida especificamente para isso
 </div>
 
 A interface do HyperDX oferece suporte tanto a SQL quanto à sintaxe no estilo Lucene, permitindo que os usuários escolham a interface de consulta mais adequada ao seu fluxo de trabalho. Desenvolvida especificamente para observabilidade, a interface é otimizada para ajudar as equipes a identificar rapidamente a causa raiz e navegar por dados complexos sem dificuldade.
 
 <div id="end-to-end-observability">
-  ### Observabilidade de ponta a ponta {#end-to-end-observability}
+  ### Observabilidade de ponta a ponta
 </div>
 
 O ClickStack oferece visibilidade completa da stack, desde as sessões de usuários no front-end até as métricas da infraestrutura de backend, os logs da aplicação e os traces distribuídos. Essa visão unificada permite uma correlação e uma análise aprofundadas em todo o sistema.
 
 <div id="built-for-clickhouse">
-  ### Desenvolvido para ClickHouse {#built-for-clickhouse}
+  ### Desenvolvido para ClickHouse
 </div>
 
 Cada camada da stack foi projetada para aproveitar ao máximo os recursos do ClickHouse. As consultas são otimizadas para aproveitar as funções analíticas e o engine colunar do ClickHouse, garantindo buscas rápidas e agregações em volumes massivos de dados.
 
 <div id="open-telemetry-native">
-  ### Nativo do OpenTelemetry {#open-telemetry-native}
+  ### Nativo do OpenTelemetry
 </div>
 
 O ClickStack tem integração nativa com o OpenTelemetry e faz a ingestão de todos os dados por meio de um endpoint do OpenTelemetry Collector. Para usuários avançados, ele também oferece suporte à ingestão direta no ClickHouse usando formatos de arquivo nativos, pipelines personalizadas ou ferramentas de terceiros, como o Vector.
 
 <div id="open-source-and-customizable">
-  ### Open source e totalmente personalizável {#open-source-and-customizable}
+  ### Open source e totalmente personalizável
 </div>
 
 O ClickStack é totalmente open source e pode ser implantado em qualquer lugar. O esquema é flexível e pode ser modificado pelo usuário, e a UI foi projetada para se adaptar a esquemas personalizados sem exigir alterações. Todos os componentes — incluindo coletores, ClickHouse e a UI — podem ser escalados de forma independente para atender às demandas de ingestão, consulta ou armazenamento.
 
-## Visão geral da arquitetura {#architectural-overview}
+<div id="architectural-overview">
+  ## Visão geral da arquitetura
+</div>
 
 A arquitetura do ClickStack varia conforme a forma como ele é implantado. Há distinções arquiteturais importantes entre o **ClickStack Open Source**, em que todos os componentes são autogerenciados, e o **Managed ClickStack**, em que o ClickHouse e a UI do HyperDX são hospedados e operados no ClickHouse Cloud. Embora os componentes principais permaneçam os mesmos em ambos os modelos, a responsabilidade por hospedar, escalar e proteger cada componente é diferente.
 
@@ -123,7 +125,7 @@ A arquitetura do ClickStack varia conforme a forma como ele é implantado. Há d
 
     * **Escalonamento automático da capacidade computacional, independente do armazenamento**
     * **Retenção de baixo custo e efetivamente ilimitada**, com base em armazenamento de objetos
-    * **[Isolamento independente entre leitura e escrita](/pt-BR/clickstack/managing/isolating-read-write)** usando ClickHouse Cloud Warehouses
+    * **Isolamento independente entre leitura e escrita** usando ClickHouse Cloud Warehouses
     * **Autenticação e controle de acesso integrados**
     * **Backups automatizados**
     * **Recursos de segurança e conformidade**

@@ -17,7 +17,9 @@ import RowBinaryFormatSettings from '/snippets/ja/common-row-binary-format-setti
 | -- | -- | ----- |
 | ✔  | ✔  |       |
 
-## 説明 {#description}
+<div id="description">
+  ## 説明
+</div>
 
 `RowBinary` フォーマットは、バイナリ形式のデータを行単位で解析します。
 行と値は、区切り文字なしで連続して並びます。
@@ -36,7 +38,9 @@ import RowBinaryFormatSettings from '/snippets/ja/common-row-binary-format-setti
   このフォーマットは行ベースであるため、[Native](/ja/reference/formats/Native) フォーマットよりも効率が低くなります。
 </Note>
 
-## データ型のワイヤ形式 {#data-types-wire-format}
+<div id="data-types-wire-format">
+  ## データ型のワイヤ形式
+</div>
 
 <Tip>
   例で示しているクエリの多くは、出力をファイルに保存して `curl` で実行できます。
@@ -49,26 +53,36 @@ import RowBinaryFormatSettings from '/snippets/ja/common-row-binary-format-setti
 
 その後、データはヘックスエディタで確認できます。
 
-### 符号なし LEB128 (リトルエンディアン Base 128) {#unsigned-leb128}
+<div id="unsigned-leb128">
+  ### 符号なし LEB128 (リトルエンディアン Base 128)
+</div>
 
 `String`、`Array`、`Map` などの可変サイズのデータ型の長さを符号化するために使われる、**符号なしリトルエンディアン**の可変長整数エンコーディングです。実装例は [LEB128 の Wikipedia ページ](https://en.wikipedia.org/wiki/LEB128#Decode_unsigned_integer)で確認できます。
 
-### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256 {#integer-types}
+<div id="integer-types">
+  ### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256
+</div>
 
 すべての整数型は、適切なバイト数で **リトルエンディアン** 形式にエンコードされます。符号付き型 (`Int8` から `Int256`) では、**2 の補数** 表現が使われます。ほとんどの言語では、組み込み機能または広く使われているライブラリを利用して、このような整数をバイト配列から取り出せます。大半の言語のネイティブな整数サイズを超える `Int128`/`Int256` および `UInt128`/`UInt256` については、独自にデシリアライズする必要がある場合があります。
 
-### Bool {#bool}
+<div id="bool">
+  ### Bool
+</div>
 
 ブール値は1バイトでエンコードされ、`UInt8`と同様にデシリアライズできます。
 
 * `0` は `false`
 * `1` は `true`
 
-### Float32, Float64 {#float32-float64}
+<div id="float32-float64">
+  ### Float32, Float64
+</div>
 
 **リトルエンディアン**形式の浮動小数点数で、`Float32` は4バイト、`Float64` は8バイトでエンコードされます。整数と同様、ほとんどの言語にはこれらの値を適切にデシリアライズするための手段が用意されています。
 
-### BFloat16 {#bfloat16}
+<div id="bfloat16">
+  ### BFloat16
+</div>
 
 [BFloat16](/ja/reference/data-types/float#bfloat16) (Brain Floating Point) は、Float32 と同じ範囲を持ちながら精度を抑えた 16 ビット浮動小数点フォーマットで、機械学習のワークロードに適しています。ワイヤ形式は、基本的に Float32 値の上位 16 ビットです。使用している言語がこれをネイティブでサポートしていない場合は、UInt16 として読み書きし、Float32 との間で相互変換するのが最も簡単です。
 
@@ -101,7 +115,9 @@ SELECT CAST(1.25, 'BFloat16')
 0xA0, 0x3F, // BFloat16 における 1.25
 ```
 
-### Decimal32, Decimal64, Decimal128, Decimal256 {#decimal}
+<div id="decimal">
+  ### Decimal32, Decimal64, Decimal128, Decimal256
+</div>
 
 Decimal 型は、それぞれのビット幅に対応する**リトルエンディアン**の整数として表現されます。
 
@@ -130,7 +146,9 @@ let result = whole_part * scale_multiplier + fractional_part
 
 詳細は、[ClickHouseドキュメントのDecimal型](/ja/reference/data-types/decimal)を参照してください。
 
-### String {#string}
+<div id="string">
+  ### String
+</div>
 
 ClickHouse の文字列は、**任意のバイト列**です。有効な UTF-8 である必要はありません。長さのプレフィックスは**バイト長**であり、文字数ではありません。
 
@@ -151,7 +169,9 @@ ClickHouse の文字列は、**任意のバイト列**です。有効な UTF-8 �
 0x72, // 'r'
 ```
 
-### FixedString {#fixedstring}
+<div id="fixedstring">
+  ### FixedString
+</div>
 
 `String` とは異なり、`FixedString` はスキーマで定義される固定長を持ちます。バイト列としてエンコードされ、値が `N` より短い場合は末尾がゼロバイトで埋められます。
 
@@ -183,7 +203,9 @@ ClickHouse の文字列は、**任意のバイト列**です。有効な UTF-8 �
 
 最後の例では、*3* バイトすべてを使用しているため、パディングは不要です。
 
-### Date {#date}
+<div id="date">
+  ### Date
+</div>
 
 `1970-01-01` からの日数を表す `UInt16` (2 バイト) として格納されます。
 
@@ -199,7 +221,9 @@ SELECT CAST('2024-01-15', 'Date') AS d
 0x19, 0x4D, // UInt16（リトルエンディアン）で19737 = 1970-01-01から19737日
 ```
 
-### Date32 {#date32}
+<div id="date32">
+  ### Date32
+</div>
 
 `1970-01-01` &#x306E;***前後***&#x306E;日数を表す `Int32` (4バイト) として格納されます。
 
@@ -225,7 +249,9 @@ SELECT CAST('1900-01-01', 'Date32') AS d
 0x21, 0x9C, 0xFF, 0xFF, // -25567 as Int32 (little-endian) = 25567 days before 1970-01-01
 ```
 
-### DateTime {#datetime}
+<div id="datetime">
+  ### DateTime
+</div>
 
 `1970-01-01 00:00:00 UTC` ***からの*** 経過秒数を表す `UInt32` (4バイト) として格納されます。
 
@@ -253,7 +279,9 @@ SELECT CAST('2024-01-15 10:30:00', 'DateTime(\'UTC\')') AS d
 0x28, 0x09, 0xA5, 0x65, // 1705314600 をUInt32として（リトルエンディアン）
 ```
 
-### DateTime64 {#datetime64}
+<div id="datetime64">
+  ### DateTime64
+</div>
 
 `1970-01-01 00:00:00 UTC`を基準とした**ティック**数を表す`Int64` (8バイト) として格納されます。値はそ&#x306E;***前後***&#x306E;いずれも取り得ます。ティックの精度は`precision`パラメータで定義されます。以下の構文を参照してください。
 
@@ -289,7 +317,9 @@ DateTime64(precision, [timezone])
   基になる `Int64` ティックの範囲は精度が高くなるほど狭くなるため、サポートされる最大値も小さくなります。`precision` 8 では `4892-10-07`、`precision` 9 (ナノ秒) では UTC で `2262-04-11 23:47:16` です。
 </Note>
 
-### Time {#time}
+<div id="time">
+  ### Time
+</div>
 
 秒単位の時刻値を表す `Int32` として格納されます。負の値も有効です。
 
@@ -310,7 +340,9 @@ SELECT CAST('15:32:16', 'Time') AS t
 0x80, 0xDA, 0x00, 0x00, // 55936 Seconds = 15:32:16
 ```
 
-### Time64 {#time64}
+<div id="time64">
+  ### Time64
+</div>
 
 内部的には `Decimal64` (`Int64` として格納) で保存され、小数秒を含む時刻値を表します。精度は設定可能です。負の値も有効です。
 
@@ -343,7 +375,9 @@ SELECT CAST('15:32:16.123456', 'Time64(6)') AS t
 // 55936123456 / 10^6 = 55936.123456 Seconds = 15:32:16.123456
 ```
 
-### インターバル型 {#interval-types}
+<div id="interval-types">
+  ### インターバル型
+</div>
 
 すべてのインターバル型は `Int64` (8バイト、リトルエンディアン) として格納されます。値は、それぞれの時間単位の個数を表します。負の値も有効です。
 
@@ -376,7 +410,9 @@ SELECT INTERVAL 5 SECOND   AS a,
 0xF4, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ```
 
-### Enum8、Enum16 {#enum8-enum16}
+<div id="enum8-enum16">
+  ### Enum8、Enum16
+</div>
 
 enum 定義内での enum 値のインデックスを表す 1 バイト (`Enum8` == `Int8`) または 2 バイト (`Enum16` == `Int16`) として格納されます。ストレージ型は **signed** である点に注意してください。つまり、enum 値には負の値も指定できます (例: `Enum8('a' = -128, 'b' = 0)`) 。
 
@@ -427,7 +463,9 @@ Map<Int16, String> {
 
 データ型パーサーにとっての主な課題は、`\'` のような `enum` 定義内のエスケープされた記号や、引用符で囲まれた文字列内に現れる可能性のある `=` のような特殊記号を正しく追跡することです。
 
-### UUID {#uuid}
+<div id="uuid">
+  ### UUID
+</div>
 
 16 バイトの並びとして表現されます。UUID は、**2 つのリトルエンディアン `UInt64` 値**として格納されます。標準的な UUID 表現の最初の 8 バイトはバイト順が逆になり、後半の 8 バイトもそれぞれ独立してバイト順が逆になります。
 
@@ -455,7 +493,9 @@ Map<Int16, String> {
 
 新しいレコードが挿入されたが、UUIDの値が指定されていない場合に使用できます。
 
-### IPv4 {#ipv4}
+<div id="ipv4">
+  ### IPv4
+</div>
 
 4バイトの `UInt32` として、**リトルエンディアン** のバイト順で格納されます。これは、IP アドレスで一般的に使用される従来のネットワークバイトオーダー (ビッグエンディアン) とは異なる点に注意してください。`IPv4` の内部値の例:
 
@@ -476,7 +516,9 @@ SELECT
 0xcc, 0xe2, 0xd4, 0xa8, // 168.212.226.204
 ```
 
-### IPv6 {#ipv6}
+<div id="ipv6">
+  ### IPv6
+</div>
 
 **ビッグエンディアン / ネットワークバイトオーダー** (MSB 先頭) で 16 バイトに格納されます。`IPv6` の内部値の例:
 
@@ -499,7 +541,9 @@ SELECT
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
 ```
 
-### Nullable {#nullable}
+<div id="nullable">
+  ### Nullable
+</div>
 
 Nullable データ型は、次のようにエンコードされます。
 
@@ -522,7 +566,9 @@ SELECT
 0x01,                   // NULL - 後続データなし
 ```
 
-### LowCardinality {#lowcardinality}
+<div id="lowcardinality">
+  ### LowCardinality
+</div>
 
 RowBinary フォーマットでは、low-cardinality マーカーはワイヤ形式に影響しません。たとえば、`LowCardinality(String)` は通常の `String` と同じようにエンコードされます。
 
@@ -536,7 +582,9 @@ RowBinary フォーマットでは、low-cardinality マーカーはワイヤ形
 
 テスト時には、カバレッジを広げるために、[allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ja/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) を `1` に設定すると、`LowCardinality` 内でほとんどの data types を許可できます。
 
-### Array {#array}
+<div id="array">
+  ### Array
+</div>
 
 Array は次のようにエンコードされます。
 
@@ -599,7 +647,9 @@ SELECT CAST([NULL, 'foo'], 'Array(Nullable(String))') AS arr;
 
 多次元配列の扱いの例は、[Geo セクション](#geo-types)に記載されています。
 
-### Tuple {#tuple}
+<div id="tuple">
+  ### Tuple
+</div>
 
 タプルは、追加のメタ情報や区切り文字を使わず、各要素をそれぞれ対応するワイヤ形式で順に並べてエンコードされます。
 
@@ -639,7 +689,9 @@ CREATE OR REPLACE TABLE foo
 ) ENGINE = Memory;
 ```
 
-### Map {#map}
+<div id="map">
+  ### Map
+</div>
 
 map は `Array(Tuple(K, V))` とみなすことができ、ここで `K` はキーの型、`V` は値の型です。map は次のようにエンコードされます。
 
@@ -666,7 +718,9 @@ SELECT CAST(map('foo', 1, 'bar', 2), 'Map(String, UInt32)') AS m
   `Map(String, Map(Int32, Array(Nullable(String))))` のように、深くネストされた構造を持つ Map も可能で、その場合も上記と同様にエンコードされます。
 </Note>
 
-### Variant {#variant}
+<div id="variant">
+  ### Variant
+</div>
 
 この型は、ほかのデータ型のユニオンを表します。型 `Variant(T1, T2, ..., TN)` は、この型の各行が `T1`、`T2`、…、`TN` のいずれかの型、またはそのどれにも該当しない値 (`NULL` 値) を持つことを意味します。
 
@@ -732,7 +786,9 @@ SELECT NULL :: Variant(UInt32, String)
 
 [allow&#95;suspicious&#95;variant&#95;types](/ja/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) 設定を使用すると、`Variant` 型をより網羅的にテストできます。
 
-### Dynamic {#dynamic}
+<div id="dynamic">
+  ### Dynamic
+</div>
 
 `Dynamic` 型は、実行時に決まる任意の型の値を保持できます。RowBinary フォーマットでは、各値は自己記述的です。最初の部分には、[このフォーマット](/ja/reference/data-types/data-types-binary-encoding)で表される型指定が入ります。続いて、このドキュメントで説明している値エンコードに従った内容が続きます。したがって、値をパースするには、型の索引を使って適切なパーサーを判断し、あとはすでに別の場所で使っている RowBinary のパース処理を再利用するだけです。
 
@@ -776,7 +832,9 @@ SELECT toDateTime64('2024-01-15 10:30:00', 3, 'America/New_York')::Dynamic
 c0 6c be 0d 8d 01 00 00   # Int64: timestamps
 ```
 
-### JSON {#json}
+<div id="json">
+  ### JSON
+</div>
 
 JSON型はデータを2つの異なるカテゴリにエンコードします：
 
@@ -928,7 +986,9 @@ Schema: `JSON(name String)`
 
 設定 `output_format_binary_write_json_as_string=1` を有効にすると、JSONカラムは構造化されたバイナリフォーマットではなく、1つのJSONテキスト文字列としてシリアライズされます。JSONカラムへの書き込みには、対応する設定 `input_format_binary_read_json_as_string` もあります。ここでどちらの設定を使うかは、JSONをクライアント側でパースするか、サーバー側でパースするかによって決まります。
 
-### Geo 型 {#geo-types}
+<div id="geo-types">
+  ### Geo 型
+</div>
 
 Geo は、地理データを表現するデータ型のカテゴリです。次の型が含まれます。
 
@@ -1013,7 +1073,9 @@ SELECT    (1.0, 2.0)                                       :: Point           AS
      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x40,
 ```
 
-### Geometry {#geometry}
+<div id="geometry">
+  ### Geometry
+</div>
 
 `Geometry` は、上記に挙げた任意の Geo 型を保持できる `Variant` 型です。ワイヤ上では `Variant` とまったく同じようにエンコードされ、後続する Geo 型を示す 判別値 バイトが付加されます。
 
@@ -1061,7 +1123,9 @@ SELECT ((1.0, 2.0)::Point)::Geometry
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40, // Y = 6.0
 ```
 
-### Nested {#nested}
+<div id="nested">
+  ### Nested
+</div>
 
 `Nested` のワイヤ形式は、`flatten_nested` 設定に依存します。
 
@@ -1069,7 +1133,9 @@ SELECT ((1.0, 2.0)::Point)::Geometry
   1 行内のすべての部分配列は、**同じ長さである必要があります**。これはサーバー側で強制される制約です。長さが一致しない場合、挿入時にエラーが発生します。
 </Warning>
 
-#### `flatten_nested = 1` (デフォルト) {#nested-flattened}
+<div id="nested-flattened">
+  #### `flatten_nested = 1` (デフォルト)
+</div>
 
 デフォルト設定では、`Nested` は独立した配列にフラット化されます。各サブカラムは、ドット区切りの名前を持つ個別の `Array` カラムになります。
 
@@ -1104,7 +1170,9 @@ INSERT INTO foo VALUES (['foo', 'bar'], [42, 144]);
  0x90, 0x00, 0x00, 0x00, // Int32 としての 144
 ```
 
-#### `flatten_nested = 0` {#nested-unflattened}
+<div id="nested-unflattened">
+  #### `flatten_nested = 0`
+</div>
 
 `flatten_nested = 0` の場合、`Nested` は `Array(Tuple(...))` 型の単一のカラムとして保持されます。カラム名はドット区切りではありません。
 
@@ -1139,7 +1207,9 @@ INSERT INTO foo VALUES ([('foo', 42), ('bar', 144)]);
 
 フィールドが、フラット化された表現のようにカラムごとにまとめられている (a₁, a₂, b₁, b₂) のではなく、要素ごとに交互に並んでいる (a₁, b₁, a₂, b₂) ことに注目してください。
 
-### SimpleAggregateFunction {#simpleaggregatefunction}
+<div id="simpleaggregatefunction">
+  ### SimpleAggregateFunction
+</div>
 
 `SimpleAggregateFunction(func, T)` は、基になるデータ型 `T` と同一の形式でエンコードされます。集約関数名はワイヤ形式に影響しません。
 
@@ -1162,12 +1232,14 @@ RowBinaryWithNamesAndTypes のヘッダーでは型は `SimpleAggregateFunction(
 0x2A, 0x00, 0x00, 0x00, // UInt32 として 42
 ```
 
-### AggregateFunction {#aggregatefunction}
+<div id="aggregatefunction">
+  ### AggregateFunction
+</div>
 
-`AggregateFunction(func, T)` は、集約関数 の完全な中間状態を格納します。中間状態を格納する点は同じでも、それを基になるデータ型と同じ形式でエンコードする `SimpleAggregateFunction` とは異なり、`AggregateFunction` は各 集約関数 固有のフォーマットを持つ不透明なバイナリブロブを格納します。
+`AggregateFunction(func, T)` は、aggregate function の完全な中間状態を格納します。中間状態を格納する点は同じでも、それを基になるデータ型と同じ形式でエンコードする `SimpleAggregateFunction` とは異なり、`AggregateFunction` は各 aggregate function 固有のフォーマットを持つ不透明なバイナリブロブを格納します。
 
 <Warning>
-  aggregate states には、RowBinary フォーマットでは**長さプレフィックスがありません**。そのため、何バイト読み取るべきかを判断するには、パーサーが各 集約関数 固有の内部シリアライゼーションフォーマットを理解している必要があります。実際には、ほとんどのクライアントは aggregate states を不透明なものとして扱い、シリアライゼーションは server に任せるため、`*State` / `*Merge` コンビネーターを使用します。
+  aggregate states には、RowBinary フォーマットでは**長さプレフィックスがありません**。そのため、何バイト読み取るべきかを判断するには、パーサーが各 aggregate function 固有の内部シリアライゼーションフォーマットを理解している必要があります。実際には、ほとんどのクライアントは aggregate states を不透明なものとして扱い、シリアライゼーションは server に任せるため、`*State` / `*Merge` コンビネーターを使用します。
 </Warning>
 
 内部フォーマットは関数ごとに異なります。簡単な例をいくつか示します。
@@ -1185,22 +1257,22 @@ SELECT countState(number) FROM numbers(5)
 **`sumState`** — 累積された合計を固定サイズの整数に格納します。ビット幅は引数の型に依存します (整数型の引数の場合は `UInt64`) :
 
 ```sql
-SELECT sumState(toUInt32(number)) FROM numbers(5) -- sum = 0+1+2+3+4 = 10
+SELECT sumState(toUInt32(number)) FROM numbers(5) -- 合計 = 0+1+2+3+4 = 10
 ```
 
 ```text
-0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 10 as UInt64
+0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // UInt64として10
 ```
 
 **`minState` / `maxState`** — フラグバイトに続けて、基になる型の値を格納します。フラグは、空の状態 (値が1つもない) の場合は `0x00`、値がある場合は `0x01` です:
 
 ```sql
-SELECT maxState(toUInt32(number)) FROM numbers(5) -- max = 4
+SELECT maxState(toUInt32(number)) FROM numbers(5) -- 最大値 = 4
 ```
 
 ```text
-0x01,                   // flag: has value
-0x04, 0x00, 0x00, 0x00, // 4 as UInt32
+0x01,                   // フラグ: 値あり
+0x04, 0x00, 0x00, 0x00, // UInt32 としての 4
 ```
 
 空の状態 (集計された行がない) :
@@ -1210,16 +1282,16 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 ```
 
 ```text
-0x00, // flag: no value
+0x00, // フラグ: 値なし
 ```
 
 <Note>
   `uniq`、`quantile`、`groupArray` のようなより複雑な関数では、実装固有のフォーマットが使用されます。これらの状態を読み書きする必要がある場合は、該当する関数の ClickHouse ソースコードを参照してください。
 </Note>
 
-設定 `aggregate_function_input_format` を `value` または `array` に設定すると、`AggregateFunction(func, T)` カラムは型 `T` の値 (引数が複数ある場合はそれらの引数型の `Tuple`) として、あるいはそのような値の `Array` として読み取られ、RowBinary におけるその型のエンコード方法とまったく同じ形式でエンコードされます。状態は server 側でそれらの値から構築されます。例えば、`aggregate_function_input_format = 'array'` の場合、`AggregateFunction(avg, UInt32)` のセルは `Array(UInt32)` となり、LEB128 の長さに続いて要素が並びます。
-
-### QBit {#qbit}
+<div id="qbit">
+  ### QBit
+</div>
 
 `QBit` は、異なる精度レベルで効率的にルックアップできるベクトル型です。内部的には転置フォーマットで保存されます。転送時には、QBit は単に基底要素型 (`Int8`、`Float32`、`Float64`、または `BFloat16`) の `Array` です。保存時のビット転置の最適化は RowBinary プロトコルではなく、サーバー側で行われます。
 
@@ -1252,7 +1324,9 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 0x00, 0x00, 0x80, 0x40, // 4.0 as Float32
 ```
 
-## フォーマット設定 {#format-settings}
+<div id="format-settings">
+  ## フォーマット設定
+</div>
 
 <RowBinaryFormatSettings />
 

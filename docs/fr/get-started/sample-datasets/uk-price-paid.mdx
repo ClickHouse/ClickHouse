@@ -1,192 +1,204 @@
 ---
-description: 'Découvrez ClickHouse à travers les données sur les prix de l’immobilier au Royaume-Uni'
+description: 'Découvrez comment utiliser les projections pour améliorer les performances des requêtes que
+  vous exécutez fréquemment grâce au jeu de données sur les prix de l’immobilier au Royaume-Uni, qui contient des données sur les montants payés pour des biens immobiliers en Angleterre et au pays de Galles'
 sidebarTitle: 'Prix de l’immobilier au Royaume-Uni'
-title: 'Requêtes analytiques sur les données des prix de l’immobilier au Royaume-Uni'
+slug: /getting-started/example-datasets/uk-price-paid
+title: 'Le jeu de données sur les prix de l’immobilier au Royaume-Uni'
 doc_type: 'guide'
-keywords: ['example dataset', 'uk property', 'sample data', 'real estate', 'getting started']
+keywords: ['jeu de données d’exemple', 'immobilier au Royaume-Uni', 'données d’exemple', 'immobilier', 'prise en main']
 ---
 
-Dans ce tutoriel, vous allez découvrir ClickHouse à l’aide du <Tooltip headline="UK Property Price dataset" tip="Contient des données du HM Land Registry © Crown copyright and database right 2021. Ces données sont publiées sous licence Open Government Licence v3.0." cta="Consulter la source" href="https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads">UK Property Price dataset</Tooltip>, qui recense les prix de vente des biens immobiliers en Angleterre et au pays de Galles depuis 1995.
+import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.jsx";
 
-## Prérequis {#prerequisites}
+Ces données contiennent les prix payés pour des biens immobiliers en Angleterre et au pays de Galles. Elles sont disponibles depuis 1995, et la taille du jeu de données au format non compressé est d’environ 4 GiB (ce qui ne représentera qu’environ 278 MiB dans ClickHouse).
 
-Pour ce tutoriel, vous aurez besoin de :
+* Source : https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
+* Description des champs : https://www.gov.uk/guidance/about-the-price-paid-data
+* Contient des données du HM Land Registry © Crown copyright et droit sur la base de données 2021. Ces données sont publiées sous la licence Open Government Licence v3.0.
 
-* Un [compte ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-sample-datasets-uk-property-price) (300 $ de crédits offerts à l&#39;inscription)
-* [Un service ClickHouse Cloud](/fr/get-started/setup/cloud#1-create-a-clickhouse-service)
+<div id="create-table">
+  ## Créer la table
+</div>
 
-<Steps titleSize="h2">
-  <Step title="Créez la table">
-    1. Sélectionnez **console SQL** dans le menu de gauche
-    2. Cliquez sur l&#39;onglet **+** à côté de l&#39;icône d&#39;accueil pour créer une nouvelle requête
-    3. Dans l&#39;éditeur SQL, saisissez la requête suivante, puis cliquez sur **Run** :
+```sql
+CREATE DATABASE uk;
 
-    ```sql
-    CREATE DATABASE uk;
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
 
-    CREATE TABLE uk.uk_price_paid
-    (
-      price UInt32,
-      date Date,
-      postcode1 LowCardinality(String),
-      postcode2 LowCardinality(String),
-      type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
-      is_new UInt8,
-      duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
-      addr1 String,
-      addr2 String,
-      street LowCardinality(String),
-      locality LowCardinality(String),
-      town LowCardinality(String),
-      district LowCardinality(String),
-      county LowCardinality(String)
-    )
-    ENGINE = MergeTree
-    ORDER BY (postcode1, postcode2, addr1, addr2);
-    ```
+<div id="preprocess-import-data">
+  ## Prétraiter et insérer les données
+</div>
 
-    <Tip>
-      Notez la clause `ORDER BY (postcode1, postcode2, addr1, addr2)`, qui définit la manière dont ClickHouse trie
-      les données sur disque. Dans ClickHouse, choisir une clé primaire efficace, adaptée à vos modèles d&#39;accès, est essentiel pour les performances des requêtes et l&#39;efficacité du stockage.
-      Consultez [&quot;Choisir une clé primaire&quot;](/fr/concepts/best-practices/choosing-a-primary-key) pour plus de détails.
-    </Tip>
+Nous allons utiliser la fonction `url` pour ingérer les données dans ClickHouse en flux. Nous devons d&#39;abord prétraiter une partie des données entrantes, ce qui comprend :
 
-    Consultez [https://www.gov.uk](https://www.gov.uk/guidance/about-the-price-paid-data) pour une description des champs.
-  </Step>
+* scinder `postcode` en deux colonnes distinctes, `postcode1` et `postcode2`, ce qui est préférable pour le stockage et les requêtes
+* convertir le champ `time` en `Date`, puisqu&#39;il ne contient que l&#39;heure 00:00
+* ignorer le champ [UUid](/fr/reference/data-types/uuid), car nous n&#39;en avons pas besoin pour l&#39;analyse
+* convertir `type` et `duration` en champs `Enum` plus explicites à l&#39;aide de la fonction [transform](/fr/reference/functions/regular-functions/other-functions#transform)
+* convertir le champ `is_new` d&#39;une chaîne d&#39;un seul caractère (`Y`/`N`) en un champ [UInt8](/fr/reference/data-types/int-uint) avec 0 ou 1
+* supprimer les deux dernières colonnes, puisqu&#39;elles ont toutes la même valeur (0)
 
-  <Step title="Prétraitement et insertion des données" id="preprocess-import-data">
-    Vous pouvez utiliser la fonction `url` pour charger des données en flux dans ClickHouse. Un prétraitement est toutefois nécessaire au préalable.
-    La requête ci-dessous insère plus de 25 millions de lignes dans la table `uk_price_paid` et effectue les étapes de prétraitement suivantes :
+La fonction `url` transmet les données en flux depuis le serveur web vers votre table ClickHouse. La commande suivante insère 5 millions de lignes dans la table `uk_price_paid` :
 
-    * découpe le champ `postcode` en deux colonnes distinctes, `postcode1` et `postcode2`, ce qui est plus efficace pour le stockage et les requêtes
-    * convertit le champ `time` en date, puisqu&#39;il ne contient que l&#39;heure `00:00`
-    * ignore le champ [UUID](/fr/reference/data-types/uuid), inutile pour l&#39;analyse
-    * transforme `type` et `duration` en champs `Enum` plus lisibles à l&#39;aide de la fonction [transform](/fr/reference/functions/regular-functions/other-functions#transform)
-    * convertit le champ `is_new`, une chaîne d&#39;un seul caractère (`Y`/`N`), en un champ [UInt8](/fr/reference/data-types/int-uint) valant 0 ou 1
-    * supprime les deux dernières colonnes, qui contiennent toutes la même valeur (0)
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
 
-    ```sql
-    INSERT INTO uk.uk_price_paid
-    SELECT
-      toUInt32(price_string) AS price,
-      parseDateTimeBestEffortUS(time) AS date,
-      splitByChar(' ', postcode)[1] AS postcode1,
-      splitByChar(' ', postcode)[2] AS postcode2,
-      transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
-      b = 'Y' AS is_new,
-      transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
-      addr1,
-      addr2,
-      street,
-      locality,
-      town,
-      district,
-      county
-    FROM url(
-      'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
-      'CSV',
-      'uuid_string String,
-      price_string String,
-      time String,
-      postcode String,
-      a String,
-      b String,
-      c String,
-      addr1 String,
-      addr2 String,
-      street String,
-      locality String,
-      town String,
-      district String,
-      county String,
-      d String,
-      e String'
-    ) SETTINGS max_http_get_redirects=10;
-    ```
+Attendez la fin de l’insertion des données : cela prendra une à deux minutes, selon la vitesse du réseau.
 
-    Attendez la fin de l&#39;insertion des données, qui prendra une à deux minutes selon la vitesse de votre réseau.
-  </Step>
+<div id="validate-data">
+  ## Valider les données
+</div>
 
-  <Step title="Vérifier les données" id="validate-data">
-    Vérifions que l&#39;opération a réussi en comptant le nombre de lignes insérées :
+Vérifions que tout a bien fonctionné en regardant combien de lignes ont été insérées :
 
-    ```sql
-    SELECT count()
-    FROM uk.uk_price_paid
-    ```
+<RunnableCode>
+  ```sql
+  SELECT count()
+  FROM uk.uk_price_paid
+  ```
+</RunnableCode>
 
-    Au moment de l&#39;exécution de cette requête, le jeu de données comptait 27 450 499 lignes. Voyons quel espace de stockage occupe la table dans ClickHouse :
+Au moment de l’exécution de cette requête, le jeu de données contenait 27,450,499 lignes. Voyons maintenant quelle est la taille de stockage de la table dans ClickHouse :
 
-    ```sql
-    SELECT formatReadableSize(total_bytes)
-    FROM system.tables
-    WHERE name = 'uk_price_paid'
-    ```
+<RunnableCode>
+  ```sql
+  SELECT formatReadableSize(total_bytes)
+  FROM system.tables
+  WHERE name = 'uk_price_paid'
+  ```
+</RunnableCode>
 
-    Notez que la taille de la table n&#39;est que de 221,43 MiB, alors que le jeu de données d&#39;origine non compressé pèse environ 4 GiB.
-    ClickHouse offre nativement une excellente compression des données, tout en vous permettant d&#39;[affiner la compression colonne par colonne](/fr/reference/statements/create/table#column_compression_codec) si nécessaire.
-  </Step>
+Remarquez que la table n’occupe que 221.43 MiB !
 
-  <Step title="Exécutez quelques requêtes" id="run-queries">
-    Une fois les données chargées, exécutez les requêtes suivantes pour vous faire une idée de la rapidité avec laquelle les requêtes analytiques renvoient leurs résultats.
-    La requête ci-dessous calcule le prix moyen par an sur l&#39;ensemble des données :
+<div id="run-queries">
+  ## Lancez quelques requêtes
+</div>
 
-    ```sql
-    SELECT
-      toYear(date) AS year,
-      round(avg(price)) AS price,
-      bar(price, 0, 1000000, 80
-    )
-    FROM uk.uk_price_paid
-    GROUP BY year
-    ORDER BY year
-    ```
+Lançons quelques requêtes pour analyser les données :
 
-    La requête ci-dessous applique un filter pour calculer le prix moyen par an à Londres :
+<div id="average-price">
+  ### Requête 1. Prix moyen par an
+</div>
 
-    ```sql
-    SELECT
-      toYear(date) AS year,
-      round(avg(price)) AS price,
-      bar(price, 0, 2000000, 100
-    )
-    FROM uk.uk_price_paid
-    WHERE town = 'LONDON'
-    GROUP BY year
-    ORDER BY year
-    ```
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 1000000, 80
+  )
+  FROM uk.uk_price_paid
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
 
-    On dirait qu&#39;il s&#39;est passé quelque chose avec les prix de l&#39;immobilier en 2020 ! Mais ce n&#39;est probablement pas vraiment une surprise...
+<div id="average-price-london">
+  ### Requête 2. prix moyen par an à Londres
+</div>
 
-    La requête ci-dessous identifie les quartiers les plus chers :
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 2000000, 100
+  )
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
 
-    ```sql
-    SELECT
+Les prix de l’immobilier ont connu quelque chose d’inhabituel en 2020 ! Mais ce n’est probablement pas une surprise...
+
+<div id="most-expensive-neighborhoods">
+  ### Requête 3. Les quartiers les plus chers
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
       town,
       district,
       count() AS c,
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
-    FROM uk.uk_price_paid
-    WHERE date >= '2020-01-01'
-    GROUP BY
+  FROM uk.uk_price_paid
+  WHERE date >= '2020-01-01'
+  GROUP BY
       town,
       district
-    HAVING c >= 100
-    ORDER BY price DESC
-    LIMIT 100
-    ```
-  </Step>
-</Steps>
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
 
-## Étapes suivantes {#next-steps}
+<div id="speeding-up-queries-with-projections">
+  ## Accélérer les requêtes avec des projections
+</div>
 
-Dans ce tutoriel, vous avez créé une table, prétraité et chargé dans ClickHouse des données sur les prix de l’immobilier au Royaume-Uni, puis
-exécuté quelques requêtes analytiques sur ces données.
+Ces requêtes peuvent être accélérées à l’aide de projections. Voir [« Projections »](/fr/concepts/features/projections/projections) pour des exemples avec ce jeu de données.
 
-Vous pouvez maintenant :
+<div id="playground">
+  ### Essayez-le dans le Playground
+</div>
 
-* Découvrir comment accélérer ces requêtes à l’aide de projections. Voir [« Projections »](/fr/concepts/features/projections/projections) pour des exemples utilisant le même jeu de données.
-* Approfondir les [concepts fondamentaux](/fr/concepts/core-concepts) de ClickHouse
-* Explorer les [bonnes pratiques](/fr/concepts/best-practices) de ClickHouse
-* Explorer d’autres [jeux de données d’exemple](/fr/get-started/sample-datasets)
+Le jeu de données est également disponible dans le [Playground en ligne](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX).

@@ -10,12 +10,12 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "Quickstarts",
+          "group": "الأدلة السريعة",
           "pages": [
             "ar/get-started/quickstarts/home",
             {
               "expanded": false,
-              "group": "All use cases",
+              "group": "جميع حالات الاستخدام",
               "pages": [
                 "ar/get-started/setup/cloud",
                 "ar/get-started/quickstarts/obtain-your-cloud-connection-details",
@@ -27,16 +27,15 @@
             },
             {
               "expanded": false,
-              "group": "Real-time analytics",
+              "group": "التحليلات في الوقت الفعلي",
               "pages": [
                 "ar/get-started/quickstarts/create-your-first-materialized-view",
-                "ar/get-started/quickstarts/create-your-first-projection",
-                "ar/get-started/quickstarts/tutorial"
+                "ar/get-started/quickstarts/create-your-first-projection"
               ]
             },
             {
               "expanded": false,
-              "group": "Data warehousing",
+              "group": "مستودعات البيانات",
               "pages": [
                 "ar/get-started/quickstarts/connect-your-iceberg-catalog",
                 "ar/get-started/quickstarts/mutations"
@@ -44,7 +43,7 @@
             },
             {
               "expanded": false,
-              "group": "Observability",
+              "group": "أوبزرفابيليتي",
               "pages": [
                 "ar/get-started/quickstarts/working-with-the-map-type"
               ]
@@ -66,7 +65,6 @@
           "group": "Use cases",
           "pages": [
             "ar/get-started/use-cases/overview",
-            "ar/get-started/use-cases/choosing-a-service",
             "ar/get-started/use-cases/real-time-analytics",
             "ar/get-started/use-cases/observability",
             "ar/get-started/use-cases/data-warehousing",

@@ -17,7 +17,9 @@ ClickStack 的核心理念很简单，却非常强大：所有可观测性数据
 
 ClickStack 利用 ClickHouse 的列式架构、适用于高基数属性的灵活 schema，以及完全并行化的执行引擎，能够高效处理高基数工作负载。这使其能够在海量数据集上实现亚秒级查询、在大时间范围内快速完成聚合，并对单个链路追踪进行深入分析。
 
-## 功能 {#features}
+<div id="features">
+  ## 功能
+</div>
 
 该技术栈包含多项专为调试和根因分析设计的关键功能：
 
@@ -37,7 +39,7 @@ ClickStack 利用 ClickHouse 的列式架构、适用于高基数属性的灵活
 * 使用 URL 查询参数通过[深层链接](/zh/clickstack/url-parameters)直接打开 ClickStack 页面
 
 <div id="components">
-  ## 组件 {#components}
+  ## 组件
 </div>
 
 ClickStack 由三个核心组件组成：
@@ -53,49 +55,49 @@ ClickStack 由三个核心组件组成：
 要开始使用，请先查看[入门指南](/zh/clickstack/getting-started/index)，然后再加载[示例数据集](/zh/clickstack/example-datasets/index)。您还可以查阅有关[部署选项](/zh/clickstack/deployment/overview)和[生产环境最佳实践](/zh/clickstack/managing/production)的文档。
 
 <div id="clickstack-principles">
-  ## 原则 {#clickstack-principles}
+  ## 原则
 </div>
 
 ClickStack 的设计遵循一系列核心原则，在可观测性栈的各个层面优先兼顾易用性、性能和灵活性：
 
 <div id="clickstack-easy-to-setup">
-  ### 几分钟内即可轻松完成设置 {#clickstack-easy-to-setup}
+  ### 几分钟内即可轻松完成设置
 </div>
 
 ClickStack 可与任何 ClickHouse 实例和 schema 开箱即用，只需极少配置。无论你是从零开始，还是集成到现有环境中，都能在几分钟内完成部署并开始使用。
 
 <div id="user-friendly-purpose-built">
-  ### 易于使用且专为此打造 {#user-friendly-purpose-built}
+  ### 易于使用且专为此打造
 </div>
 
 HyperDX UI 同时支持 SQL 和 Lucene 风格语法，用户可选择最适合其工作流的查询接口。该 UI 专为可观测性场景打造，并经过优化，可帮助团队快速定位根本原因，顺畅处理复杂数据。
 
 <div id="end-to-end-observability">
-  ### 端到端可观测性 {#end-to-end-observability}
+  ### 端到端可观测性
 </div>
 
 ClickStack 提供全栈可视性，涵盖从前端用户会话到后端基础设施指标、应用日志和分布式链路追踪的各个层面。这种统一视图让你能够在整个系统范围内进行深度关联分析。
 
 <div id="built-for-clickhouse">
-  ### 专为 ClickHouse 而构建 {#built-for-clickhouse}
+  ### 专为 ClickHouse 而构建
 </div>
 
 该技术栈的每一层都旨在充分发挥 ClickHouse 的能力。查询经过优化，可充分利用 ClickHouse 的分析函数和列式引擎，确保在海量数据上实现快速搜索与聚合。
 
 <div id="open-telemetry-native">
-  ### OpenTelemetry 原生 {#open-telemetry-native}
+  ### OpenTelemetry 原生
 </div>
 
 ClickStack 与 OpenTelemetry 原生集成，所有数据都通过 OpenTelemetry 收集器端点进行摄取。对于高级用户，它还支持使用原生文件格式、自定义管道或 Vector 等第三方工具，直接将数据摄取到 ClickHouse。
 
 <div id="open-source-and-customizable">
-  ### 开源且完全可定制 {#open-source-and-customizable}
+  ### 开源且完全可定制
 </div>
 
 ClickStack 是完全开源的，可部署在任何环境中。schema 灵活且支持用户修改，UI 也经过设计，可适配自定义 schema 而无需变更。所有组件 (包括采集器、ClickHouse 和 UI) 都可以独立扩缩容，以满足摄取、查询或存储需求。
 
 <div id="architectural-overview">
-  ## 架构概览 {#architectural-overview}
+  ## 架构概览
 </div>
 
 ClickStack 的架构会因部署方式不同而有所差异。**开源 ClickStack** 与 **托管 ClickStack** 在架构上有重要区别：前者的所有组件都由用户自行管理，后者则由 ClickHouse Cloud 托管并运行 ClickHouse 和 HyperDX UI。虽然两种模式的核心组件相同，但各组件在托管、扩缩容和安全保障方面的责任划分并不一样。
@@ -122,7 +124,7 @@ ClickStack 的架构会因部署方式不同而有所差异。**开源 ClickStac
 
     * **计算与存储解耦，计算资源可自动扩缩容**
     * **基于对象存储的低成本、近乎无限的数据保留能力**
-    * **使用 ClickHouse Cloud 仓库实现[读写隔离](/zh/clickstack/managing/isolating-read-write)**
+    * **使用 ClickHouse Cloud 仓库实现读写隔离**
     * **集成的身份验证和访问控制**
     * **自动备份**
     * **安全与合规能力**

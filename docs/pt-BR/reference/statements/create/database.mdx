@@ -14,24 +14,34 @@ Cria um novo banco de dados.
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 ```
 
-## Cláusulas {#clauses}
+<div id="clauses">
+  ## Cláusulas
+</div>
 
-### IF NOT EXISTS {#if-not-exists}
+<div id="if-not-exists">
+  ### IF NOT EXISTS
+</div>
 
 Se o banco de dados `db_name` já existir, o ClickHouse não cria um novo banco de dados e:
 
 * Não lança uma exceção se a cláusula for especificada.
 * Lança uma exceção se a cláusula não for especificada.
 
-### ON CLUSTER {#on-cluster}
+<div id="on-cluster">
+  ### ON CLUSTER
+</div>
 
 O ClickHouse cria o banco de dados `db_name` em todos os servidores do cluster especificado. Veja mais detalhes no artigo sobre [DDL distribuído](/pt-BR/reference/statements/distributed-ddl).
 
-### ENGINE {#engine}
+<div id="engine">
+  ### ENGINE
+</div>
 
 Por padrão, o ClickHouse usa seu próprio motor de banco de dados [Atomic](/pt-BR/reference/engines/database-engines/atomic). Também existem [MySQL](/pt-BR/reference/engines/database-engines/mysql), [PostgresSQL](/pt-BR/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/pt-BR/reference/engines/database-engines/materialized-postgresql), [Replicated](/pt-BR/reference/engines/database-engines/replicated), [SQLite](/pt-BR/reference/engines/database-engines/sqlite).
 
-### COMENTÁRIO {#comment}
+<div id="comment">
+  ### COMENTÁRIO
+</div>
 
 Você pode adicionar um comentário ao banco de dados ao criá-lo.
 
@@ -56,26 +66,13 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-### SETTINGS {#settings}
+<div id="settings">
+  ### CONFIGURAÇÕES
+</div>
 
-A cláusula `SETTINGS` pode ser usada sem uma cláusula `ENGINE`; nesse caso, é utilizado o motor de banco de dados padrão
-(`Atomic`). Ela pode conter tanto configurações do motor de banco de dados quanto configurações comuns de consulta; cada
-nome é encaminhado para a categoria à qual pertence.
-
-#### disk {#disk}
-
-O disco usado para armazenar os arquivos de metadados de tabela do banco de dados. Pode-se indicar um disco definido na
-configuração do servidor ou definir um disco inline com a função `disk`, da mesma forma que se faz para uma tabela individual:
-
-```sql
-CREATE DATABASE db_name SETTINGS disk = 'db_disk';
-CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
-```
-
-Aplica-se a motores de banco de dados que armazenam os metadados das tabelas em disco (`Atomic`, `Ordinary`). Se não for especificado,
-será usado o disco definido na configuração de servidor `database_disk.disk`.
-
-#### lazy_load_tables {#lazy-load-tables}
+<div id="lazy-load-tables">
+  #### lazy_load_tables
+</div>
 
 Quando ativado, as tabelas não são carregadas completamente durante a inicialização do banco de dados. Em vez disso, é criado um proxy leve para cada tabela, e o motor de tabela real é materializado no primeiro acesso. Isso reduz o tempo de inicialização e o uso de memória em bancos de dados com muitas tabelas, em que apenas um subconjunto é consultado com frequência.
 
@@ -83,7 +80,7 @@ Quando ativado, as tabelas não são carregadas completamente durante a iniciali
 CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 ```
 
-Aplica-se a motores de banco de dados que armazenam metadados de tabelas em disco (por exemplo, `Atomic`, `Ordinary`). Views, visões materializadas, dicionários, tabelas `Alias`, tabelas `TimeSeries` e tabelas baseadas em funções de tabela são sempre carregados imediatamente, independentemente dessa configuração.
+Aplica-se a motores de banco de dados que armazenam metadados de tabelas em disco (por exemplo, `Atomic`, `Ordinary`). Views, visões materializadas, dicionários e tabelas baseadas em funções de tabela são sempre carregados imediatamente, independentemente dessa configuração.
 
 **Quando usar:** Essa configuração é útil para bancos de dados com um grande número de tabelas (centenas ou milhares), em que apenas um subconjunto é consultado ativamente. Ela reduz o tempo de inicialização do servidor e o uso de memória ao adiar a criação de objetos do motor de tabela, a varredura de partes de dados e a inicialização de threads em segundo plano até o primeiro acesso.
 

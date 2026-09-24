@@ -13,21 +13,9 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## max_bytes_before_external_distinct {#max_bytes_before_external_distinct}
-
-<SettingsInfoBlock type="UInt64" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración para habilitar el volcado a disco de `DISTINCT` cuando el uso de memoria supera el umbral indicado en bytes. Si es 0, solo se aplica `max_bytes_ratio_before_external_distinct`."}]}]} />
-
-Umbral de memoria de la consulta, en bytes, a partir del cual los datos de `DISTINCT` se vuelcan a disco. El uso real de memoria puede superar
-este umbral.
-
-Con `0` se deshabilita este umbral. Si `max_bytes_ratio_before_external_distinct` también define un umbral,
-se utiliza el menor de ambos. Establezca ambas configuraciones en `0` para deshabilitar el volcado.
-
-Consulte [DISTINCT en memoria externa](/es/reference/statements/select/distinct#distinct-in-external-memory).
-
-## max_bytes_before_external_group_by {#max_bytes_before_external_group_by}
+<div id="max_bytes_before_external_group_by">
+  ## max_bytes_before_external_group_by
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -48,15 +36,19 @@ Valores posibles:
   El valor recomendado es la mitad de la memoria disponible del sistema.
 </Note>
 
-## max_bytes_before_external_join {#max_bytes_before_external_join}
+<div id="max_bytes_before_external_join">
+  ## max_bytes_before_external_join
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nueva configuración para controlar el volcado automático a disco de los hash joins. Un valor distinto de cero habilita el volcado y establece el umbral en bytes."}]}]} />
 
-Si se establece en un valor distinto de cero, el hash join se convertirá automáticamente en grace hash join para habilitar el volcado a disco cuando los datos del lado derecho superen esta cantidad de bytes. Junto con `max_bytes_ratio_before_external_join`, constituye el disparador de volcado basado en umbral para todo `join_algorithm` basado en hash, incluido `grace_hash`, que requiere que uno de los dos sea distinto de cero. Una vez que un umbral distinto de cero hace que un join pueda volcar, `enable_adaptive_memory_spill_scheduler` puede forzarlo a volcar bajo presión de memoria antes de que se alcance el umbral; con ambas configuraciones en `0`, el join nunca vuelca, por lo que el planificador no tiene nada que disparar. La excepción es `legacy_join_size_limits_trigger_spilling`: con esta opción activada, `grace_hash` independiente ignora ambas y vuelca según `max_rows_in_join` / `max_bytes_in_join`. Cuando se establece en 0 (valor predeterminado), este umbral absoluto en bytes se desactiva, pero el volcado automático puede seguir produciéndose mediante `max_bytes_ratio_before_external_join` (cuyo valor predeterminado es `0.5`); establezca ambos en `0` para desactivar por completo el volcado automático. Impide la optimización de read in order a través de join.
+Si se establece en un valor distinto de cero y `join_algorithm` es `hash`, `parallel_hash`, `default` o `auto`, el hash join se convertirá automáticamente en grace hash join para habilitar el volcado a disco cuando los datos del lado derecho superen esta cantidad de bytes. Cuando se establece en 0 (valor predeterminado), este umbral absoluto en bytes se desactiva, pero el volcado automático puede seguir produciéndose mediante `max_bytes_ratio_before_external_join` (cuyo valor predeterminado es `0.5`); establezca ambos en `0` para desactivar por completo el volcado automático. Impide la optimización de read in order a través de join.
 
-## max_bytes_before_external_sort {#max_bytes_before_external_sort}
+<div id="max_bytes_before_external_sort">
+  ## max_bytes_before_external_sort
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,13 +63,17 @@ Valores posibles:
   El valor recomendado es la mitad de la memoria disponible del sistema
 * `0` — `ORDER BY` en memoria externa deshabilitado.
 
-## max_bytes_before_remerge_sort {#max_bytes_before_remerge_sort}
+<div id="max_bytes_before_remerge_sort">
+  ## max_bytes_before_remerge_sort
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 En caso de usar ORDER BY con LIMIT, cuando el uso de memoria supere el umbral especificado, realiza pasos adicionales de combinación de bloques antes de la fusión final para conservar solo las primeras filas del LIMIT.
 
-## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
+<div id="max_bytes_for_lazy_final">
+  ## max_bytes_for_lazy_final
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
 
@@ -85,14 +81,18 @@ En caso de usar ORDER BY con LIMIT, cuando el uso de memoria supere el umbral es
 
 Número máximo de bytes en el conjunto para la optimización FINAL diferida. Si se supera, se recurre a FINAL normal.
 
-## max_bytes_in_distinct {#max_bytes_in_distinct}
+<div id="max_bytes_in_distinct">
+  ## max_bytes_in_distinct
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 El número máximo de bytes del estado en memoria (en bytes sin comprimir) que
 utiliza una tabla hash al usar DISTINCT.
 
-## max_bytes_in_join {#max_bytes_in_join}
+<div id="max_bytes_in_join">
+  ## max_bytes_in_join
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -103,52 +103,28 @@ Esta configuración se aplica a las operaciones [SELECT ... JOIN](/es/reference/
 y al [motor de tabla Join](/es/reference/engines/table-engines/special/join).
 
 Si una consulta contiene varios joins, ClickHouse comprueba esta configuración en cada
-resultado intermedio. Es un tope estricto para todo `join_algorithm` basado en hash: cuando se alcanza
-el límite, la consulta lanza un error o se interrumpe según
-[`join_overflow_mode`](/es/reference/settings/session-settings/join#join_overflow_mode).
-Nunca hace que un join haga spill a disco; esa decisión corresponde a
-[`max_bytes_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
-y a
-[`max_bytes_ratio_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
-Dado que es un tope y no un disparador, establecerlo en el umbral de spill o por debajo de él
-normalmente hace que la consulta falle antes de que el join pueda hacer spill,
-salvo que el join admita spill y `enable_adaptive_memory_spill_scheduler`
-fuerce primero un spill, o que
-`legacy_join_size_limits_trigger_spilling` convierta de nuevo este límite en un disparador
-de spill para la parte de un join que ya se ejecuta en disco.
-
-El límite contabiliza lo que contienen las tablas hash, por lo que un join que hizo spill lo alcanza a
-medida que se carga cada bucket y no mientras se lee el lado derecho: puede leer más
-del lado derecho antes de detenerse de lo que lo haría un hash join en memoria.
+resultado intermedio. Cuando se alcanza el límite, la acción depende del
+[`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) elegido; consulta
+esa configuración para ver el comportamiento de cada algoritmo (spill, re-partition, switch o
+throw/break según [`join_overflow_mode`](/es/reference/settings/session-settings/join#join_overflow_mode)).
 
 Valores posibles:
 
 * Entero positivo.
 * 0 — El control de memoria está deshabilitado.
 
-## max_bytes_in_set {#max_bytes_in_set}
+<div id="max_bytes_in_set">
+  ## max_bytes_in_set
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 El número máximo de bytes (de datos no comprimidos) que puede usar un Set de la cláusula IN
 creado a partir de una subconsulta.
 
-## max_bytes_ratio_before_external_distinct {#max_bytes_ratio_before_external_distinct}
-
-<SettingsInfoBlock type="Double" default_value="0.5" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "Nueva configuración para habilitar el volcado a disco de `DISTINCT` cuando el uso de memoria supera la proporción indicada de la memoria disponible. Si es 0, solo se aplica `max_bytes_before_external_distinct`."}]}]} />
-
-Fracción de la memoria disponible del servidor o del usuario que se emplea para calcular el umbral de `DISTINCT` externo al
-inicio de la ejecución. Por ejemplo, `0.5` utiliza la mitad de la memoria disponible.
-
-Los valores deben ser como mínimo `0` y menores que `1`. `0` desactiva este umbral. Si no hay un memory limit aplicable
-de servidor o de usuario, la proporción no surte efecto.
-
-`max_memory_usage` no influye en este cálculo. Para configurar el volcado a disco en relación con ese límite,
-utilice `max_bytes_before_external_distinct`, dejando margen para un uso de memoria adicional.
-
-## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
+<div id="max_bytes_ratio_before_external_group_by">
+  ## max_bytes_ratio_before_external_group_by
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -161,7 +137,9 @@ Por ejemplo, si se establece en `0.6`, `GROUP BY` permitirá usar el 60 % de la 
 (para server/user/merges) al inicio de la ejecución; a partir de ese momento,
 empezará a usar agregación externa.
 
-## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
+<div id="max_bytes_ratio_before_external_join">
+  ## max_bytes_ratio_before_external_join
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -173,9 +151,11 @@ Por ejemplo, si se establece en `0.6`, `JOIN` permitirá usar el `60%` de la mem
 
 Si se establecen tanto `max_bytes_before_external_join` como `max_bytes_ratio_before_external_join`, se usa el umbral resultante más bajo. Si la proporción es `0`, solo se aplica la configuración absoluta.
 
-Tiene efecto en todos los `join_algorithm` basados en hash, incluido `grace_hash`, siempre que haya configurada una ruta de datos temporales.
+Solo tiene efecto cuando `join_algorithm` es `hash`, `parallel_hash`, `default` o `auto` y hay configurada una ruta de datos temporales.
 
-## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
+<div id="max_bytes_ratio_before_external_sort">
+  ## max_bytes_ratio_before_external_sort
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -187,7 +167,9 @@ Por ejemplo, si se establece en `0.6`, `ORDER BY` permitirá usar el `60%` de la
 
 Tenga en cuenta que `max_bytes_before_external_sort` sigue respetándose; el volcado a disco solo se realizará si el bloque de ordenación es mayor que `max_bytes_before_external_sort`.
 
-## max_bytes_to_read {#max_bytes_to_read}
+<div id="max_bytes_to_read">
+  ## max_bytes_to_read
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -196,7 +178,9 @@ La restricción se comprueba para cada fragmento de datos procesado, se aplica s
 expresión de tabla más interna y, al leer desde un servidor remoto, se comprueba solo en
 el servidor remoto.
 
-## max_bytes_to_read_leaf {#max_bytes_to_read_leaf}
+<div id="max_bytes_to_read_leaf">
+  ## max_bytes_to_read_leaf
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -218,7 +202,9 @@ La restricción se comprueba para cada fragmento de datos procesado.
   Esta configuración es inestable con `prefer_localhost_replica=1`.
 </Note>
 
-## max_bytes_to_sort {#max_bytes_to_sort}
+<div id="max_bytes_to_sort">
+  ## max_bytes_to_sort
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -226,7 +212,9 @@ El número máximo de bytes antes de la ordenación. Si es necesario procesar un
 bytes sin comprimir superior a la especificada para la operación ORDER BY, el comportamiento
 vendrá determinado por `sort_overflow_mode`, que de forma predeterminada está establecido en `throw`.
 
-## max_bytes_to_transfer {#max_bytes_to_transfer}
+<div id="max_bytes_to_transfer">
+  ## max_bytes_to_transfer
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

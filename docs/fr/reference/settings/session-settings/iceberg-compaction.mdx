@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_compaction_commit_batch_size {#iceberg_compaction_commit_batch_size}
+<div id="iceberg_compaction_commit_batch_size">
+  ## iceberg_compaction_commit_batch_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -23,7 +25,9 @@ Nombre de fichiers de données fusionnés que la compaction Iceberg en arrière-
 
 Les résultats de la compaction sont publiés dès qu’il ne reste plus aucun candidat à compacter. Ce paramètre limite donc uniquement la durée pendant laquelle les fichiers déjà fusionnés restent non publiés alors que la compaction continue de trouver de nouvelles tâches. `0` rétablit l’ancien comportement, qui consiste à ne publier que lorsque la compaction n’a plus de candidats — un état qui n’est jamais atteint tant que la table continue de recevoir de nouveaux fichiers de données. Chaque résultat fusionné est alors écrit dans le stockage d’objets sans jamais être référencé par un instantané.
 
-## iceberg_compaction_data_cleanup {#iceberg_compaction_data_cleanup}
+<div id="iceberg_compaction_data_cleanup">
+  ## iceberg_compaction_data_cleanup
+</div>
 
 <SettingsInfoBlock type="Secondes" default_value="10800" />
 
@@ -31,7 +35,9 @@ Les résultats de la compaction sont publiés dès qu’il ne reste plus aucun c
 
 Le délai après lequel les données seront supprimées.
 
-## iceberg_compaction_delay_bias {#iceberg_compaction_delay_bias}
+<div id="iceberg_compaction_delay_bias">
+  ## iceberg_compaction_delay_bias
+</div>
 
 <SettingsInfoBlock type="Secondes" default_value="10800" />
 
@@ -39,27 +45,24 @@ Le délai après lequel les données seront supprimées.
 
 Délai minimal entre deux opérations de compaction en arrière-plan.
 
-## iceberg_compaction_max_bytes_in_data_file {#iceberg_compaction_max_bytes_in_data_file}
+<div id="iceberg_compaction_max_bytes_in_data_file">
+  ## iceberg_compaction_max_bytes_in_data_file
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="536870912" />
+<SettingsInfoBlock type="UInt64" default_value="18446744073709551615" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "Nouveau paramètre définissant le nombre maximal d'octets d'un fichier de données Iceberg produit par la compaction, distinct de la limite appliquée à l'insertion. La valeur par défaut est alignée sur la valeur par défaut documentée de l'Iceberg table property `write.target-file-size-bytes` (512 Mio), voir https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/. Auparavant, la compaction fusionnait tous les fichiers éligibles d'une partition en un seul fichier de sortie."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "Nouveau paramètre définissant le nombre maximal d'octets d'un fichier de données Iceberg produit par la compaction, distinct de la limite appliquée à l'insertion."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "Nouveau paramètre définissant le nombre maximal d'octets d'un fichier de données Iceberg produit par la compaction, distinct de la limite appliquée à l'insertion."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "Nouveau paramètre définissant le nombre maximal d’octets d’un fichier de données Iceberg produit par compaction, distinct de la limite lors de l’insertion."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "Nouveau paramètre définissant le nombre maximal d’octets d’un fichier de données Iceberg produit par compaction, distinct de la limite lors de l’insertion."}]}]} />
 
-Nombre maximal d&#39;octets d&#39;un iceberg parquet fichier de données produit par la compaction.
+Nombre maximal d’octets d’un fichier de données Parquet Iceberg produit par compaction. Par défaut, cette valeur est définie au maximum afin que la compaction fusionne les fichiers éligibles en un nombre minimal de fichiers de sortie.
 
-La valeur par défaut reprend la valeur par défaut documentée de l&#39;Iceberg table property `write.target-file-size-bytes` (512 Mio),
-voir https://iceberg.apache.org/docs/1.5.2/configuration/. Maintenez-la au-dessus de
-`iceberg_data_file_size_lower_threshold_compaction`, faute de quoi chaque fichier de sortie restera sous le seuil inférieur
-et sera de nouveau sélectionné pour la compaction.
-
-## iceberg_compaction_max_rows_in_data_file {#iceberg_compaction_max_rows_in_data_file}
+<div id="iceberg_compaction_max_rows_in_data_file">
+  ## iceberg_compaction_max_rows_in_data_file
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "Nouveau paramètre définissant le nombre maximal de lignes d’un fichier de données Iceberg produit par compaction, distinct de la limite à l’insertion."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "Nouveau paramètre définissant le nombre maximal de lignes d’un fichier de données Iceberg produit par compaction, distinct de la limite à l’insertion."}]}]} />
 
-Nombre maximal de lignes d’un fichier de données Parquet Iceberg produit par compaction. La valeur par défaut est la valeur maximale, de sorte que la limite de taille
-`iceberg_compaction_max_bytes_in_data_file` détermine à elle seule la quantité de données placée dans un fichier de sortie, de la même manière
-qu’Iceberg ne propose pas d’équivalent en nombre de lignes de `write.target-file-size-bytes`.
+Nombre maximal de lignes d’un fichier de données Parquet Iceberg produit par compaction. La valeur par défaut est la valeur maximale, afin que la compaction fusionne les fichiers éligibles en un nombre minimal de fichiers de sortie. Si cette valeur est supérieure à la taille que la compaction peut réellement produire, chaque fichier de sortie restera inférieur à `iceberg_data_file_size_lower_threshold_compaction` et sera sélectionné à nouveau indéfiniment.
 
 {/*AUTOGENERATED_END*/}

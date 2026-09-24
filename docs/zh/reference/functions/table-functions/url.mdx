@@ -15,13 +15,17 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 `url` 函数 可用于对 [URL](/zh/reference/engines/table-engines/special/url) 表中的数据执行 `SELECT` 和 `INSERT` 查询。
 
-## 语法 {#syntax}
+<div id="syntax">
+  ## 语法
+</div>
 
 ```sql
 url(URL [,format] [,structure] [,headers])
 ```
 
-## 参数 {#parameters}
+<div id="parameters">
+  ## 参数
+</div>
 
 | Parameter   | 描述                                                                                                                                                                                                                                                                         |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,11 +34,15 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | 采用 `'UserID UInt64, Name String'` 格式的结构，用于确定列名和类型。类型：[String](/zh/reference/data-types/string)。                                                                                                                                                                               |
 | `headers`   | 采用 `'headers('key1'='value1', 'key2'='value2')'` 格式的请求头。你可以为 HTTP 调用设置请求头。                                                                                                                                                                                                 |
 
-## 返回值 {#returned-value}
+<div id="returned-value">
+  ## 返回值
+</div>
 
 一个采用指定格式和结构、包含已定义 `URL` 中数据的表。
 
-## 示例 {#examples}
+<div id="examples">
+  ## 示例
+</div>
 
 从以 [CSV](/zh/reference/formats/CSV/CSV) 格式响应的 HTTP 服务器获取一个表的前 3 行，该表包含 `String` 和 [UInt32](/zh/reference/data-types/int-uint) 类型的列。
 
@@ -50,17 +58,19 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-## 按 URL 协议分派 {#scheme-dispatch}
+<div id="scheme-dispatch">
+  ## 按 URL 协议分派
+</div>
 
 `url` 函数充当其他文件和对象存储表函数之上的统一包装层：它会根据 URL 协议分派到正确的后端。这样一来，你就可以用一套统一的语法，从任何受支持的位置读取数据。
 
-| 协议                                        | Dispatches to                                                                  |
-| ----------------------------------------- | ------------------------------------------------------------------------------ |
+| 协议                                          | Dispatches to                                                                  |
+| --------------------------------------------- | ------------------------------------------------------------------------------ |
 | `http`, `https` (and any unrecognized 协议) | `URL` 引擎本身 (HTTP `GET`/`POST`)                                                 |
-| `file`                                    | [`file`](/zh/reference/functions/table-functions/file) 函数                         |
-| `s3`, `gs`, `gcs`, `oss`                  | [`s3`](/zh/reference/functions/table-functions/s3) 函数                             |
-| `az`, `azure`, `abfss`, `abfs`            | [`azureBlobStorage`](/zh/reference/functions/table-functions/azureBlobStorage) 函数 |
-| `hdfs`                                    | [`hdfs`](/zh/reference/functions/table-functions/hdfs) 函数                         |
+| `file`                                        | [`file`](/zh/reference/functions/table-functions/file) 函数                         |
+| `s3`, `gs`, `gcs`, `oss`                      | [`s3`](/zh/reference/functions/table-functions/s3) 函数                             |
+| `az`, `azure`, `abfss`, `abfs`                | [`azureBlobStorage`](/zh/reference/functions/table-functions/azureBlobStorage) 函数 |
+| `hdfs`                                        | [`hdfs`](/zh/reference/functions/table-functions/hdfs) 函数                         |
 
 只有那些无需额外配置、即可由 S3 URI mapper 解析为具体端点的 S3 协议 (`s3`，以及 `gs`/`gcs`/`oss`) 才会被分派。其他兼容 S3 的厂商协议 (`cos`、`obs`、`eos`、…) 具有区域特定性，且没有默认端点映射，因此像 `cos://…` 这样的 URL 会被视为无法识别的协议并报错；对于这些后端，请直接使用 [`s3`](/zh/reference/functions/table-functions/s3) 函数 (并配置 `url_scheme_mappers`) 。
 
@@ -75,15 +85,17 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 
 协议分派尚未贯通到 [`urlCluster`](/zh/reference/functions/table-functions/urlCluster)：传递给 `urlCluster` 的非 `http(s)` 协议 目前会报错并被拒绝。对于这些后端，请改用对应的集群函数 (`s3Cluster`、`azureBlobStorageCluster`、`hdfsCluster` 等) 。
 
-出于同样的原因，被分派的 `url` 调用会在接收到该查询的节点上执行读取：[parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) 的 fan-out 不会应用于它。如果希望读取分布到多个副本上，请直接使用对应的集群函数。
-
-## URL 中的通配符 {#globs-in-url}
+<div id="globs-in-url">
+  ## URL 中的通配符
+</div>
 
 `{ }` 中的模式用于生成一组分片，或指定故障转移地址。支持的模式类型及示例，请参见 [remote](/zh/reference/functions/table-functions/remote#globs-in-addresses) 函数说明。
 模式中的 `|` 字符用于指定故障转移地址。系统会按模式中列出的顺序依次遍历这些地址。生成的地址数量受 [glob&#95;expansion&#95;max&#95;elements](/zh/reference/settings/session-settings/other#glob_expansion_max_elements) 设置限制。
 有关 URL 路径中的通配符语法 (例如 `*`、`{a,b}`、`{N..M}` 和 `**`) ，请参见 [路径中的通配符](/zh/reference/functions/table-functions/file#globs-in-path)。请注意，`?` 在 URL 中用于标识查询字符串的开始，因此不能在路径组件用作通配符。
 
-## 结合 HTTP 索引页使用通配符 {#wildcards-with-http-index-pages}
+<div id="wildcards-with-http-index-pages">
+  ## 结合 HTTP 索引页使用通配符
+</div>
 
 对于 `url` 和 `URL` 表引擎，ClickHouse 可以通过拉取 HTTP 索引页 (HTML 或纯文本) ，并从响应正文中提取 URL 来展开通配符。当服务器提供目录列表时，这使得 `/**/` 之类的模式成为可能。
 
@@ -103,10 +115,12 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
 ```
 
-## 虚拟列 {#virtual-columns}
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
 
 * `_path` — `URL` 的路径。类型：`LowCardinality(String)`。
 * `_file` — `URL` 的资源名。类型：`LowCardinality(String)`。
@@ -114,7 +128,9 @@ SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 * `_headers` - HTTP 响应头。类型：`Map(LowCardinality(String), LowCardinality(String))`。
 
-## use_hive_partitioning 设置 {#hive-style-partitioning}
+<div id="hive-style-partitioning">
+  ## use_hive_partitioning 设置
+</div>
 
 当 `use_hive_partitioning` 设置为 1 时，ClickHouse 会检测路径中 Hive 风格的分区 (`/name=value/`) ，并允许在查询中将分区列作为虚拟列使用。这些虚拟列的名称将与分区路径中的名称相同。
 
@@ -126,7 +142,9 @@ SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## 解析相对 URL {#resolving-relative-urls}
+<div id="resolving-relative-urls">
+  ## 解析相对 URL
+</div>
 
 [url&#95;base](/zh/reference/settings/session-settings/url#url_base) 设置允许向 `url` 函数传入相对 URL。设置了 `url_base` 后，如果函数参数是相对引用，则会按照 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) 基于基础 URL 对其进行解析。
 
@@ -148,17 +166,23 @@ SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/'
 SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ```
 
-## 存储设置 {#storage-settings}
+<div id="storage-settings">
+  ## 存储设置
+</div>
 
 * [engine&#95;url&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings/other#engine_url_skip_empty_files) - 允许在读取时跳过空文件。默认情况下禁用。
 * [enable&#95;url&#95;encoding](/zh/reference/settings/session-settings/enable#enable_url_encoding) - 允许启用/禁用 URI 中路径的解码/编码。默认情况下启用。
 * [url&#95;base](/zh/reference/settings/session-settings/url#url_base) - 用于解析传递给 `url` 函数的相对 URL 的基础 URL。
 
-## 权限 {#permissions}
+<div id="permissions">
+  ## 权限
+</div>
 
 `url` 函数需要具备 `CREATE TEMPORARY TABLE` 权限。因此，对于设置了 [readonly](/zh/concepts/features/configuration/settings/permissions-for-queries#readonly) = 1 的用户，该函数无法使用。至少需要 readonly = 2。
 
-## 相关内容 {#related}
+<div id="related">
+  ## 相关内容
+</div>
 
 * [虚拟列](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)
 

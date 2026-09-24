@@ -33,7 +33,9 @@ Agora que temos alguns dados no ClickHouse, queremos executar algumas consultas 
 
 Vamos ver cada elemento em ação durante a execução da consulta. Vamos usar algumas consultas e depois examiná-las com a instrução `EXPLAIN`.
 
-## Parser {#parser}
+<div id="parser">
+  ## Parser
+</div>
 
 O objetivo de um parser é transformar o texto da consulta em uma AST (árvore sintática abstrata). Este passo pode ser visualizado usando `EXPLAIN AST`:
 
@@ -78,21 +80,22 @@ graph TD
     tisqe --> te["TableExpression"]
     te --> ti["TableIdentifier session_events"]
 ```
-
 Cada nó tem filhos correspondentes, e a árvore como um todo representa a estrutura geral da sua consulta. Trata-se de uma estrutura lógica que ajuda no processamento de uma consulta. Do ponto de vista do usuário final (a menos que haja interesse na execução de consultas), ela não é tão útil; essa ferramenta é usada principalmente por desenvolvedores.
 
-## Analisador {#analyzer}
+<div id="analyzer">
+  ## Analisador
+</div>
 
-O analisador vem habilitado por padrão desde o ClickHouse `24.3` e é a única forma de análise de consultas desde a versão `26.9`, quando `enable_analyzer` se tornou uma configuração obsoleta que não pode mais ser desabilitada.
+Atualmente, o ClickHouse tem duas arquiteturas para o Analisador. Você pode usar a arquitetura antiga definindo: `enable_analyzer=0`. A arquitetura atual vem habilitada por padrão desde o ClickHouse `24.3`. Vamos descrever aqui apenas a arquitetura atual, já que a antiga foi descontinuada e é mantida apenas para compatibilidade retroativa.
 
 <Note>
-  O analisador é um componente fundamental das etapas de processamento de consultas e pode ter um impacto negativo em algumas consultas: consulte as [incompatibilidades conhecidas](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities) para saber quais consultas precisam ser atualizadas por causa dele.
+  A arquitetura atual deve nos oferecer uma base melhor para aprimorar o desempenho do ClickHouse. No entanto, como é um componente fundamental das etapas de processamento de consultas, ela também pode ter um impacto negativo em algumas consultas, e há [incompatibilidades conhecidas](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). Você pode voltar para a arquitetura antiga alterando a configuração `enable_analyzer` no nível da consulta ou do usuário.
 </Note>
 
 O analisador é uma etapa importante da execução da consulta. Ele recebe uma AST e a transforma em uma árvore de consulta. O principal benefício de uma árvore de consulta em relação a uma AST é que muitos componentes passam a ser resolvidos, como o armazenamento, por exemplo. Também sabemos de qual tabela ler, os aliases são resolvidos, e a árvore conhece os diferentes tipos de dados usados. Com todos esses benefícios, o analisador pode aplicar otimizações. Essas otimizações funcionam por meio de &quot;passes&quot;. Cada pass procura otimizações diferentes. Você pode ver todos os passes [aqui](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249); vamos ver isso na prática com nossa consulta anterior:
 
 ```sql
-EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
 ```
 
 ```response
@@ -110,11 +113,12 @@ EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp
 │             IDENTIFIER id: 7, identifier: timestamp                                    │
 │   JOIN TREE                                                                            │
 │     IDENTIFIER id: 8, identifier: session_events                                       │
+│   SETTINGS allow_experimental_analyzer=1                                               │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
-EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
 ```
 
 ```response
@@ -135,13 +139,14 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 │             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
 │   JOIN TREE                                                                               │
 │     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
+│   SETTINGS allow_experimental_analyzer=1                                                  │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Entre as duas execuções, é possível observar a resolução dos aliases e das projeções.
 
 <div id="planner">
-  ## Planejador {#planner}
+  ## Planejador
 </div>
 
 O planejador recebe uma árvore de consulta e, a partir dela, gera um plano de consulta. A árvore de consulta nos diz o que queremos fazer com uma consulta específica, e o plano de consulta nos diz como isso será feito. Otimizações adicionais também são aplicadas como parte do plano de consulta. Você pode usar `EXPLAIN PLAN` ou `EXPLAIN` para ver o plano de consulta (`EXPLAIN` executa `EXPLAIN PLAN`).
@@ -261,7 +266,7 @@ GROUP BY type
 Agora você pode ver todas as entradas, funções, aliases e tipos de dados em uso. Você pode ver algumas das otimizações que o planejador vai aplicar [aqui](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h).
 
 <div id="query-pipeline">
-  ## Pipeline de consulta {#query-pipeline}
+  ## Pipeline de consulta
 </div>
 
 Um pipeline de consulta é gerado a partir do plano de consulta. O pipeline de consulta é muito semelhante ao plano de consulta, com a diferença de que não é uma árvore, mas um grafo. Ele mostra como o ClickHouse executará uma consulta e quais recursos serão utilizados. Analisar o pipeline de consulta é muito útil para identificar onde está o gargalo em termos de entradas/saídas. Vamos usar nossa consulta anterior e observar a execução do pipeline de consulta:
@@ -462,7 +467,7 @@ digraph
 Assim, o executor decidiu não paralelizar as operações porque o volume de dados não era grande o suficiente. Ao adicionar mais linhas, o executor passou a usar várias threads, como mostrado no grafo.
 
 <div id="executor">
-  ## Executor {#executor}
+  ## Executor
 </div>
 
 Por fim, a última etapa da execução da consulta é realizada pelo executor. Ele recebe o pipeline da consulta e o executa. Há diferentes tipos de executores, dependendo de você estar fazendo um `SELECT`, um `INSERT` ou um `INSERT SELECT`.

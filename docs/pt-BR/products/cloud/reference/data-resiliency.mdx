@@ -17,7 +17,7 @@ No momento, o ClickHouse Cloud não oferece suporte a failover automático nem �
 </Tip>
 
 <div id="definitions">
-  ## Definições {#definitions}
+  ## Definições
 </div>
 
 Antes, é útil revisar algumas definições.
@@ -29,7 +29,7 @@ Antes, é útil revisar algumas definições.
 **Backups e snapshots de banco de dados**: Os backups fornecem armazenamento durável de longo prazo com uma cópia separada dos dados. Os snapshots não criam uma cópia adicional dos dados, geralmente são mais rápidos e proporcionam RPOs melhores.
 
 <div id="database-backups">
-  ## Backups de banco de dados {#database-backups}
+  ## Backups de banco de dados
 </div>
 
 Manter um backup do seu serviço primário é uma forma eficaz de restaurá-lo em caso de indisisponibilidade do serviço primário.
@@ -60,21 +60,26 @@ Os backups atualmente disponíveis para o serviço estão listados na página �
 Esta seção também mostra o status de sucesso/falha de cada backup.
 
 <div id="restoring-from-a-backup">
-  ## Restauração a partir de um backup {#restoring-from-a-backup}
+  ## Restauração a partir de um backup
 </div>
 
 1. Os backups padrão, no bucket do ClickHouse Cloud, podem ser restaurados em um novo serviço na mesma região.
 2. Os backups externos (no armazenamento de objetos do cliente) podem ser restaurados em um novo serviço na mesma região ou em outra região.
 
-## Orientações sobre a duração de backups e restaurações {#backup-and-restore-duration-guidance}
+<div id="backup-and-restore-duration-guidance">
+  ## Orientações sobre o tempo de backup e restauração
+</div>
 
-A duração de backups e restaurações varia significativamente conforme o volume de dados, a complexidade do schema e o número de tabelas. Os números abaixo são observações de testes internos e não constituem compromissos de desempenho.
+Os tempos de backup e restauração dependem de vários fatores, como o tamanho do banco de dados, o schema e o número de tabelas no banco de dados.
 
-Em nossos testes, um backup de aproximadamente 1 TB levou cerca de 10 a 15 minutos, e um de 20 TB, cerca de uma hora. Conjuntos de dados maiores levam proporcionalmente mais tempo, e backups de várias centenas de TB ou mais podem levar muitas horas, embora economias de escala ajudem em volumes maiores.
+Em nossos testes, vimos backups menores, de ~1 TB, levarem de 10 a 15 minutos ou mais para serem concluídos.
+Backups com menos de 20 TB geralmente são concluídos em até uma hora, e o backup de ~50 TB de dados deve levar de 2 a 3 horas.
+Backups se beneficiam de economias de escala em tamanhos maiores, e já vimos backups de até 1 PB, em alguns serviços internos, serem concluídos em menos de 10 horas.
 
-As restaurações geralmente são mais lentas que o backup equivalente, especialmente quando incluem uma longa cadeia de backups incrementais, pois o backup completo e todos os backups incrementais subsequentes da cadeia precisam ser aplicados. Restaurar um serviço muito grande pode levar mais de um dia.
+Recomendamos testar com seu próprio banco de dados ou com dados de amostra para obter estimativas mais precisas, já que a duração real depende de vários fatores, conforme descrito acima.
 
-Como a duração depende muito dos seus dados, schema e configuração de backup, recomendamos fortemente testar uma restauração com seus próprios dados antes de se basear em qualquer tempo-alvo de recuperação.
+Os tempos de restauração são semelhantes aos tempos de backup para volumes equivalentes.
+Como mencionado acima, recomendamos testar com seu próprio banco de dados para ter uma ideia de quanto tempo levará para restaurar o backup.
 
 <Note>
   Atualmente, NÃO há suporte para failover automático entre 2 instâncias do ClickHouse Cloud, seja na mesma região ou em regiões diferentes.
@@ -82,19 +87,21 @@ Como a duração depende muito dos seus dados, schema e configuração de backup
 </Note>
 
 <div id="recovery-process">
-  ## Processo de recuperação {#recovery-process}
+  ## Processo de recuperação
 </div>
 
 Esta seção explica as várias opções de recuperação e o procedimento a ser seguido em cada caso.
 
 <div id="primary-service-data-corruption">
-  ### Corrupção de dados do serviço primário {#primary-service-data-corruption}
+  ### Corrupção de dados do serviço primário
 </div>
 
 Nesse caso, os dados [podem ser restaurados](/pt-BR/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) a partir do backup em outro serviço na mesma região.
 O backup pode ter até 24 horas ao usar a política de backup padrão, ou até 6 horas (ao usar backups configuráveis com frequência de 6 horas).
 
-#### Etapas de restauração {#restoration-steps}
+<div id="restoration-steps">
+  #### Etapas de restauração
+</div>
 
 Para restaurar a partir de um backup existente
 
@@ -105,7 +112,7 @@ Para restaurar a partir de um backup existente
 <Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="Restaurar a partir de um backup" />
 
 <div id="primary-region-downtime">
-  ### Indisponibilidade da região primária {#primary-region-downtime}
+  ### Indisponibilidade da região primária
 </div>
 
 Você pode [exportar backups](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para um bucket no seu próprio provedor de cloud.
@@ -125,7 +132,7 @@ Isso pode envolver:
 </Note>
 
 <div id="additional-options">
-  ## Opções adicionais {#additional-options}
+  ## Opções adicionais
 </div>
 
 Há algumas opções adicionais a considerar.

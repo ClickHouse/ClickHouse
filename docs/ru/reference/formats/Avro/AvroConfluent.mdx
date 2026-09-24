@@ -17,7 +17,9 @@ import DataTypesMatching from '/snippets/ru/data-types-matching.mdx';
 | ---- | ----- | --------- |
 | ✔    | ✔     |           |
 
-## Описание {#description}
+<div id="description">
+  ## Описание
+</div>
 
 [Apache Avro](https://avro.apache.org/) — это строко-ориентированный формат сериализации, использующий двоичное кодирование для эффективной обработки данных. Формат `AvroConfluent` поддерживает чтение и запись сообщений в формате Avro с использованием [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (или сервисов с совместимым API).
 
@@ -25,28 +27,36 @@ import DataTypesMatching from '/snippets/ru/data-types-matching.mdx';
 
 <a id="data-types-matching" />
 
-## Соответствие типов данных {#data-type-mapping}
+<div id="data-type-mapping">
+  ## Соответствие типов данных
+</div>
 
 <DataTypesMatching />
 
-## Настройки формата {#format-settings}
+<div id="format-settings">
+  ## Настройки формата
+</div>
 
 [//]: # "ПРИМЕЧАНИЕ: эти настройки можно задавать на уровне сеанса, но это встречается нечасто, и слишком заметное упоминание об этом может запутать пользователей."
 
-| Настройка                                        | Описание                                                                                                                                                                                                    | По умолчанию |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| `input_format_avro_allow_missing_fields`         | Следует ли использовать значение по умолчанию вместо выдачи ошибки, если поле не найдено в схеме.                                                                                                           | `0`          |
-| `input_format_avro_null_as_default`              | Следует ли использовать значение по умолчанию вместо выдачи ошибки при вставке значения `null` в столбец, не являющийся Nullable.                                                                           | `0`          |
-| `format_avro_schema_registry_url`                | URL Confluent Schema Registry. Для базовой аутентификации учетные данные в URL-кодировке можно включить непосредственно в URL.                                                                              |              |
-| `format_avro_schema_registry_connection_timeout` | Тайм-аут соединения в секундах для HTTP-клиента Schema Registry (используется как для получения схемы, так и для регистрации). Должен быть больше 0; значение 600 (10 минут) или больше уменьшается до 599. | `1`          |
-| `format_avro_schema_registry_send_timeout`       | Тайм-аут отправки в секундах для HTTP-клиента Schema Registry. Должен быть больше 0; значение 600 (10 минут) или больше уменьшается до 599.                                                                 | `1`          |
-| `format_avro_schema_registry_receive_timeout`    | Тайм-аут получения в секундах для HTTP-клиента Schema Registry. Должен быть больше 0; значение 600 (10 минут) или больше уменьшается до 599.                                                                | `1`          |
-| `output_format_avro_confluent_subject`           | Для вывода: имя subject, под которым схема зарегистрирована в Schema Registry. Обязательно при записи.                                                                                                      |              |
-| `output_format_avro_string_column_pattern`       | Для вывода: шаблон регулярного выражения для столбцов String, которые нужно сериализовать как Avro `string` (по умолчанию — `bytes`).                                                                       |              |
+| Настройка                                        | Описание                                                                                                                                                                     | По умолчанию |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `input_format_avro_allow_missing_fields`         | Следует ли использовать значение по умолчанию вместо выдачи ошибки, если поле не найдено в схеме.                                                                            | `0`          |
+| `input_format_avro_null_as_default`              | Следует ли использовать значение по умолчанию вместо выдачи ошибки при вставке значения `null` в столбец, не являющийся Nullable.                                            | `0`          |
+| `format_avro_schema_registry_url`                | URL Confluent Schema Registry. Для базовой аутентификации учетные данные в URL-кодировке можно включить непосредственно в URL.                                                 |              |
+| `format_avro_schema_registry_connection_timeout` | Тайм-аут соединения в секундах для HTTP-клиента Schema Registry (используется как для получения схемы, так и для регистрации). Должен быть больше 0 и меньше 600 (10 минут). | `1`          |
+| `format_avro_schema_registry_send_timeout`       | Тайм-аут отправки в секундах для HTTP-клиента Schema Registry. Должен быть больше 0 и меньше 600 (10 минут).                                                                 | `1`          |
+| `format_avro_schema_registry_receive_timeout`    | Тайм-аут получения в секундах для HTTP-клиента Schema Registry. Должен быть больше 0 и меньше 600 (10 минут).                                                                | `1`          |
+| `output_format_avro_confluent_subject`           | Для вывода: имя subject, под которым схема зарегистрирована в Schema Registry. Обязательно при записи.                                                                       |              |
+| `output_format_avro_string_column_pattern`       | Для вывода: шаблон регулярного выражения для столбцов String, которые нужно сериализовать как Avro `string` (по умолчанию — `bytes`).                                        |              |
 
-## Примеры {#examples}
+<div id="examples">
+  ## Примеры
+</div>
 
-### Чтение из Kafka {#reading-from-kafka}
+<div id="reading-from-kafka">
+  ### Чтение из Kafka
+</div>
 
 Чтобы читать Kafka топик в кодировке Avro с помощью [движка таблицы Kafka](/ru/reference/engines/table-engines/integrations/kafka), используйте параметр `format_avro_schema_registry_url`, чтобы указать URL реестра схем.
 
@@ -67,7 +77,9 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 SELECT * FROM topic1_stream;
 ```
 
-### Запись в Kafka {#writing-to-kafka}
+<div id="writing-to-kafka">
+  ### Запись в Kafka
+</div>
 
 Чтобы записывать сообщения AvroConfluent в топик Kafka, задайте URL реестра схем и имя subject. Схема автоматически регистрируется в реестре при первой записи.
 
@@ -88,7 +100,9 @@ output_format_avro_confluent_subject = 'topic1-value';
 INSERT INTO topic1_sink VALUES ('hello', 'world');
 ```
 
-#### Использование базовой аутентификации {#using-basic-authentication}
+<div id="using-basic-authentication">
+  #### Использование базовой аутентификации
+</div>
 
 Если для вашего реестра схем требуется базовая аутентификация (например, если вы используете Confluent Cloud), вы можете указать URL-кодированные учетные данные в параметре `format_avro_schema_registry_url`.
 
@@ -107,7 +121,9 @@ kafka_format = 'AvroConfluent',
 format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
 ```
 
-## Устранение неполадок {#troubleshooting}
+<div id="troubleshooting">
+  ## Устранение неполадок
+</div>
 
 Чтобы отслеживать прогресс ингестии и диагностировать ошибки Kafka-консьюмера, можно выполнить запрос к [системной таблице `system.kafka_consumers`](/ru/reference/system-tables/kafka_consumers). Если в вашем развертывании несколько реплик (например, в ClickHouse Cloud), необходимо использовать табличную функцию [`clusterAllReplicas`](/ru/reference/functions/table-functions/cluster).
 

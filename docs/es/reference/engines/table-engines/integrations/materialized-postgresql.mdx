@@ -23,16 +23,18 @@ import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupporte
 Crea una tabla de ClickHouse con un volcado inicial de datos de una tabla de PostgreSQL e inicia el proceso de replicación; es decir, ejecuta un trabajo en segundo plano para aplicar nuevos cambios a medida que se producen en la tabla de PostgreSQL de la base de datos remota.
 
 <Note>
-  Este motor de tabla es experimental. Para usarlo, establezca `enable_materialized_postgresql_table` en 1 en sus archivos de configuración o mediante el comando `SET`:
+  Este motor de tabla es experimental. Para usarlo, establezca `allow_experimental_materialized_postgresql_table` en 1 en sus archivos de configuración o mediante el comando `SET`:
 
   ```sql
-  SET enable_materialized_postgresql_table=1
+  SET allow_experimental_materialized_postgresql_table=1
   ```
 </Note>
 
 Si se requiere más de una tabla, se recomienda encarecidamente usar el motor de base de datos [MaterializedPostgreSQL](/es/reference/engines/database-engines/materialized-postgresql) en lugar del motor de tabla y usar la configuración `materialized_postgresql_tables_list`, que especifica las tablas que se van a replicar (también será posible añadir el `schema` de la base de datos). Esto ofrece un rendimiento mucho mejor en términos de CPU, con menos conexiones y menos slots de replicación en la base de datos remota de PostgreSQL.
 
-## Crear una tabla {#creating-a-table}
+<div id="creating-a-table">
+  ## Crear una tabla
+</div>
 
 ```sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
@@ -48,7 +50,9 @@ PRIMARY KEY key;
 * `user` — Usuario de PostgreSQL.
 * `password` — Contraseña del usuario.
 
-## TLS/SSL {#tls-ssl}
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
 
 Los parámetros de TLS/SSL se reenvían a `libpq` y pueden proporcionarse mediante una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections) o como argumentos clave-valor al final de la definición del motor: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` o `verify-full`; si no se especifica, se usa el valor predeterminado `prefer` de `libpq`), así como los certificados y la clave, de una de dos formas. `sslrootcert` (certificado de CA), `sslcert` (certificado de cliente) y `sslkey` (clave privada de cliente) son rutas a archivos locales del servidor y solo se aceptan desde una colección con nombre definida en el archivo de configuración del servidor. En cambio, `sslrootcert_pem`, `sslcert_pem` y `sslkey_pem` aceptan el contenido literal del archivo correspondiente, pueden especificarse desde SQL y se ocultan en los registros y las consultas `SHOW`, como una contraseña.
 
@@ -63,7 +67,9 @@ PRIMARY KEY key;
 
 Los parámetros TLS/SSL forman parte de los parámetros de conexión de PostgreSQL, que se establecen al crear la tabla.
 
-## Requisitos {#requirements}
+<div id="requirements">
+  ## Requisitos
+</div>
 
 1. La configuración [wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) debe tener el valor `logical`, y el parámetro `max_replication_slots` debe tener un valor de al menos `2` en el archivo de configuración de PostgreSQL.
 
@@ -73,7 +79,9 @@ Los parámetros TLS/SSL forman parte de los parámetros de conexión de PostgreS
 
 4. El motor de tabla `MaterializedPostgreSQL` solo funciona con versiones de PostgreSQL &gt;= 11, ya que la implementación requiere la función de PostgreSQL [pg&#95;replication&#95;slot&#95;advance](https://pgpedia.info/p/pg_replication_slot_advance.html).
 
-## Columnas virtuales {#virtual-columns}
+<div id="virtual-columns">
+  ## Columnas virtuales
+</div>
 
 * `_version` — Contador de transacciones. Tipo: [UInt64](/es/reference/data-types/int-uint).
 

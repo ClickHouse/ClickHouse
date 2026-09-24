@@ -11,11 +11,12 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
+<div id="distributed_plan_default_reader_bucket_count">
+  ## distributed_plan_default_reader_bucket_count
+</div>
 
 <ExperimentalBadge />
 
@@ -26,7 +27,9 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 Número predeterminado de tareas para la lectura paralela en una consulta distribuida. Las tareas se reparten entre las réplicas.
 Lo utiliza el planificador distribuido basado en reglas. El optimizador basado en costos elige el grado de paralelismo de lectura según el costo estimado y no utiliza esta configuración.
 
-## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
+<div id="distributed_plan_default_shuffle_join_bucket_count">
+  ## distributed_plan_default_shuffle_join_bucket_count
+</div>
 
 <ExperimentalBadge />
 
@@ -37,7 +40,9 @@ Lo utiliza el planificador distribuido basado en reglas. El optimizador basado e
 Número predeterminado de buckets para distributed shuffle-hash-join.
 Lo utiliza el planificador distribuido basado en reglas. El optimizador basado en costos elige el grado de paralelismo según el costo estimado y no utiliza esta configuración.
 
-## distributed_plan_execute_locally {#distributed_plan_execute_locally}
+<div id="distributed_plan_execute_locally">
+  ## distributed_plan_execute_locally
+</div>
 
 <ExperimentalBadge />
 
@@ -47,17 +52,9 @@ Lo utiliza el planificador distribuido basado en reglas. El optimizador basado e
 
 Ejecuta localmente todas las tareas de un plan de consulta distribuida. Útil para pruebas y depuración.
 
-## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración para recurrir a la ejecución local cuando un plan no se puede distribuir (solo surte efecto con `make_distributed_plan`)."}]}]} />
-
-Cuando un plan de consulta contiene un paso que no admite la ejecución distribuida, se registra el motivo y la consulta se ejecuta en el iniciador en lugar de lanzarse una excepción. Desactívela si prefiere que se lance una excepción.
-
-Solo surte efecto cuando `make_distributed_plan` (private preview) está habilitado.
-
-## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
+<div id="distributed_plan_force_exchange_kind">
+  ## distributed_plan_force_exchange_kind
+</div>
 
 <ExperimentalBadge />
 
@@ -71,7 +68,9 @@ Valores posibles:
 * &#39;Persisted&#39; - usar archivos temporales en almacenamiento de objetos,
 * &#39;Streaming&#39; - transmitir los datos de Exchange a través de la red.
 
-## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
+<div id="distributed_plan_force_shuffle_aggregation">
+  ## distributed_plan_force_shuffle_aggregation
+</div>
 
 <ExperimentalBadge />
 
@@ -80,9 +79,10 @@ Valores posibles:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Nueva configuración experimental"}]}]} />
 
 Usa la estrategia de agregación Shuffle en lugar de PartialAggregation + Merge en el plan de consulta distribuida.
-Se ignora cuando la estrategia Shuffle no puede producir un resultado correcto, por ejemplo para `GROUPING SETS` o cuando la agregación debe producir los resultados en orden de bucket.
 
-## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
+<div id="distributed_plan_max_rows_to_broadcast">
+  ## distributed_plan_max_rows_to_broadcast
+</div>
 
 <ExperimentalBadge />
 
@@ -93,7 +93,9 @@ Se ignora cuando la estrategia Shuffle no puede producir un resultado correcto, 
 Número máximo de filas para usar un broadcast join en lugar de un shuffle join en el plan de consulta distribuida.
 Una heurística para el planificador distribuido basado en reglas. Cuando el optimizador basado en costos está habilitado, la elección entre broadcast y shuffle se realiza según el costo estimado y esta configuración no tiene efecto.
 
-## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
+<div id="distributed_plan_optimize_exchanges">
+  ## distributed_plan_optimize_exchanges
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -101,9 +103,11 @@ Una heurística para el planificador distribuido basado en reglas. Cuando el opt
 
 Elimina intercambios innecesarios del plan de consulta distribuida. Desactívelo para depuración.
 
-## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
+<div id="distributed_plan_prefer_replicas_over_workers">
+  ## distributed_plan_prefer_replicas_over_workers
+</div>
 
-<PrivatePreviewBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -111,24 +115,11 @@ Elimina intercambios innecesarios del plan de consulta distribuida. Desactívelo
 
 Serializa el plan de consulta distribuida para su ejecución en las réplicas.
 
-## distributed_plan_read_in_order {#distributed_plan_read_in_order}
+<div id="distributed_plan_workers_num">
+  ## distributed_plan_workers_num
+</div>
 
 <ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración que habilita la optimización de lectura en orden para `ORDER BY` en un plan de consulta distribuido, de modo que una lectura ordenada según la clave de ordenación de la tabla pueda omitir la ordenación y detenerse antes. Desactivada de forma predeterminada: por ahora, solo son seguras las formas en las que no queda ningún intercambio entre la lectura y la ordenación."}]}]} />
-
-Habilita la optimización de lectura en orden para `ORDER BY` en un plan de consulta distribuido, de modo que una lectura ordenada según la
-clave de ordenación de la tabla pueda omitir la ordenación y detenerse antes, en lugar de escanear y ordenar.
-
-Desactivada de forma predeterminada: la reescritura que distribuye una ordenación asume que la ordenación que envuelve no depende de que su entrada
-ya esté ordenada, y una ordenación que sí depende de ello puede recibir filas a través de un intercambio que no preserva
-el orden. Por ahora, solo son seguras las formas en las que no queda ningún intercambio entre la lectura y la ordenación.
-
-## distributed_plan_workers_num {#distributed_plan_workers_num}
-
-<PrivatePreviewBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -136,14 +127,16 @@ el orden. Por ahora, solo son seguras las formas en las que no queda ningún int
 
 Cuántos workers sin estado se usarán para ejecutar esta consulta. Cero desactiva la reserva de workers sin estado para los planes distribuidos.
 
-## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
+<div id="distributed_plan_workers_provisioning_timeout_ms">
+  ## distributed_plan_workers_provisioning_timeout_ms
+</div>
 
-<PrivatePreviewBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "10000"},{"label": "Nueva configuración que limita el tiempo que una consulta espera a que los workers sin estado reservados sean accesibles antes de la ejecución."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "10000"},{"label": "Nueva configuración que limita el tiempo que una consulta espera a que los workers sin estado reservados sean accesibles antes de la ejecución; `compatibility` por debajo de 26.8 restaura el comportamiento anterior sin espera."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "10000"},{"label": "Nueva configuración que limita el tiempo que una consulta espera a que los workers sin estado arrendados sean accesibles antes de la ejecución; `compatibility` por debajo de 26.9 restaura el comportamiento anterior, sin espera."}]}]} />
 
-Tiempo total de reloj, en milisegundos, que una consulta puede dedicar al aprovisionamiento de workers sin estado antes de ejecutarse: reservarlos desde el servicio de descubrimiento y comprobar que sean accesibles. La consulta se bloquea hasta este límite de tiempo para que los workers reservados estén listos; cuando se agota, la consulta continúa con los workers verificados hasta ese momento o falla si ninguno está disponible. El valor cero espera únicamente la pasada inicial de reserva y verificación (sin reintentos).
+Tiempo total de reloj, en milisegundos, que una consulta puede dedicar al aprovisionamiento de workers sin estado antes de ejecutarse: arrendarlos desde el servicio de descubrimiento y comprobar que sean accesibles. La consulta se bloquea hasta este límite de tiempo para que los workers arrendados estén listos; cuando se agota, la consulta continúa con los workers verificados hasta ese momento o falla si ninguno está disponible. El valor cero espera únicamente la pasada inicial de arrendamiento y verificación (sin reintentos).
 
 {/*AUTOGENERATED_END*/}

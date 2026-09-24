@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد جرى توليدها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## lightweight_delete_mode {#lightweight_delete_mode}
+<div id="lightweight_delete_mode">
+  ## lightweight_delete_mode
+</div>
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -27,7 +29,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * `lightweight_update` - يشغّل التحديث الخفيف إن أمكن، وإلا فيشغّل `ALTER UPDATE`.
 * `lightweight_update_force` - يشغّل التحديث الخفيف إن أمكن، وإلا فيُطلِق استثناءً.
 
-## lightweight_deletes_sync {#lightweight_deletes_sync}
+<div id="lightweight_deletes_sync">
+  ## lightweight_deletes_sync
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -37,12 +41,12 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 القيم الممكنة:
 
-| القيمة | الوصف                                                                                                         |
-| ------ | ------------------------------------------------------------------------------------------------------------- |
-| `0`    | تُنفَّذ التعديلات بشكل غير متزامن.                                                                            |
-| `1`    | ينتظر الاستعلام حتى تكتمل عمليات الحذف الخفيفة على الخادم الحالي.                                             |
-| `2`    | ينتظر الاستعلام حتى تكتمل عمليات الحذف الخفيفة على جميع النسخ المتماثلة (إن وُجدت).                           |
-| `3`    | ينتظر الاستعلام النسخ المتماثلة النشطة فقط. أما النسخ غير النشطة فتطبّق عمليات الحذف الخفيفة عندما تصبح نشطة. |
+| القيمة | الوصف                                                                                                                                                                         |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`    | تُنفَّذ التعديلات بشكل غير متزامن.                                                                                                                                            |
+| `1`    | ينتظر الاستعلام حتى تكتمل عمليات الحذف الخفيفة على الخادم الحالي.                                                                                                             |
+| `2`    | ينتظر الاستعلام حتى تكتمل عمليات الحذف الخفيفة على جميع النسخ المتماثلة (إن وُجدت).                                                                                           |
+| `3`    | ينتظر الاستعلام اكتمالها على النسخ المتماثلة النشطة فقط. وهذا مدعوم فقط في `SharedMergeTree`. أما في `ReplicatedMergeTree`، فيعمل بالطريقة نفسها كما في `mutations_sync = 2`. |
 
 **انظر أيضًا**
 

@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 تتوفر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## short_circuit_function_evaluation {#short_circuit_function_evaluation}
+<div id="short_circuit_function_evaluation">
+  ## short_circuit_function_evaluation
+</div>
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
@@ -25,17 +27,19 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * `force_enable` — يفعّل التقييم المختصر لجميع الدوال.
 * `disable` — يعطّل التقييم المختصر.
 
-## short_circuit_function_evaluation_for_nulls {#short_circuit_function_evaluation_for_nulls}
+<div id="short_circuit_function_evaluation_for_nulls">
+  ## short_circuit_function_evaluation_for_nulls
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "السماح بتنفيذ الدوال ذات الوسيطات Nullable فقط على الصفوف التي تكون فيها جميع الوسيطات ذات قيم non-NULL"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "السماح بتنفيذ الدوال ذات الوسائط Nullable فقط على الصفوف التي تكون فيها جميع الوسائط ذات قيم non-NULL"}]}]} />
 
-يُحسّن هذا الإعداد تقييم الدوال التي تُرجع NULL إذا كانت أي وسيطة NULL. وعندما تتجاوز نسبة قيم NULL في وسيطات الدالة قيمة short&#95;circuit&#95;function&#95;evaluation&#95;for&#95;nulls&#95;threshold، يتجاوز النظام تقييم الدالة على أساس كل صف على حدة. وبدلًا من ذلك، يُرجع NULL فورًا لجميع الصفوف، ما يجنّب إجراء عمليات حسابية غير ضرورية.
+يُحسّن هذا الإعداد تقييم الدوال التي تُرجع NULL إذا كانت أي وسيطة NULL. وعندما تتجاوز نسبة قيم NULL في وسائط الدالة قيمة short&#95;circuit&#95;function&#95;evaluation&#95;for&#95;nulls&#95;threshold، يتجاوز النظام تقييم الدالة على أساس كل صف على حدة. وبدلًا من ذلك، يُرجع NULL فورًا لجميع الصفوف، ما يجنّب إجراء عمليات حسابية غير ضرورية.
 
-يتحكم هذا الإعداد في التحسين فقط. أما الدوال التي لا يمكن تنفيذها على القيمة الافتراضية لوسيطاتها - مثل `parseDateTime` أو `IPv4StringToNum` أو `intDiv` - فإنها تتخطى دائمًا الصفوف التي تحتوي على NULL بغض النظر عن هذا الإعداد، لأن القيمة المخزّنة خلف NULL هي القيمة الافتراضية لنوع الوسيطة، وتنفيذ الدالة عليها سيؤدي إلى رفع استثناء على بيانات صالحة في الأصل.
-
-## short_circuit_function_evaluation_for_nulls_threshold {#short_circuit_function_evaluation_for_nulls_threshold}
+<div id="short_circuit_function_evaluation_for_nulls_threshold">
+  ## short_circuit_function_evaluation_for_nulls_threshold
+</div>
 
 <SettingsInfoBlock type="Double" default_value="1" />
 

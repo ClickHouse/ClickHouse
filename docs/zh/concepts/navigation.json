@@ -83,7 +83,6 @@
         {
           "group": "Operations",
           "pages": [
-            "zh/concepts/features/operations/background-queries",
             {
               "group": "Insert",
               "pages": [
@@ -229,7 +228,6 @@
                 },
                 "zh/concepts/features/interfaces/postgresql",
                 "zh/concepts/features/interfaces/prometheus",
-                "zh/concepts/features/interfaces/prometheus-metrics",
                 "zh/concepts/features/interfaces/ssh",
                 "zh/concepts/features/interfaces/grpc",
                 "zh/concepts/features/interfaces/arrowflight"
@@ -239,7 +237,6 @@
             "zh/concepts/features/interfaces/schema-inference",
             "zh/concepts/features/interfaces/documentation-search",
             "zh/concepts/features/interfaces/web-sql",
-            "zh/concepts/features/interfaces/sql-console",
             "zh/concepts/features/interfaces/web-ui-color-coding",
             "zh/concepts/features/interfaces/web-ui-pinned-columns",
             "zh/concepts/features/interfaces/web-ui-result-shaping",

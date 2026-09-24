@@ -12,19 +12,21 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки конфигурируют сервер ClickHouse и автоматически сгенерированы из исходного кода ClickHouse.
 
-## database_catalog_drop_error_cooldown_sec {#database_catalog_drop_error_cooldown_sec}
+<div id="database_catalog_drop_error_cooldown_sec">
+  ## database_catalog_drop_error_cooldown_sec
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5" changeable_without_restart="No" />Если удаление таблицы завершилось ошибкой, ClickHouse подождёт этот тайм-аут перед повторной попыткой.
 
-## database_catalog_drop_table_concurrency {#database_catalog_drop_table_concurrency}
+<div id="database_catalog_drop_table_concurrency">
+  ## database_catalog_drop_table_concurrency
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />Размер пула потоков, используемого для удаления таблиц.
 
-## database_catalog_shutdown_table_concurrency {#database_catalog_shutdown_table_concurrency}
-
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Размер пула потоков, используемого для остановки таблиц при завершении работы сервера. Ноль означает, что количество потоков равно числу ядер процессора.
-
-## database_catalog_unused_dir_cleanup_period_sec {#database_catalog_unused_dir_cleanup_period_sec}
+<div id="database_catalog_unused_dir_cleanup_period_sec">
+  ## database_catalog_unused_dir_cleanup_period_sec
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="86400" changeable_without_restart="Нет" />
 
@@ -35,7 +37,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   Значение `0` означает «никогда». Значение по умолчанию соответствует 1 дню.
 </Note>
 
-## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec}
+<div id="database_catalog_unused_dir_hide_timeout_sec">
+  ## database_catalog_unused_dir_hide_timeout_sec
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="Нет" />
 
@@ -49,7 +53,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   Значение `0` означает «немедленно».
 </Note>
 
-## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
+<div id="database_catalog_unused_dir_rm_timeout_sec">
+  ## database_catalog_unused_dir_rm_timeout_sec
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="2592000" changeable_without_restart="No" />
 

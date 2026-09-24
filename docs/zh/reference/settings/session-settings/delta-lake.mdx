@@ -13,15 +13,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，由 [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## delta_lake_accurate_write_cast {#delta_lake_accurate_write_cast}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：使用精确转换将写入值转换为 Delta 写入 schema 类型；当值不适合目标类型时会引发异常，而不是静默截断；低于 26.9 的 `compatibility` 使用普通的非异常转换。"}]}]} />
-
-写入 DeltaLake 表时，使用精确转换将每个值转换为 Delta 写入 schema 类型。如果值不适合目标类型，精确转换会引发异常，而普通转换会静默截断值 (例如，将 `300` 写入 Delta 的 `byte` 列) 。如需使用普通的非异常转换，请设为 `false`，或使用低于 26.9 的 `compatibility` 设置。
-
-## delta_lake_enable_engine_predicate {#delta_lake_enable_engine_predicate}
+<div id="delta_lake_enable_engine_predicate">
+  ## delta_lake_enable_engine_predicate
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -29,7 +23,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 启用 delta-kernel 的内部数据裁剪。
 
-## delta_lake_enable_expression_visitor_logging {#delta_lake_enable_expression_visitor_logging}
+<div id="delta_lake_enable_expression_visitor_logging">
+  ## delta_lake_enable_expression_visitor_logging
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -37,7 +33,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 启用 DeltaLake 表达式访问器的测试级别日志。即使在测试日志中，这些日志也可能过于冗长。
 
-## delta_lake_insert_max_bytes_in_data_file {#delta_lake_insert_max_bytes_in_data_file}
+<div id="delta_lake_insert_max_bytes_in_data_file">
+  ## delta_lake_insert_max_bytes_in_data_file
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
@@ -45,7 +43,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 定义 Delta Lake 中单个插入数据文件的字节数上限。
 
-## delta_lake_insert_max_rows_in_data_file {#delta_lake_insert_max_rows_in_data_file}
+<div id="delta_lake_insert_max_rows_in_data_file">
+  ## delta_lake_insert_max_rows_in_data_file
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
 
@@ -53,7 +53,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 定义 Delta Lake 中单个写入数据文件的行数上限。
 
-## delta_lake_log_metadata {#delta_lake_log_metadata}
+<div id="delta_lake_log_metadata">
+  ## delta_lake_log_metadata
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -61,7 +63,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 启用将 Delta Lake 元数据文件记录到系统表中。
 
-## delta_lake_reload_schema_for_consistency {#delta_lake_reload_schema_for_consistency}
+<div id="delta_lake_reload_schema_for_consistency">
+  ## delta_lake_reload_schema_for_consistency
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -70,7 +74,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 启用后，会在每次查询执行前从 DeltaLake 元数据 重新加载 schema，以确保
 查询分析期间使用的 schema 与执行期间使用的 schema 一致。
 
-## delta_lake_snapshot_end_version {#delta_lake_snapshot_end_version}
+<div id="delta_lake_snapshot_end_version">
+  ## delta_lake_snapshot_end_version
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -78,7 +84,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 要读取的 Delta Lake 快照 的结束版本。值 -1 表示读取最新版本 (值 0 也是有效的 快照 version) 。
 
-## delta_lake_snapshot_start_version {#delta_lake_snapshot_start_version}
+<div id="delta_lake_snapshot_start_version">
+  ## delta_lake_snapshot_start_version
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -86,7 +94,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 要读取的 delta lake 快照起始版本。值为 -1 表示读取最新版本 (0 是有效的快照版本值) 。
 
-## delta_lake_snapshot_version {#delta_lake_snapshot_version}
+<div id="delta_lake_snapshot_version">
+  ## delta_lake_snapshot_version
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -94,7 +104,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 要读取的 Delta Lake 快照版本。值 -1 表示读取最新版本 (值 0 是有效的快照版本) 。
 
-## delta_lake_throw_on_engine_predicate_error {#delta_lake_throw_on_engine_predicate_error}
+<div id="delta_lake_throw_on_engine_predicate_error">
+  ## delta_lake_throw_on_engine_predicate_error
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

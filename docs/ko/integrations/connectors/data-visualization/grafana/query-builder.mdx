@@ -30,13 +30,15 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
 * [SQL Editor](#sql-editor): 쿼리를 완전히 제어해야 할 때 SQL Editor를 사용할 수 있습니다. 이 모드에서는 모든 SQL 쿼리를 실행할 수 있습니다.
 
 <div id="query-types">
-  ## 쿼리 유형 {#query-types}
+  ## 쿼리 유형
 </div>
 
 *Query Type* 설정은 현재 작성 중인 쿼리 유형에 맞게 쿼리 빌더의 레이아웃을 변경합니다.
 또한 쿼리 유형에 따라 데이터를 시각화할 때 사용할 패널도 결정됩니다.
 
-### 테이블 {#table}
+<div id="table">
+  ### 테이블
+</div>
 
 가장 유연한 쿼리 유형은 테이블 쿼리입니다. 이는 단순 쿼리와 집계 쿼리를 처리하도록 설계된 다른 쿼리 빌더를 모두 포괄하는 유형입니다.
 
@@ -54,7 +56,9 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
 
 이 쿼리 유형은 데이터를 테이블로 표시합니다.
 
-### 로그 {#logs}
+<div id="logs">
+  ### 로그
+</div>
 
 로그 쿼리 유형은 로그 데이터 쿼리에 특화된 쿼리 빌더를 제공합니다.
 기본값은 데이터 소스의 [로그 구성](/ko/integrations/connectors/data-visualization/grafana/config#logs)에서 설정할 수 있으며, 이를 통해 쿼리 빌더를 기본 데이터베이스/테이블과 컬럼으로 미리 채울 수 있습니다.
@@ -89,7 +93,7 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="로그 쿼리의 추가 필드 예시" border />
 
 <div id="time-series">
-  ### 시계열 {#time-series}
+  ### 시계열
 </div>
 
 시계열 쿼리 유형은 [table](#table)과 비슷하지만, 시계열 데이터에 더 중점을 둡니다.
@@ -124,7 +128,9 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
 
 이 쿼리 유형은 데이터를 시계열 패널로 표시합니다.
 
-### 트레이스 {#traces}
+<div id="traces">
+  ### 트레이스
+</div>
 
 트레이스 쿼리 유형은 트레이스를 쉽게 검색하고 확인할 수 있도록 쿼리 빌더를 제공합니다.
 이 기능은 OpenTelemetry 데이터용으로 설계되었지만, 다른 스키마의 트레이스를 표시하도록 컬럼을 선택할 수도 있습니다.
@@ -161,7 +167,9 @@ Time 및 Duration Time 컬럼에 대한 ORDER BY도 함께 포함됩니다.
 
 이 쿼리 유형은 Trace Search 모드에서는 데이터를 테이블 뷰로, Trace ID 모드에서는 트레이스 패널로 표시합니다.
 
-## SQL Editor {#sql-editor}
+<div id="sql-editor">
+  ## SQL Editor
+</div>
 
 쿼리 빌더로 처리하기에 너무 복잡한 쿼리의 경우 SQL Editor를 사용할 수 있습니다.
 이 모드에서는 ClickHouse SQL을 직접 작성하고 실행할 수 있어 쿼리를 완전히 제어할 수 있습니다.
@@ -175,7 +183,9 @@ Time 및 Duration Time 컬럼에 대한 ORDER BY도 함께 포함됩니다.
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="raw SQL 쿼리 예시" border />
 
-## 데이터 링크 {#data-links}
+<div id="data-links">
+  ## 데이터 링크
+</div>
 
 Grafana의 [데이터 링크](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)를 사용해 새 쿼리로 연결할 수 있습니다.
 이 기능은 트레이스를 로그에 연결하고, 반대로 로그에서 트레이스로 연결할 수 있도록 ClickHouse 플러그인에서 활성화되어 있습니다. [데이터 소스의 구성](/ko/integrations/connectors/data-visualization/grafana/config#opentelemetry)에서 로그와 트레이스 모두에 대해 OpenTelemetry를 구성하면 가장 효과적으로 작동합니다.
@@ -193,18 +203,18 @@ Grafana의 [데이터 링크](https://grafana.com/docs/grafana/latest/panels-vis
 </div>
 
 <div id="how-to-make-a-data-link">
-  ### 데이터 링크 만들기 {#how-to-make-a-data-link}
+  ### 데이터 링크 만들기
 </div>
 
 쿼리에서 `traceID`라는 이름의 컬럼을 선택하면 데이터 링크를 만들 수 있습니다. 이 이름은 대소문자를 구분하지 않으며, &quot;ID&quot; 앞에 밑줄을 추가하는 것도 허용됩니다. 예시: `traceId`, `TraceId`, `TRACE_ID`, `tracE_iD`는 모두 유효한 이름입니다.
 
 [로그](#logs) 또는 [트레이스](#traces) 쿼리에서 OpenTelemetry가 활성화되어 있으면 트레이스 ID 컬럼이 자동으로 포함됩니다.
 
-트레이스 ID 컬럼이 있으면 플러그인이 데이터에 &quot;**트레이스 보기**&quot; 및 &quot;**로그 보기**&quot; 링크를 추가할 수 있습니다.
+트레이스 ID 컬럼을 포함하면 데이터에 &quot;**트레이스 보기**&quot; 및 &quot;**로그 보기**&quot; 링크가 추가됩니다.
 
-토글은 기본적으로 활성화되어 있습니다. 현재 쿼리 유형의 링크에는 기본값을 구성할 필요가 없지만, 교차 신호 링크는 데이터 소스에 대상 신호의 기본값이 구성된 경우에만 표시됩니다. 데이터 소스의 [트레이스](/ko/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) 및 [로그](/ko/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) 구성 섹션에 있는 **&quot;트레이스 보기&quot; 링크 표시** 및 **&quot;로그 보기&quot; 링크 표시** 토글로 이를 숨길 수 있습니다.
-
-### 링크 기능 {#linking-abilities}
+<div id="linking-abilities">
+  ### 링크 기능
+</div>
 
 데이터 링크가 있으면 제공된 트레이스 ID를 사용해 트레이스와 로그를 열 수 있습니다.
 
@@ -220,7 +230,7 @@ Grafana의 [데이터 링크](https://grafana.com/docs/grafana/latest/panels-vis
 </div>
 
 <div id="macros">
-  ## 매크로 {#macros}
+  ## 매크로
 </div>
 
 매크로는 쿼리에 동적 SQL을 추가하는 간단한 방법입니다.
@@ -229,7 +239,7 @@ Grafana의 [데이터 링크](https://grafana.com/docs/grafana/latest/panels-vis
 SQL Editor와 Query Builder에서 작성한 쿼리 모두 매크로를 사용할 수 있습니다.
 
 <div id="using-macros">
-  ### 매크로 사용 {#using-macros}
+  ### 매크로 사용
 </div>
 
 매크로는 쿼리의 어느 위치에든 포함할 수 있으며, 필요에 따라 여러 번 사용할 수도 있습니다.
@@ -257,7 +267,7 @@ WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
 플러그인은 중괄호 `{}`를 사용하는 표기법도 지원합니다. [매개변수](/ko/reference/syntax#defining-and-using-query-parameters) 내에서 쿼리가 필요한 경우 이 표기법을 사용하세요.
 
 <div id="list-of-macros">
-  ### 매크로 목록 {#list-of-macros}
+  ### 매크로 목록
 </div>
 
 다음은 플러그인에서 사용할 수 있는 모든 매크로 목록입니다.

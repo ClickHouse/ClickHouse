@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont autogénérés à partir du code source de ClickHouse.
 
-## number_of_free_entries_in_pool_to_execute_mutation {#number_of_free_entries_in_pool_to_execute_mutation}
+<div id="number_of_free_entries_in_pool_to_execute_mutation">
+  ## number_of_free_entries_in_pool_to_execute_mutation
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
@@ -30,7 +32,9 @@ ne doit pas dépasser le produit de [`background_pool_size`](/fr/reference/setti
 et de [`background_merges_mutations_concurrency_ratio`](/fr/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 Sinon, ClickHouse génère une exception.
 
-## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
+<div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
+  ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
@@ -45,11 +49,15 @@ Valeurs possibles :
 * Entier positif.
 
 La valeur du paramètre `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
-ne doit pas dépasser le produit de [`background_pool_size`](/fr/reference/settings/server-settings/settings/background#background_pool_size)
-et de [`background_merges_mutations_concurrency_ratio`](/fr/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
-Sinon, ClickHouse lève une exception.
+doit être inférieure à la valeur de
+[background&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/background#background_pool_size)
 
-## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number_of_free_entries_in_pool_to_lower_max_size_of_merge}
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/fr/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
+  Sinon, ClickHouse lève une exception.
+
+<div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">
+  ## number_of_free_entries_in_pool_to_lower_max_size_of_merge
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
@@ -63,7 +71,9 @@ Valeurs possibles :
 
 * Tout entier positif.
 
-## number_of_mutations_to_delay {#number_of_mutations_to_delay}
+<div id="number_of_mutations_to_delay">
+  ## number_of_mutations_to_delay
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -71,14 +81,18 @@ Si la table comporte au moins
 ce nombre de mutations non terminées, ralentissez artificiellement les mutations de la table.
 Désactivé si la valeur est 0
 
-## number_of_mutations_to_throw {#number_of_mutations_to_throw}
+<div id="number_of_mutations_to_throw">
+  ## number_of_mutations_to_throw
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Si la table comporte au moins ce nombre de mutations inachevées, l&#39;exception &#39;Too many mutations&#39; est générée.
 Désactivé si défini sur 0
 
-## number_of_partitions_to_consider_for_merge {#number_of_partitions_to_consider_for_merge}
+<div id="number_of_partitions_to_consider_for_merge">
+  ## number_of_partitions_to_consider_for_merge
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

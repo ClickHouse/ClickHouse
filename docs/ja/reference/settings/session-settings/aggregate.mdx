@@ -13,25 +13,25 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で利用でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## aggregate_function_input_format {#aggregate_function_input_format}
+<div id="aggregate_function_input_format">
+  ## aggregate_function_input_format
+</div>
 
 <SettingsInfoBlock type="AggregateFunctionInputFormat" default_value="state" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "INSERT 操作中の AggregateFunction 入力フォーマットを制御するための新しい設定。設定値はデフォルトで state に設定されています"}]}]} />
 
-入力フォーマットが `AggregateFunction` 型のカラムをどのように読み取るかを指定します。
+INSERT 操作時の AggregateFunction 入力フォーマット。
 
 設定可能な値:
 
-* `state` — 出力フォーマットが書き出すのと同じ、集約関数のシリアル化された状態 (デフォルト) 。
-* `value` — 集約関数の引数の値、または引数が複数ある場合はそれらのタプル。値は集約され、状態が構成されます。
-* `array` — 上記の `value` オプションで説明した値の配列。配列のすべての要素が集約され、状態が構成されます。
-
-`value` モードおよび `array` モードでは、フォーマットは対象のカラムを値の型として読み取ります。すなわち、`AggregateFunction(f, T)` の場合は `T`、`AggregateFunction(f, T1, T2)` の場合は `Tuple(T1, T2)`、`array` モードではそれらの `Array` として扱われます。値は、そのフォーマットが当該の型に用いる表現で書き込まれます。テキストフォーマットでは数値または文字列、JSON フォーマットでは JSON配列、`RowBinary` や `Native` ではその型のバイナリエンコーディング、`Parquet` ではその型のカラム、といった形です。これはすべての入力フォーマットに適用され、`Array`、`Tuple`、`Map` 内にネストされた `AggregateFunction` にも適用されます。
+* `state` — シリアライズされた state を含むバイナリ文字列 (デフォルト) 。これがデフォルトの動作で、AggregateFunction の値はバイナリデータとして受け取られます。
+* `value` — このフォーマットでは、集約関数の引数の単一の値、または引数が複数ある場合はそれらの Tuple を受け取ります。これらは対応する IDataType または DataTypeTuple を使ってデシリアライズされ、その後 state を形成するために集計されます。
+* `array` — このフォーマットでは、上記の `value` オプションで説明した値の Array を受け取ります。Array 内のすべての要素が集計されて state が形成されます。
 
 **例**
 
-次の構造を持つテーブルの場合:
+次の構造を持つテーブルに対して:
 
 ```sql
 CREATE TABLE example (
@@ -47,11 +47,6 @@ INSERT INTO example FORMAT CSV
 123,456
 ```
 
-```sql
-INSERT INTO example FORMAT JSONEachRow
-{"user_id": 123, "avg_session_length": 456}
-```
-
 `aggregate_function_input_format = 'array'` の場合:
 
 ```sql
@@ -59,14 +54,11 @@ INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
 ```
 
-```sql
-INSERT INTO example FORMAT JSONEachRow
-{"user_id": 123, "avg_session_length": [456, 789, 101]}
-```
+注: `value` および `array` フォーマットは、挿入時に値を生成して集約する必要があるため、デフォルトの `state` フォーマットよりも低速です。
 
-注意: `value` および `array` フォーマットは、挿入時に値の生成と集約を行う必要があるため、デフォルトの `state` フォーマットよりも低速です。
-
-## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
+<div id="aggregate_functions_null_for_empty">
+  ## aggregate_functions_null_for_empty
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
-## number_of_free_entries_in_pool_to_execute_mutation {#number_of_free_entries_in_pool_to_execute_mutation}
+<div id="number_of_free_entries_in_pool_to_execute_mutation">
+  ## number_of_free_entries_in_pool_to_execute_mutation
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
@@ -32,11 +34,13 @@ no debe superar el producto de [`background_pool_size`](/es/reference/settings/s
 y [`background_merges_mutations_concurrency_ratio`](/es/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 De lo contrario, ClickHouse lanzará una excepción.
 
-## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
+<div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
+  ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
-Cuando haya menos entradas libres en el grupo que el número especificado, no
+Cuando haya menos entradas disponibles en el grupo que el número especificado, no
 ejecute la optimización de toda la partición en segundo plano (esta tarea se genera
 al establecer `min_age_to_force_merge_seconds` y habilitar
 `min_age_to_force_merge_on_partition_only`). Esto permite dejar hilos libres
@@ -47,11 +51,15 @@ Posibles valores:
 * Entero positivo.
 
 El valor de la SETTING `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
-no debe superar el producto de [`background_pool_size`](/es/reference/settings/server-settings/settings/background#background_pool_size)
-y [`background_merges_mutations_concurrency_ratio`](/es/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
-De lo contrario, ClickHouse lanza una excepción.
+debe ser menor que el valor de
+[background&#95;pool&#95;size](/es/reference/settings/server-settings/settings/background#background_pool_size)
 
-## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number_of_free_entries_in_pool_to_lower_max_size_of_merge}
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/es/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
+  De lo contrario, ClickHouse lanza una excepción.
+
+<div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">
+  ## number_of_free_entries_in_pool_to_lower_max_size_of_merge
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
@@ -65,7 +73,9 @@ Valores posibles:
 
 * Cualquier entero positivo.
 
-## number_of_mutations_to_delay {#number_of_mutations_to_delay}
+<div id="number_of_mutations_to_delay">
+  ## number_of_mutations_to_delay
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -73,14 +83,18 @@ Si la tabla tiene al menos
 esa cantidad de mutaciones sin finalizar, ralentiza artificialmente las mutaciones de la tabla.
 Se desactiva si se establece en 0
 
-## number_of_mutations_to_throw {#number_of_mutations_to_throw}
+<div id="number_of_mutations_to_throw">
+  ## number_of_mutations_to_throw
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Si la tabla tiene al menos esa cantidad de mutaciones sin finalizar, se genera la excepción &#39;Too many mutations&#39;.
 Se desactiva si se establece en 0
 
-## number_of_partitions_to_consider_for_merge {#number_of_partitions_to_consider_for_merge}
+<div id="number_of_partitions_to_consider_for_merge">
+  ## number_of_partitions_to_consider_for_merge
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

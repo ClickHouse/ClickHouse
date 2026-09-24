@@ -22,7 +22,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 للحصول على نظرة عامة سريعة على جميع الخيارات، يمكن العثور على قائمة كاملة بخيارات الإعداد [هنا](#all-yaml-options).
 
-## الإعدادات الشائعة {#common-settings}
+<div id="common-settings">
+  ## الإعدادات الشائعة
+</div>
 
 مثال على شاشة التهيئة:
 
@@ -55,7 +57,7 @@ secureJsonData:
 لاحظ أنه تُضاف خاصية `version` عند حفظ التهيئة من واجهة المستخدم. ويُظهر ذلك إصدار المكوّن الإضافي الذي حُفظت به التهيئة.
 
 <div id="http-protocol">
-  ### بروتوكول HTTP {#http-protocol}
+  ### بروتوكول HTTP
 </div>
 
 ستظهر إعدادات إضافية إذا اخترت الاتصال عبر بروتوكول HTTP.
@@ -63,7 +65,7 @@ secureJsonData:
 <Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="خيارات إعداد HTTP إضافية" border />
 
 <div id="http-path">
-  #### مسار HTTP {#http-path}
+  #### مسار HTTP
 </div>
 
 إذا كان خادم HTTP لديك مُتاحًا ضمن مسار URL مختلف، يمكنك إضافته هنا.
@@ -75,7 +77,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### رؤوس HTTP مخصّصة {#custom-http-headers}
+  #### رؤوس HTTP مخصّصة
 </div>
 
 يمكنك إضافة رؤوس مخصّصة إلى الطلبات المُرسلة إلى الخادم لديك.
@@ -104,7 +106,9 @@ secureJsonData:
   secureHttpHeaders.X-Example-Secure-Header: secure header value
 ```
 
-## إعدادات إضافية {#additional-settings}
+<div id="additional-settings">
+  ## إعدادات إضافية
+</div>
 
 هذه الإعدادات الإضافية اختيارية.
 
@@ -123,7 +127,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry {#opentelemetry}
+  ### OpenTelemetry
 </div>
 
 يأتي OpenTelemetry ‏(OTel) مدمجًا بشكل وثيق في المكوّن الإضافي.
@@ -132,7 +136,9 @@ jsonData:
 
 ويجب أيضًا تهيئة هذه الإعدادات الافتراضية لتمكين [روابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links)، وهي ميزة تتيح مسارات عمل observability قوية.
 
-### السجلات {#logs}
+<div id="logs">
+  ### السجلات
+</div>
 
 لتسريع [إنشاء استعلامات السجلات](/ar/integrations/connectors/data-visualization/grafana/query-builder#logs)، يمكنك تعيين قاعدة بيانات/جدول افتراضي، بالإضافة إلى أعمدة لاستعلام السجلات. سيؤدي ذلك إلى تحميل منشئ الاستعلام مسبقًا باستعلام سجلات جاهز للتشغيل، مما يجعل التصفح في صفحة Explore أسرع لسيناريوهات observability.
 
@@ -141,11 +147,11 @@ jsonData:
 
 مع أن OpenTelemetry ليس مطلوبًا للسجلات، فإن استخدام مجموعة بيانات واحدة للسجلات/التتبعات يساعد في توفير سير عمل أكثر سلاسة لـ observability باستخدام [رابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links).
 
-مثال على شاشة تهيئة السجلات:
+مثال على شاشة إعداد السجلات:
 
 <Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="إعداد السجلات" border />
 
-مثال على YAML لتهيئة السجلات:
+مثال على YAML لإعداد السجلات:
 
 ```yaml
 jsonData:
@@ -156,34 +162,27 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
-
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
 
-#### تعطيل روابط &quot;View logs&quot; {#disabling-view-logs-links}
-
-يتضمن قسم **ربط معرّف التتبّع** في تهيئة السجلات مفتاح التبديل **إظهار روابط &quot;View logs&quot;**.
-يتحكم هذا المفتاح في ما إذا كان المكوّن الإضافي تُرفق روابط &quot;View logs&quot; [لروابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links) بحقول معرّف التتبّع في نتائج الاستعلام.
-يكون مفتاح التبديل مفعّلًا افتراضيًا. لا يتطلب رابط &quot;View logs&quot; لنوع الاستعلام نفسه إعدادات افتراضية للسجلات، بينما يتطلبها رابط &quot;View logs&quot; متعدد الإشارات من نتائج استعلامات التتبّع.
-أوقف مفتاح التبديل، أو اضبط `showLogLinks: false` في YAML لإخفائها.
-
-### التتبعات {#traces}
+<div id="traces">
+  ### التتبعات
+</div>
 
 لتسريع [إنشاء الاستعلامات للتتبعات](/ar/integrations/connectors/data-visualization/grafana/query-builder#traces)، يمكنك تعيين قاعدة بيانات/جدول افتراضيين، بالإضافة إلى الأعمدة الخاصة باستعلام التتبع. سيؤدي ذلك إلى التحميل المسبق لمنشئ الاستعلام باستعلام بحث عن تتبع قابل للتشغيل، مما يسرّع التصفح في صفحة Explore لأغراض observability.
 
 إذا كنت تستخدم OpenTelemetry، فيجب تفعيل مفتاح &quot;**Use OTel**&quot;، وتعيين **جدول التتبع الافتراضي** إلى `otel_traces`.
-وسيؤدي ذلك تلقائيًا إلى تجاوز الأعمدة الافتراضية لاستخدام إصدار مخطط OTel المحدد.
+وسيؤدي ذلك تلقائيًا إلى استبدال الأعمدة الافتراضية لاستخدام إصدار مخطط OTel المحدد.
 ورغم أن OpenTelemetry ليس مطلوبًا، فإن هذه الميزة تعمل بأفضل شكل عند استخدام مخططه للتتبعات.
 
-مثال على شاشة تهيئة التتبعات:
+مثال على شاشة إعداد التتبعات:
 
 <Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="إعداد التتبعات" border />
 
-مثال على YAML لتهيئة التتبعات:
+مثال على YAML لإعداد التتبعات:
 
 ```yaml
 jsonData:
@@ -193,8 +192,6 @@ jsonData:
 
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
-
-    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
 
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
@@ -209,15 +206,8 @@ jsonData:
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
-#### تعطيل روابط &quot;View trace&quot; {#disabling-view-trace-links}
-
-يحتوي قسم **ربط معرّف التتبّع** في تهيئة التتبعات على مفتاح التبديل **إظهار روابط &quot;View trace&quot;**.
-يتحكم هذا المفتاح في إرفاق المكوّن الإضافي لروابط &quot;View trace&quot; من [روابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links) بحقول معرّف التتبّع في نتائج الاستعلامات.
-يكون مفتاح التبديل مفعّلًا افتراضيًا. لا يتطلب رابط &quot;View trace&quot; للاستعلام من النوع نفسه إعدادات تتبّع افتراضية، بينما يتطلبها رابط &quot;View trace&quot; متعدد الإشارات من نتائج استعلامات السجلات.
-أوقف مفتاح التبديل، أو اضبط `showTraceLinks: false` في YAML، لإخفائها.
-
 <div id="column-aliases">
-  ### الأسماء المستعارة للأعمدة {#column-aliases}
+  ### الأسماء المستعارة للأعمدة
 </div>
 
 يُعدّ استخدام الأسماء المستعارة للأعمدة طريقةً عملية للاستعلام عن بياناتك بأسماء وأنواع مختلفة.
@@ -231,7 +221,7 @@ jsonData:
 * تطبّق كثيرًا دوالًا لتحويل الأعمدة التي تختارها
 
 <div id="table-defined-alias-columns">
-  #### أعمدة ALIAS المعرّفة على الجدول {#table-defined-alias-columns}
+  #### أعمدة ALIAS المعرّفة على الجدول
 </div>
 
 يوفّر ClickHouse دعمًا مدمجًا للأسماء المستعارة للأعمدة، ويعمل مع Grafana مباشرةً.
@@ -250,7 +240,9 @@ CREATE TABLE alias_example (
 
 لمزيد من المعلومات، اطّلع على وثائق نوع العمود [ALIAS](/ar/reference/statements/create/table#alias).
 
-#### جداول الأسماء المستعارة للأعمدة {#column-alias-tables}
+<div id="column-alias-tables">
+  #### جداول الأسماء المستعارة للأعمدة
+</div>
 
 يوفّر Grafana، افتراضيًا، اقتراحات للأعمدة استنادًا إلى الاستجابة من `DESC table`.
 في بعض الحالات، قد ترغب في تجاوز الأعمدة التي يراها Grafana بالكامل.
@@ -292,7 +284,9 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 يمكن استخدام كلا نوعَي الأسماء المستعارة لإجراء تحويلات معقدة للأنواع أو لاستخراج حقول JSON.
 
-## جميع خيارات YAML {#all-yaml-options}
+<div id="all-yaml-options">
+  ## جميع خيارات YAML
+</div>
 
 فيما يلي جميع خيارات تهيئة YAML التي يوفّرها المكوّن الإضافي.
 تتضمن بعض الحقول قيمًا نموذجية، بينما يكتفي بعضها الآخر بعرض نوع الحقل.
@@ -329,7 +323,6 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
-        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -338,7 +331,6 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
-        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

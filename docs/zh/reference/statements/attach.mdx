@@ -20,7 +20,9 @@ ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] 
 
 如果某个表此前已被分离 ([DETACH](/zh/reference/statements/detach) 查询) ，也就是说其结构已知，则可以使用简写形式，而无需定义结构。
 
-## 附加现有表 {#attach-existing-table}
+<div id="attach-existing-table">
+  ## 附加现有表
+</div>
 
 **语法**
 
@@ -32,12 +34,15 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 如果该表已被永久分离，服务器启动时就不会重新附加它，因此你需要显式使用 `ATTACH` 查询。
 
-## 创建新表并附加数据 {#create-new-table-and-attach-data}
+<div id="create-new-table-and-attach-data">
+  ## 创建新表并附加数据
+</div>
 
-### 使用指定的表数据路径 {#with-specified-path-to-table-data}
+<div id="with-specified-path-to-table-data">
+  ### 使用指定的表数据路径
+</div>
 
 该查询会使用给定的结构创建一个新表，并将 `user_files` 中指定目录里的表数据附加到该表。
-执行此查询需要用户拥有 `READ ON FILE` 和 `WRITE ON FILE` 特权：它会读取该目录并将其移动到新表的数据路径下。
 
 **语法**
 
@@ -60,7 +65,9 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-### 使用指定表 UUID {#with-specified-table-uuid}
+<div id="with-specified-table-uuid">
+  ### 使用指定表 UUID
+</div>
 
 此查询会使用给定的结构创建一个新表，并附加具有指定 UUID 的表中的数据。
 该功能由 [Atomic](/zh/reference/engines/database-engines/atomic) 数据库引擎支持。
@@ -71,7 +78,9 @@ SELECT * FROM test;
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-## 将 MergeTree 表附加为 ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
+<div id="attach-mergetree-table-as-replicatedmergetree">
+  ## 将 MergeTree 表附加为 ReplicatedMergeTree
+</div>
 
 允许将非复制的 MergeTree 表附加为 ReplicatedMergeTree。创建的 ReplicatedMergeTree 表将使用 `default_replica_path` 和 `default_replica_name` 设置的值。也可以将复制表附加为普通 MergeTree 表。
 
@@ -115,7 +124,9 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-## 附加现有字典 {#attach-existing-dictionary}
+<div id="attach-existing-dictionary">
+  ## 附加现有字典
+</div>
 
 将先前处于 `分离` 状态的字典重新附加。
 
@@ -125,7 +136,9 @@ SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## 附加现有数据库 {#attach-existing-database}
+<div id="attach-existing-database">
+  ## 附加现有数据库
+</div>
 
 将先前已分离的数据库重新附加。
 

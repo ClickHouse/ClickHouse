@@ -13,15 +13,19 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [ملف المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## temporary_files_buffer_size {#temporary_files_buffer_size}
+<div id="temporary_files_buffer_size">
+  ## temporary_files_buffer_size
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1048576"},{"label": "إعداد جديد"}]}]} />
 
-حجم المخزن المؤقت لعمليات كتابة الملفات المؤقتة. وكلما زاد حجم المخزن المؤقت، قلّ عدد استدعاءات النظام، لكنه يستهلك ذاكرة أكبر. وأي قيمة تتجاوز 1 جيبي بايت تُخفَّض إلى 1 جيبي بايت.
+حجم المخزن المؤقت لعمليات كتابة الملفات المؤقتة. وكلما زاد حجم المخزن المؤقت، قلّ عدد استدعاءات النظام، لكنه يستهلك ذاكرة أكبر.
 
-## temporary_files_codec {#temporary_files_codec}
+<div id="temporary_files_codec">
+  ## temporary_files_codec
+</div>
 
 <SettingsInfoBlock type="String" default_value="LZ4" />
 

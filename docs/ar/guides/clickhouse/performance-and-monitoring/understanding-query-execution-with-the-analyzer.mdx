@@ -33,7 +33,9 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 لنلقِ نظرة على كل مكوّن أثناء تنفيذ الاستعلام. سنأخذ بضعة استعلامات ثم نفحصها باستخدام عبارة `EXPLAIN`.
 
-## المُحلِّل {#parser}
+<div id="parser">
+  ## المُحلِّل
+</div>
 
 يهدف المُحلِّل إلى تحويل نص الاستعلام إلى AST (شجرة البنية المجرّدة). ويمكن توضيح هذه الخطوة باستخدام `EXPLAIN AST`:
 
@@ -78,21 +80,22 @@ graph TD
     tisqe --> te["TableExpression"]
     te --> ti["TableIdentifier session_events"]
 ```
-
 لكل عقدة عُقد فرعية مرتبطة بها، وتمثل الشجرة بأكملها البنية العامة لاستعلامك. وهذه بنية منطقية تساعد في معالجة الاستعلام. ومن منظور المستخدم النهائي (ما لم يكن مهتمًا بتنفيذ الاستعلام)، فهي ليست مفيدة كثيرًا؛ إذ تُستخدم هذه الأداة أساسًا من قِبل المطورين.
 
-## المحلّل {#analyzer}
+<div id="analyzer">
+  ## المحلّل
+</div>
 
-المحلّل مفعّل افتراضيًا منذ ClickHouse `24.3`، وهو طريقة تحليل الاستعلام الوحيدة منذ `26.9`، حيث أصبح `enable_analyzer` إعدادًا مهجورًا لم يعد بالإمكان تعطيله.
+لدى ClickHouse حاليًا معماريتان للمحلّل. يمكنك استخدام المعمارية القديمة عبر تعيين: `enable_analyzer=0`. المعمارية الحالية مفعّلة افتراضيًا منذ ClickHouse `24.3`. وسنقتصر هنا على وصف المعمارية الحالية فقط، لأن القديمة أصبحت مهملة ويُحتفظ بها فقط من أجل التوافق مع الإصدارات السابقة.
 
 <Note>
-  يُعدّ المحلّل مكوّنًا أساسيًا في خطوات معالجة الاستعلام، وقد يؤثر سلبًا في بعض الاستعلامات: راجع [حالات عدم التوافق المعروفة](/ar/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities) للاطلاع على الاستعلامات التي يلزم تحديثها من أجله.
+  يُفترض أن توفّر لنا المعمارية الحالية إطارًا أفضل لتحسين أداء ClickHouse. ومع ذلك، وبما أنها مكوّن أساسي في خطوات معالجة الاستعلام، فقد تؤثر سلبًا في بعض الاستعلامات، كما توجد [حالات عدم توافق معروفة](/ar/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). يمكنك الرجوع إلى المعمارية القديمة بتغيير الإعداد `enable_analyzer` على مستوى الاستعلام أو المستخدم.
 </Note>
 
 يُعدّ المحلّل مرحلة مهمة في تنفيذ الاستعلام. فهو يأخذ AST ويحوّله إلى شجرة استعلام. والفائدة الأساسية لشجرة الاستعلام مقارنةً بـ AST هي أن كثيرًا من المكوّنات يكون قد جرى حلّها، مثل التخزين على سبيل المثال. كما يصبح معروفًا أيضًا من أي جدول ستتم القراءة، وتُحلّ الأسماء المستعارة، وتعرف الشجرة أنواع البيانات المختلفة المستخدمة. ومع هذه المزايا، يمكن للمحلّل تطبيق تحسينات. وتعمل هذه التحسينات عبر &quot;تمريرات&quot;. وتبحث كل تمريرة عن نوع مختلف من التحسينات. يمكنك الاطلاع على جميع التمريرات [هنا](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249)، ولنرَ ذلك عمليًا باستخدام استعلامنا السابق:
 
 ```sql
-EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
 ```
 
 ```response
@@ -110,11 +113,12 @@ EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp
 │             IDENTIFIER id: 7, identifier: timestamp                                    │
 │   JOIN TREE                                                                            │
 │     IDENTIFIER id: 8, identifier: session_events                                       │
+│   SETTINGS allow_experimental_analyzer=1                                               │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
-EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
 ```
 
 ```response
@@ -135,13 +139,14 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 │             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
 │   JOIN TREE                                                                               │
 │     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
+│   SETTINGS allow_experimental_analyzer=1                                                  │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 بين عمليتَي التنفيذ، يمكنك ملاحظة كيفية معالجة الأسماء المستعارة والإسقاطات.
 
 <div id="planner">
-  ## المُخطِّط {#planner}
+  ## المُخطِّط
 </div>
 
 يأخذ المُخطِّط شجرة الاستعلام ويبني منها خطة استعلام. توضّح لنا شجرة الاستعلام ما الذي نريد فعله باستعلام معيّن، بينما توضّح لنا خطة الاستعلام كيف سننفّذ ذلك. كما ستُجرى تحسينات إضافية ضمن خطة الاستعلام. يمكنك استخدام `EXPLAIN PLAN` أو `EXPLAIN` لرؤية خطة الاستعلام (سينفّذ `EXPLAIN` الأمر `EXPLAIN PLAN`).
@@ -261,7 +266,7 @@ GROUP BY type
 يمكنك الآن رؤية جميع المدخلات والدوال والأسماء المستعارة وأنواع البيانات المستخدمة. كما يمكنك الاطلاع [هنا](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h) على بعض التحسينات التي سيطبّقها المُخطِّط.
 
 <div id="query-pipeline">
-  ## مسار تنفيذ الاستعلام {#query-pipeline}
+  ## مسار تنفيذ الاستعلام
 </div>
 
 يُشتق مسار تنفيذ الاستعلام من خطة الاستعلام. وهو يشبه خطة الاستعلام إلى حد كبير، إلا أنه ليس شجرة بل رسمًا بيانيًا. ويُظهر كيف سينفّذ ClickHouse الاستعلام وما الموارد التي ستُستخدم. ويُعد تحليل مسار تنفيذ الاستعلام مفيدًا جدًا لتحديد موضع الاختناق من حيث المدخلات/المخرجات. لنأخذ الاستعلام السابق ونلقِ نظرة على تنفيذ مسار تنفيذ الاستعلام:
@@ -462,7 +467,7 @@ digraph
 لذلك قرر المنفّذ عدم تنفيذ العمليات بالتوازي لأن حجم البيانات لم يكن كبيرًا بما يكفي. وبعد إضافة المزيد من الصفوف، قرر المنفّذ استخدام عدة خيوط كما هو موضح في الرسم البياني.
 
 <div id="executor">
-  ## المنفّذ {#executor}
+  ## المنفّذ
 </div>
 
 أخيرًا، يتولى المنفّذ الخطوة الأخيرة من تنفيذ الاستعلام. إذ يأخذ مسار تنفيذ الاستعلام وينفّذه. وتوجد أنواع مختلفة من المنفّذات، بحسب ما إذا كنت تنفّذ `SELECT` أو `INSERT` أو `INSERT SELECT`.

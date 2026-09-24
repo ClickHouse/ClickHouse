@@ -15,23 +15,29 @@ Permite o processamento simultâneo de arquivos que correspondem a um caminho es
   Caso esses arquivos sejam diferentes entre os nós, o valor de retorno não pode ser determinado antecipadamente e depende da ordem em que os nós worker solicitam tarefas ao iniciador.
 </Note>
 
-## Sintaxe {#syntax}
+<div id="syntax">
+  ## Sintaxe
+</div>
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-## Argumentos {#arguments}
+<div id="arguments">
+  ## Argumentos
+</div>
 
-| Argumento            | Descrição                                                                                                                                                                                                                                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_name`       | Nome de um cluster usado para criar um conjunto de endereços e parâmetros de conexão para servidores remotos e locais.                                                                                                                                                                                                    |
-| `path`               | Caminho relativo para o arquivo em [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings/user#user_files_path). O caminho do arquivo também oferece suporte a [globs](#globs-in-path).                                                                                                                   |
-| `format`             | [Formato](/pt-BR/reference/formats/index) dos arquivos. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                                                                                                                                           |
-| `structure`          | Estrutura da tabela no formato `'UserID UInt64, Name String'`. Determina os nomes e os tipos das colunas. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                                                                                   |
-| `compression_method` | Método de compressão. Os valores suportados são `none` (sem compressão), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2` e `snappy`. Para `snappy`, o formato wire é selecionado pela configuração [snappy&#95;mode](/pt-BR/reference/settings/session-settings/other#snappy_mode) (`basic` por padrão). |
+| Argumento            | Descrição                                                                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`       | Nome de um cluster usado para criar um conjunto de endereços e parâmetros de conexão para servidores remotos e locais.                                                                                  |
+| `path`               | Caminho relativo para o arquivo em [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings/user#user_files_path). O caminho do arquivo também oferece suporte a [globs](#globs-in-path). |
+| `format`             | [Formato](/pt-BR/reference/formats/index) dos arquivos. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                         |
+| `structure`          | Estrutura da tabela no formato `'UserID UInt64, Name String'`. Determina os nomes e os tipos das colunas. Tipo: [String](/pt-BR/reference/data-types/string).                                                 |
+| `compression_method` | Método de compressão. Os tipos de compressão suportados são `gz`, `br`, `xz`, `zst`, `lz4` e `bz2`.                                                                                                     |
 
-## Valor retornado {#returned-value}
+<div id="returned-value">
+  ## Valor retornado
+</div>
 
 Uma tabela com o formato e a estrutura especificados, com dados de arquivos que correspondem ao caminho especificado.
 
@@ -80,11 +86,15 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-## Globs no Caminho {#globs-in-path}
+<div id="globs-in-path">
+  ## Globs no Caminho
+</div>
 
 Todos os padrões compatíveis com a função de tabela [File](/pt-BR/reference/functions/table-functions/file#globs-in-path) também são suportados pelo FileCluster.
 
-## Relacionados {#related}
+<div id="related">
+  ## Relacionados
+</div>
 
 * [Função de tabela File](/pt-BR/reference/functions/table-functions/file)
 

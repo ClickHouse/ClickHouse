@@ -11,22 +11,37 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## allow_experimental_analyzer {#allow_experimental_analyzer}
+<div id="allow_experimental_ai_functions">
+  ## allow_experimental_ai_functions
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Ativa funções de IA experimentais (por exemplo, `aiGenerateContent`). Essas funções fazem chamadas HTTP externas para provedores de IA.
+
+<div id="allow_experimental_analyzer">
+  ## allow_experimental_analyzer
+</div>
 
 **Aliases**: `enable_analyzer`
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "A configuração está obsoleta: o analisador é obrigatório e a antiga análise de consultas não é mais compatível. Desabilitá-lo é recusado em vez de ignorado, e a `compatibility` com uma versão anterior à 24.3 não o reverte mais."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "Habilita o analisador e o planner por padrão."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Ativa o analisador e o planejador por padrão."}]}]} />
 
-Obsoleto desde a v26.9: o analisador não pode mais ser desabilitado.
+Ativa o analisador.
 
-O analisador é a infraestrutura de análise e planejamento de consultas adotada por padrão desde a v24.3. Na v26.9, esta configuração foi congelada em seu único valor compatível, `1`: qualquer tentativa de defini-la como `0` é rejeitada, e a configuração `compatibility` não a reverte mais. Na v26.10, a análise de consultas para a qual ela alternava foi removida. Remova `enable_analyzer = 0` de consultas, configurações de sessão, settings profiles e configurações de client. Para comparar o comportamento ou o desempenho de uma consulta com a antiga análise de consultas, use uma versão do ClickHouse anterior à v26.9.
-
-## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
+<div id="allow_experimental_cleanup_old_data_files_compaction">
+  ## allow_experimental_cleanup_old_data_files_compaction
+</div>
 
 <ExperimentalBadge />
 
@@ -36,7 +51,47 @@ O analisador é a infraestrutura de análise e planejamento de consultas adotada
 
 Permite a limpeza de arquivos de dados antigos durante a compactação do Iceberg.
 
-## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
+<div id="allow_experimental_codecs">
+  ## allow_experimental_codecs
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Se estiver definido como true, permite especificar qualquer codec de compressão experimental.
+
+<div id="allow_experimental_correlated_subqueries">
+  ## allow_experimental_correlated_subqueries
+</div>
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Suporte a subconsultas correlacionadas marcado como Beta."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Nova configuração adicionada para permitir a execução de subconsultas correlacionadas."}]}]} />
+
+Permite executar subconsultas correlacionadas.
+
+<div id="allow_experimental_database_glue_catalog">
+  ## allow_experimental_database_glue_catalog
+</div>
+
+<BetaBadge />
+
+**Aliases**: `allow_database_glue_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "Permite o uso experimental do mecanismo de banco de dados DataLakeCatalog com catalog_type = 'glue'"}]}]} />
+
+Permite o uso experimental do mecanismo de banco de dados DataLakeCatalog com catalog&#95;type = &#39;glue&#39;
+
+Valor padrão no Cloud: `1`.
+
+<div id="allow_experimental_database_hms_catalog">
+  ## allow_experimental_database_hms_catalog
+</div>
 
 <ExperimentalBadge />
 
@@ -46,7 +101,25 @@ Permite a limpeza de arquivos de dados antigos durante a compactação do Iceber
 
 Permite o mecanismo de banco de dados experimental DataLakeCatalog com catalog&#95;type = &#39;hms&#39;
 
-## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
+<div id="allow_experimental_database_iceberg">
+  ## allow_experimental_database_iceberg
+</div>
+
+<BetaBadge />
+
+**Aliases**: `allow_database_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+
+Permite o uso do mecanismo de banco de dados experimental DataLakeCatalog com catalog&#95;type = &#39;iceberg&#39;
+
+Valor padrão no Cloud: `1`.
+
+<div id="allow_experimental_database_materialized_postgresql">
+  ## allow_experimental_database_materialized_postgresql
+</div>
 
 <ExperimentalBadge />
 
@@ -54,7 +127,9 @@ Permite o mecanismo de banco de dados experimental DataLakeCatalog com catalog&#
 
 Permite a criação de um database com Engine=MaterializedPostgreSQL(...).
 
-## allow_experimental_database_paimon_rest_catalog {#allow_experimental_database_paimon_rest_catalog}
+<div id="allow_experimental_database_paimon_rest_catalog">
+  ## allow_experimental_database_paimon_rest_catalog
+</div>
 
 <ExperimentalBadge />
 
@@ -64,7 +139,39 @@ Permite a criação de um database com Engine=MaterializedPostgreSQL(...).
 
 Permite usar o mecanismo de banco de dados experimental DataLakeCatalog com catalog&#95;type = &#39;paimon&#95;rest&#39;
 
-## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
+<div id="allow_experimental_database_unity_catalog">
+  ## allow_experimental_database_unity_catalog
+</div>
+
+<BetaBadge />
+
+**Aliases**: `allow_database_unity_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "Permite o mecanismo de banco de dados experimental DataLakeCatalog com catalog_type = 'unity'"}]}]} />
+
+Permite o mecanismo de banco de dados experimental DataLakeCatalog com catalog&#95;type = &#39;unity&#39;
+
+Valor padrão no Cloud: `1`.
+
+<div id="allow_experimental_delta_lake_writes">
+  ## allow_experimental_delta_lake_writes
+</div>
+
+<BetaBadge />
+
+**Aliases**: `allow_delta_lake_writes`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "As gravações no Delta Lake passaram para Beta."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+
+Habilita o recurso de gravação do delta-kernel.
+
+<div id="allow_experimental_eval_table_function">
+  ## allow_experimental_eval_table_function
+</div>
 
 <ExperimentalBadge />
 
@@ -74,7 +181,9 @@ Permite usar o mecanismo de banco de dados experimental DataLakeCatalog com cata
 
 Ativa a função de tabela experimental `eval`.
 
-## allow_experimental_expire_snapshots {#allow_experimental_expire_snapshots}
+<div id="allow_experimental_expire_snapshots">
+  ## allow_experimental_expire_snapshots
+</div>
 
 <ExperimentalBadge />
 
@@ -84,7 +193,29 @@ Ativa a função de tabela experimental `eval`.
 
 Permite a execução do comando experimental do Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
-## allow_experimental_hash_functions {#allow_experimental_hash_functions}
+<div id="allow_experimental_funnel_functions">
+  ## allow_experimental_funnel_functions
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Ativa funções experimentais de análise de funil.
+
+<div id="allow_experimental_geo_types_in_iceberg">
+  ## allow_experimental_geo_types_in_iceberg
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nova configuração para permitir interpretar campos geometry\/geography do Iceberg como o tipo Geometry."}]}]} />
+
+Permite interpretar os tipos de campo `geometry` e `geography` do Iceberg como o tipo `Geometry` (Variant) do ClickHouse.
+
+<div id="allow_experimental_hash_functions">
+  ## allow_experimental_hash_functions
+</div>
 
 <ExperimentalBadge />
 
@@ -92,7 +223,9 @@ Permite a execução do comando experimental do Iceberg `ALTER TABLE ... EXECUTE
 
 Ativa funções de hash experimentais
 
-## allow_experimental_iceberg_compaction {#allow_experimental_iceberg_compaction}
+<div id="allow_experimental_iceberg_compaction">
+  ## allow_experimental_iceberg_compaction
+</div>
 
 <ExperimentalBadge />
 
@@ -102,7 +235,45 @@ Ativa funções de hash experimentais
 
 Permite usar explicitamente &#39;OPTIMIZE&#39; em tabelas Iceberg.
 
-## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
+<div id="allow_experimental_join_right_table_sorting">
+  ## allow_experimental_join_right_table_sorting
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Se estiver definido como true e as condições de `join_to_sort_minimum_perkey_rows` e `join_to_sort_maximum_table_rows` forem atendidas, a tabela da direita será reordenada pela chave para melhorar o desempenho em left hash join ou inner hash join"}]}]} />
+
+Se estiver definido como true e as condições de `join_to_sort_minimum_perkey_rows` e `join_to_sort_maximum_table_rows` forem atendidas, a tabela da direita será reordenada pela chave para melhorar o desempenho em left hash join ou inner hash join.
+
+<div id="allow_experimental_json_lazy_type_hints">
+  ## allow_experimental_json_lazy_type_hints
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nova configuração experimental para Lazy Type Hints no tipo JSON"}]}]} />
+
+Ativa as Lazy Type Hints experimentais para o tipo JSON. Esse recurso permite otimizar as conversões de tipo de JSON ao adiar a avaliação das type hints.
+
+<div id="allow_experimental_kafka_offsets_storage_in_keeper">
+  ## allow_experimental_kafka_offsets_storage_in_keeper
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Permite o uso do motor de armazenamento experimental do Kafka que armazena os offsets confirmados no ClickHouse Keeper"}]}]} />
+
+Permite o uso do recurso experimental para armazenar offsets do Kafka no ClickHouse Keeper. Quando habilitado, um caminho do ClickHouse Keeper e o nome da réplica podem ser especificados para o mecanismo de tabela Kafka. Como resultado, em vez do mecanismo Kafka padrão, será usado um novo tipo de motor de armazenamento que armazena os offsets confirmados principalmente no ClickHouse Keeper
+
+<div id="allow_experimental_kusto_dialect">
+  ## allow_experimental_kusto_dialect
+</div>
 
 <ExperimentalBadge />
 
@@ -110,9 +281,21 @@ Permite usar explicitamente &#39;OPTIMIZE&#39; em tabelas Iceberg.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Uma nova configuração"}]}]} />
 
-Habilita o dialeto Kusto Query Language (KQL), uma alternativa ao SQL.
+Habilita o Kusto Query Language (KQL), uma alternativa ao SQL.
 
-## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
+<div id="allow_experimental_materialized_postgresql_table">
+  ## allow_experimental_materialized_postgresql_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Permite o uso do motor de tabela MaterializedPostgreSQL. Desabilitado por padrão, pois esse recurso é experimental
+
+<div id="allow_experimental_nlp_functions">
+  ## allow_experimental_nlp_functions
+</div>
 
 <ExperimentalBadge />
 
@@ -120,7 +303,26 @@ Habilita o dialeto Kusto Query Language (KQL), uma alternativa ao SQL.
 
 Ativa funções experimentais de processamento de linguagem natural.
 
-## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
+<div id="allow_experimental_nullable_tuple_type">
+  ## allow_experimental_nullable_tuple_type
+</div>
+
+<BetaBadge />
+
+**Aliases**: `enable_nullable_tuple_type`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Nova configuração experimental"}]}]} />
+
+Permite criar colunas [Nullable](/pt-BR/reference/data-types/nullable) [Tuple](/pt-BR/reference/data-types/tuple) em tabelas.
+
+Essa configuração não controla se as subcolunas de tuple extraídas podem ser `Nullable` (por exemplo, de colunas Dynamic, Variant, JSON ou Tuple).
+Use `allow_nullable_tuple_in_extracted_subcolumns` para controlar se as subcolunas de tuple extraídas podem ser `Nullable`.
+
+<div id="allow_experimental_object_storage_queue_hive_partitioning">
+  ## allow_experimental_object_storage_queue_hive_partitioning
+</div>
 
 <ExperimentalBadge />
 
@@ -130,7 +332,9 @@ Ativa funções experimentais de processamento de linguagem natural.
 
 Permite usar o particionamento Hive com os motores S3Queue/AzureQueue
 
-## allow_experimental_paimon_storage_engine {#allow_experimental_paimon_storage_engine}
+<div id="allow_experimental_paimon_storage_engine">
+  ## allow_experimental_paimon_storage_engine
+</div>
 
 <ExperimentalBadge />
 
@@ -140,7 +344,9 @@ Permite usar o particionamento Hive com os motores S3Queue/AzureQueue
 
 Permite criar tabelas com os motores de tabela Paimon*.
 
-## allow_experimental_parallel_reading_from_replicas {#allow_experimental_parallel_reading_from_replicas}
+<div id="allow_experimental_parallel_reading_from_replicas">
+  ## allow_experimental_parallel_reading_from_replicas
+</div>
 
 **Aliases**: `enable_parallel_replicas`
 
@@ -148,7 +354,9 @@ Permite criar tabelas com os motores de tabela Paimon*.
 
 Use até `max_parallel_replicas` réplicas de cada shard para a execução de consultas SELECT. A leitura é paralelizada e coordenada dinamicamente. 0 - desabilitado, 1 - habilitado, desabilita silenciosamente em caso de falha, 2 - habilitado, gera uma exceção em caso de falha
 
-## allow_experimental_polyglot_dialect {#allow_experimental_polyglot_dialect}
+<div id="allow_experimental_polyglot_dialect">
+  ## allow_experimental_polyglot_dialect
+</div>
 
 <ExperimentalBadge />
 
@@ -158,7 +366,9 @@ Use até `max_parallel_replicas` réplicas de cada shard para a execução de co
 
 Ativa o transpilador SQL poliglota - transpila SQL de mais de 30 dialetos (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB etc.) para ClickHouse SQL.
 
-## allow_experimental_prql_dialect {#allow_experimental_prql_dialect}
+<div id="allow_experimental_prql_dialect">
+  ## allow_experimental_prql_dialect
+</div>
 
 <ExperimentalBadge />
 
@@ -168,7 +378,72 @@ Ativa o transpilador SQL poliglota - transpila SQL de mais de 30 dialetos (MySQL
 
 Habilita o PRQL — uma alternativa ao SQL.
 
-## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
+<div id="allow_experimental_time_series_aggregate_functions">
+  ## allow_experimental_time_series_aggregate_functions
+</div>
+
+<ExperimentalBadge />
+
+**Aliases**: `allow_experimental_ts_to_grid_aggregate_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Nova configuração para habilitar funções de agregação experimentais timeSeries*."}]}]} />
+
+Funções de agregação experimentais timeSeries* para reamostragem de séries temporais no estilo do Prometheus e para cálculo de taxa e delta.
+
+<div id="allow_experimental_time_series_table">
+  ## allow_experimental_time_series_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Adicionada nova configuração para permitir o motor de tabela TimeSeries"}]}]} />
+
+Permite criar tabelas com o motor de tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series). Valores possíveis:
+
+* 0 — o motor de tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series) está desabilitado.
+* 1 — o motor de tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series) está habilitado.
+
+<div id="allow_experimental_unique_key">
+  ## allow_experimental_unique_key
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nova configuração que controla a cláusula experimental UNIQUE KEY em tabelas da família MergeTree"}]}]} />
+
+Permite criar tabelas com a cláusula `UNIQUE KEY` em motores da família MergeTree.
+
+<div id="allow_experimental_url_wildcard_from_index_pages">
+  ## allow_experimental_url_wildcard_from_index_pages
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nova configuração para permitir a expansão de curingas na função de tabela `url` por meio da listagem de páginas de índice HTTP."}]}]} />
+
+Permite a expansão experimental de curingas para `url()` e `ENGINE = URL` por meio de páginas de índice HTTP.
+
+<div id="allow_experimental_window_view">
+  ## allow_experimental_window_view
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Habilita WINDOW VIEW. Ainda não está suficientemente maduro.
+
+<div id="allow_experimental_ytsaurus_dictionary_source">
+  ## allow_experimental_ytsaurus_dictionary_source
+</div>
 
 <ExperimentalBadge />
 
@@ -178,7 +453,9 @@ Habilita o PRQL — uma alternativa ao SQL.
 
 Fonte de dicionário experimental para integração com o YTsaurus.
 
-## allow_experimental_ytsaurus_table_engine {#allow_experimental_ytsaurus_table_engine}
+<div id="allow_experimental_ytsaurus_table_engine">
+  ## allow_experimental_ytsaurus_table_engine
+</div>
 
 <ExperimentalBadge />
 
@@ -188,7 +465,9 @@ Fonte de dicionário experimental para integração com o YTsaurus.
 
 Motor de tabela experimental para integração com o YTsaurus.
 
-## allow_experimental_ytsaurus_table_function {#allow_experimental_ytsaurus_table_function}
+<div id="allow_experimental_ytsaurus_table_function">
+  ## allow_experimental_ytsaurus_table_function
+</div>
 
 <ExperimentalBadge />
 

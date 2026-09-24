@@ -11,7 +11,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
-  ## はじめに {#introduction}
+  ## はじめに
 </div>
 
 ClickHouse には、リアルタイムなシナリオで大量のデータに対する分析クエリを高速化するための、さまざまな仕組みがあります。そうしたクエリ高速化の仕組みの 1 つが、*プロジェクション* の利用です。プロジェクションは、着目する属性に基づいてデータを並べ替えたものを作成することで、クエリの最適化に役立ちます。具体的には、次のいずれかの形を取ります。
@@ -27,7 +27,9 @@ ClickHouse には、リアルタイムなシナリオで大量のデータに対
   <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## プロジェクションはどのように機能しますか？ {#how-do-projections-work}
+<div id="how-do-projections-work">
+  ## プロジェクションはどのように機能しますか？
+</div>
 
 実際のところ、PROJECTION は元のテーブルに追加される
 非表示テーブルのようなものと考えられます。PROJECTION は元のテーブルとは
@@ -51,7 +53,7 @@ ClickHouse は自動的に主キーをサンプリングし、
 <Image img="/images/data-modeling/projections_1.webp" size="md" alt="ClickHouse における プロジェクション" />
 
 <div id="smarter_storage_with_part_offset">
-  ### `_part_offset` によるより効率的なストレージ {#smarter_storage_with_part_offset}
+  ### `_part_offset` によるより効率的なストレージ
 </div>
 
 バージョン 25.5 以降、ClickHouse はプロジェクション内の仮想カラム `_part_offset` をサポートしており、
@@ -72,7 +74,7 @@ ClickHouse は自動的に主キーをサンプリングし、
 ほかのカラムは `_part_offset` を介して間接的に扱えます。
 
 <div id="when-to-use-projections">
-  ## Projections を使用すべきケース {#when-to-use-projections}
+  ## Projections を使用すべきケース
 </div>
 
 Projections は、データの挿入に応じて自動的に維持されるため、新規ユーザーにとって魅力的な機能です。さらに、クエリは単一のテーブルに送るだけでよく、可能な場合は projections が活用されて応答時間の短縮につながります。
@@ -102,11 +104,11 @@ Projections は、データの挿入に応じて自動的に維持されるた�
   [ストレージのオーバーヘッドを評価してください](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。
 
 <div id="examples">
-  ## 例 {#examples}
+  ## 例
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### 主キーに含まれていないカラムでのフィルタリング {#filtering-without-using-primary-keys}
+  ### 主キーに含まれていないカラムでのフィルタリング
 </div>
 
 この例では、テーブルにプロジェクションを追加する方法を紹介します。
@@ -194,7 +196,9 @@ WHERE query_id='<query_id>'
    └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
 ```
 
-### PROJECTIONを使用して UK price paid クエリを高速化する {#using-projections-to-speed-up-UK-price-paid}
+<div id="using-projections-to-speed-up-UK-price-paid">
+  ### PROJECTIONを使用して UK price paid クエリを高速化する
+</div>
 
 PROJECTIONを使ってクエリパフォーマンスをどのように向上できるかを示すために、実際のデータセットを使った例を見てみましょう。この例では、3,003 万行を含む [UK Property Price Paid](/ja/get-started/sample-datasets/uk-price-paid) チュートリアルのテーブルを使用します。このデータセットは、[sql.clickhouse.com](https://sql.clickhouse.com/?query_id=6IDMHK3OMR1C97J6M9EUQS) 環境でも利用できます。
 
@@ -388,7 +392,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### さらに例を見ていきます {#further-examples}
+  ### さらに例を見ていきます
 </div>
 
 以下の例では、同じ英国の価格データセットを使用し、projections を使用する場合としない場合のクエリを比較します。
@@ -400,29 +404,25 @@ CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
 INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 ```
 
-#### PROJECTIONを作成する {#build-projection}
+<div id="build-projection">
+  #### PROJECTIONを作成する
+</div>
 
-`year`、`district`、`town` の各次元で集計PROJECTIONを作成しましょう。
-このPROJECTIONは各販売の年ごとに売上をグループ化するため、その式をカラムとしてマテリアライズし、フィルタから参照できるようにします。
-
-```sql
-ALTER TABLE uk.uk_price_paid_with_projections_v2
-    ADD COLUMN year UInt16 MATERIALIZED toYear(date)
-```
+`toYear(date)`、`district`、`town` の各次元で集計PROJECTIONを作成しましょう。
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
     ADD PROJECTION projection_by_year_district_town
     (
         SELECT
-            year,
+            toYear(date),
             district,
             town,
             avg(price),
             sum(price),
             count()
         GROUP BY
-            year,
+            toYear(date),
             district,
             town
     )
@@ -439,13 +439,13 @@ SETTINGS mutations_sync = 1
 以下のクエリでは、PROJECTIONありの場合となしの場合で、パフォーマンスを比較します。PROJECTIONの使用を無効にするには、デフォルトで有効になっている設定 [`optimize_use_projections`](/ja/reference/settings/session-settings/optimize-use#optimize_use_projections) を使用します。
 
 <div id="average-price-projections">
-  #### クエリ 1. 年ごとの平均価格 {#average-price-projections}
+  #### クエリ 1. 年ごとの平均価格
 </div>
 
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -458,7 +458,7 @@ SETTINGS mutations_sync = 1
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -471,13 +471,13 @@ SETTINGS mutations_sync = 1
 結果は同じですが、後者の例のほうがパフォーマンスは向上します。
 
 <div id="average-price-london-projections">
-  #### クエリ 2. ロンドンの年別平均価格 {#average-price-london-projections}
+  #### クエリ 2. ロンドンの年別平均価格
 </div>
 
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -491,7 +491,7 @@ SETTINGS mutations_sync = 1
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -502,10 +502,10 @@ SETTINGS mutations_sync = 1
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### クエリ 3. 最も高額な地域 {#most-expensive-neighborhoods-projections}
+  #### クエリ 3. 最も高額な地域
 </div>
 
-2020 年以降の行に対するフィルタは、PROJECTION に保存されている 次元 `year` を直接参照します。
+条件 `(date >= '2020-01-01')` は、projection の dimension (`toYear(date) >= 2020`) に合うように変更する必要があります。
 
 <RunnableCode>
   ```sql
@@ -516,7 +516,7 @@ SETTINGS mutations_sync = 1
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE year >= 2020
+  WHERE toYear(date) >= 2020
   GROUP BY
       town,
       district
@@ -536,7 +536,7 @@ SETTINGS mutations_sync = 1
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE year >= 2020
+  WHERE toYear(date) >= 2020
   GROUP BY
       town,
       district
@@ -546,17 +546,10 @@ SETTINGS mutations_sync = 1
   ```
 </RunnableCode>
 
-今回も結果は同じですが、2 番目のクエリではクエリパフォーマンスが向上していることがわかります。
-
-<Note>
-  フィルタは、保存されている 次元 `year` を直接参照する必要があります。
-  `WHERE toYear(date) >= 2020` と書いた場合、PROJECTION は使用されません。optimizer が
-  この条件を `date` に対する range に書き換える一方で、PROJECTION には `date`
-  カラムが保存されていないため、ClickHouse は基となるテーブルの scan にフォールバックします。
-</Note>
+今回も結果は同じですが、2 番目のクエリではクエリのパフォーマンスが向上していることがわかります。
 
 <div id="combining-projections">
-  ### 1つのクエリで複数のプロジェクションを組み合わせる {#combining-projections}
+  ### 1つのクエリで複数のプロジェクションを組み合わせる
 </div>
 
 バージョン 25.6 以降、前バージョンで導入された `_part_offset` サポートを基盤として、ClickHouse では複数のフィルターを含む1つのクエリの高速化に複数のプロジェクションを利用できるようになりました。
@@ -671,7 +664,9 @@ SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
 複数のプロジェクションの索引解析を組み合わせることで、ClickHouse はスキャン対象のデータ量を大幅に削減し、
 ストレージのオーバーヘッドを低く抑えながらパフォーマンスを向上させます。
 
-## 関連コンテンツ {#related-content}
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
 
 * [ClickHouse におけるプライマリインデックスの実践的な入門](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [materialized view](/ja/concepts/features/materialized-views/index)

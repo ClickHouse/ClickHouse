@@ -21,7 +21,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Frame>
 
 <div id="when-should-refreshable-materialized-views-be-used">
-  ## متى ينبغي استخدام العروض المادية القابلة للتحديث؟ {#when-should-refreshable-materialized-views-be-used}
+  ## متى ينبغي استخدام العروض المادية القابلة للتحديث؟
 </div>
 
 تُعد العروض المادية التزايدية في ClickHouse قوية للغاية، وعادةً ما تكون قابليتها للتوسع أفضل بكثير من النهج المستخدم في العروض المادية القابلة للتحديث، خاصةً في الحالات التي يلزم فيها إجراء aggregation على جدول واحد. فمن خلال احتساب aggregation فقط لكل block من البيانات عند insertه، ثم دمج الحالات التزايدية في الجدول النهائي، لا يُنفَّذ الـ query إلا على مجموعة فرعية من البيانات. ويمكن لهذا الأسلوب أن يتوسع ليصل إلى بيتابايتات من البيانات، وهو عادةً الأسلوب المفضل.
@@ -30,10 +30,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 > يمكن للعروض المادية القابلة للتحديث تشغيل عمليات دفعية لتنفيذ مهام مثل إلغاء التطبيع. ويمكن إنشاء تبعيات بين العروض المادية القابلة للتحديث بحيث يعتمد أحد العروض على نتائج عرض آخر، ولا يُنفَّذ إلا بعد اكتماله. ويمكن أن يحل هذا محل مسارات العمل المجدولة أو مخططات DAG البسيطة مثل مهمة [dbt](https://www.getdbt.com/). ولمعرفة المزيد حول كيفية تعيين التبعيات بين العروض المادية القابلة للتحديث، انتقل إلى [CREATE VIEW](/ar/reference/statements/create/view#refresh-dependencies)، قسم `Dependencies`.
 
-## كيف يتم تحديث عرض مادي قابل للتحديث؟ {#how-do-you-refresh-a-refreshable-materialized-view}
+<div id="how-do-you-refresh-a-refreshable-materialized-view">
+  ## كيف يتم تحديث عرض مادي قابل للتحديث؟
+</div>
 
-يُحدَّث العرض المادي القابل للتحديث تلقائيًا على فاصل زمني يُحدَّد أثناء الإنشاء.
-على سبيل المثال، يُحدَّث العرض المادي التالي كل دقيقة:
+يُحدَّث العرض المادي القابل للتحديث تلقائيًا على فاصل زمني يُحدَّد أثناء الإنشاء.
+على سبيل المثال، يُحدَّث العرض المادي التالي كل دقيقة:
 
 ```sql
 CREATE MATERIALIZED VIEW table_name_mv
@@ -50,12 +52,8 @@ SYSTEM REFRESH VIEW table_name_mv;
 يمكنك أيضًا إلغاء العرض أو إيقافه أو تشغيله.
 لمزيد من التفاصيل، راجع توثيق [إدارة العروض المادية القابلة للتحديث](/ar/reference/statements/system#managing-refreshable-materialized-views).
 
-<Warning>
-  العروض المادية القابلة للتحديث التي لا تُنسَّق عمليات تحديثها عبر ClickHouse Keeper لا تحتفظ بوقت آخر تحديث لها، لذا قد تُحدَّث جميعها في آنٍ واحد بعد إعادة تشغيل الخادم. راجع [ما الذي يحدث للعروض المادية القابلة للتحديث عند إعادة تشغيل الخادم](/ar/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) لمعرفة العروض المتأثرة وكيفية إعادة تشغيلها واحدًا تلو الآخر.
-</Warning>
-
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## متى تم آخر تحديث للعرض المادي القابل للتحديث؟ {#when-was-a-refreshable-materialized-view-last-refreshed}
+  ## متى تم آخر تحديث للعرض المادي القابل للتحديث؟
 </div>
 
 لمعرفة وقت آخر تحديث للعرض المادي القابل للتحديث، يمكنك الاستعلام عن جدول النظام [`system.view_refreshes`](/ar/reference/system-tables/view_refreshes)، كما هو موضح أدناه:
@@ -74,7 +72,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## كيف يمكنني تغيير معدل التحديث؟ {#how-can-i-change-the-refresh-rate}
+  ## كيف يمكنني تغيير معدل التحديث؟
 </div>
 
 لتغيير معدل التحديث لعرض مادي قابل للتحديث، استخدم صيغة [`ALTER TABLE...MODIFY REFRESH`](/ar/reference/statements/alter/view#alter-table--modify-refresh-statement).
@@ -93,7 +91,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## استخدام `APPEND` لإضافة صفوف جديدة {#using-append-to-add-new-rows}
+  ## استخدام `APPEND` لإضافة صفوف جديدة
 </div>
 
 تتيح لك وظيفة `APPEND` إضافة صفوف جديدة إلى نهاية الجدول بدلًا من استبدال العرض بأكمله.
@@ -199,13 +197,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## أمثلة {#examples}
+  ## أمثلة
 </div>
 
 لنرَ الآن كيفية استخدام العروض المادية القابلة للتحديث مع بعض مجموعات البيانات النموذجية.
 
 <div id="stack-overflow">
-  ### Stack Overflow {#stack-overflow}
+  ### Stack Overflow
 </div>
 
 يوضح [دليل إزالة تطبيع البيانات](/ar/guides/clickhouse/data-modelling/denormalization) تقنيات متنوعة لإزالة تطبيع البيانات باستخدام مجموعة بيانات Stack Overflow. نملأ هذه الجداول بالبيانات التالية: `votes` و`users` و`badges` و`posts` و`postlinks`.
@@ -257,7 +255,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb {#imdb}
+  ### IMDb
 </div>
 
 في [دليل تكامل dbt وClickHouse](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/index)، ملأنا مجموعة بيانات IMDb بالجداول التالية: `actors` و`directors` و`genres` و`movie_directors` و`movies` و`roles`.

@@ -15,11 +15,15 @@ doc_type: 'référence'
 | ------ | ------ | ----- |
 | ✔      | ✔      |       |
 
-## Description {#description}
+<div id="description">
+  ## Description
+</div>
 
 [Apache Parquet](https://parquet.apache.org/) est un format de stockage colonnaire largement répandu dans l’écosystème Hadoop. ClickHouse prend en charge la lecture et l’écriture de ce format.
 
-## Correspondance des types de données {#data-types-matching-parquet}
+<div id="data-types-matching-parquet">
+  ## Correspondance des types de données
+</div>
 
 Le tableau ci-dessous indique la correspondance entre les types de données Parquet et les [types de données](/fr/reference/data-types/index) de ClickHouse.
 
@@ -35,8 +39,7 @@ Le tableau ci-dessous indique la correspondance entre les types de données Parq
 | `UINT_64`                                    | [UInt64](/fr/reference/data-types/int-uint)                                     |
 | `INT_64`                                     | [Int64](/fr/reference/data-types/int-uint)                                      |
 | `DATE`                                       | [Date32](/fr/reference/data-types/date)                                         |
-| `TIMESTAMP`                                  | [DateTime64](/fr/reference/data-types/datetime64)                               |
-| `TIME`                                       | [Time64](/fr/reference/data-types/time64)                                       |
+| `TIMESTAMP`, `TIME`                          | [DateTime64](/fr/reference/data-types/datetime64)                               |
 | `FLOAT`                                      | [Float32](/fr/reference/data-types/float)                                       |
 | `DOUBLE`                                     | [Float64](/fr/reference/data-types/float)                                       |
 | `INT96`                                      | [DateTime64(9, &#39;UTC&#39;)](/fr/reference/data-types/datetime64)             |
@@ -58,7 +61,7 @@ Le tableau ci-dessous indique la correspondance entre les types de données Parq
 | `MultiPolygon` (GeoParquet)                  | [MultiPolygon](/fr/reference/data-types/geo#multipolygon)                       |
 | géométrie mixte/inconnue (GeoParquet)        | [Geometry](/fr/reference/data-types/geo#geometry)                               |
 
-Lors de l’écriture d’un fichier Parquet, les types de données qui n’ont pas de type Parquet correspondant sont convertis vers le type disponible le plus proche :
+Lors de l’écriture d’un fichier Parquet, les types de données qui n’ont pas de type Parquet correspondant sont convertis vers le type disponible le plus proche :
 
 | Type de données ClickHouse                                      | Type Parquet                                         |
 | --------------------------------------------------------------- | ---------------------------------------------------- |
@@ -76,11 +79,13 @@ Lors de l’écriture d’un fichier Parquet, les types de données qui n’ont 
 
 Les tableaux peuvent être imbriqués et accepter comme argument une valeur de type `Nullable`. Les types `Tuple` et `Map` peuvent également être imbriqués.
 
-### Entiers larges {#wide-integers}
+<div id="wide-integers">
+  ### Entiers larges
+</div>
 
 Par défaut, ClickHouse écrit `Int128`, `UInt128`, `Int256` et `UInt256` comme valeurs `FIXED_LEN_BYTE_ARRAY(16/32)` non annotées en ordre little-endian. Cette représentation héritée reste la valeur par défaut afin que les fichiers puissent être lus par les anciennes versions de ClickHouse.
 
-Définissez `output_format_parquet_wide_integer_as_decimal = 1` pour utiliser à la place la représentation `DECIMAL` standard de Parquet :
+Définissez `output_format_parquet_wide_integer_as_decimal = 1` pour utiliser à la place la représentation `DECIMAL` standard de Parquet :
 
 | Type ClickHouse | Type logique Parquet | Type physique              | Encodage des valeurs                                                                           |
 | --------------- | -------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -89,22 +94,27 @@ Définissez `output_format_parquet_wide_integer_as_decimal = 1` pour utiliser à
 | `Int128`        | `DECIMAL(39, 0)`     | `FIXED_LEN_BYTE_ARRAY(17)` | La valeur en complément à deux de 16 octets en ordre big-endian, étendue par signe à 17 octets |
 | `Int256`        | `DECIMAL(77, 0)`     | `FIXED_LEN_BYTE_ARRAY(33)` | La valeur en complément à deux de 32 octets en ordre big-endian, étendue par signe à 33 octets |
 
-La représentation décimale fournit un ordre numérique pour les statistiques standard des fragments de colonnes et les index de pages Parquet, ce qui permet à ClickHouse d&#39;utiliser l&#39;élagage min/max des groupes de lignes et des pages. ClickHouse lit les deux encodages. Pour une précision décimale de 39, l&#39;inférence de schéma renvoie `Decimal(39, 0)`, basé sur `Decimal256` ; spécifiez une structure `Int128` ou `UInt128` explicite pour retrouver un type d&#39;entier large. Une précision décimale de 77 ou 78 dépasse la plage de `Decimal256` de ClickHouse ; la lecture de ces fichiers nécessite donc une structure `Int256` ou `UInt256` compatible explicite. Avec une structure d&#39;entier large explicite, ClickHouse accepte les valeurs décimales standard stockées sous forme de `BYTE_ARRAY` ou de `FIXED_LEN_BYTE_ARRAY` de toute largeur valide, et vérifie que chaque valeur est dans la plage après suppression de l&#39;extension de signe.
+La représentation décimale fournit un ordre numérique pour les statistiques standard des fragments de colonnes et les index de pages Parquet, ce qui permet à ClickHouse d&#39;utiliser l&#39;élagage min/max des groupes de lignes et des pages. ClickHouse lit les deux encodages. Pour une précision décimale de 39, l&#39;inférence de schéma renvoie `Decimal(39, 0)`, basé sur `Decimal256` ; spécifiez une structure `Int128` ou `UInt128` explicite pour retrouver un type d&#39;entier large. Une précision décimale de 77 ou 78 dépasse la plage de `Decimal256` de ClickHouse ; la lecture de ces fichiers nécessite donc une structure `Int256` ou `UInt256` compatible explicite. Avec une structure d&#39;entier large explicite, ClickHouse accepte les valeurs décimales standard stockées sous forme de `BYTE_ARRAY` ou de `FIXED_LEN_BYTE_ARRAY` de toute largeur valide, et vérifie que chaque valeur est dans la plage après suppression de l&#39;extension de signe.
 
 Certains clients Parquet ne prennent en charge qu&#39;une précision décimale allant jusqu&#39;à 38, tandis que les types décimaux de haut niveau d&#39;Arrow ne prennent en charge qu&#39;une précision allant jusqu&#39;à 76. Ces clients peuvent rejeter la représentation de précision 77/78, même si son schéma et sa largeur physique de 33 octets sont conformes à Parquet. Laissez ce paramètre désactivé lorsque les fichiers doivent être lus par des versions plus anciennes de ClickHouse ou par des clients ayant des limites décimales inférieures.
 
 Les types de données des colonnes d&#39;une table ClickHouse peuvent différer de ceux des champs correspondants dans les données Parquet insérées. Lors de l&#39;insertion de données, ClickHouse interprète les types de données conformément au tableau ci-dessus, puis [convertit](/fr/reference/functions/regular-functions/type-conversion-functions#CAST) les données vers le type défini pour la colonne de la table ClickHouse. Par exemple, une colonne Parquet `UINT_32` peut être lue dans une colonne ClickHouse [IPv4](/fr/reference/data-types/ipv4).
 
-Pour certains types Parquet, il n&#39;existe pas de type ClickHouse vraiment proche. Nous les lisons comme suit :
+Pour certains types Parquet, il n&#39;existe pas de type ClickHouse vraiment proche. Nous les lisons comme suit :
 
-* `TIMESTAMP` avec `isAdjustedToUTC=false` correspond à une heure locale d&#39;horloge (champs année, mois, jour, heure, minute, seconde et fraction de seconde dans un fuseau horaire local, indépendamment du fuseau horaire précis considéré comme local), comme en SQL `TIMESTAMP WITHOUT TIME ZONE`. ClickHouse le lit au contraire comme s&#39;il s&#39;agissait d&#39;un timestamp UTC. Par exemple, `2025-09-29 18:42:13.000` (représentant la lecture d&#39;une horloge locale) devient `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')` représentant un point dans le temps). S&#39;il est converti en String, il affiche correctement l&#39;année, le mois, le jour, l&#39;heure, la minute, la seconde et la fraction de seconde, qui peuvent ensuite être interprétés comme appartenant à un fuseau horaire local plutôt qu&#39;à UTC. De manière contre-intuitive, changer le type de `DateTime64(3, 'UTC')` en `DateTime64(3)` ne résoudrait pas le problème, car les deux types représentent un point dans le temps plutôt qu&#39;une lecture d&#39;horloge, mais `DateTime64(3)` serait formaté de manière incorrecte avec le fuseau horaire local.
+* `TIME` (heure de la journée) est lu comme un timestamp. Par exemple, `10:23:13.000` devient `1970-01-01 10:23:13.000`.
+* `TIMESTAMP`/`TIME` avec `isAdjustedToUTC=false` correspond à une heure locale d&#39;horloge (champs année, mois, jour, heure, minute, seconde et fraction de seconde dans un fuseau horaire local, indépendamment du fuseau horaire précis considéré comme local), comme en SQL `TIMESTAMP WITHOUT TIME ZONE`. ClickHouse le lit au contraire comme s&#39;il s&#39;agissait d&#39;un timestamp UTC. Par exemple, `2025-09-29 18:42:13.000` (représentant la lecture d&#39;une horloge locale) devient `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')` représentant un point dans le temps). S&#39;il est converti en String, il affiche correctement l&#39;année, le mois, le jour, l&#39;heure, la minute, la seconde et la fraction de seconde, qui peuvent ensuite être interprétés comme appartenant à un fuseau horaire local plutôt qu&#39;à UTC. De manière contre-intuitive, changer le type de `DateTime64(3, 'UTC')` en `DateTime64(3)` ne résoudrait pas le problème, car les deux types représentent un point dans le temps plutôt qu&#39;une lecture d&#39;horloge, mais `DateTime64(3)` serait formaté de manière incorrecte avec le fuseau horaire local.
 * `INTERVAL` est actuellement lu comme `FixedString(12)`, avec la représentation binaire brute de l&#39;intervalle de temps telle qu&#39;elle est encodée dans le fichier Parquet.
 
-## Types géo (GeoParquet) {#geo-types}
+<div id="geo-types">
+  ## Types géo (GeoParquet)
+</div>
 
 ClickHouse prend en charge la lecture et l’écriture des colonnes géométriques conformément à la spécification [GeoParquet](https://geoparquet.org/). Les colonnes géométriques sont stockées sous forme de payloads `BYTE_ARRAY` encodés en [WKB](https://libgeos.org/specifications/wkb/) (ou en WKT à la lecture), avec une clé JSON `geo` dans les métadonnées Parquet au niveau du fichier, qui décrit l’encodage, le type de géométrie et le CRS de chaque colonne géométrique.
 
-### Comportement en lecture {#read}
+<div id="read">
+  ### Comportement en lecture
+</div>
 
 À la lecture, les colonnes géométriques sont associées aux [types de données Geo](/fr/reference/data-types/geo) ClickHouse correspondants :
 
@@ -112,15 +122,21 @@ ClickHouse prend en charge la lecture et l’écriture des colonnes géométriqu
 * Une colonne contenant plusieurs types de géométrie ou des types de géométrie inconnus est lue dans le type [`Geometry`](/fr/reference/data-types/geo#geometry), qui est un `Variant` de tous les types Geo pris en charge.
 * Si le type de colonne demandé est `String`, les métadonnées GeoParquet sont ignorées et la charge utile géométrique brute encodée est renvoyée telle quelle — en octets WKB ou WKT, selon l’encodage déclaré par la colonne GeoParquet. Cela vaut également si le paramètre [`input_format_parquet_allow_geoparquet_parser`](/fr/reference/settings/formats/input-format#input_format_parquet_allow_geoparquet_parser) est défini sur `0`.
 
-### Comportement d’écriture {#write}
+<div id="write">
+  ### Comportement d’écriture
+</div>
 
 Lors de l’écriture, les colonnes de premier niveau de type `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` ou `MultiPolygon` sont encodées en `BYTE_ARRAY` (WKB), et les métadonnées JSON `geo` appropriées sont ajoutées au footer du fichier Parquet. Un [`Geometry`](/fr/reference/data-types/geo#geometry) `Variant` de premier niveau est lui aussi encodé sous la forme d’une charge utile `BYTE_ARRAY` WKB (ses sous-valeurs sont converties en WKB et stockées dans une colonne `Nullable(String)`), mais aucune métadonnée `geo` n’est émise le concernant ; le résultat n’est donc pas reconnu à la lecture comme une colonne de géométrie GeoParquet. Les autres types liés à la géométrie, tels que [`Ring`](/fr/reference/data-types/geo#ring), sont écrits à l’aide de leur représentation native sous-jacente, sans métadonnées GeoParquet. Ce comportement peut être entièrement désactivé en définissant [`output_format_parquet_geometadata`](/fr/reference/settings/formats/output-format#output_format_parquet_geometadata) sur `0`. Dans ce cas, même les types geo pris en charge sont écrits à l’aide de leur représentation native sous-jacente (`Point` comme `Tuple(Float64, Float64)`, `LineString` comme `Array(Point)`, `Polygon` comme `Array(Array(Point))`, etc.), et aucune métadonnée GeoParquet n’est émise.
 
 Les colonnes géométriques doivent se trouver à la racine du schéma ou être imbriquées dans `Tuple` (`struct`) ; leur imbrication dans `Array` ou `Map` n’est pas prise en charge. `Nullable` n’est pas non plus pris en charge pour les colonnes géométriques.
 
-## Exemple d’utilisation {#example-usage}
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
 
-### Insertion de données {#inserting-data}
+<div id="inserting-data">
+  ### Insertion de données
+</div>
 
 À partir d’un fichier Parquet contenant les données suivantes, nommé `football.parquet` :
 
@@ -152,7 +168,9 @@ Insérez les données :
 INSERT INTO football FROM INFILE 'football.parquet' FORMAT Parquet;
 ```
 
-### Lecture des données {#reading-data}
+<div id="reading-data">
+  ### Lecture des données
+</div>
 
 Lisez les données au format `Parquet` :
 
@@ -169,7 +187,9 @@ FORMAT Parquet
 
 Pour échanger des données avec Hadoop, vous pouvez utiliser le [`moteur de table HDFS`](/fr/reference/engines/table-engines/integrations/hdfs).
 
-## Paramètres de format {#format-settings}
+<div id="format-settings">
+  ## Paramètres de format
+</div>
 
 | Paramètre                                                                      | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Par défaut                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

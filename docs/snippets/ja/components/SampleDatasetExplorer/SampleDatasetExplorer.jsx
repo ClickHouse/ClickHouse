@@ -3,42 +3,42 @@ export const SampleDatasetExplorer = ({ categories }) => {
   const assetBase = typeof window === "undefined" || window.location.pathname.startsWith("/docs") ? "/docs" : ""
   const withBase = (p) => (p && p.startsWith("/") ? assetBase + p : p)
 
-  // 各カテゴリ: id、title（バナー画像の下に表示）、子カードで使用するアイコン、
-  // 2つのバナー画像、および子データセットページ。
+  // Each category: id, title (shown beneath the banner image), an icon used for
+  // its child cards, the two banner images, and the child dataset pages.
   const CATEGORIES = [
     {
       id: "benchmarks",
-      title: "ベンチマーク",
+      title: "Benchmarks",
       icon: "gauge",
       imgLight: "/images/sample-datasets-grid/benchmarks-light.jpg",
       imgDark: "/images/sample-datasets-grid/benchmarks-dark.jpg",
       datasets: [
         {
-          title: "AMPLab ビッグデータベンチマーク",
+          title: "AMPLab Big Data Benchmark",
           href: "/ja/get-started/sample-datasets/amplab-benchmark",
           imgLight: "/images/sample-datasets-grid/amplab-benchmark-light.jpg",
           imgDark: "/images/sample-datasets-grid/amplab-benchmark-dark.jpg"
         },
         {
-          title: "ブラウン大学ベンチマーク",
+          title: "Brown University Benchmark",
           href: "/ja/get-started/sample-datasets/brown-benchmark",
           imgLight: "/images/sample-datasets-grid/brown-benchmark-light.jpg",
           imgDark: "/images/sample-datasets-grid/brown-benchmark-dark.jpg"
         },
         {
-          title: "Criteo テラバイトクリックログ",
+          title: "Criteo terabyte click logs",
           href: "/ja/get-started/sample-datasets/criteo",
           imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
           imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
         },
         {
-          title: "JOB ベンチマーク",
+          title: "JOB benchmark",
           href: "/ja/get-started/sample-datasets/job",
           imgLight: "/images/sample-datasets-grid/benchmarks-light.jpg",
           imgDark: "/images/sample-datasets-grid/benchmarks-dark.jpg"
         },
         {
-          title: "スタースキーマベンチマーク (SSB)",
+          title: "Star Schema Benchmark (SSB)",
           href: "/ja/get-started/sample-datasets/star-schema",
           imgLight: "/images/sample-datasets-grid/star-schema-light.jpg",
           imgDark: "/images/sample-datasets-grid/star-schema-dark.jpg"
@@ -49,13 +49,13 @@ export const SampleDatasetExplorer = ({ categories }) => {
     },
     {
       id: "geo-location",
-      title: "地理と位置情報",
+      title: "Geo & location",
       icon: "map-pin",
       imgLight: "/images/sample-datasets-grid/geo-location-light.jpg",
       imgDark: "/images/sample-datasets-grid/geo-location-dark.jpg",
       datasets: [
         {
-          title: "携帯電話基地局 (OpenCelliD)",
+          title: "Cell towers (OpenCelliD)",
           href: "/ja/get-started/sample-datasets/cell-towers",
           imgLight: "/images/sample-datasets-grid/cell-towers-light.jpg",
           imgDark: "/images/sample-datasets-grid/cell-towers-dark.jpg"
@@ -67,7 +67,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/foursquare-places-dark.jpg"
         },
         {
-          title: "ニューヨークのタクシーデータ",
+          title: "New York taxi data",
           href: "/ja/get-started/sample-datasets/nyc-taxi",
           imgLight: "/images/sample-datasets-grid/nyc-taxi-light.jpg",
           imgDark: "/images/sample-datasets-grid/nyc-taxi-dark.jpg"
@@ -76,13 +76,13 @@ export const SampleDatasetExplorer = ({ categories }) => {
     },
     {
       id: "public-records",
-      title: "公的記録とオープンデータ",
+      title: "Public records & open data",
       icon: "landmark",
       imgLight: "/images/sample-datasets-grid/public-records-light.jpg",
       imgDark: "/images/sample-datasets-grid/public-records-dark.jpg",
       datasets: [
         {
-          title: "COVID-19 オープンデータ",
+          title: "COVID-19 open data",
           href: "/ja/get-started/sample-datasets/covid19",
           imgLight: "/images/sample-datasets-grid/covid19-light.jpg",
           imgDark: "/images/sample-datasets-grid/covid19-dark.jpg"
@@ -94,19 +94,19 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
         },
         {
-          title: "NYPD 通報データ",
+          title: "NYPD complaint data",
           href: "/ja/get-started/sample-datasets/nypd-complaint-data",
           imgLight: "/images/sample-datasets-grid/nypd-complaint-data-light.jpg",
           imgDark: "/images/sample-datasets-grid/nypd-complaint-data-dark.jpg"
         },
         {
-          title: "OnTime (航空便)",
+          title: "OnTime (airline flights)",
           href: "/ja/get-started/sample-datasets/ontime",
           imgLight: "/images/sample-datasets-grid/ontime-light.jpg",
           imgDark: "/images/sample-datasets-grid/ontime-dark.jpg"
         },
         {
-          title: "英国の不動産価格",
+          title: "UK property prices",
           href: "/ja/get-started/sample-datasets/uk-price-paid",
           imgLight: "/images/sample-datasets-grid/uk-price-paid-light.jpg",
           imgDark: "/images/sample-datasets-grid/uk-price-paid-dark.jpg"
@@ -115,25 +115,25 @@ export const SampleDatasetExplorer = ({ categories }) => {
     },
     {
       id: "time-series-sensors",
-      title: "時系列とセンサー",
+      title: "Time series & sensors",
       icon: "activity",
       imgLight: "/images/sample-datasets-grid/time-series-sensors-light.jpg",
       imgDark: "/images/sample-datasets-grid/time-series-sensors-dark.jpg",
       datasets: [
         {
-          title: "環境センサーデータ",
+          title: "Environmental sensors data",
           href: "/ja/get-started/sample-datasets/environmental-sensors",
           imgLight: "/images/sample-datasets-grid/environmental-sensors-light.jpg",
           imgDark: "/images/sample-datasets-grid/environmental-sensors-dark.jpg"
         },
         {
-          title: "NOAA 全球歴史気候ネットワーク",
+          title: "NOAA Global Historical Climatology Network",
           href: "/ja/get-started/sample-datasets/noaa",
           imgLight: "/images/sample-datasets-grid/noaa-light.jpg",
           imgDark: "/images/sample-datasets-grid/noaa-dark.jpg"
         },
         {
-          title: "台湾の過去の気象データ",
+          title: "Taiwan historical weather",
           href: "/ja/get-started/sample-datasets/tw-weather",
           imgLight: "/images/sample-datasets-grid/tw-weather-light.jpg",
           imgDark: "/images/sample-datasets-grid/tw-weather-dark.jpg"
@@ -143,31 +143,31 @@ export const SampleDatasetExplorer = ({ categories }) => {
     },
     {
       id: "vector-search",
-      title: "ベクトル検索と埋め込み",
+      title: "Vector search & embeddings",
       icon: "search",
       imgLight: "/images/sample-datasets-grid/vector-search-light.jpg",
       imgDark: "/images/sample-datasets-grid/vector-search-dark.jpg",
       datasets: [
         {
-          title: "dbpedia データセット",
+          title: "dbpedia dataset",
           href: "/ja/get-started/sample-datasets/dbpedia",
           imgLight: "/images/sample-datasets-grid/dbpedia-light.jpg",
           imgDark: "/images/sample-datasets-grid/dbpedia-dark.jpg"
         },
         {
-          title: "Hacker News ベクトル検索",
+          title: "Hacker News vector search",
           href: "/ja/get-started/sample-datasets/hacker-news-vector-search",
           imgLight: "/images/sample-datasets-grid/hacker-news-vector-search-light.jpg",
           imgDark: "/images/sample-datasets-grid/hacker-news-vector-search-dark.jpg"
         },
         {
-          title: "Laion-400M データセット",
+          title: "Laion-400M dataset",
           href: "/ja/get-started/sample-datasets/laion",
           imgLight: "/images/sample-datasets-grid/laion-400m-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion-400m-dark.jpg"
         },
         {
-          title: "LAION 5B データセット",
+          title: "LAION 5B dataset",
           href: "/ja/get-started/sample-datasets/laion5b",
           imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
@@ -176,13 +176,13 @@ export const SampleDatasetExplorer = ({ categories }) => {
     },
     {
       id: "web-social",
-      title: "Web とソーシャル分析",
+      title: "Web & social analytics",
       icon: "globe",
       imgLight: "/images/sample-datasets-grid/web-social-analytics-light.jpg",
       imgDark: "/images/sample-datasets-grid/web-social-analytics-dark.jpg",
       datasets: [
         {
-          title: "Amazon カスタマーレビュー",
+          title: "Amazon customer reviews",
           href: "/ja/get-started/sample-datasets/amazon-reviews",
           imgLight: "/images/sample-datasets-grid/amazon-reviews-light.jpg",
           imgDark: "/images/sample-datasets-grid/amazon-reviews-dark.jpg"
@@ -247,7 +247,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
       aria-label={item.title}
       style={{
         "--sde-image-light-mode": `url("${webpFor(item.imgDark)}")`,
-        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`
+        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`,
       }}
     />
   )
@@ -258,6 +258,15 @@ export const SampleDatasetExplorer = ({ categories }) => {
       <style
         dangerouslySetInnerHTML={{
           __html: `
+        @keyframes sde-pop {
+          from { opacity: 0; transform: translateY(14px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes sde-fade {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        .sde-view { animation: sde-fade 0.25s ease both; }
         .sde-tile {
           display: block;
           width: 100%;
@@ -266,6 +275,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
           background: transparent;
           text-align: left;
           cursor: pointer;
+          animation: sde-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+          transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
         }
         .sde-tile:hover { transform: translateY(-4px) scale(1.015); }
         .sde-tile:active { transform: translateY(-1px) scale(0.995); }
@@ -279,6 +290,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           border-radius: 8px;
           overflow: hidden;
           box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+          transition: box-shadow 0.25s ease;
         }
         .dark .sde-root .sde-tile-media { border-color: #3c3c3c; }
         .sde-tile:hover .sde-tile-media { box-shadow: 0 12px 28px rgba(0,0,0,0.22); }
@@ -309,6 +321,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           backdrop-filter: blur(6px);
           -webkit-backdrop-filter: blur(6px);
           opacity: 0;
+          transition: opacity 0.25s ease;
           pointer-events: none;
         }
         .sde-tile:hover .sde-tile-hint { opacity: 1; }
@@ -336,6 +349,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           align-items: center;
           gap: 4px;
         }
+        .sde-child { animation: sde-pop 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
         .sde-back {
           display: inline-flex;
           align-items: center;
@@ -348,6 +362,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           opacity: 0.5;
           font-size: 0.875rem;
           font-weight: 500;
+          transition: opacity 0.2s ease;
         }
         .sde-back:hover { opacity: 1; }
         .sde-detail-title {
@@ -355,6 +370,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           font-weight: 600;
           line-height: 1.3;
           margin: 0 0 1.25rem 0;
+          animation: sde-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
         }
       `
         }}
@@ -363,8 +379,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
       {!selected ? (
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-            {cats.map((cat) => (
-              <button key={cat.id} type="button" className="sde-tile" onClick={() => setSelectedId(cat.id)} aria-label={`${cat.title} のデータセットを探索`}>
+            {cats.map((cat, i) => (
+              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`${cat.title} のデータセットを探索`}>
                 <span className="sde-tile-media">
                   <Banner cat={cat} />
                   <span className="sde-tile-hint">
@@ -398,8 +414,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
           <h2 className="sde-detail-title">{selected.title}</h2>
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-            {selected.datasets.map((ds) => (
-              <a key={ds.href} href={ds.href} className="sde-tile">
+            {selected.datasets.map((ds, i) => (
+              <a key={ds.href} href={ds.href} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
                 <span className="sde-tile-media">
                   {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">

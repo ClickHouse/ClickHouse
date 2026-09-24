@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-## output_format_always_write_decimal_point_in_float_and_decimal {#output_format_always_write_decimal_point_in_float_and_decimal}
+<div id="output_format_always_write_decimal_point_in_float_and_decimal">
+  ## output_format_always_write_decimal_point_in_float_and_decimal
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,7 +25,9 @@ Toujours afficher un point décimal pour les nombres en virgule flottante et Dec
 
 Désactivé par défaut.
 
-## output_format_arrow_compression_method {#output_format_arrow_compression_method}
+<div id="output_format_arrow_compression_method">
+  ## output_format_arrow_compression_method
+</div>
 
 <SettingsInfoBlock type="ArrowCompression" default_value="lz4_frame" />
 
@@ -31,7 +35,9 @@ Désactivé par défaut.
 
 Méthode de compression pour le format de sortie Arrow. Codecs pris en charge : lz4&#95;frame, zstd, none (sans compression)
 
-## output_format_arrow_date_as_uint16 {#output_format_arrow_date_as_uint16}
+<div id="output_format_arrow_date_as_uint16">
+  ## output_format_arrow_date_as_uint16
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -39,7 +45,9 @@ Méthode de compression pour le format de sortie Arrow. Codecs pris en charge :
 
 Écrit les valeurs Date sous forme de simples nombres 16 bits (relus en tant que UInt16), au lieu de les convertir en type Arrow DATE32 32 bits (relu en tant que Date32).
 
-## output_format_arrow_fixed_string_as_fixed_byte_array {#output_format_arrow_fixed_string_as_fixed_byte_array}
+<div id="output_format_arrow_fixed_string_as_fixed_byte_array">
+  ## output_format_arrow_fixed_string_as_fixed_byte_array
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -47,41 +55,17 @@ Méthode de compression pour le format de sortie Arrow. Codecs pris en charge :
 
 Utilise le type Arrow FIXED&#95;SIZE&#95;BINARY au lieu de Binary pour les colonnes de type FixedString.
 
-## output_format_arrow_low_cardinality_as_dictionary {#output_format_arrow_low_cardinality_as_dictionary}
+<div id="output_format_arrow_low_cardinality_as_dictionary">
+  ## output_format_arrow_low_cardinality_as_dictionary
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Active la sortie du type LowCardinality sous forme de type Dictionary d’Arrow
 
-## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
-
-<SettingsInfoBlock type="UInt64" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre permettant de regrouper les petits blocs dans les sorties `Arrow` et `ArrowStream` à l'aide d'un nombre de lignes cible. La valeur par défaut `0` conserve un record batch par bloc."}]}]} />
-
-Nombre cible de lignes par record batch pour les formats de sortie `Arrow` et `ArrowStream`. Le regroupement des petits blocs réduit le surcoût lié aux métadonnées et au remplissage des tampons, en particulier pour les requêtes comportant des filters sélectifs.
-
-Les blocs s&#39;accumulent jusqu&#39;à ce que cette cible ou [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/fr/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes) soit atteinte. Un bloc qui atteint déjà la cible en lignes ou en octets est écrit séparément, sans être découpé. Si vous définissez une cible en lignes, les batches regroupés contiennent moins du double de ce nombre de lignes, mais un bloc d&#39;entrée isolé peut être plus volumineux.
-
-La mise en tampon des blocs peut augmenter la consommation mémoire et retarder la sortie. Si le résultat n&#39;atteint jamais l&#39;une ou l&#39;autre des cibles, `ArrowStream` n&#39;écrit le premier record batch qu&#39;à la fin de la requête, même s&#39;il peut écrire le schéma plus tôt. Laissez les deux cibles à `0` pour écrire les record batches au fur et à mesure de l&#39;arrivée des blocs.
-
-`0` (la valeur par défaut) désactive la cible en lignes. Essayez `65409` comme valeur de départ.
-
-## output_format_arrow_record_batch_size_bytes {#output_format_arrow_record_batch_size_bytes}
-
-<SettingsInfoBlock type="UInt64" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre permettant de combiner de petits blocs dans les sorties `Arrow` et `ArrowStream` à l'aide d'une taille cible, en octets, des données accumulées. La valeur par défaut `0` conserve un record batch par bloc."}]}]} />
-
-Taille cible du record batch pour les formats de sortie `Arrow` et `ArrowStream`, exprimée en octets de données de bloc accumulées. Elle repose sur la même mesure que [min&#95;insert&#95;block&#95;size&#95;bytes](/fr/reference/settings/session-settings/min-insert#min_insert_block_size_bytes). Un batch est écrit dès que cette cible ou [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size](/fr/reference/settings/formats/output-format#output_format_arrow_record_batch_size) est atteinte.
-
-Notez que les colonnes `LowCardinality` peuvent produire des batches Arrow bien plus grands ou bien plus petits que cette cible en octets. Les valeurs répétées sont développées dans la sortie, sauf si [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/fr/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary) est activé. Les blocs filtrés peuvent eux aussi conserver de volumineux dictionnaires : même un bloc comportant très peu de lignes peut donc atteindre la cible et être écrit séparément. Pour ces colonnes, utilisez [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size](/fr/reference/settings/formats/output-format#output_format_arrow_record_batch_size) afin de contrôler le nombre de lignes, et fixez la cible en octets à `0`.
-
-La mise en tampon des blocs peut augmenter la consommation mémoire et retarder le premier record batch jusqu&#39;à la fin de la requête. Laissez les deux cibles à `0` pour écrire les record batches au fur et à mesure de l&#39;arrivée des blocs.
-
-`0` (valeur par défaut) désactive la cible en octets. Essayez `1048576` (1 Mio) comme valeur de départ.
-
-## output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
+<div id="output_format_arrow_string_as_string">
+  ## output_format_arrow_string_as_string
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -89,43 +73,19 @@ La mise en tampon des blocs peut augmenter la consommation mémoire et retarder 
 
 Utiliser le type Arrow String au lieu de Binary pour les colonnes de type String
 
-## output_format_arrow_unsupported_types {#output_format_arrow_unsupported_types}
-
-<SettingsInfoBlock type="ArrowUnsupportedTypes" default_value="binary" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "binary"},{"label": "Nouveau paramètre remplaçant `output_format_arrow_unsupported_types_as_binary`, qui ajoute un mode `text`. Sa valeur par défaut correspond au comportement précédent, `compatibility` ne doit donc pas la modifier."}]}]} />
-
-Ce qu&#39;il faut écrire pour une colonne dont le type n&#39;a pas de correspondance native en Arrow (par exemple `JSON`, `Dynamic`, `QBit` ou `AggregateFunction`) :
-
-* `throw` — rejeter la requête ;
-* `text` — une valeur sous forme textuelle par ligne (ce que produirait `CAST(col AS String)`), dans une colonne Arrow `Utf8` ;
-* `binary` — la représentation binaire de chaque valeur, dans une colonne Arrow `Binary` (le même encodage par valeur que `RowBinary`).
-
-Une colonne `AggregateFunction` est également de type `Binary` en mode `text`, car sa forme textuelle est l&#39;état d&#39;agrégation brut et non du texte, or une colonne Arrow `Utf8` doit contenir de l&#39;UTF-8 valide. Utilisez `finalizeAggregation` pour obtenir une valeur lisible.
-
-Une valeur écrite dans une colonne `Utf8` est ajustée pour contenir de l&#39;UTF-8 valide, chaque séquence invalide étant remplacée par U+FFFD. Cela ne concerne que du texte qu&#39;un lecteur n&#39;aurait de toute façon pas pu interpréter comme tel — par exemple un `Dynamic` contenant une `String` faite d&#39;octets arbitraires. Utilisez le mode `binary` lorsque les octets doivent être préservés à l&#39;identique.
-
-`output_format_arrow_string_as_string` ne s&#39;applique pas à ces colonnes, mais uniquement aux véritables colonnes `String` et `FixedString`. Le type Arrow d&#39;une colonne opaque reste ainsi une indication de l&#39;encodage qu&#39;elle contient : `Utf8` correspond à la forme textuelle et `Binary` à la forme binaire, quelle que soit la valeur de ce paramètre.
-
-Il en va de même pour un état d&#39;agrégation contenu dans un `Dynamic` : la colonne est typée à partir de `Dynamic`, ce qui ne dit rien de ce que contiennent ses lignes, et le schéma Arrow est fixé avant qu&#39;aucune valeur n&#39;ait été vue ; l&#39;état ne peut donc pas recevoir sa propre colonne `Binary`, contrairement à une colonne `AggregateFunction`. En mode `text`, il y a par conséquent perte d&#39;information. Le mode `binary`, lui, la préserve. Un `Variant` n&#39;est pas concerné : il énumère ses alternatives, de sorte qu&#39;un `AggregateFunction` figurant parmi elles obtient son propre enfant `Binary`.
-
-En mode `text` comme en mode `binary`, le champ est étiqueté dans le schéma Arrow avec le nom d&#39;extension `clickhouse.opaque` et le nom du type ClickHouse d&#39;origine, afin qu&#39;un lecteur puisse le distinguer d&#39;une véritable colonne de chaîne ou binaire.
-
-ClickHouse ne relit une telle colonne dans le type nommé par l&#39;étiquette que si le côté lecture connaît déjà ce type, parce qu&#39;une table le déclare ou qu&#39;un structure argument tel que celui accepté par `file` et `s3` le nomme ; il le fait alors également à l&#39;intérieur de `Array`, `Tuple`, `Map` et `Nullable`. La schéma inference ne consulte pas l&#39;étiquette : une colonne lue sans type nommé pour elle arrive donc toujours en tant que `String` contenant la charge utile brute. Une alternative d&#39;un `Variant` n&#39;est jamais relue, même avec le type nommé, car l&#39;union Arrow que forment ses alternatives est décodée sans consulter les étiquettes. Dans tous les cas, les données écrites restent bien formées pour les autres lecteurs Arrow.
-
-Ce paramètre est prioritaire sur l&#39;ancien `output_format_arrow_unsupported_types_as_binary`, qui n&#39;est consulté que lorsque ce paramètre est laissé à sa valeur par défaut.
-
-## output_format_arrow_unsupported_types_as_binary {#output_format_arrow_unsupported_types_as_binary}
+<div id="output_format_arrow_unsupported_types_as_binary">
+  ## output_format_arrow_unsupported_types_as_binary
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "Nouveau paramètre permettant de convertir les types CH non pris en charge au format binaire Arrow au lieu de renvoyer une exception UNKNOWN_TYPE."}]}]} />
 
-Les types de sortie sans conversion sont émis sous forme de données binaires brutes. Si false, ces types génèrent une exception.
+Les types de sortie sans conversion sont émis sous forme de données binaires brutes. Si false, ces types génèrent une exception UNKNOWN&#95;TYPE.
 
-Remplacé par `output_format_arrow_unsupported_types` : `0` correspond à `throw` et `1` à `binary`. N&#39;est pris en compte que lorsque `output_format_arrow_unsupported_types` n&#39;est pas défini explicitement.
-
-## output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
+<div id="output_format_arrow_use_64_bit_indexes_for_dictionary">
+  ## output_format_arrow_use_64_bit_indexes_for_dictionary
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +93,9 @@ Remplacé par `output_format_arrow_unsupported_types` : `0` correspond à `throw
 
 Toujours utiliser des entiers sur 64 bits pour les index de dictionnaire au format Arrow
 
-## output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
+<div id="output_format_arrow_use_signed_indexes_for_dictionary">
+  ## output_format_arrow_use_signed_indexes_for_dictionary
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -141,33 +103,45 @@ Toujours utiliser des entiers sur 64 bits pour les index de dictionnaire au form
 
 Utiliser des entiers signés pour les index de dictionnaire au format Arrow
 
-## output_format_avro_codec {#output_format_avro_codec}
+<div id="output_format_avro_codec">
+  ## output_format_avro_codec
+</div>
 
 Codec de compression utilisé pour la sortie. Valeurs possibles : &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;.
 
-## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
+<div id="output_format_avro_confluent_subject">
+  ## output_format_avro_confluent_subject
+</div>
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "Nouveau paramètre permettant de spécifier le nom du sujet sous lequel le schéma est enregistré dans Confluent Schema Registry lors de l’écriture au format de sortie AvroConfluent."}]}]} />
 
 Pour le format de sortie AvroConfluent : le nom du sujet sous lequel le schéma est enregistré dans Confluent Schema Registry. Obligatoire lors de l’écriture au format de sortie AvroConfluent.
 
-## output_format_avro_rows_in_file {#output_format_avro_rows_in_file}
+<div id="output_format_avro_rows_in_file">
+  ## output_format_avro_rows_in_file
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 Nombre maximal de lignes dans un fichier (si le stockage le permet)
 
-## output_format_avro_string_column_pattern {#output_format_avro_string_column_pattern}
+<div id="output_format_avro_string_column_pattern">
+  ## output_format_avro_string_column_pattern
+</div>
 
 Pour le format Avro : expression régulière des colonnes de type String à sélectionner comme chaînes AVRO.
 
-## output_format_avro_sync_interval {#output_format_avro_sync_interval}
+<div id="output_format_avro_sync_interval">
+  ## output_format_avro_sync_interval
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
 Intervalle de synchronisation, en octets.
 
-## output_format_binary_encode_types_in_binary_format {#output_format_binary_encode_types_in_binary_format}
+<div id="output_format_binary_encode_types_in_binary_format">
+  ## output_format_binary_encode_types_in_binary_format
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -175,7 +149,9 @@ Intervalle de synchronisation, en octets.
 
 Écrire les types de données au format binaire au lieu des noms de type dans le format de sortie RowBinaryWithNamesAndTypes
 
-## output_format_binary_write_json_as_string {#output_format_binary_write_json_as_string}
+<div id="output_format_binary_write_json_as_string">
+  ## output_format_binary_write_json_as_string
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -183,13 +159,17 @@ Intervalle de synchronisation, en octets.
 
 Écrit les valeurs de type [JSON](/fr/reference/data-types/newjson) sous forme de valeurs [String](/fr/reference/data-types/string) contenant du JSON dans le format de sortie RowBinary.
 
-## output_format_bson_string_as_string {#output_format_bson_string_as_string}
+<div id="output_format_bson_string_as_string">
+  ## output_format_bson_string_as_string
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Utilise le type BSON String au lieu de Binary pour les colonnes de type String.
 
-## output_format_compression_level {#output_format_compression_level}
+<div id="output_format_compression_level">
+  ## output_format_compression_level
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -199,7 +179,9 @@ Niveau de compression par défaut si la sortie de la requête est compressée. C
 
 Valeurs possibles : de `1` à `22`
 
-## output_format_compression_zstd_window_log {#output_format_compression_zstd_window_log}
+<div id="output_format_compression_zstd_window_log">
+  ## output_format_compression_zstd_window_log
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -209,13 +191,17 @@ Peut être utilisé lorsque la méthode de compression de sortie est `zstd`. Si 
 
 Valeurs possibles : nombres non négatifs. Notez que si la valeur est trop petite ou trop grande, `zstdlib` lèvera une exception. Les valeurs typiques vont de `20` (taille de fenêtre = `1MB`) à `30` (taille de fenêtre = `1GB`).
 
-## output_format_csv_crlf_end_of_line {#output_format_csv_crlf_end_of_line}
+<div id="output_format_csv_crlf_end_of_line">
+  ## output_format_csv_crlf_end_of_line
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Si cette option est réglée sur true, la fin de ligne au format CSV sera \r\n au lieu de \n.
 
-## output_format_csv_header_serialize_tuple_into_separate_columns {#output_format_csv_header_serialize_tuple_into_separate_columns}
+<div id="output_format_csv_header_serialize_tuple_into_separate_columns">
+  ## output_format_csv_header_serialize_tuple_into_separate_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -225,7 +211,9 @@ Lorsque [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate
 
 Remarque : un en-tête aplati n’est pas relu dans un Tuple par nom lorsque `input_format_with_names_use_header = 1`. Pour relire ces données dans un Tuple, définissez soit ce paramètre sur `0` en sortie, soit lisez-les avec `input_format_with_names_use_header = 0` (et, pour les formats `*WithNamesAndTypes` `CSVWithNamesAndTypes` et `CustomSeparatedWithNamesAndTypes`, également `input_format_with_types_use_header = 0`, car la ligne de types aplatie est sinon validée par rapport à l’unique champ Tuple d’entrée de niveau supérieur, puis rejetée).
 
-## output_format_csv_serialize_tuple_into_separate_columns {#output_format_csv_serialize_tuple_into_separate_columns}
+<div id="output_format_csv_serialize_tuple_into_separate_columns">
+  ## output_format_csv_serialize_tuple_into_separate_columns
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -235,7 +223,9 @@ Si ce paramètre est défini sur true, les colonnes `Tuple` utilisées seules au
 
 Cet aplatissement s’applique uniquement aux `Tuple` utilisés seuls. Un `Nullable(Tuple)` est toujours sérialisé comme un seul champ CSV (afin que les lignes NULL et non-NULL occupent le même nombre de champs), indépendamment de ce paramètre.
 
-## output_format_decimal_trailing_zeros {#output_format_decimal_trailing_zeros}
+<div id="output_format_decimal_trailing_zeros">
+  ## output_format_decimal_trailing_zeros
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -245,7 +235,9 @@ Affiche les zéros non significatifs lors de l’affichage des valeurs Decimal. 
 
 Désactivé par défaut.
 
-## output_format_float_precision {#output_format_float_precision}
+<div id="output_format_float_precision">
+  ## output_format_float_precision
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -258,7 +250,9 @@ Les valeurs trop grandes pour la notation fixe, ainsi que les valeurs dont la va
 
 Plage valide : de 0 à 100.
 
-## output_format_image_height {#output_format_image_height}
+<div id="output_format_image_height">
+  ## output_format_image_height
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -268,7 +262,9 @@ Hauteur, en pixels, de l’image produite pour les formats de sortie d’image t
 
 Valeur par défaut : 1024.
 
-## output_format_image_streaming_animation {#output_format_image_streaming_animation}
+<div id="output_format_image_streaming_animation">
+  ## output_format_image_streaming_animation
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -280,7 +276,9 @@ Une seule image est conservée en mémoire, et les images sont écrites dans la 
 
 Valeur par défaut : `false`.
 
-## output_format_image_terminal_mode {#output_format_image_terminal_mode}
+<div id="output_format_image_terminal_mode">
+  ## output_format_image_terminal_mode
+</div>
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "Nouveau paramètre qui détermine si les formats de sortie d’image, tels que PNG, sont affichés directement dans le terminal à l’aide d’un protocole d’image intégré."}]}]} />
 
@@ -296,7 +294,9 @@ Valeurs possibles :
 
 Valeur par défaut : &#96;&#96; (vide).
 
-## output_format_image_time_divisor_seconds {#output_format_image_time_divisor_seconds}
+<div id="output_format_image_time_divisor_seconds">
+  ## output_format_image_time_divisor_seconds
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
@@ -308,7 +308,9 @@ Consultez [`output_format_image_time_multiplier_seconds`](/fr/reference/settings
 
 Valeur par défaut : 60.
 
-## output_format_image_time_multiplier_seconds {#output_format_image_time_multiplier_seconds}
+<div id="output_format_image_time_multiplier_seconds">
+  ## output_format_image_time_multiplier_seconds
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -322,7 +324,9 @@ Avec les valeurs par défaut (`1` et `60`), une unité de `t` correspond à 1/60
 
 Valeur par défaut : 1.
 
-## output_format_image_width {#output_format_image_width}
+<div id="output_format_image_width">
+  ## output_format_image_width
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -332,7 +336,9 @@ Largeur, en pixels, de l’image de sortie pour les formats de sortie d’image 
 
 Valeur par défaut : 1024.
 
-## output_format_json_array_of_rows {#output_format_json_array_of_rows}
+<div id="output_format_json_array_of_rows">
+  ## output_format_json_array_of_rows
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -379,7 +385,9 @@ Résultat :
 {"number":"2"}
 ```
 
-## output_format_json_escape_forward_slashes {#output_format_json_escape_forward_slashes}
+<div id="output_format_json_escape_forward_slashes">
+  ## output_format_json_escape_forward_slashes
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -387,7 +395,9 @@ Contrôle l’échappement des slashs dans les chaînes de sortie au format de s
 
 Activé par défaut.
 
-## output_format_json_map_as_array_of_tuples {#output_format_json_map_as_array_of_tuples}
+<div id="output_format_json_map_as_array_of_tuples">
+  ## output_format_json_map_as_array_of_tuples
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -397,7 +407,9 @@ Sérialise les colonnes de type Map sous forme de tableaux JSON de tuples.
 
 Désactivé par défaut.
 
-## output_format_json_named_tuples_as_objects {#output_format_json_named_tuples_as_objects}
+<div id="output_format_json_named_tuples_as_objects">
+  ## output_format_json_named_tuples_as_objects
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -407,7 +419,9 @@ Sérialise les colonnes de tuples nommés sous forme d’objets JSON.
 
 Activé par défaut.
 
-## output_format_json_pretty_print {#output_format_json_pretty_print}
+<div id="output_format_json_pretty_print">
+  ## output_format_json_pretty_print
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -455,7 +469,9 @@ La sortie se présentera comme suit :
 
 Activé par défaut.
 
-## output_format_json_quote_64bit_floats {#output_format_json_quote_64bit_floats}
+<div id="output_format_json_quote_64bit_floats">
+  ## output_format_json_quote_64bit_floats
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -463,7 +479,9 @@ Contrôle la mise entre guillemets des [Float](/fr/reference/data-types/float) 6
 
 Désactivé par défaut.
 
-## output_format_json_quote_64bit_integers {#output_format_json_quote_64bit_integers}
+<div id="output_format_json_quote_64bit_integers">
+  ## output_format_json_quote_64bit_integers
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -477,7 +495,9 @@ Valeurs possibles :
 * 0 — Les entiers sont renvoyés sans guillemets.
 * 1 — Les entiers sont entourés de guillemets.
 
-## output_format_json_quote_decimals {#output_format_json_quote_decimals}
+<div id="output_format_json_quote_decimals">
+  ## output_format_json_quote_decimals
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -485,7 +505,9 @@ Contrôle la mise entre guillemets des valeurs décimales dans les formats de so
 
 Désactivé par défaut.
 
-## output_format_json_quote_denormals {#output_format_json_quote_denormals}
+<div id="output_format_json_quote_denormals">
+  ## output_format_json_quote_denormals
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -584,13 +606,17 @@ Lorsque `output_format_json_quote_denormals = 1`, la requête renvoie :
 }
 ```
 
-## output_format_json_skip_null_value_in_named_tuples {#output_format_json_skip_null_value_in_named_tuples}
+<div id="output_format_json_skip_null_value_in_named_tuples">
+  ## output_format_json_skip_null_value_in_named_tuples
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignore les paires clé-valeur dont la valeur est nulle lors de la sérialisation des colonnes de tuples nommés en objets JSON. Ce paramètre n’est valide que lorsque `output_format_json_named_tuples_as_objects` vaut true.
 
-## output_format_json_validate_utf8 {#output_format_json_validate_utf8}
+<div id="output_format_json_validate_utf8">
+  ## output_format_json_validate_utf8
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -598,7 +624,9 @@ Contrôle la validation des séquences UTF-8 dans les formats de sortie JSON. N&
 
 Désactivé par défaut.
 
-## output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
+<div id="output_format_markdown_escape_special_characters">
+  ## output_format_markdown_escape_special_characters
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -615,13 +643,17 @@ Valeurs possibles :
 * 0 — Désactivé.
 * 1 — Activé.
 
-## output_format_msgpack_uuid_representation {#output_format_msgpack_uuid_representation}
+<div id="output_format_msgpack_uuid_representation">
+  ## output_format_msgpack_uuid_representation
+</div>
 
 <SettingsInfoBlock type="MsgPackUUIDRepresentation" default_value="ext" />
 
 Définit la manière dont un UUID est représenté en sortie au format MsgPack.
 
-## output_format_native_encode_types_in_binary_format {#output_format_native_encode_types_in_binary_format}
+<div id="output_format_native_encode_types_in_binary_format">
+  ## output_format_native_encode_types_in_binary_format
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -629,7 +661,9 @@ Définit la manière dont un UUID est représenté en sortie au format MsgPack.
 
 Écrire les types de données au format binaire au lieu des nom de type dans le format de sortie Native
 
-## output_format_native_use_flattened_dynamic_and_json_serialization {#output_format_native_use_flattened_dynamic_and_json_serialization}
+<div id="output_format_native_use_flattened_dynamic_and_json_serialization">
+  ## output_format_native_use_flattened_dynamic_and_json_serialization
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -637,7 +671,9 @@ Définit la manière dont un UUID est représenté en sortie au format MsgPack.
 
 Écrire les données des colonnes [JSON](/fr/reference/data-types/newjson) et [Dynamic](/fr/reference/data-types/dynamic) dans un format aplati (tous les types/chemins comme sous-colonnes distinctes).
 
-## output_format_native_write_json_as_string {#output_format_native_write_json_as_string}
+<div id="output_format_native_write_json_as_string">
+  ## output_format_native_write_json_as_string
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -645,7 +681,9 @@ Définit la manière dont un UUID est représenté en sortie au format MsgPack.
 
 Écrit les données d’une colonne [JSON](/fr/reference/data-types/newjson) dans une colonne [String](/fr/reference/data-types/string) contenant des chaînes JSON, au lieu d’utiliser la sérialisation JSON native par défaut.
 
-## output_format_orc_compression_block_size {#output_format_orc_compression_block_size}
+<div id="output_format_orc_compression_block_size">
+  ## output_format_orc_compression_block_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="262144" />
 
@@ -653,7 +691,9 @@ Définit la manière dont un UUID est représenté en sortie au format MsgPack.
 
 Taille, en octets, du bloc de compression du format de sortie ORC.
 
-## output_format_orc_compression_method {#output_format_orc_compression_method}
+<div id="output_format_orc_compression_method">
+  ## output_format_orc_compression_method
+</div>
 
 <SettingsInfoBlock type="ORCCompression" default_value="zstd" />
 
@@ -661,7 +701,9 @@ Taille, en octets, du bloc de compression du format de sortie ORC.
 
 Méthode de compression du format de sortie ORC. Codecs pris en charge : lz4, snappy, zlib, zstd, none (non compressé)
 
-## output_format_orc_dictionary_key_size_threshold {#output_format_orc_dictionary_key_size_threshold}
+<div id="output_format_orc_dictionary_key_size_threshold">
+  ## output_format_orc_dictionary_key_size_threshold
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -669,13 +711,17 @@ Méthode de compression du format de sortie ORC. Codecs pris en charge : lz4, s
 
 Pour une colonne de chaînes au format de sortie ORC, si le nombre de valeurs distinctes est supérieur à cette fraction du nombre total de lignes non NULL, l&#39;encodage par dictionnaire est désactivé. Sinon, l&#39;encodage par dictionnaire est activé
 
-## output_format_orc_row_index_stride {#output_format_orc_row_index_stride}
+<div id="output_format_orc_row_index_stride">
+  ## output_format_orc_row_index_stride
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 Pas cible de l&#39;index de ligne du format de sortie ORC
 
-## output_format_orc_string_as_string {#output_format_orc_string_as_string}
+<div id="output_format_orc_string_as_string">
+  ## output_format_orc_string_as_string
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -683,7 +729,9 @@ Pas cible de l&#39;index de ligne du format de sortie ORC
 
 Utiliser le type String d’ORC au lieu de Binary pour les colonnes de type String
 
-## output_format_orc_writer_time_zone_name {#output_format_orc_writer_time_zone_name}
+<div id="output_format_orc_writer_time_zone_name">
+  ## output_format_orc_writer_time_zone_name
+</div>
 
 <SettingsInfoBlock type="String" default_value="GMT" />
 
@@ -691,7 +739,9 @@ Utiliser le type String d’ORC au lieu de Binary pour les colonnes de type Stri
 
 Le nom du fuseau horaire utilisé par le writer ORC ; par défaut, le writer ORC utilise le fuseau horaire GMT.
 
-## output_format_parallel_formatting {#output_format_parallel_formatting}
+<div id="output_format_parallel_formatting">
+  ## output_format_parallel_formatting
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -702,13 +752,17 @@ Valeurs possibles :
 * 1 — Activé.
 * 0 — Désactivé.
 
-## output_format_parquet_batch_size {#output_format_parquet_batch_size}
+<div id="output_format_parquet_batch_size">
+  ## output_format_parquet_batch_size
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
 
 Vérifie la taille de la page toutes les N lignes. Envisagez de diminuer cette valeur si vous avez des colonnes dont la taille moyenne des valeurs dépasse quelques Ko.
 
-## output_format_parquet_bloom_filter_bits_per_value {#output_format_parquet_bloom_filter_bits_per_value}
+<div id="output_format_parquet_bloom_filter_bits_per_value">
+  ## output_format_parquet_bloom_filter_bits_per_value
+</div>
 
 <SettingsInfoBlock type="Double" default_value="10.5" />
 
@@ -722,7 +776,9 @@ Nombre approximatif de bits à utiliser pour chaque valeur distincte dans les fi
 * 26.4 bits -  0.01 %
 * 41   bits -  0.001 %
 
-## output_format_parquet_bloom_filter_flush_threshold_bytes {#output_format_parquet_bloom_filter_flush_threshold_bytes}
+<div id="output_format_parquet_bloom_filter_flush_threshold_bytes">
+  ## output_format_parquet_bloom_filter_flush_threshold_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
@@ -734,7 +790,9 @@ Emplacement des filtres de Bloom dans le fichier Parquet. Les filtres de Bloom s
   * si elle est supérieure à la taille totale de tous les filtres de Bloom, les filtres de Bloom de tous les groupes de lignes seront accumulés en mémoire, puis écrits ensemble vers la fin du fichier,
   * sinon, les filtres de Bloom seront accumulés en mémoire et écrits dès que leur taille totale dépasse cette valeur.
 
-## output_format_parquet_compression_method {#output_format_parquet_compression_method}
+<div id="output_format_parquet_compression_method">
+  ## output_format_parquet_compression_method
+</div>
 
 <SettingsInfoBlock type="ParquetCompression" default_value="zstd" />
 
@@ -742,13 +800,17 @@ Emplacement des filtres de Bloom dans le fichier Parquet. Les filtres de Bloom s
 
 Méthode de compression du format de sortie Parquet. Codecs pris en charge : snappy, lz4, brotli, zstd, gzip, none (non compressé)
 
-## output_format_parquet_data_page_size {#output_format_parquet_data_page_size}
+<div id="output_format_parquet_data_page_size">
+  ## output_format_parquet_data_page_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 Taille de page cible, en octets, avant compression.
 
-## output_format_parquet_date_as_uint16 {#output_format_parquet_date_as_uint16}
+<div id="output_format_parquet_date_as_uint16">
+  ## output_format_parquet_date_as_uint16
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -756,7 +818,9 @@ Taille de page cible, en octets, avant compression.
 
 Écrit les valeurs Date sous forme de simples nombres 16 bits (relus comme UInt16), au lieu de les convertir en type DATE Parquet 32 bits (relu comme Date32).
 
-## output_format_parquet_datetime_as_uint32 {#output_format_parquet_datetime_as_uint32}
+<div id="output_format_parquet_datetime_as_uint32">
+  ## output_format_parquet_datetime_as_uint32
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -764,7 +828,9 @@ Taille de page cible, en octets, avant compression.
 
 Écrire les valeurs DateTime sous forme d’horodatage Unix brut (relues comme UInt32), au lieu de les convertir en millisecondes (relues comme DateTime64(3)).
 
-## output_format_parquet_enum_as_byte_array {#output_format_parquet_enum_as_byte_array}
+<div id="output_format_parquet_enum_as_byte_array">
+  ## output_format_parquet_enum_as_byte_array
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -772,7 +838,9 @@ Taille de page cible, en octets, avant compression.
 
 Écrire les enum en utilisant le type physique Parquet : BYTE&#95;ARRAY et le type logique : ENUM
 
-## output_format_parquet_fixed_string_as_fixed_byte_array {#output_format_parquet_fixed_string_as_fixed_byte_array}
+<div id="output_format_parquet_fixed_string_as_fixed_byte_array">
+  ## output_format_parquet_fixed_string_as_fixed_byte_array
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -780,7 +848,9 @@ Taille de page cible, en octets, avant compression.
 
 Utiliser le type Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY au lieu de Binary pour les colonnes FixedString.
 
-## output_format_parquet_geometadata {#output_format_parquet_geometadata}
+<div id="output_format_parquet_geometadata">
+  ## output_format_parquet_geometadata
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -788,7 +858,9 @@ Utiliser le type Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY au lieu de Binary pour
 
 Permet d’écrire des informations sur les colonnes Geo dans les métadonnées Parquet et d’encoder les colonnes au format WKB.
 
-## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
+<div id="output_format_parquet_max_dictionary_size">
+  ## output_format_parquet_max_dictionary_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -796,25 +868,33 @@ Permet d’écrire des informations sur les colonnes Geo dans les métadonnées 
 
 Si la taille du dictionnaire dépasse ce nombre d’octets, l’encodage bascule vers un mode sans dictionnaire. Définissez cette valeur sur 0 pour désactiver l’encodage par dictionnaire.
 
-## output_format_parquet_parallel_encoding {#output_format_parquet_parallel_encoding}
+<div id="output_format_parquet_parallel_encoding">
+  ## output_format_parquet_parallel_encoding
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Effectue l’encodage Parquet en parallèle sur plusieurs threads.
 
-## output_format_parquet_row_group_size {#output_format_parquet_row_group_size}
+<div id="output_format_parquet_row_group_size">
+  ## output_format_parquet_row_group_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 Taille cible du groupe de lignes, en nombre de lignes.
 
-## output_format_parquet_row_group_size_bytes {#output_format_parquet_row_group_size_bytes}
+<div id="output_format_parquet_row_group_size_bytes">
+  ## output_format_parquet_row_group_size_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
 Taille cible du groupe de lignes, en octets, avant compression.
 
-## output_format_parquet_string_as_string {#output_format_parquet_string_as_string}
+<div id="output_format_parquet_string_as_string">
+  ## output_format_parquet_string_as_string
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -822,7 +902,9 @@ Taille cible du groupe de lignes, en octets, avant compression.
 
 Utiliser le type String de Parquet au lieu de Binary pour les colonnes de type String.
 
-## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
+<div id="output_format_parquet_wide_integer_as_decimal">
+  ## output_format_parquet_wide_integer_as_decimal
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -830,7 +912,9 @@ Utiliser le type String de Parquet au lieu de Binary pour les colonnes de type S
 
 Écrit les valeurs `Int128`, `UInt128`, `Int256` et `UInt256` sous forme de valeurs Parquet `DECIMAL` conformes aux normes, avec un ordre des octets big-endian. La valeur par défaut conserve la représentation `FIXED_LEN_BYTE_ARRAY` little-endian non annotée legacy, afin d’assurer la compatibilité avec les anciennes versions de ClickHouse. La représentation décimale permet d’obtenir des statistiques numériques interopérables, mais certains lecteurs Parquet ne prennent pas en charge des précisions supérieures à 38 ou 76.
 
-## output_format_parquet_write_bloom_filter {#output_format_parquet_write_bloom_filter}
+<div id="output_format_parquet_write_bloom_filter">
+  ## output_format_parquet_write_bloom_filter
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -838,7 +922,9 @@ Utiliser le type String de Parquet au lieu de Binary pour les colonnes de type S
 
 Écrire des filtres de Bloom dans les fichiers Parquet.
 
-## output_format_parquet_write_checksums {#output_format_parquet_write_checksums}
+<div id="output_format_parquet_write_checksums">
+  ## output_format_parquet_write_checksums
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -846,7 +932,9 @@ Utiliser le type String de Parquet au lieu de Binary pour les colonnes de type S
 
 Insère des sommes de contrôle CRC32 dans les en-têtes de page Parquet.
 
-## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
+<div id="output_format_parquet_write_page_index">
+  ## output_format_parquet_write_page_index
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -854,7 +942,9 @@ Insère des sommes de contrôle CRC32 dans les en-têtes de page Parquet.
 
 Écrit les index de colonnes et de décalage (c’est-à-dire des statistiques sur chaque page de données, qui peuvent être utilisées pour le pushdown des filtres à la lecture) dans les fichiers Parquet.
 
-## output_format_pretty_color {#output_format_pretty_color}
+<div id="output_format_pretty_color">
+  ## output_format_pretty_color
+</div>
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -862,7 +952,9 @@ Insère des sommes de contrôle CRC32 dans les en-têtes de page Parquet.
 
 Utilise les séquences d’échappement ANSI dans les format Pretty. 0 - désactivé, 1 - activé, &#39;auto&#39; - activé si la sortie se fait dans un terminal.
 
-## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
+<div id="output_format_pretty_display_footer_column_names">
+  ## output_format_pretty_display_footer_column_names
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -896,7 +988,9 @@ Résultat :
       └─number─┴─toTypeName(number)─┘
 ```
 
-## output_format_pretty_display_footer_column_names_min_rows {#output_format_pretty_display_footer_column_names_min_rows}
+<div id="output_format_pretty_display_footer_column_names_min_rows">
+  ## output_format_pretty_display_footer_column_names_min_rows
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -904,7 +998,9 @@ Résultat :
 
 Définit le nombre minimal de lignes à partir duquel un pied de page affichant les noms des colonnes est présenté si le paramètre [output&#95;format&#95;pretty&#95;display&#95;footer&#95;column&#95;names](/fr/reference/settings/formats/output-format#output_format_pretty_display_footer_column_names) est activé.
 
-## output_format_pretty_fallback_to_vertical {#output_format_pretty_fallback_to_vertical}
+<div id="output_format_pretty_fallback_to_vertical">
+  ## output_format_pretty_fallback_to_vertical
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -913,7 +1009,9 @@ Définit le nombre minimal de lignes à partir duquel un pied de page affichant 
 S&#39;il est activé et que la table est large mais comporte peu de lignes, le format Pretty l&#39;affiche comme le format Vertical.
 Consultez `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` et `output_format_pretty_fallback_to_vertical_min_table_width` pour régler ce comportement plus finement.
 
-## output_format_pretty_fallback_to_vertical_max_rows_per_chunk {#output_format_pretty_fallback_to_vertical_max_rows_per_chunk}
+<div id="output_format_pretty_fallback_to_vertical_max_rows_per_chunk">
+  ## output_format_pretty_fallback_to_vertical_max_rows_per_chunk
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -921,7 +1019,9 @@ Consultez `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` et `out
 
 Le basculement vers le format Vertical (voir `output_format_pretty_fallback_to_vertical`) ne s&#39;active que si le nombre d&#39;enregistrements dans un chunk est inférieur ou égal à la valeur spécifiée.
 
-## output_format_pretty_fallback_to_vertical_min_columns {#output_format_pretty_fallback_to_vertical_min_columns}
+<div id="output_format_pretty_fallback_to_vertical_min_columns">
+  ## output_format_pretty_fallback_to_vertical_min_columns
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -929,7 +1029,9 @@ Le basculement vers le format Vertical (voir `output_format_pretty_fallback_to_v
 
 Le basculement vers le format Vertical (voir `output_format_pretty_fallback_to_vertical`) s&#39;active uniquement si le nombre de colonnes est supérieur à la valeur spécifiée.
 
-## output_format_pretty_fallback_to_vertical_min_table_width {#output_format_pretty_fallback_to_vertical_min_table_width}
+<div id="output_format_pretty_fallback_to_vertical_min_table_width">
+  ## output_format_pretty_fallback_to_vertical_min_table_width
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="250" />
 
@@ -937,7 +1039,9 @@ Le basculement vers le format Vertical (voir `output_format_pretty_fallback_to_v
 
 Le basculement vers le format Vertical (voir `output_format_pretty_fallback_to_vertical`) ne sera activé que si la somme des longueurs des colonnes d’une table est au moins égale à la valeur spécifiée, ou si au moins une valeur contient un caractère de retour à la ligne.
 
-## output_format_pretty_glue_chunks {#output_format_pretty_glue_chunks}
+<div id="output_format_pretty_glue_chunks">
+  ## output_format_pretty_glue_chunks
+</div>
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -947,7 +1051,9 @@ Si les données affichées dans les formats Pretty arrivent en plusieurs chunks,
 
 0 - désactivé, 1 - activé, &#39;auto&#39; - activé si la sortie se fait dans un terminal.
 
-## output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
+<div id="output_format_pretty_grid_charset">
+  ## output_format_pretty_grid_charset
+</div>
 
 <SettingsInfoBlock type="String" default_value="UTF-8" />
 
@@ -955,7 +1061,9 @@ Jeu de caractères utilisé pour l’affichage des bordures de la grille. Jeux d
 
 En mode interactif, `clickhouse-client` bascule automatiquement vers `ASCII` lorsque le terminal ne prend pas en charge UTF-8 (selon les variables d’environnement `LC_ALL`, `LC_CTYPE` et `LANG`), sauf si ce paramètre est explicitement défini.
 
-## output_format_pretty_highlight_digit_groups {#output_format_pretty_highlight_digit_groups}
+<div id="output_format_pretty_highlight_digit_groups">
+  ## output_format_pretty_highlight_digit_groups
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -963,7 +1071,9 @@ En mode interactif, `clickhouse-client` bascule automatiquement vers `ASCII` lor
 
 Si cette option est activée et si la sortie est un terminal, chaque chiffre correspondant aux milliers, millions, etc. est souligné.
 
-## output_format_pretty_highlight_trailing_spaces {#output_format_pretty_highlight_trailing_spaces}
+<div id="output_format_pretty_highlight_trailing_spaces">
+  ## output_format_pretty_highlight_trailing_spaces
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -971,7 +1081,9 @@ Si cette option est activée et si la sortie est un terminal, chaque chiffre cor
 
 Si ce paramètre est activé et que la sortie est un terminal, les espaces de fin de ligne sont mis en évidence en gris et soulignés.
 
-## output_format_pretty_max_column_name_width_cut_to {#output_format_pretty_max_column_name_width_cut_to}
+<div id="output_format_pretty_max_column_name_width_cut_to">
+  ## output_format_pretty_max_column_name_width_cut_to
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="24" />
 
@@ -980,7 +1092,9 @@ Si ce paramètre est activé et que la sortie est un terminal, les espaces de fi
 Si le nom de la colonne est trop long, tronquez-le à cette longueur.
 La colonne sera tronquée si sa longueur dépasse `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
 
-## output_format_pretty_max_column_name_width_min_chars_to_cut {#output_format_pretty_max_column_name_width_min_chars_to_cut}
+<div id="output_format_pretty_max_column_name_width_min_chars_to_cut">
+  ## output_format_pretty_max_column_name_width_min_chars_to_cut
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
@@ -989,13 +1103,17 @@ La colonne sera tronquée si sa longueur dépasse `output_format_pretty_max_colu
 Nombre minimal de caractères à supprimer si le nom de la colonne est trop long.
 Le nom de la colonne sera tronqué s&#39;il dépasse `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
 
-## output_format_pretty_max_column_pad_width {#output_format_pretty_max_column_pad_width}
+<div id="output_format_pretty_max_column_pad_width">
+  ## output_format_pretty_max_column_pad_width
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="250" />
 
 Largeur maximale de remplissage appliquée à toutes les valeurs d’une colonne dans les formats Pretty.
 
-## output_format_pretty_max_rows {#output_format_pretty_max_rows}
+<div id="output_format_pretty_max_rows">
+  ## output_format_pretty_max_rows
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1003,14 +1121,18 @@ Largeur maximale de remplissage appliquée à toutes les valeurs d’une colonne
 
 Limite de lignes pour les formats Pretty.
 
-## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
+<div id="output_format_pretty_max_value_width">
+  ## output_format_pretty_max_value_width
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 Largeur maximale de la valeur affichée dans les formats Pretty. Au-delà, elle sera tronquée.
 La valeur 0 signifie : ne jamais tronquer.
 
-## output_format_pretty_max_value_width_apply_for_single_value {#output_format_pretty_max_value_width_apply_for_single_value}
+<div id="output_format_pretty_max_value_width_apply_for_single_value">
+  ## output_format_pretty_max_value_width_apply_for_single_value
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1018,7 +1140,9 @@ La valeur 0 signifie : ne jamais tronquer.
 
 Ne tronquer les valeurs (voir le paramètre `output_format_pretty_max_value_width`) que lorsqu&#39;il ne s&#39;agit pas d&#39;une valeur isolée dans un bloc. Sinon, les afficher intégralement, ce qui est utile pour la requête `SHOW CREATE TABLE`.
 
-## output_format_pretty_multiline_fields {#output_format_pretty_multiline_fields}
+<div id="output_format_pretty_multiline_fields">
+  ## output_format_pretty_multiline_fields
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1027,7 +1151,9 @@ Ne tronquer les valeurs (voir le paramètre `output_format_pretty_max_value_widt
 Si cette option est activée, les formats Pretty afficheront les champs sur plusieurs lignes à l’intérieur des cellules du tableau, de sorte que les bordures du tableau soient préservées.
 Sinon, ils seront affichés tels quels, ce qui risque de déformer le tableau (l’un des avantages de laisser cette option désactivée est que le copier-coller de valeurs sur plusieurs lignes sera plus facile).
 
-## output_format_pretty_named_tuples_as_json {#output_format_pretty_named_tuples_as_json}
+<div id="output_format_pretty_named_tuples_as_json">
+  ## output_format_pretty_named_tuples_as_json
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1035,7 +1161,9 @@ Sinon, ils seront affichés tels quels, ce qui risque de déformer le tableau (l
 
 Détermine si les tuples nommés au format Pretty sont affichés sous forme d&#39;objets JSON avec une mise en forme lisible.
 
-## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
+<div id="output_format_pretty_row_numbers">
+  ## output_format_pretty_row_numbers
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1043,7 +1171,9 @@ Détermine si les tuples nommés au format Pretty sont affichés sous forme d&#3
 
 Ajoute des numéros de ligne avant chaque ligne pour le format de sortie Pretty
 
-## output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
+<div id="output_format_pretty_single_large_number_tip_threshold">
+  ## output_format_pretty_single_large_number_tip_threshold
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -1051,7 +1181,9 @@ Ajoute des numéros de ligne avant chaque ligne pour le format de sortie Pretty
 
 Affiche, à droite du tableau, une indication lisible pour un nombre si le bloc est constitué d’un seul nombre supérieur à cette valeur (sauf 0)
 
-## output_format_pretty_squash_consecutive_ms {#output_format_pretty_squash_consecutive_ms}
+<div id="output_format_pretty_squash_consecutive_ms">
+  ## output_format_pretty_squash_consecutive_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -1060,7 +1192,9 @@ Affiche, à droite du tableau, une indication lisible pour un nombre si le bloc 
 Attend le bloc suivant pendant le nombre de millisecondes spécifié au maximum, puis le fusionne avec le précédent avant l’écriture.
 Cela évite de produire trop souvent des blocs trop petits, tout en permettant d’afficher les données en mode streaming.
 
-## output_format_pretty_squash_max_wait_ms {#output_format_pretty_squash_max_wait_ms}
+<div id="output_format_pretty_squash_max_wait_ms">
+  ## output_format_pretty_squash_max_wait_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1068,7 +1202,9 @@ Cela évite de produire trop souvent des blocs trop petits, tout en permettant d
 
 Affiche le bloc en attente dans les formats Pretty si le nombre de millisecondes écoulées depuis la sortie précédente dépasse la valeur spécifiée.
 
-## output_format_pretty_use_nbsp_for_padding {#output_format_pretty_use_nbsp_for_padding}
+<div id="output_format_pretty_use_nbsp_for_padding">
+  ## output_format_pretty_use_nbsp_for_padding
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1078,47 +1214,63 @@ S&#39;il est activé, les espaces de remplissage dans les formats de sortie `Pre
 La sortie reste visuellement identique avec une police à chasse fixe, mais ces espaces de remplissage sont préservés par les outils qui compressent ou suppriment les suites d&#39;espaces ordinaires.
 Ne prend effet que lorsque `output_format_pretty_grid_charset` vaut `UTF-8`.
 
-## output_format_protobuf_nullables_with_google_wrappers {#output_format_protobuf_nullables_with_google_wrappers}
+<div id="output_format_protobuf_nullables_with_google_wrappers">
+  ## output_format_protobuf_nullables_with_google_wrappers
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Lors de la sérialisation de colonnes Nullable avec les wrappers Google, sérialisez les valeurs par défaut sous forme de wrappers vides. Si cette option est désactivée, les valeurs par défaut et les valeurs NULL ne sont pas sérialisées
 
-## output_format_schema {#output_format_schema}
+<div id="output_format_schema">
+  ## output_format_schema
+</div>
 
 Chemin du fichier dans lequel le schéma généré automatiquement sera enregistré aux formats [Cap&#39;n Proto](/fr/reference/formats/CapnProto) ou [Protobuf](/fr/reference/formats/Protobuf/Protobuf).
 
-## output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
+<div id="output_format_sql_insert_include_column_names">
+  ## output_format_sql_insert_include_column_names
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Inclure les noms de colonnes dans la requête INSERT
 
-## output_format_sql_insert_max_batch_size {#output_format_sql_insert_max_batch_size}
+<div id="output_format_sql_insert_max_batch_size">
+  ## output_format_sql_insert_max_batch_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="65409" />
 
 Le nombre maximal de lignes dans une instruction INSERT.
 
-## output_format_sql_insert_quote_names {#output_format_sql_insert_quote_names}
+<div id="output_format_sql_insert_quote_names">
+  ## output_format_sql_insert_quote_names
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Mettre les noms de colonnes entre des caractères &#39;&#96;&#39;
 
-## output_format_sql_insert_table_name {#output_format_sql_insert_table_name}
+<div id="output_format_sql_insert_table_name">
+  ## output_format_sql_insert_table_name
+</div>
 
 <SettingsInfoBlock type="String" default_value="table" />
 
 Le nom de la table dans la requête INSERT générée en sortie
 
-## output_format_sql_insert_use_replace {#output_format_sql_insert_use_replace}
+<div id="output_format_sql_insert_use_replace">
+  ## output_format_sql_insert_use_replace
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Utiliser l’instruction REPLACE au lieu de l’instruction INSERT
 
-## output_format_trim_fixed_string {#output_format_trim_fixed_string}
+<div id="output_format_trim_fixed_string">
+  ## output_format_trim_fixed_string
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1126,13 +1278,17 @@ Utiliser l’instruction REPLACE au lieu de l’instruction INSERT
 
 Supprime les octets nuls en fin de valeur FixedString dans les formats de sortie textuels. Par ex., `toFixedString('John', 8)` s&#39;affiche comme `John` au lieu de `John\0\0\0\0`.
 
-## output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
+<div id="output_format_tsv_crlf_end_of_line">
+  ## output_format_tsv_crlf_end_of_line
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Si ce paramètre est défini sur true, la fin de ligne au format TSV sera \r\n au lieu de \n.
 
-## output_format_values_escape_quote_with_quote {#output_format_values_escape_quote_with_quote}
+<div id="output_format_values_escape_quote_with_quote">
+  ## output_format_values_escape_quote_with_quote
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1140,7 +1296,9 @@ Si ce paramètre est défini sur true, la fin de ligne au format TSV sera \r\n a
 
 Si true, échappe &#39; par &#39;&#39;, sinon avec &#92;&#39;
 
-## output_format_write_statistics {#output_format_write_statistics}
+<div id="output_format_write_statistics">
+  ## output_format_write_statistics
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

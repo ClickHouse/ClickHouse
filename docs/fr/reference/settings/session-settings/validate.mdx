@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
+<div id="validate_enum_literals_in_operators">
+  ## validate_enum_literals_in_operators
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -21,30 +23,21 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Si cette option est activée, les littéraux enum utilisés dans des opérateurs tels que `IN`, `NOT IN`, `==` et `!=` sont validés par rapport au type enum, et une exception est levée si le littéral n’est pas une valeur enum valide.
 
-## validate_group_by_all_key_types {#validate_group_by_all_key_types}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "La validation des types de clés issus du développement des expressions `SELECT` par `GROUP BY ALL` est maintenue sous `compatibility` avec les versions 26.7 ou 26.8 : la valeur précédente est délibérément identique à la nouvelle, car ces versions rejetaient déjà une telle clé et seule une version antérieure à 26.7 rétablit l'acceptation antérieure."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "1"},{"label": "Nouveau paramètre contrôlant la validation des types de clés issus du développement des expressions `SELECT` par `GROUP BY ALL`. La version 26.7 a commencé à rejeter une clé `Variant`\/`Dynamic` dans ce cas, alors que les versions antérieures l'acceptaient lorsque l'analyseur était activé (`enable_analyzer = 1`, valeur par défaut ; l'ancien analyseur rejetait également une telle clé avant la version 26.7). La valeur précédente est donc `false` et `compatibility` avec une version antérieure à 26.7 rétablit l'acceptation antérieure."}]}]} />
-
-Contrôle si les clés de regroupement issues du développement des expressions `SELECT` par `GROUP BY ALL` sont vérifiées selon [allow&#95;suspicious&#95;types&#95;in&#95;group&#95;by](/fr/reference/settings/session-settings/allow-suspicious#allow_suspicious_types_in_group_by). Désactivez-le pour rétablir le comportement des versions antérieures à 26.7, qui acceptaient une clé [Variant](/fr/reference/data-types/variant) ou [Dynamic](/fr/reference/data-types/dynamic) utilisée avec `GROUP BY ALL`, par exemple une clé de regroupement correspondant à un sous-chemin JSON non typé. Ne prend effet que lorsque l&#39;analyseur est activé (`enable_analyzer = 1`, valeur par défaut) ; avec l&#39;ancien analyseur, une telle clé était déjà rejetée avant la version 26.7, il n&#39;y a donc rien à rétablir. Un `GROUP BY` explicite n&#39;est pas concerné et continue de rejeter une telle clé dans tous les cas. Cette option est donc plus restrictive que le paramètre `allow_suspicious_types_in_group_by`, qui les autorise également dans un `GROUP BY` explicite.
-
-Valeurs possibles :
-
-* 0 - Les types de clés issus du développement des expressions par `GROUP BY ALL` ne sont pas validés.
-* 1 - Ils sont validés, comme le sont les propres clés d&#39;un `GROUP BY` explicite.
-
-## validate_mutation_query {#validate_mutation_query}
+<div id="validate_mutation_query">
+  ## validate_mutation_query
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "Nouveau paramètre qui valide les requêtes de mutation par défaut."}]}]} />
 
-Valider les requêtes de mutation avant de les accepter. Les mutations sont exécutées en arrière-plan, et l&#39;exécution d&#39;une requête invalide peut entraîner leur blocage, nécessitant une intervention manuelle.
+Valider les requêtes de mutation avant de les accepter. Les mutations sont exécutées en arrière-plan, et l&#39;exécution d&#39;une requête invalide entraînera leur blocage, nécessitant une intervention manuelle.
 
 Ne modifiez ce paramètre que si vous rencontrez un bogue non rétrocompatible.
 
-## validate_polygons {#validate_polygons}
+<div id="validate_polygons">
+  ## validate_polygons
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

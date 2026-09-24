@@ -20,7 +20,9 @@ La requête ne crée pas de données sur le disque, mais suppose que les donnée
 
 Si une table a été précédemment détachée (requête [DETACH](/fr/reference/statements/detach)), c’est-à-dire que sa structure est connue, vous pouvez utiliser la forme abrégée sans définir la structure.
 
-## Attacher une table existante {#attach-existing-table}
+<div id="attach-existing-table">
+  ## Attacher une table existante
+</div>
 
 **Syntaxe**
 
@@ -32,12 +34,15 @@ Cette requête est utilisée au démarrage du serveur. Le serveur stocke les mé
 
 Si la table a été détachée de façon permanente, elle ne sera pas attachée au démarrage du serveur ; vous devez donc exécuter explicitement la requête `ATTACH`.
 
-## Créer une nouvelle table et y attacher des données {#create-new-table-and-attach-data}
+<div id="create-new-table-and-attach-data">
+  ## Créer une nouvelle table et y attacher des données
+</div>
 
-### Avec un chemin spécifié pour les données de la table {#with-specified-path-to-table-data}
+<div id="with-specified-path-to-table-data">
+  ### Avec un chemin spécifié pour les données de la table
+</div>
 
 La requête crée une nouvelle table avec la structure fournie et y attache les données de la table à partir du répertoire indiqué dans `user_files`.
-L&#39;utilisateur doit disposer des privilèges `READ ON FILE` et `WRITE ON FILE` pour cette requête : elle lit le répertoire et le déplace vers le data path de la nouvelle table.
 
 **Syntaxe**
 
@@ -60,7 +65,9 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-### Avec l’UUID de la table spécifié {#with-specified-table-uuid}
+<div id="with-specified-table-uuid">
+  ### Avec l’UUID de la table spécifié
+</div>
 
 Cette requête crée une nouvelle table avec la structure fournie et y attache les données de la table ayant l’UUID spécifié.
 Elle est prise en charge par le moteur de base de données [Atomic](/fr/reference/engines/database-engines/atomic).
@@ -71,7 +78,9 @@ Elle est prise en charge par le moteur de base de données [Atomic](/fr/referenc
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-## Attacher une table MergeTree en ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
+<div id="attach-mergetree-table-as-replicatedmergetree">
+  ## Attacher une table MergeTree en ReplicatedMergeTree
+</div>
 
 Permet d’attacher une table MergeTree non répliquée en tant que ReplicatedMergeTree. La table ReplicatedMergeTree sera créée avec les valeurs des paramètres `default_replica_path` et `default_replica_name`. Il est également possible d’attacher une table répliquée en tant que table MergeTree classique.
 
@@ -115,7 +124,9 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-## Attacher un dictionnaire existant {#attach-existing-dictionary}
+<div id="attach-existing-dictionary">
+  ## Attacher un dictionnaire existant
+</div>
 
 Rattache un dictionnaire précédemment détaché.
 
@@ -125,7 +136,9 @@ Rattache un dictionnaire précédemment détaché.
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## Attacher une base de données existante {#attach-existing-database}
+<div id="attach-existing-database">
+  ## Attacher une base de données existante
+</div>
 
 Permet de rattacher une base de données précédemment détachée.
 

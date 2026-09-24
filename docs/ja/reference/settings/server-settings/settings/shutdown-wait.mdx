@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーを設定するためのもので、ClickHouseのソースコードから自動生成されています。
 
-## shutdown_wait_backups_and_restores {#shutdown_wait_backups_and_restores}
+<div id="shutdown_wait_backups_and_restores">
+  ## shutdown_wait_backups_and_restores
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />true に設定すると、ClickHouse はシャットダウンする前に、実行中のバックアップと復元が完了するまで待機します。
 
-## shutdown_wait_unfinished {#shutdown_wait_unfinished}
+<div id="shutdown_wait_unfinished">
+  ## shutdown_wait_unfinished
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />シャットダウン時に未完了のクエリの完了を待機する遅延時間 (秒)。`shutdown_wait_backups_and_restores` が無効な場合、実行中のバックアップおよび復元の待機時間の上限にもなります。
+<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />未完了のクエリの完了を待機する遅延時間 (秒)
 
-## shutdown_wait_unfinished_queries {#shutdown_wait_unfinished_queries}
+<div id="shutdown_wait_unfinished_queries">
+  ## shutdown_wait_unfinished_queries
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />true に設定すると、ClickHouse はシャットダウン前に、実行中のクエリが終了するまで待機します。
 

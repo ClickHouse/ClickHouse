@@ -11,14 +11,18 @@ Para obtener información sobre precios, consulta la página [ClickHouse Cloud P
 ClickHouse Cloud factura en función del uso de recursos de cómputo, almacenamiento, [transferencia de datos](/es/products/cloud/reference/billing/network-data-transfer) (salida a través de internet y entre regiones) y [ClickPipes](/es/integrations/clickpipes/home).
 Para entender qué puede afectar tu factura y cómo puedes gestionar tu gasto, sigue leyendo.
 
-## Ejemplo de Amazon Web Services (AWS) {#amazon-web-services-aws-example}
+<div id="amazon-web-services-aws-example">
+  ## Ejemplo de Amazon Web Services (AWS)
+</div>
 
 <Note>
   * Los precios reflejan las tarifas de AWS us-east-1.
   * Consulte [aquí](/es/products/cloud/reference/billing/network-data-transfer) los cargos aplicables por transferencia de datos.
 </Note>
 
-### Basic: desde $66.52 al mes {#basic-from-6652-per-month}
+<div id="basic-from-6652-per-month">
+  ### Basic: desde $66.52 al mes
+</div>
 
 Ideal para: casos de uso departamentales con menores volúmenes de datos y sin requisitos estrictos de fiabilidad.
 
@@ -81,7 +85,9 @@ Desglose de precios para este ejemplo:
   </tbody>
 </table>
 
-### Scale (siempre activo, escalado automático): desde $499.38 al mes {#scale-always-on-auto-scaling-from-49938-per-month}
+<div id="scale-always-on-auto-scaling-from-49938-per-month">
+  ### Scale (siempre activo, escalado automático): desde $499.38 al mes
+</div>
 
 Ideal para: cargas de trabajo que requieren SLA mejorados (servicios con 2+ réplicas), escalabilidad y seguridad avanzada.
 
@@ -143,7 +149,9 @@ Desglose de precios para este ejemplo:
   </tbody>
 </table>
 
-### Enterprise: Los precios iniciales varían {#enterprise-starting-prices-vary}
+<div id="enterprise-starting-prices-vary">
+  ### Enterprise: Los precios iniciales varían
+</div>
 
 Ideal para: implementaciones a gran escala y de misión crítica con requisitos estrictos de seguridad y cumplimiento
 
@@ -202,9 +210,13 @@ Ideal para: implementaciones a gran escala y de misión crítica con requisitos 
   </tbody>
 </table>
 
-## Preguntas frecuentes {#faqs}
+<div id="faqs">
+  ## Preguntas frecuentes
+</div>
 
-### ¿Qué es un ClickHouse Credit (CHC)? {#what-is-chc}
+<div id="what-is-chc">
+  ### ¿Qué es un ClickHouse Credit (CHC)?
+</div>
 
 Un ClickHouse Credit es una unidad de crédito para el uso de ClickHouse Cloud por parte del Cliente, equivalente a un (1) dólar estadounidense, que se aplica según la lista de precios publicada por ClickHouse y vigente en ese momento.
 
@@ -212,27 +224,37 @@ Un ClickHouse Credit es una unidad de crédito para el uso de ClickHouse Cloud p
   Si la facturación se realiza a través de Stripe, verás que 1 CHC equivale a $0.01 USD en tu factura de Stripe. Esto permite una facturación precisa en Stripe debido a la limitación que tienen para facturar cantidades fraccionarias de nuestro SKU estándar de 1 CHC = $1 USD.
 </Note>
 
-### ¿Dónde puedo encontrar los precios anteriores? {#find-legacy-pricing}
+<div id="find-legacy-pricing">
+  ### ¿Dónde puedo encontrar los precios anteriores?
+</div>
 
 Puedes encontrar la información sobre los precios anteriores [aquí](https://clickhouse.com/pricing?legacy=true).
 
-### ¿Cómo se factura el cómputo? {#how-is-compute-metered}
+<div id="how-is-compute-metered">
+  ### ¿Cómo se factura el cómputo?
+</div>
 
 ClickHouse Cloud factura el cómputo por minuto, en incrementos de 8 GB de RAM.
 Los costos de cómputo varían según el nivel, la región y el proveedor de servicios en la nube.
 
-### ¿Cómo se calcula el almacenamiento en disco? {#how-is-storage-on-disk-calculated}
+<div id="how-is-storage-on-disk-calculated">
+  ### ¿Cómo se calcula el almacenamiento en disco?
+</div>
 
 ClickHouse Cloud utiliza almacenamiento de objetos en la nube, y el uso se contabiliza en función del tamaño comprimido de los datos almacenados en las tablas de ClickHouse.
 Los costos de almacenamiento son los mismos en todos los niveles y varían según la región y el proveedor de servicios en la nube.
 
-### ¿Las copias de seguridad cuentan para el almacenamiento total? {#do-backups-count-toward-total-storage}
+<div id="do-backups-count-toward-total-storage">
+  ### ¿Las copias de seguridad cuentan para el almacenamiento total?
+</div>
 
 El almacenamiento y las copias de seguridad se incluyen en los costes de almacenamiento y se facturan por separado.
 Todos los servicios tendrán por defecto una copia de seguridad, con una retención de un día.
 Los usuarios que necesiten copias de seguridad adicionales pueden configurarlas en la pestaña de configuración de la consola de Cloud, en [copias de seguridad](/es/products/cloud/guides/backups/review-and-restore-backups).
 
-### ¿Cómo estimo la compresión? {#how-do-i-estimate-compression}
+<div id="how-do-i-estimate-compression">
+  ### ¿Cómo estimo la compresión?
+</div>
 
 La compresión puede variar de un conjunto de datos a otro.
 Cuánto varía depende de lo comprimibles que sean los datos en primer lugar (número de campos de cardinalidad alta frente a baja),
@@ -249,12 +271,16 @@ FROM system.tables
 WHERE name = <your table name>
 ```
 
-### ¿Qué herramientas ofrece ClickHouse para estimar el costo de operar un servicio en la nube si tengo una implementación autogestionada? {#what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment}
+<div id="what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment">
+  ### ¿Qué herramientas ofrece ClickHouse para estimar el costo de operar un servicio en la nube si tengo una implementación autogestionada?
+</div>
 
 El registro de consultas de ClickHouse captura [métricas clave](/es/reference/system-tables/query_log) que pueden utilizarse para estimar el costo de ejecutar una carga de trabajo en ClickHouse Cloud.
 Para migrar de ClickHouse autogestionado a ClickHouse Cloud, utiliza [`remoteSecure`](/es/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) o [`BACKUP` y `RESTORE`](/es/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore). Ponte en contacto con [soporte de ClickHouse Cloud](https://console.clickhouse.cloud/support) si tienes alguna otra pregunta.
 
-### ¿Qué opciones de facturación están disponibles para ClickHouse Cloud? {#what-billing-options-are-available-for-clickhouse-cloud}
+<div id="what-billing-options-are-available-for-clickhouse-cloud">
+  ### ¿Qué opciones de facturación están disponibles para ClickHouse Cloud?
+</div>
 
 ClickHouse Cloud ofrece las siguientes opciones de facturación:
 
@@ -266,25 +292,33 @@ ClickHouse Cloud ofrece las siguientes opciones de facturación:
   Los créditos de ClickHouse Cloud para PAYG se facturan en unidades de $0.01, lo que nos permite cobrar a los clientes fracciones de créditos de ClickHouse en función de su uso. Esto difiere de los créditos de ClickHouse de gasto comprometido, que se compran por adelantado en unidades enteras de $1.
 </Note>
 
-### ¿Puedo eliminar mi tarjeta de crédito? {#can-i-delete-my-credit-card}
+<div id="can-i-delete-my-credit-card">
+  ### ¿Puedo eliminar mi tarjeta de crédito?
+</div>
 
 No puedes eliminar una tarjeta de crédito desde la UI de facturación, pero puedes actualizarla en cualquier momento. Esto ayuda a garantizar que tu organización siempre tenga un método de pago válido. Si necesitas eliminar tu tarjeta de crédito, ponte en contacto con el [soporte de ClickHouse Cloud](https://console.clickhouse.cloud/support) para obtener ayuda.
 
-### ¿Dónde puedo ver mis reembolsos? {#where-can-i-see-my-refunds}
+<div id="where-can-i-see-my-refunds">
+  ### ¿Dónde puedo ver mis reembolsos?
+</div>
 
 Vaya a Organization &gt; Billing en la consola de ClickHouse Cloud. La sección Refunds aparece debajo de Invoices y Credits. Debe ser Organization Admin o Billing Admin para poder verla.
 
-### ¿Cuánto tarda en aparecer un reembolso? {#how-long-does-it-take-for-a-refund-to-appear}
+<div id="how-long-does-it-take-for-a-refund-to-appear">
+  ### ¿Cuánto tarda en aparecer un reembolso?
+</div>
 
 Los reembolsos aparecen una vez que los procesamos. Los reembolsos a tarjetas de crédito pueden tardar un poco más en aparecer en tu estado de cuenta, según tu banco.
 
-### ¿Cuánto dura el ciclo de facturación? {#how-long-is-the-billing-cycle}
+<div id="how-long-is-the-billing-cycle">
+  ### ¿Cuánto dura el ciclo de facturación?
+</div>
 
-La facturación sigue un ciclo mensual. En el caso de las organizaciones nuevas, el ciclo de facturación siempre comienza el primer día del mes.
-Las organizaciones existentes pueden conservar un ciclo de facturación que comience otro día del mes.
-Para cambiar su ciclo de facturación, póngase en contacto con el [soporte de ClickHouse Cloud](https://console.clickhouse.cloud/support).
+La facturación se realiza en ciclos mensuales, y la fecha de inicio corresponde a la fecha en que se creó la organización de ClickHouse Cloud.
 
-### Si tengo una suscripción PAYG del marketplace activa y luego firmo un contrato por compromiso, ¿se consumirán primero mis créditos contratados? {#committed-credits-consumed-first-with-active-payg-subscription}
+<div id="committed-credits-consumed-first-with-active-payg-subscription">
+  ### Si tengo una suscripción PAYG del marketplace activa y luego firmo un contrato por compromiso, ¿se consumirán primero mis créditos contratados?
+</div>
 
 Sí. El uso se consume con los siguientes métodos de pago en este orden:
 
@@ -292,30 +326,42 @@ Sí. El uso se consume con los siguientes métodos de pago en este orden:
 * Suscripción del marketplace (PAYG)
 * Tarjeta de crédito
 
-### ¿Qué controles ofrece ClickHouse Cloud para gestionar los costos de los servicios Scale y Enterprise? {#what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-scale-and-enterprise-services}
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-scale-and-enterprise-services">
+  ### ¿Qué controles ofrece ClickHouse Cloud para gestionar los costos de los servicios Scale y Enterprise?
+</div>
 
 * Los clientes de Trial y Annual Commit reciben notificaciones automáticas por correo electrónico cuando su consumo alcanza determinados umbrales: `50%`, `75%` y `90%`. Esto le permite gestionar su uso de forma proactiva.
 * ClickHouse Cloud le permite establecer un límite máximo de autoescalado para su capacidad de cómputo mediante [control avanzado de escalado](/es/products/cloud/features/autoscaling/overview), un factor de costo importante para las cargas de trabajo analíticas.
 * [control avanzado de escalado](/es/products/cloud/features/autoscaling/overview) le permite establecer límites de memoria, con una opción para controlar el comportamiento de pausa/estado inactivo durante los periodos de inactividad.
 
-### ¿Qué controles ofrece ClickHouse Cloud para gestionar los costos de los servicios Basic? {#what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-basic-services}
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-basic-services">
+  ### ¿Qué controles ofrece ClickHouse Cloud para gestionar los costos de los servicios Basic?
+</div>
 
 * El [control avanzado de escalado](/es/products/cloud/features/autoscaling/overview) le permite controlar el comportamiento de pausa o inactividad durante los periodos sin actividad. No se admite ajustar la asignación de memoria para los servicios Basic.
 * Tenga en cuenta que la configuración predeterminada pausa el servicio tras un periodo de inactividad.
 
-### Si tengo varios servicios, ¿recibo una factura por servicio o una factura consolidada? {#if-i-have-multiple-services-do-i-get-an-invoice-per-service-or-a-consolidated-invoice}
+<div id="if-i-have-multiple-services-do-i-get-an-invoice-per-service-or-a-consolidated-invoice">
+  ### Si tengo varios servicios, ¿recibo una factura por servicio o una factura consolidada?
+</div>
 
 Se genera una factura consolidada para todos los servicios de una organización determinada en un período de facturación.
 
-### Si añado mi tarjeta de crédito y actualizo antes de que expire mi período de prueba y se agoten los créditos, ¿se me cobrará? {#if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged}
+<div id="if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged">
+  ### Si añado mi tarjeta de crédito y actualizo antes de que expire mi período de prueba y se agoten los créditos, ¿se me cobrará?
+</div>
 
 Cuando un usuario añade una tarjeta de crédito durante el período de prueba, seguimos descontando créditos de prueba hasta que se agoten o expiren, lo que ocurra primero. Los créditos de prueba expiran al final del período de prueba de 30 días, incluso después de añadir un método de pago. Una vez que los créditos de prueba se hayan agotado o hayan expirado, los cargos se aplicarán a la tarjeta de crédito registrada. Puede confirmar la fecha de expiración de sus créditos de prueba en la página de facturación de la consola de ClickHouse Cloud.
 
-### ¿Cómo puedo llevar un control de mis gastos? {#how-can-i-keep-track-of-my-spending}
+<div id="how-can-i-keep-track-of-my-spending">
+  ### ¿Cómo puedo llevar un control de mis gastos?
+</div>
 
 La consola de ClickHouse Cloud ofrece una vista de uso que detalla el consumo de cada servicio. Este desglose, organizado por dimensiones de uso, le ayuda a comprender el costo asociado a cada unidad facturable.
 
-### ¿Cómo accedo a las facturas de mi suscripción al servicio de ClickHouse Cloud? {#how-do-i-access-my-invoice-for-my-subscription-to-the-clickhouse-cloud-service}
+<div id="how-do-i-access-my-invoice-for-my-subscription-to-the-clickhouse-cloud-service">
+  ### ¿Cómo accedo a las facturas de mi suscripción al servicio de ClickHouse Cloud?
+</div>
 
 Para las suscripciones directas con tarjeta de crédito:
 
@@ -325,30 +371,39 @@ Para las suscripciones a través de un marketplace en la nube:
 
 Todas las suscripciones del marketplace se facturan y se emiten a través del marketplace. Puede ver su factura directamente en el marketplace del proveedor de nube correspondiente.
 
-### ¿Por qué las fechas de los extractos de uso no coinciden con las de mi factura de AWS Marketplace? {#why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice}
+<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
+  ### ¿Por qué las fechas de los extractos de uso no coinciden con las de mi factura de AWS Marketplace?
+</div>
 
 La facturación de AWS Marketplace sigue el ciclo del mes natural.
 Por ejemplo, para el uso entre las fechas 01-Dec-2024 y 01-Jan-2025,
 se genera una factura entre 3-Jan y 5-Jan-2025
 
-Para algunas organizaciones existentes, los extractos de uso de ClickHouse Cloud siguen un ciclo de facturación que comienza en un día distinto del primero del mes. Las organizaciones nuevas siguen un ciclo de facturación mensual que comienza el primer día del mes.
+Los extractos de uso de ClickHouse Cloud siguen un ciclo de facturación diferente, en el que el uso se mide
+y se informa a lo largo de 30 días a partir de la fecha de registro.
 
 Las fechas de uso y de la factura serán distintas si no coinciden. Dado que los extractos de uso registran el uso por día para un servicio determinado, puede basarse en ellos para ver el desglose de los costes.
 
-### ¿Hay alguna restricción sobre el uso de créditos prepagados? {#are-there-any-restrictions-around-the-usage-of-prepaid-credits}
+<div id="are-there-any-restrictions-around-the-usage-of-prepaid-credits">
+  ### ¿Hay alguna restricción sobre el uso de créditos prepagados?
+</div>
 
 Los créditos prepagados de ClickHouse Cloud (ya sea directamente a través de ClickHouse o mediante el marketplace de un proveedor de nube)
 solo pueden utilizarse durante la vigencia del contrato.
 Esto significa que pueden aplicarse en la fecha de aceptación o en una fecha posterior, pero no a períodos anteriores.
 Cualquier exceso no cubierto por los créditos prepagados debe pagarse con tarjeta de crédito o mediante la facturación mensual del marketplace.
 
-### ¿Hay alguna diferencia en el precio de ClickHouse Cloud si se paga a través del marketplace del proveedor de nube o directamente a ClickHouse? {#is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse}
+<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
+  ### ¿Hay alguna diferencia en el precio de ClickHouse Cloud si se paga a través del marketplace del proveedor de nube o directamente a ClickHouse?
+</div>
 
 No hay ninguna diferencia de precio entre la facturación a través del marketplace y la contratación directa con ClickHouse.
 En ambos casos, su uso de ClickHouse Cloud se contabiliza en ClickHouse Cloud Credits (CHCs),
 que se miden de la misma manera y se facturan en consecuencia.
 
-### ¿Cómo se factura la separación compute-compute? {#how-is-compute-compute-separation-billed}
+<div id="how-is-compute-compute-separation-billed">
+  ### ¿Cómo se factura la separación compute-compute?
+</div>
 
 Al crear un servicio además de otro ya existente,
 puede elegir si este nuevo servicio debe compartir los mismos datos que el existente.
@@ -432,6 +487,8 @@ Estimación de costos (por mes) para este ejemplo en el **Scale Tier**:
 Sin warehouses, tendría que pagar por la cantidad de memoria que el científico de datos necesita para sus consultas.
 Sin embargo, combinar dos servicios en un warehouse y dejar uno de ellos en modo inactivo le ayuda a ahorrar dinero.
 
-## Precios de ClickPipes {#clickpipes-pricing}
+<div id="clickpipes-pricing">
+  ## Precios de ClickPipes
+</div>
 
 Para obtener información sobre la facturación de ClickPipes, consulta la sección específica de [&quot;ClickPipes&quot;](/es/products/cloud/reference/billing/clickpipes/index).

@@ -20,7 +20,9 @@ ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] 
 
 テーブルが以前にデタッチされていた ([DETACH](/ja/reference/statements/detach)クエリ) 場合、つまりその構造が既知である場合は、構造を定義せずに短縮記法を使用できます。
 
-## 既存のテーブルをアタッチ {#attach-existing-table}
+<div id="attach-existing-table">
+  ## 既存のテーブルをアタッチ
+</div>
 
 **構文**
 
@@ -32,12 +34,15 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 テーブルが恒久的にデタッチされている場合、サーバーの起動時に再アタッチされることはないため、`ATTACH` クエリを明示的に実行する必要があります。
 
-## 新しいテーブルを作成してデータをアタッチする {#create-new-table-and-attach-data}
+<div id="create-new-table-and-attach-data">
+  ## 新しいテーブルを作成してデータをアタッチする
+</div>
 
-### テーブルデータへのパスを指定する場合 {#with-specified-path-to-table-data}
+<div id="with-specified-path-to-table-data">
+  ### テーブルデータへのパスを指定する場合
+</div>
 
 このクエリは、指定した構造で新しいテーブルを作成し、`user_files` 内の指定したディレクトリにあるテーブルデータをアタッチします。
-このクエリを実行するには、ユーザーに `READ ON FILE` および `WRITE ON FILE` 権限が必要です。ディレクトリを読み取り、それを新しいテーブルのデータパスに移動するためです。
 
 **構文**
 
@@ -60,7 +65,9 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-### 指定したテーブル UUID を使用する {#with-specified-table-uuid}
+<div id="with-specified-table-uuid">
+  ### 指定したテーブル UUID を使用する
+</div>
 
 このクエリは、指定された 構造 を持つ新しいテーブルを作成し、指定した UUID を持つテーブルのデータをアタッチします。
 これは [Atomic](/ja/reference/engines/database-engines/atomic) データベースエンジンでサポートされています。
@@ -71,7 +78,9 @@ SELECT * FROM test;
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-## MergeTree テーブルを ReplicatedMergeTree として アタッチ {#attach-mergetree-table-as-replicatedmergetree}
+<div id="attach-mergetree-table-as-replicatedmergetree">
+  ## MergeTree テーブルを ReplicatedMergeTree として アタッチ
+</div>
 
 レプリケーションされていない MergeTree テーブルを ReplicatedMergeTree として アタッチ できます。ReplicatedMergeTree テーブルは、`default_replica_path` および `default_replica_name` Settings の値を使って作成されます。レプリケートされたテーブルを通常の MergeTree として アタッチ することも可能です。
 
@@ -115,7 +124,9 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-## 既存のDictionaryをアタッチ {#attach-existing-dictionary}
+<div id="attach-existing-dictionary">
+  ## 既存のDictionaryをアタッチ
+</div>
 
 以前にデタッチされたDictionaryをアタッチします。
 
@@ -125,7 +136,9 @@ SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## 既存のデータベースをアタッチ {#attach-existing-database}
+<div id="attach-existing-database">
+  ## 既存のデータベースをアタッチ
+</div>
 
 以前にデタッチされたデータベースをアタッチします。
 

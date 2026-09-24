@@ -13,25 +13,31 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Esta configuración está disponible en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
-## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
+<div id="object_shared_data_buckets_for_compact_part">
+  ## object_shared_data_buckets_for_compact_part
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "8"},{"label": "Añade una configuración para controlar el número de buckets de datos compartidos en la serialización JSON en partes compactas"}]}]} />
 
-El número de buckets para la serialización JSON de datos compartidos en partes compactas. Funciona con las serializaciones de datos compartidos `map_with_buckets`, `advanced` y `advanced_chunked`.
+El número de buckets para la serialización JSON de datos compartidos en partes compactas. Funciona con las serializaciones de datos compartidos `map_with_buckets` y `advanced`.
 El valor máximo permitido es 256.
 
-## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
+<div id="object_shared_data_buckets_for_wide_part">
+  ## object_shared_data_buckets_for_wide_part
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32"},{"label": "Se añade una configuración para controlar el número de buckets de los datos compartidos en la serialización JSON en wide partes"}]}]} />
 
-Número de buckets para la serialización de datos compartidos en JSON en wide partes. Funciona con las serializaciones de datos compartidos `map_with_buckets`, `advanced` y `advanced_chunked`.
+Número de buckets para la serialización de datos compartidos en JSON en wide partes. Funciona con las serializaciones de datos compartidos `map_with_buckets` y `advanced`.
 El valor máximo permitido es 256.
 
-## object_shared_data_serialization_version {#object_shared_data_serialization_version}
+<div id="object_shared_data_serialization_version">
+  ## object_shared_data_serialization_version
+</div>
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -45,12 +51,13 @@ Valores posibles:
 * `map_with_buckets` - almacena los datos compartidos como varias columnas `Map(String, String)` independientes. El uso de buckets mejora la lectura de rutas individuales de los datos compartidos.
 * `advanced` - serialización especial de datos compartidos diseñada para mejorar significativamente la lectura de rutas individuales de los datos compartidos.
   Ten en cuenta que esta serialización aumenta el tamaño de almacenamiento en disco de los datos compartidos porque almacenamos mucha información adicional.
-* `advanced_chunked` - igual que `advanced`, pero con soporte para dividir las filas en fragmentos más pequeños durante la serialización, con el fin de reducir el pico de memoria durante las fusiones de columnas JSON con muchas rutas únicas. El tamaño del fragmento se controla mediante la configuración [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows).
 
-El número de buckets para las serializaciones `map_with_buckets`, `advanced` y `advanced_chunked` se determina mediante las configuraciones
+El número de buckets para las serializaciones `map_with_buckets` y `advanced` se determina mediante las configuraciones
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/es/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part).
 
-## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
+<div id="object_shared_data_serialization_version_for_zero_level_parts">
+  ## object_shared_data_serialization_version_for_zero_level_parts
+</div>
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 
@@ -58,18 +65,7 @@ El número de buckets para las serializaciones `map_with_buckets`, `advanced` y 
 
 Esta configuración permite especificar una versión de serialización distinta para los
 datos compartidos dentro del tipo JSON en las partes de nivel cero que se crean durante las inserciones.
-Se recomienda no usar la serialización de datos compartidos `advanced` o `advanced_chunked` para las partes de nivel cero, ya que puede aumentar
+Se recomienda no usar la serialización de datos compartidos `advanced` para las partes de nivel cero, ya que puede aumentar
 significativamente el tiempo de inserción.
-
-## object_shared_data_target_chunk_rows {#object_shared_data_target_chunk_rows}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "8192"},{"label": "Nueva configuración"}]}]} />
-
-Número objetivo de filas por fragmento durante la serialización de datos compartidos JSON `advanced_chunked`.
-No se trata de un límite estricto: si el último fragmento fuese menor que la mitad del objetivo, se fusiona con el fragmento anterior,
-por lo que los tamaños reales de los fragmentos van de `target/2` a `1.5 * target`.
-Los valores más pequeños reducen el pico de memoria durante las fusiones de columnas JSON con muchas rutas únicas, a costa de generar más fragmentos.
 
 {/*AUTOGENERATED_END*/}

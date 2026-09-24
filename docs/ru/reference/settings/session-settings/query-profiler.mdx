@@ -12,7 +12,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
+<div id="query_profiler_cpu_time_period_ns">
+  ## query_profiler_cpu_time_period_ns
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -29,13 +31,13 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 * 0 для отключения таймера.
 
-По умолчанию равно 0 в сборках с MemorySanitizer, где профилировщик с сэмплированием отключён.
-
 См. также:
 
 * Системная таблица [trace&#95;log](/ru/reference/system-tables/trace_log)
 
-## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
+<div id="query_profiler_real_time_period_ns">
+  ## query_profiler_real_time_period_ns
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -48,11 +50,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   Рекомендуемые значения:
 
   * 10000000 наносекунд (100 раз в секунду) и меньше для отдельных запросов.
-  * 1000000000 (один раз в секунду) для профилирования в масштабе всего кластера.
+  * 1000000000 (один раз в секунду) для профилирования всего кластера.
 
 * 0, чтобы отключить таймер.
-
-По умолчанию 0 в сборках с MemorySanitizer, где профилировщик с сэмплированием отключён.
 
 См. также:
 

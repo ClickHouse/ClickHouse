@@ -9,7 +9,7 @@ doc_type: '参考'
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <div id="introduction">
-  ## 简介 {#introduction}
+  ## 简介
 </div>
 
 ClickHouse 处理查询的速度极快，但这些查询是如何
@@ -20,7 +20,7 @@ ClickHouse 处理查询的速度极快，但这些查询是如何
 > 多个副本来执行。
 
 <div id="sharded-architecture">
-  ## 分片架构 {#sharded-architecture}
+  ## 分片架构
 </div>
 
 在 shared-nothing 架构中，集群通常会拆分为
@@ -63,7 +63,7 @@ ClickHouse 处理查询的速度极快，但这些查询是如何
 这意味着可以并行处理更多查询。
 
 <div id="non-sharded-architecture">
-  ## 非分片架构 {#non-sharded-architecture}
+  ## 非分片架构
 </div>
 
 ClickHouse Cloud 的架构与上文介绍的架构有很大不同。
@@ -85,7 +85,9 @@ Keeper 集群为元数据提供了单一事实来源。
 分片架构中，这一点很容易理解，因为每个分片实际上都可以
 在部分数据子集上执行查询。那么在没有分片的情况下，它是如何工作的呢？
 
-## 介绍并行副本 {#introducing-parallel-replicas}
+<div id="introducing-parallel-replicas">
+  ## 介绍并行副本
+</div>
 
 要通过多台服务器并行执行查询，首先需要能够将其中一台服务器指定为协调器。协调器负责创建待执行的任务列表，确保这些任务全部得到执行、完成聚合，并将结果返回给客户端。与大多数分布式系统一样，这一角色通常由接收初始查询的节点承担。我们还需要定义工作单元。在分片架构中，工作单元是分片，即数据的一个子集。而在并行副本中，我们将使用表中的一小部分，也就是[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)，作为工作单元。
 
@@ -140,7 +142,9 @@ Keeper 集群为元数据提供了单一事实来源。
 
 我们将在接下来的章节中说明如何克服这些因素。
 
-### 通知 {#announcements}
+<div id="announcements">
+  ### 通知
+</div>
 
 为了解决上述列表中的 (1) 和 (2)，我们引入了“通知”这一概念。下面通过下图来说明其工作方式：
 
@@ -173,7 +177,9 @@ Keeper 集群为元数据提供了单一事实来源。
   </li>
 </ol>
 
-### 动态协调 {#dynamic-coordination}
+<div id="dynamic-coordination">
+  ### 动态协调
+</div>
 
 为了解决长尾延迟问题，我们引入了动态协调。这意味着，
 不会在一次请求中将所有粒度都发送给某个副本，而是每个副本
@@ -231,7 +237,7 @@ Keeper 集群为元数据提供了单一事实来源。
 </ol>
 
 <div id="managing-cache-locality">
-  ### 管理缓存局部性 {#managing-cache-locality}
+  ### 管理缓存局部性
 </div>
 
 最后一个尚待解决的潜在问题是如何处理缓存局部性。如果同一个查询
@@ -284,14 +290,16 @@ Keeper 集群为元数据提供了单一事实来源。
 副本数量，则会随机选择副本来执行查询。
 
 <div id="task-stealing">
-  ### 任务窃取 {#task-stealing}
+  ### 任务窃取
 </div>
 
 如果某个副本处理任务的速度比其他副本慢，其他副本会尝试
 “窃取”按哈希原本应分配给该副本的任务，以降低
 长尾延迟。
 
-### 限制 {#limitations}
+<div id="limitations">
+  ### 限制
+</div>
 
 此功能存在一些已知限制，其中较为主要的限制记录在
 本节中。
@@ -312,7 +320,7 @@ Keeper 集群为元数据提供了单一事实来源。
 | 与 analyzer 的兼容性   | analyzer 在某些场景下可能会显著减慢或加快查询执行速度。                                                                                                                                                                                                                    |
 
 <div id="settings-related-to-parallel-replicas">
-  ## 与并行副本相关的设置 {#settings-related-to-parallel-replicas}
+  ## 与并行副本相关的设置
 </div>
 
 | Setting                                            | Description                                                                                             |
@@ -321,8 +329,11 @@ Keeper 集群为元数据提供了单一事实来源。
 | `cluster_for_parallel_replicas`                    | 用于并行副本的集群名称；如果你使用的是 ClickHouse Cloud，请使用 `default`。                                                     |
 | `max_parallel_replicas`                            | 在多个副本上执行查询时可使用的最大副本数；如果指定的数值小于集群中的副本数，则会随机选择节点。该值也可以 overcommit，以适应横向扩缩容。                               |
 | `parallel_replicas_min_number_of_rows_per_replica` | 有助于根据需要处理的行数限制所使用的副本数，使用的副本数由以下公式确定：<br /> `estimated rows to read` / `min_number_of_rows_per_replica`。 |
+| `enable_analyzer`                                  | 仅在启用 analyzer 时，才支持使用并行副本执行查询                                                                           |
 
-## 排查并行副本问题 {#investigating-issues-with-parallel-replicas}
+<div id="investigating-issues-with-parallel-replicas">
+  ## 排查并行副本问题
+</div>
 
 你可以在
 [`system.query_log`](/zh/reference/system-tables/query_log) 表中查看每个查询使用了哪些设置。你还可以查看 [`system.events`](/zh/reference/system-tables/events)

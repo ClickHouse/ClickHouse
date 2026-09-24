@@ -13,13 +13,18 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات يتم إنشاؤها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
+<div id="date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands">
+  ## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-احذف الأصفار اللاحقة من قيم `DateTime64` ديناميكيًا، مع تقريب مقياس الإخراج إلى الأعلى إلى المضاعف التالي للعدد ثلاثة الذي يحافظ على جميع الأرقام المهمة: [0, 3, 6, 9]. ويُحذف الجزء الكسري إذا كانت جميع أرقامه أصفارًا.
+احذف الأصفار اللاحقة من قيم datetime64 ديناميكيًا لضبط مقياس الإخراج إلى [0, 3, 6]،
+بما يقابل &#39;الثواني&#39; و&#39;المللي ثانية&#39; و&#39;الميكروثانية&#39;
 
-## date_time_input_format {#date_time_input_format}
+<div id="date_time_input_format">
+  ## date_time_input_format
+</div>
 
 <SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
 
@@ -46,7 +51,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * [نوع البيانات DateTime.](/ar/reference/data-types/datetime)
 * [الدالة الخاصة بالتعامل مع التواريخ والأوقات.](/ar/reference/functions/regular-functions/date-time-functions)
 
-## date_time_output_format {#date_time_output_format}
+<div id="date_time_output_format">
+  ## date_time_output_format
+</div>
 
 <SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
 
@@ -71,11 +78,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * [نوع البيانات DateTime.](/ar/reference/data-types/datetime)
 * [الدوال الخاصة بالتعامل مع التواريخ والأوقات.](/ar/reference/functions/regular-functions/date-time-functions)
 
-## date_time_overflow_behavior {#date_time_overflow_behavior}
+<div id="date_time_overflow_behavior">
+  ## date_time_overflow_behavior
+</div>
 
 <SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
 
-يحدّد السلوك عند تحويل [Date](/ar/reference/data-types/date) أو [Date32](/ar/reference/data-types/date32) أو [DateTime](/ar/reference/data-types/datetime) أو [DateTime64](/ar/reference/data-types/datetime64) أو الأعداد الصحيحة إلى Date أو Date32 أو DateTime أو DateTime64، عندما يتعذّر تمثيل القيمة في النوع الناتج. وينطبق أيضًا عند تحليل `Date` أو `DateTime` من نص، بما في ذلك عبر صيغة إدخال.
+يحدّد السلوك عند تحويل [Date](/ar/reference/data-types/date) أو [Date32](/ar/reference/data-types/date32) أو [DateTime](/ar/reference/data-types/datetime) أو [DateTime64](/ar/reference/data-types/datetime64) أو الأعداد الصحيحة إلى Date أو Date32 أو DateTime أو DateTime64، عندما يتعذّر تمثيل القيمة في النوع الناتج.
 
 القيم الممكنة:
 

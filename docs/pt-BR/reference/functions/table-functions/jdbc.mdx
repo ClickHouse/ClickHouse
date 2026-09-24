@@ -13,12 +13,14 @@ doc_type: 'reference'
   O ClickHouse recomenda usar funções de tabela nativas do ClickHouse, que oferecem uma alternativa melhor para cenários de consultas ad hoc (Postgres, MySQL, MongoDB etc.).
 </Note>
 
-A função de tabela JDBC retorna uma tabela conectada por meio do driver JDBC.
+A função de tabela JDBC retorna uma tabela conectada por meio de um driver JDBC.
 
-Esta função de tabela exige que um programa [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) separado esteja em execução.
+Esta função de tabela exige que o programa [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) esteja em execução separadamente.
 Ela oferece suporte a tipos Nullable (com base no DDL da tabela remota consultada).
 
-## Sintaxe {#syntax}
+<div id="syntax">
+  ## Sintaxe
+</div>
 
 ```sql
 jdbc(datasource, external_database, external_table)
@@ -26,7 +28,9 @@ jdbc(datasource, external_table)
 jdbc(named_collection)
 ```
 
-## Exemplos {#examples}
+<div id="examples">
+  ## Exemplos
+</div>
 
 Em vez do nome de um banco de dados externo, é possível especificar um esquema:
 

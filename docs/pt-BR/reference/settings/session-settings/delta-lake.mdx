@@ -13,15 +13,9 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## delta_lake_accurate_write_cast {#delta_lake_accurate_write_cast}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração: converte os valores gravados para o tipo do schema de gravação do Delta com uma conversão precisa, que lança uma exceção quando o valor não cabe no tipo de destino em vez de truncá-lo silenciosamente; `compatibility` abaixo de 26.9 usa a conversão simples, que não lança exceção."}]}]} />
-
-Ao gravar em uma tabela DeltaLake, converte cada valor para o tipo do schema de gravação do Delta com uma conversão precisa, que lança uma exceção quando o valor não cabe no tipo de destino, em vez de uma conversão simples, que o trunca silenciosamente (por exemplo, `300` gravado em uma coluna Delta do tipo `byte`). Defina como `false` ou use uma configuração `compatibility` abaixo de 26.9 para usar a conversão simples, que não lança exceção.
-
-## delta_lake_enable_engine_predicate {#delta_lake_enable_engine_predicate}
+<div id="delta_lake_enable_engine_predicate">
+  ## delta_lake_enable_engine_predicate
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -29,7 +23,9 @@ Ao gravar em uma tabela DeltaLake, converte cada valor para o tipo do schema de 
 
 Habilita o data pruning interno do delta-kernel.
 
-## delta_lake_enable_expression_visitor_logging {#delta_lake_enable_expression_visitor_logging}
+<div id="delta_lake_enable_expression_visitor_logging">
+  ## delta_lake_enable_expression_visitor_logging
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -37,7 +33,9 @@ Habilita o data pruning interno do delta-kernel.
 
 Habilita logs no nível Test do visitante de expressões do DeltaLake. Esses logs podem ser verbosos demais até mesmo para logs de teste.
 
-## delta_lake_insert_max_bytes_in_data_file {#delta_lake_insert_max_bytes_in_data_file}
+<div id="delta_lake_insert_max_bytes_in_data_file">
+  ## delta_lake_insert_max_bytes_in_data_file
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
@@ -45,7 +43,9 @@ Habilita logs no nível Test do visitante de expressões do DeltaLake. Esses log
 
 Define o limite, em bytes, para um único arquivo de dados inserido no delta lake.
 
-## delta_lake_insert_max_rows_in_data_file {#delta_lake_insert_max_rows_in_data_file}
+<div id="delta_lake_insert_max_rows_in_data_file">
+  ## delta_lake_insert_max_rows_in_data_file
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
 
@@ -53,7 +53,9 @@ Define o limite, em bytes, para um único arquivo de dados inserido no delta lak
 
 Define o limite de linhas para um único arquivo de dados inserido no delta lake.
 
-## delta_lake_log_metadata {#delta_lake_log_metadata}
+<div id="delta_lake_log_metadata">
+  ## delta_lake_log_metadata
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -61,7 +63,9 @@ Define o limite de linhas para um único arquivo de dados inserido no delta lake
 
 Habilita o registro, em tabela do sistema, dos arquivos de metadados do Delta Lake.
 
-## delta_lake_reload_schema_for_consistency {#delta_lake_reload_schema_for_consistency}
+<div id="delta_lake_reload_schema_for_consistency">
+  ## delta_lake_reload_schema_for_consistency
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -70,7 +74,9 @@ Habilita o registro, em tabela do sistema, dos arquivos de metadados do Delta La
 Se habilitado, o schema é recarregado dos metadados do DeltaLake antes da execução de cada consulta para garantir
 a consistência entre o schema usado durante a análise da consulta e o schema usado durante a execução.
 
-## delta_lake_snapshot_end_version {#delta_lake_snapshot_end_version}
+<div id="delta_lake_snapshot_end_version">
+  ## delta_lake_snapshot_end_version
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -78,7 +84,9 @@ a consistência entre o schema usado durante a análise da consulta e o schema u
 
 Versão final do snapshot do Delta Lake a ser lido. O valor -1 significa ler a versão mais recente (o valor 0 é uma versão de snapshot válida).
 
-## delta_lake_snapshot_start_version {#delta_lake_snapshot_start_version}
+<div id="delta_lake_snapshot_start_version">
+  ## delta_lake_snapshot_start_version
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -86,7 +94,9 @@ Versão final do snapshot do Delta Lake a ser lido. O valor -1 significa ler a v
 
 Versão inicial do snapshot do Delta Lake a ser lido. O valor -1 significa ler a versão mais recente (o valor 0 é uma versão de snapshot válida).
 
-## delta_lake_snapshot_version {#delta_lake_snapshot_version}
+<div id="delta_lake_snapshot_version">
+  ## delta_lake_snapshot_version
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -94,7 +104,9 @@ Versão inicial do snapshot do Delta Lake a ser lido. O valor -1 significa ler a
 
 Versão do snapshot do Delta Lake a ser lida. O valor -1 significa que a versão mais recente será lida (o valor 0 é uma versão de snapshot válida).
 
-## delta_lake_throw_on_engine_predicate_error {#delta_lake_throw_on_engine_predicate_error}
+<div id="delta_lake_throw_on_engine_predicate_error">
+  ## delta_lake_throw_on_engine_predicate_error
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

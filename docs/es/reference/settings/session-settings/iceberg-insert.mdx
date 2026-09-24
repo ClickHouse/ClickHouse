@@ -13,20 +13,19 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
+<div id="iceberg_insert_max_bytes_in_data_file">
+  ## iceberg_insert_max_bytes_in_data_file
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="536870912" />
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "Alineado con el valor predeterminado documentado de la propiedad de tabla Iceberg `write.target-file-size-bytes` (512 MiB); consulte https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "Nueva configuración."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "Nueva configuración."}]}]} />
 
 Número máximo de bytes del archivo de datos Parquet de Iceberg en una operación de inserción.
 
-El valor predeterminado refleja el valor predeterminado documentado de la propiedad de tabla Iceberg `write.target-file-size-bytes` (512 MiB);
-consulte https://iceberg.apache.org/docs/1.5.2/configuration/. Tenga en cuenta que ClickHouse compara el límite con el
-tamaño sin comprimir de los datos escritos hasta ese momento en el archivo, mientras que la propiedad de Iceberg se refiere al tamaño del
-archivo resultante, y que `iceberg_insert_max_rows_in_data_file` limita el archivo con independencia de su tamaño.
-
-## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
+<div id="iceberg_insert_max_partitions">
+  ## iceberg_insert_max_partitions
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -34,7 +33,9 @@ archivo resultante, y que `iceberg_insert_max_rows_in_data_file` limita el archi
 
 Número máximo de particiones permitidas por operación de inserción en el motor de tabla Iceberg.
 
-## iceberg_insert_max_rows_in_data_file {#iceberg_insert_max_rows_in_data_file}
+<div id="iceberg_insert_max_rows_in_data_file">
+  ## iceberg_insert_max_rows_in_data_file
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 

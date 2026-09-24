@@ -20,34 +20,34 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
     * ストレージとは独立したコンピュートの自動スケーリング
     * オブジェクトストレージを基盤とした、低コストで実質的に無制限のデータ保持
-    * Warehouses により、[読み取りワークロードと書き込みワークロードを個別に分離](/ja/clickstack/managing/isolating-read-write)可能
+    * Warehouses により、読み取りワークロードと書き込みワークロードを個別に分離可能
     * 統合認証
     * 自動化された[バックアップ](/ja/products/cloud/features/backups/overview)
     * シームレスなアップグレード
 
     **Managed ClickStack を使用する場合は、ClickHouse Cloud 向けの[ベストプラクティス](/ja/products/cloud/guides/production-readiness)に従ってください。**
 
-    ### インジェストの保護 {#secure-ingestion-managed}
+    ### インジェストの保護
 
     デフォルトでは、Open Source ディストリビューション以外でデプロイされた ClickStack OpenTelemetry Collector は保護されておらず、OTLP ポートでの認証も不要です。
 
     インジェストを保護するには、`OTLP_AUTH_TOKEN` 環境変数を使用して collector をデプロイする際に認証トークンを指定します。詳しくは、[&quot;collector の保護&quot;](/ja/clickstack/ingesting-data/collector#securing-the-collector)を参照してください。
 
-    #### インジェスト用ユーザーを作成する {#create-a-database-ingestion-user-managed}
+    #### インジェスト用ユーザーを作成する
 
     Managed ClickHouse へのインジェスト用に、OTel collector 専用のユーザーを作成し、インジェストの送信先を特定のデータベース (例: `otel`) に固定することを推奨します。詳しくは、[&quot;インジェスト用ユーザーの作成&quot;](/ja/clickstack/ingesting-data/collector#creating-an-ingestion-user)を参照してください。
 
-    ### 有効期限 (TTL) を設定する {#configure-ttl-managed}
+    ### 有効期限 (TTL) を設定する
 
     Managed ClickStack デプロイ向けに、[Time To Live (TTL)](/ja/clickstack/managing/ttl) が[適切に設定](/ja/clickstack/managing/ttl#modifying-ttl)されていることを確認してください。これはデータの保持期間を制御するものであり、デフォルトの 3 日間は変更が必要になることがよくあります。
 
-    ### リソースの見積もり {#estimating-resources}
+    ### リソースの見積もり
 
     <ResourceEstimation />
 
     環境に合わせてサイジングの前提条件をさらに調整する方法については、[&quot;環境に合わせたサイジング前提の調整&quot;](/ja/clickstack/managing/estimating-resources#refining-sizing-assumptions)を参照してください。
 
-    #### オブザーバビリティ ワークロードの分離 {#isolating-workloads}
+    #### オブザーバビリティ ワークロードの分離
 
     リアルタイムのアプリケーション分析など、すでに他のワークロードをサポートしている**既存の ClickHouse Cloud サービス**に ClickStack を追加する場合は、オブザーバビリティ トラフィックを分離することを強く推奨します。
 
@@ -60,15 +60,11 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
     この方法により、既存のワークロードに影響を与えることなく、オブザーバビリティ データの増加に応じて ClickStack を独立してスケールさせることができます。
 
-    #### 読み取りワークロードと書き込みワークロードの分離 {#isolating-read-write}
-
-    Warehouses を使用すると、ClickStack 自身のインジェストおよびクエリのワークロードを専用のコンピュートに分離し、インジェストは読み書き可能なサービスに向け、ClickStack UI は読み取り専用サービス上で実行することもできます。これは、より大規模なデプロイにおいて推奨される本番トポロジーです。[&quot;読み取りワークロードと書き込みワークロードの分離&quot;](/ja/clickstack/managing/isolating-read-write)を参照してください。
-
     より大規模なデプロイやカスタムのサイジング ガイダンスが必要な場合は、より正確な見積もりについてサポートにお問い合わせください。
   </Tab>
 
   <Tab title="ClickStack Open Source">
-    ### ネットワークとポートのセキュリティ {#network-security}
+    ### ネットワークとポートのセキュリティ
 
     デフォルトでは、Docker Compose はホスト上のポートを公開するため、`ufw` (Uncomplicated Firewall) などのツールが有効になっている場合でも、コンテナー外部からアクセスできる状態になります。これは、明示的に設定しない限りホストレベルのファイアウォールルールを迂回できる Docker のネットワークスタックの仕様によるものです。
 
@@ -88,7 +84,7 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
     コンテナーの分離とアクセスのセキュリティ強化の詳細については、[Dockerネットワークドキュメント](https://docs.docker.com/network/)を参照してください。
 
-    ### セッションシークレットの設定 {#session-secret}
+    ### セッションシークレットの設定
 
     本番環境では、セッションデータを保護し改ざんを防ぐため、ClickStack UI (HyperDX) の環境変数 `EXPRESS_SESSION_SECRET` に強力なランダム値を必ず設定してください。
 
@@ -128,7 +124,7 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
     シークレットをソース管理にコミットしないようにしてください。本番環境では、環境変数管理ツール (例：Docker Secrets、HashiCorp Vault、環境固有のCI/CD設定など) の使用を検討してください。
 
-    ### インジェストのセキュリティ保護 {#secure-ingestion}
+    ### インジェストのセキュリティ保護
 
     すべてのインジェストは、ClickStack が提供する OpenTelemetry (OTel) collector の OTLP ポートを経由して行う必要があります。デフォルトでは、起動時に生成されるセキュアなインジェスト API key が必要です。この API key は OTel ポートへのデータ送信時に必要となり、HyperDX UI の `Team Settings → API Keys` から確認できます。
 
@@ -136,15 +132,15 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
     また、OTLPエンドポイントでのTLS有効化も推奨します。
 
-    #### インジェスト用ユーザーを作成する {#create-a-database-ingestion-user-oss}
+    #### インジェストユーザーの作成
 
-    OTel collector がClickHouseにデータを取り込むための専用ユーザーを作成し、インジェストが特定のデータベース (例：`otel`) に送信されるよう設定することを推奨します。詳細については、[&quot;インジェストユーザーの作成&quot;](/ja/clickstack/ingesting-data/collector#creating-an-ingestion-user)を参照してください。
+    OTel collector がClickHouseにデータを取り込むための専用ユーザーを作成し、インジェストが特定のデータベース (例：`otel`) に送信されるよう設定することを推奨します。詳細については、[「インジェストユーザーの作成」](/ja/clickstack/ingesting-data/collector#creating-an-ingestion-user)を参照してください。
 
-    ### ClickHouse {#clickhouse}
+    ### ClickHouse
 
     自身でClickHouseインスタンスを管理するユーザーは、以下のベストプラクティスを遵守してください。
 
-    #### セキュリティのベストプラクティス {#self-managed-security}
+    #### セキュリティのベストプラクティス
 
     独自の ClickHouse インスタンスを管理している場合は、**TLS** を有効化し、認証を強制し、アクセスを堅牢化するためのベストプラクティスに従うことが重要です。実際の設定ミスとその回避方法については、[このブログ記事](https://www.wiz.io/blog/clickhouse-and-wiz)を参照してください。
 
@@ -163,7 +159,7 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
     ユーザーの管理およびクエリ・リソース制限の設定については、[外部認証機能](/ja/concepts/features/security/external-authenticators/index)および[クエリ複雑度の設定](/ja/concepts/features/configuration/settings/query-complexity)も参照してください。
 
-    #### ClickStack UIのユーザー権限 {#user-permissions}
+    #### ClickStack UIのユーザー権限
 
     ClickStack UI用のClickHouseユーザーは、以下の設定を変更できる`readonly`ユーザーであれば十分です：
 
@@ -174,11 +170,11 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
     デフォルトでは、OSSおよびClickHouse Cloudの両方で`default`ユーザーにこれらの権限が付与されていますが、これらの権限を持つ新規ユーザーを作成することを推奨します。
 
-    ### 有効期限 (TTL) の設定 {#configure-ttl}
+    ### 有効期限 (TTL) の設定
 
     ClickStack のデプロイメントに合わせて、[有効期限 (TTL)](/ja/clickstack/managing/ttl) が[適切に設定されている](/ja/clickstack/managing/ttl#modifying-ttl)ことを確認してください。これはデータの保持期間を制御する設定で、デフォルトの 3 日間は多くの場合変更が必要です。
 
-    ### MongoDBガイドライン {#mongodb-guidelines}
+    ### MongoDBガイドライン
 
     公式の[MongoDBセキュリティチェックリスト](https://www.mongodb.com/docs/manual/administration/security-checklist/)に従ってください。
   </Tab>

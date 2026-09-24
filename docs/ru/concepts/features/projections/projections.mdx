@@ -12,7 +12,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
-  ## Введение {#introduction}
+  ## Введение
 </div>
 
 ClickHouse предлагает различные механизмы ускорения аналитических запросов на
@@ -31,7 +31,9 @@ ClickHouse предлагает различные механизмы ускор
   <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="Видеопроигрыватель YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## Как работают проекции? {#how-do-projections-work}
+<div id="how-do-projections-work">
+  ## Как работают проекции?
+</div>
 
 На практике проекцию можно рассматривать как дополнительную скрытую таблицу
 к исходной таблице. Проекция может иметь другой порядок строк и, следовательно,
@@ -55,7 +57,7 @@ ClickHouse автоматически анализирует первичные 
 <Image img="/images/data-modeling/projections_1.webp" size="md" alt="Проекции в ClickHouse" />
 
 <div id="smarter_storage_with_part_offset">
-  ### Более эффективное хранение с `_part_offset` {#smarter_storage_with_part_offset}
+  ### Более эффективное хранение с `_part_offset`
 </div>
 
 Начиная с версии 25.5, ClickHouse поддерживает виртуальный столбец `_part_offset` в
@@ -76,7 +78,7 @@ ClickHouse автоматически анализирует первичные 
 другие — косвенно через `_part_offset`.
 
 <div id="when-to-use-projections">
-  ## Когда использовать проекции? {#when-to-use-projections}
+  ## Когда использовать проекции?
 </div>
 
 Проекции — привлекательная возможность для новых пользователей, поскольку они автоматически
@@ -114,11 +116,11 @@ ClickHouse автоматически анализирует первичные 
   [оцените дополнительные затраты на хранение](/ru/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="examples">
-  ## Примеры {#examples}
+  ## Примеры
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### Фильтрация по столбцам, не входящим в первичный ключ {#filtering-without-using-primary-keys}
+  ### Фильтрация по столбцам, не входящим в первичный ключ
 </div>
 
 В этом примере мы покажем, как добавить проекцию в таблицу.
@@ -207,7 +209,9 @@ WHERE query_id='<query_id>'
    └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
 ```
 
-### Использование проекций для ускорения запросов к UK price paid {#using-projections-to-speed-up-UK-price-paid}
+<div id="using-projections-to-speed-up-UK-price-paid">
+  ### Использование проекций для ускорения запросов к UK price paid
+</div>
 
 Чтобы показать, как проекции можно использовать для ускорения выполнения запросов, давайте
 рассмотрим пример с реальным набором данных. В этом примере мы будем
@@ -418,7 +422,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### Дополнительные примеры {#further-examples}
+  ### Дополнительные примеры
 </div>
 
 В следующих примерах используется тот же набор данных о ценах в Великобритании, чтобы сравнить запросы с проекциями и без них.
@@ -430,30 +434,25 @@ CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
 INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 ```
 
-#### Создадим проекцию {#build-projection}
+<div id="build-projection">
+  #### Создадим проекцию
+</div>
 
-Создадим агрегирующую проекцию по размерностям `year`, `district` и `town`.
-Проекция группирует продажи по году продажи, поэтому мы материализуем это
-выражение как столбец, чтобы на него можно было ссылаться в фильтрах:
-
-```sql
-ALTER TABLE uk.uk_price_paid_with_projections_v2
-    ADD COLUMN year UInt16 MATERIALIZED toYear(date)
-```
+Создадим агрегирующую проекцию по измерениям `toYear(date)`, `district` и `town`:
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
     ADD PROJECTION projection_by_year_district_town
     (
         SELECT
-            year,
+            toYear(date),
             district,
             town,
             avg(price),
             sum(price),
             count()
         GROUP BY
-            year,
+            toYear(date),
             district,
             town
     )
@@ -470,13 +469,13 @@ SETTINGS mutations_sync = 1
 Следующие запросы показывают различия в производительности при использовании проекций и без них. Чтобы отключить использование проекций, мы используем настройку [`optimize_use_projections`](/ru/reference/settings/session-settings/optimize-use#optimize_use_projections), которая включена по умолчанию.
 
 <div id="average-price-projections">
-  #### Запрос 1. Средняя цена по годам {#average-price-projections}
+  #### Запрос 1. Средняя цена по годам
 </div>
 
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -489,7 +488,7 @@ SETTINGS mutations_sync = 1
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -502,13 +501,13 @@ SETTINGS mutations_sync = 1
 Результаты должны быть одинаковыми, но во втором примере запрос будет выполняться быстрее!
 
 <div id="average-price-london-projections">
-  #### Запрос 2. Средняя цена за год в Лондоне {#average-price-london-projections}
+  #### Запрос 2. Средняя цена за год в Лондоне
 </div>
 
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -522,7 +521,7 @@ SETTINGS mutations_sync = 1
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -533,10 +532,10 @@ SETTINGS mutations_sync = 1
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### Запрос 3. Самые дорогие районы {#most-expensive-neighborhoods-projections}
+  #### Запрос 3. Самые дорогие районы
 </div>
 
-Фильтр по строкам начиная с 2020 года обращается напрямую к сохранённой размерности проекции `year`:
+Условие (date &gt;= &#39;2020-01-01&#39;) нужно изменить так, чтобы оно соответствовало размерности проекции (`toYear(date) >= 2020)`:
 
 <RunnableCode>
   ```sql
@@ -547,7 +546,7 @@ SETTINGS mutations_sync = 1
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE year >= 2020
+  WHERE toYear(date) >= 2020
   GROUP BY
       town,
       district
@@ -567,7 +566,7 @@ SETTINGS mutations_sync = 1
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE year >= 2020
+  WHERE toYear(date) >= 2020
   GROUP BY
       town,
       district
@@ -579,15 +578,8 @@ SETTINGS mutations_sync = 1
 
 И снова результат тот же, но обратите внимание на рост производительности у второго запроса.
 
-<Note>
-  Фильтр должен обращаться напрямую к сохранённой размерности `year`. Запись
-  `WHERE toYear(date) >= 2020` проекцию не задействует: оптимизатор преобразует
-  условие в диапазон по `date`, а проекция не хранит столбец `date`,
-  поэтому ClickHouse переходит к сканированию базовой таблицы.
-</Note>
-
 <div id="combining-projections">
-  ### Объединение проекций в одном запросе {#combining-projections}
+  ### Объединение проекций в одном запросе
 </div>
 
 Начиная с версии 25.6, развивая поддержку `_part_offset`, появившуюся в
@@ -709,7 +701,9 @@ SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
 За счет объединения анализа индексов нескольких проекций ClickHouse значительно уменьшает объем сканируемых данных,
 повышая производительность при низких накладных расходах на хранение.
 
-## Связанные материалы {#related-content}
+<div id="related-content">
+  ## Связанные материалы
+</div>
 
 * [Практическое введение в первичные индексы в ClickHouse](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [materialized view](/ru/concepts/features/materialized-views/index)

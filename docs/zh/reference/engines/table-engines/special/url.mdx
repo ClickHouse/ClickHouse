@@ -42,7 +42,9 @@ doc_type: 'reference'
 
 例如，对于引擎表达式 `URL('http://localhost/test.gzip')`，将使用 `gzip` 压缩方法；而对于 `URL('http://localhost/test.fr')`，则不会启用压缩，因为后缀 `fr` 与上述任何压缩方法都不匹配。
 
-## 按 URL 协议分派 {#scheme-dispatch}
+<div id="scheme-dispatch">
+  ## 按 URL 协议分派
+</div>
 
 `URL` 引擎是在其他文件和对象存储引擎之上的统一封装：它会根据 URL 协议分派到正确的后端。`http`/`https` (以及任何无法识别的协议) 由 `URL` 引擎自身处理；`file://` 由 [File 表引擎](/zh/reference/engines/table-engines/special/file) 处理；`s3://`、`gs://`、`gcs://`、`oss://` 由 [S3](/zh/reference/engines/table-engines/integrations/s3) 引擎处理；`az://`、`azure://`、`abfss://`、`abfs://` 由 [AzureBlobStorage](/zh/reference/engines/table-engines/integrations/azureBlobStorage) 引擎处理；`hdfs://` 由 [HDFS](/zh/reference/engines/table-engines/integrations/hdfs) 引擎处理。
 
@@ -55,7 +57,9 @@ CREATE TABLE file_via_url (a UInt32, b String) ENGINE = URL('file://data.csv', C
 CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv', CSV);
 ```
 
-## 用法 {#using-the-engine-in-the-clickhouse-server}
+<div id="using-the-engine-in-the-clickhouse-server">
+  ## 用法
+</div>
 
 `INSERT` 和 `SELECT` 查询会分别转换为 `POST` 和 `GET` 请求。
 要处理 `POST` 请求，远程服务器必须支持
@@ -63,14 +67,18 @@ CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv',
 
 你可以使用 [max&#95;http&#95;get&#95;redirects](/zh/reference/settings/session-settings/max#max_http_get_redirects) 设置来限制 HTTP GET 重定向的最大跳转次数。
 
-## HTTP 索引页中的通配符 {#wildcards-with-http-index-pages}
+<div id="wildcards-with-http-index-pages">
+  ## HTTP 索引页中的通配符
+</div>
 
-启用 [allow&#95;url&#95;wildcard&#95;from&#95;index&#95;pages](/zh/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages) 后，`URL` 表引擎可以通过拉取 HTTP 索引页并从中提取链接来展开通配符。
+启用 [allow&#95;experimental&#95;url&#95;wildcard&#95;from&#95;index&#95;pages](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) 后，`URL` 表引擎可以通过拉取 HTTP 索引页并从中提取链接来展开通配符。
 其机制与 [`url`](/zh/reference/functions/table-functions/url#wildcards-with-http-index-pages) 表函数相同。
 
 展开过程会受到以下限制：对每个拉取的索引页，受 [max&#95;http&#95;index&#95;page&#95;size](/zh/reference/settings/server-settings/settings/max#max_http_index_page_size) 限制；对于递归目录遍历，受 [url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/zh/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) 限制。
 
-## 示例 {#example}
+<div id="example">
+  ## 示例
+</div>
 
 **1.** 在服务器上创建 `url_engine_table` 表：
 
@@ -115,7 +123,9 @@ SELECT * FROM url_engine_table
 └───────┴───────┘
 ```
 
-## 实现细节 {#details-of-implementation}
+<div id="details-of-implementation">
+  ## 实现细节
+</div>
 
 * 读写可并行进行
 * 不支持：
@@ -123,7 +133,9 @@ SELECT * FROM url_engine_table
   * 索引。
   * 复制。
 
-## 虚拟列 {#virtual-columns}
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
 
 * `_path` — `URL` 的路径。类型：`LowCardinality(String)`。
 * `_file` — `URL` 的资源名。类型：`LowCardinality(String)`。
@@ -131,7 +143,9 @@ SELECT * FROM url_engine_table
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 * `_headers` - HTTP 响应头。类型：`Map(LowCardinality(String), LowCardinality(String))`。
 
-## 解析相对 URL {#resolving-relative-urls}
+<div id="resolving-relative-urls">
+  ## 解析相对 URL
+</div>
 
 [url&#95;base](/zh/reference/settings/session-settings/url#url_base) 设置允许在 `URL` 引擎 中使用相对 URL。设置 `url_base` 后，传递给该 引擎 的 URL 会按照 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) 相对于它进行解析。有关解析规则的完整说明，请参见 [url 表函数文档](/zh/reference/functions/table-functions/url#resolving-relative-urls)。
 
@@ -143,7 +157,9 @@ CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.cs
 SELECT * FROM url_engine_table;
 ```
 
-## 存储设置 {#storage-settings}
+<div id="storage-settings">
+  ## 存储设置
+</div>
 
 * [engine&#95;url&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings/other#engine_url_skip_empty_files) - 允许在读取时跳过空文件。默认禁用。
 * [enable&#95;url&#95;encoding](/zh/reference/settings/session-settings/enable#enable_url_encoding) - 允许对 URI 中的 path 启用/禁用解码和编码。默认启用。

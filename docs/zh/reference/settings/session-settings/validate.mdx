@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
+<div id="validate_enum_literals_in_operators">
+  ## validate_enum_literals_in_operators
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -21,30 +23,21 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 启用后，会根据枚举类型检查 `IN`、`NOT IN`、`==` 和 `!=` 等运算符中的枚举字面量；如果字面量不是有效的枚举值，则抛出异常。
 
-## validate_group_by_all_key_types {#validate_group_by_all_key_types}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "对 `GROUP BY ALL` 展开 `SELECT` expressions 后所得 key types 的验证，在 `compatibility` 设置为 26.7 或 26.8 时保持不变：先前的值特意设为与新值相同，因为这些版本已经拒绝此类 key；只有 `compatibility` 设置为 26.7 之前的版本，才会恢复此前的接受行为。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "1"},{"label": "新增设置，用于控制对 `GROUP BY ALL` 展开 `SELECT` expressions 后所得 key types 的验证。26.7 开始拒绝此处的 `Variant`\/`Dynamic` key，而较早版本在启用 analyzer 时会接受此类 key（`enable_analyzer = 1`，即默认值；旧 analyzer 在 26.7 之前也会拒绝此类 key），因此先前的值为 `false`，将 `compatibility` 设置为 26.7 之前的版本可恢复此前的接受行为。"}]}]} />
-
-控制是否依据 [allow&#95;suspicious&#95;types&#95;in&#95;group&#95;by](/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_types_in_group_by) 检查 `GROUP BY ALL` 展开 `SELECT` expressions 后所得的 grouping keys。禁用此设置可恢复 26.7 之前版本的行为：这些版本会接受写为 `GROUP BY ALL` 的 [Variant](/zh/reference/data-types/variant) 或 [Dynamic](/zh/reference/data-types/dynamic) key，例如未指定类型的 JSON subpath 作为 grouping key。仅在启用 analyzer 时生效 (`enable_analyzer = 1`，即默认值) ；旧 analyzer 在 26.7 之前同样会拒绝此类 key，因此无需恢复任何行为。显式 `GROUP BY` 不受影响，无论如何仍会拒绝此类 key，因此该设置的范围比 `allow_suspicious_types_in_group_by` 更窄，后者也允许在显式 `GROUP BY` 中使用它们。
-
-可能的值：
-
-* 0 - 不验证 `GROUP BY ALL` 展开后所得的 key types。
-* 1 - 验证这些类型，与显式 `GROUP BY` 验证其自身 keys 的方式相同。
-
-## validate_mutation_query {#validate_mutation_query}
+<div id="validate_mutation_query">
+  ## validate_mutation_query
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "默认启用的新设置，用于验证变更查询。"}]}]} />
 
-在接受变更查询之前先验证其有效性。变更操作在后台执行，运行无效查询可能导致变更操作卡住，并需要手动干预。
+在接受变更查询之前先验证其有效性。变更操作在后台执行，运行无效查询会导致变更操作卡住，并需要手动干预。
 
 只有在遇到向后不兼容的 bug 时，才应更改此设置。
 
-## validate_polygons {#validate_polygons}
+<div id="validate_polygons">
+  ## validate_polygons
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

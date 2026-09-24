@@ -1,192 +1,203 @@
 ---
-description: '英国の不動産価格データを使って ClickHouse を探索する'
+description: 'イングランドとウェールズの不動産取引価格データを含む英国の不動産価格データセットを使って、頻繁に実行するクエリのパフォーマンスを向上させるプロジェクションの使い方を学びます'
 sidebarTitle: '英国の不動産価格'
-title: '英国の不動産価格データを対象とした分析クエリ'
+slug: /getting-started/example-datasets/uk-price-paid
+title: '英国の不動産価格データセット'
 doc_type: 'guide'
-keywords: ['example dataset', 'uk property', 'sample data', 'real estate', 'getting started']
+keywords: ['サンプルデータセット', '英国の不動産', 'サンプルデータ', '不動産', 'はじめに']
 ---
 
-このチュートリアルでは、<Tooltip headline="UK Property Price dataset" tip="HM Land Registry のデータを含みます © Crown copyright and database right 2021。このデータは Open Government Licence v3.0 に基づいてライセンスされています。" cta="出典を見る" href="https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads">UK Property Price dataset</Tooltip> を使って ClickHouse を探索します。このデータセットには、1995 年以降にイングランドおよびウェールズで取引された不動産の支払価格データが収録されています。
+import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
 
-## 前提条件 {#prerequisites}
+このデータには、イングランドおよびウェールズの不動産取引で支払われた価格が含まれています。データは1995年以降について利用可能で、データセットの非圧縮サイズは約4 GiBです (ClickHouseでは約278 MiBしか使用しません) 。
 
-このチュートリアルを進めるには、以下が必要です。
+* ソース: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
+* フィールドの説明: https://www.gov.uk/guidance/about-the-price-paid-data
+* HM Land Registry data © Crown copyright and database right 2021 を含みます。このデータは Open Government Licence v3.0 の下で提供されています。
 
-* [ClickHouse Cloud アカウント](https://clickhouse.cloud/signUp?loc=docs-sample-datasets-uk-property-price) (サインアップ時に 300 ドル分の無料クレジットを利用できます)
-* [ClickHouse Cloud サービス](/ja/get-started/setup/cloud#1-create-a-clickhouse-service)
+<div id="create-table">
+  ## テーブルを作成
+</div>
 
-<Steps titleSize="h2">
-  <Step title="テーブルを作成する">
-    1. 左側のメニューから **SQL console** を選択します
-    2. ホームアイコンの横にある **+** タブをクリックして、新しいクエリを作成します
-    3. SQL エディタに次のクエリを入力し、**Run** をクリックします。
+```sql
+CREATE DATABASE uk;
 
-    ```sql
-    CREATE DATABASE uk;
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
 
-    CREATE TABLE uk.uk_price_paid
-    (
-      price UInt32,
-      date Date,
-      postcode1 LowCardinality(String),
-      postcode2 LowCardinality(String),
-      type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
-      is_new UInt8,
-      duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
-      addr1 String,
-      addr2 String,
-      street LowCardinality(String),
-      locality LowCardinality(String),
-      town LowCardinality(String),
-      district LowCardinality(String),
-      county LowCardinality(String)
-    )
-    ENGINE = MergeTree
-    ORDER BY (postcode1, postcode2, addr1, addr2);
-    ```
+<div id="preprocess-import-data">
+  ## データを前処理して挿入する
+</div>
 
-    <Tip>
-      `ORDER BY (postcode1, postcode2, addr1, addr2)` に注目してください。これは、ClickHouse がディスク上でデータをどのようにソートするかを定義しています。
-      ClickHouse では、アクセスパターンに合った効果的な主キーを選択することが、クエリパフォーマンスとストレージ効率の両面で極めて重要です。
-      詳細は [&quot;主キーの選択&quot;](/ja/concepts/best-practices/choosing-a-primary-key) を参照してください。
-    </Tip>
+データを ClickHouse にストリーミングするために、`url` 関数を使用します。まず、取り込むデータの一部を前処理する必要があります。具体的には、次の処理を行います。
 
-    各フィールドの説明については、[https://www.gov.uk](https://www.gov.uk/guidance/about-the-price-paid-data) を参照してください。
-  </Step>
+* `postcode` を 2 つの別々のカラム `postcode1` と `postcode2` に分割する。これは保存効率とクエリ性能の両方の面で有利です
+* `time` フィールドは時刻部分が常に 00:00 のため、日付に変換する
+* 分析には不要なため、[UUid](/ja/reference/data-types/uuid) フィールドを無視する
+* [transform](/ja/reference/functions/regular-functions/other-functions#transform) 関数を使用して、`type` と `duration` を、より読みやすい `Enum` フィールドに変換する
+* `is_new` フィールドを、1 文字の文字列 (`Y`/`N`) から 0 または 1 の [UInt8](/ja/reference/data-types/int-uint) フィールドに変換する
+* 最後の 2 つのカラムはどちらも同じ値 (0) なので削除する
 
-  <Step title="データを前処理して挿入する" id="preprocess-import-data">
-    `url` 関数を使用すると、ClickHouse にデータをストリーミングできます。ただし、事前にいくつかの前処理が必要です。
-    以下のクエリは、`uk_price_paid` テーブルに 2,500 万行以上を挿入し、その際に次の前処理を行います。
+`url` 関数は、Web サーバーから ClickHouse テーブルにデータをストリーミングします。次のコマンドは、`uk_price_paid` テーブルに 500 万行を挿入します。
 
-    * `postcode` を `postcode1` と `postcode2` の 2 つのカラムに分割します。こうすることで、ストレージ効率とクエリ性能が向上します
-    * `time` フィールドには `00:00` の時刻しか含まれていないため、日付型に変換します
-    * [UUID](/ja/reference/data-types/uuid) フィールドは分析に不要なため、取り込みません
-    * [transform](/ja/reference/functions/regular-functions/other-functions#transform) 関数を使用して、`type` と `duration` を可読性の高い `Enum` フィールドに変換します
-    * `is_new` フィールドを 1 文字の文字列 (`Y`/`N`) から、0 または 1 の値を持つ [UInt8](/ja/reference/data-types/int-uint) フィールドに変換します
-    * 最後の 2 つのカラムはすべて同じ値 (0) であるため削除します
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
 
-    ```sql
-    INSERT INTO uk.uk_price_paid
-    SELECT
-      toUInt32(price_string) AS price,
-      parseDateTimeBestEffortUS(time) AS date,
-      splitByChar(' ', postcode)[1] AS postcode1,
-      splitByChar(' ', postcode)[2] AS postcode2,
-      transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
-      b = 'Y' AS is_new,
-      transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
-      addr1,
-      addr2,
-      street,
-      locality,
-      town,
-      district,
-      county
-    FROM url(
-      'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
-      'CSV',
-      'uuid_string String,
-      price_string String,
-      time String,
-      postcode String,
-      a String,
-      b String,
-      c String,
-      addr1 String,
-      addr2 String,
-      street String,
-      locality String,
-      town String,
-      district String,
-      county String,
-      d String,
-      e String'
-    ) SETTINGS max_http_get_redirects=10;
-    ```
+データが挿入されるまで待機してください。ネットワーク速度によっては1～2分かかります。
 
-    データの挿入が完了するまでお待ちください。ネットワーク速度にもよりますが、1〜2分程度かかります。
-  </Step>
+<div id="validate-data">
+  ## データを検証する
+</div>
 
-  <Step title="データを検証する" id="validate-data">
-    挿入された行数を確認して、正しく動作したかどうかを検証しましょう：
+正しく取り込まれたことを、挿入された行数を確認して検証してみましょう。
 
-    ```sql
-    SELECT count()
-    FROM uk.uk_price_paid
-    ```
+<RunnableCode>
+  ```sql
+  SELECT count()
+  FROM uk.uk_price_paid
+  ```
+</RunnableCode>
 
-    このクエリを実行した時点で、データセットには 27,450,499 行が含まれていました。ClickHouse 上のテーブルのストレージサイズを確認してみましょう：
+このクエリを実行した時点では、このデータセットには 27,450,499 行ありました。次に、ClickHouse でこのテーブルのストレージサイズを見てみましょう。
 
-    ```sql
-    SELECT formatReadableSize(total_bytes)
-    FROM system.tables
-    WHERE name = 'uk_price_paid'
-    ```
+<RunnableCode>
+  ```sql
+  SELECT formatReadableSize(total_bytes)
+  FROM system.tables
+  WHERE name = 'uk_price_paid'
+  ```
+</RunnableCode>
 
-    テーブルのサイズはわずか 221.43 MiB であるのに対し、元のデータセットは非圧縮の状態で約 4 GiB あることに注目してください。
-    ClickHouse は追加設定なしでも優れたデータ圧縮を実現しますが、必要に応じて[カラムごとに圧縮をさらにチューニングする](/ja/reference/statements/create/table#column_compression_codec)こともできます。
-  </Step>
+このテーブルのサイズは、わずか 221.43 MiB です。
 
-  <Step title="いくつかのクエリを実行する" id="run-queries">
-    データの読み込みが完了したら、以下のクエリを実行して、分析クエリがどれほど高速に結果を返すかを体感してみてください。
-    次のクエリは、全データを対象に年ごとの平均価格を算出します。
+<div id="run-queries">
+  ## クエリをいくつか実行する
+</div>
 
-    ```sql
-    SELECT
-      toYear(date) AS year,
-      round(avg(price)) AS price,
-      bar(price, 0, 1000000, 80
-    )
-    FROM uk.uk_price_paid
-    GROUP BY year
-    ORDER BY year
-    ```
+データを分析するため、クエリをいくつか実行してみましょう。
 
-    以下のクエリでは、フィルタを適用してロンドンにおける年ごとの平均価格を求めています。
+<div id="average-price">
+  ### クエリ 1. 年別の平均価格
+</div>
 
-    ```sql
-    SELECT
-      toYear(date) AS year,
-      round(avg(price)) AS price,
-      bar(price, 0, 2000000, 100
-    )
-    FROM uk.uk_price_paid
-    WHERE town = 'LONDON'
-    GROUP BY year
-    ORDER BY year
-    ```
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 1000000, 80
+  )
+  FROM uk.uk_price_paid
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
 
-    2020年に住宅価格に何か変化があったようです！とはいえ、これは驚くほどのことではないでしょう...
+<div id="average-price-london">
+  ### クエリ 2. ロンドンの年別平均価格
+</div>
 
-    次のクエリは、住宅価格が最も高い地域を抽出します：
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 2000000, 100
+  )
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
 
-    ```sql
-    SELECT
+2020年の住宅価格には何かが起きていますね！ とはいえ、おそらく驚くほどのことではないでしょう...
+
+<div id="most-expensive-neighborhoods">
+  ### クエリ 3. 最も価格が高い地区
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
       town,
       district,
       count() AS c,
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
-    FROM uk.uk_price_paid
-    WHERE date >= '2020-01-01'
-    GROUP BY
+  FROM uk.uk_price_paid
+  WHERE date >= '2020-01-01'
+  GROUP BY
       town,
       district
-    HAVING c >= 100
-    ORDER BY price DESC
-    LIMIT 100
-    ```
-  </Step>
-</Steps>
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
 
-## 次のステップ {#next-steps}
+<div id="speeding-up-queries-with-projections">
+  ## プロジェクションによるクエリの高速化
+</div>
 
-このチュートリアルでは、テーブルを作成し、英国の不動産価格データを前処理して ClickHouse にロードしたうえで、
-そのデータに対していくつかの分析クエリを実行しました。
+これらのクエリはプロジェクションで高速化できます。このデータセットでの例については、[&quot;Projections&quot;](/ja/concepts/features/projections/projections) を参照してください。
 
-次のステップとして、以下を行うことができます。
+<div id="playground">
+  ### Playgroundで試す
+</div>
 
-* プロジェクションを使ってこれらのクエリを高速化する方法を学ぶ。同じデータセットを使用した例については、[&quot;Projections&quot;](/ja/concepts/features/projections/projections) を参照してください。
-* ClickHouse の[コアコンセプト](/ja/concepts/core-concepts)について詳しく学ぶ
-* ClickHouse の[ベストプラクティス](/ja/concepts/best-practices)を確認する
-* その他の[サンプルデータセット](/ja/get-started/sample-datasets)を試す
+このデータセットは [Online Playground](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX) でも利用できます。

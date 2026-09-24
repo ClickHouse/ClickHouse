@@ -14,7 +14,9 @@ import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnly
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## distributed_cache_alignment {#distributed_cache_alignment}
+<div id="distributed_cache_alignment">
+  ## distributed_cache_alignment
+</div>
 
 <CloudOnlyBadge />
 
@@ -24,7 +26,9 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 Solo tiene efecto en ClickHouse Cloud. Es una configuración para pruebas; no la cambie
 
-## distributed_cache_bypass_connection_pool {#distributed_cache_bypass_connection_pool}
+<div id="distributed_cache_bypass_connection_pool">
+  ## distributed_cache_bypass_connection_pool
+</div>
 
 <CloudOnlyBadge />
 
@@ -34,7 +38,9 @@ Solo tiene efecto en ClickHouse Cloud. Es una configuración para pruebas; no la
 
 Solo tiene efecto en ClickHouse Cloud. Permite omitir el pool de conexiones de caché distribuida
 
-## distributed_cache_client_id {#distributed_cache_client_id}
+<div id="distributed_cache_client_id">
+  ## distributed_cache_client_id
+</div>
 
 <CloudOnlyBadge />
 
@@ -42,7 +48,9 @@ Solo tiene efecto en ClickHouse Cloud. Permite omitir el pool de conexiones de c
 
 Solo tiene efecto en ClickHouse Cloud. Configuración utilizada únicamente para pruebas de CI: cuando no está vacía, sobrescribe el ID de client de caché distribuida configurado en el registro para las solicitudes de esta consulta. Permite que las pruebas distribuyan los datos entre un conjunto limitado de ID de client, manteniendo los mismos datos en el mismo ID de client. Requiere que `ci_mode` esté habilitado en la configuración del client de caché distribuida: cuando no lo está (el valor predeterminado, como en producción), una consulta que enruta una lectura o escritura a través de la caché distribuida falla con `SUPPORT_IS_DISABLED` en lugar de recurrir silenciosamente al ID de client configurado. Las consultas que nunca alcanzan la caché distribuida no se ven afectadas, por lo que el valor se ignora en ellas.
 
-## distributed_cache_connect_backoff_max_ms {#distributed_cache_connect_backoff_max_ms}
+<div id="distributed_cache_connect_backoff_max_ms">
+  ## distributed_cache_connect_backoff_max_ms
+</div>
 
 <CloudOnlyBadge />
 
@@ -52,7 +60,9 @@ Solo tiene efecto en ClickHouse Cloud. Configuración utilizada únicamente para
 
 Solo tiene efecto en ClickHouse Cloud. Número máximo de milisegundos de backoff para la creación de conexiones de caché distribuida.
 
-## distributed_cache_connect_backoff_min_ms {#distributed_cache_connect_backoff_min_ms}
+<div id="distributed_cache_connect_backoff_min_ms">
+  ## distributed_cache_connect_backoff_min_ms
+</div>
 
 <CloudOnlyBadge />
 
@@ -62,7 +72,9 @@ Solo tiene efecto en ClickHouse Cloud. Número máximo de milisegundos de backof
 
 Solo tiene efecto en ClickHouse Cloud. Número mínimo de milisegundos de espera entre reintentos al crear conexiones de caché distribuida.
 
-## distributed_cache_connect_max_tries {#distributed_cache_connect_max_tries}
+<div id="distributed_cache_connect_max_tries">
+  ## distributed_cache_connect_max_tries
+</div>
 
 <CloudOnlyBadge />
 
@@ -72,7 +84,9 @@ Solo tiene efecto en ClickHouse Cloud. Número mínimo de milisegundos de espera
 
 Solo tiene efecto en ClickHouse Cloud. Número de intentos de conexión a caché distribuida en caso de error
 
-## distributed_cache_connect_timeout_ms {#distributed_cache_connect_timeout_ms}
+<div id="distributed_cache_connect_timeout_ms">
+  ## distributed_cache_connect_timeout_ms
+</div>
 
 <CloudOnlyBadge />
 
@@ -82,7 +96,9 @@ Solo tiene efecto en ClickHouse Cloud. Número de intentos de conexión a caché
 
 Solo tiene efecto en ClickHouse Cloud. Tiempo de espera de la conexión al conectarse al servidor de caché distribuida.
 
-## distributed_cache_credentials_refresh_period_seconds {#distributed_cache_credentials_refresh_period_seconds}
+<div id="distributed_cache_credentials_refresh_period_seconds">
+  ## distributed_cache_credentials_refresh_period_seconds
+</div>
 
 <CloudOnlyBadge />
 
@@ -92,7 +108,9 @@ Solo tiene efecto en ClickHouse Cloud. Tiempo de espera de la conexión al conec
 
 Solo tiene efecto en ClickHouse Cloud. Período de actualización de las credenciales.
 
-## distributed_cache_data_packet_ack_window {#distributed_cache_data_packet_ack_window}
+<div id="distributed_cache_data_packet_ack_window">
+  ## distributed_cache_data_packet_ack_window
+</div>
 
 <CloudOnlyBadge />
 
@@ -102,7 +120,9 @@ Solo tiene efecto en ClickHouse Cloud. Período de actualización de las credenc
 
 Solo surte efecto en ClickHouse Cloud. Ventana para enviar ACK de la secuencia de DataPacket en una única solicitud de lectura de caché distribuida
 
-## distributed_cache_discard_connection_if_unread_data {#distributed_cache_discard_connection_if_unread_data}
+<div id="distributed_cache_discard_connection_if_unread_data">
+  ## distributed_cache_discard_connection_if_unread_data
+</div>
 
 <CloudOnlyBadge />
 
@@ -112,7 +132,9 @@ Solo surte efecto en ClickHouse Cloud. Ventana para enviar ACK de la secuencia d
 
 Solo tiene efecto en ClickHouse Cloud. Descarta la conexión si quedan datos sin leer.
 
-## distributed_cache_fetch_metrics_only_from_current_az {#distributed_cache_fetch_metrics_only_from_current_az}
+<div id="distributed_cache_fetch_metrics_only_from_current_az">
+  ## distributed_cache_fetch_metrics_only_from_current_az
+</div>
 
 <CloudOnlyBadge />
 
@@ -122,7 +144,9 @@ Solo tiene efecto en ClickHouse Cloud. Descarta la conexión si quedan datos sin
 
 Solo tiene efecto en ClickHouse Cloud. Recupera métricas únicamente de la zona de disponibilidad actual en system.distributed&#95;cache&#95;metrics, system.distributed&#95;cache&#95;events
 
-## distributed_cache_file_cache_name {#distributed_cache_file_cache_name}
+<div id="distributed_cache_file_cache_name">
+  ## distributed_cache_file_cache_name
+</div>
 
 <CloudOnlyBadge />
 
@@ -130,7 +154,9 @@ Solo tiene efecto en ClickHouse Cloud. Recupera métricas únicamente de la zona
 
 Solo tiene efecto en ClickHouse Cloud. Configuración usada solo para pruebas de CI: nombre de la caché del sistema de archivos que se usará en caché distribuida.
 
-## distributed_cache_log_mode {#distributed_cache_log_mode}
+<div id="distributed_cache_log_mode">
+  ## distributed_cache_log_mode
+</div>
 
 <CloudOnlyBadge />
 
@@ -140,7 +166,9 @@ Solo tiene efecto en ClickHouse Cloud. Configuración usada solo para pruebas de
 
 Solo surte efecto en ClickHouse Cloud. Modo de escritura en system.distributed&#95;cache&#95;log
 
-## distributed_cache_max_unacked_inflight_packets {#distributed_cache_max_unacked_inflight_packets}
+<div id="distributed_cache_max_unacked_inflight_packets">
+  ## distributed_cache_max_unacked_inflight_packets
+</div>
 
 <CloudOnlyBadge />
 
@@ -150,7 +178,9 @@ Solo surte efecto en ClickHouse Cloud. Modo de escritura en system.distributed&#
 
 Solo tiene efecto en ClickHouse Cloud. Número máximo de paquetes en tránsito sin confirmar en una única solicitud de lectura del caché distribuida
 
-## distributed_cache_min_bytes_for_seek {#distributed_cache_min_bytes_for_seek}
+<div id="distributed_cache_min_bytes_for_seek">
+  ## distributed_cache_min_bytes_for_seek
+</div>
 
 <CloudOnlyBadge />
 
@@ -160,64 +190,21 @@ Solo tiene efecto en ClickHouse Cloud. Número máximo de paquetes en tránsito 
 
 Solo tiene efecto en ClickHouse Cloud. Número mínimo de bytes para realizar un seek en caché distribuida.
 
-## distributed_cache_min_inflight_bytes_to_discard_connection_on_seek {#distributed_cache_min_inflight_bytes_to_discard_connection_on_seek}
+<div id="distributed_cache_min_inflight_bytes_to_discard_connection_on_seek">
+  ## distributed_cache_min_inflight_bytes_to_discard_connection_on_seek
+</div>
 
 <CloudOnlyBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
-<VersionHistory
-  rows={[
-{
-  id: "row-1",
-  items: [
-    { label: "26.9" },
-    { label: "4194304" },
-    {
-      label:
-        "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."
-    }
-  ]
-},
-{
-  id: "row-2",
-  items: [
-    { label: "26.8" },
-    { label: "4194304" },
-    {
-      label:
-        "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."
-    }
-  ]
-},
-{
-  id: "row-3",
-  items: [
-    { label: "26.8" },
-    { label: "4194304" },
-    {
-      label:
-        "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."
-    }
-  ]
-},
-{
-  id: "row-4",
-  items: [
-    { label: "26.7" },
-    { label: "4194304" },
-    {
-      label:
-        "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."
-    }
-  ]
-}
-]}
-/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4194304"},{"label": "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "4194304"},{"label": "Nueva configuración para descartar y volver a abrir una conexión de caché distribuida al realizar un reposicionamiento cuando, de otro modo, habría que descartar demasiados bytes en tránsito. El valor predeterminado es 4 MiB; 0 restaura el comportamiento anterior (reutilizar siempre la conexión mediante el ID del rango de lectura)."}]}]} />
 
 Solo tiene efecto en ClickHouse Cloud. Al reposicionarse desde la posición actual de un stream de caché distribuida abierto, si el número estimado de bytes en tránsito que habría que descartar para seguir reutilizando la conexión (mediante el mecanismo de ID del rango de lectura) supera este valor, descarte la conexión y abra una nueva. Esto evita tener que descartar una gran cantidad de datos no utilizados cuando los reposicionamientos son frecuentes. 0 deshabilita esta opción y reutiliza siempre la conexión.
 
-## distributed_cache_pool_behaviour_on_limit {#distributed_cache_pool_behaviour_on_limit}
+<div id="distributed_cache_pool_behaviour_on_limit">
+  ## distributed_cache_pool_behaviour_on_limit
+</div>
 
 <CloudOnlyBadge />
 
@@ -227,7 +214,9 @@ Solo tiene efecto en ClickHouse Cloud. Al reposicionarse desde la posición actu
 
 Solo tiene efecto en ClickHouse Cloud. Identifica el comportamiento de la conexión de caché distribuida cuando se alcanza el límite del grupo
 
-## distributed_cache_prefer_bigger_buffer_size {#distributed_cache_prefer_bigger_buffer_size}
+<div id="distributed_cache_prefer_bigger_buffer_size">
+  ## distributed_cache_prefer_bigger_buffer_size
+</div>
 
 <CloudOnlyBadge />
 
@@ -237,7 +226,9 @@ Solo tiene efecto en ClickHouse Cloud. Identifica el comportamiento de la conexi
 
 Solo tiene efecto en ClickHouse Cloud. Lo mismo que filesystem&#95;cache&#95;prefer&#95;bigger&#95;buffer&#95;size, pero para caché distribuida.
 
-## distributed_cache_read_only_from_current_az {#distributed_cache_read_only_from_current_az}
+<div id="distributed_cache_read_only_from_current_az">
+  ## distributed_cache_read_only_from_current_az
+</div>
 
 <CloudOnlyBadge />
 
@@ -247,7 +238,9 @@ Solo tiene efecto en ClickHouse Cloud. Lo mismo que filesystem&#95;cache&#95;pre
 
 Solo tiene efecto en ClickHouse Cloud. Permite leer solo desde la zona de disponibilidad actual. Si se desactiva, leerá desde todos los servidores de caché de todas las zonas de disponibilidad.
 
-## distributed_cache_read_request_max_tries {#distributed_cache_read_request_max_tries}
+<div id="distributed_cache_read_request_max_tries">
+  ## distributed_cache_read_request_max_tries
+</div>
 
 <CloudOnlyBadge />
 
@@ -257,7 +250,9 @@ Solo tiene efecto en ClickHouse Cloud. Permite leer solo desde la zona de dispon
 
 Solo tiene efecto en ClickHouse Cloud. Número de intentos para realizar una solicitud de lectura a caché distribuida si no tiene éxito
 
-## distributed_cache_receive_response_wait_milliseconds {#distributed_cache_receive_response_wait_milliseconds}
+<div id="distributed_cache_receive_response_wait_milliseconds">
+  ## distributed_cache_receive_response_wait_milliseconds
+</div>
 
 <CloudOnlyBadge />
 
@@ -267,7 +262,9 @@ Solo tiene efecto en ClickHouse Cloud. Número de intentos para realizar una sol
 
 Solo tiene efecto en ClickHouse Cloud. Tiempo de espera en milisegundos para recibir datos de una solicitud desde caché distribuida
 
-## distributed_cache_receive_timeout_milliseconds {#distributed_cache_receive_timeout_milliseconds}
+<div id="distributed_cache_receive_timeout_milliseconds">
+  ## distributed_cache_receive_timeout_milliseconds
+</div>
 
 <CloudOnlyBadge />
 
@@ -279,7 +276,9 @@ Solo tiene efecto en ClickHouse Cloud. Tiempo de espera, en milisegundos, para r
 
 Valor predeterminado en Cloud: `20000`.
 
-## distributed_cache_receive_timeout_ms {#distributed_cache_receive_timeout_ms}
+<div id="distributed_cache_receive_timeout_ms">
+  ## distributed_cache_receive_timeout_ms
+</div>
 
 <CloudOnlyBadge />
 
@@ -289,7 +288,9 @@ Valor predeterminado en Cloud: `20000`.
 
 Solo tiene efecto en ClickHouse Cloud. Tiempo de espera para recibir datos desde el servidor de Distributed Cache, en milisegundos. Si no se recibe ningún byte durante este intervalo, se lanza una excepción.
 
-## distributed_cache_registry_show_certificate_and_signature {#distributed_cache_registry_show_certificate_and_signature}
+<div id="distributed_cache_registry_show_certificate_and_signature">
+  ## distributed_cache_registry_show_certificate_and_signature
+</div>
 
 <CloudOnlyBadge />
 
@@ -299,7 +300,9 @@ Solo tiene efecto en ClickHouse Cloud. Tiempo de espera para recibir datos desde
 
 Solo tiene efecto en ClickHouse Cloud. Muestra las columnas `certificate` y `signature` en la tabla `system.distributed_cache_registry`. De forma predeterminada, estas columnas están vacías para mantener la salida compacta; habilita esta opción para inspeccionarlas.
 
-## distributed_cache_send_timeout_ms {#distributed_cache_send_timeout_ms}
+<div id="distributed_cache_send_timeout_ms">
+  ## distributed_cache_send_timeout_ms
+</div>
 
 <CloudOnlyBadge />
 
@@ -309,7 +312,9 @@ Solo tiene efecto en ClickHouse Cloud. Muestra las columnas `certificate` y `sig
 
 Solo tiene efecto en ClickHouse Cloud. Tiempo de espera para enviar datos al servidor de caché distribuida, en milisegundos. Si un client necesita enviar datos pero no puede enviar ningún byte dentro de este intervalo, se lanza una excepción.
 
-## distributed_cache_tcp_keep_alive_timeout_ms {#distributed_cache_tcp_keep_alive_timeout_ms}
+<div id="distributed_cache_tcp_keep_alive_timeout_ms">
+  ## distributed_cache_tcp_keep_alive_timeout_ms
+</div>
 
 <CloudOnlyBadge />
 
@@ -319,7 +324,9 @@ Solo tiene efecto en ClickHouse Cloud. Tiempo de espera para enviar datos al ser
 
 Solo tiene efecto en ClickHouse Cloud. Es el tiempo, en milisegundos, que la conexión con el servidor de Distributed Cache debe permanecer inactiva antes de que TCP comience a enviar sondas de keepalive.
 
-## distributed_cache_throw_on_error {#distributed_cache_throw_on_error}
+<div id="distributed_cache_throw_on_error">
+  ## distributed_cache_throw_on_error
+</div>
 
 <CloudOnlyBadge />
 
@@ -329,7 +336,9 @@ Solo tiene efecto en ClickHouse Cloud. Es el tiempo, en milisegundos, que la con
 
 Solo tiene efecto en ClickHouse Cloud. Vuelve a lanzar cualquier excepción que se produzca durante la comunicación con la caché distribuida o cualquier excepción recibida de la caché distribuida. En caso contrario, omite la caché distribuida si se produce un error.
 
-## distributed_cache_use_clients_cache_for_read {#distributed_cache_use_clients_cache_for_read}
+<div id="distributed_cache_use_clients_cache_for_read">
+  ## distributed_cache_use_clients_cache_for_read
+</div>
 
 <CloudOnlyBadge />
 
@@ -339,7 +348,9 @@ Solo tiene efecto en ClickHouse Cloud. Vuelve a lanzar cualquier excepción que 
 
 Solo tiene efecto en ClickHouse Cloud. Usa la caché de los clientes para solicitudes de lectura.
 
-## distributed_cache_wait_connection_from_pool_milliseconds {#distributed_cache_wait_connection_from_pool_milliseconds}
+<div id="distributed_cache_wait_connection_from_pool_milliseconds">
+  ## distributed_cache_wait_connection_from_pool_milliseconds
+</div>
 
 <CloudOnlyBadge />
 
@@ -349,7 +360,9 @@ Solo tiene efecto en ClickHouse Cloud. Usa la caché de los clientes para solici
 
 Solo tiene efecto en ClickHouse Cloud. Tiempo de espera, en milisegundos, para obtener una conexión del grupo de conexiones si distributed&#95;cache&#95;pool&#95;behaviour&#95;on&#95;limit es wait
 
-## distributed_cache_write_request_max_tries {#distributed_cache_write_request_max_tries}
+<div id="distributed_cache_write_request_max_tries">
+  ## distributed_cache_write_request_max_tries
+</div>
 
 <CloudOnlyBadge />
 

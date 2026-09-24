@@ -13,13 +13,17 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُنشأة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## alter_move_to_space_execute_async {#alter_move_to_space_execute_async}
+<div id="alter_move_to_space_execute_async">
+  ## alter_move_to_space_execute_async
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 نفِّذ ALTER TABLE MOVE ... TO [DISK|VOLUME] بصورة غير متزامنة
 
-## alter_partition_verbose_result {#alter_partition_verbose_result}
+<div id="alter_partition_verbose_result">
+  ## alter_partition_verbose_result
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -54,20 +58,22 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-## alter_sync {#alter_sync}
+<div id="alter_sync">
+  ## alter_sync
+</div>
 
 **الأسماء البديلة**: `replication_alter_partitions_sync`
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
-يتيح لك تحديد آلية الانتظار للإجراءات التي تُنفَّذ على النسخ المتماثلة بواسطة استعلامات [`ALTER`](/ar/reference/statements/alter/index) أو [`OPTIMIZE`](/ar/reference/statements/optimize) أو [`TRUNCATE`](/ar/reference/statements/truncate).
+يتيح لك تحديد آلية الانتظار للإجراءات التي تُنفَّذ على النسخ المتماثلة بواسطة استعلامات [`ALTER`](/ar/reference/statements/alter/index) أو [`OPTIMIZE`](/ar/reference/statements/optimize) أو [`TRUNCATE`](/ar/reference/statements/truncate).
 
 القيم الممكنة:
 
 * `0` — عدم الانتظار.
 * `1` — الانتظار حتى اكتمال التنفيذ المحلي.
 * `2` — الانتظار حتى يكتمل التنفيذ لدى الجميع.
-* `3` - الانتظار فقط للنسخ المتماثلة النشطة. تطبق النسخ المتماثلة غير النشطة التغيير عندما تصبح نشطة.
+* `3` - الانتظار فقط للنسخ المتماثلة النشطة.
 
 القيمة الافتراضية في Cloud: `0`.
 
@@ -75,7 +81,9 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
   ينطبق `alter_sync` على جداول `Replicated` و`SharedMergeTree` فقط، ولا يكون له أي تأثير عند تعديل الجداول غير `Replicated` أو `Shared`.
 </Note>
 
-## alter_update_mode {#alter_update_mode}
+<div id="alter_update_mode">
+  ## alter_update_mode
+</div>
 
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
 

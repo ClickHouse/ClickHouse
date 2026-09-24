@@ -17,15 +17,19 @@ Esta guía explica cómo funcionan las copias de seguridad en ClickHouse Cloud, 
 
 * Ha leído [&quot;Cómo funcionan las copias de seguridad en ClickHouse Cloud&quot;](/es/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (Página de descripción general de la funcionalidad)
 
-## Lista del estado de las copias de seguridad {#backup-status-list}
+<div id="backup-status-list">
+  ## Lista del estado de las copias de seguridad
+</div>
 
-Las copias de seguridad se realizan según la programación configurada para su servicio, ya sea la programación diaria predeterminada o una [programación personalizada](/es/products/cloud/guides/backups/configurable-backups) elegida por usted. Puede ver todas las copias de seguridad disponibles en la pestaña **Copias de seguridad** del servicio. Aquí puede consultar el estado, la duración y el tamaño de cada copia de seguridad. También puede restaurar una copia de seguridad específica desde la columna **Acciones**.
+Se crearán copias de seguridad de su servicio según la programación configurada, ya sea la programación diaria predeterminada o una [programación personalizada](/es/products/cloud/guides/backups/configurable-backups) elegida por usted. Puede ver todas las copias de seguridad disponibles en la pestaña **Copias de seguridad** del servicio. Aquí puede consultar el estado, la duración y el tamaño de cada copia de seguridad. También puede restaurar una copia de seguridad específica desde la columna **Acciones**.
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="Lista del estado de las copias de seguridad en ClickHouse Cloud" border />
 
-## Comprender el costo de las copias de seguridad {#understanding-backup-cost}
+<div id="understanding-backup-cost">
+  ## Comprender el costo de las copias de seguridad
+</div>
 
-A menos que se configure una programación diferente, los servicios se respaldan cada 24 horas y cada copia de seguridad se conserva durante 24 horas. La posibilidad de configurar programaciones de copias de seguridad varía según el servicio y el plan. Elegir una programación que requiera conservar más datos o realizar copias de seguridad con mayor frecuencia puede generar cargos adicionales de almacenamiento por las copias de seguridad.
+Según la política predeterminada, ClickHouse Cloud exige una copia de seguridad diaria, con una retención de 24 horas. Elegir una programación que requiera conservar más datos o realizar copias de seguridad con mayor frecuencia puede generar cargos adicionales de almacenamiento por las copias de seguridad.
 
 Para comprender el costo de las copias de seguridad, puede ver el costo por servicio en la pantalla de uso (como se muestra a continuación). Una vez que las copias de seguridad se hayan estado ejecutando durante unos días con una programación personalizada, podrá hacerse una idea del costo y extrapolarlo para obtener el costo mensual de las copias de seguridad.
 
@@ -42,7 +46,9 @@ Para estimar el costo total de sus copias de seguridad, debe definir una program
   Tenga en cuenta que el costo estimado de las copias de seguridad cambiará a medida que aumente con el tiempo el volumen de datos del servicio.
 </Note>
 
-## Restaurar una copia de seguridad {#restore-a-backup}
+<div id="restore-a-backup">
+  ## Restaurar una copia de seguridad
+</div>
 
 Las copias de seguridad se restauran en un nuevo servicio de ClickHouse Cloud, no en el servicio existente del que se obtuvo la copia de seguridad.
 
@@ -55,7 +61,7 @@ El nuevo servicio aparecerá en la lista de servicios como `Provisioning` hasta 
 <Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="Servicio en proceso de aprovisionamiento" border />
 
 <div id="working-with-your-restored-service">
-  ## Trabajar con tu servicio restaurado {#working-with-your-restored-service}
+  ## Trabajar con tu servicio restaurado
 </div>
 
 Después de restaurar una copia de seguridad, tendrás dos servicios similares: el **servicio original** que necesitaba restaurarse y un nuevo **servicio restaurado** creado a partir de una copia de seguridad del original.
@@ -66,7 +72,7 @@ Una vez completada la restauración de la copia de seguridad, debes hacer una de
 * Migrar los datos del nuevo servicio restaurado al servicio original y eliminar el nuevo servicio restaurado.
 
 <div id="use-the-new-restored-service">
-  ### Use el **nuevo servicio restaurado** {#use-the-new-restored-service}
+  ### Use el **nuevo servicio restaurado**
 </div>
 
 Para usar el nuevo servicio, siga estos pasos:
@@ -76,7 +82,7 @@ Para usar el nuevo servicio, siga estos pasos:
 3. Elimine el servicio original.
 
 <div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
-  ### Migre los datos del **servicio recién restaurado** al **servicio original** {#migrate-data-from-the-newly-restored-service-back-to-the-original-service}
+  ### Migre los datos del **servicio recién restaurado** al **servicio original**
 </div>
 
 Supongamos que, por algún motivo, no puede trabajar con el servicio recién restaurado; por ejemplo, si todavía tiene usuarios o aplicaciones que se conectan al servicio existente. En ese caso, puede decidir migrar los datos recién restaurados al servicio original. La migración puede realizarse siguiendo estos pasos:
@@ -142,7 +148,7 @@ Utilice la función `remoteSecure` para extraer los datos del servicio de ClickH
 Una vez que haya insertado correctamente los datos en su servicio original, asegúrese de comprobar los datos en el servicio. También debe eliminar el servicio nuevo una vez verificados los datos.
 
 <div id="undeleting-or-undropping-tables">
-  ## Recuperar tablas eliminadas {#undeleting-or-undropping-tables}
+  ## Recuperar tablas eliminadas
 </div>
 
 El comando `UNDROP` está disponible en ClickHouse Cloud a través de [Shared Catalog](/es/products/cloud/features/infrastructure/shared-catalog).
@@ -163,26 +169,34 @@ Para evitar que los usuarios eliminen tablas por accidente, puede usar [sentenci
   Planes heredados: para los clientes con planes heredados, las copias de seguridad diarias predeterminadas, que se conservan durante 24 horas, están incluidas en el costo de almacenamiento.
 </Note>
 
-## Duración de las copias de seguridad {#backup-durations}
+<div id="backup-durations">
+  ## Duración de las copias de seguridad
+</div>
 
-La duración de las copias de seguridad y las restauraciones varía considerablemente en función del tamaño de los datos, la complejidad del esquema y el número de tablas. Las cifras siguientes proceden de pruebas internas y no constituyen compromisos de rendimiento.
+Los tiempos de copia de seguridad y restauración dependen de varios factores, como el tamaño de la base de datos, así como del esquema y del número de tablas de la base de datos.
+Las copias de seguridad incrementales suelen completarse mucho más rápido que una copia de seguridad completa, ya que se respaldan menos datos.
+La restauración a partir de una copia de seguridad incremental será ligeramente más lenta que la restauración a partir de una copia de seguridad completa, ya que incluye todas las copias de seguridad incrementales y la última copia de seguridad completa de la cadena, como se explicó anteriormente.
 
-En nuestras pruebas, una copia de seguridad de aproximadamente 1 TB ha tardado entre 10 y 15 minutos, mientras que una de 20 TB ha tardado alrededor de una hora. Los conjuntos de datos más grandes tardan proporcionalmente más, y las copias de seguridad de varios cientos de TB o más pueden tardar muchas horas, aunque las economías de escala ayudan con volúmenes mayores.
-
-Las restauraciones suelen ser más lentas que las copias de seguridad equivalentes, especialmente cuando incluyen una cadena larga de copias de seguridad incrementales, ya que se deben aplicar la copia de seguridad completa y todas las copias incrementales posteriores de la cadena. Restaurar un servicio muy grande puede tardar más de un día.
-
-Dado que la duración depende en gran medida de sus datos, su esquema y la configuración de las copias de seguridad, recomendamos encarecidamente probar una restauración con sus propios datos antes de basarse en un tiempo objetivo de recuperación.
+En nuestras pruebas, hemos observado que las copias de seguridad más pequeñas, de ~1 TB, pueden tardar entre 10 y 15 minutos o más en completarse.
+Las copias de seguridad de menos de 20 TB deberían completarse en una hora, y respaldar 50 TB de datos debería llevar entre 2 y 3 horas.
+Las copias de seguridad se benefician de economías de escala a mayor tamaño, y hemos visto que copias de seguridad de hasta 1 PB para algunos servicios internos se completan en unas 10 horas.
 
 <Note>
-  Las copias de seguridad en buckets externos pueden ser más lentas que las realizadas en buckets de ClickHouse
+  Las copias de seguridad en buckets externos pueden ser más lentas que las copias de seguridad en buckets de ClickHouse
 </Note>
 
+Los tiempos de restauración son aproximadamente los mismos que los tiempos de copia de seguridad.
+
+Recomendamos hacer pruebas con su propia base de datos o con datos de muestra para obtener mejores estimaciones, ya que la duración real depende de varios factores, como se ha indicado anteriormente.
+
 <div id="configurable-backups">
-  ## Copias de seguridad configurables {#configurable-backups}
+  ## Copias de seguridad configurables
 </div>
 
 Si quieres establecer un programa de copias de seguridad distinto del predeterminado, consulta [Copias de seguridad configurables](/es/products/cloud/guides/backups/configurable-backups).
 
-## Exporta las copias de seguridad a tu propia cuenta en la nube {#export-backups-to-your-own-cloud-account}
+<div id="export-backups-to-your-own-cloud-account">
+  ## Exporta las copias de seguridad a tu propia cuenta en la nube
+</div>
 
 Si quieres exportar copias de seguridad a tu propia cuenta en la nube, consulta [aquí](/es/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account).

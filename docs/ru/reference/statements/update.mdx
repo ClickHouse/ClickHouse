@@ -23,16 +23,14 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Он доступен только для семейства движков таблиц [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree).
 
 ```sql
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
 ```
 
 `filter_expr` должен иметь тип `UInt8`. Этот запрос обновляет значения указанных столбцов значениями соответствующих выражений в тех строках, где `filter_expr` принимает ненулевое значение.
 Значения приводятся к типу столбца с помощью оператора `CAST`. Обновление столбцов, используемых при вычислении основного ключа или ключа партиционирования, не поддерживается.
 
-Клауза `IN PARTITION` ограничивает обновление перечисленными партициями. Без неё в таблицах семейства `ReplicatedMergeTree`, когда включена настройка [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/ru/reference/settings/session-settings/optimize) (по умолчанию), ClickHouse автоматически определяет условия ключа партиционирования в `filter_expr` и обновляет только затронутые партиции. В нереплицируемых таблицах `MergeTree` используйте явную клаузу `IN PARTITION`, чтобы ограничить обновление конкретными партициями.
-
 <div id="examples">
-  ## Примеры {#examples}
+  ## Примеры
 </div>
 
 ```sql
@@ -41,32 +39,36 @@ UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
 UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
-## Легковесные обновления сразу видны в запросах {#lightweight-update-does-not-update-data-immediately}
+<div id="lightweight-update-does-not-update-data-immediately">
+  ## Легковесные обновления не обновляют данные сразу
+</div>
 
-Легковесный `UPDATE` делает обновлённые значения сразу видимыми в `SELECT`-запросах за счёт применения **патч-частей**. Запросам не нужно ждать слияния, чтобы прочитать обновлённые значения.
-Патч-часть — это особый вид части данных, содержащий только обновлённые столбцы и строки. Их создание не приводит к немедленному физическому изменению исходных данных в хранилище.
-Процесс обновления похож на запрос `INSERT ... SELECT ...`, при этом запрос `UPDATE` возвращает управление только после завершения создания патч-части.
+Легковесный `UPDATE` реализован с помощью **патч-частей** — особого вида частей данных, которые содержат только обновлённые столбцы и строки.
+Легковесный `UPDATE` создаёт патч-части, но не вносит немедленных физических изменений в исходные данные в хранилище.
+Процесс обновления похож на запрос `INSERT ... SELECT ...`, но запрос `UPDATE` ждёт завершения создания патч-части, прежде чем завершиться.
 
-Видимость в запросах и физическая материализация — это разные вещи:
+Обновлённые значения:
 
-* **Видимость в запросах:** `SELECT`-запросы применяют патчи и читают обновлённые значения ещё до того, как эти патчи будут материализованы в исходных частях данных.
-* **Физическая материализация:** последующие слияния и мутации переносят обновлённые значения в части данных.
-* **Очистка:** патч-части удаляются автоматически, как только патчи будут материализованы во всех активных частях.
+* **Сразу видны** в запросах `SELECT` за счёт применения патчей
+* **Физически материализуются** только во время последующих слияний и мутаций
+* **Автоматически удаляются** после того, как патчи будут материализованы во всех активных частях
 
-О согласованности параллельных обновлений см. [Параллельные операции](#concurrent-operations).
-
-## Требования к легковесным обновлениям {#lightweight-update-requirements}
+<div id="lightweight-update-requirements">
+  ## Требования к легковесным обновлениям
+</div>
 
 Легковесные обновления поддерживаются для движков [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/ru/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/ru/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree), а также их версий [`Replicated`](/ru/reference/engines/table-engines/mergetree-family/replication) и [`Shared`](/ru/products/cloud/features/infrastructure/shared-merge-tree).
 
 Чтобы использовать легковесные обновления, нужно включить материализацию столбцов `_block_number` и `_block_offset` с помощью настроек таблицы [`enable_block_number_column`](/ru/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) и [`enable_block_offset_column`](/ru/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column).
 
-## Легковесные удаления {#lightweight-delete}
+<div id="lightweight-delete">
+  ## Легковесные удаления
+</div>
 
 Запрос [легковесного `DELETE`](/ru/reference/statements/delete) можно выполнить как легковесный `UPDATE`, а не как мутацию `ALTER UPDATE`. Реализация легковесного `DELETE` управляется настройкой [`lightweight_delete_mode`](/ru/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
-  ## Особенности производительности {#performance-considerations}
+  ## Особенности производительности
 </div>
 
 **Преимущества легковесных обновлений:**
@@ -83,13 +85,15 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 * Небольшие, но слишком частые обновления могут привести к ошибке &quot;слишком много частей&quot;. Рекомендуется объединять несколько обновлений в один запрос, например поместив идентификаторы обновляемых строк в одно условие `IN` в `WHERE`
 * Легковесные обновления рассчитаны на обновление небольшого количества строк (примерно до 10% таблицы). Если нужно обновить больший объём данных, рекомендуется использовать мутацию [`ALTER TABLE ... UPDATE`](/ru/reference/statements/alter/update)
 
-## Параллельные операции {#concurrent-operations}
+<div id="concurrent-operations">
+  ## Параллельные операции
+</div>
 
 Легковесные обновления, в отличие от тяжёлых мутаций, не ждут завершения текущих слияний/мутаций.
 Согласованность параллельных легковесных обновлений определяется настройками [`update_sequential_consistency`](/ru/reference/settings/session-settings/update#update_sequential_consistency) и [`update_parallel_mode`](/ru/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
-  ## Разрешения для UPDATE {#update-permissions}
+  ## Разрешения для UPDATE
 </div>
 
 Для `UPDATE` требуется привилегия `ALTER UPDATE`. Чтобы разрешить команды `UPDATE` для конкретной таблицы указанному пользователю, выполните:
@@ -99,7 +103,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## Детали реализации {#details-of-the-implementation}
+  ## Детали реализации
 </div>
 
 Патч-части — это обычные части, но они содержат только обновлённые столбцы и несколько системных столбцов:
@@ -138,7 +142,9 @@ GRANT ALTER UPDATE ON db.table TO username;
 
 Режим JOIN медленнее и требует больше памяти, чем режим слияния, но используется реже.
 
-## Связанные материалы {#related-content}
+<div id="related-content">
+  ## Связанные материалы
+</div>
 
 * [`ALTER UPDATE`](/ru/reference/statements/alter/update) — тяжёлые операции `UPDATE`
 * [Легковесный `DELETE`](/ru/reference/statements/delete) — операции легковесного `DELETE`

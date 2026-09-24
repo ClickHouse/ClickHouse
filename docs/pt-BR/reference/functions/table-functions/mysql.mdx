@@ -11,13 +11,17 @@ doc_type: 'reference'
 
 Permite executar consultas `SELECT` e `INSERT` em dados armazenados em um servidor MySQL remoto.
 
-## Sintaxe {#syntax}
+<div id="syntax">
+  ## Sintaxe
+</div>
 
 ```sql
 mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
-## Argumentos {#arguments}
+<div id="arguments">
+  ## Argumentos
+</div>
 
 | Argument              | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -35,7 +39,9 @@ Cláusulas `WHERE` simples, como `=, !=, >, >=, <, <=`, atualmente são executad
 
 O restante das condições e a restrição de amostragem `LIMIT` são executados no ClickHouse somente após a conclusão da consulta ao MySQL.
 
-## TLS/SSL {#tls-ssl}
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
 
 As credenciais de uma conexão criptografada com o MySQL são fornecidas como chaves de coleção nomeada (ou como argumentos de chave-valor):
 
@@ -49,7 +55,9 @@ Os valores correspondem ao conteúdo dos respectivos arquivos PEM, que pode ser 
 
 As mesmas credenciais também podem ser fornecidas como caminhos para arquivos no servidor, em `ssl_ca`, `ssl_cert` e `ssl_key` — mas **somente em uma coleção nomeada definida no arquivo de configuração do servidor**, e esse valor não pode ser substituído em uma consulta. O servidor abre esses arquivos com seus próprios privilégios. Portanto, aceitar um caminho via SQL permitiria que qualquer usuário capaz de definir uma fonte MySQL sondasse o sistema de arquivos local e se autenticasse com um certificado e uma chave que não tem permissão para ler.
 
-## Passando uma consulta em vez de um nome de tabela {#passing-a-query}
+<div id="passing-a-query">
+  ## Passando uma consulta em vez de um nome de tabela
+</div>
 
 Em vez de um nome de tabela, o terceiro argumento pode ser uma consulta `SELECT` passada ao MySQL como está. A estrutura da tabela resultante é inferida a partir do resultado da consulta. A consulta pode ser escrita como uma subconsulta ou encapsulada na função `query`:
 
@@ -63,7 +71,7 @@ Isso é útil para executar junções, agregações ou qualquer outro processame
 <Note>
   A forma de subconsulta `(SELECT ...)` é analisada pelo ClickHouse e reserializada no dialeto do MySQL (identificadores entre crases) antes de ser enviada ao servidor. Portanto, ela deve ser um SQL válido do ClickHouse. Para passar sintaxe específica do MySQL que o ClickHouse não analisa, use a forma `query('...')`, cujo texto é enviado ao MySQL literalmente.
 
-  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse circundante **não** é enviado para execução na consulta fornecida — ele é aplicado no ClickHouse depois que todo o resultado da consulta é obtido. Para restringir os dados lidos do MySQL, coloque o filtro dentro da consulta fornecida. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo sobre as colunas da função de tabela é rejeitado com uma exceção, em vez de ser aplicado localmente, porque ele não pode ser enviado para a consulta fornecida. A verificação abrange o predicado `WHERE` de nível superior e cada conjunção de um `AND` de nível superior. Um `PREWHERE` sobre as colunas desta tabela não é um caso para essa configuração: este motor de tabela não é compatível com `PREWHERE`, e tal consulta é rejeitada com `ILLEGAL_PREWHERE` independentemente da configuração. A verificação é executada apenas onde um filtro poderia de fato ser enviado para execução: quando esta tabela é a única tabela da consulta, em qualquer um dos lados de um `INNER JOIN`, ou no lado preservado de uma junção externa (o lado esquerdo de um `LEFT JOIN`, o lado direito de um `RIGHT JOIN`). No lado não preservado de um `LEFT`/`RIGHT JOIN` e em qualquer um dos lados de um `FULL JOIN`, nada é enviado para execução e nada é verificado, portanto um filtro sobre as colunas desta tabela é aplicado localmente após a junção, mesmo no modo estrito. Onde a verificação é executada, um predicado que referencia outras tabelas unidas na consulta circundante não é enviado para execução e é excluído da verificação, seja ele referenciando apenas o lado unido ou misturando-o com esta tabela dentro de uma única expressão que não seja `AND` (por exemplo, um `OR`); tal predicado mantém seu ponto de avaliação usual no ClickHouse (`WHERE` depois da junção, `PREWHERE` antes dela) e não é rejeitado.
+  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse circundante **não** é enviado para execução na consulta fornecida — ele é aplicado no ClickHouse depois que todo o resultado da consulta é obtido. Para restringir os dados lidos do MySQL, coloque o filtro dentro da consulta fornecida. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo que não pode ser enviado para execução é rejeitado com uma exceção, em vez de ser aplicado localmente.
 </Note>
 
 Compatível com várias réplicas, que devem ser listadas com `|`. Por exemplo:
@@ -78,7 +86,9 @@ ou
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-## Valor retornado {#returned-value}
+<div id="returned-value">
+  ## Valor retornado
+</div>
 
 Um objeto de tabela com as mesmas colunas da tabela MySQL original.
 
@@ -90,7 +100,9 @@ Um objeto de tabela com as mesmas colunas da tabela MySQL original.
   Na consulta `INSERT`, para distinguir a função de tabela `mysql(...)` do nome da tabela com uma lista de nomes de colunas, você deve usar as palavras-chave `FUNCTION` ou `TABLE FUNCTION`. Veja os exemplos abaixo.
 </Note>
 
-## Exemplos {#examples}
+<div id="examples">
+  ## Exemplos
+</div>
 
 Tabela no MySQL:
 
@@ -134,7 +146,9 @@ SELECT * FROM mysql(creds, table='test');
 └────────┴───────┘
 ```
 
-### `enable_compression` {#enable-compression}
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
 
 Habilita a compressão para a conexão via protocolo MySQL.
 
@@ -202,7 +216,9 @@ SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
 WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
-## Relacionados {#related}
+<div id="related">
+  ## Relacionados
+</div>
 
 * [O motor de tabela &#39;MySQL&#39;](/pt-BR/reference/engines/table-engines/integrations/mysql)
 * [Usar o MySQL como origem de dicionário](/pt-BR/reference/statements/create/dictionary/sources/mysql)

@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## join_algorithm {#join_algorithm}
+<div id="join_algorithm">
+  ## join_algorithm
+</div>
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -22,8 +24,6 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Указывает, какой алгоритм [JOIN](/ru/reference/statements/select/join) используется.
 
 Можно указать несколько алгоритмов; для конкретного запроса будет выбран доступный вариант в зависимости от kind/strictness и движка таблицы.
-
-Будет ли алгоритм на основе hash сбрасывать данные на диск, этим выбором не определяется: [`max_bytes_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) служат порогом сброса для всех из них (а как только одно из этих двух значений становится ненулевым, `enable_adaptive_memory_spill_scheduler` может сбросить JOIN на диск ещё раньше, при нехватке памяти), а [`max_rows_in_join`](/ru/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_join) — жёстким ограничением для всех из них, если только `legacy_join_size_limits_trigger_spilling` не превращает эти два ограничения обратно в триггеры сброса данных на диск. Выбранное значение определяет, как именно JOIN сбрасывает данные: `grace_hash` разбивает правую таблицу на партиции начиная с первого блока, а `hash` и `parallel_hash` собирают её в памяти и переключаются после превышения порога.
 
 Большинство алгоритмов влияют на запрос только тогда, когда именно они выбраны для его выполнения. Однако некоторые изменяют планирование уже при самом наличии в списке — даже как резервный вариант с более низким приоритетом, который в итоге не выбирается, — поскольку решение принимается до выбора алгоритма. Есть два таких эффекта:
 
@@ -38,27 +38,25 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Используется [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join). Grace hash — это вариант алгоритма, обеспечивающий производительное выполнение сложных JOIN при ограниченном потреблении памяти.
 
-`grace_hash` является внешним начиная с первого блока: правая таблица сразу разбивается на партиции, тогда как `hash` и `parallel_hash` сначала собирают её в памяти и разбивают на партиции только после превышения порога сброса. Выбирайте его, когда заранее известно, что правая сторона не поместится в память, и хочется пропустить фазу работы в памяти. Сам порог сброса — тот же, что используют все алгоритмы на основе hash: [`max_bytes_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), и одно из этих двух значений должно быть ненулевым, если только не включён `legacy_join_size_limits_trigger_spilling`. Без порога `grace_hash` пропускается в пользу следующего алгоритма из списка, а если он единственный — отклоняется.
-
-На первом этапе grace join читается правая таблица, и она разбивается на N бакетов в зависимости от значения hash ключевых столбцов (изначально N равно `grace_hash_join_initial_buckets`). Это делается так, чтобы каждый бакет мог обрабатываться независимо. Строки из первого бакета добавляются в hash table в памяти, а остальные сохраняются на диск. Если hash table вырастает сверх порога сброса, число бакетов увеличивается вместе с назначенным бакетом для каждой строки. Все строки, которые не принадлежат текущему бакету, сбрасываются и переназначаются.
+На первом этапе grace JOIN считывает правую таблицу и разбивает её на N бакетов в зависимости от значения hash в столбцах ключа (изначально N равно `grace_hash_join_initial_buckets`). Это делается так, чтобы каждый бакет можно было обрабатывать независимо. Строки из первого бакета добавляются во внутреннюю hash table, а остальные сохраняются на disk. Если hash table вырастает сверх memory limit (например, заданного через [`max_bytes_in_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_join)), количество бакетов увеличивается, и для каждой строки заново определяется назначенный бакет. Все строки, которые не принадлежат текущему бакету, сбрасываются и перераспределяются.
 
 Поддерживает `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
 * hash
 
-Используется [алгоритм hash join](https://en.wikipedia.org/wiki/Hash_join). Наиболее универсальная реализация, поддерживающая все комбинации вида и strictness, а также несколько ключей JOIN, объединённых через `OR` в секции `JOIN ON`.
+Используется [алгоритм Hash join](https://en.wikipedia.org/wiki/Hash_join). Это наиболее универсальная реализация, поддерживающая все комбинации kind и strictness, а также несколько ключей JOIN, объединённых с помощью `OR` в секции `JOIN ON`.
 
 При использовании алгоритма `hash` правая часть `JOIN` загружается в оперативную память.
 
 * parallel&#95;hash
 
-Вариация `hash` join, которая разбивает данные на бакеты и строит несколько hash-таблиц вместо одной параллельно, чтобы ускорить этот процесс.
+Вариант `hash` JOIN, который разбивает данные на бакеты и параллельно строит несколько hash table вместо одной, чтобы ускорить этот процесс.
 
 При использовании алгоритма `parallel_hash` правая часть `JOIN` загружается в оперативную память.
 
 * partial&#95;merge
 
-Вариация [алгоритма sort-merge](https://en.wikipedia.org/wiki/Sort-merge_join), в которой полностью сортируется только правая таблица.
+Вариант [алгоритма sort-merge](https://en.wikipedia.org/wiki/Sort-merge_join), в котором полностью сортируется только правая таблица.
 
 `RIGHT JOIN` и `FULL JOIN` поддерживаются только со strictness `ALL` (`SEMI`, `ANTI`, `ANY` и `ASOF` не поддерживаются).
 
@@ -85,32 +83,34 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Алгоритм [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf), основанный на сортировке, для `JOIN`, в секции `ON` которого есть два сравнения на неравенство (`<`, `<=`, `>`, `>=`) между выражениями соединяемых таблиц. Поддерживает `ALL INNER/LEFT/RIGHT/FULL JOIN` и `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
-Позиция в списке задаёт приоритет: если IEJoin указан после других алгоритмов, он используется только когда они неприменимы (в секции `ON` нет условий равенства); если указан первым, он используется всегда, когда секция `ON` содержит два условия неравенства. Остальные условия (включая равенства) применяются как фильтр к результату JOIN для `ALL INNER JOIN`, а для остальных видов вычисляются внутри оператора как остаточное условие, влияющее на сопоставление. Когда секция `ON` содержит более двух подходящих условий неравенства, два условия, используемые алгоритмом, выбираются по их оценочной селективности на основе min/max статистики столбцов (см. тип `basic` в разделе [Статистика столбцов](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)); если оценки недоступны (нет статистики или отключена [`use_statistics`](/ru/reference/settings/session-settings/use-statistics#use_statistics)), используются первые два условия в синтаксическом порядке. Без `ie_join` в списке `INNER JOIN`, содержащий только условия неравенства, выполняется как `CROSS JOIN` с фильтром, а остальные виды не поддерживаются.
+Позиция в списке задаёт приоритет: если IEJoin указан после других алгоритмов, он используется только когда они неприменимы (в секции `ON` нет условий равенства); если указан первым, он используется всегда, когда секция `ON` содержит два условия неравенства. Остальные условия (включая равенства) применяются как фильтр к результату JOIN для `ALL INNER JOIN`, а для остальных видов вычисляются внутри оператора как остаточное условие, влияющее на сопоставление. Без `ie_join` в списке `INNER JOIN`, содержащий только условия неравенства, выполняется как `CROSS JOIN` с фильтром, а остальные виды не поддерживаются.
 
-Оба входных набора данных накапливаются в памяти перед JOIN: [`max_rows_in_join`](/ru/reference/settings/session-settings/max-rows#max_rows_in_join) и [`max_bytes_in_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_join) ограничивают суммарный объём накопленных входных данных с обеих сторон (а не только с правой), а действие при переполнении задаётся параметром [`join_overflow_mode`](/ru/reference/settings/session-settings/join#join_overflow_mode); индексы сортировки, которые оператор строит для накопленных входных данных, не учитываются при подсчёте лимита. Сам оператор JOIN работает в одном потоке; распараллеливаются только сортировки входных данных перед JOIN.
+Оба входа накапливаются в памяти перед выполнением JOIN: [`max_rows_in_join`](/ru/reference/settings/session-settings/max-rows#max_rows_in_join) и [`max_bytes_in_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_join) ограничивают суммарный объём входных данных обеих сторон (не только правой), а действие при переполнении задаётся через [`join_overflow_mode`](/ru/reference/settings/session-settings/join#join_overflow_mode); индексы сортировки, которые оператор строит поверх накопленных входных данных, не учитываются в ограничении. Сам оператор JOIN выполняется в одном потоке; распараллеливается только предварительная сортировка входных данных.
 
 * parallel&#95;full&#95;sorting&#95;merge
 
-То же, что `full_sorting_merge`, но JOIN по равенству, совместимые с hash, разбиваются на сегменты по hash ключей JOIN, образуя независимые соединения слиянием для каждого сегмента, которые выполняются параллельно (до `max_threads`), вместо одного соединения слиянием. Это сохраняет низкое потребление памяти при потоковой обработке, характерное для соединения слиянием, при этом задействуются все потоки, а результат не упорядочен.
+То же, что `full_sorting_merge`, но JOIN по равенству, совместимые с hash, сегментируются по hash ключей JOIN на независимые соединения слиянием для каждого сегмента, которые выполняются параллельно (до `max_threads`), вместо одного соединения слиянием. Это сохраняет низкое потоковое использование памяти соединения слиянием при задействовании всех потоков, а результат не упорядочен.
 
-Hash-сегментирование по ключам JOIN применяется только к простым JOIN по равенству для типов ключей, hash которых согласован со сравнением соединения слиянием, и только если ни одна из сторон ещё не отсортирована. Оно пропускается в следующих случаях:
+Hash-сегментирование по ключам JOIN применяется только к простым JOIN по равенству для типов ключей, hash которых согласуется со сравнением соединения слиянием, и только если ни одна из сторон уже не отсортирована. Оно пропускается в следующих случаях:
 
 * JOIN `ASOF` и типы ключей floating-point / `JSON` / `Object` / `Dynamic`: их hash несовместимы со сравнением соединения слиянием, поэтому равные ключи могут попасть в разные сегменты.
 * Стороны, которые уже отсортированы (чтение MergeTree по порядку или любые предварительно отсортированные входные данные): сохраняющее порядок распределение по соединениям слиянием для каждого сегмента может привести к взаимной блокировке конвейера. Вместо этого сохраняются чтение по порядку и его оптимизация `read_in_order_use_virtual_row`.
 * Когда инициатор строит распределённый план (`make_distributed_plan`), поскольку распределённая сортировка не сериализуема для удалённого выполнения. Локальный односегментный план и фрагменты для каждого worker повторно оптимизируются с отключённой этой настройкой, поэтому всё ещё могут быть сегментированы.
 
-Пропуск этого отключает только данное преобразование, но не параллелизм в целом: JOIN выполняется как один `full_sorting_merge`, а стороны MergeTree, читаемые по порядку, всё ещё могут сегментироваться на уровне источника по диапазонам primary key (которые упорядочены тем же сравнением, что используется в JOIN, поэтому равные ключи остаются вместе), когда включён `query_plan_join_shard_by_pk_ranges`.
+Пропуск отключает только это преобразование, а не параллелизм в целом: JOIN выполняется как один `full_sorting_merge`, а стороны MergeTree с чтением по порядку всё ещё могут быть сегментированы в источнике по диапазонам primary key (которые упорядочиваются тем же сравнением, что использует JOIN, поэтому равные ключи остаются вместе), если включён `query_plan_join_shard_by_pk_ranges`.
 
 * prefer&#95;partial&#95;merge
 
-ClickHouse всегда пытается использовать JOIN `partial_merge`, если это возможно, иначе использует `hash`. *Устарело*, то же, что `partial_merge,hash`.
+ClickHouse всегда пытается использовать JOIN `partial_merge`, если это возможно; в противном случае используется `hash`. *Устарело*, то же самое, что `partial_merge,hash`.
 
-* default (устарело)
+* default (deprecated)
 
-Устаревшее значение, больше не используйте.
-То же, что `direct,hash`, то есть сначала попробуйте использовать direct JOIN, затем hash JOIN (в таком порядке).
+Устаревшее значение, больше его не используйте.
+То же самое, что `direct,hash`, то есть сначала используется direct join, а затем hash join (в этом порядке).
 
-## join_any_take_last_row {#join_any_take_last_row}
+<div id="join_any_take_last_row">
+  ## join_any_take_last_row
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +133,9 @@ ClickHouse всегда пытается использовать JOIN `partial_
 * [движок таблицы Join](/ru/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/ru/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness {#join_default_strictness}
+<div id="join_default_strictness">
+  ## join_default_strictness
+</div>
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +148,9 @@ ClickHouse всегда пытается использовать JOIN `partial_
 * `ASOF` — Для соединения последовательностей с неточным совпадением.
 * `Empty string` — Если в запросе не указаны `ALL` или `ANY`, ClickHouse генерирует исключение.
 
-## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
+<div id="join_on_disk_max_files_to_merge">
+  ## join_on_disk_max_files_to_merge
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +162,9 @@ ClickHouse всегда пытается использовать JOIN `partial_
 
 * Любое положительное целое число, начиная с 2.
 
-## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
+<div id="join_output_by_rowlist_perkey_rows_threshold">
+  ## join_output_by_rowlist_perkey_rows_threshold
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +172,9 @@ ClickHouse всегда пытается использовать JOIN `partial_
 
 Нижний порог среднего числа строк на ключ в правой таблице, определяющий, следует ли использовать вывод по списку строк при hash JOIN.
 
-## join_overflow_mode {#join_overflow_mode}
+<div id="join_overflow_mode">
+  ## join_overflow_mode
+</div>
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -175,13 +183,11 @@ ClickHouse всегда пытается использовать JOIN `partial_
 * [max&#95;bytes&#95;in&#95;join](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 * [max&#95;rows&#95;in&#95;join](/ru/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-Этот параметр учитывается всеми значениями [`join_algorithm`](/ru/reference/settings/session-settings/join#join_algorithm),
-основанными на хеше, включая те, что сбрасывают данные на диск: достижение
-ограничения останавливает запрос, а не приводит к сбросу данных на диск. Исключением является
-`legacy_join_size_limits_trigger_spilling`: когда он включён, та часть JOIN, которая
-уже выполняется на диске, продолжает сбрасывать данные на диск вместо применения этого параметра.
-`ie_join` также учитывает его — для входных данных, накапливаемых с обеих сторон. `partial_merge` по-прежнему
-обрабатывает эти ограничения переключением стратегии — см.
+Этот параметр действует только для значений `hash`, `parallel_hash` и `ie_join`
+параметра [`join_algorithm`](/ru/reference/settings/session-settings/join#join_algorithm). Другие
+алгоритмы (например, `partial_merge`, `grace_hash`, `auto`) обрабатывают
+эти ограничения иначе — выгружают данные на диск, переразбивают их на партиции или переключают
+стратегию — см.
 [`join_algorithm`](/ru/reference/settings/session-settings/join#join_algorithm).
 
 Возможные значения:
@@ -196,7 +202,9 @@ ClickHouse всегда пытается использовать JOIN `partial_
 * [предложение JOIN](/ru/reference/statements/select/join)
 * [движок таблицы Join](/ru/reference/engines/table-engines/special/join)
 
-## join_use_nulls {#join_use_nulls}
+<div id="join_use_nulls">
+  ## join_use_nulls
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -11,13 +11,17 @@ doc_type: 'reference'
 
 リモートの MySQLサーバーに保存されているデータに対して、`SELECT` および `INSERT` クエリを実行できます。
 
-## 構文 {#syntax}
+<div id="syntax">
+  ## 構文
+</div>
 
 ```sql
 mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
-## 引数 {#arguments}
+<div id="arguments">
+  ## 引数
+</div>
 
 | 引数                    | 説明                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -35,7 +39,9 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 それ以外の条件と `LIMIT` のサンプリング制約は、MySQL へのクエリの完了後にのみ ClickHouse で実行されます。
 
-## TLS/SSL {#tls-ssl}
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
 
 MySQL への暗号化接続の認証情報は、名前付きコレクションのキー (またはキー・バリュー引数) として渡されます。
 
@@ -49,7 +55,9 @@ MySQL への暗号化接続の認証情報は、名前付きコレクション�
 
 同じ認証情報は、サーバー上のファイルへのパスとして `ssl_ca`、`ssl_cert`、`ssl_key` に指定することもできます。ただし、**サーバー設定ファイルで定義された名前付きコレクション内でのみ指定可能**であり、このような値はクエリでオーバーライドできません。サーバーは自身の権限でこれらのファイルを開くため、SQL からパスを受け入れると、MySQL ログソースを定義できるすべてのユーザーがローカルファイルシステムを調査し、自身には読み取り権限のない証明書と秘密鍵を使って認証できてしまいます。
 
-## テーブル名の代わりにクエリを渡す {#passing-a-query}
+<div id="passing-a-query">
+  ## テーブル名の代わりにクエリを渡す
+</div>
 
 テーブル名の代わりに、3 番目の引数には、そのまま MySQL に渡される `SELECT` クエリを指定できます。結果として得られるテーブルの構造は、クエリ結果から推論されます。クエリは、サブクエリとして記述することも、`query` 関数でラップすることもできます。
 
@@ -63,7 +71,7 @@ SELECT * FROM mysql('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2
 <Note>
   サブクエリ形式 `(SELECT ...)` は ClickHouse で解析され、サーバーに送信される前に MySQL の SQL方言 (Identifier をバッククォートで囲む形式) で再シリアライズされます。そのため、有効な ClickHouse SQL である必要があります。ClickHouse が解析しない MySQL 固有の構文を渡すには、`query('...')` 形式を使用してください。この形式では、テキストがそのまま MySQL に送信されます。
 
-  渡したクエリに対して、外側の ClickHouse クエリにある `WHERE`、`LIMIT`、集計などが**プッシュダウンされることはありません**。これらは完全なクエリ結果を取得した後に ClickHouse 側で適用されます。MySQL から読み取るデータを絞り込むには、フィルターを渡すクエリの中に記述してください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、渡したクエリにプッシュダウンできないため、テーブル関数のカラムに対する外側のフィルターはローカルで適用される代わりに、例外を返して拒否されます。このチェックは、最上位の `WHERE` 述語と、最上位の `AND` の各連言項を対象とします。このテーブルのカラムに対する `PREWHERE` はこの設定の対象ではありません。このテーブルエンジンは `PREWHERE` をサポートしておらず、このようなクエリは設定にかかわらず `ILLEGAL_PREWHERE` で拒否されます。フィルターをプッシュダウンできる可能性がある場合にのみチェックが実行されます。つまり、このテーブルがクエリ内で唯一のテーブルである場合、`INNER JOIN` のいずれかの側にある場合、または外部 JOIN の行を保持する側 (`LEFT JOIN` の左側、`RIGHT JOIN` の右側) にある場合です。`LEFT`/`RIGHT JOIN` の行を保持しない側、および `FULL JOIN` のいずれの側でも、何もプッシュダウンされず、チェックも行われません。そのため、厳格モードであっても、このテーブルのカラムに対するフィルターは JOIN 後にローカルで適用されます。チェックが実行される場合でも、外側のクエリで JOIN された他のテーブルを参照する述語はプッシュダウンされず、チェックから除外されます。これは JOIN された側のみを参照する場合でも、単一の非 `AND` 式内でこのテーブルと混在させる場合 (たとえば `OR`) でも同様です。このような述語は通常どおりの ClickHouse の評価位置 (`WHERE` は JOIN 後、`PREWHERE` はその前) を維持し、拒否されません。
+  渡したクエリに対して、外側の ClickHouse クエリにある `WHERE`、`LIMIT`、集計などが**プッシュダウンされることはありません**。これらは完全なクエリ結果を取得した後に ClickHouse 側で適用されます。MySQL から読み取るデータを絞り込むには、フィルターを渡すクエリの中に記述してください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、プッシュダウンできない外側のフィルターはローカルで適用される代わりに、例外を返して拒否されます。
 </Note>
 
 複数のレプリカをサポートしており、`|` で区切って指定する必要があります。例えば:
@@ -78,7 +86,9 @@ SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'us
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-## 戻り値 {#returned-value}
+<div id="returned-value">
+  ## 戻り値
+</div>
 
 元の MySQL テーブルと同じカラムを持つテーブルオブジェクトです。
 
@@ -90,7 +100,9 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
   `INSERT` クエリでは、テーブル関数 `mysql(...)` と、カラム名リスト付きのテーブル名を区別するために、キーワード `FUNCTION` または `TABLE FUNCTION` を使用する必要があります。以下の例を参照してください。
 </Note>
 
-## 例 {#examples}
+<div id="examples">
+  ## 例
+</div>
 
 MySQLのテーブル:
 
@@ -134,7 +146,9 @@ SELECT * FROM mysql(creds, table='test');
 └────────┴───────┘
 ```
 
-### `enable_compression` {#enable-compression}
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
 
 MySQLプロトコル接続の圧縮を有効にします。
 
@@ -202,7 +216,9 @@ SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
 WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
-## 関連 {#related}
+<div id="related">
+  ## 関連
+</div>
 
 * [&#39;MySQL&#39; テーブルエンジン](/ja/reference/engines/table-engines/integrations/mysql)
 * [MySQL を Dictionary ソースとして使用する](/ja/reference/statements/create/dictionary/sources/mysql)

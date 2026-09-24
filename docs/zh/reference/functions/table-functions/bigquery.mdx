@@ -12,14 +12,18 @@ doc_type: 'reference'
 
 读取操作使用 BigQuery REST API (`tabledata.list`)，因此只能读取原生表 (不支持视图、materialized view 和外部表) 。写入操作使用流式插入 (`tabledata.insertAll`)，要求项目已启用计费。
 
-## 语法 {#syntax}
+<div id="syntax">
+  ## 语法
+</div>
 
 ```sql
 bigquery(project, dataset, table[, access_token][, key = value, ...])
 bigquery(named_collection[, key = value, ...])
 ```
 
-## 参数 {#arguments}
+<div id="arguments">
+  ## 参数
+</div>
 
 | 参数             | 描述                                                                    |
 | -------------- | --------------------------------------------------------------------- |
@@ -43,7 +47,9 @@ bigquery(named_collection[, key = value, ...])
 | `base_url`            | API 端点，默认为 `https://bigquery.googleapis.com`。可针对测试和模拟器进行更改。                               |
 | `token_url`           | 用于测试和模拟器的 OAuth 令牌端点替代值。默认使用服务账号密钥中的 `token_uri` 或 `https://oauth2.googleapis.com/token`。 |
 
-## 身份验证 {#authentication}
+<div id="authentication">
+  ## 身份验证
+</div>
 
 必须且只能提供一种身份验证方法。BigQuery 不允许匿名访问，因此即使是公开数据集也需要提供凭据。
 
@@ -53,7 +59,9 @@ bigquery(named_collection[, key = value, ...])
 
 将凭据存储在[命名集合](/zh/concepts/features/configuration/server-config/named-collections)中，避免在每个查询中重复指定。通过命名集合创建的永久表 (使用 `BigQuery` 表引擎或 `CREATE TABLE ... AS bigquery(...)`) 会被注册为该集合的依赖项，因此只要该表仍存在，`DROP NAMED COLLECTION` 就会被阻止。
 
-## 数据类型映射 {#data-type-mapping}
+<div id="data-type-mapping">
+  ## 数据类型映射
+</div>
 
 | BigQuery 类型           | ClickHouse 类型                                                                                                                  |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -80,7 +88,7 @@ bigquery(named_collection[, key = value, ...])
 
 * BigQuery `DATETIME` 不带时区；会映射为 `DateTime64(6, 'UTC')`，以确保显示的值不受服务器时区影响。
 * `NULLABLE` `RECORD` 会映射为 `Nullable(Tuple(...))`，从而将整个记录的 `NULL` 保留为 `NULL`，而不会变为由默认值组成的 `Tuple`。`NULL` (或空) 数组会变为空数组，因为 ClickHouse 中 `Array` 不能位于 `Nullable` 内。BigQuery 数组不能包含 `NULL` 元素 (`ARRAY<T>` 等同于 `ARRAY<T NOT NULL>`) ，因此 `REPEATED` 字段的元素类型不是 `Nullable` (`RECORD` 元素对应 `Array(Tuple(...))`，其他元素对应 `Array(T)`) ；`tabledata.list` 响应中的 `NULL` 元素会因输入格式错误而被拒绝。
-* 显式声明持久化 `BigQuery` 引擎表的列时，`RECORD` 字段可声明为普通 `Tuple(...)` 而非推断出的 `Nullable(Tuple(...))`，但代价是将整个记录的 `NULL` 强制转换为默认元组；相较于推断类型，唯一允许的差异是在同一记录上移除包裹其 `Tuple` 的 `Nullable`——不能将可空性移至其他 (内部或外部) 记录。
+* 通过 `bigquery` 表函数读取和写入 `Nullable(Tuple(...))` 列无需额外设置。创建包含此类列的持久化 `BigQuery` 引擎表 (无论结构是自动推断还是显式声明) 都需要设置 `enable_nullable_tuple_type`，与其他所有 `Nullable(Tuple)` 列相同。显式声明列时，也可将 `RECORD` 字段声明为普通 `Tuple(...)` 以避免该设置，但代价是将整个记录的 `NULL` 强制转换为默认元组；相较于推断类型，唯一允许的差异是在同一记录上移除包裹其 `Tuple` 的 `Nullable`——不能将可空性移至其他 (内部或外部) 记录。
 * `GEOGRAPHY` 映射为 [Geometry](/zh/reference/data-types/geo#geometry)。BigQuery 将 `GEOGRAPHY` 值作为 [WKT](https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry) 文本传输：读取时将其解析为对应的 `Geometry` 备选类型 (即由 `Point`、`MultiPoint`、`Ring`、`LineString`、`MultiLineString`、`Polygon` 和 `MultiPolygon` 组成的 `Variant`) ，写入时再序列化为 WKT。`GEOMETRYCOLLECTION` 和空几何图形 (如 `POINT EMPTY`) 没有对应的 `Geometry` 类型，因此读取包含此类值的行会引发错误。由于 `Variant` 本身可容纳 `NULL`，`NULLABLE` `GEOGRAPHY` 字段映射为 `Geometry` 而非 `Nullable(Geometry)`，且 `NULL` 仍可无损往返转换。
 * `JSON` 映射为 `String` 而非 [JSON](/zh/reference/data-types/newjson) 数据类型，因为 ClickHouse 的 `JSON` 类型仅接受顶层对象 (`{...}`) ，而 BigQuery `JSON` 值可以是任意 JSON 值——标量、数组或 `null`——因此包含此类值的表将无法读取。此外，`JSON` 不能包装在 `Nullable` 中，因此无法保留 `NULLABLE` 列中的 SQL `NULL`。`String` 映射无损；顶层对象可通过 `CAST(value AS JSON)` 转换。
 * 整数部分超过 38 位的 `BIGNUMERIC` 值无法存入 `Decimal(76, 38)`，会引发错误。
@@ -88,7 +96,9 @@ bigquery(named_collection[, key = value, ...])
 * `RANGE` 列为只读。`tabledata.insertAll` 要求 `RANGE<T>` 值为结构化的 `{start, end}` 对象，无法根据 `String` 映射重建，因此向 `RANGE` 列插入数据会引发错误。
 * `INT64` 值会以十进制字符串形式发送到 `tabledata.insertAll`，因为 API 会将 JSON 数值解析为双精度浮点数，否则会损坏 `[-2^53 + 1, 2^53 - 1]` 范围之外的值。
 
-## 示例 {#examples}
+<div id="examples">
+  ## 示例
+</div>
 
 使用 `gcloud` 中的令牌读取公开数据集：
 
@@ -133,7 +143,9 @@ SELECT number AS id, toString(number) AS name FROM numbers(10);
 SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 ```
 
-## 限制 {#limitations}
+<div id="limitations">
+  ## 限制
+</div>
 
 * 只能读取原生 BigQuery 表。视图和外部表需要运行 BigQuery 查询作业，而此函数不会这样做。
 * 可以读取 `RANGE` 列 (以 `String` 类型读取) ，但不能写入：向 `RANGE` 列插入数据会引发错误。
@@ -147,7 +159,9 @@ SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 * 大型 `INSERT` 会分批发送至 `tabledata.insertAll`：每个请求最多 500 行，并会进一步拆分，以确保每个请求不超过 BigQuery&#39;s 10 MB 请求大小限制 (超过该限制的单行会被拒绝，并返回明确的错误) 。
 * 写入不是原子操作，单个 `tabledata.insertAll` 请求也可能只部分成功：BigQuery 可以提交请求中的部分行，同时通过 `insertErrors` 拒绝其余行。各请求也是彼此独立提交的，因此即使较早的批次已被接受，较晚的批次仍可能被拒绝。两种情况下，查询都会报告错误，但已提交的行仍会保留在 BigQuery 中。为减少重复，每行都会附带一个稳定的 `insertId`，该值根据查询 id 和该行在流中的序号生成，BigQuery 会在其流式插入窗口内利用它进行尽力而为的去重。长度超过 BigQuery 的 128 字符 `insertId` 限制的 `query_id` 会被哈希为固定长度的前缀，并且对该 `query_id` 保持稳定。由于 `insertId` 取决于序号位置，只有在重新运行时以相同顺序生成各行，去重才可靠：对批次进行传输层重试始终是安全的；而使用相同 `query_id` 重新运行相同的 `INSERT`，仅当各行以相同顺序提供时才能去重 (例如单线程插入，或采用其他确定性排序；对于分片顺序可能在不同尝试之间发生变化的并行 `INSERT ... SELECT`，请设置 `max_threads = 1` 和 `max_insert_threads = 1`) 。
 
-## 相关内容 {#related}
+<div id="related">
+  ## 相关内容
+</div>
 
 * [`BigQuery` 表引擎](/zh/reference/engines/table-engines/integrations/bigquery)
 

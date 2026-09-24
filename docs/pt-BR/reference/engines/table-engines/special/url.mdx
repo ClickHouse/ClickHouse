@@ -42,7 +42,9 @@ Se `CompressionMethod` não for especificado, o padrão será `auto`. Isso signi
 
 Por exemplo, para a expressão de motor `URL('http://localhost/test.gzip')`, o método de compressão `gzip` é aplicado, mas para `URL('http://localhost/test.fr')`, nenhuma compressão é habilitada porque o sufixo `fr` não corresponde a nenhum dos métodos de compressão acima.
 
-## Encaminhamento por esquema de URL {#scheme-dispatch}
+<div id="scheme-dispatch">
+  ## Encaminhamento por esquema de URL
+</div>
 
 O motor `URL` é um wrapper unificado sobre os outros motores de armazenamento de arquivos e objetos: ele encaminha para o backend correto com base no esquema da URL. `http`/`https` (e qualquer esquema não reconhecido) são atendidos pelo próprio motor `URL`; `file://` é atendido pelo motor [File](/pt-BR/reference/engines/table-engines/special/file); `s3://`, `gs://`, `gcs://`, `oss://` pelo motor [S3](/pt-BR/reference/engines/table-engines/integrations/s3); `az://`, `azure://`, `abfss://`, `abfs://` pelo motor [AzureBlobStorage](/pt-BR/reference/engines/table-engines/integrations/azureBlobStorage); e `hdfs://` pelo motor [HDFS](/pt-BR/reference/engines/table-engines/integrations/hdfs).
 
@@ -55,7 +57,9 @@ CREATE TABLE file_via_url (a UInt32, b String) ENGINE = URL('file://data.csv', C
 CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv', CSV);
 ```
 
-## Uso {#using-the-engine-in-the-clickhouse-server}
+<div id="using-the-engine-in-the-clickhouse-server">
+  ## Uso
+</div>
 
 As consultas `INSERT` e `SELECT` são transformadas em requisições `POST` e `GET`,
 respectivamente. Para processar requisições `POST`, o servidor remoto deve oferecer
@@ -63,14 +67,18 @@ suporte a [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_tran
 
 Você pode limitar o número máximo de redirecionamentos HTTP GET usando a configuração [max&#95;http&#95;get&#95;redirects](/pt-BR/reference/settings/session-settings/max#max_http_get_redirects).
 
-## Curingas com páginas de índice HTTP {#wildcards-with-http-index-pages}
+<div id="wildcards-with-http-index-pages">
+  ## Curingas com páginas de índice HTTP
+</div>
 
-Quando [allow&#95;url&#95;wildcard&#95;from&#95;index&#95;pages](/pt-BR/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages) está habilitada, o motor de tabela `URL` pode expandir curingas ao buscar páginas de índice HTTP e extrair links delas.
+Quando [allow&#95;experimental&#95;url&#95;wildcard&#95;from&#95;index&#95;pages](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) está habilitada, o motor de tabela `URL` pode expandir curingas ao buscar páginas de índice HTTP e extrair links delas.
 Esse é o mesmo mecanismo da função de tabela [`url`](/pt-BR/reference/functions/table-functions/url#wildcards-with-http-index-pages).
 
 A expansão é limitada por [max&#95;http&#95;index&#95;page&#95;size](/pt-BR/reference/settings/server-settings/settings/max#max_http_index_page_size) para cada página de índice obtida e por [url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/pt-BR/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) ao percorrer diretórios recursivamente.
 
-## Exemplo {#example}
+<div id="example">
+  ## Exemplo
+</div>
 
 **1.** Crie uma tabela `url_engine_table` no servidor:
 
@@ -115,7 +123,9 @@ SELECT * FROM url_engine_table
 └───────┴───────┘
 ```
 
-## Detalhes da implementação {#details-of-implementation}
+<div id="details-of-implementation">
+  ## Detalhes da implementação
+</div>
 
 * Leituras e gravações podem ocorrer em paralelo
 * Não há suporte a:
@@ -123,7 +133,9 @@ SELECT * FROM url_engine_table
   * Índices.
   * Replicação.
 
-## Colunas virtuais {#virtual-columns}
+<div id="virtual-columns">
+  ## Colunas virtuais
+</div>
 
 * `_path` — Caminho da `URL`. Tipo: `LowCardinality(String)`.
 * `_file` — Nome do recurso da `URL`. Tipo: `LowCardinality(String)`.
@@ -131,7 +143,9 @@ SELECT * FROM url_engine_table
 * `_time` — Hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se a hora for desconhecida, o valor será `NULL`.
 * `_headers` - Cabeçalhos da resposta HTTP. Tipo: `Map(LowCardinality(String), LowCardinality(String))`.
 
-## Resolução de URLs relativas {#resolving-relative-urls}
+<div id="resolving-relative-urls">
+  ## Resolução de URLs relativas
+</div>
 
 A configuração [url&#95;base](/pt-BR/reference/settings/session-settings/url#url_base) permite usar uma URL relativa no motor `URL`. Quando `url_base` está definido, a URL passada para o motor é resolvida com base nele, de acordo com a [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). Para ver uma descrição completa das regras de resolução, consulte a [documentação da função de tabela url](/pt-BR/reference/functions/table-functions/url#resolving-relative-urls).
 
@@ -143,7 +157,9 @@ CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.cs
 SELECT * FROM url_engine_table;
 ```
 
-## Configurações de armazenamento {#storage-settings}
+<div id="storage-settings">
+  ## Configurações de armazenamento
+</div>
 
 * [engine&#95;url&#95;skip&#95;empty&#95;files](/pt-BR/reference/settings/session-settings/other#engine_url_skip_empty_files) - permite ignorar arquivos vazios durante a leitura. Desativado por padrão.
 * [enable&#95;url&#95;encoding](/pt-BR/reference/settings/session-settings/enable#enable_url_encoding) - permite ativar/desativar a decodificação/codificação do caminho na URI. Ativado por padrão.

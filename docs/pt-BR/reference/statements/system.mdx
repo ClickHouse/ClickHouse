@@ -10,13 +10,17 @@ doc_type: 'reference'
 
 import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
+<div id="reload-embedded-dictionaries">
+  ## SYSTEM RELOAD EMBEDDED DICTIONARIES
+</div>
 
 Recarrega todos os [dicionários internos](/pt-BR/reference/statements/create/dictionary).
 Por padrão, os dicionários internos ficam desabilitados.
 Sempre retorna `Ok.`, independentemente do resultado da atualização dos dicionários internos.
 
-## SYSTEM RELOAD DICTIONARIES {#reload-dictionaries}
+<div id="reload-dictionaries">
+  ## SYSTEM RELOAD DICTIONARIES
+</div>
 
 A consulta `SYSTEM RELOAD DICTIONARIES` recarrega dicionários com status `LOADED` (consulte a coluna `status` de [`system.dictionaries`](/pt-BR/reference/system-tables/dictionaries)), ou seja, dicionários que já foram carregados com sucesso anteriormente.
 Por padrão, os dicionários são carregados sob demanda (consulte [dictionaries&#95;lazy&#95;load](/pt-BR/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load)), portanto, em vez de serem carregados automaticamente na inicialização, eles são inicializados no primeiro acesso, por meio da função [`dictGet`](/pt-BR/reference/functions/regular-functions/ext-dict-functions#dictGet) ou de `SELECT` em tabelas com `ENGINE = Dictionary`.
@@ -27,7 +31,9 @@ Por padrão, os dicionários são carregados sob demanda (consulte [dictionaries
 SYSTEM RELOAD DICTIONARIES [ON CLUSTER cluster_name]
 ```
 
-## SYSTEM RELOAD DICTIONARY {#reload-dictionary}
+<div id="reload-dictionary">
+  ## SYSTEM RELOAD DICTIONARY
+</div>
 
 Recarrega por completo o dicionário `dictionary_name`, independentemente do estado do dicionário (LOADED / NOT&#95;LOADED / FAILED).
 Sempre retorna `Ok.`, independentemente do resultado da atualização do dicionário.
@@ -42,7 +48,9 @@ O status do dicionário pode ser verificado consultando a tabela `system.diction
 SELECT name, status FROM system.dictionaries;
 ```
 
-## SYSTEM UNLOAD DICTIONARY {#unload-dictionary}
+<div id="unload-dictionary">
+  ## SYSTEM UNLOAD DICTIONARY
+</div>
 
 Descarrega um Dicionário `dictionary_name` para liberar a memória dele, se o status do dicionário for `LOADED`.
 O dicionário é recarregado sob demanda quando necessário novamente.
@@ -57,7 +65,9 @@ O status do dicionário pode ser verificado consultando a tabela `system.diction
 SELECT name, status FROM system.dictionaries;
 ```
 
-## SYSTEM UNLOAD DICTIONARIES {#unload-dictionaries}
+<div id="unload-dictionaries">
+  ## SYSTEM UNLOAD DICTIONARIES
+</div>
 
 A consulta `SYSTEM UNLOAD DICTIONARIES` descarrega todos os dicionários com status `LOADED` (consulte a coluna `status` de [`system.dictionaries`](/pt-BR/reference/system-tables/dictionaries)), ou seja, os dicionários que já foram carregados com sucesso.
 
@@ -65,7 +75,38 @@ A consulta `SYSTEM UNLOAD DICTIONARIES` descarrega todos os dicionários com sta
 SYSTEM UNLOAD DICTIONARIES
 ```
 
-## SYSTEM RELOAD FUNCTIONS {#reload-functions}
+<div id="reload-models">
+  ## SYSTEM RELOAD MODELS
+</div>
+
+<Note>
+  Este comando e `SYSTEM RELOAD MODEL` apenas removem os modelos CatBoost da memória do clickhouse-library-bridge. A função `catboostEvaluate()`
+  carrega um modelo no primeiro acesso, caso ele ainda não esteja carregado.
+</Note>
+
+Remove da memória todos os modelos CatBoost.
+
+**Sintaxe**
+
+```sql
+SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
+```
+
+<div id="reload-model">
+  ## SYSTEM RELOAD MODEL
+</div>
+
+Descarrega um modelo CatBoost em `model_path`.
+
+**Sintaxe**
+
+```sql
+SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
+```
+
+<div id="reload-functions">
+  ## SYSTEM RELOAD FUNCTIONS
+</div>
 
 Recarrega todas as [funções executáveis definidas pelo usuário](/pt-BR/reference/functions/regular-functions/udf#executable-user-defined-functions) registradas, ou uma delas, de um arquivo de configuração.
 
@@ -76,7 +117,9 @@ SYSTEM RELOAD FUNCTIONS [ON CLUSTER cluster_name]
 SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 ```
 
-## SYSTEM RELOAD ASYNCHRONOUS METRICS {#reload-asynchronous-metrics}
+<div id="reload-asynchronous-metrics">
+  ## SYSTEM RELOAD ASYNCHRONOUS METRICS
+</div>
 
 Recalcula todas as [métricas assíncronas](/pt-BR/reference/system-tables/asynchronous_metrics). Como as métricas assíncronas são atualizadas periodicamente com base na configuração [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/pt-BR/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s), em geral não é necessário atualizá-las manualmente com esta instrução.
 
@@ -84,42 +127,60 @@ Recalcula todas as [métricas assíncronas](/pt-BR/reference/system-tables/async
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 ```
 
-## SYSTEM CLEAR|DROP DNS CACHE {#drop-dns-cache}
+<div id="drop-dns-cache">
+  ## SYSTEM CLEAR|DROP DNS CACHE
+</div>
 
 Limpa o cache DNS interno do ClickHouse. Às vezes (em versões mais antigas do ClickHouse), é necessário usar este comando ao alterar a infraestrutura (mudando o endereço IP de outro servidor ClickHouse ou do servidor usado pelos dicionários).
 
 Para um gerenciamento de cache mais prático (automático), consulte os parâmetros `disable_internal_dns_cache`, `dns_cache_max_entries`, `dns_cache_update_period`.
 
-## SYSTEM CLEAR|DROP MARK CACHE {#drop-mark-cache}
+<div id="drop-mark-cache">
+  ## SYSTEM CLEAR|DROP MARK CACHE
+</div>
 
 Limpa o cache de marks.
 
-## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE {#drop-primary-index-cache}
+<div id="drop-primary-index-cache">
+  ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE
+</div>
 
 Limpa o cache de índice primário, que mantém em memória as chaves primárias das tabelas [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
 Seu tamanho é configurado pela configuração no nível do servidor [`primary_index_cache_size`](/pt-BR/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
-## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
+<div id="drop-iceberg-metadata-cache">
+  ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
+</div>
 
 Limpa o cache de metadados do Iceberg.
 
-## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE {#drop-avro-schema-cache}
+<div id="drop-avro-schema-cache">
+  ## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE
+</div>
 
 Limpa os caches por URL do Confluent Schema Registry usados pelo formato `AvroConfluent`. Isso remove tanto o cache de obtenção de schema (id → schema) quanto o cache de registro de schema (subject + schema → id), fazendo com que leituras e gravações subsequentes voltem a recorrer ao servidor do registry. É útil quando um schema foi excluído ou reescrito no registry, ou para verificar a idempotência do registry em testes.
 
-## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
+<div id="drop-parquet-metadata-cache">
+  ## SYSTEM DROP PARQUET METADATA CACHE
+</div>
 
 Limpa o cache de metadados do Parquet.
 
-## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
+<div id="drop-paimon-metadata-cache">
+  ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE
+</div>
 
 Limpa o cache em memória dos arquivos de metadados do Paimon processados (listas de manifestos e manifestos).
 
-## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
+<div id="drop-point-in-polygon-cache">
+  ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE
+</div>
 
 Limpa o cache de polígonos constantes pré-processados usado pela função [`pointInPolygon`](/pt-BR/reference/functions/regular-functions/geo/coordinates#pointinpolygon). O limite de tamanho configurado (a configuração no nível do servidor `point_in_polygon_cache_size`) permanece inalterado, portanto o cache continua aceitando novas entradas depois disso. Para desativar o cache, defina `point_in_polygon_cache_size` como `0`.
 
-## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
+<div id="drop-text-index-caches">
+  ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
+</div>
 
 Limpa os caches de tokens, de cabeçalho e de postings do índice de texto.
 
@@ -129,35 +190,51 @@ Se quiser limpar um desses caches individualmente, você pode executar
 * `SYSTEM CLEAR TEXT INDEX HEADER CACHE`, ou
 * `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
 
-## SYSTEM CLEAR|DROP INDEX MARK CACHE {#drop-index-mark-cache}
+<div id="drop-index-mark-cache">
+  ## SYSTEM CLEAR|DROP INDEX MARK CACHE
+</div>
 
 Limpa o cache de marcas dos índices secundários (de salto de dados).
 
-## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE {#drop-index-uncompressed-cache}
+<div id="drop-index-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE
+</div>
 
 Limpa o cache de blocos não comprimidos dos índices secundários (de salto de dados).
 
-## SYSTEM CLEAR|DROP MMAP CACHE {#drop-mmap-cache}
+<div id="drop-mmap-cache">
+  ## SYSTEM CLEAR|DROP MMAP CACHE
+</div>
 
 Limpa o cache de arquivos mapeados em memória.
 
-## SYSTEM CLEAR|DROP PAGE CACHE {#drop-page-cache}
+<div id="drop-page-cache">
+  ## SYSTEM CLEAR|DROP PAGE CACHE
+</div>
 
 Limpa o cache de páginas em espaço do usuário, o cache em memória do próprio ClickHouse para dados lidos do armazenamento subjacente.
 
-## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
+<div id="drop-vector-similarity-index-cache">
+  ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE
+</div>
 
 Limpa o cache do índice de similaridade vetorial.
 
-## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
+<div id="drop-connections-cache">
+  ## SYSTEM CLEAR|DROP CONNECTIONS CACHE
+</div>
 
 Limpa o cache dos pools de conexões HTTP usados nas conexões de saída.
 
-## SYSTEM CLEAR|DROP S3 CLIENT CACHE {#drop-s3-client-cache}
+<div id="drop-s3-client-cache">
+  ## SYSTEM CLEAR|DROP S3 CLIENT CACHE
+</div>
 
 Limpa o cache dos clientes S3.
 
-## SYSTEM PREWARM MARK CACHE {#prewarm-mark-cache}
+<div id="prewarm-mark-cache">
+  ## SYSTEM PREWARM MARK CACHE
+</div>
 
 Carrega as marcas de uma tabela para o [cache de marcas](#drop-mark-cache). As marcas dos índices secundários também são carregadas para o [cache de marcas de índice](#drop-index-mark-cache).
 
@@ -165,7 +242,9 @@ Carrega as marcas de uma tabela para o [cache de marcas](#drop-mark-cache). As m
 SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
 ```
 
-## SYSTEM PREWARM PRIMARY INDEX CACHE {#prewarm-primary-index-cache}
+<div id="prewarm-primary-index-cache">
+  ## SYSTEM PREWARM PRIMARY INDEX CACHE
+</div>
 
 Carrega os índices primários de uma tabela `MergeTree` para o [cache de índice primário](#drop-primary-index-cache).
 
@@ -173,7 +252,9 @@ Carrega os índices primários de uma tabela `MergeTree` para o [cache de índic
 SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
 ```
 
-## SYSTEM CLEAR|DROP DISK METADATA CACHE {#drop-disk-metadata-cache}
+<div id="drop-disk-metadata-cache">
+  ## SYSTEM CLEAR|DROP DISK METADATA CACHE
+</div>
 
 Limpa o cache de metadados do disco especificado.
 
@@ -181,7 +262,9 @@ Limpa o cache de metadados do disco especificado.
 SYSTEM DROP DISK METADATA CACHE <disk_name>
 ```
 
-## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
+<div id="sync-filesystem-cache">
+  ## SYSTEM SYNC FILESYSTEM CACHE
+</div>
 
 Reconcilia o estado em memória do cache do sistema de arquivos do ClickHouse com os arquivos de cache efetivamente presentes em disco e retorna o `cache_name`, o `path` e o `size` baixado de cada segmento de arquivo em cache. Um nome de cache opcional limita a operação a um único cache.
 
@@ -189,7 +272,9 @@ Reconcilia o estado em memória do cache do sistema de arquivos do ClickHouse co
 SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
 ```
 
-## SYSTEM CLEAR|DROP DISTRIBUTED CACHE {#drop-distributed-cache}
+<div id="drop-distributed-cache">
+  ## SYSTEM CLEAR|DROP DISTRIBUTED CACHE
+</div>
 
 <Note>
   `SYSTEM CLEAR|DROP DISTRIBUTED CACHE` está disponível apenas no ClickHouse Cloud.
@@ -201,7 +286,9 @@ Remove o Distributed Cache. Use `CONNECTIONS` para remover apenas as conexões e
 SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
 ```
 
-## SYSTEM DROP REPLICA {#drop-replica}
+<div id="drop-replica">
+  ## SYSTEM DROP REPLICA
+</div>
 
 Réplicas inativas de tabelas `ReplicatedMergeTree` podem ser removidas usando a sintaxe a seguir:
 
@@ -219,7 +306,9 @@ A segunda faz o mesmo para todas as tabelas replicadas no banco de dados.
 A terceira faz o mesmo para todas as tabelas replicadas no servidor local.
 A quarta é útil para remover os metadados de uma réplica inativa quando todas as outras réplicas de uma tabela tiverem sido removidas. Ela exige que o caminho da tabela seja especificado explicitamente. Deve ser o mesmo caminho que foi passado como primeiro argumento do motor `ReplicatedMergeTree` na criação da tabela.
 
-## SYSTEM DROP DATABASE REPLICA {#drop-database-replica}
+<div id="drop-database-replica">
+  ## SYSTEM DROP DATABASE REPLICA
+</div>
 
 Réplicas inativas de bancos de dados `Replicated` podem ser removidas com a seguinte sintaxe:
 
@@ -231,26 +320,36 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 
 Semelhante a `SYSTEM DROP REPLICA`, mas remove do ZooKeeper o caminho da réplica do banco de dados `Replicated` quando não existe um banco de dados sobre o qual executar `DROP DATABASE`. Observe que isso não remove réplicas `ReplicatedMergeTree` (portanto, talvez você também precise de `SYSTEM DROP REPLICA`). Os nomes do shard e da réplica são os que foram especificados nos argumentos do mecanismo `Replicated` ao criar o banco de dados. Além disso, esses nomes podem ser obtidos nas colunas `database_shard_name` e `database_replica_name` em `system.clusters`. Se a cláusula `FROM SHARD` estiver ausente, `replica_name` deverá ser um nome completo de réplica no formato `shard_name|replica_name`.
 
-## SYSTEM CLEAR|DROP UNCOMPRESSED CACHE {#drop-uncompressed-cache}
+<div id="drop-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP UNCOMPRESSED CACHE
+</div>
 
 Limpa o cache de dados não comprimidos.
 O cache de dados não comprimidos é ativado/desativado pela configuração [`use_uncompressed_cache`](/pt-BR/reference/settings/session-settings/use#use_uncompressed_cache) no nível de consulta/usuário/perfil.
 Seu tamanho pode ser configurado usando a configuração no nível do servidor [`uncompressed_cache_size`](/pt-BR/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size).
 
-## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
+<div id="drop-compiled-expression-cache">
+  ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE
+</div>
 
 Limpa o cache de expressões compiladas.
 O cache de expressões compiladas é ativado/desativado pela configuração [`compile_expressions`](/pt-BR/reference/settings/session-settings/compile#compile_expressions) no nível de consulta/usuário/perfil.
 
-## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
+<div id="drop-query-condition-cache">
+  ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
+</div>
 
 Limpa o cache de condições de consulta.
 
-## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
+<div id="drop-encryption-headers-cache">
+  ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE
+</div>
 
 Limpa o cache de cabeçalhos de criptografia. Esse cache armazena os cabeçalhos de criptografia lidos no início de arquivos criptografados e é usado pelo caminho de leitura experimental `use_reader_executor` para evitar relê-los; seu tamanho é configurado pela configuração do servidor `encryption_header_cache_size`.
 
-## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
+<div id="drop-query-cache">
+  ## SYSTEM CLEAR|DROP QUERY CACHE
+</div>
 
 ```sql
 SYSTEM CLEAR QUERY CACHE;
@@ -260,7 +359,9 @@ SYSTEM CLEAR QUERY CACHE TAG '<tag>'
 Limpa o [cache de consultas](/pt-BR/concepts/features/performance/caches/query-cache).
 Se uma tag for especificada, somente as entradas do cache de consultas com a tag especificada serão excluídas.
 
-## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
+<div id="system-drop-schema-format">
+  ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
+</div>
 
 Limpa o cache dos esquemas carregados a partir de [`format_schema_path`](/pt-BR/reference/settings/server-settings/settings/format#format_schema_path).
 
@@ -274,7 +375,9 @@ Alvos compatíveis:
 SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
 ```
 
-## SYSTEM FLUSH LOGS {#flush-logs}
+<div id="flush-logs">
+  ## SYSTEM FLUSH LOGS
+</div>
 
 Descarrega mensagens de log em buffer nas tabelas de sistema, por exemplo, system.query&#95;log. É útil principalmente para depuração, já que a maioria das tabelas de sistema tem um intervalo padrão de flush de 7,5 segundos.
 Isso também criará tabelas de sistema mesmo que a fila de mensagens esteja vazia.
@@ -289,7 +392,9 @@ Se você não quiser fazer flush de tudo, poderá fazer flush de um ou mais logs
 SYSTEM FLUSH LOGS query_log, system.query_views_log;
 ```
 
-## SYSTEM RELOAD CONFIG {#reload-config}
+<div id="reload-config">
+  ## SYSTEM RELOAD CONFIG
+</div>
 
 Recarrega a configuração do ClickHouse. É usado quando a configuração está armazenada no ZooKeeper. Observe que `SYSTEM RELOAD CONFIG` não recarrega a configuração de `USER` armazenada no ZooKeeper; ele recarrega apenas a configuração de `USER` armazenada em `users.xml`. Para recarregar toda a configuração de `USER`, use `SYSTEM RELOAD USERS`
 
@@ -297,7 +402,9 @@ Recarrega a configuração do ClickHouse. É usado quando a configuração está
 SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
 ```
 
-## SYSTEM RELOAD USERS {#reload-users}
+<div id="reload-users">
+  ## SYSTEM RELOAD USERS
+</div>
 
 Recarrega todos os armazenamentos de acesso, incluindo: users.xml, o armazenamento de acesso em disco local e o armazenamento de acesso replicado (no ZooKeeper).
 
@@ -305,24 +412,32 @@ Recarrega todos os armazenamentos de acesso, incluindo: users.xml, o armazenamen
 SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
 ```
 
-## SYSTEM SHUTDOWN {#shutdown}
+<div id="shutdown">
+  ## SYSTEM SHUTDOWN
+</div>
 
 <CloudNotSupportedBadge />
 
 Normalmente encerra o ClickHouse (como `service clickhouse-server stop` / `kill {$pid_clickhouse-server}`)
 
-## SYSTEM KILL {#kill}
+<div id="kill">
+  ## SYSTEM KILL
+</div>
 
 Encerra o processo do ClickHouse (como `kill -9 {$ pid_clickhouse-server}`)
 
-## SYSTEM INSTRUMENT {#instrument}
+<div id="instrument">
+  ## SYSTEM INSTRUMENT
+</div>
 
 Gerencia pontos de instrumentação usando o recurso XRay do LLVM, que está disponível quando o ClickHouse é compilado com `ENABLE_XRAY=1`.
 Isso permite depurar e gerar perfis em produção sem modificar o código-fonte e com sobrecarga mínima.
 Quando nenhum ponto de instrumentação é adicionado, o impacto no desempenho é desprezível, pois isso apenas adiciona um salto extra para um endereço próximo
 no prólogo e no epílogo das funções com mais de 200 instruções.
 
-### SYSTEM INSTRUMENT ADD {#instrument-add}
+<div id="instrument-add">
+  ### SYSTEM INSTRUMENT ADD
+</div>
 
 Adiciona um novo ponto de instrumentação. As funções instrumentadas podem ser inspecionadas na tabela de sistema [`system.instrumentation`](/pt-BR/reference/system-tables/instrumentation). Mais de um handler pode ser adicionado à mesma função, e eles serão executados na mesma ordem em que a instrumentação foi adicionada.
 As funções a serem instrumentadas podem ser obtidas na tabela de sistema [`system.symbols`](/pt-BR/reference/system-tables/symbols).
@@ -337,7 +452,9 @@ SYSTEM INSTRUMENT ADD FUNCTION HANDLER [ARGUMENTS]
 
 em que `FUNCTION` é qualquer função ou substring de uma função, como `QueryMetricLog::startQuery`, e o handler é um dos seguintes
 
-#### LOG {#instrument-add-log}
+<div id="instrument-add-log">
+  #### LOG
+</div>
 
 Imprime o texto fornecido como argumento e o stack trace na `ENTRY` ou na `EXIT` da função.
 
@@ -346,7 +463,9 @@ SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'this is a log prin
 SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'this is a log printed at exit'
 ```
 
-#### SLEEP {#instrument-add-sleep}
+<div id="instrument-add-sleep">
+  #### SLEEP
+</div>
 
 Suspende a execução por um número fixo de segundos em `ENTRY` ou `EXIT`:
 
@@ -360,7 +479,9 @@ ou para um número aleatório de segundos com distribuição uniforme, informand
 SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 1
 ```
 
-#### PROFILE {#instrument-add-profile}
+<div id="instrument-add-profile">
+  #### PROFILE
+</div>
 
 Mede o tempo gasto entre `ENTRY` e `EXIT` de uma função.
 O resultado do profiling é armazenado em [`system.trace_log`](/pt-BR/reference/system-tables/trace_log) e pode ser convertido
@@ -370,7 +491,9 @@ no [Chrome Event Trace Format](/pt-BR/reference/system-tables/trace_log#chrome-e
 SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' PROFILE
 ```
 
-### SYSTEM INSTRUMENT REMOVE {#instrument-remove}
+<div id="instrument-remove">
+  ### SYSTEM INSTRUMENT REMOVE
+</div>
 
 Remove um único ponto de instrumentação com:
 
@@ -398,11 +521,15 @@ SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
 
 As informações sobre o ponto de instrumentação podem ser obtidas na tabela de sistema [`system.instrumentation`](/pt-BR/reference/system-tables/instrumentation).
 
-## Gerenciando tabelas distribuídas {#managing-distributed-tables}
+<div id="managing-distributed-tables">
+  ## Gerenciando tabelas distribuídas
+</div>
 
 O ClickHouse pode gerenciar tabelas [distribuídas](/pt-BR/reference/engines/table-engines/special/distributed). Quando um usuário insere dados nessas tabelas, o ClickHouse primeiro cria uma fila com os dados que devem ser enviados aos nós do cluster e depois os envia de forma assíncrona. Você pode gerenciar o processamento da fila com as consultas [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed) e [`START DISTRIBUTED SENDS`](#start-distributed-sends). Você também pode inserir dados distribuídos de forma síncrona com a configuração [`distributed_foreground_insert`](/pt-BR/reference/settings/session-settings/distributed#distributed_foreground_insert).
 
-### SYSTEM STOP DISTRIBUTED SENDS {#stop-distributed-sends}
+<div id="stop-distributed-sends">
+  ### SYSTEM STOP DISTRIBUTED SENDS
+</div>
 
 Desativa a distribuição de dados em segundo plano ao inserir dados em tabelas distribuídas.
 
@@ -414,7 +541,9 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
   Se [`prefer_localhost_replica`](/pt-BR/reference/settings/session-settings/prefer#prefer_localhost_replica) estiver habilitado (padrão), os dados ainda serão inseridos no shard local.
 </Note>
 
-### SYSTEM FLUSH DISTRIBUTED {#flush-distributed}
+<div id="flush-distributed">
+  ### SYSTEM FLUSH DISTRIBUTED
+</div>
 
 Força o ClickHouse a enviar dados aos nós do cluster de forma síncrona. Se algum nó estiver indisponível, o ClickHouse gera uma exceção e interrompe a execução da consulta. Você pode tentar a consulta novamente até que ela seja concluída com sucesso, o que acontecerá quando todos os nós voltarem a ficar online.
 
@@ -428,7 +557,9 @@ SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name]
   Cada bloco pendente é armazenado em disco com as configurações da consulta INSERT inicial; por isso, às vezes pode ser necessário substituir essas configurações.
 </Note>
 
-### SYSTEM START DISTRIBUTED SENDS {#start-distributed-sends}
+<div id="start-distributed-sends">
+  ### SYSTEM START DISTRIBUTED SENDS
+</div>
 
 Ativa a distribuição de dados em segundo plano ao inserir dados em tabelas distribuídas.
 
@@ -436,7 +567,9 @@ Ativa a distribuição de dados em segundo plano ao inserir dados em tabelas dis
 SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
 
-### SYSTEM STOP LISTEN {#stop-listen}
+<div id="stop-listen">
+  ### SYSTEM STOP LISTEN
+</div>
 
 Fecha o socket e encerra de forma controlada as conexões existentes com o servidor na porta e no protocolo especificados.
 
@@ -451,7 +584,9 @@ SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QU
 * Se o modificador `QUERIES DEFAULT [EXCEPT .. [,..]]` for especificado, todos os protocolos padrão serão interrompidos, exceto os especificados na cláusula `EXCEPT`.
 * Se o modificador `QUERIES CUSTOM [EXCEPT .. [,..]]` for especificado, todos os protocolos personalizados serão interrompidos, exceto os especificados na cláusula `EXCEPT`.
 
-### SYSTEM START LISTEN {#start-listen}
+<div id="start-listen">
+  ### SYSTEM START LISTEN
+</div>
 
 Permite estabelecer novas conexões nos protocolos especificados.
 
@@ -461,11 +596,15 @@ No entanto, se o servidor na porta e no protocolo especificados não tiver sido 
 SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```
 
-## Gerenciamento de tabelas MergeTree {#managing-mergetree-tables}
+<div id="managing-mergetree-tables">
+  ## Gerenciamento de tabelas MergeTree
+</div>
 
 O ClickHouse pode gerenciar processos em segundo plano em tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
 
-### SYSTEM STOP MERGES {#stop-merges}
+<div id="stop-merges">
+  ### SYSTEM STOP MERGES
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -479,7 +618,9 @@ SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]mer
   O `DETACH / ATTACH` de uma tabela iniciará merges em segundo plano para a tabela, mesmo que os merges tenham sido interrompidos anteriormente para todas as tabelas MergeTree.
 </Note>
 
-### SYSTEM START MERGES {#start-merges}
+<div id="start-merges">
+  ### SYSTEM START MERGES
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -489,7 +630,9 @@ Permite iniciar merges em segundo plano para tabelas da família MergeTree:
 SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
-### SYSTEM STOP TTL MERGES {#stop-ttl-merges}
+<div id="stop-ttl-merges">
+  ### SYSTEM STOP TTL MERGES
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -500,7 +643,9 @@ Retorna `Ok.` mesmo que a tabela não exista ou não use o motor MergeTree. Reto
 SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
-### SYSTEM START TTL MERGES {#start-ttl-merges}
+<div id="start-ttl-merges">
+  ### SYSTEM START TTL MERGES
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -511,7 +656,9 @@ Retorna `Ok.` mesmo que a tabela não exista. Retorna erro quando o banco de dad
 SYSTEM START TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
-### SYSTEM STOP MOVES {#stop-moves}
+<div id="stop-moves">
+  ### SYSTEM STOP MOVES
+</div>
 
 Permite interromper a movimentação de dados em segundo plano de acordo com a [expressão TTL da tabela com a cláusula TO VOLUME ou TO DISK](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-table-ttl) para tabelas da família MergeTree:
 Retorna `Ok.` mesmo que a tabela não exista. Retorna erro quando o banco de dados não existe:
@@ -520,7 +667,9 @@ Retorna `Ok.` mesmo que a tabela não exista. Retorna erro quando o banco de dad
 SYSTEM STOP MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
-### SYSTEM START MOVES {#start-moves}
+<div id="start-moves">
+  ### SYSTEM START MOVES
+</div>
 
 Permite iniciar a movimentação de dados em segundo plano de acordo com a [expressão TTL da tabela com as cláusulas TO VOLUME e TO DISK](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-table-ttl) para tabelas da família MergeTree:
 Retorna `Ok.` mesmo que a tabela não exista. Retorna erro quando o banco de dados não existe:
@@ -529,7 +678,9 @@ Retorna `Ok.` mesmo que a tabela não exista. Retorna erro quando o banco de dad
 SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
-### SYSTEM UNFREEZE {#query_language-system-unfreeze}
+<div id="query_language-system-unfreeze">
+  ### SYSTEM UNFREEZE
+</div>
 
 Remove um backup congelado com o nome especificado de todos os disks. Veja mais sobre como descongelar partes individuais em [ALTER TABLE table&#95;name UNFREEZE WITH NAME ](/pt-BR/reference/statements/alter/partition#unfreeze-partition)
 
@@ -537,7 +688,9 @@ Remove um backup congelado com o nome especificado de todos os disks. Veja mais 
 SYSTEM UNFREEZE WITH NAME <backup_name>
 ```
 
-### SYSTEM WAIT LOADING PARTS {#wait-loading-parts}
+<div id="wait-loading-parts">
+  ### SYSTEM WAIT LOADING PARTS
+</div>
 
 Aguarde até que todas as partes de dados de uma tabela carregadas de forma assíncrona (partes de dados desatualizadas) sejam carregadas.
 
@@ -545,11 +698,15 @@ Aguarde até que todas as partes de dados de uma tabela carregadas de forma ass�
 SYSTEM WAIT LOADING PARTS [ON CLUSTER cluster_name] [db.]merge_tree_family_table_name
 ```
 
-## Gerenciando tabelas ReplicatedMergeTree {#managing-replicatedmergetree-tables}
+<div id="managing-replicatedmergetree-tables">
+  ## Gerenciando tabelas ReplicatedMergeTree
+</div>
 
 O ClickHouse pode gerenciar, em segundo plano, os processos relacionados à replicação em tabelas [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replication).
 
-### SYSTEM STOP FETCHES {#stop-fetches}
+<div id="stop-fetches">
+  ### SYSTEM STOP FETCHES
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -560,7 +717,9 @@ Sempre retorna `Ok.`, independentemente do motor da tabela, mesmo que a tabela o
 SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
-### SYSTEM START FETCHES {#start-fetches}
+<div id="start-fetches">
+  ### SYSTEM START FETCHES
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -571,7 +730,9 @@ Sempre retorna `Ok.` independentemente do motor da tabela, mesmo que a tabela ou
 SYSTEM START FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
-### SYSTEM STOP REPLICATED SENDS {#stop-replicated-sends}
+<div id="stop-replicated-sends">
+  ### SYSTEM STOP REPLICATED SENDS
+</div>
 
 Permite interromper, em segundo plano, o envio de novas partes inseridas para outras réplicas no cluster em tabelas da família `ReplicatedMergeTree`:
 
@@ -579,7 +740,9 @@ Permite interromper, em segundo plano, o envio de novas partes inseridas para ou
 SYSTEM STOP REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
-### SYSTEM START REPLICATED SENDS {#start-replicated-sends}
+<div id="start-replicated-sends">
+  ### SYSTEM START REPLICATED SENDS
+</div>
 
 Permite iniciar, em segundo plano, o envio de novas partes inseridas para outras réplicas no cluster em tabelas da família `ReplicatedMergeTree`:
 
@@ -587,7 +750,9 @@ Permite iniciar, em segundo plano, o envio de novas partes inseridas para outras
 SYSTEM START REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
-### SYSTEM STOP REPLICATION QUEUES {#stop-replication-queues}
+<div id="stop-replication-queues">
+  ### SYSTEM STOP REPLICATION QUEUES
+</div>
 
 Permite interromper tarefas de fetch em segundo plano das filas de replicação armazenadas no ZooKeeper para tabelas da família `ReplicatedMergeTree`. Os possíveis tipos de tarefas em segundo plano são: merges, fetches, mutation e instruções DDL com a cláusula ON CLUSTER:
 
@@ -595,7 +760,9 @@ Permite interromper tarefas de fetch em segundo plano das filas de replicação 
 SYSTEM STOP REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
-### SYSTEM START REPLICATION QUEUES {#start-replication-queues}
+<div id="start-replication-queues">
+  ### SYSTEM START REPLICATION QUEUES
+</div>
 
 Permite iniciar tarefas de fetch em segundo plano a partir das filas de replicação armazenadas no Zookeeper para tabelas da família `ReplicatedMergeTree`. Os tipos possíveis de tarefas em segundo plano são - merges, fetches, mutation, instruções DDL com a cláusula ON CLUSTER:
 
@@ -603,7 +770,9 @@ Permite iniciar tarefas de fetch em segundo plano a partir das filas de replica�
 SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
-### SYSTEM STOP PULLING REPLICATION LOG {#stop-pulling-replication-log}
+<div id="stop-pulling-replication-log">
+  ### SYSTEM STOP PULLING REPLICATION LOG
+</div>
 
 Interrompe a leitura de novas entradas do log de replicação para a fila de replicação em uma tabela `ReplicatedMergeTree`.
 
@@ -611,7 +780,9 @@ Interrompe a leitura de novas entradas do log de replicação para a fila de rep
 SYSTEM STOP PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
-### SYSTEM START PULLING REPLICATION LOG {#start-pulling-replication-log}
+<div id="start-pulling-replication-log">
+  ### SYSTEM START PULLING REPLICATION LOG
+</div>
 
 Cancela `SYSTEM STOP PULLING REPLICATION LOG`.
 
@@ -619,7 +790,9 @@ Cancela `SYSTEM STOP PULLING REPLICATION LOG`.
 SYSTEM START PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
-### SYSTEM SYNC REPLICA {#sync-replica}
+<div id="sync-replica">
+  ### SYSTEM SYNC REPLICA
+</div>
 
 Aguarde até que uma tabela `ReplicatedMergeTree` esteja sincronizada com outras réplicas em um cluster, mas por no máximo `receive_timeout` segundos.
 
@@ -635,7 +808,9 @@ Após executar esta instrução, `[db.]replicated_merge_tree_family_table_name` 
   Além disso, o modificador LIGHTWEIGHT oferece suporte a uma cláusula opcional FROM &#39;srcReplicas&#39;, em que &#39;srcReplicas&#39; é uma lista, separada por vírgulas, com nomes de réplicas de origem. Essa extensão permite uma sincronização mais direcionada, ao focar apenas nas tarefas de replicação originadas das réplicas de origem especificadas.
 * Se um modificador `PULL` for especificado, a consulta extrai novas entradas da fila de replicação do ZooKeeper, mas não aguarda o processamento de nada.
 
-### SYNC DATABASE REPLICA {#sync-database-replica}
+<div id="sync-database-replica">
+  ### SYNC DATABASE REPLICA
+</div>
 
 Aguarda até que o [banco de dados replicado](/pt-BR/reference/engines/database-engines/replicated) especificado aplique todas as alterações de esquema presentes na fila DDL desse banco de dados.
 
@@ -645,7 +820,9 @@ Aguarda até que o [banco de dados replicado](/pt-BR/reference/engines/database-
 SYSTEM SYNC DATABASE REPLICA replicated_database_name;
 ```
 
-### SYSTEM RESTART REPLICA {#restart-replica}
+<div id="restart-replica">
+  ### SYSTEM RESTART REPLICA
+</div>
 
 Permite reinicializar o estado da sessão do ZooKeeper para a tabela `ReplicatedMergeTree`, comparar o estado atual com o ZooKeeper como fonte da verdade e adicionar tarefas à fila do ZooKeeper, se necessário.
 A inicialização da fila de replicação com base nos dados do ZooKeeper acontece da mesma forma que na instrução `ATTACH TABLE`. Por um curto período, a tabela ficará indisponível para qualquer operação.
@@ -654,7 +831,9 @@ A inicialização da fila de replicação com base nos dados do ZooKeeper aconte
 SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
 ```
 
-### SYSTEM RESTORE REPLICA {#restore-replica}
+<div id="restore-replica">
+  ### SYSTEM RESTORE REPLICA
+</div>
 
 Restaura uma réplica se os dados [possivelmente] ainda estiverem presentes, mas os metadados do ZooKeeper tiverem sido perdidos.
 
@@ -673,7 +852,9 @@ As partes presentes em uma réplica antes da perda dos metadados não são busca
   As partes em qualquer estado são movidas para a pasta `detached/`. As partes que estavam ativas antes da perda dos dados (confirmadas) são anexadas.
 </Note>
 
-### SYSTEM RESTORE DATABASE REPLICA {#restore-database-replica}
+<div id="restore-database-replica">
+  ### SYSTEM RESTORE DATABASE REPLICA
+</div>
 
 Restaura uma réplica caso os dados [possivelmente] ainda estejam presentes, mas os metadados do Zookeeper tenham sido perdidos.
 
@@ -733,11 +914,15 @@ Outra forma:
 SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
 ```
 
-### SYSTEM RESTART REPLICAS {#restart-replicas}
+<div id="restart-replicas">
+  ### SYSTEM RESTART REPLICAS
+</div>
 
 Permite reinicializar o estado das sessões do Zookeeper para todas as tabelas `ReplicatedMergeTree`, comparando o estado atual com o Zookeeper como fonte da verdade e adicionando tarefas à fila do Zookeeper, se necessário
 
-### SYSTEM CLEAR|DROP FILESYSTEM CACHE {#drop-filesystem-cache}
+<div id="drop-filesystem-cache">
+  ### SYSTEM CLEAR|DROP FILESYSTEM CACHE
+</div>
 
 Permite limpar o cache do sistema de arquivos.
 
@@ -745,7 +930,9 @@ Permite limpar o cache do sistema de arquivos.
 SYSTEM CLEAR FILESYSTEM CACHE [ON CLUSTER cluster_name]
 ```
 
-### SYSTEM SYNC FILE CACHE {#sync-file-cache}
+<div id="sync-file-cache">
+  ### SYSTEM SYNC FILE CACHE
+</div>
 
 <Note>
   É muito pesado e pode ser usado indevidamente.
@@ -757,7 +944,9 @@ Executa a syscall `sync`.
 SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
 ```
 
-### SYSTEM LOAD PRIMARY KEY {#load-primary-key}
+<div id="load-primary-key">
+  ### SYSTEM LOAD PRIMARY KEY
+</div>
 
 Carrega as chaves primárias para a tabela especificada ou para todas as tabelas.
 
@@ -769,7 +958,9 @@ SYSTEM LOAD PRIMARY KEY [db.]name
 SYSTEM LOAD PRIMARY KEY
 ```
 
-### SYSTEM UNLOAD PRIMARY KEY {#unload-primary-key}
+<div id="unload-primary-key">
+  ### SYSTEM UNLOAD PRIMARY KEY
+</div>
 
 Descarrega as chaves primárias da tabela especificada ou de todas as tabelas.
 
@@ -781,13 +972,17 @@ SYSTEM UNLOAD PRIMARY KEY [db.]name
 SYSTEM UNLOAD PRIMARY KEY
 ```
 
-## Gerenciando views materializadas atualizáveis {#managing-refreshable-materialized-views}
+<div id="managing-refreshable-materialized-views">
+  ## Gerenciando views materializadas atualizáveis
+</div>
 
 Comandos para controlar tarefas em segundo plano executadas por [views materializadas atualizáveis](/pt-BR/reference/statements/create/view#refreshable-materialized-view)
 
 Fique de olho em [`system.view_refreshes`](/pt-BR/reference/system-tables/view_refreshes) ao usá-las.
 
-### SYSTEM STOP [REPLICATED] VIEW, STOP VIEWS {#stop-view-stop-views}
+<div id="stop-view-stop-views">
+  ### SYSTEM STOP [REPLICATED] VIEW, STOP VIEWS
+</div>
 
 Desativa a atualização periódica da view especificada ou de todas as views atualizáveis. Se houver uma atualização em andamento, ela também será cancelada.
 
@@ -806,7 +1001,9 @@ SYSTEM STOP VIEW [db.]name
 SYSTEM STOP VIEWS
 ```
 
-### SYSTEM START [REPLICATED] VIEW, START VIEWS {#start-view-start-views}
+<div id="start-view-start-views">
+  ### SYSTEM START [REPLICATED] VIEW, START VIEWS
+</div>
 
 Ativa a atualização periódica da view especificada ou de todas as views atualizáveis. Nenhuma atualização imediata é disparada.
 
@@ -820,7 +1017,9 @@ SYSTEM START VIEW [db.]name
 SYSTEM START VIEWS
 ```
 
-### SYSTEM PAUSE VIEW, PAUSE VIEWS {#pause-view-pause-views}
+<div id="pause-view-pause-views">
+  ### SYSTEM PAUSE VIEW, PAUSE VIEWS
+</div>
 
 Desativa a atualização periódica da view especificada ou de todas as views atualizáveis.
 Ao contrário de `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEW` não interrompe uma atualização que já esteja em andamento: a atualização em execução pode terminar, e apenas as atualizações subsequentes são impedidas.
@@ -840,7 +1039,9 @@ SYSTEM PAUSE VIEW [db.]name
 SYSTEM PAUSE VIEWS
 ```
 
-### SYSTEM REFRESH VIEW {#refresh-view}
+<div id="refresh-view">
+  ### SYSTEM REFRESH VIEW
+</div>
 
 Executa uma atualização imediata, fora do agendamento, de uma determinada view.
 
@@ -848,7 +1049,9 @@ Executa uma atualização imediata, fora do agendamento, de uma determinada view
 SYSTEM REFRESH VIEW [db.]name
 ```
 
-### SYSTEM WAIT VIEW {#wait-view}
+<div id="wait-view">
+  ### SYSTEM WAIT VIEW
+</div>
 
 Espera a atualização em execução ser concluída. Se nenhuma atualização estiver em execução, retorna imediatamente. Se a tentativa de atualização mais recente tiver falhado, retorna um erro.
 
@@ -860,7 +1063,9 @@ Se a view estiver em um banco de dados Replicated ou Shared, e a atualização e
 SYSTEM WAIT VIEW [db.]name
 ```
 
-### SYSTEM CANCEL VIEW {#cancel-view}
+<div id="cancel-view">
+  ### SYSTEM CANCEL VIEW
+</div>
 
 Se houver uma atualização em andamento para a view especificada na réplica atual, interrompa-o e cancele-o. Caso contrário, não faça nada.
 
@@ -868,7 +1073,9 @@ Se houver uma atualização em andamento para a view especificada na réplica at
 SYSTEM CANCEL VIEW [db.]name
 ```
 
-## Gerenciamento de atividades em segundo plano {#managing-background-activity}
+<div id="managing-background-activity">
+  ## Gerenciamento de atividades em segundo plano
+</div>
 
 Comandos independentes de mecanismo para controlar a atividade em segundo plano de uma única tabela ou de todas essas tabelas no servidor de uma só vez. Eles abrangem:
 
@@ -887,7 +1094,9 @@ As formas por tabela e com curinga diferem na forma como tratam tabelas sem ativ
   Nenhum desses estados persiste após a reinicialização do servidor. Após uma reinicialização, as views atualizáveis retomam os agendamentos configurados, e os motores de streaming retomam o consumo.
 </Note>
 
-### SYSTEM STOP {#stop-background}
+<div id="stop-background">
+  ### SYSTEM STOP
+</div>
 
 Interrompe a atividade em segundo plano e a mantém interrompida: interrompe o que está em execução e impede novas execuções até `SYSTEM START`. Equivale a `PAUSE` + `CANCEL`.
 
@@ -896,7 +1105,9 @@ SYSTEM STOP [db.]table
 SYSTEM STOP ALL BACKGROUND
 ```
 
-### SYSTEM START {#start-background}
+<div id="start-background">
+  ### SYSTEM START
+</div>
 
 Retoma a atividade, revertendo um `SYSTEM STOP` ou `SYSTEM PAUSE` anterior. Nenhuma atividade é interrompida.
 
@@ -905,7 +1116,9 @@ SYSTEM START [db.]table
 SYSTEM START ALL BACKGROUND
 ```
 
-### SYSTEM PAUSE {#pause-background}
+<div id="pause-background">
+  ### SYSTEM PAUSE
+</div>
 
 Impede novas atividades em segundo plano, mas permite que o que estiver em execução no momento seja concluído primeiro.
 
@@ -914,7 +1127,9 @@ SYSTEM PAUSE [db.]table
 SYSTEM PAUSE ALL BACKGROUND
 ```
 
-### SYSTEM CANCEL {#cancel-background}
+<div id="cancel-background">
+  ### SYSTEM CANCEL
+</div>
 
 Interrompe apenas a atividade em execução, sem bloquear atividades futuras — a tabela continua sendo atualizada ou consumindo dados conforme o agendamento. Não faz nada se não houver atividade em andamento.
 
@@ -923,7 +1138,9 @@ SYSTEM CANCEL [db.]table
 SYSTEM CANCEL ALL BACKGROUND
 ```
 
-### SYSTEM REFRESH {#refresh-background}
+<div id="refresh-background">
+  ### SYSTEM REFRESH
+</div>
 
 Execute um ciclo extra fora do agendamento. Em uma tabela de streaming, ele é executado imediatamente, uma única vez, mesmo que a tabela esteja interrompida ou pausada. Em uma view materializada atualizável, ele se comporta como `SYSTEM REFRESH VIEW`: se a view estiver interrompida, a atualização é registrada e executada uma vez quando `SYSTEM START` a liberar.
 
@@ -932,36 +1149,20 @@ SYSTEM REFRESH [db.]table
 SYSTEM REFRESH ALL BACKGROUND
 ```
 
-### Privilégios {#background-privileges}
+<div id="background-privileges">
+  ### Privilégios
+</div>
 
 Cada comando exige o privilégio do mecanismo correspondente: `SYSTEM VIEWS` para uma view materializada atualizável e `SYSTEM STREAMING ENGINES` para uma tabela de streaming. Ambos são subordinados a `SYSTEM BACKGROUND`; portanto, conceder `SYSTEM BACKGROUND` permite controlar a atividade em segundo plano de todas essas tabelas. As formas `ALL BACKGROUND` se aplicam apenas às tabelas que o usuário tem permissão para controlar e ignoram silenciosamente as demais.
 
-## SYSTEM FLUSH OBJECT STORAGE QUEUE {#flush-object-storage-queue}
+<div id="flush-object-storage-queue">
+  ## SYSTEM FLUSH OBJECT STORAGE QUEUE
+</div>
 
 Bloqueia até que o arquivo especificado seja processado ou falhe permanentemente pela tabela [S3Queue](/pt-BR/reference/engines/table-engines/integrations/s3queue) ou [AzureQueue](/pt-BR/reference/engines/table-engines/integrations/azure-queue) informada. Retorna imediatamente se o arquivo já tiver sido processado. Gera um erro se o arquivo tiver falhado permanentemente (todas as tentativas esgotadas).
 
 ```sql
 SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
 ```
-
-## SYSTEM ENABLE|DISABLE FAILPOINT {#failpoint}
-
-Fail points são pontos nomeados no código do servidor onde uma falha pode ser injetada sob demanda — um erro, um atraso ou uma pausa da thread em execução — para fins de teste. Eles são listados na tabela [`system.fail_points`](/pt-BR/reference/system-tables/fail_points) junto com seu estado atual.
-
-```sql
-SYSTEM ENABLE FAILPOINT name
-SYSTEM DISABLE FAILPOINT name
-SYSTEM DISABLE ALL FAILPOINTS
-SYSTEM WAIT FAILPOINT name [PAUSE|RESUME]
-SYSTEM NOTIFY FAILPOINT name
-```
-
-`SYSTEM ENABLE FAILPOINT` arma um único fail point; `SYSTEM DISABLE FAILPOINT` o desarma e retoma qualquer thread bloqueada nele, sendo um no-op caso ele não estivesse habilitado.
-
-`SYSTEM DISABLE ALL FAILPOINTS` desabilita todos os fail points de uma só vez e retoma todas as threads bloqueadas em um fail point pausável. Não recebe nome e é idempotente, de modo que um conjunto de testes pode usá-lo para devolver o servidor a um estado que não injeta nada, sem precisar saber quais fail points o teste anterior habilitou. Em uma compilação sem suporte a fail points, a instrução é executada com sucesso e não faz nada.
-
-`SYSTEM WAIT FAILPOINT ... PAUSE` bloqueia até que uma thread pause no fail point pausável informado (ou até que o fail point seja desabilitado), `... RESUME` bloqueia até que a thread pausada seja retomada, e `SYSTEM NOTIFY FAILPOINT` retoma as threads pausadas sem desabilitar o fail point.
-
-Fail points são estado local do node, portanto nenhuma dessas instruções aceita `ON CLUSTER`. Todas elas exigem o privilégio `SYSTEM FAILPOINT`.
 
 {/*AUTOGENERATED_END*/}

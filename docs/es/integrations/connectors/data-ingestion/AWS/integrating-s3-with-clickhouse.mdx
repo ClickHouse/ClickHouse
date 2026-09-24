@@ -16,7 +16,9 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 Puede insertar datos de S3 en ClickHouse y también usar S3 como destino de exportación, lo que permite interactuar con arquitecturas de &quot;lago de datos&quot;. Además, S3 puede proporcionar niveles de almacenamiento &quot;en frío&quot; y ayudar a separar el almacenamiento del cómputo. En las secciones siguientes, usamos el conjunto de datos de taxis de la ciudad de Nueva York para mostrar el proceso de transferir datos entre S3 y ClickHouse, así como identificar parámetros clave de configuración y ofrecer sugerencias para optimizar el rendimiento.
 
-## Funciones de tabla S3 {#s3-table-functions}
+<div id="s3-table-functions">
+  ## Funciones de tabla S3
+</div>
 
 La función de tabla `s3` permite leer y escribir archivos en almacenamiento compatible con S3. La sintaxis general es la siguiente:
 
@@ -29,11 +31,13 @@ donde:
 * path — URL del bucket con la ruta al archivo. Admite los siguientes comodines en modo de solo lectura: `*`, `?`, `{abc,def}` y `{N..M}`, donde `N` y `M` son números, y `'abc'` y `'def'` son cadenas. Para más información, consulta la documentación sobre el [uso de comodines en la ruta](/es/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * format — El [formato](/es/reference/formats/index#formats-overview) del archivo.
 * structure — Estructura de la tabla. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.
-* compression — El parámetro es opcional. Valores admitidos: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. De forma predeterminada, la compresión se detecta automáticamente según la extensión del archivo. Para `snappy`, la codificación wire se selecciona mediante la configuración [snappy&#95;mode](/es/reference/settings/session-settings/other#snappy_mode) (`basic` de forma predeterminada).
+* compression — El parámetro es opcional. Valores admitidos: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. De forma predeterminada, la compresión se detecta automáticamente según la extensión del archivo.
 
 El uso de comodines en la expresión de ruta permite hacer referencia a varios archivos y posibilita el paralelismo.
 
-### Preparación {#preparation}
+<div id="preparation">
+  ### Preparación
+</div>
 
 Antes de crear la tabla en ClickHouse, quizá quieras echar un vistazo más de cerca a los datos del bucket de S3. Puedes hacerlo directamente desde ClickHouse con la sentencia `DESCRIBE`:
 
@@ -157,7 +161,9 @@ Observe el uso del [particionado](/es/reference/engines/table-engines/mergetree-
 
 Cada registro de nuestro conjunto de datos de taxis contiene un trayecto en taxi. Estos datos anonimizados constan de 20 M de registros comprimidos en el bucket de S3 https://datasets-documentation.s3.eu-west-3.amazonaws.com/, dentro de la carpeta **nyc-taxi**. Los datos están en formato TSV, con aproximadamente 1 M de filas por archivo.
 
-### Lectura de datos desde S3 {#reading-data-from-s3}
+<div id="reading-data-from-s3">
+  ### Lectura de datos desde S3
+</div>
 
 Podemos consultar datos de S3 como origen sin necesidad de persistirlos en ClickHouse. En la siguiente consulta, tomamos una muestra de 10 filas. Tenga en cuenta que aquí no se incluyen credenciales, ya que el bucket es de acceso público:
 
@@ -202,7 +208,9 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trip
 
 Aunque resulta útil para el muestreo de datos y para ejecutar consultas exploratorias ad hoc, leer datos directamente de S3 no es algo que convenga hacer con regularidad. Cuando llegue el momento de tomárselo en serio, importa los datos a una tabla `MergeTree` en ClickHouse.
 
-### Uso de clickhouse-local {#using-clickhouse-local}
+<div id="using-clickhouse-local">
+  ### Uso de clickhouse-local
+</div>
 
 El programa `clickhouse-local` le permite procesar archivos locales rápidamente sin implementar ni configurar el servidor ClickHouse. Cualquier consulta que use la función de tabla `s3` puede ejecutarse con esta utilidad. Por ejemplo:
 
@@ -210,7 +218,9 @@ El programa `clickhouse-local` le permite procesar archivos locales rápidamente
 clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
-### Inserción de datos desde S3 {#inserting-data-from-s3}
+<div id="inserting-data-from-s3">
+  ### Inserción de datos desde S3
+</div>
 
 Para aprovechar al máximo las capacidades de ClickHouse, a continuación leeremos e insertaremos los datos en nuestra instancia.
 Combinamos la función `s3` con una sencilla sentencia `INSERT` para lograrlo. Tenga en cuenta que no es necesario enumerar las columnas, porque la tabla de destino proporciona la estructura requerida. Para ello, las columnas deben aparecer en el orden especificado en la sentencia DDL de la tabla: las columnas se asignan según su posición en la cláusula `SELECT`. La inserción de los 10 millones de filas puede tardar unos minutos, según la instancia de ClickHouse. A continuación, insertamos 1 millón de filas para garantizar una respuesta rápida. Ajuste la cláusula `LIMIT` o la selección de columnas para importar subconjuntos según sea necesario:
@@ -222,7 +232,9 @@ INSERT INTO trips
    LIMIT 1000000;
 ```
 
-### Inserción remota con ClickHouse Local {#remote-insert-using-clickhouse-local}
+<div id="remote-insert-using-clickhouse-local">
+  ### Inserción remota con ClickHouse Local
+</div>
 
 Si las políticas de seguridad de red impiden que su clúster de ClickHouse realice conexiones salientes, es posible insertar datos de S3 mediante `clickhouse-local`. En el ejemplo siguiente, leemos desde un bucket de S3 e insertamos los datos en ClickHouse con la función `remote`:
 
@@ -235,7 +247,7 @@ clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'd
 </Note>
 
 <div id="exporting-data">
-  ### Exportación de datos {#exporting-data}
+  ### Exportación de datos
 </div>
 
 Puede escribir archivos en S3 mediante la función de tabla `s3`. Para ello, necesitará los permisos adecuados. Incluimos las credenciales necesarias en la solicitud, pero consulte la página [Gestión de credenciales](#managing-credentials) para ver más opciones.
@@ -258,7 +270,7 @@ LIMIT 10000;
 Observe aquí cómo el formato del archivo se deduce de la extensión. Tampoco es necesario especificar las columnas en la función `s3`; esto puede deducirse de `SELECT`.
 
 <div id="splitting-large-files">
-  ### Dividir archivos grandes {#splitting-large-files}
+  ### Dividir archivos grandes
 </div>
 
 Es poco probable que quieras exportar tus datos a un único archivo. La mayoría de las herramientas, incluido ClickHouse, obtienen un mayor rendimiento al leer y escribir en varios archivos gracias a la posibilidad de procesarlos en paralelo. Podríamos ejecutar nuestro comando `INSERT` varias veces, cada una sobre un subconjunto de los datos. ClickHouse ofrece una forma de dividir archivos automáticamente mediante una clave `PARTITION`.
@@ -295,7 +307,9 @@ FROM trips
 LIMIT 100000;
 ```
 
-### Uso de clústeres {#utilizing-clusters}
+<div id="utilizing-clusters">
+  ### Uso de clústeres
+</div>
 
 Las funciones anteriores están limitadas a ejecutarse en un solo nodo. Las velocidades de lectura escalarán linealmente con los núcleos de CPU hasta que se saturen otros recursos (normalmente, la red), lo que permite a los usuarios escalar verticalmente. Sin embargo, este enfoque tiene sus limitaciones. Aunque puede aliviar parte de la presión sobre los recursos insertando en una tabla distribuida al realizar una consulta `INSERT INTO SELECT`, esto sigue dejando a un solo nodo a cargo de leer, analizar y procesar los datos. Para abordar este desafío y poder escalar las lecturas horizontalmente, contamos con la función [s3Cluster](/es/reference/functions/table-functions/s3Cluster).
 
@@ -330,7 +344,9 @@ INSERT INTO default.trips_all
 
 Las inserciones se realizarán en el nodo iniciador. Esto significa que, aunque las lecturas se realizarán en cada nodo, las filas resultantes se enviarán al iniciador para su distribución. En escenarios de alto volumen, esto puede convertirse en un cuello de botella. Para solucionarlo, establezca el parámetro [parallel&#95;distributed&#95;insert&#95;select](/es/reference/settings/session-settings/parallel#parallel_distributed_insert_select) para la función `s3cluster`.
 
-## Motores de tabla de S3 {#s3-table-engines}
+<div id="s3-table-engines">
+  ## Motores de tabla de S3
+</div>
 
 Aunque las funciones `s3` permiten realizar consultas ad hoc sobre datos almacenados en S3, su sintaxis es verbosa. El motor de tabla `S3` evita tener que especificar la URL del bucket y las credenciales una y otra vez. Para ello, ClickHouse proporciona el motor de tabla S3.
 
@@ -343,9 +359,11 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `path` — URL del bucket con la ruta del archivo. Admite los siguientes comodines en modo de solo lectura: `*`, `?`, `{abc,def}` y `{N..M}`, donde N y M son números, y &#39;abc&#39; y &#39;def&#39; son cadenas. Para más información, consulte [aquí](/es/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * `format` — El [formato](/es/reference/formats/index#formats-overview) del archivo.
 * `aws_access_key_id`, `aws_secret_access_key` - Credenciales de larga duración para el usuario de la cuenta de AWS. Puede usarlas para autenticar sus solicitudes. El parámetro es opcional. Si no se especifican credenciales, se usan los valores del archivo de configuración. Para más información, consulte [Gestión de credenciales](#managing-credentials).
-* `compression` — Tipo de compresión. Valores admitidos: none, gzip/gz, deflate, brotli/br, xz/LZMA, zstd/zst, lz4, bz2, snappy. El parámetro es opcional. De forma predeterminada, la compresión se detecta automáticamente según la extensión del archivo. Para `snappy`, la codificación wire se selecciona mediante la configuración [snappy&#95;mode](/es/reference/settings/session-settings/other#snappy_mode) (`basic` de forma predeterminada).
+* `compression` — Tipo de compresión. Valores admitidos: none, gzip/gz, brotli/br, xz/LZMA, zstd/zst. El parámetro es opcional. De forma predeterminada, la compresión se detecta automáticamente según la extensión del archivo.
 
-### Lectura de datos {#reading-data}
+<div id="reading-data">
+  ### Lectura de datos
+</div>
 
 En el siguiente ejemplo, creamos una tabla llamada `trips_raw` con los primeros diez archivos TSV ubicados en el bucket `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/`. Cada uno de ellos contiene 1 millón de filas:
 
@@ -424,7 +442,7 @@ LIMIT 10;
 ```
 
 <div id="inserting-data">
-  ### Inserción de datos {#inserting-data}
+  ### Inserción de datos
 </div>
 
 El motor de tabla `S3` admite lecturas en paralelo. Las escrituras solo se admiten si la definición de la tabla no contiene patrones glob. Por tanto, la tabla anterior bloquearía las escrituras.
@@ -487,7 +505,7 @@ Algunas notas sobre el motor de tabla `S3`:
   * No existe el concepto de índices, es decir, primarios o de omisión.
 
 <div id="managing-credentials">
-  ## Gestión de credenciales {#managing-credentials}
+  ## Gestión de credenciales
 </div>
 
 En los ejemplos anteriores, hemos pasado las credenciales en la función `s3` o en la definición de la tabla `S3`. Aunque esto puede ser aceptable para un uso ocasional, en producción se necesitan mecanismos de authentication menos explícitos. Para ello, ClickHouse ofrece varias opciones:
@@ -531,19 +549,19 @@ En los ejemplos anteriores, hemos pasado las credenciales en la función `s3` o 
   * Estos mismos Settings también pueden establecerse para un endpoint específico, utilizando la misma regla de coincidencia por prefijo.
 
 <div id="s3-optimizing-performance">
-  ## Optimización del rendimiento {#s3-optimizing-performance}
+  ## Optimización del rendimiento
 </div>
 
 Para obtener información sobre cómo optimizar la lectura y la inserción con la función s3, consulta la [guía de rendimiento específica](/es/integrations/connectors/data-ingestion/AWS/performance).
 
 <div id="s3-storage-tuning">
-  ### Ajuste del almacenamiento en S3 {#s3-storage-tuning}
+  ### Ajuste del almacenamiento en S3
 </div>
 
 Internamente, el MergeTree de ClickHouse utiliza dos formatos de almacenamiento principales: [`Wide` y `Compact`](/es/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage). Aunque la implementación actual usa el comportamiento predeterminado de ClickHouse (controlado mediante los ajustes `min_bytes_for_wide_part` y `min_rows_for_wide_part`), esperamos que este comportamiento sea distinto para S3 en futuras versiones; por ejemplo, un valor predeterminado más alto de `min_bytes_for_wide_part` favorecería un formato más `Compact` y, por lo tanto, menos archivos. En este momento, quizá le convenga ajustar estos parámetros si utiliza exclusivamente almacenamiento en S3.
 
 <div id="s3-backed-mergetree">
-  ## MergeTree respaldado por S3 {#s3-backed-mergetree}
+  ## MergeTree respaldado por S3
 </div>
 
 Las funciones `s3` y el motor de tabla asociado nos permiten consultar datos en S3 con la sintaxis habitual de ClickHouse. Sin embargo, en cuanto a funcionalidades de gestión de datos y rendimiento, son limitados. No admiten índices primarios ni caché, y las inserciones de archivos deben gestionarse por parte del usuario.
@@ -551,7 +569,7 @@ Las funciones `s3` y el motor de tabla asociado nos permiten consultar datos en 
 ClickHouse reconoce que S3 es una solución de almacenamiento atractiva, especialmente cuando el rendimiento de las consultas sobre datos &quot;más fríos&quot; es menos crítico y los usuarios buscan separar el almacenamiento del cómputo. Para facilitarlo, se ofrece compatibilidad para usar S3 como almacenamiento de un motor MergeTree. Esto le permitirá aprovechar la escalabilidad y las ventajas de coste de S3, así como el rendimiento de inserción y consulta del motor MergeTree.
 
 <div id="storage-tiers">
-  ### Niveles de almacenamiento {#storage-tiers}
+  ### Niveles de almacenamiento
 </div>
 
 Los volúmenes de almacenamiento de ClickHouse permiten abstraer los discos físicos del motor de tabla MergeTree. Un mismo volumen puede estar compuesto por un conjunto ordenado de discos. Aunque esta abstracción permite principalmente usar varios dispositivos de bloques para almacenar datos, también admite otros tipos de almacenamiento, incluido S3. Las partes de datos de ClickHouse pueden moverse entre volúmenes según las políticas de almacenamiento y los niveles de ocupación, lo que da lugar al concepto de niveles de almacenamiento.
@@ -559,7 +577,7 @@ Los volúmenes de almacenamiento de ClickHouse permiten abstraer los discos fís
 Los niveles de almacenamiento hacen posibles las arquitecturas hot-cold, en las que los datos más recientes, que por lo general también son los más consultados, requieren solo una pequeña cantidad de espacio en almacenamiento de alto rendimiento, por ejemplo, SSD NVMe. A medida que los datos envejecen, aumentan los SLA de los tiempos de consulta, al igual que la frecuencia de las consultas. Esta larga cola de datos puede almacenarse en medios más lentos y de menor rendimiento, como HDD o almacenamiento de objetos como S3.
 
 <div id="creating-a-disk">
-  ### Creación de un disco {#creating-a-disk}
+  ### Creación de un disco
 </div>
 
 Para utilizar un bucket de S3 como disco, primero debemos declararlo en el archivo de configuración de ClickHouse. Puede ampliar `config.xml` o, preferiblemente, crear un archivo nuevo en `conf.d`. A continuación se muestra un ejemplo de declaración de un disco S3:
@@ -593,7 +611,7 @@ Para utilizar un bucket de S3 como disco, primero debemos declararlo en el archi
 Puede encontrar una lista completa de la configuración pertinente para esta declaración de disco [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). Tenga en cuenta que las credenciales pueden administrarse aquí mediante los mismos métodos descritos en [Gestión de credenciales](#managing-credentials); es decir, `use&#95;environment&#95;credentials` puede establecerse en true en el bloque de configuración anterior para usar roles de IAM.
 
 <div id="creating-a-storage-policy">
-  ### Creación de una política de almacenamiento {#creating-a-storage-policy}
+  ### Creación de una política de almacenamiento
 </div>
 
 Una vez configurado, este &quot;disco&quot; puede utilizarse en un volumen de almacenamiento declarado dentro de una política. En el siguiente ejemplo, asumimos que S3 es nuestro único almacenamiento. Esto deja de lado arquitecturas hot-cold más complejas, en las que los datos pueden reubicarse en función de los TTL y de los niveles de ocupación.
@@ -622,7 +640,9 @@ Una vez configurado, este &quot;disco&quot; puede utilizarse en un volumen de al
 </clickhouse>
 ```
 
-### Creación de una tabla {#creating-a-table}
+<div id="creating-a-table">
+  ### Creación de una tabla
+</div>
 
 Si ha configurado el disco para usar un bucket con acceso de escritura, debería poder crear una tabla como en el ejemplo siguiente. Para simplificar, usamos un subconjunto de las columnas de taxis de NYC y transmitimos los datos directamente a la tabla respaldada por S3:
 
@@ -660,7 +680,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="modifying-a-table">
-  ### Modificar una tabla {#modifying-a-table}
+  ### Modificar una tabla
 </div>
 
 En ocasiones, puede ser necesario modificar la política de almacenamiento de una tabla concreta. Aunque esto es posible, tiene limitaciones. La nueva política de destino debe contener todos los discos y volúmenes de la política anterior; es decir, los datos no se migrarán para adaptarse a un cambio de política. Al validar estas restricciones, los volúmenes y los discos se identificarán por su nombre, y cualquier intento de infringirlas producirá un error. No obstante, si usa los ejemplos anteriores, los siguientes cambios son válidos.
@@ -695,12 +715,14 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 Aquí reutilizamos el volumen principal en nuestra nueva política s3&#95;tiered e introducimos un nuevo volumen hot. Este usa el disco predeterminado, que consta de un único disco configurado mediante el parámetro `<path>`. Ten en cuenta que los nombres de nuestros volúmenes y discos no cambian.  Los nuevos datos insertados en nuestra tabla residirán en el disco predeterminado hasta que este alcance move&#95;factor * disk&#95;size; en ese momento, los datos se reubicarán en S3.
 
 <div id="handling-replication">
-  ### Gestión de la replicación {#handling-replication}
+  ### Gestión de la replicación
 </div>
 
 La replicación con discos S3 puede implementarse mediante el motor de tabla `ReplicatedMergeTree`. Consulte la guía sobre [cómo replicar un único segmento entre dos regiones de AWS con almacenamiento de objetos S3](#s3-multi-region) para obtener más detalles.
 
-### Lecturas y escrituras {#read--writes}
+<div id="read--writes">
+  ### Lecturas y escrituras
+</div>
 
 Las siguientes notas describen la implementación de las interacciones de S3 con ClickHouse. Aunque en general son solo informativas, pueden resultar útiles al [optimización del rendimiento](#s3-optimizing-performance):
 
@@ -709,13 +731,13 @@ Las siguientes notas describen la implementación de las interacciones de S3 con
 * Las escrituras se realizan en paralelo, con un máximo de 100 hilos concurrentes de escritura de archivos. `max_insert_delayed_streams_for_parallel_write`, que tiene un valor predeterminado de 1000, controla el número de blobs de S3 que se escriben en paralelo. Como se requiere un búfer para cada archivo que se escribe (~1MB), esto limita de forma efectiva el consumo de memoria de un INSERT. Puede ser conveniente reducir este valor en entornos con poca memoria en el servidor.
 
 <div id="configuring-s3-for-clickhouse-use">
-  ## Usar el almacenamiento de objetos de S3 como disco de ClickHouse {#configuring-s3-for-clickhouse-use}
+  ## Usar el almacenamiento de objetos de S3 como disco de ClickHouse
 </div>
 
 Si necesitas instrucciones paso a paso para crear buckets y un rol de IAM, consulta [&quot;Cómo crear un usuario de IAM de AWS y un bucket de S3&quot;](/es/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)
 
 <div id="configure-clickhouse-to-use-the-s3-bucket-as-a-disk">
-  ### Configure ClickHouse para usar el bucket de S3 como disco {#configure-clickhouse-to-use-the-s3-bucket-as-a-disk}
+  ### Configure ClickHouse para usar el bucket de S3 como disco
 </div>
 
 El siguiente ejemplo se basa en un paquete Deb para Linux instalado como servicio con los directorios predeterminados de ClickHouse.
@@ -781,7 +803,9 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
-### Prueba {#testing}
+<div id="testing">
+  ### Prueba
+</div>
 
 1. Inicie sesión con el cliente de ClickHouse; por ejemplo:
 
@@ -862,7 +886,7 @@ SELECT * FROM s3_table1;
 <Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="Vista del bucket de S3 en la consola de AWS que muestra archivos de datos de ClickHouse almacenados en S3" />
 
 <div id="s3-multi-region">
-  ## Replicar un único segmento entre dos regiones de AWS mediante almacenamiento de objetos en S3 {#s3-multi-region}
+  ## Replicar un único segmento entre dos regiones de AWS mediante almacenamiento de objetos en S3
 </div>
 
 <Tip>
@@ -870,7 +894,7 @@ SELECT * FROM s3_table1;
 </Tip>
 
 <div id="plan-the-deployment">
-  ### Planifique la implementación {#plan-the-deployment}
+  ### Planifique la implementación
 </div>
 
 Este tutorial se basa en la implementación de dos nodos de servidor de ClickHouse y tres nodos de ClickHouse Keeper en AWS EC2. El almacenamiento de datos de los servidores ClickHouse se realiza en S3. Se utilizan dos regiones de AWS, con un servidor de ClickHouse y un bucket de S3 en cada región, para posibilitar la recuperación ante desastres.
@@ -878,17 +902,17 @@ Este tutorial se basa en la implementación de dos nodos de servidor de ClickHou
 Las tablas de ClickHouse se replican entre los dos servidores y, por tanto, entre las dos regiones.
 
 <div id="install-software">
-  ### Instalar el software {#install-software}
+  ### Instalar el software
 </div>
 
 <div id="clickhouse-server-nodes">
-  #### Nodos del servidor ClickHouse {#clickhouse-server-nodes}
+  #### Nodos del servidor ClickHouse
 </div>
 
 Consulta las [instrucciones de instalación](/es/get-started/setup/install) al llevar a cabo los pasos de implementación en los nodos del servidor ClickHouse.
 
 <div id="deploy-clickhouse">
-  #### Desplegar ClickHouse {#deploy-clickhouse}
+  #### Desplegar ClickHouse
 </div>
 
 Despliegue ClickHouse en dos hosts; en las configuraciones de ejemplo, estos se denominan `chnode1` y `chnode2`.
@@ -896,7 +920,7 @@ Despliegue ClickHouse en dos hosts; en las configuraciones de ejemplo, estos se 
 Coloque `chnode1` en una región de AWS y `chnode2` en una segunda región.
 
 <div id="deploy-clickhouse-keeper">
-  #### Desplegar ClickHouse Keeper {#deploy-clickhouse-keeper}
+  #### Desplegar ClickHouse Keeper
 </div>
 
 Despliegue ClickHouse Keeper en tres hosts; en las configuraciones de ejemplo, se denominan `keepernode1`, `keepernode2` y `keepernode3`. `keepernode1` puede desplegarse en la misma región que `chnode1`, `keepernode2` junto con `chnode2` y `keepernode3` en cualquiera de las dos regiones, pero en una zona de disponibilidad distinta de la del nodo de ClickHouse de esa región.
@@ -904,7 +928,7 @@ Despliegue ClickHouse Keeper en tres hosts; en las configuraciones de ejemplo, s
 Consulte las [instrucciones de instalación](/es/get-started/setup/install) al realizar los pasos de despliegue en los nodos de ClickHouse Keeper.
 
 <div id="create-s3-buckets">
-  ### Crear buckets de S3 {#create-s3-buckets}
+  ### Crear buckets de S3
 </div>
 
 Cree dos buckets de S3, uno en cada una de las regiones donde ha ubicado `chnode1` y `chnode2`.
@@ -952,7 +976,7 @@ Los archivos de configuración se colocarán en `/etc/clickhouse-server/config.d
 </Note>
 
 <div id="configure-clickhouse-keeper">
-  ### Configurar ClickHouse Keeper {#configure-clickhouse-keeper}
+  ### Configurar ClickHouse Keeper
 </div>
 
 Cuando se ejecuta ClickHouse Keeper en modo standalone (independiente del servidor de ClickHouse), la configuración se define en un único archivo XML. En este tutorial, el archivo es `/etc/clickhouse-keeper/keeper_config.xml`. Los tres servidores Keeper usan la misma configuración, con una única diferencia: `<server_id>`.
@@ -1010,11 +1034,11 @@ sudo -u clickhouse \
 ```
 
 <div id="configure-clickhouse-server">
-  ### Configurar el servidor de ClickHouse {#configure-clickhouse-server}
+  ### Configurar el servidor de ClickHouse
 </div>
 
 <div id="define-a-cluster">
-  #### Definir un clúster {#define-a-cluster}
+  #### Definir un clúster
 </div>
 
 Los clústeres de ClickHouse se definen en la sección `<remote_servers>` de la configuración. En este ejemplo, se define un clúster, `cluster_1S_2R`, que consta de un único segmento con dos réplicas. Las réplicas están ubicadas en los hosts `chnode1` y `chnode2`.
@@ -1058,7 +1082,7 @@ Cuando se trabaja con clústeres, resulta útil definir macros que rellenen las 
 </Note>
 
 <div id="disable-zero-copy-replication">
-  #### Deshabilitar la replicación zero-copy {#disable-zero-copy-replication}
+  #### Deshabilitar la replicación zero-copy
 </div>
 
 En las versiones 22.7 y anteriores de ClickHouse, la configuración `allow_remote_fs_zero_copy_replication` está establecida en `true` de forma predeterminada para los discos S3 y HDFS. Para este escenario de recuperación ante desastres, esta configuración debe establecerse en `false`; a partir de la versión 22.8, ya está establecida en `false` de forma predeterminada.
@@ -1095,7 +1119,7 @@ ClickHouse Keeper se encarga de coordinar la replicación de datos entre los nod
 ```
 
 <div id="configure-networking">
-  ### Configurar la red {#configure-networking}
+  ### Configurar la red
 </div>
 
 Consulta la lista de [puertos de red](/es/concepts/features/security/network-ports) al configurar los ajustes de seguridad en AWS para que tus servidores puedan comunicarse entre sí y para que tú puedas comunicarte con ellos.
@@ -1109,11 +1133,11 @@ Los tres servidores deben aceptar conexiones de red para poder comunicarse entre
 ```
 
 <div id="start-the-servers">
-  ### Iniciar los servidores {#start-the-servers}
+  ### Iniciar los servidores
 </div>
 
 <div id="run-clickhouse-keeper">
-  #### Ejecutar ClickHouse Keeper {#run-clickhouse-keeper}
+  #### Ejecutar ClickHouse Keeper
 </div>
 
 En cada servidor Keeper, ejecute los comandos de su sistema operativo; por ejemplo:
@@ -1125,7 +1149,7 @@ sudo systemctl status clickhouse-keeper
 ```
 
 <div id="check-clickhouse-keeper-status">
-  #### Comprobar el estado de ClickHouse Keeper {#check-clickhouse-keeper-status}
+  #### Comprobar el estado de ClickHouse Keeper
 </div>
 
 Envíe comandos a ClickHouse Keeper con `netcat`.  Por ejemplo, `mntr` devuelve el estado del clúster de ClickHouse Keeper.  Si ejecuta el comando en cada uno de los nodos de Keeper, verá que uno es el leader y los otros dos son followers:
@@ -1157,7 +1181,7 @@ zk_synced_followers     2
 ```
 
 <div id="run-clickhouse-server">
-  #### Ejecute el servidor de ClickHouse {#run-clickhouse-server}
+  #### Ejecute el servidor de ClickHouse
 </div>
 
 En cada servidor de ClickHouse, ejecute
@@ -1166,7 +1190,9 @@ En cada servidor de ClickHouse, ejecute
 sudo service clickhouse-server start
 ```
 
-#### Verificar el servidor de ClickHouse {#verify-clickhouse-server}
+<div id="verify-clickhouse-server">
+  #### Verificar el servidor de ClickHouse
+</div>
 
 Cuando agregó la [configuración del clúster](#define-a-cluster), se definió un único segmento replicado entre los dos nodos de ClickHouse. En este paso de verificación, comprobará que el clúster se creó cuando se inició ClickHouse y creará una tabla replicada usando ese clúster.
 
@@ -1237,7 +1263,9 @@ Cuando agregó la [configuración del clúster](#define-a-cluster), se definió 
   Puede personalizar la ruta de ZooKeeper `'clickhouse/tables/{uuid}/{shard}` que se muestra arriba configurando `default_replica_path` y `default_replica_name`. La documentación está [aquí](/es/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
-### Pruebas {#testing-1}
+<div id="testing-1">
+  ### Pruebas
+</div>
 
 Estas pruebas verificarán que los datos se estén replicando entre los dos servidores y que se almacenen en los buckets de S3, no en el disco local.
 
@@ -1303,7 +1331,7 @@ Estas pruebas verificarán que los datos se estén replicando entre los dos serv
 <Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="Tamaño de los datos en el segundo bucket de S3, con métricas de uso de almacenamiento" />
 
 <div id="s3express">
-  ## S3Express {#s3express}
+  ## S3Express
 </div>
 
 [S3Express](https://aws.amazon.com/s3/storage-classes/express-one-zone/) es una nueva clase de almacenamiento de alto rendimiento de Amazon S3 en una única zona de disponibilidad.
@@ -1315,7 +1343,7 @@ Puedes consultar este [blog](https://aws.amazon.com/blogs/storage/clickhouse-clo
 </Note>
 
 <div id="s3-disk">
-  ### Disco S3 {#s3-disk}
+  ### Disco S3
 </div>
 
 Para crear una tabla con almacenamiento respaldado por un bucket de S3Express, siga estos pasos:
@@ -1363,7 +1391,7 @@ SETTINGS storage_policy = 's3_express';
 ```
 
 <div id="s3-storage">
-  ### Almacenamiento S3 {#s3-storage}
+  ### Almacenamiento S3
 </div>
 
 El almacenamiento S3 también es compatible, pero solo para rutas `Object URL`. Ejemplo:
@@ -1384,7 +1412,7 @@ también es necesario especificar la región del bucket en la configuración:
 ```
 
 <div id="backups">
-  ### Copias de seguridad {#backups}
+  ### Copias de seguridad
 </div>
 
 Es posible almacenar una copia de seguridad en el disco que creamos anteriormente:

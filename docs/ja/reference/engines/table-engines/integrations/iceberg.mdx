@@ -17,7 +17,9 @@ doc_type: 'reference'
 
 このエンジンは、Amazon S3、Azure、HDFS、およびローカルに保存された Apache [Iceberg](https://iceberg.apache.org/) テーブルに対する*データ*インテグレーションを提供します。
 
-## テーブルの作成 {#create-table}
+<div id="create-table">
+  ## テーブルの作成
+</div>
 
 明示的にスキーマを指定しない場合、Icebergテーブルはストレージ上にあらかじめ存在している必要があります。書き込み可能なバックエンドに新しいスタンドアロンのIcebergテーブルを作成するには、`CREATE TABLE`ステートメントでスキーマを指定します。
 
@@ -35,7 +37,9 @@ CREATE TABLE iceberg_table_local
     ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
 ```
 
-## エンジン引数 {#engine-arguments}
+<div id="engine-arguments">
+  ## エンジン引数
+</div>
 
 引数の説明は、それぞれ `S3`、`AzureBlobStorage`、`HDFS`、`File` エンジンの引数の説明に対応しています。
 `format` は、Icebergテーブル内のデータファイルのフォーマットを表します。
@@ -44,7 +48,9 @@ CREATE TABLE iceberg_table_local
 
 エンジンパラメータは、[Named Collections](/ja/concepts/features/configuration/server-config/named-collections) を使用して指定できます
 
-### 例 {#example}
+<div id="example">
+  ### 例
+</div>
 
 ```sql
 CREATE TABLE iceberg_table ENGINE=IcebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
@@ -69,15 +75,21 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 ```
 
-## 別名 {#aliases}
+<div id="aliases">
+  ## 別名
+</div>
 
 `Iceberg` テーブルエンジンは、`disk` 設定からストレージバックエンドを自動検出し、それに応じて `IcebergS3`、`IcebergAzure`、または `IcebergLocal` を使い分けます。`disk` が指定されていない場合は、デフォルトで `IcebergS3` 実装が使用されます。
 
-## データ型 {#data-types}
+<div id="data-types">
+  ## データ型
+</div>
 
 次の表は、スキーマ推論時に (読み取り用として) Iceberg のデータ型が ClickHouse のデータ型にどのように対応付けられるかを示しています。
 
-### 基本データ型 {#primitive-types}
+<div id="primitive-types">
+  ### 基本データ型
+</div>
 
 | Iceberg 型          | ClickHouse 型           | 注記                                |
 | ------------------ | ---------------------- | --------------------------------- |
@@ -97,7 +109,9 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 | `fixed(N)`         | `FixedString(N)`       |                                   |
 | `decimal(P, S)`    | `Decimal(P, S)`        |                                   |
 
-### 複雑な型 {#complex-types}
+<div id="complex-types">
+  ### 複雑な型
+</div>
 
 | Iceberg 型 | ClickHouse 型 |
 | --------- | ------------ |
@@ -105,7 +119,9 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 | `map`     | `Map`        |
 | `struct`  | `Tuple`      |
 
-## スキーマおよび書き込みの互換性に関する制限事項 {#schema-and-write-compatibility-limitations}
+<div id="schema-and-write-compatibility-limitations">
+  ## スキーマおよび書き込みの互換性に関する制限事項
+</div>
 
 上記のデータ型マッピングは読み取り時に適用されます。ClickHouse で Iceberg スキーマを作成または変更し、データを書き込む際には、以下の制限事項があります。
 
@@ -114,7 +130,9 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 * ClickHouse では、`decimal`、`fixed`、`timestamp_ns`、`timestamptz_ns` のカラムを直接パーティションフィールドとして使用する Iceberg テーブルには書き込めません。この操作は、サポートされていない型の例外により失敗します。
 * `Bool` や `Decimal` など、ClickHouse が境界値をシリアル化できない型を含むデータファイルでは、ClickHouse は Iceberg マニフェストエントリからすべてのカラムの下限値と上限値を省略します。カラムサイズと null カウントは引き続き含まれ、データの正確性も維持されますが、リーダーはこれらのファイルに対してマニフェストレベルの min-max プルーニングを使用できません。
 
-## スキーマの進化 {#schema-evolution}
+<div id="schema-evolution">
+  ## スキーマの進化
+</div>
 
 ClickHouse は、時間の経過とともにスキーマが変化した Iceberg テーブル の読み取りをサポートしています。これには、カラムが追加、削除、並べ替えされたテーブルや、カラムが required から Nullable に変更されたテーブルが含まれます。さらに、次の型変換がサポートされています。
 
@@ -126,15 +144,21 @@ ClickHouse は、時間の経過とともにスキーマが変化した Iceberg 
 
 動的なスキーマ推論を使用して作成したテーブルで、作成後にスキーマが変更されたものを読み取るには、テーブルの作成時に allow&#95;dynamic&#95;metadata&#95;for&#95;data&#95;lakes = true を設定します。
 
-## パーティションプルーニング {#partition-pruning}
+<div id="partition-pruning">
+  ## パーティションプルーニング
+</div>
 
 ClickHouse は、Iceberg テーブルに対する SELECT クエリでパーティションプルーニングをサポートしており、無関係なデータファイルをスキップすることでクエリパフォーマンスを最適化できます。パーティションプルーニングを有効にするには、`use_iceberg_partition_pruning = 1` を設定します。Iceberg のパーティションプルーニングの詳細については、https://iceberg.apache.org/spec/#partitioning を参照してください
 
-## タイムトラベル {#time-travel}
+<div id="time-travel">
+  ## タイムトラベル
+</div>
 
 ClickHouse は Iceberg テーブルでのタイムトラベルをサポートしており、特定のタイムスタンプまたはスナップショット ID を指定して過去のデータをクエリできます。
 
-## マニフェストファイルのコンパクション {#manifest-compaction}
+<div id="manifest-compaction">
+  ## マニフェストファイルのコンパクション
+</div>
 
 時間の経過とともに、Iceberg テーブルへの頻繁な書き込みによって、現在のスナップショットのマニフェストリストに多数の小さなマニフェストファイルが蓄積されることがあります。マニフェストリストが長くなると、データファイルを見つけるためにすべてのマニフェストファイルを読み取る必要があるため、クエリプランの作成が遅くなります。ClickHouse では、`OPTIMIZE TABLE ... MANIFEST` ステートメントを使用して、これらのマニフェストファイルを、より少数で大きなものにコンパクションできます。
 
@@ -144,26 +168,32 @@ OPTIMIZE TABLE example_table MANIFEST SETTINGS allow_experimental_iceberg_compac
 
 これにより、新しいスナップショット (`replace` 操作) が生成され、統合された一連のマニフェストファイルを介して同じデータファイルを参照するようになります。データファイルは書き換えられず、行の追加・削除・重複排除も行われません。再編成されるのはマニフェスト層だけです。
 
-### 要件と動作 {#manifest-compaction-behavior}
+<div id="manifest-compaction-behavior">
+  ### 要件と動作
+</div>
 
 * この機能は Experimental であり、`allow_experimental_iceberg_compaction` 設定で制御されます。設定が有効になっていない場合、このステートメントは例外をスローします。
-* コンパクション は、現在のスナップショット のマニフェストリスト内のマニフェストファイル数が `iceberg_manifest_min_count_to_compact` 設定で指定された threshold (デフォルトは `100`。これは Iceberg table property `commit.manifest.min-count-to-merge` のドキュメントに記載されたデフォルト値です) を超えた場合にのみ試行されます。現在の数が threshold 以下の場合、コンパクション はスキップされ、新しい スナップショット は作成されません。より積極的に コンパクション を行うには、threshold を低く設定してください。
-* `OPTIMIZE TABLE ... MANIFEST` は Iceberg テーブル でのみサポートされています。これを他の テーブルエンジン に対して実行すると、例外をスローします。
+* コンパクション は、current スナップショット のマニフェストリスト内のマニフェストファイル数が `iceberg_manifest_min_count_to_compact` 設定で指定された threshold (デフォルトは `30`) を超えた場合にのみ試行されます。現在の数が threshold 以下の場合、コンパクション はスキップされ、新しい スナップショット は作成されません。より積極的に コンパクション を行うには、threshold を低く設定してください。
+* `OPTIMIZE TABLE ... MANIFEST` は Iceberg tables でのみサポートされています。これを他の テーブルエンジン に対して実行すると、例外をスローします。
 * `OPTIMIZE TABLE ... MANIFEST` は Iceberg format-version 2 の table でのみサポートされています。これを format-version 1 の table に対して実行すると例外をスローし、format-version 3 の table に対して実行した場合も同様です。これは、v3 の row-lineage `first_row_id` メタデータが manifest rewrite を通じてまだ往復変換されないためです。
-* `OPTIMIZE TABLE ... MANIFEST` は、データファイル にファイルごとの `key_metadata` を含む暗号化された Iceberg テーブル ではサポートされていません。manifest rewrite の過程でこの暗号化メタデータを保持する機能はまだ実装されていないため、このステートメントは `NOT_IMPLEMENTED` 例外をスローします。
+* `OPTIMIZE TABLE ... MANIFEST` は、data files にファイルごとの `key_metadata` を含む暗号化された Iceberg tables ではサポートされていません。manifest rewrite の過程でこの暗号化メタデータを保持する機能はまだ実装されていないため、このステートメントは `NOT_IMPLEMENTED` 例外をスローします。
 
-## 削除された行があるテーブルの処理 {#deleted-rows}
+<div id="deleted-rows">
+  ## 削除された行があるテーブルの処理
+</div>
 
 ClickHouse は、以下の削除方式を使用する Iceberg テーブルの読み取りをサポートしています。
 
 * [位置削除](https://iceberg.apache.org/spec/#position-delete-files)
 * [等価削除](https://iceberg.apache.org/spec/#equality-delete-files) (バージョン 25.8+ でサポート)
-* [削除ベクター](https://iceberg.apache.org/spec/#deletion-vectors) (v3 で導入)
 
-削除ベクターのサポートは読み取り専用です。ClickHouse は削除ベクターの書き込み、更新、コンパクションを行いません。
-Iceberg フォーマットバージョン 3 のテーブルでは、`ALTER TABLE ... DELETE` および `ALTER TABLE ... UPDATE` はサポートされていません。
+以下の削除方式は **サポートされていません**。
 
-### 基本的な使い方 {#basic-usage}
+* [削除ベクトル](https://iceberg.apache.org/spec/#deletion-vectors) (v3 で導入)
+
+<div id="basic-usage">
+  ### 基本的な使い方
+</div>
 
 ```sql
  SELECT * FROM example_table ORDER BY 1
@@ -177,7 +207,9 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 
 注: 同一のクエリで `iceberg_timestamp_ms` パラメータと `iceberg_snapshot_id` パラメータを同時に指定することはできません。
 
-### 重要な注意点 {#important-considerations}
+<div id="important-considerations">
+  ### 重要な注意点
+</div>
 
 * **スナップショット** は通常、次の場合に作成されます:
   * 新しいデータがテーブルに書き込まれたとき
@@ -185,11 +217,15 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 
 * **スキーマ変更では通常、スナップショットは作成されません** - このため、スキーマ進化を経たテーブルでタイムトラベルを使用する場合には、重要な挙動の違いが生じます。
 
-### シナリオ例 {#example-scenarios}
+<div id="example-scenarios">
+  ### シナリオ例
+</div>
 
 これらのシナリオでは、外部の Iceberg ライターによるスキーマ変更を Spark を使って説明します。
 
-#### シナリオ 1: 新しいスナップショットがない場合のスキーマ変更 {#scenario-1}
+<div id="scenario-1">
+  #### シナリオ 1: 新しいスナップショットがない場合のスキーマ変更
+</div>
 
 次の一連の操作を考えてみましょう。
 
@@ -249,7 +285,9 @@ ts3 = now()
 * ts1 と ts2: 元の 2 つのカラムのみが表示されます
 * ts3: 3 つのカラムすべてが表示され、最初の行の price は NULL になります
 
-#### シナリオ 2: 過去と現在のスキーマの違い {#scenario-2}
+<div id="scenario-2">
+  #### シナリオ 2: 過去と現在のスキーマの違い
+</div>
 
 現在時点でのタイムトラベルクエリでは、現在のテーブルとは異なるスキーマが表示されることがあります。
 
@@ -291,7 +329,9 @@ ts = now();
 
 これは、`ALTER TABLE` では新しいスナップショットが作成されず、現在のテーブルについては Spark がスナップショットではなく最新のメタデータファイルから `schema_id` の値を取得するためです。
 
-#### シナリオ 3: 過去のスキーマと現在のスキーマの違い {#scenario-3}
+<div id="scenario-3">
+  #### シナリオ 3: 過去のスキーマと現在のスキーマの違い
+</div>
 
 2 つ目は、タイムトラベルを行っても、テーブルにまだ一度もデータが書き込まれていない時点の状態は取得できないということです:
 
@@ -312,11 +352,15 @@ ts = now();
 
 ClickHouse では、この挙動は Spark と共通です。Spark の Select クエリを ClickHouse の Select クエリに置き換えて考えても、同じように機能します。
 
-## メタデータファイルの解決 {#metadata-file-resolution}
+<div id="metadata-file-resolution">
+  ## メタデータファイルの解決
+</div>
 
 ClickHouse で `Iceberg` テーブルエンジンを使用する場合、システムは Iceberg テーブルの構造を記述した適切な metadata.json ファイルを特定する必要があります。この解決処理は、次のように行われます。
 
-### 候補の検索 {#candidate-search}
+<div id="candidate-search">
+  ### 候補の検索
+</div>
 
 1. **パスの直接指定**:
 
@@ -333,7 +377,9 @@ ClickHouse で `Iceberg` テーブルエンジンを使用する場合、シス�
 
 * 上記のどちらの設定も指定されていない場合、`metadata` directory 内のすべての `.metadata.json` ファイルが候補になります
 
-### 最新のファイルの選択 {#most-recent-file}
+<div id="most-recent-file">
+  ### 最新のファイルの選択
+</div>
 
 上記のルールを使用して候補ファイルを特定した後、システムはその中から最も新しいものを判定します。
 
@@ -354,15 +400,21 @@ CREATE TABLE example_table ENGINE = Iceberg(
 
 **注**: Icebergカタログは通常メタデータの解決を担いますが、ClickHouse の `Iceberg` テーブルエンジンは S3 に保存されたファイルを Icebergテーブルとして直接解釈するため、これらの解決ルールを理解しておくことが重要です。
 
-## データキャッシュ {#data-cache}
+<div id="data-cache">
+  ## データキャッシュ
+</div>
 
 `Iceberg` テーブルエンジンおよびテーブル関数は、`S3`、`AzureBlobStorage`、`HDFS` ストレージと同様にデータキャッシュをサポートしています。[こちら](/ja/reference/engines/table-engines/integrations/s3#data-cache)を参照してください。
 
-## メタデータキャッシュ {#metadata-cache}
+<div id="metadata-cache">
+  ## メタデータキャッシュ
+</div>
 
 `Iceberg` テーブルエンジンとテーブル関数は、マニフェストファイル、マニフェストリスト、metadata JSON の情報を保存するメタデータキャッシュをサポートしています。キャッシュはメモリ上に保存されます。この機能は設定 `use_iceberg_metadata_files_cache` で制御されており、デフォルトで有効です。
 
-## 非同期メタデータプリフェッチ {#async-metadata-prefetch}
+<div id="async-metadata-prefetch">
+  ## 非同期メタデータプリフェッチ
+</div>
 
 非同期メタデータプリフェッチは、`iceberg_metadata_async_prefetch_period_ms` を設定することで、`Iceberg` テーブルの作成時に有効化できます。0 (デフォルト) に設定されている場合、またはメタデータキャッシュが有効になっていない場合は、非同期プリフェッチは無効になります。
 この機能を有効にするには、0 以外のミリ秒単位の値を指定する必要があります。これは、プリフェッチサイクル間の間隔を表します。
@@ -390,7 +442,9 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 **注記**: 現時点では、非同期先読みが有効な場合、メタデータキャッシュのサイズは、すべてのアクティブなテーブルの最新のメタデータスナップショット全体を保持できるだけ十分であることが想定されています。
 
-## 関連項目 {#see-also}
+<div id="see-also">
+  ## 関連項目
+</div>
 
 * [Iceberg テーブル関数](/ja/reference/functions/table-functions/iceberg)
 

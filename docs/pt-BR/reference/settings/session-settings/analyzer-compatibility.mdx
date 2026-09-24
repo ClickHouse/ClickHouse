@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested {#analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested}
+<div id="analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested">
+  ## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -21,15 +23,19 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Permite adicionar identificadores compostos ao nested. Esta é uma configuração de compatibilidade porque altera o resultado da consulta. Quando desabilitada, `SELECT a.b.c FROM table ARRAY JOIN a` não funciona, e `SELECT a FROM table` não inclui a coluna `a.b.c` no resultado de `Nested a`.
 
-## analyzer_compatibility_allow_non_aggregate_in_having {#analyzer_compatibility_allow_non_aggregate_in_having}
+<div id="analyzer_compatibility_allow_non_aggregate_in_having">
+  ## analyzer_compatibility_allow_non_aggregate_in_having
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nova configuração de compatibilidade. Quando habilitada, o analyzer reproduz a reescrita legada de `HAVING` para `WHERE` para conjunções com AND não agregadas, em vez de gerar `NOT_AN_AGGREGATE`."}]}]} />
 
-Quando habilitada, o analyzer reproduz o comportamento legado de mover conjunções com AND não agregadas de `HAVING` para `WHERE`, em vez de gerar `NOT_AN_AGGREGATE`. A rejeição em conformidade com o padrão é o comportamento padrão; esta configuração serve como auxílio de migração para consultas que eram aceitas silenciosamente pela análise de consultas que o ClickHouse usava antes da v24.3. Conjunções que contêm funções de agregação, `grouping` ou funções não determinísticas permanecem em `HAVING`. Se qualquer conjunção contiver uma função de janela ou uma função com estado (por exemplo, `rowNumberInBlock`), a reescrita será desabilitada para todo o `HAVING`, em linha com o comportamento legado do `PredicateExpressionsOptimizer`. A configuração também é ignorada quando `GROUP BY` usa `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` ou `GROUPING SETS`.
+Quando habilitada, o analyzer reproduz o comportamento legado de mover conjunções com AND não agregadas de `HAVING` para `WHERE`, em vez de gerar `NOT_AN_AGGREGATE`. A rejeição em conformidade com o padrão é o comportamento padrão; esta configuração serve como auxílio de migração para consultas que eram aceitas silenciosamente pelo analyzer antigo (`enable_analyzer = 0`). Conjunções que contêm funções de agregação, `grouping` ou funções não determinísticas permanecem em `HAVING`. Se qualquer conjunção contiver uma função de janela ou uma função com estado (por exemplo, `rowNumberInBlock`), a reescrita será desabilitada para todo o `HAVING`, em linha com o comportamento legado do `PredicateExpressionsOptimizer`. A configuração também é ignorada quando `GROUP BY` usa `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` ou `GROUPING SETS`.
 
-## analyzer_compatibility_apply_final_to_all_joined_tables {#analyzer_compatibility_apply_final_to_all_joined_tables}
+<div id="analyzer_compatibility_apply_final_to_all_joined_tables">
+  ## analyzer_compatibility_apply_final_to_all_joined_tables
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -42,7 +48,9 @@ Valores possíveis:
 * 0 - `FINAL` se aplica apenas à tabela em que foi especificado.
 * 1 - `FINAL` na tabela mais à esquerda de um JOIN é aplicado a todas as tabelas unidas.
 
-## analyzer_compatibility_join_using_top_level_identifier {#analyzer_compatibility_join_using_top_level_identifier}
+<div id="analyzer_compatibility_join_using_top_level_identifier">
+  ## analyzer_compatibility_join_using_top_level_identifier
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,7 +58,9 @@ Valores possíveis:
 
 Força a resolução do identificador em JOIN USING a partir da projeção (por exemplo, em `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)`, o join será realizado por `t1.a + 1 = t2.b`, em vez de `t1.b = t2.b`). Aliases definidos em subexpressões na lista SELECT também são considerados (por exemplo, em `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)`, o join é realizado por `t1.a + 1 = t2.b`). Quando o alias correspondente é definido em uma subexpressão na lista SELECT, em vez de como um alias de nível superior, as réplicas paralelas são desativadas para a consulta. Para consultas enviadas a servidores remotos (tabelas `Distributed`, a função de tabela `remote`), essa consulta é rejeitada com uma exceção somente quando o identificador não pode ser resolvido no servidor remoto; se o alias mascarar uma coluna real da tabela à esquerda, o servidor remoto realizará o join por essa coluna, portanto os resultados poderão diferir da execução local.
 
-## analyzer_compatibility_multiple_joins_qualify_column_names {#analyzer_compatibility_multiple_joins_qualify_column_names}
+<div id="analyzer_compatibility_multiple_joins_qualify_column_names">
+  ## analyzer_compatibility_multiple_joins_qualify_column_names
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -68,7 +78,11 @@ Isso permite que consultas externas que referenciam essas colunas pelos nomes qu
 SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
 ```
 
-## analyzer_compatibility_prefer_alias_over_subcolumn {#analyzer_compatibility_prefer_alias_over_subcolumn}
+Tem efeito apenas quando o analyzer está habilitado (`enable_analyzer = 1`).
+
+<div id="analyzer_compatibility_prefer_alias_over_subcolumn">
+  ## analyzer_compatibility_prefer_alias_over_subcolumn
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

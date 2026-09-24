@@ -13,25 +13,25 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويجري توليدها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## aggregate_function_input_format {#aggregate_function_input_format}
+<div id="aggregate_function_input_format">
+  ## aggregate_function_input_format
+</div>
 
 <SettingsInfoBlock type="AggregateFunctionInputFormat" default_value="state" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "إعداد جديد للتحكم في صيغة إدخال AggregateFunction أثناء عمليات INSERT. تُضبط قيمة الإعداد على state افتراضيًا"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "إعداد جديد للتحكم في تنسيق إدخال AggregateFunction أثناء عمليات INSERT. تُضبط قيمة الإعداد على state افتراضيًا"}]}]} />
 
-كيفية قراءة صيغ الإدخال للأعمدة من النوع `AggregateFunction`.
+تنسيق إدخال AggregateFunction أثناء عمليات INSERT.
 
 القيم الممكنة:
 
-* `state` — الحالة المُسلسَلة للدالة التجميعية، بالشكل الذي تكتبها به تنسيقات الإخراج (القيمة الافتراضية).
-* `value` — قيمة وسيطة الدالة التجميعية، أو tuple من الوسائط إن كانت متعددة. تُجمَّع القيمة لتكوين الحالة.
-* `array` — مصفوفة من القيم، كما هو موضّح في الخيار `value` أعلاه. تُجمَّع جميع عناصر المصفوفة لتكوين الحالة.
+* `state` — سلسلة ثنائية تتضمن الحالة المُسلسلة (الافتراضي). وهذا هو السلوك الافتراضي، حيث يُتوقع أن تكون قيم AggregateFunction على هيئة بيانات ثنائية.
+* `value` — يتوقع التنسيق قيمة واحدة لوسيط الدالة التجميعية، أو Tuple من القيم في حال وجود عدة وسائط. ويُفك تسلسلها باستخدام IDataType أو DataTypeTuple المقابل، ثم تُجمع لتكوين الحالة.
+* `array` — يتوقع التنسيق Array من القيم، كما هو موضح في الخيار `value` أعلاه. وتُجمع جميع عناصر المصفوفة لتكوين الحالة.
 
-في وضعَي `value` و`array` تقرأ الصيغة العمود كما لو كان من نوع القيم نفسها: `T` في حالة `AggregateFunction(f, T)`، و`Tuple(T1, T2)` في حالة `AggregateFunction(f, T1, T2)`، أو `Array` منه في وضع `array`. وتُكتب القيم بالتمثيل الذي تستخدمه الصيغة لذلك النوع: رقم أو سلسلة نصية في الصيغ النصية، ومصفوفة JSON في صيغ JSON، والترميز الثنائي للنوع في `RowBinary` أو `Native`، وعمود من ذلك النوع في `Parquet`، وهكذا. وينطبق هذا على كل صيغة إدخال، وكذلك على `AggregateFunction` المتداخل داخل `Array` أو `Tuple` أو `Map`.
+**أمثلة**
 
-**Examples**
-
-لجدول ببنية:
+لجدول ذي بنية:
 
 ```sql
 CREATE TABLE example (
@@ -40,33 +40,25 @@ CREATE TABLE example (
 );
 ```
 
-مع `aggregate_function_input_format = 'value'`:
+عند استخدام `aggregate_function_input_format = 'value'`:
 
 ```sql
 INSERT INTO example FORMAT CSV
 123,456
 ```
 
-```sql
-INSERT INTO example FORMAT JSONEachRow
-{"user_id": 123, "avg_session_length": 456}
-```
-
-مع `aggregate_function_input_format = 'array'`:
+عند استخدام `aggregate_function_input_format = 'array'`:
 
 ```sql
 INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
 ```
 
-```sql
-INSERT INTO example FORMAT JSONEachRow
-{"user_id": 123, "avg_session_length": [456, 789, 101]}
-```
+ملاحظة: إن تنسيقي `value` و`array` أبطأ من تنسيق `state` الافتراضي، لأنهما يتطلبان إنشاء القيم وتجميعها أثناء الإدراج.
 
-ملاحظة: صيغتا `value` و`array` أبطأ من الصيغة الافتراضية `state`، لأنهما تتطلبان إنشاء القيم وتجميعها أثناء الإدراج.
-
-## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
+<div id="aggregate_functions_null_for_empty">
+  ## aggregate_functions_null_for_empty
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

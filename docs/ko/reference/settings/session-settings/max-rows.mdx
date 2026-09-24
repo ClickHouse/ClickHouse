@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-## max_rows_for_lazy_final {#max_rows_for_lazy_final}
+<div id="max_rows_for_lazy_final">
+  ## max_rows_for_lazy_final
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" />
 
@@ -21,13 +23,17 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 지연 실행 FINAL 최적화에 사용되는 Set의 최대 행 수입니다. 이 값을 초과하면 일반 FINAL로 전환됩니다.
 
-## max_rows_in_distinct {#max_rows_in_distinct}
+<div id="max_rows_in_distinct">
+  ## max_rows_in_distinct
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 DISTINCT 사용 시 서로 다른 행의 최대 개수입니다.
 
-## max_rows_in_join {#max_rows_in_join}
+<div id="max_rows_in_join">
+  ## max_rows_in_join
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -38,28 +44,26 @@ table)의 행 수를 제한합니다.
 작업과 [Join](/ko/reference/engines/table-engines/special/join) 테이블 엔진에 적용됩니다.
 
 쿼리에 여러 조인이 포함된 경우 ClickHouse는 각
-중간 결과에 대해 이 설정을 확인합니다. 이는 모든 해시 기반 `join_algorithm`에 적용되는 엄격한 상한값으로, 제한에
-도달하면 쿼리는 [`join_overflow_mode`](/ko/reference/settings/session-settings/join#join_overflow_mode)에 따라
-throw되거나 break됩니다.
-이 설정이 조인을 디스크로 스필하게 만드는 일은 없으며, 그 결정은
-[`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)과
-[`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)이
-담당합니다.
-예외는 `legacy_join_size_limits_trigger_spilling`입니다. 이 설정이 켜져 있으면 이미 디스크에서 실행 중인
-조인의 해당 파트는 이 제한을 상한값이 아닌 추가적인 스필 트리거로 취급합니다.
+중간 결과에 대해 이 설정을 확인합니다. 제한에 도달하면 동작은
+선택한 [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)에 따라 달라집니다. 알고리즘별 동작(spill, re-partition, switch 또는
+[`join_overflow_mode`](/ko/reference/settings/session-settings/join#join_overflow_mode)에 따른 throw/break)에 대해서는 해당 설정을 참조하십시오.
 
 가능한 값:
 
 * 양의 정수.
 * `0` — 행 수에 제한이 없습니다.
 
-## max_rows_in_set {#max_rows_in_set}
+<div id="max_rows_in_set">
+  ## max_rows_in_set
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 서브쿼리로 생성된 IN 절의 데이터 Set에 허용되는 최대 행 수입니다.
 
-## max_rows_in_set_to_optimize_join {#max_rows_in_set_to_optimize_join}
+<div id="max_rows_in_set_to_optimize_join">
+  ## max_rows_in_set_to_optimize_join
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -72,7 +76,9 @@ throw되거나 break됩니다.
 * 0 — 비활성화합니다.
 * 임의의 양의 정수.
 
-## max_rows_to_group_by {#max_rows_to_group_by}
+<div id="max_rows_to_group_by">
+  ## max_rows_to_group_by
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -84,7 +90,9 @@ GROUP BY 중 집계로 인해 지정된 개수보다 많은
 &#39;group&#95;by&#95;overflow&#95;mode&#39;에 따라 결정됩니다. 기본값은 `throw`이지만,
 근사 GROUP BY 모드로 전환할 수도 있습니다.
 
-## max_rows_to_read {#max_rows_to_read}
+<div id="max_rows_to_read">
+  ## max_rows_to_read
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -93,7 +101,9 @@ GROUP BY 중 집계로 인해 지정된 개수보다 많은
 가장 깊은 테이블 표현식에만 적용됩니다. 원격 서버에서 읽는 경우에는
 원격 서버에서만 검사됩니다.
 
-## max_rows_to_read_leaf {#max_rows_to_read_leaf}
+<div id="max_rows_to_read_leaf">
+  ## max_rows_to_read_leaf
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -107,7 +117,9 @@ GROUP BY 중 집계로 인해 지정된 개수보다 많은
   이 설정은 `prefer_localhost_replica=1`과 함께 사용할 경우 안정적으로 동작하지 않습니다.
 </Note>
 
-## max_rows_to_sort {#max_rows_to_sort}
+<div id="max_rows_to_sort">
+  ## max_rows_to_sort
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -115,7 +127,9 @@ GROUP BY 중 집계로 인해 지정된 개수보다 많은
 ORDER BY 작업에서 지정한 수보다 많은 레코드를 처리해야 하는 경우,
 동작은 `sort_overflow_mode`에 따라 결정되며 기본값은 `throw`입니다.
 
-## max_rows_to_transfer {#max_rows_to_transfer}
+<div id="max_rows_to_transfer">
+  ## max_rows_to_transfer
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

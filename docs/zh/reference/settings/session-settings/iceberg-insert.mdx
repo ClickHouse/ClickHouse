@@ -13,20 +13,19 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
+<div id="iceberg_insert_max_bytes_in_data_file">
+  ## iceberg_insert_max_bytes_in_data_file
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="536870912" />
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "与 Iceberg 表属性 `write.target-file-size-bytes` 的文档默认值（512 MiB）保持一致，参见 https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/。"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "新增设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "新设置。"}]}]} />
 
-插入操作时 Iceberg Parquet 数据文件的最大字节数。
+插入操作期间 Iceberg Parquet 数据文件的最大字节数。
 
-该默认值与 Iceberg 表属性 `write.target-file-size-bytes` 的文档默认值 (512 MiB) 一致，
-参见 https://iceberg.apache.org/docs/1.5.2/configuration/。请注意，ClickHouse 比较该限制时使用的是目前已写入文件的数据的
-未压缩大小，而 Iceberg 该属性针对的是最终生成文件的大小；此外，`iceberg_insert_max_rows_in_data_file`
-会独立于文件大小对文件加以限制。
-
-## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
+<div id="iceberg_insert_max_partitions">
+  ## iceberg_insert_max_partitions
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -34,7 +33,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 Iceberg 表引擎单次插入操作允许的最大分区数。
 
-## iceberg_insert_max_rows_in_data_file {#iceberg_insert_max_rows_in_data_file}
+<div id="iceberg_insert_max_rows_in_data_file">
+  ## iceberg_insert_max_rows_in_data_file
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 

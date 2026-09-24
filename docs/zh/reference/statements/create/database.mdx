@@ -14,24 +14,34 @@ doc_type: 'reference'
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 ```
 
-## 子句 {#clauses}
+<div id="clauses">
+  ## 子句
+</div>
 
-### IF NOT EXISTS {#if-not-exists}
+<div id="if-not-exists">
+  ### IF NOT EXISTS
+</div>
 
 如果 `db_name` 数据库已存在，则 ClickHouse 不会创建新的数据库，并且：
 
 * 如果指定了该子句，则不会抛出异常。
 * 如果未指定该子句，则会抛出异常。
 
-### ON CLUSTER {#on-cluster}
+<div id="on-cluster">
+  ### ON CLUSTER
+</div>
 
 ClickHouse 会在指定集群的所有服务器上创建 `db_name` 数据库。更多信息，请参见 [Distributed DDL](/zh/reference/statements/distributed-ddl) 一文。
 
-### 引擎 {#engine}
+<div id="engine">
+  ### 引擎
+</div>
 
 默认情况下，ClickHouse 使用其自带的 [Atomic](/zh/reference/engines/database-engines/atomic) 数据库引擎。另有 [MySQL](/zh/reference/engines/database-engines/mysql)、[PostgresSQL](/zh/reference/engines/database-engines/postgresql)、[MaterializedPostgreSQL](/zh/reference/engines/database-engines/materialized-postgresql)、[Replicated](/zh/reference/engines/database-engines/replicated) 和 [SQLite](/zh/reference/engines/database-engines/sqlite)。
 
-### 注释 {#comment}
+<div id="comment">
+  ### 注释
+</div>
 
 你可以在创建数据库时添加注释。
 
@@ -56,22 +66,13 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-### SETTINGS {#settings}
+<div id="settings">
+  ### SETTINGS
+</div>
 
-`SETTINGS` 子句可以在不指定 `ENGINE` 子句的情况下使用，此时将采用默认的数据库引擎 (`Atomic`) 。该子句既可以包含数据库引擎的设置，也可以包含普通的查询设置；每个名称会被分派到其所属的那一类。
-
-#### disk {#disk}
-
-用于存储该数据库的表元数据文件的磁盘。可以指定服务器配置中已定义的磁盘，也可以像单个表那样，通过 `disk` 函数内联定义：
-
-```sql
-CREATE DATABASE db_name SETTINGS disk = 'db_disk';
-CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
-```
-
-适用于将表元数据存储在磁盘上的数据库引擎 (`Atomic`、`Ordinary`) 。若未指定，则使用 `database_disk.disk` 服务器设置中定义的磁盘。
-
-#### lazy_load_tables {#lazy-load-tables}
+<div id="lazy-load-tables">
+  #### lazy_load_tables
+</div>
 
 启用后，数据库启动时不会完全加载各个表。相反，系统会为每个表创建一个轻量级代理，并在首次访问时才将实际的表引擎物化出来。对于包含大量表、但实际只会查询其中一部分的数据库，这可以减少启动时间和内存使用量。
 
@@ -79,7 +80,7 @@ CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/cl
 CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 ```
 
-适用于将表元数据存储在磁盘上的数据库 引擎 (例如 `Atomic`、`Ordinary`) 。无论此设置如何，视图、materialized view、字典、`Alias` 表、`TimeSeries` 表以及基于表函数的表始终都会立即加载。
+适用于将表元数据存储在磁盘上的数据库 引擎 (例如 `Atomic`、`Ordinary`) 。无论此设置如何，视图、materialized view、字典以及基于表函数的表始终都会立即加载。
 
 **何时使用：** 对于拥有大量表 (数百张甚至数千张) 、但只有一部分会被频繁查询的数据库，此设置非常有用。它会将表引擎对象的创建、数据分区片段的扫描以及后台线程的初始化推迟到首次访问时再进行，从而减少服务器启动时间和内存占用。
 

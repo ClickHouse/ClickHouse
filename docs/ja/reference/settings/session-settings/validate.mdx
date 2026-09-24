@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
+<div id="validate_enum_literals_in_operators">
+  ## validate_enum_literals_in_operators
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -21,30 +23,21 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 有効にすると、`IN`、`NOT IN`、`==`、`!=` などの演算子で使われる enum リテラルを enum 型に対して検証し、そのリテラルが有効な enum 値でない場合は例外をスローします。
 
-## validate_group_by_all_key_types {#validate_group_by_all_key_types}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`GROUP BY ALL` が `SELECT` の式を展開して得られるキーの型の検証は、26.7 または 26.8 との `compatibility` 設定の管理下に置かれます。以前の値は意図的に新しい値と同一にしてあります。これらのバージョンでは既にそのようなキーが拒否されており、以前の許容動作が復元されるのは 26.7 より前のバージョンを指定した場合のみだからです。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "1"},{"label": "`GROUP BY ALL` が `SELECT` の式を展開して得られるキーの型の検証を制御する新しい設定です。26.7 以降、そこでの `Variant`\/`Dynamic` キーは拒否されるようになりました。それ以前のバージョンでは、アナライザが有効（`enable_analyzer = 1`、デフォルト）な場合にこれを許容していました（旧アナライザでは 26.7 より前でもそのようなキーは拒否されていました）。そのため以前の値は `false` であり、26.7 より前のバージョンとの `compatibility` 設定によって以前の許容動作が復元されます。"}]}]} />
-
-`GROUP BY ALL` が `SELECT` の式を展開して得られるグルーピングキーを [allow&#95;suspicious&#95;types&#95;in&#95;group&#95;by](/ja/reference/settings/session-settings/allow-suspicious#allow_suspicious_types_in_group_by) に照らして検証するかどうかを制御します。これを無効にすると、`GROUP BY ALL` として記述された [Variant](/ja/reference/data-types/variant) キーや [Dynamic](/ja/reference/data-types/dynamic) キー (例えば型指定のない JSON サブパスをグルーピングキーとする場合) を許容していた 26.7 より前のバージョンの動作を復元できます。有効になるのはアナライザが有効 (`enable_analyzer = 1`、デフォルト) な場合のみです。旧アナライザでは 26.7 より前でもそのようなキーは拒否されていたため、復元すべき動作はありません。明示的な `GROUP BY` はこの設定の影響を受けず、いずれの場合もそのようなキーを拒否し続けます。そのため、明示的な `GROUP BY` でもそれらを許可する `allow_suspicious_types_in_group_by` に比べ、この設定の適用範囲はより限定的です。
-
-設定可能な値:
-
-* 0 - `GROUP BY ALL` が展開して得られるキーの型は検証されません。
-* 1 - 明示的な `GROUP BY` が自身のキーを検証するのと同様に、検証されます。
-
-## validate_mutation_query {#validate_mutation_query}
+<div id="validate_mutation_query">
+  ## validate_mutation_query
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "デフォルトで mutation クエリを検証するための新しい設定。"}]}]} />
 
-受け付ける前に mutation クエリを検証します。mutation はバックグラウンドで実行されるため、無効なクエリを実行すると mutation が停止したままとなり、手動での対応が必要になる場合があります。
+受け付ける前に mutation クエリを検証します。mutation はバックグラウンドで実行されるため、無効なクエリを実行すると mutation が停止したままとなり、手動での対応が必要になります。
 
 この設定を変更するのは、後方互換性のないバグに遭遇した場合のみにしてください。
 
-## validate_polygons {#validate_polygons}
+<div id="validate_polygons">
+  ## validate_polygons
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

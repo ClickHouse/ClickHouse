@@ -15,7 +15,9 @@ doc_type: 'referência'
 | ------- | ----- | ----- |
 | ✔       | ✔     | `TSV` |
 
-## Descrição {#description}
+<div id="description">
+  ## Descrição
+</div>
 
 No formato TabSeparated, os dados são gravados por linha. Cada linha contém valores separados por tabulações. Cada valor é seguido por uma tabulação, exceto o último valor da linha, que é seguido por uma quebra de linha. Assume-se estritamente o uso de quebras de linha Unix em todos os lugares. A última linha também deve terminar com uma quebra de linha. Os valores são gravados em formato de texto, sem aspas e com caracteres especiais escapados.
 
@@ -42,9 +44,11 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-23      1406958
 ```
 
-## Formatação de dados {#tabseparated-data-formatting}
+<div id="tabseparated-data-formatting">
+  ## Formatação de dados
+</div>
 
-Números inteiros são escritos em formato decimal. Os números podem conter um caractere &quot;+&quot; adicional no início (ignorado durante o parsing e não registrado durante a formatação), e zeros à esquerda são ignorados durante o parsing (`007` é lido como `7`). Números não negativos não podem conter o sinal de menos. Na leitura, é permitido interpretar uma string vazia como zero ou (para tipos com sinal) uma string composta apenas por um sinal de menos como zero. Números que não cabem no tipo de dado correspondente podem ser interpretados como um número diferente, sem mensagem de erro.
+Números inteiros são escritos em formato decimal. Os números podem conter um caractere &quot;+&quot; adicional no início (ignorado durante o parsing e não registrado durante a formatação). Números não negativos não podem conter o sinal de menos. Na leitura, é permitido interpretar uma string vazia como zero ou (para tipos com sinal) uma string composta apenas por um sinal de menos como zero. Números que não cabem no tipo de dado correspondente podem ser interpretados como um número diferente, sem mensagem de erro.
 
 Números de ponto flutuante são escritos em formato decimal. O ponto é usado como separador decimal. Há suporte para notação exponencial, bem como para &#39;inf&#39;, &#39;+inf&#39;, &#39;-inf&#39; e &#39;nan&#39;. Um valor de número de ponto flutuante pode começar ou terminar com um ponto decimal.
 Durante a formatação, pode haver perda de precisão em números de ponto flutuante.
@@ -107,9 +111,13 @@ SELECT * FROM nestedt FORMAT TSV
 1  [1]    ['a']
 ```
 
-## Exemplo de uso {#example-usage}
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
 
-### Inserindo dados {#inserting-data}
+<div id="inserting-data">
+  ### Inserindo dados
+</div>
 
 Usando o arquivo TSV abaixo, chamado `football.tsv`:
 
@@ -139,7 +147,9 @@ Insira os dados:
 INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparated;
 ```
 
-### Leitura de dados {#reading-data}
+<div id="reading-data">
+  ### Leitura de dados
+</div>
 
 Leia os dados no formato `TabSeparated`:
 
@@ -171,7 +181,9 @@ A saída estará em formato delimitado por tabulação:
 2022-05-07      2021    Walsall Swindon Town    0       3
 ```
 
-## Configurações de formato {#format-settings}
+<div id="format-settings">
+  ## Configurações de formato
+</div>
 
 | Configuração                                                                                                                                            | Descrição                                                                                                                                                                                                                                                                 | Padrão  |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |

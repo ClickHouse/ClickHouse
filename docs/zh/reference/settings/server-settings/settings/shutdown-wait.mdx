@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并由 ClickHouse 源代码自动生成。
 
-## shutdown_wait_backups_and_restores {#shutdown_wait_backups_and_restores}
+<div id="shutdown_wait_backups_and_restores">
+  ## shutdown_wait_backups_and_restores
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />如果设置为 true，ClickHouse 会在关闭前等待正在运行的备份和恢复完成。
 
-## shutdown_wait_unfinished {#shutdown_wait_unfinished}
+<div id="shutdown_wait_unfinished">
+  ## shutdown_wait_unfinished
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />关闭时等待未完成查询的时长 (秒)。当 `shutdown_wait_backups_and_restores` 被禁用时，该值也限定了对正在运行的备份和恢复的等待时长。
+<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />等待未完成查询的时长 (秒)
 
-## shutdown_wait_unfinished_queries {#shutdown_wait_unfinished_queries}
+<div id="shutdown_wait_unfinished_queries">
+  ## shutdown_wait_unfinished_queries
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />如果设为 true，ClickHouse 会在关闭前等待正在运行的查询执行完毕。
 

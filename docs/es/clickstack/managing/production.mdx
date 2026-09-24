@@ -20,34 +20,34 @@ Al desplegar ClickStack en producción, hay varias consideraciones adicionales p
 
     * Escalado automático de la capacidad de cómputo independiente del almacenamiento
     * Retención de bajo costo y prácticamente ilimitada basada en almacenamiento de objetos
-    * La posibilidad de [aislar de forma independiente las cargas de trabajo de lectura y escritura](/es/clickstack/managing/isolating-read-write) con Warehouses.
+    * La posibilidad de aislar de forma independiente las cargas de trabajo de lectura y escritura con Warehouses.
     * Autenticación integrada
     * [Backups](/es/products/cloud/features/backups/overview) automatizados
     * Actualizaciones sin interrupciones
 
     **Sigue estas [buenas prácticas](/es/products/cloud/guides/production-readiness) de ClickHouse Cloud al usar Managed ClickStack.**
 
-    ### Proteger la ingestión {#secure-ingestion-managed}
+    ### Proteger la ingestión
 
     De forma predeterminada, ClickStack OpenTelemetry Collector no está protegido cuando se despliega fuera de las distribuciones open source y no requiere autenticación en sus puertos OTLP.
 
     Para proteger la ingestión, especifica un token de autenticación al desplegar el collector mediante la variable de entorno `OTLP_AUTH_TOKEN`. Consulta [&quot;Proteger el collector&quot;](/es/clickstack/ingesting-data/collector#securing-the-collector) para obtener más información.
 
-    #### Crear un usuario de ingestión {#create-a-database-ingestion-user-managed}
+    #### Crear un usuario de ingestión
 
     Se recomienda crear un usuario dedicado para el OTel collector para la ingestión en Managed ClickHouse y para garantizar que la ingestión se envíe a una base de datos específica, por ejemplo, `otel`. Consulta [&quot;Crear un usuario de ingestión&quot;](/es/clickstack/ingesting-data/collector#creating-an-ingestion-user) para obtener más información.
 
-    ### Configurar Time To Live (TTL) {#configure-ttl-managed}
+    ### Configurar Time To Live (TTL)
 
     Asegúrate de que [Time To Live (TTL)](/es/clickstack/managing/ttl) esté [configurado adecuadamente](/es/clickstack/managing/ttl#modifying-ttl) para tu despliegue de Managed ClickStack. Esto controla durante cuánto tiempo se conservan los datos; el valor predeterminado de 3 días a menudo debe modificarse.
 
-    ### Estimación de recursos {#estimating-resources}
+    ### Estimación de recursos
 
     <ResourceEstimation />
 
     Para obtener más información sobre cómo ajustar las hipótesis de dimensionamiento para tu entorno, consulta [&quot;Ajustar las hipótesis de dimensionamiento para tu entorno&quot;](/es/clickstack/managing/estimating-resources#refining-sizing-assumptions).
 
-    #### Aislar cargas de trabajo de observabilidad {#isolating-workloads}
+    #### Aislar cargas de trabajo de observabilidad
 
     Si estás añadiendo ClickStack a un **servicio de ClickHouse Cloud existente** que ya admite otras cargas de trabajo, como análisis de aplicaciones en tiempo real, se recomienda encarecidamente aislar el tráfico de observabilidad.
 
@@ -60,15 +60,11 @@ Al desplegar ClickStack en producción, hay varias consideraciones adicionales p
 
     Este enfoque garantiza que tus cargas de trabajo existentes no se vean afectadas y, al mismo tiempo, permite que ClickStack escale de forma independiente a medida que crecen los datos de observabilidad.
 
-    #### Aislar cargas de trabajo de lectura y escritura {#isolating-read-write}
-
-    Los Warehouses también permiten separar en capacidad de cómputo dedicada las propias cargas de trabajo de ingestión y de consulta de ClickStack, de modo que la ingestión se dirija a un servicio de lectura y escritura y la UI de ClickStack se ejecute en un servicio de solo lectura. Esta es la topología de producción recomendada para despliegues más grandes. Consulta [&quot;Aislar cargas de trabajo de lectura y escritura&quot;](/es/clickstack/managing/isolating-read-write).
-
     Para despliegues más grandes o recomendaciones de dimensionamiento personalizadas, ponte en contacto con soporte para obtener una estimación más precisa.
   </Tab>
 
   <Tab title="ClickStack Open Source">
-    ### Seguridad de red y puertos {#network-security}
+    ### Seguridad de red y puertos
 
     De forma predeterminada, Docker Compose expone puertos en el host y los hace accesibles desde fuera del contenedor, incluso si herramientas como `ufw` (Uncomplicated Firewall) están habilitadas. Este comportamiento se debe a la pila de red de Docker, que puede saltarse las reglas de firewall a nivel de host a menos que se configure explícitamente.
 
@@ -88,7 +84,7 @@ Al desplegar ClickStack en producción, hay varias consideraciones adicionales p
 
     Consulte la [documentación de redes de Docker](https://docs.docker.com/network/) para obtener más información sobre el aislamiento de contenedores y el endurecimiento del acceso.
 
-    ### Configuración del secret de sesión {#session-secret}
+    ### Configuración del secret de sesión
 
     En producción, debe establecer un valor aleatorio y robusto para la variable de entorno `EXPRESS_SESSION_SECRET` de la UI de ClickStack (HyperDX), a fin de proteger los datos de sesión y evitar manipulaciones.
 
@@ -128,7 +124,7 @@ Al desplegar ClickStack en producción, hay varias consideraciones adicionales p
 
     Evite incluir secretos en el control de versiones. En producción, considere usar herramientas de gestión de variables de entorno (p. ej., Docker Secrets, HashiCorp Vault o configuraciones de CI/CD específicas del entorno).
 
-    ### Ingestión segura {#secure-ingestion}
+    ### Ingestión segura
 
     Toda la ingestión debe realizarse a través de los puertos OTLP expuestos por la distribución ClickStack del colector de OpenTelemetry (OTel). De forma predeterminada, esto requiere una API key de ingesta segura generada al inicio. Esta clave es necesaria para enviar datos a los puertos OTel y puede encontrarse en la UI de HyperDX en `Team Settings → API Keys`.
 
@@ -136,15 +132,15 @@ Al desplegar ClickStack en producción, hay varias consideraciones adicionales p
 
     Además, se recomienda habilitar TLS para los endpoints OTLP.
 
-    #### Crear un usuario de ingestión {#create-a-database-ingestion-user-oss}
+    #### Crear un usuario de ingestión
 
     Se recomienda crear un usuario dedicado para el OTel collector para la ingestión en ClickHouse y asegurarse de que los datos se envíen a una base de datos específica, por ejemplo, `otel`. Consulte [&quot;Creación de un usuario de ingestión&quot;](/es/clickstack/ingesting-data/collector#creating-an-ingestion-user) para obtener más información.
 
-    ### ClickHouse {#clickhouse}
+    ### ClickHouse
 
     Los usuarios que administren su propia instancia de ClickHouse deben seguir las siguientes buenas prácticas.
 
-    #### Buenas prácticas de seguridad {#self-managed-security}
+    #### Buenas prácticas de seguridad
 
     Si administra su propia instancia de ClickHouse, es fundamental habilitar **TLS**, aplicar autenticación y seguir las buenas prácticas para reforzar el control de acceso. Consulte [esta entrada de blog](https://www.wiz.io/blog/clickhouse-and-wiz) para obtener más información sobre configuraciones incorrectas en entornos reales y cómo evitarlas.
 
@@ -163,7 +159,7 @@ Al desplegar ClickStack en producción, hay varias consideraciones adicionales p
 
     Consulte también [autenticadores externos](/es/concepts/features/security/external-authenticators/index) y [configuración de complejidad de consultas](/es/concepts/features/configuration/settings/query-complexity) para gestionar usuarios y garantizar los límites de consultas y recursos.
 
-    #### Permisos de usuario para la UI de ClickStack {#user-permissions}
+    #### Permisos de usuario para la UI de ClickStack
 
     El usuario de ClickHouse para la UI de ClickStack solo necesita ser un usuario `readonly` con acceso para modificar las siguientes configuraciones:
 
@@ -174,11 +170,11 @@ Al desplegar ClickStack en producción, hay varias consideraciones adicionales p
 
     De forma predeterminada, el usuario `default` tanto en OSS como en ClickHouse Cloud tendrá estos permisos disponibles; no obstante, se recomienda crear un nuevo usuario con dichos permisos.
 
-    ### Configurar Time To Live (TTL) {#configure-ttl}
+    ### Configurar Time To Live (TTL)
 
     Asegúrese de que el [Time To Live (TTL)](/es/clickstack/managing/ttl) esté [configurado correctamente](/es/clickstack/managing/ttl#modifying-ttl) para su implementación de ClickStack. Esto controla durante cuánto tiempo se retienen los datos; el valor predeterminado de 3 días suele requerir ajustes.
 
-    ### Directrices de MongoDB {#mongodb-guidelines}
+    ### Directrices de MongoDB
 
     Consulte la [lista de comprobación de seguridad de MongoDB](https://www.mongodb.com/docs/manual/administration/security-checklist/) oficial.
   </Tab>

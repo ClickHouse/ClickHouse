@@ -12,23 +12,9 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
-
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
-
-Tamaño mínimo, en bytes, de un cargo individual al rastreador de memoria global (de todo el servidor) a partir del cual se captura un stack trace, se escribe en el log del servidor con nivel `Warning` y se inserta en [`system.trace_log`](/es/reference/system-tables/trace_log) con el tipo de traza `MemoryLargeAllocation`.
-
-El tamaño que se compara con el umbral, y que se reporta, es el que carga una llamada al tracker, que no corresponde necesariamente a una sola asignación: un thread difiere sus asignaciones pequeñas y las vuelca (flush) como un único cargo, por lo que el tamaño reportado puede superar a la asignación situada en la cima de la pila reportada hasta en `max_untracked_memory`. Mantener el umbral muy por encima de `max_untracked_memory` hace que esa diferencia sea irrelevante.
-
-Se trata de un diagnóstico para un total global registrado que ha crecido muy por encima del uso de memoria real del proceso. En ese estado, el servidor rechaza todas las asignaciones, incluso las de cero bytes, mientras utiliza solo una fracción de su límite, y la telemetría ordinaria no permite atribuir el incremento: las asignaciones cargadas bajo un `MemoryTrackerBlockerInThread` omiten la comprobación del límite y las trazas que la acompañan, y las inserciones en `system.trace_log` que transportarían el resto fallan una vez que el servidor está bloqueado. El log del servidor se sigue escribiendo, de modo que el stack trace sí llega hasta él.
-
-Se capturan como máximo 10 trazas por ejecución del servidor, ya que capturar y simbolizar una pila es costoso y el trigger tiende a repetirse. Cambiar esta configuración en tiempo de ejecución, en cualquier sentido, no eleva ese límite.
-
-Requiere que `trace_log` esté configurado. Sin un colector de trazas en ejecución, el valor se ignora y se reporta como `0` en [`system.server_settings`](/es/reference/system-tables/server_settings), dado que la traza solo podría capturarse y descartarse. Una traza que el colector procese antes de que esa tabla esté attached, lo que ocurre en una fase tardía del arranque, llega únicamente al log del servidor.
-
-Un valor de `0` (predeterminado) desactiva el diagnóstico. Configúrelo muy por encima de la mayor asignación que el servidor realice legítimamente; de lo contrario, también se registrarán asignaciones grandes ordinarias y el arranque puede consumir todo el presupuesto.
-
-## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
+<div id="min_allocation_size_to_throw_on_memory_limit">
+  ## min_allocation_size_to_throw_on_memory_limit
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -40,7 +26,9 @@ Un valor de `0` (predeterminado) conserva el comportamiento heredado: las asigna
 
 Ten en cuenta que, para evitar efectos secundarios, se recomienda establecer un valor mayor que `max_untracked_memory`.
 
-## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
+<div id="min_os_cpu_wait_time_ratio_to_drop_connection">
+  ## min_os_cpu_wait_time_ratio_to_drop_connection
+</div>
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Sí" />
 

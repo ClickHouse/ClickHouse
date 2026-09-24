@@ -13,7 +13,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يوفّر واجهة شبيهة بالجداول لجداول Apache [Iceberg](https://iceberg.apache.org/) في Amazon S3 أو Azure أو HDFS أو المخزّنة محليًا.
 
-## الصيغة {#syntax}
+<div id="syntax">
+  ## الصيغة
+</div>
 
 ```sql
 icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
@@ -29,28 +31,36 @@ icebergLocal(path_to_table, [,format] [,compression_method])
 icebergLocal(named_collection[, option=value [,..]])
 ```
 
-## المعاملات {#arguments}
+<div id="arguments">
+  ## المعاملات
+</div>
 
 يتطابق وصف المعاملات مع وصفها في دوال الجداول `s3` و`azureBlobStorage` و`HDFS` و`file`، على التوالي.
 يشير `format` إلى تنسيق ملفات البيانات في جدول Iceberg.
 
 بالنسبة إلى `icebergS3`، يمكن استخدام المعامل الاختياري `extra_credentials` لتمرير `role_arn` بغرض الوصول المستند إلى الدور في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات الإعداد.
 
-### القيمة المُعادة {#returned-value}
+<div id="returned-value">
+  ### القيمة المُعادة
+</div>
 
 جدول ذو البنية المحددة لقراءة البيانات من جدول Iceberg المحدد.
 
-### مثال {#example}
+<div id="example">
+  ### مثال
+</div>
 
 ```sql
 SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
 ```
 
 <Warning>
-  يدعم ClickHouse حاليًا قراءة الإصدارين v1 وv2 من صيغة Iceberg عبر دوال الجداول `icebergS3` و`icebergAzure` و`icebergHDFS` و`icebergLocal`، ومحركات الجداول `IcebergS3` و`icebergAzure` و`IcebergHDFS` و`IcebergLocal`. دعم الإصدار v3 جزئي: قراءة متجهات الحذف مدعومة؛ أما دمج manifest فغير مدعوم.
+  يدعم ClickHouse حاليًا قراءة الإصدارين v1 وv2 من صيغة Iceberg عبر دوال الجداول `icebergS3` و`icebergAzure` و`icebergHDFS` و`icebergLocal`، ومحركات الجداول `IcebergS3` و`icebergAzure` و`IcebergHDFS` و`IcebergLocal`. دعم الإصدار v3 جزئي؛ إذ لا تُدعم متجهات الحذف ودمج manifest.
 </Warning>
 
-## تعريف مجموعة مسماة {#defining-a-named-collection}
+<div id="defining-a-named-collection">
+  ## تعريف مجموعة مسماة
+</div>
 
 فيما يلي مثال على تهيئة مجموعة مسماة لتخزين URL وبيانات الاعتماد:
 
@@ -73,7 +83,9 @@ SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
 DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 ```
 
-## استخدام كتالوج بيانات {#iceberg-writes-catalogs}
+<div id="iceberg-writes-catalogs">
+  ## استخدام كتالوج بيانات
+</div>
 
 يمكن أيضًا استخدام جداول Iceberg مع كتالوجات بيانات متعددة، مثل [REST Catalog](https://iceberg.apache.org/rest-catalog-spec/)، و[AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html)، و[Unity Catalog](https://www.unitycatalog.io/).
 
@@ -105,7 +117,9 @@ ENGINE = IcebergS3(
 )
 ```
 
-## تطور المخطط {#schema-evolution}
+<div id="schema-evolution">
+  ## تطور المخطط
+</div>
 
 في الوقت الحالي، وبمساعدة CH، يمكنك قراءة جداول Iceberg التي تغيّر مخططها بمرور الوقت. ونحن ندعم حاليًا قراءة الجداول التي أُضيفت إليها أعمدة وأُزيلت منها أعمدة، أو تغيّر ترتيب أعمدتها. ويمكنك أيضًا تحويل عمود تكون فيه القيمة إلزامية إلى عمود يُسمح فيه بالقيمة NULL. بالإضافة إلى ذلك، ندعم تحويل الأنواع المسموح به للأنواع البسيطة، وهي:  
 
@@ -115,21 +129,31 @@ ENGINE = IcebergS3(
 
 حاليًا، لا يمكن تغيير البُنى المتداخلة أو أنواع العناصر داخل Array وMap.
 
-## استبعاد الأقسام {#partition-pruning}
+<div id="partition-pruning">
+  ## استبعاد الأقسام
+</div>
 
 يدعم ClickHouse استبعاد الأقسام أثناء استعلامات SELECT على جداول Iceberg، مما يساعد على تحسين أداء الاستعلامات عبر تخطي ملفات البيانات غير ذات الصلة. لتمكين استبعاد الأقسام، اضبط `use_iceberg_partition_pruning = 1`. لمزيد من المعلومات حول استبعاد أقسام Iceberg، راجع https://iceberg.apache.org/spec/#partitioning
 
-## السفر عبر الزمن {#time-travel}
+<div id="time-travel">
+  ## السفر عبر الزمن
+</div>
 
 يدعم ClickHouse ميزة السفر عبر الزمن في جداول Iceberg، ما يتيح لك الاستعلام عن البيانات التاريخية استنادًا إلى طابع زمني محدد أو معرّف لقطة محدد.
 
-## معالجة الجداول ذات الصفوف المحذوفة {#deleted-rows}
+<div id="deleted-rows">
+  ## معالجة الجداول ذات الصفوف المحذوفة
+</div>
 
 يدعم ClickHouse جداول Iceberg التي تستخدم [الحذف حسب الموضع](https://iceberg.apache.org/spec/#position-delete-files) و[الحذف بالمساواة](https://iceberg.apache.org/spec/#equality-delete-files). يُدعَم الحذف بالمساواة بدءًا من الإصدار v25.8.
 
-كما يدعم ClickHouse قراءة [متجهات الحذف](https://iceberg.apache.org/spec/#deletion-vectors) (أُضيفت في v3). هذا الدعم للقراءة فقط: لا يكتب ClickHouse متجهات الحذف ولا يحدّثها ولا يضغطها، كما أن `ALTER TABLE ... DELETE` و`ALTER TABLE ... UPDATE` غير مدعومين لجداول Iceberg ذات إصدار التنسيق 3.
+أسلوب الحذف التالي **غير مدعوم**:
 
-### الاستخدام الأساسي {#basic-usage}
+* [متجهات الحذف](https://iceberg.apache.org/spec/#deletion-vectors) (أُضيفت في v3)
+
+<div id="basic-usage">
+  ### الاستخدام الأساسي
+</div>
 
 ```sql
  SELECT * FROM example_table ORDER BY 1 
@@ -143,7 +167,9 @@ ENGINE = IcebergS3(
 
 ملاحظة: لا يمكنك تحديد المعلَمين `iceberg_timestamp_ms` و`iceberg_snapshot_id` معًا في الاستعلام نفسه.
 
-### اعتبارات مهمة {#important-considerations}
+<div id="important-considerations">
+  ### اعتبارات مهمة
+</div>
 
 * **اللقطات** تُنشأ عادةً عندما:
 
@@ -153,11 +179,15 @@ ENGINE = IcebergS3(
 
 * **تغييرات المخطط لا تُنشئ لقطات عادةً** - يؤدي ذلك إلى سلوكيات مهمة عند استخدام السفر عبر الزمن مع الجداول التي خضعت لتطوّر المخطط.
 
-### أمثلة على السيناريوهات {#example-scenarios}
+<div id="example-scenarios">
+  ### أمثلة على السيناريوهات
+</div>
 
 تستخدم هذه السيناريوهات Spark لتوضيح تغييرات المخطط التي أجراها كاتب Iceberg خارجي.
 
-#### السيناريو 1: تغييرات المخطط من دون لقطات جديدة {#scenario-1}
+<div id="scenario-1">
+  #### السيناريو 1: تغييرات المخطط من دون لقطات جديدة
+</div>
 
 تأمل تسلسل العمليات التالي:
 
@@ -217,7 +247,9 @@ ENGINE = IcebergS3(
 * عند ts1 وts2: يظهر العمودان الأصليان فقط
 * عند ts3: تظهر الأعمدة الثلاثة جميعها، وتكون قيمة السعر في الصف الأول NULL
 
-#### السيناريو 2:  الاختلافات بين المخطط التاريخي والمخطط الحالي {#scenario-2}
+<div id="scenario-2">
+  #### السيناريو 2:  الاختلافات بين المخطط التاريخي والمخطط الحالي
+</div>
 
 قد يُظهر استعلام السفر عبر الزمن في الوقت الحالي مخططًا يختلف عن مخطط الجدول الحالي:
 
@@ -259,7 +291,9 @@ ENGINE = IcebergS3(
 
 يحدث هذا لأن `ALTER TABLE` لا يُنشئ snapshot جديدة، ولكن بالنسبة إلى الجدول الحالي، يأخذ Spark قيمة `schema_id` من أحدث ملف metadata، وليس من snapshot.
 
-#### السيناريو 3: الاختلافات بين المخطط التاريخي والمخطط الحالي {#scenario-3}
+<div id="scenario-3">
+  #### السيناريو 3: الاختلافات بين المخطط التاريخي والمخطط الحالي
+</div>
 
 والنقطة الثانية هي أنه عند استخدام السفر عبر الزمن، لا يمكنك الحصول على حالة الجدول قبل كتابة أي بيانات فيه:
 
@@ -280,11 +314,15 @@ ENGINE = IcebergS3(
 
 في ClickHouse، يكون السلوك متوافقًا مع Spark. يمكنك ببساطة اعتبار استعلامات `Select` في ClickHouse بدلًا من استعلامات `Select` في Spark، وسيعمل الأمر بالطريقة نفسها.
 
-## تحديد ملف البيانات الوصفية {#metadata-file-resolution}
+<div id="metadata-file-resolution">
+  ## تحديد ملف البيانات الوصفية
+</div>
 
 عند استخدام الدالة الجدولية `iceberg` في ClickHouse، يحتاج النظام إلى تحديد ملف metadata.json الصحيح الذي يصف بنية جدول Iceberg. إليك كيف تتم عملية التحديد هذه:
 
-### البحث عن المرشحين (حسب ترتيب الأولوية) {#candidate-search}
+<div id="candidate-search">
+  ### البحث عن المرشحين (حسب ترتيب الأولوية)
+</div>
 
 1. **تحديد المسار مباشرةً**:
    *إذا عيّنت `iceberg_metadata_file_path`، فسيستخدم النظام هذا المسار المحدد كما هو، من خلال دمجه مع مسار دليل جدول Iceberg.
@@ -299,7 +337,9 @@ ENGINE = IcebergS3(
 3. **البحث الافتراضي**:
    *إذا لم يتم توفير أيٍّ من الإعدادين أعلاه، تصبح جميع ملفات `.metadata.json` في دليل `metadata` مرشحين
 
-### اختيار أحدث ملف {#most-recent-file}
+<div id="most-recent-file">
+  ### اختيار أحدث ملف
+</div>
 
 بعد تحديد الملفات المرشحة باستخدام القواعد المذكورة أعلاه، يحدّد النظام الملف الأحدث بينها:
 
@@ -322,15 +362,21 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 
 **ملاحظة**: رغم أن كتالوجات Iceberg تتولى عادةً تحديد البيانات الوصفية، فإن دالة الجدول `iceberg` في ClickHouse تفسّر مباشرةً الملفات المخزّنة في S3 على أنها جداول Iceberg، ولذلك من المهم فهم قواعد التحديد هذه.
 
-## ذاكرة التخزين المؤقت للبيانات الوصفية {#metadata-cache}
+<div id="metadata-cache">
+  ## ذاكرة التخزين المؤقت للبيانات الوصفية
+</div>
 
 يدعم محرك الجدول `Iceberg` والدالة الجدولية ذاكرة تخزين مؤقت للبيانات الوصفية تُخزّن معلومات ملفات manifest وmanifest list وملف metadata json. تُخزَّن ذاكرة التخزين المؤقت هذه في الذاكرة. ويجري التحكم في هذه الميزة عبر الإعداد `use_iceberg_metadata_files_cache`، وهي مفعّلة افتراضيًا.
 
-## الأسماء البديلة {#aliases}
+<div id="aliases">
+  ## الأسماء البديلة
+</div>
 
 أصبحت الدالة الجدولية `iceberg` اسمًا بديلًا لـ `icebergS3`.
 
-## الأعمدة الافتراضية {#virtual-columns}
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
@@ -338,7 +384,9 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، فستكون القيمة `NULL`.
 * `_etag` — قيمة etag للملف. النوع: `LowCardinality(String)`. إذا كانت قيمة etag غير معروفة، فستكون القيمة `NULL`.
 
-## الكتابة في جدول Iceberg {#writes-into-iceberg-table}
+<div id="writes-into-iceberg-table">
+  ## الكتابة في جدول Iceberg
+</div>
 
 بدءًا من الإصدار 25.7، يدعم ClickHouse تعديل جداول Iceberg على الواجهات الخلفية للتخزين القابلة للكتابة.
 
@@ -348,12 +396,16 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 SET allow_insert_into_iceberg = 1;
 ```
 
-### إنشاء جدول {#create-iceberg-table}
+<div id="create-iceberg-table">
+  ### إنشاء جدول
+</div>
 
 لإنشاء جدول Iceberg مستقل جديد على واجهة خلفية قابلة للكتابة، استخدم محرك جدول Iceberg وحدِّد المخطط صراحةً.
 تدعم عمليات الكتابة جميع تنسيقات البيانات وفقًا لمواصفة Iceberg، مثل Parquet وAvro وORC.
 
-### مثال {#example-iceberg-writes-create}
+<div id="example">
+  ### مثال
+</div>
 
 ```sql
 CREATE TABLE iceberg_writes_example
@@ -367,13 +419,17 @@ ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
 ملاحظة: لإنشاء ملف تلميح الإصدار، فعِّل الإعداد `iceberg_use_version_hint`.
 إذا أردت ضغط ملف metadata.json، فحدِّد اسم خوارزمية الضغط في الإعداد `iceberg_metadata_compression_method`.
 
-### INSERT {#writes-inserts}
+<div id="writes-inserts">
+  ### INSERT
+</div>
 
 <BetaBadge />
 
 بعد إنشاء جدول جديد، يمكنك إدراج البيانات باستخدام صيغة ClickHouse المعتادة.
 
-### مثال {#example-iceberg-writes-insert}
+<div id="example">
+  ### مثال
+</div>
 
 ```sql
 INSERT INTO iceberg_writes_example VALUES ('Pavel', 777), ('Ivanov', 993);
@@ -393,12 +449,16 @@ x: Ivanov
 y: 993
 ```
 
-### DELETE {#iceberg-writes-delete}
+<div id="iceberg-writes-delete">
+  ### DELETE
+</div>
 
 يدعم ClickHouse أيضًا حذف الصفوف الإضافية في تنسيق merge-on-read.
 سينشئ هذا الاستعلام لقطة جديدة تتضمّن ملفات حذف حسب الموضع.
 
-### مثال {#example-iceberg-writes-delete}
+<div id="example">
+  ### مثال
+</div>
 
 ```sql
 ALTER TABLE iceberg_writes_example DELETE WHERE x != 'Ivanov';
@@ -413,11 +473,15 @@ x: Ivanov
 y: 993
 ```
 
-### تطوّر المخطط {#iceberg-writes-schema-evolution}
+<div id="iceberg-writes-schema-evolution">
+  ### تطوّر المخطط
+</div>
 
 يتيح ClickHouse إضافة الأعمدة ذات الأنواع البسيطة (غير tuple وغير array وغير map) أو حذفها أو تعديلها أو إعادة تسميتها.
 
-### مثال {#example-iceberg-writes-evolution}
+<div id="example">
+  ### مثال
+</div>
 
 ```sql
 ALTER TABLE iceberg_writes_example MODIFY COLUMN y Nullable(Int64);
@@ -497,7 +561,9 @@ x: Ivanov
 value: 993
 ```
 
-### الدمج {#iceberg-writes-compaction}
+<div id="iceberg-writes-compaction">
+  ### الدمج
+</div>
 
 يدعم ClickHouse دمج جداول Iceberg. حاليًا، يمكنه دمج ملفات الحذف حسب الموضع في ملفات البيانات مع تحديث البيانات الوصفية. وتبقى معرّفات اللقطات السابقة والطوابع الزمنية من دون تغيير، لذا يظل بالإمكان استخدام ميزة السفر عبر الزمن بالمعرّفات والقيم الزمنية نفسها.
 
@@ -518,7 +584,9 @@ x: Ivanov
 y: 993
 ```
 
-### حذف اللقطات منتهية الصلاحية {#iceberg-expire-snapshots}
+<div id="iceberg-expire-snapshots">
+  ### حذف اللقطات منتهية الصلاحية
+</div>
 
 تتراكم اللقطات في جداول Iceberg مع كل عملية INSERT أو DELETE أو UPDATE. ومع مرور الوقت، قد يؤدي ذلك إلى زيادة كبيرة في عدد اللقطات وملفات البيانات المرتبطة بها. يزيل الأمر `expire_snapshots` اللقطات القديمة وينظّف ملفات البيانات التي لم تعد أي لقطة محتفَظ بها تُشير إليها.
 
@@ -602,7 +670,9 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 6. في الوضع العادي: يحذف فعليًا قوائم البيان وملفات البيان وملفات البيانات التي لم يعد من الممكن الوصول إليها
 7. في وضع `dry_run = 1`: يتخطى الخطوتين 5 و6 ويُرجع فقط المقاييس المحسوبة
 
-#### سياسة الاحتفاظ باللقطات {#iceberg-snapshot-retention-policy}
+<div id="iceberg-snapshot-retention-policy">
+  #### سياسة الاحتفاظ باللقطات
+</div>
 
 يراعي الأمر `expire_snapshots` [سياسة الاحتفاظ بلقطات Iceberg](https://iceberg.apache.org/spec/#snapshot-retention-policy). يُضبط الاحتفاظ عبر خصائص جدول Iceberg وعمليات التجاوز على مستوى كل مرجع:
 
@@ -644,7 +714,9 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
   * يُطبَّق التفويض الخاص بـ catalog نفسه (مثل مصادقة REST catalog وAWS Glue IAM وغيرها) بشكل مستقل عندما يحدّث ClickHouse البيانات الوصفية
 </Note>
 
-### إزالة الملفات اليتيمة {#iceberg-remove-orphan-files}
+<div id="iceberg-remove-orphan-files">
+  ### إزالة الملفات اليتيمة
+</div>
 
 الملفات اليتيمة هي ملفات موجودة في التخزين لا تشير إليها أي لقطة في البيانات الوصفية لجدول Iceberg. وتتراكم بسبب عمليات الكتابة الفاشلة، والتنظيف الجزئي بعد الدمج، والعمليات المنقطعة، مما يؤدي إلى نمو غير محدود في مساحة التخزين. يحدِّد الأمر `remove_orphan_files` هذه الملفات اليتيمة ويزيلها.
 
@@ -726,7 +798,9 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
   * تحمي عتبة `older_than` من حذف الملفات الناتجة عن عمليات كتابة لا تزال قيد التنفيذ — وتوفّر العتبة الافتراضية البالغة 3 أيام هامش أمان مريحًا
 </Note>
 
-## راجع أيضًا {#see-also}
+<div id="see-also">
+  ## راجع أيضًا
+</div>
 
 * [محرك Iceberg](/ar/reference/engines/table-engines/integrations/iceberg)
 * [دالة جدولية للعنقود الخاصة بـ Iceberg](/ar/reference/functions/table-functions/icebergCluster)

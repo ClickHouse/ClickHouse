@@ -13,15 +13,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## delta_lake_accurate_write_cast {#delta_lake_accurate_write_cast}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新しい設定: 書き込む値を Delta の書き込みスキーマの型へ accurate cast でキャストし、変換先の型に収まらない値は暗黙的に切り詰めるのではなく例外をスローします。26.9 未満の `compatibility` 設定では、例外をスローしない通常のキャストが使用されます。"}]}]} />
-
-Delta Lake テーブルへ書き込む際、各値を Delta の書き込みスキーマの型へ accurate cast でキャストし、変換先の型に収まらない値があれば例外をスローします (例: Delta の `byte` カラムに `300` を書き込む場合) 。通常のキャストでは、このような値は暗黙的に切り詰められます。例外をスローしない通常のキャストを使用するには、`false` に設定するか、26.9 未満の `compatibility` 設定を使用してください。
-
-## delta_lake_enable_engine_predicate {#delta_lake_enable_engine_predicate}
+<div id="delta_lake_enable_engine_predicate">
+  ## delta_lake_enable_engine_predicate
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -29,7 +23,9 @@ Delta Lake テーブルへ書き込む際、各値を Delta の書き込みス�
 
 delta-kernel 内部のデータプルーニングを有効にします。
 
-## delta_lake_enable_expression_visitor_logging {#delta_lake_enable_expression_visitor_logging}
+<div id="delta_lake_enable_expression_visitor_logging">
+  ## delta_lake_enable_expression_visitor_logging
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -37,7 +33,9 @@ delta-kernel 内部のデータプルーニングを有効にします。
 
 Delta Lake expression visitor のテストレベルのログを有効にします。これらのログは、テスト用としても冗長すぎる場合があります。
 
-## delta_lake_insert_max_bytes_in_data_file {#delta_lake_insert_max_bytes_in_data_file}
+<div id="delta_lake_insert_max_bytes_in_data_file">
+  ## delta_lake_insert_max_bytes_in_data_file
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
@@ -45,7 +43,9 @@ Delta Lake expression visitor のテストレベルのログを有効にしま�
 
 Delta Lake に挿入される 1 つのデータファイルの最大バイト数を定義します。
 
-## delta_lake_insert_max_rows_in_data_file {#delta_lake_insert_max_rows_in_data_file}
+<div id="delta_lake_insert_max_rows_in_data_file">
+  ## delta_lake_insert_max_rows_in_data_file
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
 
@@ -53,7 +53,9 @@ Delta Lake に挿入される 1 つのデータファイルの最大バイト数
 
 Delta Lake の 1 つの挿入データファイルに対する行数の上限を定義します。
 
-## delta_lake_log_metadata {#delta_lake_log_metadata}
+<div id="delta_lake_log_metadata">
+  ## delta_lake_log_metadata
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -61,7 +63,9 @@ Delta Lake の 1 つの挿入データファイルに対する行数の上限を
 
 Delta Lake のメタデータファイルをシステムテーブルにログ記録する機能を有効にします。
 
-## delta_lake_reload_schema_for_consistency {#delta_lake_reload_schema_for_consistency}
+<div id="delta_lake_reload_schema_for_consistency">
+  ## delta_lake_reload_schema_for_consistency
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -70,7 +74,9 @@ Delta Lake のメタデータファイルをシステムテーブルにログ記
 有効にすると、一貫性を確保するために、各クエリ実行の前に Delta Lake のメタデータからスキーマが再読み込みされ、
 クエリ分析で使用されるスキーマと実行時に使用されるスキーマの整合性が保たれます。
 
-## delta_lake_snapshot_end_version {#delta_lake_snapshot_end_version}
+<div id="delta_lake_snapshot_end_version">
+  ## delta_lake_snapshot_end_version
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -78,7 +84,9 @@ Delta Lake のメタデータファイルをシステムテーブルにログ記
 
 読み取り対象の Delta Lake スナップショットの終了バージョンです。値 `-1` は最新バージョンを読み取ることを意味します (`0` は有効なスナップショットバージョンです) 。
 
-## delta_lake_snapshot_start_version {#delta_lake_snapshot_start_version}
+<div id="delta_lake_snapshot_start_version">
+  ## delta_lake_snapshot_start_version
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -86,7 +94,9 @@ Delta Lake のメタデータファイルをシステムテーブルにログ記
 
 読み取る Delta Lake スナップショットの開始バージョンです。値 `-1` は最新バージョンを読み取ることを意味します (値 `0` は有効なスナップショットバージョンです) 。
 
-## delta_lake_snapshot_version {#delta_lake_snapshot_version}
+<div id="delta_lake_snapshot_version">
+  ## delta_lake_snapshot_version
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -94,7 +104,9 @@ Delta Lake のメタデータファイルをシステムテーブルにログ記
 
 読み取る Delta Lake スナップショットのバージョン。値 `-1` は最新のバージョンを読み取ることを意味します (値 `0` は有効なスナップショットバージョンです) 。
 
-## delta_lake_throw_on_engine_predicate_error {#delta_lake_throw_on_engine_predicate_error}
+<div id="delta_lake_throw_on_engine_predicate_error">
+  ## delta_lake_throw_on_engine_predicate_error
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

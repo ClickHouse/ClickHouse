@@ -30,7 +30,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 <DedicatedKeeperServers />
 
 <div id="prerequisites">
-  ## المتطلبات الأساسية {#prerequisites}
+  ## المتطلبات الأساسية
 </div>
 
 * سبق أن قمت بإعداد [خادم ClickHouse محلي](/ar/get-started/setup/install)
@@ -169,7 +169,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
   </Step>
 
   <Step title="تهيئة عقد ClickHouse" id="configure-clickhouse-servers">
-    ### إعداد الخادم {#server-setup}
+    ### إعداد الخادم
 
     قم الآن بتعديل كل ملف تهيئة فارغ `config.xml` الموجود في
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. يجب تغيير الأسطر
@@ -255,7 +255,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 
     يُشرح كل قسم من أقسام ملف الإعداد أعلاه بمزيد من التفاصيل في ما يلي.
 
-    #### الشبكة والتسجيل {#networking}
+    #### الشبكة والتسجيل
 
     <ListenHost />
 
@@ -274,7 +274,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     لمزيد من المعلومات حول تهيئة التسجيل، راجع التعليقات المضمّنة في
     [ملف التهيئة](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) الافتراضي لـ ClickHouse.
 
-    #### تهيئة الكلستر {#cluster-config}
+    #### تهيئة الكلستر
 
     يتم إعداد إعدادات الكلستر في مقطع `<remote_servers>`.
     هنا يُعرَّف اسم الكلستر `cluster_2S_2R`.
@@ -319,7 +319,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ويعمل بوصفه template لاستعلامات DDL الموزَّعة، وهي الاستعلامات التي تُنفَّذ
     عبر الكلستر باستخدام جملة `ON CLUSTER`.
 
-    #### تهيئة Keeper {#keeper-config-explanation}
+    #### تهيئة Keeper
 
     يُخبر القسم `<ZooKeeper>` ClickHouse بمكان تشغيل ClickHouse Keeper (أو ZooKeeper).
     نظرًا لاستخدامنا Keeper cluster، يجب تحديد كل `<node>` من عقد الـ cluster،
@@ -349,7 +349,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
       فإننا نوصي بشدة، في بيئات الإنتاج، بتشغيل ClickHouse Keeper على مضيفات مخصصة.
     </Note>
 
-    #### تهيئة الماكرو {#macros-config-explanation}
+    #### تهيئة الماكرو
 
     بالإضافة إلى ذلك، يُستخدم قسم `<macros>` لتعريف استبدالات المعاملات للجداول المُكرَّرة. وتُدرج هذه الاستبدالات في `system.macros`، مما يتيح استخدام استبدالات مثل `{shard}` و`{replica}` في الاستعلامات.
 
@@ -360,7 +360,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </macros>
     ```
 
-    ### تهيئة المستخدم {#cluster-configuration}
+    ### تهيئة المستخدم
 
     عدِّل الآن كل ملف تهيئة فارغ `users.xml` الموجود في
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` بإضافة ما يلي:
@@ -378,6 +378,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
+                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -385,6 +386,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
+                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -414,7 +416,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
   <Step title="إعداد ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     بعد ذلك، ستُعِد ClickHouse Keeper، والذي يُستخدم للتنسيق.
 
-    ### إعداد Keeper {#configuration-explanation}
+    ### إعداد Keeper
 
     <KeeperConfig />
 
@@ -602,7 +604,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     [UK property prices](/ar/get-started/sample-datasets/uk-price-paid) الأصلي ضمن عبارة `CREATE`،
     باستثناء عبارة `ON CLUSTER` واستخدام المحرك `ReplicatedMergeTree`.
 
-    صُمِّمت عبارة `ON CLUSTER` للتنفيذ الموزع لاستعلامات DDL (لغة تعريف البيانات)
+    صُمِّمت عبارة `ON CLUSTER` للتنفيذ الموزع لاستعلامات DDL (لغة تعريف البيانات)
     مثل `CREATE` و`DROP` و`ALTER` و`RENAME`، بما يضمن تطبيق
     تغييرات المخطط هذه على جميع العقد في المجموعة.
 
@@ -647,7 +649,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     و`DELETE`. ولإدراج البيانات، يجب استخدام محرّك الجدول
     [`Distributed`](/ar/reference/engines/table-engines/special/distributed).
     وكما تعلّمت في [الدليل](/ar/guides/oss/deployment-and-scaling/examples/2-shards-1-replica) الخاص بإعداد عنقود يضم جزأين ونسخة متماثلة واحدة، فإن الجداول الموزّعة هي جداول يمكنها الوصول إلى الأجزاء الموجودة على
-    مضيفين مختلفين، وتُعرَّف باستخدام محرّك الجدول `Distributed`.
+    مضيفين مختلفين، وتُعرَّف باستخدام محرّك الجدول `Distributed`.
     ويعمل الجدول الموزّع بوصفه واجهة موحّدة عبر جميع الأجزاء في العنقود.
 
     من أي عميل على أحد المضيفين، شغّل الاستعلام التالي لإنشاء جدول موزّع
@@ -668,7 +670,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
        └───────────────────────────┘
     ```
 
-    يمكن إدراج البيانات في جدول `uk_price_paid_distributed` من أيٍّ من
+    يمكن إدراج البيانات في جدول `uk_price_paid_distributed` من أيٍّ من
     العملاء على المضيفات باستخدام الاستعلام التالي:
 
     ```sql
@@ -710,7 +712,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ) SETTINGS max_http_get_redirects=10;
     ```
 
-    شغّل الاستعلام التالي للتأكد من أن البيانات المُدخلة قد وُزِّعت بالتساوي
+    شغّل الاستعلام التالي للتأكد من أن البيانات المُدخلة قد وُزِّعت بالتساوي
     عبر عُقد العنقود:
 
     ```sql
@@ -732,7 +734,9 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
   </Step>
 </Steps>
 
-## الخلاصة {#conclusion}
+<div id="conclusion">
+  ## الخلاصة
+</div>
 
 تتمثل ميزة بنية العُنقود هذه، التي تضم شاردين ونسختين متماثلتين، في أنها توفّر كلاً من قابلية التوسع وتحمل الأعطال.
 تُوزَّع البيانات عبر مضيفين منفصلين، مما يقلّل متطلبات التخزين وعمليات الإدخال/الإخراج لكل عقدة، بينما تُعالَج الاستعلامات بالتوازي عبر كلا الشاردين لتحسين الأداء وكفاءة استخدام الذاكرة.

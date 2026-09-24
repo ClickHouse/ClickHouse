@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## max_rows_for_lazy_final {#max_rows_for_lazy_final}
+<div id="max_rows_for_lazy_final">
+  ## max_rows_for_lazy_final
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" />
 
@@ -21,45 +23,48 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 Número máximo de filas en el conjunto para la optimización FINAL diferida. Si se supera, se recurre a FINAL normal.
 
-## max_rows_in_distinct {#max_rows_in_distinct}
+<div id="max_rows_in_distinct">
+  ## max_rows_in_distinct
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 El número máximo de filas distintas al usar DISTINCT.
 
-## max_rows_in_join {#max_rows_in_join}
+<div id="max_rows_in_join">
+  ## max_rows_in_join
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limita el número de filas en la estructura de datos del lado derecho (normalmente, una tabla
 hash) que se utiliza al hacer join entre tablas.
 
-Este SETTING se aplica a las operaciones [SELECT ... JOIN](/es/reference/statements/select/join)
+Esta configuración se aplica a las operaciones [SELECT ... JOIN](/es/reference/statements/select/join)
 y al motor de tabla [Join](/es/reference/engines/table-engines/special/join).
 
 Si una consulta contiene varios joins, ClickHouse comprueba esta configuración para cada
-resultado intermedio. Es un tope estricto para cada `join_algorithm` basado en hash: cuando se alcanza
-el límite, la consulta lanza una excepción o se interrumpe según
-[`join_overflow_mode`](/es/reference/settings/session-settings/join#join_overflow_mode).
-Nunca hace que un join haga spill a disco; esa decisión corresponde a
-[`max_bytes_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
-y
-[`max_bytes_ratio_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
-La excepción es `legacy_join_size_limits_trigger_spilling`: con esta opción activada, la parte de un
-join que ya se ejecuta en disco trata este límite como un disparador adicional de spill en lugar de como un tope.
+resultado intermedio. Cuando se alcanza el límite, la acción depende del
+[`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) elegido; consulte
+esa configuración para conocer el comportamiento de cada algoritmo (spill, re-partition, switch o
+throw/break según [`join_overflow_mode`](/es/reference/settings/session-settings/join#join_overflow_mode)).
 
 Valores posibles:
 
 * Entero positivo.
 * `0` — Número ilimitado de filas.
 
-## max_rows_in_set {#max_rows_in_set}
+<div id="max_rows_in_set">
+  ## max_rows_in_set
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 El número máximo de filas de un conjunto de datos en la cláusula IN creada a partir de una subconsulta.
 
-## max_rows_in_set_to_optimize_join {#max_rows_in_set_to_optimize_join}
+<div id="max_rows_in_set_to_optimize_join">
+  ## max_rows_in_set_to_optimize_join
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -72,7 +77,9 @@ Posibles valores:
 * 0 — Desactiva.
 * Cualquier entero positivo.
 
-## max_rows_to_group_by {#max_rows_to_group_by}
+<div id="max_rows_to_group_by">
+  ## max_rows_to_group_by
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -84,7 +91,9 @@ filas (claves únicas de GROUP BY), el comportamiento vendrá determinado por
 &#39;group&#95;by&#95;overflow&#95;mode&#39;, que de forma predeterminada es `throw`, aunque también puede cambiarse
 a un modo aproximado de GROUP BY.
 
-## max_rows_to_read {#max_rows_to_read}
+<div id="max_rows_to_read">
+  ## max_rows_to_read
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -93,7 +102,9 @@ La restricción se comprueba para cada fragmento de datos procesado; se aplica s
 expresión de tabla más profunda y, al leer desde un servidor remoto, se comprueba solo en
 el servidor remoto.
 
-## max_rows_to_read_leaf {#max_rows_to_read_leaf}
+<div id="max_rows_to_read_leaf">
+  ## max_rows_to_read_leaf
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -114,7 +125,9 @@ La restricción se comprueba para cada fragmento de datos procesado.
   Este ajuste es inestable con `prefer_localhost_replica=1`.
 </Note>
 
-## max_rows_to_sort {#max_rows_to_sort}
+<div id="max_rows_to_sort">
+  ## max_rows_to_sort
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -122,7 +135,9 @@ El número máximo de filas antes de la ordenación. Esto permite limitar el con
 Si es necesario procesar más registros que la cantidad especificada para la operación ORDER BY,
 el comportamiento vendrá determinado por `sort_overflow_mode`, que de forma predeterminada está configurado como `throw`.
 
-## max_rows_to_transfer {#max_rows_to_transfer}
+<div id="max_rows_to_transfer">
+  ## max_rows_to_transfer
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

@@ -14,13 +14,17 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## throw_on_error_from_cache_on_write_operations {#throw_on_error_from_cache_on_write_operations}
+<div id="throw_on_error_from_cache_on_write_operations">
+  ## throw_on_error_from_cache_on_write_operations
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 تجاهل الخطأ الصادر من cache عند التخزين المؤقت في عمليات الكتابة (INSERT وعمليات الدمج)
 
-## throw_on_hive_partitioning_resolution_failure {#throw_on_hive_partitioning_resolution_failure}
+<div id="throw_on_hive_partitioning_resolution_failure">
+  ## throw_on_hive_partitioning_resolution_failure
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,7 +32,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 أطلق استثناءً بدلاً من تسجيل تحذير عند تعذّر اكتشاف التقسيم بنمط Hive لجدول في تخزين الكائنات بسبب عدم القدرة على سرد محتويات التخزين. عند تعطيل هذا الإعداد، يُشغَّل الاستعلام دون أعمدة تقسيم Hive، مما قد يغيّر نتيجته.
 
-## throw_on_max_partitions_per_insert_block {#throw_on_max_partitions_per_insert_block}
+<div id="throw_on_max_partitions_per_insert_block">
+  ## throw_on_max_partitions_per_insert_block
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -43,7 +49,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   قد يكون ذلك مفيدًا إذا كنت تحاول فهم التأثير على المستخدمين عند تغيير [`max_partitions_per_insert_block`](/ar/reference/settings/session-settings/max-partitions#max_partitions_per_insert_block).
 </Tip>
 
-## throw_on_unsupported_query_inside_transaction {#throw_on_unsupported_query_inside_transaction}
+<div id="throw_on_unsupported_query_inside_transaction">
+  ## throw_on_unsupported_query_inside_transaction
+</div>
 
 <ExperimentalBadge />
 

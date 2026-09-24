@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد جرى إنشاؤها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_compaction_commit_batch_size {#iceberg_compaction_commit_batch_size}
+<div id="iceberg_compaction_commit_batch_size">
+  ## iceberg_compaction_commit_batch_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -26,7 +28,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 المتمثل في النشر فقط عند نفاد مرشحي الدمج، وهي حالة لا تحدث أبدًا ما دام الجدول يتلقى
 ملفات بيانات جديدة؛ لذلك يُكتب كل ناتج مدمج إلى تخزين الكائنات دون أن تتم الإشارة إليه مطلقًا من قِبل لقطة.
 
-## iceberg_compaction_data_cleanup {#iceberg_compaction_data_cleanup}
+<div id="iceberg_compaction_data_cleanup">
+  ## iceberg_compaction_data_cleanup
+</div>
 
 <SettingsInfoBlock type="ثوانٍ" default_value="10800" />
 
@@ -34,7 +38,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 المدة التي ستُحذف بعدها البيانات.
 
-## iceberg_compaction_delay_bias {#iceberg_compaction_delay_bias}
+<div id="iceberg_compaction_delay_bias">
+  ## iceberg_compaction_delay_bias
+</div>
 
 <SettingsInfoBlock type="ثوانٍ" default_value="10800" />
 
@@ -42,27 +48,24 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأدنى للمدة الفاصلة بين عمليتَي الدمج في الخلفية.
 
-## iceberg_compaction_max_bytes_in_data_file {#iceberg_compaction_max_bytes_in_data_file}
-
-<SettingsInfoBlock type="UInt64" default_value="536870912" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "إعداد جديد للحد الأقصى لعدد البايتات في ملف بيانات Iceberg الناتج عن الدمج، منفصل عن الحد المطبَّق أثناء الإدراج. تتوافق القيمة الافتراضية مع القيمة الافتراضية الموثَّقة لخاصية جدول Iceberg `write.target-file-size-bytes` (512 ميبي بايت)، راجع https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/. في السابق كان الدمج يدمج جميع الملفات المؤهَّلة ضمن التقسيم في ملف الإخراج واحد."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "إعداد جديد للحد الأقصى لعدد البايتات في ملف بيانات Iceberg الناتج عن الدمج، منفصل عن الحد المطبَّق أثناء الإدراج."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "إعداد جديد للحد الأقصى لعدد البايتات في ملف بيانات Iceberg الناتج عن الدمج، منفصل عن الحد المطبَّق أثناء الإدراج."}]}]} />
-
-الحد الأقصى لعدد البايتات في ملف بيانات Parquet الخاص بـ Iceberg والناتج عن الدمج.
-
-تعكس القيمة الافتراضية القيمة الافتراضية الموثَّقة لخاصية جدول Iceberg `write.target-file-size-bytes` (512 ميبي بايت)،
-راجع https://iceberg.apache.org/docs/1.5.2/configuration/. احرص على إبقائها أعلى من
-`iceberg_data_file_size_lower_threshold_compaction`، وإلا فسيظل كل ملف الإخراج دون الحد الأدنى
-ويُختار مجددًا لإجراء الدمج عليه.
-
-## iceberg_compaction_max_rows_in_data_file {#iceberg_compaction_max_rows_in_data_file}
+<div id="iceberg_compaction_max_bytes_in_data_file">
+  ## iceberg_compaction_max_bytes_in_data_file
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "إعداد جديد للحد الأقصى لعدد الصفوف في ملف بيانات Iceberg الناتج عن الدمج، وهو منفصل عن الحد المطبَّق أثناء الإدراج."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "إعداد جديد للحد الأقصى لعدد الصفوف في ملف بيانات Iceberg الناتج عن الدمج، وهو منفصل عن الحد المطبَّق أثناء الإدراج."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "إعداد جديد للحد الأقصى لعدد البايتات في ملف بيانات Iceberg الناتج عن الدمج، وهو منفصل عن حد وقت الإدراج."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "إعداد جديد للحد الأقصى لعدد البايتات في ملف بيانات Iceberg الناتج عن الدمج، وهو منفصل عن حد وقت الإدراج."}]}]} />
 
-الحد الأقصى لعدد الصفوف في ملف بيانات Parquet لـ Iceberg ناتج عن الدمج. القيمة الافتراضية هي الحد الأقصى، بحيث يحدد حد الحجم
-`iceberg_compaction_max_bytes_in_data_file` وحده مقدار البيانات التي تذهب إلى ملف الإخراج، تمامًا كما أن
-Iceberg ليس لديه نظير لعدد الصفوف لـ `write.target-file-size-bytes`.
+الحد الأقصى لعدد البايتات في ملف بيانات Parquet الخاص بـ Iceberg الناتج عن الدمج. القيمة الافتراضية هي الحد الأقصى، بحيث يدمج الدمج الملفات المؤهلة في أقل عدد ممكن من ملفات الإخراج.
+
+<div id="iceberg_compaction_max_rows_in_data_file">
+  ## iceberg_compaction_max_rows_in_data_file
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="18446744073709551615" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "18446744073709551615"},{"label": "إعداد جديد للحد الأقصى لعدد الصفوف في ملف بيانات Iceberg الناتج عن الدمج، وهو منفصل عن حد وقت الإدراج."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "18446744073709551615"},{"label": "إعداد جديد للحد الأقصى لعدد الصفوف في ملف بيانات Iceberg الناتج عن الدمج، وهو منفصل عن حد وقت الإدراج."}]}]} />
+
+الحد الأقصى لعدد الصفوف في ملف بيانات Parquet لـ Iceberg ناتج عن الدمج. القيمة الافتراضية هي الحد الأقصى، بحيث يدمج الدمج الملفات المؤهلة في أقل عدد ممكن من ملفات الإخراج. سيؤدي إبقاء هذه القيمة أعلى من الحجم الذي يمكن أن ينتجه الدمج فعليًا إلى بقاء كل ملف إخراج دون `iceberg_data_file_size_lower_threshold_compaction` وإعادة اختياره باستمرار.
 
 {/*AUTOGENERATED_END*/}

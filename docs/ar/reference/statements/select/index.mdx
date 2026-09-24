@@ -10,7 +10,9 @@ doc_type: 'reference'
 
 تُستخدم استعلامات `SELECT` لاسترجاع البيانات. وبشكل افتراضي، تُعاد البيانات المطلوبة إلى العميل، ويمكن عند استخدامها مع [INSERT INTO](/ar/reference/statements/insert-into) توجيهها إلى جدول آخر.
 
-## البنية {#syntax}
+<div id="syntax">
+  ## البنية
+</div>
 
 ```sql
 [WITH expr_list(subquery)]
@@ -28,7 +30,6 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
-[LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
 [SETTINGS ...]
 [UNION  ...]
 [INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
@@ -72,13 +73,17 @@ FROM table
 |> ORDER BY c DESC
 ```
 
-## بند SELECT {#select-clause}
+<div id="select-clause">
+  ## بند SELECT
+</div>
 
 تُحتسب [التعبيرات](/ar/reference/syntax#expressions) المحددة في بند `SELECT` بعد اكتمال جميع العمليات في البنود الموضحة أعلاه. وتعمل هذه التعبيرات كما لو كانت تُطبَّق على صفوف منفصلة في النتيجة. وإذا كانت التعبيرات في بند `SELECT` تحتوي على دوال تجميع، فإن ClickHouse يعالج دوال التجميع والتعبيرات المستخدمة بوصفها وسيطات لها أثناء [تجميع GROUP BY](/ar/reference/statements/select/group-by).
 
 إذا كنت تريد تضمين جميع الأعمدة في النتيجة، فاستخدم رمز النجمة (`*`). على سبيل المثال: `SELECT * FROM ...`.
 
-### الاختيار الديناميكي للأعمدة {#dynamic-column-selection}
+<div id="dynamic-column-selection">
+  ### الاختيار الديناميكي للأعمدة
+</div>
 
 يتيح لك الاختيار الديناميكي للأعمدة (ويُعرف أيضًا باسم تعبير COLUMNS) مطابقة بعض الأعمدة في النتائج باستخدام تعبير نمطي [re2](https://en.wikipedia.org/wiki/RE2_\(software\)).
 
@@ -137,7 +142,9 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 قد تكون أنواع بيانات الأعمدة التي طابقت التعبير `COLUMNS` مختلفة. وإذا لم يطابق `COLUMNS` أي أعمدة وكان هو التعبير الوحيد في `SELECT`، فإن ClickHouse يرفع استثناءً.
 
-#### اختيار الأعمدة باستخدام `LIKE` أو `ILIKE` {#select-columns-with-like-or-ilike}
+<div id="select-columns-with-like-or-ilike">
+  #### اختيار الأعمدة باستخدام `LIKE` أو `ILIKE`
+</div>
 
 يمكنك أيضًا اختيار الأعمدة عبر مطابقة أسمائها مع نمط بعد `*`، باستخدام `LIKE` المطابق لحالة الأحرف أو `ILIKE` غير المطابق لحالة الأحرف:
 
@@ -171,7 +178,9 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 └────┘
 ```
 
-### النجمة {#asterisk}
+<div id="asterisk">
+  ### النجمة
+</div>
 
 يمكنك وضع نجمة في أي جزء من الاستعلام بدلًا من تعبير. وعند تحليل الاستعلام، تُوسَّع النجمة إلى قائمة بكل أعمدة الجدول (باستثناء الأعمدة `MATERIALIZED` و`ALIAS`). ولا يوجد سوى عدد قليل من الحالات التي يكون فيها استخدام النجمة مبررًا:
 
@@ -183,7 +192,9 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 في جميع الحالات الأخرى، لا نوصي باستخدام النجمة، لأنها لا تمنحك سوى عيوب نظام إدارة قواعد البيانات العمودي بدلًا من مزاياه. وبعبارة أخرى، لا يُنصح باستخدام النجمة.
 
-### القيم القصوى {#extreme-values}
+<div id="extreme-values">
+  ### القيم القصوى
+</div>
 
 بالإضافة إلى النتائج، يمكنك أيضًا الحصول على القيم الدنيا والقصوى لأعمدة النتائج. للقيام بذلك، اضبط الإعداد **extremes** على 1. تُحسب القيم الدنيا والقصوى للأنواع الرقمية، والتواريخ، وقيم التاريخ والوقت. أما الأعمدة الأخرى، فتُخرَج لها القيم الافتراضية.
 
@@ -191,15 +202,19 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 في تنسيقات `JSON*` و`XML`، تُخرَج القيم القصوى في حقل منفصل باسم &#39;extremes&#39;. وفي تنسيقات `TabSeparated*` و`CSV*` و`Vertical`، يأتي هذا الصف بعد النتيجة الرئيسية، وبعد &#39;totals&#39; أيضًا إذا كان موجودًا. ويسبقه صف فارغ (بعد البيانات الأخرى). وفي تنسيقات `Pretty*`، يُخرَج الصف في جدول منفصل بعد النتيجة الرئيسية، وبعد `totals` أيضًا إذا كان موجودًا. وفي تنسيق `Template`، تُخرَج القيم القصوى وفقًا للقالب المحدد.
 
-تُحسب القيم القصوى للصفوف قبل `LIMIT`، ولكن بعد `LIMIT BY`. ومع ذلك، عند استخدام `LIMIT offset, size`، تُدرَج الصفوف التي تسبق `offset` ضمن `extremes`. ويتصرف النطاق [`LIMIT ... AFTER ... UNTIL`](/ar/reference/statements/select/limit#limit-after-until) مثل `LIMIT` هنا: إذ تُحسب القيم القصوى على الصفوف المقروءة قبل تطبيق النطاق. وفي الطلبات المتدفقة، قد تتضمن النتيجة أيضًا عددًا قليلًا من الصفوف التي مرّت عبر `LIMIT`.
+تُحسب القيم القصوى للصفوف قبل `LIMIT`، ولكن بعد `LIMIT BY`. ومع ذلك، عند استخدام `LIMIT offset, size`، تُدرَج الصفوف التي تسبق `offset` ضمن `extremes`. وفي الطلبات المتدفقة، قد تتضمن النتيجة أيضًا عددًا قليلًا من الصفوف التي مرّت عبر `LIMIT`.
 
-### ملاحظات {#notes}
+<div id="notes">
+  ### ملاحظات
+</div>
 
 يمكنك استخدام المرادفات (الأسماء المستعارة باستخدام `AS`) في أي جزء من الاستعلام.
 
 تدعم بنود `GROUP BY` و`ORDER BY` و`LIMIT BY` الوسيطات الموضعية. لتمكين ذلك، فعِّل الإعداد [enable&#95;positional&#95;arguments](/ar/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments). بعد ذلك، على سبيل المثال، سيؤدي `ORDER BY 1,2` إلى فرز صفوف الجدول حسب العمود الأول ثم العمود الثاني.
 
-## تفاصيل التنفيذ {#implementation-details}
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
 
 إذا كان الاستعلام لا يتضمن بنود `DISTINCT` و`GROUP BY` و`ORDER BY` ولا الاستعلامات الفرعية `IN` و`JOIN`، فستتم معالجة الاستعلام بالكامل على نحوٍ تدفقي، باستخدام مقدار O(1) من RAM. بخلاف ذلك، قد يستهلك الاستعلام قدرًا كبيرًا من RAM إذا لم تُحدَّد القيود المناسبة:
 
@@ -219,7 +234,9 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 لمزيد من المعلومات، راجع قسم &quot;الإعدادات&quot;. يمكن استخدام الفرز الخارجي (بحفظ الجداول المؤقتة على القرص) والتجميع الخارجي.
 
-## مُعدِّلات SELECT {#select-modifiers}
+<div id="select-modifiers">
+  ## مُعدِّلات SELECT
+</div>
 
 يمكنك استخدام المُعدِّلات التالية في استعلامات `SELECT`.
 
@@ -229,7 +246,9 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 | [`EXCEPT`](/ar/reference/statements/select/except_modifier)   | يحدِّد أسماء عمود واحد أو أكثر لاستبعادها من النتيجة. وتُحذف جميع أسماء الأعمدة المطابقة من المخرجات.                                                                                                                                                                                                                              |
 | [`REPLACE`](/ar/reference/statements/select/replace_modifier) | يحدِّد اسمًا مستعارًا واحدًا أو أكثر لـ [التعبيرات](/ar/reference/syntax#expression-aliases). يجب أن يطابق كل اسم مستعار اسم عمود من عبارة `SELECT *`. وفي قائمة أعمدة المخرجات، يُستبدل العمود المطابق للاسم المستعار بالتعبير الموجود في `REPLACE`. لا يغيِّر هذا المُعدِّل أسماء الأعمدة أو ترتيبها، لكنه قد يغيِّر القيمة ونوعها. |
 
-### تركيبات المعدِّلات {#modifier-combinations}
+<div id="modifier-combinations">
+  ### تركيبات المعدِّلات
+</div>
 
 يمكنك استخدام كل معدِّل على حدة أو الجمع بينها.
 
@@ -259,7 +278,9 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 └─────────────────┴────────┘
 ```
 
-## الإعدادات في استعلام SELECT {#settings-in-select-query}
+<div id="settings-in-select-query">
+  ## الإعدادات في استعلام SELECT
+</div>
 
 يمكنك تحديد الإعدادات اللازمة مباشرةً داخل استعلام `SELECT`. ولا تُطبَّق قيمة الإعداد إلا على هذا الاستعلام، ثم تُعاد إلى القيمة الافتراضية أو إلى القيمة السابقة بعد تنفيذ الاستعلام.
 

@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-## shutdown_wait_backups_and_restores {#shutdown_wait_backups_and_restores}
+<div id="shutdown_wait_backups_and_restores">
+  ## shutdown_wait_backups_and_restores
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Si cette option est définie sur true, ClickHouse attend la fin des sauvegardes et restaurations en cours avant de s&#39;arrêter.
 
-## shutdown_wait_unfinished {#shutdown_wait_unfinished}
+<div id="shutdown_wait_unfinished">
+  ## shutdown_wait_unfinished
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />Délai d’attente, en secondes, avant l’arrêt en cas de requêtes non terminées. Limite également l’attente des sauvegardes et restaurations en cours lorsque `shutdown_wait_backups_and_restores` est désactivé.
+<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />Délai d’attente, en secondes, avant l’arrêt en cas de requêtes non terminées
 
-## shutdown_wait_unfinished_queries {#shutdown_wait_unfinished_queries}
+<div id="shutdown_wait_unfinished_queries">
+  ## shutdown_wait_unfinished_queries
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Si cette option est définie sur true, ClickHouse attendra la fin des requêtes en cours avant l’arrêt.
 

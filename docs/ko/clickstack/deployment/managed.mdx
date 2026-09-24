@@ -18,7 +18,7 @@ import SetupManagedIngestion from '/snippets/ko/clickstack/_setup_managed_ingest
 import NavigateClickStackUI from '/snippets/ko/clickstack/_navigate_managed.mdx';
 import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
-이 **가이드는 기존 ClickHouse Cloud 사용자를 대상**으로 합니다. ClickHouse Cloud를 처음 사용하는 경우 관리형 ClickStack용 [시작하기](/ko/clickstack/getting-started/managed) 가이드를 권장합니다.
+이 **가이드는 기존 ClickHouse Cloud 사용자를 대상**으로 합니다. ClickHouse Cloud를 처음 사용하는 경우 Managed ClickStack용 [시작하기](/ko/clickstack/getting-started/managed) 가이드를 권장합니다.
 
 이 배포 패턴에서는 ClickHouse와 ClickStack UI(HyperDX)를 모두 ClickHouse Cloud에서 호스팅하므로, 자체 호스팅해야 하는 구성 요소를 최소화할 수 있습니다.
 
@@ -26,7 +26,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
 * 스토리지와 독립적인 컴퓨트 자동 스케일링
 * 객체 스토리지 기반의 저비용, 사실상 무제한 보존
-* Warehouses를 사용해 [읽기 및 쓰기 워크로드를 독립적으로 격리](/ko/clickstack/managing/isolating-read-write)할 수 있는 기능
+* Warehouses를 사용해 읽기 및 쓰기 워크로드를 독립적으로 격리할 수 있는 기능
 * 통합 인증
 * 자동 백업
 * 보안 및 컴플라이언스 기능
@@ -35,7 +35,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 이 모드에서는 데이터 수집을 전적으로 사용자가 담당합니다. 자체 호스팅 OpenTelemetry collector, 클라이언트 라이브러리의 직접 수집, ClickHouse 네이티브 테이블 엔진(Kafka 또는 S3 등), ETL 파이프라인 또는 ClickHouse Cloud의 관리형 수집 서비스인 ClickPipes를 사용해 Managed ClickStack로 데이터를 수집할 수 있습니다. 이 방식은 ClickStack를 운영하는 가장 단순하면서도 성능이 뛰어난 방법입니다.
 
 <div id="suitable-for">
-  ### 적합한 경우 {#suitable-for}
+  ### 적합한 경우
 </div>
 
 이 배포 패턴은 다음과 같은 시나리오에 적합합니다.
@@ -45,7 +45,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 3. 이미 분석용으로 ClickHouse Cloud를 사용하고 있으며, ClickStack instrumentation 라이브러리를 사용해 애플리케이션에 계측을 추가하고 동일한 클러스터로 데이터를 전송하려는 경우. 이 경우 관측성 워크로드용 컴퓨트를 격리하기 위해 [warehouses](/ko/products/cloud/features/infrastructure/warehouses)를 사용하는 것을 권장합니다.
 
 <div id="setup-steps">
-  ## 설정 단계 {#setup-steps}
+  ## 설정 단계
 </div>
 
 다음 가이드는 ClickHouse Cloud 서비스를 이미 생성한 상태를 가정합니다. 아직 서비스를 생성하지 않았다면 Managed ClickStack의 [시작하기](/ko/clickstack/getting-started/managed) 가이드를 따르십시오. 그러면 이 가이드와 동일한 상태, 즉 ClickStack이 활성화되어 관측성 데이터를 사용할 준비가 된 서비스가 생성됩니다.
@@ -137,7 +137,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             아직 실행 중인 collector가 없다면 아래 단계에 따라 시작하세요. 기존 collector가 있다면 구성 예시도 제공됩니다.
 
-            ### collector 시작 {#start-a-collector-existing}
+            ### collector 시작
 
             다음 내용은 권장 방식인 **ClickStack distribution of the OpenTelemetry Collector** 사용을 전제로 합니다. 이 배포판에는 추가 처리 기능이 포함되어 있으며 ClickHouse Cloud에 맞게 특별히 최적화되어 있습니다. 자체 OpenTelemetry Collector를 사용하려면 [&quot;기존 collector 구성&quot;](#configure-existing-collectors-existing)을 참조하세요.
 
@@ -155,7 +155,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             이 명령 하나로 4317(gRPC) 및 4318(HTTP) 포트에 OTLP endpoint를 노출하는 ClickStack collector가 시작됩니다. 이미 OpenTelemetry instrumentation과 agent가 있다면 이 endpoint로 즉시 텔레메트리 데이터를 보내기 시작할 수 있습니다.
 
-            ### 기존 collector 구성 {#configure-existing-collectors-existing}
+            ### 기존 collector 구성
 
             기존 OpenTelemetry Collectors를 직접 구성하거나 자체 배포판의 collector를 사용할 수도 있습니다.
 
@@ -173,7 +173,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             OpenTelemetry collector 구성에 대한 자세한 내용은 [&quot;OpenTelemetry로 수집하기&quot;](/ko/clickstack/ingesting-data/opentelemetry)를 참조하세요.
 
-            ### 수집 시작(선택 사항) {#start-ingestion-existing}
+            ### 수집 시작(선택 사항)
 
             기존 애플리케이션이나 OpenTelemetry로 instrument할 infrastructure가 있다면 &quot;애플리케이션 연결&quot;에 링크된 관련 가이드로 이동하세요.
 
@@ -197,7 +197,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
             다음 내용에서는 수집 파이프라인이 미리 구성되어 데이터를 전달하는 Vector 인스턴스가 이미 실행 중이라고 가정합니다.
 
-            ### 데이터베이스와 테이블 생성 {#create-database-and-tables}
+            ### 데이터베이스와 테이블 생성
 
             Vector는 데이터를 수집하기 전에 테이블과 스키마가 정의되어 있어야 합니다.
 
@@ -286,10 +286,12 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 </Tabs>
 
 <div id="additional-tasks">
-  ## 추가 작업 {#additional-tasks}
+  ## 추가 작업
 </div>
 
-### Managed ClickStack에 대한 액세스 권한 부여 {#configure-access}
+<div id="configure-access">
+  ### Managed ClickStack에 대한 액세스 권한 부여
+</div>
 
 1. ClickHouse Cloud 콘솔에서 해당 서비스로 이동합니다
 2. **설정** → **SQL 콘솔 액세스**로 이동합니다
@@ -307,13 +309,13 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 </Warning>
 
 <div id="clickstack-read-only-compute">
-  ### 읽기 전용 컴퓨트에서 ClickStack 사용하기 {#clickstack-read-only-compute}
+  ### 읽기 전용 컴퓨트에서 ClickStack 사용하기
 </div>
 
 ClickStack UI는 읽기 전용 ClickHouse Cloud 서비스만으로도 완전히 실행할 수 있습니다. 수집 워크로드와 쿼리 워크로드를 분리하려는 경우 권장되는 구성입니다.
 
 <div id="how-clickstack-selects-compute">
-  #### ClickStack에서 컴퓨트를 선택하는 방식 {#how-clickstack-selects-compute}
+  #### ClickStack에서 컴퓨트를 선택하는 방식
 </div>
 
 ClickStack UI는 항상 ClickHouse Cloud 콘솔에서 실행한 ClickHouse 서비스에 연결됩니다.
@@ -326,7 +328,7 @@ ClickStack UI는 항상 ClickHouse Cloud 콘솔에서 실행한 ClickHouse 서�
 읽기 전용 동작을 강제하기 위해 ClickStack 내부에서 추가로 구성할 필요는 없습니다.
 
 <div id="recommended-setup">
-  #### 권장 설정 {#recommended-setup}
+  #### 권장 설정
 </div>
 
 읽기 전용 컴퓨트에서 ClickStack을 실행하려면 다음과 같이 하십시오.
@@ -337,19 +339,17 @@ ClickStack UI는 항상 ClickHouse Cloud 콘솔에서 실행한 ClickHouse 서�
 
 실행되면 ClickStack UI가 이 읽기 전용 서비스에 자동으로 바인딩됩니다.
 
-대시보드, 저장된 검색, 알림, 소스는 ClickStack을 실행한 서비스로 범위가 한정되므로, warehouse 내 다른 서비스에 저장된 항목은 여기에서 사용할 수 없으며 다시 생성해야 합니다. 표준 OpenTelemetry 스키마를 사용하는 소스는 자동으로 감지되어 해당 데이터에 대한 검색이 즉시 동작하지만, 사용자 정의 소스나 수동으로 구성한 소스는 그렇지 않으므로 다시 설정해야 합니다.
-
-수집을 어디로 보낼지, 어떤 서비스에 DDL을 실행할지, 알림이 어떻게 동작하는지를 포함한 전체 토폴로지는 [&quot;읽기 및 쓰기 워크로드 분리&quot;](/ko/clickstack/managing/isolating-read-write)를 참조하십시오.
-
 <div id="adding-data-sources">
-  ### 데이터 소스 추가하기 {#adding-data-sources}
+  ### 데이터 소스 추가하기
 </div>
 
 ClickStack은 OpenTelemetry 네이티브이지만 OpenTelemetry에만 국한되지는 않으므로, 필요하면 자체 테이블 스키마를 사용할 수 있습니다.
 
 다음에서는 자동으로 구성되는 데이터 소스 외에 데이터 소스를 추가하는 방법을 설명합니다.
 
-#### OpenTelemetry 스키마 사용 {#using-otel-schemas}
+<div id="using-otel-schemas">
+  #### OpenTelemetry 스키마 사용
+</div>
 
 OTel collector를 사용해 ClickHouse 내에 데이터베이스와 테이블을 생성하는 경우, 소스 생성 모델에서는 기본값을 모두 그대로 유지하고 `Table` 필드에 `otel_logs`를 입력하여 로그 소스를 생성하십시오. 다른 모든 설정은 자동으로 감지되므로 `Save New Source`를 클릭하면 됩니다.
 
@@ -370,7 +370,7 @@ OTel collector를 사용해 ClickHouse 내에 데이터베이스와 테이블을
 </Info>
 
 <div id="using-custom-schemas">
-  #### 사용자 지정 스키마 사용 {#using-custom-schemas}
+  #### 사용자 지정 스키마 사용
 </div>
 
 기존 서비스의 데이터를 ClickStack에 연결하려는 사용자는 필요에 따라 데이터베이스 및 테이블 설정을 입력하면 됩니다. 테이블이 ClickHouse용 OpenTelemetry 스키마를 따르면 설정은 자동으로 감지됩니다.

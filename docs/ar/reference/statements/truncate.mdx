@@ -10,7 +10,9 @@ doc_type: 'مرجع'
 
 تُستخدم عبارة `TRUNCATE` في ClickHouse لإزالة جميع البيانات بسرعة من جدول أو قاعدة بيانات مع الحفاظ على بنيتهما.
 
-## TRUNCATE TABLE {#truncate-table}
+<div id="truncate-table">
+  ## TRUNCATE TABLE
+</div>
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -18,19 +20,19 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 
 <br />
 
-| معلمة                | Description                                                                                                                               |
+| Parameter            | Description                                                                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `IF EXISTS`          | يمنع حدوث خطأ إذا لم يكن الجدول موجودًا. وإذا أُغفل، فسيُرجع الاستعلام خطأ.                                                               |
 | `db.name`            | اسم قاعدة البيانات اختياري.                                                                                                               |
 | `ON CLUSTER cluster` | يشغّل الأمر على عنقود محدد.                                                                                                               |
 | `SYNC`               | يجعل عملية الاقتطاع متزامنة عبر النسخ المتماثلة عند استخدام الجداول المتماثلة. وإذا أُغفل، تحدث عملية الاقتطاع بشكل غير متزامن افتراضيًا. |
 
-يمكنك استخدام إعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) لتهيئة الانتظار حتى تُنفَّذ الإجراءات على النسخ المتماثلة.
+يمكنك استخدام إعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) لتهيئة الانتظار حتى تُنفَّذ الإجراءات على النسخ المتماثلة.
 
 يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة استعلامات `TRUNCATE` باستخدام إعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  إذا كان `alter_sync` مضبوطًا على `2`، وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد بواسطة إعداد `replication_wait_for_inactive_replica_timeout`، فسيُطرَح الاستثناء `UNFINISHED`. أما عند `alter_sync = 3` فلا يتم الانتظار للنسخ المتماثلة غير النشطة، ومن ثمّ لا يُطرَح أي استثناء.
+  إذا كان `alter_sync` مضبوطًا على `2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد بواسطة إعداد `replication_wait_for_inactive_replica_timeout`، فسيُطرَح الاستثناء `UNFINISHED`.
 </Note>
 
 الاستعلام `TRUNCATE TABLE` **غير مدعوم** لمحركات الجداول التالية:
@@ -41,7 +43,9 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 * [`Buffer`](/ar/reference/engines/table-engines/special/buffer)
 * [`Null`](/ar/reference/engines/table-engines/special/null)
 
-## TRUNCATE جميع الجداول {#truncate-all-tables}
+<div id="truncate-all-tables">
+  ## TRUNCATE جميع الجداول
+</div>
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -59,7 +63,9 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 يزيل جميع البيانات من جميع الجداول في قاعدة بيانات.
 
-## TRUNCATE DATABASE {#truncate-database}
+<div id="truncate-database">
+  ## TRUNCATE DATABASE
+</div>
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

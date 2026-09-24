@@ -13,7 +13,9 @@ y consultar datos en formatos de tabla abiertos sin necesidad de duplicarlos.
 Esto transforma a ClickHouse en un potente motor de consultas que se integra perfectamente con
 la infraestructura existente de su lago de datos.
 
-## Catálogos compatibles {#supported-catalogs}
+<div id="supported-catalogs">
+  ## Catálogos compatibles
+</div>
 
 El motor `DataLakeCatalog` es compatible con los siguientes catálogos de datos:
 
@@ -22,14 +24,16 @@ El motor `DataLakeCatalog` es compatible con los siguientes catálogos de datos:
 * **Hive Metastore** - Catálogo tradicional del ecosistema Hadoop
 * **Catálogos REST** - Cualquier catálogo compatible con la especificación REST de Iceberg
 
-## Crear una base de datos {#creating-a-database}
+<div id="creating-a-database">
+  ## Crear una base de datos
+</div>
 
 Deberá habilitar la configuración correspondiente que se indica a continuación para usar el motor `DataLakeCatalog`:
 
 ```sql
-SET allow_database_iceberg = 1;
-SET allow_database_unity_catalog = 1;
-SET allow_database_glue_catalog = 1;
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_database_unity_catalog = 1;
+SET allow_experimental_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
 SET allow_experimental_database_paimon_rest_catalog = 1;
 ```
@@ -66,14 +70,16 @@ Se admiten los siguientes ajustes:
 | `dlf_access_key_secret` | Clave de acceso secreta para acceder a DLF                                                                                                                                                                                                                                                                                                                                                                                           |
 | `force_add_bucket`      | Al construir las URL del almacenamiento de objetos a partir de la ubicación de la tabla proporcionada por el catálogo y `storage_endpoint`, anteponga el nombre del bucket/contenedor aunque el endpoint ya lo contenga. Valor predeterminado: `false`. Establézcallo en `true` para los catálogos que devuelven rutas sin el bucket y requieren que se agregue durante el paso de construcción de la URL (rutas de estilo Polaris). |
 
-## Ejemplos {#examples}
+<div id="examples">
+  ## Ejemplos
+</div>
 
 Consulte las secciones siguientes para ver ejemplos de uso del motor `DataLakeCatalog`:
 
 * [Unity Catalog](/es/guides/use-cases/data-warehousing/unity-catalog)
 * [Glue Catalog](/es/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
-  Puede usarse habilitando `allow_database_iceberg`.
+  Puede usarse habilitando `allow_experimental_database_iceberg` o `allow_database_iceberg`.
 
 ```sql
 CREATE DATABASE database_name

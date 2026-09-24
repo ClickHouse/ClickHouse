@@ -9,7 +9,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <div id="introduction">
-  ## はじめに {#introduction}
+  ## はじめに
 </div>
 
 ClickHouse はクエリを非常に高速に処理しますが、これらのクエリは
@@ -19,7 +19,9 @@ ClickHouse はクエリを非常に高速に処理しますが、これらのク
 > 複数の分片にどのように分散するのかを説明し、その後、クエリの実行で
 > 複数のレプリカをどのように活用できるのかを説明します。
 
-## 分片アーキテクチャ {#sharded-architecture}
+<div id="sharded-architecture">
+  ## 分片アーキテクチャ
+</div>
 
 shared-nothing アーキテクチャでは、クラスターは通常、複数の分片に
 分割され、各分片には全体データの一部が格納されます。これらの分片の
@@ -63,7 +65,7 @@ shared-nothing アーキテクチャでは、クラスターは通常、複数�
 つまり、より多くのクエリを並列に処理できるようになります。
 
 <div id="non-sharded-architecture">
-  ## 非分片アーキテクチャ {#non-sharded-architecture}
+  ## 非分片アーキテクチャ
 </div>
 
 ClickHouse Cloud のアーキテクチャは、上で示したものとは大きく異なります。
@@ -86,7 +88,9 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 アーキテクチャでは、各分片がデータの一部に対して実際にクエリを実行できるため、
 比較的わかりやすいものでした。では、sharding がない場合はどのように機能するのでしょうか。
 
-## 並列レプリカの紹介 {#introducing-parallel-replicas}
+<div id="introducing-parallel-replicas">
+  ## 並列レプリカの紹介
+</div>
 
 複数のサーバーにまたがってクエリ実行を並列化するには、まず
 サーバーのうち 1 台をコーディネーターとして割り当てられるようにする
@@ -159,7 +163,9 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 
 これらの要因をどのように克服しているかは、以降のセクションで説明します。
 
-### アナウンス {#announcements}
+<div id="announcements">
+  ### アナウンス
+</div>
 
 上のリストの (1) と (2) に対処するため、アナウンス という概念を導入しました。以下の図でその仕組みを見てみましょう。
 
@@ -194,7 +200,9 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
   </li>
 </ol>
 
-### 動的協調 {#dynamic-coordination}
+<div id="dynamic-coordination">
+  ### 動的協調
+</div>
 
 テールレイテンシの問題に対処するため、動的協調を追加しました。これは、
 すべてのグラニュールを1回のリクエストでレプリカに送るのではなく、各レプリカが
@@ -253,7 +261,7 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 </ol>
 
 <div id="managing-cache-locality">
-  ### cache の局所性の管理 {#managing-cache-locality}
+  ### cache の局所性の管理
 </div>
 
 最後に残っている潜在的な問題は、cache の局所性をどう扱うかです。クエリが複数回実行される場合、同じタスクが同じレプリカにルーティングされることを、どのように保証すればよいのでしょうか。前の例では、次のタスクが割り当てられていました。
@@ -298,12 +306,14 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 理屈の上ではよさそうに見えますが、実際には、あるレプリカに急に負荷がかかったり、ネットワークが劣化したりすると、特定のタスクの実行に同じレプリカが継続的に使われることで、テールレイテンシが発生する可能性があります。`max_parallel_replicas` がレプリカ数より少ない場合は、クエリ実行のためにランダムにレプリカが選択されます。
 
 <div id="task-stealing">
-  ### タスクのスティーリング {#task-stealing}
+  ### タスクのスティーリング
 </div>
 
 あるレプリカでのタスク処理が他のレプリカより遅い場合、他のレプリカは、ハッシュに基づいて本来そのレプリカに割り当てられているタスクを「奪う」ことで、テールレイテンシの低減を図ります。
 
-### 制限事項 {#limitations}
+<div id="limitations">
+  ### 制限事項
+</div>
 
 この機能には既知の制限があり、主なものをこのセクションで説明します。
 
@@ -322,7 +332,7 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 | アナライザとの互換性              | アナライザにより、特定のシナリオではクエリ実行が大幅に遅くなったり、逆に速くなったりする可能性があります。                                                                                                                                                                                                                                       |
 
 <div id="settings-related-to-parallel-replicas">
-  ## 並列レプリカに関連する設定 {#settings-related-to-parallel-replicas}
+  ## 並列レプリカに関連する設定
 </div>
 
 | Setting                                            | Description                                                                                                                 |
@@ -331,8 +341,11 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 | `cluster_for_parallel_replicas`                    | 並列レプリカに使用するクラスター名です。ClickHouse Cloud を使用している場合は `default` を使用してください。                                                        |
 | `max_parallel_replicas`                            | 複数のレプリカでクエリを実行する際に使用するレプリカの最大数です。クラスター内のレプリカ数より少ない値を指定すると、ノードはランダムに選択されます。この値は、水平スケーリングを考慮してオーバーコミットすることもできます。              |
 | `parallel_replicas_min_number_of_rows_per_replica` | 処理対象の行数に基づいて、使用するレプリカ数を制限するのに役立ちます。使用されるレプリカ数は次の式で決まります。<br /> `estimated rows to read` / `min_number_of_rows_per_replica`。 |
+| `enable_analyzer`                                  | 並列レプリカによるクエリ実行は、アナライザが有効な場合にのみサポートされます                                                                                      |
 
-## 並列レプリカの問題の調査 {#investigating-issues-with-parallel-replicas}
+<div id="investigating-issues-with-parallel-replicas">
+  ## 並列レプリカの問題の調査
+</div>
 
 各クエリでどの設定が使われているかは、
 [`system.query_log`](/ja/reference/system-tables/query_log) テーブルで確認できます。また、

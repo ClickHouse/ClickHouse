@@ -15,13 +15,17 @@ La fonction `url` crée une table à partir de l’`URL` avec le `format` et la 
 
 La fonction `url` peut être utilisée dans des requêtes `SELECT` et `INSERT` sur des données stockées dans des tables [URL](/fr/reference/engines/table-engines/special/url).
 
-## Syntaxe {#syntax}
+<div id="syntax">
+  ## Syntaxe
+</div>
 
 ```sql
 url(URL [,format] [,structure] [,headers])
 ```
 
-## Paramètres {#parameters}
+<div id="parameters">
+  ## Paramètres
+</div>
 
 | Paramètre   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,11 +34,15 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | Structure de la table au format `'UserID UInt64, Name String'`. Détermine les noms et les types des colonnes. Type : [String](/fr/reference/data-types/string).                                                                                                                                                                                                                                                                                                                    |
 | `headers`   | En-têtes au format `'headers('key1'='value1', 'key2'='value2')'`. Vous pouvez définir des en-têtes pour l’appel HTTP.                                                                                                                                                                                                                                                                                                                                                           |
 
-## Valeur renvoyée {#returned-value}
+<div id="returned-value">
+  ## Valeur renvoyée
+</div>
 
 Une table au format et à la structure spécifiés, contenant les données de l&#39;`URL` définie.
 
-## Exemples {#examples}
+<div id="examples">
+  ## Exemples
+</div>
 
 Récupération des 3 premières lignes d’une table contenant des colonnes de type `String` et [UInt32](/fr/reference/data-types/int-uint) depuis un serveur HTTP qui renvoie les données au format [CSV](/fr/reference/formats/CSV/CSV).
 
@@ -50,9 +58,11 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-## Routage selon le schéma d’URL {#scheme-dispatch}
+<div id="scheme-dispatch">
+  ## Routage selon le schéma d’URL
+</div>
 
-La fonction `url` sert de wrapper unifié au-dessus des autres fonctions de table pour les fichiers et le stockage d’objets : elle distribue les requêtes vers le bon backend selon le schéma d’URL. Cela permet de lire depuis n’importe quel emplacement pris en charge avec une syntaxe unique et uniforme.
+La fonction `url` sert de wrapper unifié au-dessus des autres fonctions de table pour les fichiers et le stockage d’objets : elle distribue les requêtes vers le bon backend selon le schéma d’URL. Cela permet de lire depuis n’importe quel emplacement pris en charge avec une syntaxe unique et uniforme.
 
 | Schéma                                       | Distribué vers                                                                          |
 | -------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -62,7 +72,7 @@ La fonction `url` sert de wrapper unifié au-dessus des autres fonctions de tabl
 | `az`, `azure`, `abfss`, `abfs`               | la fonction [`azureBlobStorage`](/fr/reference/functions/table-functions/azureBlobStorage) |
 | `hdfs`                                       | la fonction [`hdfs`](/fr/reference/functions/table-functions/hdfs)                         |
 
-Seuls les schémas S3 que le mappeur d’URI S3 résout en un endpoint concret sans configuration supplémentaire (`s3`, ainsi que `gs`/`gcs`/`oss`) sont distribués. Les autres schémas de fournisseurs compatibles S3 (`cos`, `obs`, `eos`, …) sont spécifiques à une région et n’ont pas de mappage d’endpoint par défaut. Une URL `cos://…` est donc traitée comme un schéma non reconnu et signalée comme une erreur ; pour ces backends, utilisez directement la fonction [`s3`](/fr/reference/functions/table-functions/s3) (avec `url_scheme_mappers` configuré).
+Seuls les schémas S3 que le mappeur d’URI S3 résout en un endpoint concret sans configuration supplémentaire (`s3`, ainsi que `gs`/`gcs`/`oss`) sont distribués. Les autres schémas de fournisseurs compatibles S3 (`cos`, `obs`, `eos`, …) sont spécifiques à une région et n’ont pas de mappage d’endpoint par défaut. Une URL `cos://…` est donc traitée comme un schéma non reconnu et signalée comme une erreur ; pour ces backends, utilisez directement la fonction [`s3`](/fr/reference/functions/table-functions/s3) (avec `url_scheme_mappers` configuré).
 
 Pour `file://`, un chemin relatif (`file://data.csv`) est résolu dans le répertoire [user&#95;files](/fr/reference/settings/server-settings/settings/user#user_files_path), et un chemin absolu (`file:///home/user/data.csv`) doit, comme d’habitude, pointer à l’intérieur de celui-ci.
 
@@ -73,40 +83,44 @@ SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
 SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
-La répartition selon le schéma d’URL n’est pas encore prise en charge par [`urlCluster`](/fr/reference/functions/table-functions/urlCluster) : tout schéma autre que `http(s)` transmis à `urlCluster` est rejeté avec une erreur. Utilisez plutôt la fonction de cluster correspondante (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) pour ces backends.
+La répartition selon le schéma d’URL n’est pas encore prise en charge par [`urlCluster`](/fr/reference/functions/table-functions/urlCluster) : tout schéma autre que `http(s)` transmis à `urlCluster` est rejeté avec une erreur. Utilisez plutôt la fonction de cluster correspondante (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) pour ces backends.
 
-Pour la même raison, un appel `url` distribué est lu sur le nœud qui a reçu la requête : le fan-out [parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/fr/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) ne lui est pas appliqué. Utilisez directement la fonction de cluster correspondante si vous souhaitez que la lecture soit répartie entre les répliques.
-
-## Globs dans l’URL {#globs-in-url}
+<div id="globs-in-url">
+  ## Globs dans l’URL
+</div>
 
 Les motifs dans `{ }` sont utilisés pour générer un ensemble de shards ou pour spécifier des adresses de basculement. Pour connaître les types de motifs pris en charge et voir des exemples, consultez la description de la fonction [remote](/fr/reference/functions/table-functions/remote#globs-in-addresses).
 Le caractère `|` à l’intérieur des motifs sert à spécifier des adresses de basculement. Elles sont parcourues dans le même ordre que celui indiqué dans le motif. Le nombre d’adresses générées est limité par le paramètre [glob&#95;expansion&#95;max&#95;elements](/fr/reference/settings/session-settings/other#glob_expansion_max_elements).
 Pour la syntaxe des globs dans le chemin de l’URL (comme `*`, `{a,b}`, `{N..M}` et `**`), voir [Globs dans le chemin](/fr/reference/functions/table-functions/file#globs-in-path). Notez que `?` marque le début de la chaîne de requête dans une URL et ne peut pas être utilisé comme caractère générique dans le composant de chemin.
 
-## Caractères génériques avec les pages d’index HTTP {#wildcards-with-http-index-pages}
+<div id="wildcards-with-http-index-pages">
+  ## Caractères génériques avec les pages d’index HTTP
+</div>
 
 Pour `url` et le moteur de table `URL`, ClickHouse peut étendre les caractères génériques en récupérant des pages d’index HTTP (HTML ou texte brut) et en extrayant les URL du corps de la réponse. Cela permet d’utiliser des motifs comme `/**/` lorsque le serveur expose des listes de répertoires.
 
-Remarques :
+Remarques :
 
 * Les URL relatives sont résolues par rapport à l’URL de la page d’index.
 * Les modèles `URL` sont étendus avant la récupération des pages d’index, y compris l’expansion des segments par virgules et par plages numériques, ainsi que les options de basculement `|` en dehors du composant de chemin.
 * Les motifs de basculement `|` à l’intérieur du composant de chemin ne sont pas pris en charge pour l’expansion des pages d’index HTTP.
 * La correspondance des caractères génériques est appliquée au composant de chemin de l’URL.
 * Si une URL listée contient déjà une chaîne de requête ou un fragment, celle-ci prévaut sur ceux de l’URL source. Sinon, la chaîne de requête et le fragment de l’URL source sont utilisés.
-* Une liste vide est autorisée ; les erreurs HTTP (par ex. 404) sur les pages d’index génèrent des exceptions.
+* Une liste vide est autorisée ; les erreurs HTTP (par ex. 404) sur les pages d’index génèrent des exceptions.
 * La taille maximale d’une page d’index est limitée par [max&#95;http&#95;index&#95;page&#95;size](/fr/reference/settings/server-settings/settings/max#max_http_index_page_size).
 * Le nombre maximal de répertoires lus lors de l’expansion récursive est limité par [url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/fr/reference/settings/session-settings/url#url_wildcard_max_directories_to_read).
 
-Exemple :
+Exemple :
 
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
 ```
 
-## Colonnes virtuelles {#virtual-columns}
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
 
 * `_path` — Chemin de l’`URL`. Type : `LowCardinality(String)`.
 * `_file` — Nom de la ressource pointée par l’`URL`. Type : `LowCardinality(String)`.
@@ -114,7 +128,9 @@ SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 * `_time` — Horodatage de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si l’horodatage est inconnu, la valeur est `NULL`.
 * `_headers` - En-têtes de réponse HTTP. Type : `Map(LowCardinality(String), LowCardinality(String))`.
 
-## paramètre use_hive_partitioning {#hive-style-partitioning}
+<div id="hive-style-partitioning">
+  ## paramètre use_hive_partitioning
+</div>
 
 Lorsque le paramètre `use_hive_partitioning` est défini sur 1, ClickHouse détecte le partitionnement de type Hive dans le chemin (`/name=value/`) et permet d’utiliser les colonnes de partition comme colonnes virtuelles dans une requête. Ces colonnes virtuelles porteront les mêmes noms que dans le chemin partitionné.
 
@@ -126,7 +142,9 @@ Utilisation de colonnes virtuelles créées avec le partitionnement de type Hive
 SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## Résolution des URL relatives {#resolving-relative-urls}
+<div id="resolving-relative-urls">
+  ## Résolution des URL relatives
+</div>
 
 Le paramètre [url&#95;base](/fr/reference/settings/session-settings/url#url_base) permet de passer une URL relative à la fonction `url`. Lorsque `url_base` est défini et que l’argument de la fonction est une référence relative, celle-ci est résolue par rapport à l’URL de base, conformément à la [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
 
@@ -148,17 +166,23 @@ SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/'
 SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ```
 
-## Paramètres de stockage {#storage-settings}
+<div id="storage-settings">
+  ## Paramètres de stockage
+</div>
 
 * [engine&#95;url&#95;skip&#95;empty&#95;files](/fr/reference/settings/session-settings/other#engine_url_skip_empty_files) - permet d’ignorer les fichiers vides lors de la lecture. Désactivé par défaut.
 * [enable&#95;url&#95;encoding](/fr/reference/settings/session-settings/enable#enable_url_encoding) - permet d’activer ou de désactiver le décodage/l’encodage du chemin dans l’URI. Activé par défaut.
 * [url&#95;base](/fr/reference/settings/session-settings/url#url_base) - URL de base pour résoudre les URL relatives passées à la fonction `url`.
 
-## Autorisations {#permissions}
+<div id="permissions">
+  ## Autorisations
+</div>
 
 La fonction `url` nécessite l’autorisation `CREATE TEMPORARY TABLE`. Par conséquent, elle ne fonctionnera pas pour les utilisateurs dont le paramètre [readonly](/fr/concepts/features/configuration/settings/permissions-for-queries#readonly) est défini sur 1. Au minimum, readonly = 2 est requis.
 
-## Voir aussi {#related}
+<div id="related">
+  ## Voir aussi
+</div>
 
 * [Colonnes virtuelles](/fr/reference/engines/table-engines/index#table_engines-virtual_columns)
 

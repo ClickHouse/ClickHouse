@@ -12,23 +12,9 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações configuram o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
-
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
-
-Tamanho mínimo, em bytes, de uma única cobrança ao rastreador de memória global (de todo o servidor) para a qual um stack trace é capturado, gravado no log do servidor no nível `Warning` e inserido em [`system.trace_log`](/pt-BR/reference/system-tables/trace_log) com o trace type `MemoryLargeAllocation`.
-
-O tamanho comparado ao limiar, e reportado, é o que uma chamada do tracker cobra, o que não corresponde necessariamente a uma única alocação: uma thread adia suas alocações pequenas e as descarrega (flush) como uma única cobrança, de modo que o tamanho reportado pode exceder a alocação no topo da pilha reportada em até `max_untracked_memory`. Manter o limiar bem acima de `max_untracked_memory` torna essa diferença irrelevante.
-
-Trata-se de um diagnóstico para um total global rastreado que cresceu muito além do memory usage real do processo. Nesse estado, o servidor recusa qualquer alocação, até mesmo as de zero byte, enquanto usa apenas uma fração do seu limite, e a telemetria comum não consegue atribuir o passo: alocações cobradas sob um `MemoryTrackerBlockerInThread` pulam a verificação de limite e os traces que a acompanham, e os inserts em `system.trace_log` que carregariam o restante falham quando o servidor já está travado. O log do servidor continua sendo gravado, então o stack trace chega até ele.
-
-No máximo 10 traces são capturados por execução do servidor, porque capturar e simbolizar uma pilha é caro e o trigger tende a se repetir. Alterar esta configuração em runtime, em qualquer direção, não eleva esse limite.
-
-Requer que `trace_log` esteja configurado. Sem um trace collector em execução, o valor é ignorado e reportado como `0` em [`system.server_settings`](/pt-BR/reference/system-tables/server_settings), já que o trace só poderia ser capturado e descartado. Um trace processado pelo collector antes de essa tabela ser anexada, o que ocorre no fim da inicialização, chega apenas ao log do servidor.
-
-O valor `0` (padrão) desativa o diagnóstico. Defina-o bem acima da maior alocação que o servidor legitimamente realiza; caso contrário, alocações grandes comuns também serão registradas em log e a inicialização pode consumir todo o orçamento.
-
-## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
+<div id="min_allocation_size_to_throw_on_memory_limit">
+  ## min_allocation_size_to_throw_on_memory_limit
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Sim" />
 
@@ -40,7 +26,9 @@ Um valor de `0` (padrão) preserva o comportamento legado: alocações implícit
 
 Observação: para evitar efeitos colaterais, recomenda-se definir um valor maior que `max_untracked_memory`.
 
-## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
+<div id="min_os_cpu_wait_time_ratio_to_drop_connection">
+  ## min_os_cpu_wait_time_ratio_to_drop_connection
+</div>
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Sim" />
 

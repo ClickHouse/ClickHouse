@@ -12,7 +12,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 La arquitectura de ClickStack varía según cómo se despliegue. Existen diferencias arquitectónicas importantes entre **ClickStack Open Source**, donde todos los componentes son autogestionados, y **Managed ClickStack**, donde ClickHouse y la UI de HyperDX están alojados y gestionados en ClickHouse Cloud. Aunque los componentes principales siguen siendo los mismos en ambos modelos, la responsabilidad de alojar, escalar y proteger cada componente difiere.
 
 <div id="architecture-overview">
-  ## Descripción general de la arquitectura {#architecture-overview}
+  ## Descripción general de la arquitectura
 </div>
 
 A continuación se presenta una descripción general de las arquitecturas de ClickStack administrada y de código abierto.
@@ -25,7 +25,7 @@ A continuación se presenta una descripción general de las arquitecturas de Cli
 
     <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="Arquitectura gestionada" size="lg" />
 
-    ### ClickHouse Cloud: el motor {#clickhouse-cloud}
+    ### ClickHouse Cloud: el motor
 
     En el centro de Managed ClickStack se encuentra ClickHouse Cloud, una versión serverless de ClickHouse, una base de datos orientada a columnas diseñada para analítica en tiempo real a gran escala. Impulsa la ingestión y consulta de datos de observabilidad, lo que permite:
 
@@ -41,13 +41,13 @@ A continuación se presenta una descripción general de las arquitecturas de Cli
 
     * Escalado automático de compute independiente del almacenamiento
     * Retención de bajo coste y prácticamente ilimitada basada en object storage
-    * Capacidad para [aislar de forma independiente las cargas de trabajo de lectura y escritura](/es/clickstack/managing/isolating-read-write) con Warehouses
+    * Capacidad para aislar de forma independiente las cargas de trabajo de lectura y escritura con Warehouses
     * Autenticación integrada
     * Backups automatizados
     * Funciones de seguridad y compliance
     * Actualizaciones sin interrupciones
 
-    ### OpenTelemetry collector: ingestión de datos {#open-telemetry-collector-managed}
+    ### OpenTelemetry collector: ingestión de datos
 
     Managed ClickStack incluye un collector de OpenTelemetry (OTel) preconfigurado para ingestar telemetría de forma abierta y estandarizada. Puede enviar datos mediante el protocolo OTLP a través de:
 
@@ -58,7 +58,7 @@ A continuación se presenta una descripción general de las arquitecturas de Cli
 
     **Este componente de la arquitectura lo gestiona el usuario**
 
-    ### UI de ClickStack (HyperDX): la interfaz {#hyperdx}
+    ### UI de ClickStack (HyperDX): la interfaz
 
     La UI de ClickStack (HyperDX) es la interfaz de usuario de ClickStack. Ofrece:
 
@@ -79,7 +79,7 @@ A continuación se presenta una descripción general de las arquitecturas de Cli
 
     <Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="Arquitectura" size="lg" />
 
-    ### ClickHouse: el motor de base de datos {#clickhouse}
+    ### ClickHouse: el motor de base de datos
 
     En el corazón de ClickStack está ClickHouse, una base de datos orientada a columnas diseñada para analítica en tiempo real a escala. Impulsa la ingestión y consulta de datos de observabilidad, lo que permite:
 
@@ -91,7 +91,7 @@ A continuación se presenta una descripción general de las arquitecturas de Cli
 
     ClickHouse maneja los datos de observabilidad como eventos amplios, lo que permite una correlación profunda entre logs, métricas y trazas en una única estructura unificada.
 
-    ### OpenTelemetry collector: ingestión de datos {#open-telemetry-collector}
+    ### OpenTelemetry collector: ingestión de datos
 
     ClickStack incluye un collector de OpenTelemetry (OTel) preconfigurado para ingestar telemetría de una forma abierta y estandarizada. Puede enviar datos mediante el protocolo OTLP a través de:
 
@@ -100,7 +100,7 @@ A continuación se presenta una descripción general de las arquitecturas de Cli
 
     El collector exporta telemetría a ClickHouse en lotes eficientes. Admite esquemas de tabla optimizados por fuente de datos, lo que garantiza un rendimiento escalable en todos los tipos de señal.
 
-    ### ClickStack UI (HyperDX): la interfaz {#hyperdx-ui}
+    ### ClickStack UI (HyperDX): la interfaz
 
     ClickStack UI (HyperDX) es la interfaz de usuario de ClickStack. Ofrece:
 
@@ -113,7 +113,7 @@ A continuación se presenta una descripción general de las arquitecturas de Cli
 
     Diseñado específicamente para ClickHouse, HyperDX combina una potente capacidad de búsqueda con flujos de trabajo intuitivos, lo que le permite detectar anomalías, investigar problemas y obtener información rápidamente.
 
-    ### MongoDB: estado de la aplicación {#mongo}
+    ### MongoDB: estado de la aplicación
 
     ClickStack usa MongoDB para almacenar el estado a nivel de aplicación, incluidos:
 

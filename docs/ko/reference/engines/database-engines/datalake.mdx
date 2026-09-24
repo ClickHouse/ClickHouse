@@ -13,7 +13,9 @@ doc_type: 'reference'
 이를 통해 ClickHouse는 기존 데이터 레이크 인프라와
 원활하게 연동되는 강력한 쿼리 엔진이 됩니다.
 
-## 지원되는 카탈로그 {#supported-catalogs}
+<div id="supported-catalogs">
+  ## 지원되는 카탈로그
+</div>
 
 `DataLakeCatalog` 엔진은 다음 카탈로그를 지원합니다:
 
@@ -22,14 +24,16 @@ doc_type: 'reference'
 * **Hive Metastore** - 전통적인 Hadoop 생태계 카탈로그
 * **REST Catalogs** - Iceberg REST 사양을 지원하는 모든 카탈로그
 
-## 데이터베이스 생성 {#creating-a-database}
+<div id="creating-a-database">
+  ## 데이터베이스 생성
+</div>
 
 `DataLakeCatalog` 엔진을 사용하려면 아래 관련 설정을 활성화해야 합니다:
 
 ```sql
-SET allow_database_iceberg = 1;
-SET allow_database_unity_catalog = 1;
-SET allow_database_glue_catalog = 1;
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_database_unity_catalog = 1;
+SET allow_experimental_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
 SET allow_experimental_database_paimon_rest_catalog = 1;
 ```
@@ -55,9 +59,9 @@ catalog_type,
 | `auth_scope`            | 인증용 OAuth2 스코프입니다(OAuth를 사용하는 경우).                                                                                                                                                                                                                     |
 | `storage_endpoint`      | 기본 스토리지의 엔드포인트 URL입니다.                                                                                                                                                                                                                                 |
 | `oauth_server_uri`      | 인증에 사용할 OAuth2 authorization server의 URI입니다.                                                                                                                                                                                                           |
-| `vended_credentials`    | 카탈로그에서 제공된 자격 증명을 사용할지 여부를 나타내는 불리언 값입니다(AWS S3 및 Azure ADLS Gen2 지원).                                                                                                                                                                                 |
-| `aws_access_key_id`     | S3/Glue 액세스에 사용할 AWS access key ID입니다(제공된 자격 증명을 사용하지 않는 경우).                                                                                                                                                                                          |
-| `aws_secret_access_key` | S3/Glue 액세스에 사용할 AWS secret access key입니다(제공된 자격 증명을 사용하지 않는 경우).                                                                                                                                                                                      |
+| `vended_credentials`    | 카탈로그에서 제공된 자격 증명을 사용할지 여부를 나타내는 불리언 값입니다(AWS S3 및 Azure ADLS Gen2 지원).                                                                                                                                                                                |
+| `aws_access_key_id`     | S3/Glue 액세스에 사용할 AWS access key ID입니다(제공된 자격 증명을 사용하지 않는 경우).                                                                                                                                                                                 |
+| `aws_secret_access_key` | S3/Glue 액세스에 사용할 AWS secret access key입니다(제공된 자격 증명을 사용하지 않는 경우).                                                                                                                                                                             |
 | `aws_role_arn`          | AWS/Glue 액세스를 위해 Assume할 IAM role의 ARN입니다. 설정하면 ClickHouse는 `aws_access_key_id`와 `aws_secret_access_key`가 모두 제공된 경우 이를 기본 자격 증명으로 사용해 AWS STS `AssumeRole`을 호출하고, 그렇지 않으면 기본 AWS credential chain을 사용합니다(이 role은 server가 실행되는 아이덴티티를 신뢰하도록 구성되어야 합니다). |
 | `aws_role_session_name` | AWS STS `AssumeRole` 호출에 사용할 세션 이름입니다. 선택 사항이며, 기본값은 `ClickHouseSession`입니다.                                                                                                                                                                           |
 | `aws_external_id`       | role의 trust policy에 있는 `sts:ExternalId` 조건과 일치하도록 AWS STS `AssumeRole`에 전달되는 external ID입니다. role이 ClickHouse Cloud와 같은 제3자 소유인 경우 이를 사용합니다.                                                                                                           |
@@ -66,14 +70,16 @@ catalog_type,
 | `dlf_access_key_secret` | DLF 액세스에 사용할 access key secret입니다.                                                                                                                                                                                                                     |
 | `force_add_bucket`      | 카탈로그에서 제공한 테이블 location과 `storage_endpoint`를 사용해 객체 스토리지 URL을 구성할 때, 엔드포인트에 이미 포함되어 있더라도 버킷/container 이름을 앞에 추가합니다. 기본값: `false`. 버킷 없이 경로를 반환하므로 URL 구성 단계에서 버킷을 추가해야 하는 카탈로그(Polaris 스타일 경로)의 경우 `true`로 설정합니다.                                      |
 
-## 예시 {#examples}
+<div id="examples">
+  ## 예시
+</div>
 
 아래 섹션에서 `DataLakeCatalog` 엔진 사용 예시를 확인할 수 있습니다:
 
 * [Unity Catalog](/ko/guides/use-cases/data-warehousing/unity-catalog)
 * [Glue Catalog](/ko/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
-  `allow_database_iceberg`를 활성화하여 사용할 수 있습니다.
+  `allow_experimental_database_iceberg` 또는 `allow_database_iceberg`를 활성화하여 사용할 수 있습니다.
 
 ```sql
 CREATE DATABASE database_name

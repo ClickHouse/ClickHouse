@@ -30,14 +30,14 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 * [محرر SQL](#sql-editor): يمكن استخدام محرر SQL عندما تريد تحكمًا كاملاً في الاستعلام. في هذا الوضع، يمكن تنفيذ أي SQL query.
 
 <div id="query-types">
-  ## أنواع الاستعلامات {#query-types}
+  ## أنواع الاستعلامات
 </div>
 
 سيؤدي إعداد *نوع الاستعلام* إلى تغيير تخطيط أداة إنشاء الاستعلامات ليتوافق مع نوع الاستعلام الذي يتم إنشاؤه.
 ويحدد نوع الاستعلام أيضًا اللوحة المستخدمة عند عرض البيانات بصريًا.
 
 <div id="table">
-  ### جدول {#table}
+  ### جدول
 </div>
 
 أكثر أنواع الاستعلامات مرونة هو استعلام الجدول. وهو بمثابة نوع عام يشمل منشئات الاستعلامات الأخرى المصممة للتعامل مع الاستعلامات البسيطة والتجميعية.
@@ -57,7 +57,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 سيعرض نوع الاستعلام هذا البيانات في شكل جدول.
 
 <div id="logs">
-  ### السجلات {#logs}
+  ### السجلات
 </div>
 
 يوفّر نوع استعلام السجلات منشئ الاستعلامات الذي يركّز على الاستعلام عن بيانات السجلات.
@@ -92,7 +92,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="مثال على الحقول الإضافية في استعلام السجلات" border />
 
-### سلاسل زمنية {#time-series}
+<div id="time-series">
+  ### سلاسل زمنية
+</div>
 
 يشبه نوع استعلام السلاسل الزمنية [الجدول](#table)، لكنه يركز على بيانات السلاسل الزمنية.
 
@@ -126,7 +128,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 يعرض نوع الاستعلام هذا البيانات باستخدام لوحة السلاسل الزمنية.
 
-### التتبعات {#traces}
+<div id="traces">
+  ### التتبعات
+</div>
 
 يوفّر نوع استعلام التتبّع منشئ الاستعلامات لتسهيل البحث في التتبعات وعرضها.
 وهو مصمَّم لبيانات OpenTelemetry، لكن يمكن تحديد الأعمدة لعرض التتبعات من مخطط مختلف.
@@ -164,7 +168,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 سيعرض نوع الاستعلام هذا البيانات باستخدام عرض الجدول في وضع Trace Search، وباستخدام لوحة التتبّع في وضع معرّف التتبّع.
 
 <div id="sql-editor">
-  ## محرر SQL {#sql-editor}
+  ## محرر SQL
 </div>
 
 بالنسبة إلى الاستعلامات شديدة التعقيد التي لا تناسب منشئ الاستعلامات، يمكنك استخدام محرر SQL.
@@ -180,7 +184,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="مثال على استعلام SQL خام" border />
 
 <div id="data-links">
-  ## روابط البيانات {#data-links}
+  ## روابط البيانات
 </div>
 
 يمكن استخدام [روابط البيانات](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
@@ -200,18 +204,18 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 </div>
 
 <div id="how-to-make-a-data-link">
-  ### كيفية إنشاء رابط بيانات {#how-to-make-a-data-link}
+  ### كيفية إنشاء رابط بيانات
 </div>
 
 يمكنك إنشاء رابط بيانات عبر تحديد عمود باسم `traceID` في الاستعلام. هذا الاسم لا يميّز بين الأحرف الكبيرة والصغيرة، كما يدعم إضافة شرطة سفلية قبل &quot;ID&quot;. على سبيل المثال: `traceId` و`TraceId` و`TRACE_ID` و`tracE_iD` كلها صيغ صالحة.
 
 إذا كان OpenTelemetry مفعّلًا في استعلام [السجلات](#logs) أو [التتبّع](#traces)، فسيُدرج عمود معرّف التتبّع تلقائيًا.
 
-عند وجود عمود لمعرّف التتبّع، يمكن للإضافة إرفاق رابطَي &quot;**عرض التتبّع**&quot; و&quot;**عرض السجلات**&quot; بالبيانات.
+عند تضمين عمود لمعرّف التتبّع، سيُرفق بالبيانات رابطا &quot;**عرض التتبّع**&quot; و&quot;**عرض السجلات**&quot;.
 
-تكون أزرار التبديل مفعّلة افتراضيًا. لا يتطلب رابط نوع الاستعلام الحالي إعدادات افتراضية مهيّأة، بينما لا يظهر الرابط بين الإشارات إلا إذا كانت الإعدادات الافتراضية لإشارة الهدف مهيّأة في مصدر البيانات. يمكنك إخفاؤها باستخدام زري التبديل **إظهار روابط &quot;عرض التتبّع&quot;** و**إظهار روابط &quot;عرض السجلات&quot;** في قسمي تهيئة [التتبّع](/ar/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) و[السجلات](/ar/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) لمصدر البيانات.
-
-### قدرات الربط {#linking-abilities}
+<div id="linking-abilities">
+  ### قدرات الربط
+</div>
 
 عند توفر روابط البيانات، يمكنك فتح التتبّعات والسجلات باستخدام معرّف التتبّع المتاح.
 
@@ -227,7 +231,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 </div>
 
 <div id="macros">
-  ## وحدات الماكرو {#macros}
+  ## وحدات الماكرو
 </div>
 
 تُعد وحدات الماكرو طريقة بسيطة لإضافة SQL ديناميكي إلى استعلامك.
@@ -236,7 +240,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 يمكن للاستعلامات الواردة من كلٍّ من SQL Editor وQuery Builder استخدام وحدات الماكرو.
 
 <div id="using-macros">
-  ### استخدام وحدات الماكرو {#using-macros}
+  ### استخدام وحدات الماكرو
 </div>
 
 يمكن استخدام وحدات الماكرو في أي مكان داخل الاستعلام، وتكرارها عند الحاجة.
@@ -264,7 +268,7 @@ WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
 يدعم المكوّن الإضافي أيضًا الصياغة باستخدام الأقواس المعقوفة `{}`. استخدم هذه الصياغة عندما تحتاج إلى استعلامات داخل [المعلمات](/ar/reference/syntax#defining-and-using-query-parameters).
 
 <div id="list-of-macros">
-  ### قائمة وحدات الماكرو {#list-of-macros}
+  ### قائمة وحدات الماكرو
 </div>
 
 هذه قائمة بجميع وحدات الماكرو المتاحة في المكوّن الإضافي:

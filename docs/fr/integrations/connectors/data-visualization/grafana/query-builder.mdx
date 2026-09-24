@@ -30,13 +30,15 @@ Les types de requête disponibles sont les suivants :
 * [SQL Editor](#sql-editor) : le SQL Editor peut être utilisé lorsque vous souhaitez garder un contrôle total sur la requête. Dans ce mode, toute requête SQL peut être exécutée.
 
 <div id="query-types">
-  ## Types de requête {#query-types}
+  ## Types de requête
 </div>
 
 Le paramètre *Type de requête* modifie la disposition du générateur de requêtes afin qu’elle corresponde au type de requête en cours de création.
 Le type de requête détermine également le panneau utilisé pour visualiser les données.
 
-### Table {#table}
+<div id="table">
+  ### Table
+</div>
 
 Le type de requête le plus flexible est la requête de type tableau. Il s’agit d’une option générique qui regroupe les autres constructeurs de requêtes conçus pour gérer les requêtes simples et les requêtes d’agrégation.
 
@@ -54,7 +56,9 @@ Le type de requête le plus flexible est la requête de type tableau. Il s’agi
 
 Ce type de requête affiche les données sous forme de tableau.
 
-### Logs {#logs}
+<div id="logs">
+  ### Logs
+</div>
 
 Le type de requête logs propose un constructeur de requêtes axé sur l’interrogation des données de logs.
 Des valeurs par défaut peuvent être configurées dans la [configuration des logs](/fr/integrations/connectors/data-visualization/grafana/config#logs) de la source de données afin de précharger le constructeur de requêtes avec une base de données/table et des colonnes par défaut.
@@ -88,7 +92,9 @@ Les colonnes supplémentaires sélectionnées dans la requête peuvent être con
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Exemple de champs supplémentaires dans une requête de logs" border />
 
-### Time Series {#time-series}
+<div id="time-series">
+  ### Time Series
+</div>
 
 Le type de requête de séries temporelles est similaire à [table](#table), mais se concentre sur les données de séries temporelles.
 
@@ -122,7 +128,9 @@ Les deux vues sont globalement identiques, avec toutefois les différences notab
 
 Ce type de requête affichera les données dans le panneau de séries temporelles.
 
-### Traces {#traces}
+<div id="traces">
+  ### Traces
+</div>
 
 Le type de requête de trace propose un constructeur de requêtes pour rechercher et afficher facilement des traces.
 Il est conçu pour les données OpenTelemetry, mais il est possible de sélectionner des colonnes pour afficher des traces à partir d&#39;un autre schéma.
@@ -159,7 +167,9 @@ Le type de requête de trace prend en charge les [liens de données](#data-links
 
 Ce type de requête affichera les données dans la vue tableau pour le mode Trace Search, et dans le panneau de traces pour le mode Trace ID.
 
-## SQL Editor {#sql-editor}
+<div id="sql-editor">
+  ## SQL Editor
+</div>
 
 Pour les requêtes trop complexes pour le constructeur de requêtes, vous pouvez utiliser le SQL Editor.
 Il vous donne un contrôle total sur la requête en vous permettant d’écrire et d’exécuter directement du ClickHouse SQL.
@@ -173,7 +183,9 @@ Ce changement a également un effet en vue dashboard, notamment avec les donnée
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Exemple de requête Raw SQL" border />
 
-## Liens de données {#data-links}
+<div id="data-links">
+  ## Liens de données
+</div>
 
 Les [liens de données](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
 de Grafana peuvent être utilisés pour créer des liens vers de nouvelles requêtes.
@@ -192,18 +204,18 @@ Cette fonctionnalité a été activée dans le plugin ClickHouse pour lier une t
 </div>
 
 <div id="how-to-make-a-data-link">
-  ### Comment créer un lien de données {#how-to-make-a-data-link}
+  ### Comment créer un lien de données
 </div>
 
 Vous pouvez créer un lien de données en sélectionnant une colonne nommée `traceID` dans votre requête. Ce nom n’est pas sensible à la casse et accepte l’ajout d’un trait de soulignement avant « ID ». Par exemple : `traceId`, `TraceId`, `TRACE_ID` et `tracE_iD` sont tous valides.
 
 Si OpenTelemetry est activé dans une requête de [logs](#logs) ou de [trace](#traces), une colonne d’ID de trace sera ajoutée automatiquement.
 
-Lorsqu’une colonne d’ID de trace est présente, le plugin peut associer les liens &quot;**View Trace**&quot; et &quot;**View Logs**&quot; aux données.
+En incluant une colonne d’ID de trace, les liens &quot;**View Trace**&quot; et &quot;**View Logs**&quot; seront associés aux données.
 
-Les boutons bascule sont activés par défaut. Un lien pour le type de requête actuel ne nécessite pas de valeurs par défaut configurées, tandis qu’un lien inter-signaux n’apparaît que lorsque la source de données possède des valeurs par défaut configurées pour le signal cible. Vous pouvez les masquer à l’aide des boutons bascule **Afficher les liens « View trace »** et **Afficher les liens « View logs »** dans les sections de configuration [trace](/fr/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) et [log](/fr/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) de la source de données.
-
-### Fonctionnalités de liaison {#linking-abilities}
+<div id="linking-abilities">
+  ### Fonctionnalités de liaison
+</div>
 
 Avec les liens de données, vous pouvez ouvrir des traces et des logs à l’aide du trace ID fourni.
 
@@ -219,7 +231,7 @@ Il est nécessaire de configurer des valeurs par défaut pour les [logs](/fr/int
 </div>
 
 <div id="macros">
-  ## Macros {#macros}
+  ## Macros
 </div>
 
 Les macros sont un moyen simple d&#39;ajouter du SQL dynamique à votre requête.
@@ -228,7 +240,7 @@ Avant qu&#39;une requête ne soit envoyée au serveur ClickHouse, le plugin dév
 Les requêtes du SQL Editor comme du Query Builder peuvent utiliser des macros.
 
 <div id="using-macros">
-  ### Utilisation des macros {#using-macros}
+  ### Utilisation des macros
 </div>
 
 Les macros peuvent être utilisées n’importe où dans la requête, et plusieurs fois si nécessaire.
@@ -256,7 +268,7 @@ Dans cet exemple, l’intervalle de temps du tableau de bord Grafana est appliqu
 Le plugin prend également en charge la notation avec des accolades `{}`. Utilisez cette notation lorsqu’il est nécessaire d’utiliser des requêtes dans les [paramètres](/fr/reference/syntax#defining-and-using-query-parameters).
 
 <div id="list-of-macros">
-  ### Liste des macros {#list-of-macros}
+  ### Liste des macros
 </div>
 
 Voici la liste de toutes les macros disponibles dans le plugin :

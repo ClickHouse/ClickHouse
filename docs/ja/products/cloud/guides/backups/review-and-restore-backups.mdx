@@ -17,17 +17,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 * [&quot;ClickHouse Cloud におけるバックアップの仕組み&quot;](/ja/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (機能概要ページ) を読んでいること
 
-## バックアップのステータス一覧 {#backup-status-list}
+<div id="backup-status-list">
+  ## バックアップのステータス一覧
+</div>
 
-バックアップは、デフォルトの毎日のスケジュールでも、ユーザーが選択した[カスタムスケジュール](/ja/products/cloud/guides/backups/configurable-backups)でも、サービスに設定されたスケジュールに従って実行されます。利用可能なバックアップはすべて、サービスの**Backups**タブから確認できます。ここでは、バックアップのステータス、所要時間、バックアップのサイズを確認できます。また、**Actions**カラムから特定のバックアップを復元することもできます。
+サービスは、デフォルトの毎日のスケジュールでも、ユーザーが選択した[カスタムスケジュール](/ja/products/cloud/guides/backups/configurable-backups)でも、設定されたスケジュールに従ってバックアップされます。利用可能なバックアップはすべて、サービスの**Backups**タブから確認できます。ここでは、バックアップのステータス、所要時間、バックアップのサイズを確認できます。また、**Actions**カラムから特定のバックアップを復元することもできます。
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud のバックアップステータス一覧" border />
 
 <div id="understanding-backup-cost">
-  ## バックアップコストの把握 {#understanding-backup-cost}
+  ## バックアップコストの把握
 </div>
 
-異なるスケジュールが設定されていない限り、サービスは 24 時間ごとに 1 回バックアップされ、各バックアップは 24 時間保持されます。バックアップスケジュールを設定できるかどうかは、サービスおよびプランによって異なります。より多くのデータを保持するスケジュールを選択したり、バックアップ頻度を高くしたりすると、バックアップストレージに追加料金が発生する場合があります。
+デフォルトのポリシーでは、ClickHouse Cloud では毎日バックアップが実行され、保持期間は 24 時間です。より多くのデータを保持するスケジュールを選択したり、バックアップ頻度を高くしたりすると、バックアップストレージに追加料金が発生する場合があります。
 
 バックアップコストを把握するには、使用状況画面でサービスごとのバックアップコストを確認できます (以下を参照) 。カスタマイズしたスケジュールで数日間バックアップを実行すると、コストの目安を把握でき、それをもとに月間のバックアップコストを見積もれます。
 
@@ -35,7 +37,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 バックアップの総コストを見積もるには、バックアップスケジュールを設定する必要があります。スケジュールを設定する前でも、次の項目を入力して [料金計算ツール](https://clickhouse.com/pricing) を使えば、月額費用の見積もりを取得できます。
 
-* フルバックアップとインクリメンタルバックアップのサイズ
+* フルバックアップと増分バックアップのサイズ
 * 希望するバックアップ頻度
 * 希望するバックアップ保持期間
 * クラウドプロバイダーとリージョン
@@ -44,7 +46,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   サービス内のデータ量は時間の経過とともに増加するため、バックアップの見積もりコストも変動する点に注意してください。
 </Note>
 
-## バックアップを復元する {#restore-a-backup}
+<div id="restore-a-backup">
+  ## バックアップを復元する
+</div>
 
 バックアップは、取得元の既存サービスではなく、新しい ClickHouse Cloud サービスに復元されます。
 
@@ -57,7 +61,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 <Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="サービスのプロビジョニングが進行中" border />
 
 <div id="working-with-your-restored-service">
-  ## 復元済みサービスの扱い {#working-with-your-restored-service}
+  ## 復元済みサービスの扱い
 </div>
 
 バックアップを復元すると、同様のサービスが 2 つ存在する状態になります。1 つは復元が必要だった**元のサービス**、もう 1 つはその元のサービスのバックアップから作成された新しい**復元済みサービス**です。
@@ -68,7 +72,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * 新しい復元済みサービスから元のサービスへデータを移行し、新しい復元済みサービスを削除します。
 
 <div id="use-the-new-restored-service">
-  ### **新しい復元済みサービス**を使用する {#use-the-new-restored-service}
+  ### **新しい復元済みサービス**を使用する
 </div>
 
 新しい復元済みサービスを使用するには、次の手順を実行します。
@@ -78,7 +82,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 3. 元のサービスを削除します。
 
 <div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
-  ### **新たに復元したサービス**から**元のサービス**へデータを移行する {#migrate-data-from-the-newly-restored-service-back-to-the-original-service}
+  ### **新たに復元したサービス**から**元のサービス**へデータを移行する
 </div>
 
 何らかの理由で、新たに復元したサービスを利用できない場合があります。たとえば、既存のサービスに接続しているユーザーやアプリケーションがまだある場合です。そのような場合は、新たに復元したデータを元のサービスへ移行することになります。移行は、次の手順で実施できます。
@@ -144,7 +148,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 データを元のサービスに正常に挿入したら、そのサービス内のデータを必ず確認してください。データを確認したら、新しい  サービスも削除してください。
 
 <div id="undeleting-or-undropping-tables">
-  ## テーブルの削除取り消し {#undeleting-or-undropping-tables}
+  ## テーブルの削除取り消し
 </div>
 
 `UNDROP` コマンドは、ClickHouse Cloud で [Shared Catalog](/ja/products/cloud/features/infrastructure/shared-catalog) を通じてサポートされています。
@@ -165,26 +169,34 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   レガシープラン: レガシープランをご利用のお客様には、24時間保持されるデフォルトの日次バックアップがストレージコストに含まれています。
 </Note>
 
-## バックアップの所要時間 {#backup-durations}
+<div id="backup-durations">
+  ## バックアップの所要時間
+</div>
 
-バックアップと復元の所要時間は、データ量、スキーマの複雑さ、テーブル数によって大きく異なります。以下の数値は社内テストで得られた結果であり、パフォーマンスを保証するものではありません。
+バックアップと復元の所要時間は、データベースのサイズに加え、スキーマやデータベース内のテーブル数など、複数の要因によって異なります。
+増分バックアップは、バックアップ対象のデータ量が少ないため、通常はフルバックアップよりも大幅に短時間で完了します。
+増分バックアップからの復元は、前述のとおり、チェーン内の直近のフルバックアップとそれ以降のすべての増分バックアップを含めて復元するため、フルバックアップからの復元よりもやや時間がかかります。
 
-テストでは、約 1 TB のバックアップに約 10～15 分、20 TB のバックアップに約 1 時間かかりました。より大規模なデータセットでは、所要時間もおおむね比例して長くなります。数百 TB 以上のバックアップには何時間もかかることがありますが、規模が大きくなるほどスケールメリットも得られます。
-
-復元は通常、同等のバックアップよりも時間がかかります。特に、長いインクリメンタルバックアップチェーンを含む復元では、完全バックアップとチェーン内の後続のすべてのインクリメンタルバックアップを適用する必要があるためです。非常に大規模なサービスの復元には、1 日以上かかる場合があります。
-
-所要時間はデータ、スキーマ、バックアップ設定に大きく依存するため、目標復旧時間を設定する前に、必ずご自身のデータを使用して復元をテストすることを強くお勧めします。
+弊社のテストでは、約 1 TB の比較的小規模なバックアップでも、10～15 分、あるいはそれ以上かかる場合があることを確認しています。
+20 TB 未満のバックアップは通常 1 時間以内に完了し、50 TB のデータのバックアップにはおよそ 2～3 時間かかると見込まれます。
+バックアップはサイズが大きくなるほど規模の経済が働くため、一部の社内サービスでは最大 1 PB のバックアップが約 10 時間で完了することを確認しています。
 
 <Note>
   外部バケットへのバックアップは、ClickHouse バケットへのバックアップよりも遅くなる場合があります
 </Note>
 
+復元の所要時間は、バックアップの所要時間とほぼ同じです。
+
+実際の所要時間は、前述のとおり複数の要因に左右されるため、より正確な見積もりを得るには、ご自身のデータベースまたはサンプルデータでテストすることをお勧めします。
+
 <div id="configurable-backups">
-  ## 設定可能なバックアップ {#configurable-backups}
+  ## 設定可能なバックアップ
 </div>
 
 デフォルトとは異なるバックアップスケジュールを設定したい場合は、[設定可能なバックアップ](/ja/products/cloud/guides/backups/configurable-backups)をご覧ください。
 
-## ご自身のクラウドアカウントにバックアップをエクスポートする {#export-backups-to-your-own-cloud-account}
+<div id="export-backups-to-your-own-cloud-account">
+  ## ご自身のクラウドアカウントにバックアップをエクスポートする
+</div>
 
 バックアップをご自身のクラウドアカウントにエクスポートする場合は、[こちら](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)を参照してください。

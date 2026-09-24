@@ -13,25 +13,31 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются из исходного кода ClickHouse.
 
-## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
+<div id="object_shared_data_buckets_for_compact_part">
+  ## object_shared_data_buckets_for_compact_part
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "8"},{"label": "Добавлена настройка для управления количеством бакетов общих данных в JSON-сериализации в компактных частях"}]}]} />
 
-Количество бакетов для JSON-сериализации общих данных в компактных частях. Работает с сериализациями общих данных `map_with_buckets`, `advanced` и `advanced_chunked`.
+Количество бакетов для JSON-сериализации общих данных в компактных частях. Работает с сериализациями общих данных `map_with_buckets` и `advanced`.
 Максимально допустимое значение — 256.
 
-## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
+<div id="object_shared_data_buckets_for_wide_part">
+  ## object_shared_data_buckets_for_wide_part
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32"},{"label": "Добавлена настройка, управляющая количеством бакетов для общих данных в JSON-сериализации в частях Wide"}]}]} />
 
-Количество бакетов для JSON-сериализации общих данных в частях Wide. Работает с сериализациями общих данных `map_with_buckets`, `advanced` и `advanced_chunked`.
+Количество бакетов для JSON-сериализации общих данных в частях Wide. Работает с сериализациями общих данных `map_with_buckets` и `advanced`.
 Максимально допустимое значение — 256.
 
-## object_shared_data_serialization_version {#object_shared_data_serialization_version}
+<div id="object_shared_data_serialization_version">
+  ## object_shared_data_serialization_version
+</div>
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -45,12 +51,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `map_with_buckets` - хранить общие данные в виде нескольких отдельных столбцов `Map(String, String)`. Использование бакетов улучшает чтение отдельных путей из общих данных.
 * `advanced` - специальная сериализация общих данных, разработанная для значительного улучшения чтения отдельных путей из общих данных.
   Обратите внимание, что эта сериализация увеличивает объем общих данных на диске, поскольку мы сохраняем много дополнительной информации.
-* `advanced_chunked` - то же, что и `advanced`, но с поддержкой разбиения строк на меньшие фрагменты во время сериализации, чтобы снизить пиковое потребление памяти при слияниях JSON-столбцов с большим количеством уникальных путей. Размер фрагмента управляется настройкой [object&#95;shared&#95;data&#95;target&#95;chunk&#95;rows](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows).
 
-Количество бакетов для сериализаций `map_with_buckets`, `advanced` и `advanced_chunked` определяется настройками
+Количество бакетов для сериализаций `map_with_buckets` и `advanced` определяется настройками
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part).
 
-## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
+<div id="object_shared_data_serialization_version_for_zero_level_parts">
+  ## object_shared_data_serialization_version_for_zero_level_parts
+</div>
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 
@@ -58,18 +65,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эта настройка позволяет указать версию сериализации
 общих данных внутри типа JSON для частей нулевого уровня, создаваемых во время вставок.
-Для частей нулевого уровня не рекомендуется использовать сериализацию общих данных `advanced` или `advanced_chunked`, поскольку это может
+Для частей нулевого уровня не рекомендуется использовать сериализацию общих данных `advanced`, поскольку это может
 существенно увеличить время вставки.
-
-## object_shared_data_target_chunk_rows {#object_shared_data_target_chunk_rows}
-
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "8192"},{"label": "New setting"}]}]} />
-
-Целевое количество строк во фрагменте при сериализации общих данных JSON в режиме `advanced_chunked`.
-Это не жёсткое ограничение: если последний фрагмент окажется меньше половины целевого размера, он объединяется с предыдущим,
-поэтому фактические размеры фрагментов находятся в диапазоне от `target/2` до `1.5 * target`.
-Меньшие значения снижают пиковое потребление памяти при слияниях JSON-столбцов с большим числом уникальных путей — ценой увеличения количества фрагментов.
 
 {/*AUTOGENERATED_END*/}

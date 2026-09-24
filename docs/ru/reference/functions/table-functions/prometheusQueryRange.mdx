@@ -10,7 +10,9 @@ doc_type: 'reference'
 
 Вычисляет запрос Prometheus, используя данные из таблицы TimeSeries в заданном диапазоне моментов вычисления.
 
-## Синтаксис {#syntax}
+<div id="syntax">
+  ## Синтаксис
+</div>
 
 ```sql
 prometheusQueryRange('db_name', 'time_series_table', 'promql_query', start_time, end_time, step)
@@ -18,7 +20,9 @@ prometheusQueryRange(db_name.time_series_table, 'promql_query', start_time, end_
 prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, step)
 ```
 
-## Аргументы {#arguments}
+<div id="arguments">
+  ## Аргументы
+</div>
 
 * `db_name` - Имя базы данных, в которой находится таблица TimeSeries.
 * `time_series_table` - Имя таблицы TimeSeries.
@@ -27,43 +31,49 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 * `end_time` - Время окончания интервала вычисления.
 * `step` - Шаг, с которым перебирается время вычисления от `start_time` до `end_time` (включительно).
 
-## Возвращаемое значение {#returned-value}
+<div id="returned-value">
+  ## Возвращаемое значение
+</div>
 
 Функция может возвращать разные столбцы в зависимости от типа результата запроса, переданного в параметр `promql_query`:
 
-| Тип результата | Возвращаемые столбцы                                                              | Пример                                              |
-| -------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
-| vector         | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType       | prometheusQuery(mytable, &#39;up&#39;)              |
-| matrix         | tags Array(Tuple(String, String)), samples Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
-| scalar         | scalar ValueType                                                                  | prometheusQuery(mytable, &#39;1h30m&#39;)           |
-| string         | string String                                                                     | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+| Тип результата | Возвращаемые столбцы                                                                      | Пример                                              |
+| -------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector         | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix         | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar         | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string         | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
 
-Столбец `samples` называется `time_series`, если таблица `TimeSeries` имеет [version](/ru/reference/engines/table-engines/integrations/time-series#schema-versioning) 2 или ниже.
+<div id="supported-promql-features">
+  ## Поддерживаемые возможности PromQL
+</div>
 
-## Поддерживаемые возможности PromQL {#supported-promql-features}
-
-### Селекторы {#selectors}
+<div id="selectors">
+  ### Селекторы
+</div>
 
 Мгновенные селекторы, селекторы диапазона, сопоставители меток (`=`, `!=`, `=~`, `!~`), модификаторы offset, модификаторы временной метки `@` и подзапросы.
 
-### Функции {#functions}
+<div id="functions">
+  ### Функции
+</div>
 
-| Категория          | Функции                                                                                                                                                                                                                                                                                                              |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Диапазон           | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `predict_linear` |
-| Математические     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max`                                                                                                                                                                                        |
-| Тригонометрические | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                                                                                                                                                                                                       |
-| Дата и время       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                                                                                                                                                                                                                     |
-| Метка              | `label_replace`, `label_join`                                                                                                                                                                                                                                                                                        |
-| Тип                | `scalar`, `vector`                                                                                                                                                                                                                                                                                                   |
-| Гистограмма        | `histogram_quantile`                                                                                                                                                                                                                                                                                                 |
-| Другое             | `time`, `pi`, `absent`                                                                                                                                                                                                                                                                                               |
+| Категория          | Функции                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Диапазон           | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`                                |
+| Математические     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
+| Тригонометрические | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                |
+| Дата и время       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                              |
+| Метка              | `label_replace`, `label_join`                                                                                                 |
+| Тип                | `scalar`, `vector`                                                                                                            |
+| Гистограмма        | `histogram_quantile`                                                                                                          |
+| Другое             | `time`, `pi`                                                                                                                  |
 
 **Note**: `histogram_quantile` использует линейную интерполяцию для классических бакетов гистограммы (определяемых по метке `le`). Нативные гистограммы не поддерживаются. Аргумент `phi` (уровень квантиля) должен быть константным скаляром. Выражения, меняющиеся от шага к шагу, такие как `histogram_quantile(time() / 1000, ...)`, отклоняются с исключением `NOT_IMPLEMENTED`.
 
-**Note**: `ts_of_min_over_time` и `ts_of_max_over_time` — экспериментальные функции в Prometheus (там они включаются с помощью `--enable-feature=promql-experimental-functions`); ClickHouse вычисляет их без этого флага.
-
-### Операторы {#operators}
+<div id="operators">
+  ### Операторы
+</div>
 
 Бинарные арифметические (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) и сравнительные (`==`, `!=`, `<`, `>`, `<=`, `>=` с необязательным `bool`) операторы с модификаторами `on()`/`ignoring()` и `group_left()`/`group_right()`.
 
@@ -71,15 +81,23 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 Унарные операторы `+` и `-`.
 
-### Операторы агрегации {#aggregation-operators}
+<div id="aggregation-operators">
+  ### Операторы агрегации
+</div>
 
-`sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — с необязательными модификаторами `by()` и `without()`.
+`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — с необязательными модификаторами `by()` и `without()`.
 
-### Пока не поддерживается {#not-yet-supported}
+<div id="not-yet-supported">
+  ### Пока не поддерживается
+</div>
 
-* Функции диапазона `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+* Оператор агрегации `count_values`
+* Функции диапазона `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+* Функция `absent`
 
-## Пример {#example}
+<div id="example">
+  ## Пример
+</div>
 
 ```sql
 SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)

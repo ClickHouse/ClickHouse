@@ -31,7 +31,9 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   على الرغم من تشابه الاسم، فإن المحرّك [Merge](/ar/reference/engines/table-engines/special/merge) يختلف عن محركات `*MergeTree`.
 </Note>
 
-## إنشاء الجداول {#table_engine-mergetree-creating-a-table}
+<div id="table_engine-mergetree-creating-a-table">
+  ## إنشاء الجداول
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -58,15 +60,21 @@ ORDER BY expr
 
 للاطلاع على وصف مفصل للمعلمات، راجع تعليمة [CREATE TABLE](/ar/reference/statements/create/table)
 
-### عبارات الاستعلام {#mergetree-query-clauses}
+<div id="mergetree-query-clauses">
+  ### عبارات الاستعلام
+</div>
 
-#### ENGINE {#engine}
+<div id="engine">
+  #### ENGINE
+</div>
 
 `ENGINE` — اسم المحرّك ومعلماته. `ENGINE = MergeTree()`. لا يحتوي محرّك `MergeTree` على أي معلمات.
 
 <a id="order_by" />
 
-#### ORDER BY {#order-by}
+<div id="order-by">
+  #### ORDER BY
+</div>
 
 `ORDER BY` — مفتاح الفرز.
 
@@ -77,20 +85,26 @@ ORDER BY expr
 إذا لم تكن هناك حاجة إلى الفرز، يمكنك استخدام الصياغة `ORDER BY tuple()`.
 وبدلاً من ذلك، إذا كان الإعداد `create_table_empty_primary_key_by_default` مفعّلًا، فستُضاف `ORDER BY ()` ضمنيًا إلى عبارات `CREATE TABLE`. راجع [Selecting a Primary Key](#selecting-a-primary-key).
 
-#### PARTITION BY {#partition-by}
+<div id="partition-by">
+  #### PARTITION BY
+</div>
 
 `PARTITION BY` — [مفتاح التقسيم](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key). وهو اختياري. في معظم الحالات، لا تحتاج إلى مفتاح تقسيم، وحتى إذا احتجت إلى التقسيم، فغالبًا لا تحتاج إلى مفتاح تقسيم أكثر دقة من التقسيم حسب الشهر. لا يسرّع التقسيم الاستعلامات (على عكس تعبير ORDER BY). يجب ألّا تستخدم مطلقًا تقسيمًا مفرط الدقة. لا تقسّم بياناتك حسب معرّفات العملاء أو الأسماء (وعوضًا عن ذلك، اجعل معرّف العميل أو الاسم هو العمود الأول في تعبير ORDER BY).
 
 للتقسيم حسب الشهر، استخدم التعبير `toYYYYMM(date_column)`، حيث إن `date_column` هو عمود يحتوي على تاريخ من النوع [Date](/ar/reference/data-types/date). وتكون أسماء الأقسام هنا بالتنسيق `"YYYYMM"`.
 
-#### PRIMARY KEY {#primary-key}
+<div id="primary-key">
+  #### PRIMARY KEY
+</div>
 
 `PRIMARY KEY` — المفتاح الأساسي إذا كان [يختلف عن مفتاح الفرز](#choosing-a-primary-key-that-differs-from-the-sorting-key). وهو اختياري.
 
 إن تحديد مفتاح فرز (باستخدام عبارة `ORDER BY`) يعني ضمنيًا تحديد مفتاح أساسي.
 وعادةً لا تكون هناك حاجة إلى تحديد المفتاح الأساسي إلى جانب مفتاح الفرز.
 
-#### SAMPLE BY {#sample-by}
+<div id="sample-by">
+  #### SAMPLE BY
+</div>
 
 `SAMPLE BY` — تعبير لأخذ العينات. اختياري.
 
@@ -99,7 +113,9 @@ ORDER BY expr
 
 مثال: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-#### TTL {#ttl}
+<div id="ttl">
+  #### TTL
+</div>
 
 `TTL` — قائمة بالقواعد التي تحدد مدة الاحتفاظ بالصفوف ومنطق [نقل الأجزاء تلقائيًا بين الأقراص ووحدات التخزين](#table_engine-mergetree-multiple-volumes). اختياري.
 
@@ -109,7 +125,9 @@ ORDER BY expr
 
 لمزيد من التفاصيل، راجع [TTL للأعمدة والجداول](#table_engine-mergetree-ttl)
 
-#### الإعدادات {#settings}
+<div id="settings">
+  #### الإعدادات
+</div>
 
 انظر [إعدادات MergeTree](/ar/reference/settings/merge-tree-settings).
 
@@ -157,7 +175,9 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
   يُهيَّأ محرّك `MergeTree` بالطريقة نفسها المستخدَمة في المثال أعلاه ضمن طريقة تهيئة المحرّك الرئيسية.
 </details>
 
-## تخزين البيانات {#mergetree-data-storage}
+<div id="mergetree-data-storage">
+  ## تخزين البيانات
+</div>
 
 يتكوّن الجدول من أجزاء بيانات مرتّبة حسب المفتاح الأساسي.
 
@@ -173,7 +193,9 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 يُقيَّد حجم الحبيبة بالإعدادين `index_granularity` و`index_granularity_bytes` الخاصين بمحرك الجدول. ويقع عدد الصفوف في الحبيبة ضمن النطاق `[1, index_granularity]`، وذلك بحسب حجم الصفوف. وقد يتجاوز حجم الحبيبة `index_granularity_bytes` إذا كان حجم صف واحد أكبر من قيمة الإعداد. وفي هذه الحالة، يكون حجم الحبيبة مساويًا لحجم الصف.
 
-## المفاتيح الأساسية والفهارس في الاستعلامات {#primary-keys-and-indexes-in-queries}
+<div id="primary-keys-and-indexes-in-queries">
+  ## المفاتيح الأساسية والفهارس في الاستعلامات
+</div>
 
 خذ المفتاح الأساسي `(CounterID, Date)` على سبيل المثال. في هذه الحالة، يمكن توضيح الفرز والفهرس كما يلي:
 
@@ -202,7 +224,9 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 يمكنك استخدام تعبيرات من النوع `Nullable` في عبارتي `PRIMARY KEY` و`ORDER BY`، ولكن لا يُنصح بذلك بشدة. للسماح بهذه الميزة، فعِّل الإعداد [allow&#95;nullable&#95;key](/ar/reference/settings/merge-tree-settings/allow#allow_nullable_key). وينطبق مبدأ [NULLS&#95;LAST](/ar/reference/statements/select/order-by#sorting-of-special-values) على قيم `NULL` في عبارة `ORDER BY`.
 
-### اختيار مفتاح أساسي {#selecting-a-primary-key}
+<div id="selecting-a-primary-key">
+  ### اختيار مفتاح أساسي
+</div>
 
 عدد الأعمدة في المفتاح الأساسي غير محدود صراحةً. وبحسب بنية البيانات، يمكنك تضمين عدد أكبر أو أقل من الأعمدة في المفتاح الأساسي. وقد يترتب على ذلك ما يلي:
 
@@ -227,7 +251,9 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 لاختيار البيانات بالترتيب الأصلي، استخدم استعلامات `SELECT` [أحادية الخيط](/ar/reference/settings/session-settings/max-threads#max_threads).
 
-### اختيار مفتاح أساسي يختلف عن مفتاح الفرز {#choosing-a-primary-key-that-differs-from-the-sorting-key}
+<div id="choosing-a-primary-key-that-differs-from-the-sorting-key">
+  ### اختيار مفتاح أساسي يختلف عن مفتاح الفرز
+</div>
 
 يمكن تحديد مفتاح أساسي (تعبير بقيم تُكتب في ملف الفهرس لكل علامة) يختلف عن مفتاح الفرز (تعبير لفرز الصفوف في أجزاء البيانات). في هذه الحالة، يجب أن تكون مجموعة تعبيرات المفتاح الأساسي بادئةً لمجموعة تعبيرات مفتاح الفرز.
 
@@ -238,7 +264,9 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 يُعد [ALTER](/ar/reference/statements/alter/skipping-index) لمفتاح الفرز عملية خفيفة، لأنه عند إضافة عمود جديد في الوقت نفسه إلى الجدول وإلى مفتاح الفرز، لا تحتاج أجزاء البيانات الحالية إلى أي تغيير. وبما أن مفتاح الفرز القديم هو بادئة لمفتاح الفرز الجديد، ولا توجد بيانات في العمود المُضاف حديثًا، فإن البيانات تكون مرتبةً وفقًا لمفتاحي الفرز القديم والجديد معًا عند تعديل الجدول.
 
-### استخدام الفهارس والتقسيمات في الاستعلامات {#use-of-indexes-and-partitions-in-queries}
+<div id="use-of-indexes-and-partitions-in-queries">
+  ### استخدام الفهارس والتقسيمات في الاستعلامات
+</div>
 
 بالنسبة إلى استعلامات `SELECT`، يحلّل ClickHouse ما إذا كان يمكن استخدام فهرس. ويمكن استخدام الفهرس إذا كانت عبارة `WHERE/PREWHERE` تتضمن تعبيرًا (إما كأحد عناصر الاقتران أو بالكامل) يمثّل عملية مقارنة مساواة أو عدم مساواة، أو إذا كانت تتضمن `IN` أو `LIKE` مع بادئة ثابتة على أعمدة أو تعبيرات موجودة في المفتاح الأساسي أو مفتاح التقسيم، أو على بعض الدوال الجزئية التكرار لهذه الأعمدة، أو على العلاقات المنطقية بين هذه التعبيرات.
 
@@ -285,7 +313,9 @@ SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 
 يتيح مفتاح التقسيم بحسب الشهر قراءة كتل البيانات التي تحتوي فقط على تواريخ ضمن النطاق المناسب. في هذه الحالة، قد تحتوي كتلة البيانات على بيانات تخص عدة تواريخ (حتى شهر كامل). وداخل الكتلة، تكون البيانات مرتبة حسب المفتاح الأساسي، الذي قد لا يتضمن التاريخ بوصفه العمود الأول. لذلك، فإن استخدام استعلام يتضمن شرطًا على التاريخ فقط ولا يحدد بادئة المفتاح الأساسي سيؤدي إلى قراءة بيانات أكثر مما يلزم عند الاستعلام عن تاريخ واحد.
 
-### استخدام الفهرس مع التعبيرات الحتمية في المفاتيح الأساسية {#use-of-index-for-deterministic-expressions-in-primary-keys}
+<div id="use-of-index-for-deterministic-expressions-in-primary-keys">
+  ### استخدام الفهرس مع التعبيرات الحتمية في المفاتيح الأساسية
+</div>
 
 يمكن أن يحتوي المفتاح الأساسي على تعبيرات، لا على أسماء الأعمدة فقط. ولا تقتصر هذه التعبيرات على سلاسل دوال بسيطة، بل يمكن أن تكون أشجار تعبيرات كيفما كانت (مثل الدوال المتداخلة والتعبيرات المركبة)، ما دامت حتمية.
 
@@ -334,7 +364,9 @@ SELECT * FROM table WHERE p NOT IN ('abc', '12345');
 SELECT * FROM table WHERE NOT has(['abc', '12345'], p);
 ```
 
-### استخدام الفهرس مع المفاتيح الأساسية الرتيبة جزئيًا {#use-of-index-for-partially-monotonic-primary-keys}
+<div id="use-of-index-for-partially-monotonic-primary-keys">
+  ### استخدام الفهرس مع المفاتيح الأساسية الرتيبة جزئيًا
+</div>
 
 لنأخذ، على سبيل المثال، أيام الشهر. فهي تُشكّل [تسلسلاً رتيبًا](https://en.wikipedia.org/wiki/Monotonic_function) داخل شهر واحد، لكنها لا تكون رتيبة على مدى فترات أطول. هذا تسلسل رتيب جزئيًا. إذا أنشأ المستخدم جدولًا بمفتاح أساسي رتيب جزئيًا، ينشئ ClickHouse فهرسًا متناثرًا كالمعتاد. وعندما يستعلم المستخدم عن بيانات من هذا النوع من الجداول، يحلّل ClickHouse شروط الاستعلام. فإذا أراد المستخدم الحصول على بيانات بين علامتين من الفهرس، وكانت كلتا العلامتين تقعان ضمن شهر واحد، يمكن لـ ClickHouse استخدام الفهرس في هذه الحالة تحديدًا، لأنه يستطيع حساب المسافة بين معلمات الاستعلام وعلامات الفهرس.
 
@@ -342,7 +374,9 @@ SELECT * FROM table WHERE NOT has(['abc', '12345'], p);
 
 يستخدم ClickHouse هذا المنطق ليس فقط مع تسلسلات أيام الشهر، بل مع أي مفتاح أساسي يمثّل تسلسلاً رتيبًا جزئيًا.
 
-### فهارس تخطي البيانات {#table_engine-mergetree-data_skipping-indexes}
+<div id="table_engine-mergetree-data_skipping-indexes">
+  ### فهارس تخطي البيانات
+</div>
 
 يرد تعريف الفهرس في قسم الأعمدة ضمن استعلام `CREATE`.
 
@@ -399,7 +433,9 @@ INDEX nested_1_index col.nested_col1 TYPE bloom_filter
 INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 ```
 
-### أنواع فهارس التخطي {#skip-index-types}
+<div id="skip-index-types">
+  ### أنواع فهارس التخطي
+</div>
 
 يدعم محرك الجدول `MergeTree` الأنواع التالية من فهارس التخطي.
 لمزيد من المعلومات حول كيفية استخدام فهارس التخطي لتحسين الأداء،
@@ -413,7 +449,9 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 * فهرس [`text`](#text)
 * فهرس [`vector_similarity`](#vector-similarity)
 
-#### فهرس التخطي MinMax {#minmax}
+<div id="minmax">
+  #### فهرس التخطي MinMax
+</div>
 
 لكل حبيبة فهرس، تُخزَّن القيمتان الصغرى والكبرى لتعبير ما.
 (إذا كان التعبير من النوع `tuple`، فإنه يخزّن القيمتين الصغرى والكبرى لكل عنصر من عناصر الـ `tuple`.)
@@ -422,7 +460,9 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 minmax
 ```
 
-#### Set {#set}
+<div id="set">
+  #### Set
+</div>
 
 يُخزَّن لكل كتلة فهرس ما يصل إلى `max_rows` من القيم الفريدة للتعبير المحدد.
 ويعني `max_rows = 0` &quot;تخزين جميع القيم الفريدة&quot;.
@@ -431,9 +471,11 @@ minmax
 set(max_rows)
 ```
 
-#### مرشح Bloom {#bloom-filter}
+<div id="bloom-filter">
+  #### مرشح Bloom
+</div>
 
-يُخزَّن [مرشح Bloom](https://en.wikipedia.org/wiki/Bloom_filter) لكل حبيبة فهرس للأعمدة المحددة.
+يُخزَّن [مرشح Bloom](https://en.wikipedia.org/wiki/Bloom_filter) لكل حبيبة فهرس للأعمدة المحددة.
 
 ```text title="Syntax"
 bloom_filter([false_positive_rate])
@@ -456,15 +498,21 @@ bloom_filter([false_positive_rate])
 * `UUID`
 * `Map`
 
-<Note title="نوع البيانات Map: تحديد إنشاء الفهرس على المفاتيح أو القيم">
+<Info>
+  **نوع البيانات Map: تحديد إنشاء الفهرس على المفاتيح أو القيم**
+
   بالنسبة إلى نوع البيانات `Map`، يمكن للعميل تحديد ما إذا كان يجب إنشاء الفهرس على المفاتيح أو على القيم باستخدام الدالتين [`mapKeys`](/ar/reference/functions/regular-functions/tuple-map-functions#mapKeys) أو [`mapValues`](/ar/reference/functions/regular-functions/tuple-map-functions#mapValues).
-</Note>
+</Info>
 
-<Note title="نوع البيانات JSON: فهرسة مسارات JSON">
-  بالنسبة إلى نوع البيانات [`JSON`](/ar/reference/data-types/newjson)، يمكن إنشاء فهرس مرشح Bloom على مجموعة المسارات باستخدام الدالة [`JSONAllPaths`](/ar/reference/functions/regular-functions/json-functions#JSONAllPaths). يتيح ذلك تخطي الحبيبات التي لا يحتوي فيها الاستعلام على مسار JSON موجود. راجع [فهارس تخطي البيانات لـ JSON](/ar/reference/data-types/newjson#data-skipping-indexes-for-json) لمزيد من التفاصيل.
-</Note>
+<Info>
+  **نوع البيانات JSON: فهرسة مسارات JSON**
 
-#### مرشح Bloom لـ N-gram *(مهمل)* {#n-gram-bloom-filter}
+  بالنسبة إلى نوع البيانات [`JSON`](/ar/reference/data-types/newjson)، يمكن إنشاء فهرس bloom filter على مجموعة المسارات باستخدام الدالة [`JSONAllPaths`](/ar/reference/functions/regular-functions/json-functions#JSONAllPaths). يتيح ذلك تخطي الحبيبات التي لا يحتوي فيها الاستعلام على مسار JSON موجود. راجع [فهارس تخطي البيانات لـ JSON](/ar/reference/data-types/newjson#data-skipping-indexes-for-json) لمزيد من التفاصيل.
+</Info>
+
+<div id="n-gram-bloom-filter">
+  #### مرشح Bloom لـ N-gram *(مهمل)*
+</div>
 
 <Note>
   مع الوصول إلى مرحلة التوافر العام (GA) لفهرس `text` بدءًا من إصدار ClickHouse 26.2، لم يعد يُوصى باستخدام الفهرس `ngrambf_v1` في البحث في النص الكامل.
@@ -538,7 +586,9 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 وبالطبع، يمكنك أيضًا استخدام تلك الدوال لتقدير المعلمات الخاصة بشروط أخرى.
 وتستند الدوال المذكورة أعلاه إلى حاسبة bloom filter [هنا](https://hur.st/bloomfilter).
 
-#### مرشح bloom للرموز {#token-bloom-filter}
+<div id="token-bloom-filter">
+  #### مرشح bloom للرموز
+</div>
 
 <Note>
   مع الإتاحة العامة (GA) للفهرس `text` بدءًا من إصدار ClickHouse 26.2، لم يعد الفهرس `tokenbf_v1` موصى به لعمليات البحث في النص الكامل.
@@ -550,7 +600,9 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
-#### مرشح Bloom لـ sparse grams {#sparse-grams-bloom-filter}
+<div id="sparse-grams-bloom-filter">
+  #### مرشح Bloom لـ sparse grams
+</div>
 
 مرشح Bloom لـ sparse grams مشابه لـ `ngrambf_v1`، لكنه يستخدم [رموز sparse grams](/ar/reference/functions/regular-functions/string-functions#sparseGrams) بدلًا من ngrams.
 
@@ -558,15 +610,21 @@ tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
-### فهرس نصي {#text}
+<div id="text">
+  ### فهرس نصي
+</div>
 
 ينشئ فهرسًا معكوسًا على بيانات نصية مُجزّأة إلى رموز، مما يتيح بحثًا نصيًا كاملًا بكفاءة وبشكل حتمي. راجع [هنا](/ar/reference/engines/table-engines/mergetree-family/textindexes) لمزيد من التفاصيل.
 
-#### تشابه المتجهات {#vector-similarity}
+<div id="vector-similarity">
+  #### تشابه المتجهات
+</div>
 
 يدعم البحث التقريبي عن أقرب الجيران، راجع [هنا](/ar/reference/engines/table-engines/mergetree-family/annindexes) للاطلاع على التفاصيل.
 
-### دعم الدوال {#functions-support}
+<div id="functions-support">
+  ### دعم الدوال
+</div>
 
 تتضمن الشروط في عبارة `WHERE` استدعاءات لدوال تتعامل مع الأعمدة. وإذا كان العمود جزءًا من فهرس، يحاول ClickHouse استخدام هذا الفهرس عند تطبيق هذه الدوال. يدعم ClickHouse مجموعات فرعية مختلفة من الدوال التي يمكن معها استخدام الفهارس.
 
@@ -575,7 +633,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 | الدالة (المعامل) / الفهرس                                                                                                           | المفتاح الأساسي | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
 | ----------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
 | [equals (=, ==)](/ar/reference/functions/regular-functions/comparison-functions#equals)                                                | ✔               | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notEquals(!=, &lt;&gt;)](/ar/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [notEquals(!=, &lt;&gt;)](/ar/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔               | ✔      | ✔              | ✔              | ✔                | ✔                | ✗    |
 | [like](/ar/reference/functions/regular-functions/string-search-functions#like)                                                         | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
 | [notLike](/ar/reference/functions/regular-functions/string-search-functions#notLike)                                                   | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
 | [match](/ar/reference/functions/regular-functions/string-search-functions#match)                                                       | ✗               | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
@@ -585,7 +643,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 | [multiSearchAnyUTF8](/ar/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                             | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 | [multiMatchAny](/ar/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                       | ✗               | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 | [in](/ar/reference/functions/regular-functions/in-functions)                                                                           | ✔               | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notIn](/ar/reference/functions/regular-functions/in-functions)                                                                        | ✔               | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [notIn](/ar/reference/functions/regular-functions/in-functions)                                                                        | ✔               | ✔      | ✔              | ✔              | ✔                | ✔                | ✗    |
 | [less (`<`)](/ar/reference/functions/regular-functions/comparison-functions#less)                                                      | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
 | [greater (`>`)](/ar/reference/functions/regular-functions/comparison-functions#greater)                                                | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
 | [lessOrEquals (`<=`)](/ar/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                     | ✔               | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
@@ -630,7 +688,9 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
     * `NOT startsWith(s, 'test')`
 </Note>
 
-## الإسقاطات {#projections}
+<div id="projections">
+  ## الإسقاطات
+</div>
 
 تشبه الإسقاطات [العروض المُجسَّدة](/ar/reference/statements/create/view)، لكنها تُعرَّف على مستوى الجزء. وهي توفّر ضمانات للاتساق إلى جانب استخدامها تلقائيًا في الاستعلامات.
 
@@ -640,7 +700,9 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 لا تُدعَم الإسقاطات في عبارات `SELECT` التي تستخدم المُعدِّل [FINAL](/ar/reference/statements/select/from#final-modifier).
 
-### استعلام الإسقاط {#projection-query}
+<div id="projection-query">
+  ### استعلام الإسقاط
+</div>
 
 استعلام الإسقاط هو ما يعرّف الإسقاط. وهو يختار البيانات ضمنيًا من الجدول الأصلي.
 **البنية**
@@ -651,14 +713,18 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 
 يمكن تعديل الإسقاطات أو حذفها باستخدام تعليمة [ALTER](/ar/reference/statements/alter/projection).
 
-### فهارس الإسقاط {#projection-index}
+<div id="projection-index">
+  ### فهارس الإسقاط
+</div>
 
 تُوسّع فهارس الإسقاط النظام الفرعي للإسقاط عبر توفير طريقة خفيفة وواضحة لتعريف فهارس على مستوى الإسقاط.
 ومن الناحية الظاهرية، يظل فهرس الإسقاط إسقاطًا، ولكن بصياغة أبسط وغرض أوضح: إذ يعرّف تعبيرًا مخصصًا للتصفية، بدلًا من تقديم بيانات مُحتسَبة ومخزَّنة مسبقًا.
 أما داخليًا، فلا يقوم فهرس الإسقاط بتمثيل الجدول الأصلي فعليًا بترتيب صفوف مُبدَّل كما يفعل الإسقاط العادي.
 وبدلًا من ذلك، يُخزَّن هذا التبديل في صورة عمود رقمي للتبديل `_part_offset`، أي `SELECT _part_offset ORDER BY <index_expr>`.
 
-#### الصياغة {#projection-index-syntax}
+<div id="projection-index-syntax">
+  #### الصياغة
+</div>
 
 ```sql
 PROJECTION <name> INDEX <index_expr> TYPE <index_type>
@@ -679,7 +745,9 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-#### أنواع الفهارس {#projection-index-types}
+<div id="projection-index-types">
+  #### أنواع الفهارس
+</div>
 
 الأنواع المدعومة حاليًا:
 
@@ -687,23 +755,31 @@ ORDER BY id;
 
 يوفّر هذا الإطار إمكانية إضافة المزيد من أنواع الفهارس مستقبلًا.
 
-### تخزين الإسقاطات {#projection-storage}
+<div id="projection-storage">
+  ### تخزين الإسقاطات
+</div>
 
 تُخزَّن الإسقاطات داخل دليل الجزء. وهي تشبه الفهرس، لكنها تتضمن دليلًا فرعيًا يخزّن جزءًا من جدول `MergeTree` مجهول الاسم. ويُشتق هذا الجدول من استعلام تعريف الإسقاط. إذا وُجد بند `GROUP BY`، يصبح محرك التخزين الأساسي هو [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree)، وتُحوَّل جميع الدوال التجميعية إلى `AggregateFunction`. وإذا وُجد بند `ORDER BY`، يستخدمه جدول `MergeTree` كتعبير المفتاح الأساسي. وأثناء عملية الدمج، يُدمَج جزء الإسقاط عبر إجراء الدمج الخاص بالتخزين التابع له. ويُدمَج المجموع الاختباري لجزء الجدول الأصل مع جزء الإسقاط. أما مهام الصيانة الأخرى فهي مشابهة لفهارس التخطي.
 
-### تحليل الاستعلام {#projection-query-analysis}
+<div id="projection-query-analysis">
+  ### تحليل الاستعلام
+</div>
 
 1. تحقّق مما إذا كان يمكن استخدام الإسقاط للإجابة عن الاستعلام المعطى، أي إنه ينتج النتيجة نفسها التي ينتجها الاستعلام على الجدول الأساسي.
 2. اختر أفضل تطابق ممكن، وهو التطابق الذي يتطلب قراءة أقل عدد من الحبيبات.
 3. سيكون مسار تنفيذ الاستعلام الذي يستخدم الإسقاطات مختلفًا عن ذلك الذي يستخدم الأجزاء الأصلية. وإذا كان الإسقاط غير موجود في بعض الأجزاء، فيمكننا إضافة مسار التنفيذ لإسقاطه أثناء التشغيل.
 
-## الوصول المتزامن إلى البيانات {#concurrent-data-access}
+<div id="concurrent-data-access">
+  ## الوصول المتزامن إلى البيانات
+</div>
 
 للوصول المتزامن إلى الجدول، نستخدم آلية تعدد الإصدارات. وبعبارة أخرى، عند قراءة جدول وتحديثه في الوقت نفسه، تُقرأ البيانات من مجموعة الأجزاء الحالية وقت تنفيذ الاستعلام. ولا توجد أقفال طويلة الأمد. كما أن عمليات الإدراج لا تعيق عمليات القراءة.
 
 تُنفَّذ القراءة من الجدول بالتوازي تلقائيًا.
 
-## TTL للأعمدة والجداول {#table_engine-mergetree-ttl}
+<div id="table_engine-mergetree-ttl">
+  ## TTL للأعمدة والجداول
+</div>
 
 يحدّد مدة بقاء القيم.
 
@@ -711,13 +787,15 @@ ORDER BY id;
 
 يجب أن ينتج عن تقييم التعبيرات نوع البيانات [Date](/ar/reference/data-types/date) أو [Date32](/ar/reference/data-types/date32) أو [DateTime](/ar/reference/data-types/datetime) أو [DateTime64](/ar/reference/data-types/datetime64).
 
-<Tip title="تجنّب الدوال غير الحتمية في تعبيرات TTL">
+<Tip>
+  **تجنّب الدوال غير الحتمية في تعبيرات TTL**
+
   يُقيَّم TTL أثناء عمليات الدمج في الخلفية، وليس وقت الإدراج.
   تُعاد تقييم دوال مثل `rand()` و`now()` و`now64()` عند كل عملية دمج، مما يؤدي إلى سلوك حذف غير قابل للتنبؤ.
   يمنع ClickHouse التعبيرات التي لا تعتمد على أي عمود على الإطلاق، لكنه لا يرفض حاليًا الدوال غير الحتمية الممزوجة بإشارة إلى عمود (مثل `ts + rand()`). ينبغي أن تستند تعبيرات TTL فقط إلى قيم حتمية مشتقة من الأعمدة للحصول على نتائج قابلة للتنبؤ.
 </Tip>
 
-**الصياغة**
+**البنية**
 
 تعيين مدة بقاء لعمود:
 
@@ -733,7 +811,9 @@ TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
 
-### TTL للعمود {#mergetree-column-ttl}
+<div id="mergetree-column-ttl">
+  ### TTL للعمود
+</div>
 
 عندما تنتهي صلاحية القيم في العمود، يستبدلها ClickHouse بالقيم الافتراضية لنوع بيانات العمود. وإذا انتهت صلاحية جميع قيم العمود في جزء البيانات، يحذف ClickHouse هذا العمود من جزء البيانات على نظام الملفات.
 
@@ -741,7 +821,9 @@ TTL date_time + INTERVAL 15 HOUR
 
 **أمثلة**
 
-#### إنشاء جدول باستخدام `TTL`: {#creating-a-table-with-ttl}
+<div id="creating-a-table-with-ttl">
+  #### إنشاء جدول باستخدام `TTL`:
+</div>
 
 ```sql
 CREATE TABLE tab
@@ -756,7 +838,9 @@ PARTITION BY toYYYYMM(d)
 ORDER BY d;
 ```
 
-#### إضافة TTL إلى عمود في جدول موجود {#adding-ttl-to-a-column-of-an-existing-table}
+<div id="adding-ttl-to-a-column-of-an-existing-table">
+  #### إضافة TTL إلى عمود في جدول موجود
+</div>
 
 ```sql
 ALTER TABLE tab
@@ -764,7 +848,9 @@ ALTER TABLE tab
     c String TTL d + INTERVAL 1 DAY;
 ```
 
-#### تعديل TTL للعمود {#altering-ttl-of-the-column}
+<div id="altering-ttl-of-the-column">
+  #### تعديل TTL للعمود
+</div>
 
 ```sql
 ALTER TABLE tab
@@ -772,7 +858,9 @@ ALTER TABLE tab
     c String TTL d + INTERVAL 1 MONTH;
 ```
 
-### TTL للجدول {#mergetree-table-ttl}
+<div id="mergetree-table-ttl">
+  ### TTL للجدول
+</div>
 
 يمكن أن يحتوي الجدول على تعبير لإزالة الصفوف منتهية الصلاحية، وعلى عدة تعبيرات لنقل الأجزاء تلقائيًا بين [الأقراص أو وحدات التخزين](#table_engine-mergetree-multiple-volumes). وعندما تنتهي صلاحية الصفوف في الجدول، يحذف ClickHouse جميع الصفوف المقابلة. أما بالنسبة إلى نقل الأجزاء أو إعادة ضغطها، فيجب أن تستوفي جميع صفوف الجزء معايير تعبير `TTL`.
 
@@ -803,7 +891,9 @@ TTL time_column + INTERVAL 1 MONTH DELETE WHERE column = 'value'
 
 **أمثلة**
 
-#### إنشاء جدول مع `TTL`: {#creating-a-table-with-ttl-1}
+<div id="creating-a-table-with-ttl-1">
+  #### إنشاء جدول مع `TTL`:
+</div>
 
 ```sql
 CREATE TABLE tab
@@ -819,7 +909,9 @@ TTL d + INTERVAL 1 MONTH DELETE,
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-#### تعديل `TTL` للجدول: {#altering-ttl-of-the-table}
+<div id="altering-ttl-of-the-table">
+  #### تعديل `TTL` للجدول:
+</div>
 
 ```sql
 ALTER TABLE tab
@@ -840,7 +932,9 @@ ORDER BY d
 TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
 ```
 
-#### إنشاء جدول يُعاد فيه ضغط الصفوف منتهية الصلاحية: {#creating-a-table-where-expired-rows-are-recompressed}
+<div id="creating-a-table-where-expired-rows-are-recompressed">
+  #### إنشاء جدول يُعاد فيه ضغط الصفوف منتهية الصلاحية:
+</div>
 
 ```sql
 CREATE TABLE table_for_recompression
@@ -871,7 +965,9 @@ ORDER BY (k1, k2)
 TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
-### إزالة البيانات منتهية الصلاحية {#mergetree-removing-expired-data}
+<div id="mergetree-removing-expired-data">
+  ### إزالة البيانات منتهية الصلاحية
+</div>
 
 تُزال البيانات التي انتهت صلاحية `TTL` الخاصة بها عندما يدمج ClickHouse أجزاء البيانات.
 
@@ -883,7 +979,9 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 * إعداد [ttl&#95;only&#95;drop&#95;parts](/ar/reference/settings/merge-tree-settings/other#ttl_only_drop_parts)
 
-## أنواع الأقراص {#disk-types}
+<div id="disk-types">
+  ## أنواع الأقراص
+</div>
 
 بالإضافة إلى أجهزة التخزين الكتلية المحلية، يدعم ClickHouse أنواع التخزين التالية:
 
@@ -896,9 +994,13 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 * [`s3_plain` للنسخ الاحتياطية إلى S3](/ar/concepts/features/backup-restore/local-disk)
 * [`s3_plain_rewritable` للجداول غير القابلة للتغيير وغير المُكرَّرة في S3](/ar/concepts/features/configuration/server-config/storing-data#s3-plain-rewritable-storage)
 
-## استخدام عدة أجهزة تخزين كتلية لتخزين البيانات {#table_engine-mergetree-multiple-volumes}
+<div id="table_engine-mergetree-multiple-volumes">
+  ## استخدام عدة أجهزة تخزين كتلية لتخزين البيانات
+</div>
 
-### المقدمة {#introduction}
+<div id="introduction">
+  ### المقدمة
+</div>
 
 يمكن لمحركات الجداول من عائلة `MergeTree` تخزين البيانات على عدة أجهزة تخزين كتلية. على سبيل المثال، قد يكون ذلك مفيدًا عندما تُقسَّم بيانات جدول معيّن ضمنيًا إلى بيانات &quot;ساخنة&quot; وأخرى &quot;باردة&quot;. تُطلَب أحدث البيانات بانتظام، لكنها لا تتطلب سوى مساحة صغيرة. في المقابل، نادرًا ما تُطلَب البيانات التاريخية الممتدة على مدى زمني طويل. وإذا توفرت عدة أقراص، فيمكن وضع البيانات &quot;الساخنة&quot; على أقراص سريعة (مثل أقراص NVMe SSD أو الذاكرة)، بينما تُحفَظ البيانات &quot;الباردة&quot; على أقراص أبطأ نسبيًا (مثل HDD).
 
@@ -906,7 +1008,9 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 يُعد جزء البيانات أصغر وحدة قابلة للنقل في الجداول التي تستخدم المحرك `MergeTree`. وتُخزَّن البيانات التابعة لجزء واحد على قرص واحد. ويمكن نقل أجزاء البيانات بين الأقراص في الخلفية (وفقًا لإعدادات المستخدم)، وكذلك باستخدام استعلامات [ALTER](/ar/reference/statements/alter/partition).
 
-### المصطلحات {#terms}
+<div id="terms">
+  ### المصطلحات
+</div>
 
 * القرص — جهاز تخزين كتلي مُركَّب على نظام الملفات.
 * القرص الافتراضي — القرص الذي يخزّن المسار المحدد في إعداد الخادم [path](/ar/reference/settings/server-settings/settings/other#path).
@@ -915,7 +1019,9 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 يمكن العثور على الأسماء المخصَّصة للكيانات الموصوفة في جداول النظام [system.storage&#95;policies](/ar/reference/system-tables/storage_policies) و[system.disks](/ar/reference/system-tables/disks). لتطبيق إحدى سياسات التخزين المُعدّة على جدول، استخدم الإعداد `storage_policy` في جداول عائلة المحرك `MergeTree`.
 
-### التكوين {#table_engine-mergetree-multiple-volumes_configure}
+<div id="table_engine-mergetree-multiple-volumes_configure">
+  ### التكوين
+</div>
 
 يجب تعريف الأقراص ووحدات التخزين وسياسات التخزين داخل الوسم `<storage_configuration>`، سواء في ملف ضمن الدليل `config.d`.
 
@@ -1074,7 +1180,9 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 يمكن تغيير عدد الخيوط التي تنفّذ عمليات نقل أجزاء البيانات في الخلفية عبر الإعداد [background&#95;move&#95;pool&#95;size](/ar/reference/settings/server-settings/settings/background#background_move_pool_size).
 
-### التفاصيل {#details}
+<div id="details">
+  ### التفاصيل
+</div>
 
 في حالة جداول `MergeTree`، تصل البيانات إلى القرص بطرق مختلفة:
 
@@ -1102,9 +1210,11 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 يمكن للمستخدم إسناد الأجزاء الكبيرة الجديدة إلى أقراص مختلفة ضمن وحدة تخزين من نوع [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) بطريقة متوازنة باستخدام الإعداد [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/ar/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod).
 
-## استخدام التخزين الخارجي لتخزين البيانات {#table_engine-mergetree-s3}
+<div id="table_engine-mergetree-s3">
+  ## استخدام التخزين الخارجي لتخزين البيانات
+</div>
 
-يمكن لمحركات الجداول من عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) تخزين البيانات في `S3` و`AzureBlobStorage` و`HDFS` باستخدام قرص من النوع `s3` أو `azure_blob_storage` أو `hdfs` على الترتيب. راجع [تهيئة خيارات التخزين الخارجي](/ar/concepts/features/configuration/server-config/storing-data#configuring-external-storage) لمزيد من التفاصيل.
+يمكن لمحركات الجداول من عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) تخزين البيانات في `S3` و`AzureBlobStorage` و`HDFS` باستخدام قرص من النوع `s3` أو `azure_blob_storage` أو `hdfs` على الترتيب. راجع [إعداد خيارات التخزين الخارجي](/ar/concepts/features/configuration/server-config/storing-data#configuring-external-storage) لمزيد من التفاصيل.
 
 مثال على استخدام [S3](https://aws.amazon.com/s3/) كتخزين خارجي باستخدام قرص من النوع `s3`.
 
@@ -1132,8 +1242,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <s3_retry_attempts>10</s3_retry_attempts>
-            <s3_max_single_read_retries>4</s3_max_single_read_retries>
+            <retry_attempts>10</retry_attempts>
+            <single_read_retries>4</single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -1151,11 +1261,13 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 راجع أيضًا [تهيئة خيارات التخزين الخارجي](/ar/concepts/features/configuration/server-config/storing-data#configuring-external-storage).
 
-### استخدام أقراص S3 مع عدة وحدات تخزين {#s3-multiple-volumes}
+<div id="s3-multiple-volumes">
+  ### استخدام أقراص S3 مع وحدات تخزين متعددة
+</div>
 
-يمكن استخدام أقراص S3 (وغيرها من أقراص تخزين الكائنات) في سياسات التخزين متعددة الأقراص ومتعددة الوحدات بالطريقة نفسها المستخدمة مع الأقراص المحلية. يتيح لك ذلك توزيع البيانات عبر عدة حاويات S3 ضمن وحدة تخزين واحدة (على نمط JBOD)، أو إعداد سياسات تخزين متعددة الطبقات باستخدام وحدات S3.
+يمكن استخدام أقراص S3 (وغيرها من أقراص التخزين الكائني) في سياسات التخزين متعددة الأقراص ومتعددة الوحدات بالطريقة نفسها المستخدمة مع الأقراص المحلية. يتيح لك ذلك توزيع البيانات عبر عدة حاويات S3 ضمن وحدة تخزين واحدة (على نمط JBOD)، أو إعداد سياسات تخزين متعددة الطبقات باستخدام وحدات S3.
 
-على سبيل المثال، لتوزيع البيانات عبر حاويتَي S3 بأسلوب التوزيع بالتناوب:
+على سبيل المثال، لتوزيع البيانات عبر حاويتَي S3 بأسلوب round-robin:
 
 ```xml
 <storage_configuration>
@@ -1224,11 +1336,15 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 يمكن إعداد جداول MergeTree غير المكررة وفق سيناريو كاتب واحد وعدة قرّاء على وحدة تخزين مشتركة. ويتحقق ذلك عبر التحديث التلقائي لقائمة الأجزاء، الذي يمكن إعداده على القرّاء. لاحظ أن ذلك يتطلب بيانات تعريف نظام ملفات مشتركة عبر النسخ المتماثلة (أو `table_disk = true` مع قرص محلي على مستوى الجدول). راجع [refresh&#95;parts&#95;interval and table&#95;disk](/ar/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk).
 
-<Note title="إعدادات cache">
-  تستخدم إصدارات ClickHouse من 22.3 إلى 22.7 إعدادات cache مختلفة. راجع [using local cache](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache) إذا كنت تستخدم أحد هذه الإصدارات.
-</Note>
+<Info>
+  **إعدادات cache**
 
-## الأعمدة الافتراضية {#virtual-columns}
+  تستخدم إصدارات ClickHouse من 22.3 إلى 22.7 إعدادات cache مختلفة. راجع [using local cache](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache) إذا كنت تستخدم أحد هذه الإصدارات.
+</Info>
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
 
 * `_part` — اسم الجزء.
 * `_part_index` — الفهرس التسلسلي للجزء في نتيجة الاستعلام.
@@ -1244,7 +1360,9 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 * `_block_offset` — الرقم الأصلي للصف داخل block الذي أُسنِد عند insert، ويُحفَظ عبر merges عندما يكون الإعداد `enable_block_offset_column` مفعّلًا.
 * `_disk_name` — اسم الـ قرص المستخدم للتخزين.
 
-## إحصاءات الأعمدة {#column-statistics}
+<div id="column-statistics">
+  ## إحصاءات الأعمدة
+</div>
 
 يرد تعريف الإحصاءات في قسم الأعمدة ضمن استعلام `CREATE` للجداول التابعة لعائلة `*MergeTree*`:
 
@@ -1258,8 +1376,6 @@ ENGINE = MergeTree
 ORDER BY a
 ```
 
-تتطلّب الإحصاءات وجود عمود مُخزَّن فعليًا. فالعمود من نوع `ALIAS` أو `EPHEMERAL` لا يُكتب إلى أي جزء، ولذلك يُرفض تعريف إحصاءات عليه.
-
 يمكننا أيضًا تعديل الإحصاءات باستخدام تعليمات `ALTER`:
 
 ```sql
@@ -1267,15 +1383,15 @@ ALTER TABLE tab ADD STATISTICS b TYPE tdigest, uniq;
 ALTER TABLE tab DROP STATISTICS a;
 ```
 
-توفّر هذه الإحصاءات خفيفة الوزن معلومات مجمّعة عن توزيع القيم في الأعمدة. وتُخزَّن الإحصاءات في كل جزء وتُحدَّث مع كل عملية إدراج.
+توفّر هذه الإحصاءات خفيفة الوزن معلومات مجمّعة عن توزيع القيم في الأعمدة. وتُخزَّن الإحصاءات في كل جزء وتُحدَّث مع كل عملية إدراج.
 ولا يمكن استخدامها لتحسين `PREWHERE` إلا إذا فعّلنا `set use_statistics = 1`.
 
-#### تقليم الأجزاء باستخدام الإحصاءات {#part-pruning-with-statistics}
+<div id="part-pruning-with-statistics">
+  #### تقليم الأجزاء باستخدام الإحصاءات
+</div>
 
 عند تمكين `use_statistics_for_part_pruning`، يمكن استخدام الإحصاءات في تقليم الأجزاء.
-حاليًا، لا يدعم تقليم الأجزاء إلا إحصاءات `basic` (وإحصاءات `minmax` المهملة).
-في الأعمدة الرقمية والزمنية، تتتبّع إحصاءات `basic` (وكذلك `minmax` عند تحديدها صراحةً) القيمتَين الدنيا والقصوى في كل جزء، بحيث تستطيع مسندات المدى تخطي الأجزاء التي لا يمكن لحدودها أن تُطابق.
-أما في أعمدة `Nullable` من أي نوع، فتتتبّع `basic` أيضًا عدد قيم `NULL` في كل جزء، وهذا يتيح التقليم اعتمادًا على مسندات `IS NULL` / `IS NOT NULL`. وفي الأعمدة الرقمية والزمنية، يضيّق ذلك أيضًا حدود المدى للأجزاء التي لا تحتوي على أي قيم `NULL`.
+حاليًا، لا يدعم تقليم الأجزاء إلا إحصاءات `basic` (وإحصاءات `minmax` المهملة). وعند تعريف مثل هذه الإحصاءات لعمود، يتتبّع ClickHouse القيمتَين الصغرى والكبرى لذلك العمود في كل جزء.
 يتيح تقليم الأجزاء تخطي قراءة أجزاء البيانات كاملةً عندما يتعذر على شرط التصفية في الاستعلام مطابقة أي صفوف في ذلك الجزء.
 
 **مثال:**
@@ -1306,31 +1422,33 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 -- The output will show "Parts: 1/2" indicating one part was pruned
 ```
 
-### الأنواع المتاحة من إحصاءات الأعمدة {#available-types-of-column-statistics}
+<div id="available-types-of-column-statistics">
+  ### الأنواع المتاحة من إحصاءات الأعمدة
+</div>
 
 * `basic`
 
-  حزمة مضغوطة من الملخصات ذات القيمة الواحدة المستمدة من عمود. وبحسب نوع العمود، تُعبَّأ العناصر التالية:
+  حزمة مضغوطة من الملخصات ذات القيمة الواحدة المستمدة من عمود. وبحسب نوع العمود، تُعبَّأ العناصر التالية:
 
-  * لأي عمود: عدد الصفوف التي تساوي القيمة الافتراضية للنوع (`0` للأعداد الصحيحة والأعداد فاصلة عائمة، و`''` لـ `String`، و`[]` لـ `Array`، و`NULL` لـ `Nullable`، إلخ)، مما يتيح للمُحسِّن تقدير مسندات `col = <default>` وعوامل التصفية `IS NULL`؛
-  * لأي عمود تُمثَّل قيمه كأعداد (أعداد صحيحة، أعداد فاصلة عائمة، `Decimal*`، `Date*`، `DateTime*`، `Enum*`، `IPv4`، ...): القيمة الدنيا والقيمة القصوى، مما يتيح تقدير انتقائية عوامل تصفية النطاق وتمكين تقليم الأجزاء؛
+  * لأي عمود: عدد الصفوف التي تساوي القيمة الافتراضية للنوع (`0` للأعداد الصحيحة والأعداد فاصلة عائمة، و`''` لـ `String`، و`[]` لـ `Array`، و`NULL` لـ `Nullable`، إلخ)، مما يتيح للمُحسِّن تقدير مسندات `col = <default>` وعوامل التصفية `IS NULL`؛
+  * لأي عمود تُمثَّل قيمه كأعداد (أعداد صحيحة، أعداد فاصلة عائمة، `Decimal*`، `Date*`، `DateTime*`، `Enum*`، `IPv4`، ...): القيمة الدنيا والقيمة القصوى، مما يتيح تقدير انتقائية عوامل تصفية النطاق وتمكين تقليم الأجزاء؛
   * لأعمدة `String` و`FixedString`: إجمالي طول القيم غير `NULL` بالبايت (الذي يمكن اشتقاق متوسط طول السلسلة منه).
 
-    يمكن لإحصائية `basic` واحدة أن تعبّئ عدة عناصر من هذه في الوقت نفسه — فعلى سبيل المثال، في عمود `Nullable(UInt32)`، تتتبّع كلاً من الحد الأدنى/الأقصى الرقمي وعدد قيم `NULL`. ولأن عدد القيم الافتراضية مُعرَّف لكل نوع من أنواع الأعمدة، يمكن تعريف `basic` على أي عمود، بما في ذلك الأنواع المركبة مثل `Array` و`Tuple` و`Map`.
+    يمكن لإحصائية `basic` واحدة أن تعبّئ عدة عناصر من هذه في الوقت نفسه — فعلى سبيل المثال، في عمود `Nullable(UInt32)`، تتتبّع كلاً من الحد الأدنى/الأقصى الرقمي وعدد قيم `NULL`. ولأن عدد القيم الافتراضية مُعرَّف لكل نوع من أنواع الأعمدة، يمكن تعريف `basic` على أي عمود، بما في ذلك الأنواع المركبة مثل `Array` و`Tuple` و`Map`.
 
 * `minmax` (مهمل)
 
-  <Note>
-    إحصاءات `minmax` مهملة. استخدم إحصاءات `basic` بدلاً منها، فهي مجموعة شاملة لـ `minmax`.
-  </Note>
+<Note>
+  إحصاءات `minmax` مهملة. استخدم إحصاءات `basic` بدلاً منها، فهي مجموعة شاملة لـ `minmax`.
+</Note>
 
 * `tdigest`
 
-  <Warning>
-    إحصاءات النوع `tdigest` لها تكاليف إنشاء مرتفعة وقد تؤدي إلى إبطاء استيعاب البيانات.
-  </Warning>
+<Warning>
+  إحصاءات النوع `tdigest` لها تكاليف إنشاء مرتفعة وقد تؤدي إلى إبطاء استيعاب البيانات.
+</Warning>
 
-  هياكل [TDigest](https://github.com/tdunning/t-digest) التقريبية التي تتيح حساب النسب المئوية التقريبية (مثل المئين التسعين) للأعمدة الرقمية.
+هياكل [TDigest](https://github.com/tdunning/t-digest) التقريبية التي تتيح حساب النسب المئوية التقريبية (مثل المئين التسعين) للأعمدة الرقمية.
 
 * `uniq`
 
@@ -1342,13 +1460,15 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `countmin`
 
-  <Warning>
-    إحصاءات النوع `countmin` لها تكاليف إنشاء مرتفعة وقد تؤدي إلى إبطاء استيعاب البيانات.
-  </Warning>
+<Warning>
+  إحصاءات النوع `countmin` لها تكاليف إنشاء مرتفعة وقد تؤدي إلى إبطاء استيعاب البيانات.
+</Warning>
 
-  هياكل [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) التقريبية التي توفّر عدّاً تقريبياً لتكرار كل قيمة في العمود.
+هياكل [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) التقريبية التي توفّر عدّاً تقريبياً لتكرار كل قيمة في العمود.
 
-### أنواع البيانات المدعومة {#supported-data-types}
+<div id="supported-data-types">
+  ### أنواع البيانات المدعومة
+</div>
 
 |             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String أو FixedString | أي نوع آخر                   |
 | ----------- | -------------------------------------------------- | ---- | --------------------- | ---------------------------- |
@@ -1361,7 +1481,9 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 تقبل جميع ما سبق أيضًا الأغلفة `Nullable` و`LowCardinality(Nullable)` للأنواع المذكورة. ويمكن أيضًا تعريف `basic` لأي نوع آخر (بما في ذلك الأنواع المركبة مثل `Array` و`Tuple` و`Map`)، وفي هذه الحالة لا يسجّل سوى عدد القيم الافتراضية.
 
-### العمليات المدعومة {#supported-operations}
+<div id="supported-operations">
+  ### العمليات المدعومة
+</div>
 
 |             | عوامل تصفية المساواة (==) | عوامل تصفية النطاق (`>, >=, <, <=`) |
 | ----------- | ------------------------- | ----------------------------------- |
@@ -1382,7 +1504,9 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 (المستخدم لتقدير متوسط طول السلسلة) بالإضافة إلى عدد القيم الافتراضية/`NULL`؛ ولا تعتمد عليها عوامل تصفية النطاق أو
 تقليم الأجزاء.
 
-## إعدادات على مستوى العمود {#column-level-settings}
+<div id="column-level-settings">
+  ## إعدادات على مستوى العمود
+</div>
 
 يمكن تجاوز بعض إعدادات MergeTree على مستوى العمود:
 

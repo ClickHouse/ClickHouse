@@ -13,20 +13,19 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
+<div id="iceberg_insert_max_bytes_in_data_file">
+  ## iceberg_insert_max_bytes_in_data_file
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="536870912" />
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "Iceberg 테이블 속성 `write.target-file-size-bytes`의 문서화된 기본값(512 MiB)에 맞췄습니다. https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/ 을 참조하십시오."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "새 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "새 설정입니다."}]}]} />
 
-삽입 작업 시 Iceberg Parquet 데이터 파일의 최대 바이트 수입니다.
+삽입 작업 중 Iceberg Parquet 데이터 파일의 최대 크기(바이트)입니다.
 
-기본값은 Iceberg 테이블 속성 `write.target-file-size-bytes`의 문서화된 기본값(512 MiB)을 따릅니다.
-https://iceberg.apache.org/docs/1.5.2/configuration/ 을 참조하십시오. 단, ClickHouse는 이 제한을 지금까지
-파일에 기록된 데이터의 압축되지 않은 크기와 비교하는 반면, Iceberg 속성은 최종 생성되는 파일의 크기를 기준으로
-한다는 점에 유의하십시오. 또한 `iceberg_insert_max_rows_in_data_file`은 파일 크기와는 별개로 파일을 제한합니다.
-
-## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
+<div id="iceberg_insert_max_partitions">
+  ## iceberg_insert_max_partitions
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -34,7 +33,9 @@ https://iceberg.apache.org/docs/1.5.2/configuration/ 을 참조하십시오. 단
 
 Iceberg 테이블 엔진에서 한 번의 삽입 작업에 허용되는 최대 파티션 수입니다.
 
-## iceberg_insert_max_rows_in_data_file {#iceberg_insert_max_rows_in_data_file}
+<div id="iceberg_insert_max_rows_in_data_file">
+  ## iceberg_insert_max_rows_in_data_file
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 

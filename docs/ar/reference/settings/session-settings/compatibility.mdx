@@ -13,24 +13,26 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويُنشئها النظام تلقائيًا استنادًا إلى [ملف المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## compatibility {#compatibility}
+<div id="compatibility">
+  ## compatibility
+</div>
 
-يجعل الإعداد `compatibility` ClickHouse يستخدم الإعدادات الافتراضية لإصدار سابق من ClickHouse، مع استثناءات مُسجَّلة في سجل تغييرات الإعدادات.
+يجعل الإعداد `compatibility` ClickHouse يستخدم الإعدادات الافتراضية لإصدار سابق من ClickHouse، على أن يُحدَّد ذلك الإصدار السابق كقيمة لهذا الإعداد.
 
-إذا كانت بعض الإعدادات مضبوطة على قيم غير افتراضية، فستظل هذه القيم مُطبَّقة (فقط الإعدادات التي لم تُعدَّل تتأثر بالإعداد `compatibility`).
+إذا كانت بعض الإعدادات مضبوطة على قيم غير افتراضية، فستظل هذه القيم مُطبَّقة (فقط الإعدادات التي لم تُعدَّل تتأثر بالإعداد `compatibility`).
 
-التغييرات المُعلَّمة بـ `Ignore` في [`system.settings_changes`](/ar/reference/system-tables/settings_changes) تمنع التراجع عن ذلك التغيير وعن جميع التغييرات الأسبق على الإعداد نفسه.
+يأخذ هذا الإعداد رقم إصدار ClickHouse كسلسلة نصية، مثل `22.3` و`22.8`. وتعني القيمة الفارغة أن هذا الإعداد معطَّل.
 
-يأخذ هذا الإعداد رقم إصدار ClickHouse كسلسلة نصية، مثل `22.3` و`22.8`. وتعني القيمة الفارغة أن هذا الإعداد معطَّل.
-
-يكون معطَّلًا افتراضيًا.
+يكون معطَّلًا افتراضيًا.
 
 <Note>
   في ClickHouse Cloud، يجب أن يضبط ClickHouse Cloud Support إعداد `compatibility` الافتراضي على مستوى الخدمة. يُرجى [فتح تذكرة](https://clickhouse.cloud/support) لطلب ضبطه.
   ومع ذلك، يمكن تجاوز إعداد `compatibility` على مستوى المستخدم أو الدور أو profile أو الاستعلام أو الجلسة باستخدام آليات إعدادات ClickHouse القياسية، مثل `SET compatibility = '22.3'` داخل جلسة أو `SETTINGS compatibility = '22.3'` داخل استعلام.
 </Note>
 
-## compatibility_s3_presigned_url_query_in_path {#compatibility_s3_presigned_url_query_in_path}
+<div id="compatibility_s3_presigned_url_query_in_path">
+  ## compatibility_s3_presigned_url_query_in_path
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

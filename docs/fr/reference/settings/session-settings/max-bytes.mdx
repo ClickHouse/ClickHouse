@@ -13,21 +13,9 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## max_bytes_before_external_distinct {#max_bytes_before_external_distinct}
-
-<SettingsInfoBlock type="UInt64" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le déversement sur disque de `DISTINCT` lorsque l'utilisation de la mémoire dépasse le seuil indiqué en octets. Si la valeur est 0, seul `max_bytes_ratio_before_external_distinct` s'applique."}]}]} />
-
-Seuil de mémoire de la requête, en octets, à partir duquel les données `DISTINCT` sont déversées sur disque. L&#39;utilisation réelle de la mémoire peut dépasser
-ce seuil.
-
-`0` désactive ce seuil. Si `max_bytes_ratio_before_external_distinct` définit lui aussi un seuil,
-c&#39;est le plus petit des deux qui est retenu. Définissez les deux paramètres à `0` pour désactiver le déversement.
-
-Voir [DISTINCT en mémoire externe](/fr/reference/statements/select/distinct#distinct-in-external-memory).
-
-## max_bytes_before_external_group_by {#max_bytes_before_external_group_by}
+<div id="max_bytes_before_external_group_by">
+  ## max_bytes_before_external_group_by
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -48,15 +36,19 @@ Valeurs possibles :
   La valeur recommandée est la moitié de la mémoire système disponible.
 </Note>
 
-## max_bytes_before_external_join {#max_bytes_before_external_join}
+<div id="max_bytes_before_external_join">
+  ## max_bytes_before_external_join
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre permettant de contrôler le déversement sur disque automatique des hash joins sur disque. Une valeur non nulle active le déversement sur disque et définit le seuil en octets."}]}]} />
 
-S&#39;il est défini sur une valeur non nulle, le hash join sera automatiquement converti en grace hash join pour permettre le déversement sur disque lorsque les données du côté droit dépassent ce nombre d&#39;octets. Conjointement avec `max_bytes_ratio_before_external_join`, il constitue le déclencheur de déversement basé sur un seuil pour tout `join_algorithm` reposant sur le hachage, y compris `grace_hash`, qui exige que l&#39;un des deux soit non nul. Dès qu&#39;un seuil non nul rend une join capable de déverser sur disque, `enable_adaptive_memory_spill_scheduler` peut la forcer à déverser sous pression mémoire avant que le seuil ne soit atteint ; si les deux paramètres valent `0`, la join ne déverse jamais et le scheduler n&#39;a donc rien à déclencher. L&#39;exception est `legacy_join_size_limits_trigger_spilling` : lorsqu&#39;il est activé, un `grace_hash` standalone ignore les deux et déverse en fonction de `max_rows_in_join` / `max_bytes_in_join` à la place. Lorsqu&#39;il est défini sur 0 (valeur par défaut), ce seuil absolu en octets est désactivé, mais un déversement sur disque automatique peut toujours se produire via `max_bytes_ratio_before_external_join` (qui vaut par défaut `0.5`) ; définissez les deux sur `0` pour désactiver complètement le déversement sur disque automatique. Cela empêche l&#39;optimisation de lecture `read in order` via join.
+S&#39;il est défini sur une valeur non nulle et que `join_algorithm` vaut `hash`, `parallel_hash`, `default` ou `auto`, le hash join sera automatiquement converti en grace hash join pour permettre le déversement sur disque sur disque lorsque les données de droite dépassent ce nombre d&#39;octets. Lorsqu&#39;il est défini sur 0 (valeur par défaut), ce seuil absolu en octets est désactivé, mais un déversement sur disque automatique peut toujours se produire via `max_bytes_ratio_before_external_join` (qui vaut par défaut `0.5`) ; définissez les deux sur `0` pour désactiver complètement le déversement sur disque automatique. Cela empêche l&#39;optimisation de lecture `read in order` via join.
 
-## max_bytes_before_external_sort {#max_bytes_before_external_sort}
+<div id="max_bytes_before_external_sort">
+  ## max_bytes_before_external_sort
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,13 +63,17 @@ Valeurs possibles :
   La valeur recommandée est la moitié de la mémoire système disponible
 * `0` — `ORDER BY` en mémoire externe désactivé.
 
-## max_bytes_before_remerge_sort {#max_bytes_before_remerge_sort}
+<div id="max_bytes_before_remerge_sort">
+  ## max_bytes_before_remerge_sort
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 Dans le cas d’un ORDER BY avec LIMIT, lorsque l’utilisation de la mémoire dépasse le seuil spécifié, effectuez des étapes supplémentaires de fusion de blocs avant la fusion finale afin de ne conserver que les LIMIT premières lignes.
 
-## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
+<div id="max_bytes_for_lazy_final">
+  ## max_bytes_for_lazy_final
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
 
@@ -85,14 +81,18 @@ Dans le cas d’un ORDER BY avec LIMIT, lorsque l’utilisation de la mémoire d
 
 Nombre maximal d’octets dans l’ensemble utilisé pour l’optimisation lazy FINAL. Au-delà de cette limite, le système revient à FINAL standard.
 
-## max_bytes_in_distinct {#max_bytes_in_distinct}
+<div id="max_bytes_in_distinct">
+  ## max_bytes_in_distinct
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Nombre maximal d’octets de l’état (en octets non compressés) en mémoire,
 utilisé par une table de hachage avec DISTINCT.
 
-## max_bytes_in_join {#max_bytes_in_join}
+<div id="max_bytes_in_join">
+  ## max_bytes_in_join
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -100,43 +100,25 @@ La taille maximale, en octets, de la structure de données située du côté dro
 
 Ce paramètre s’applique aux opérations [SELECT ... JOIN](/fr/reference/statements/select/join) et au [moteur de table Join](/fr/reference/engines/table-engines/special/join).
 
-Si une requête contient plusieurs jointures, ClickHouse vérifie ce paramètre pour chaque résultat intermédiaire. Il s’agit d’un plafond strict pour tout `join_algorithm` fondé sur le hachage : lorsque la limite est atteinte, la requête lève une exception ou s’interrompt selon [`join_overflow_mode`](/fr/reference/settings/session-settings/join#join_overflow_mode).
-Il ne provoque jamais le spill d’une jointure sur disque — cette décision relève de
-[`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
-et de
-[`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
-Comme il s’agit d’un plafond et non d’un déclencheur, le définir au niveau du seuil de spill ou en dessous fait normalement échouer la requête avant même que la jointure puisse faire du spill — sauf si la jointure est capable de spill et que `enable_adaptive_memory_spill_scheduler` force d’abord un spill, ou si `legacy_join_size_limits_trigger_spilling` reconvertit cette limite en déclencheur de spill pour la partie d’une jointure qui s’exécute déjà sur disque.
+Si une requête contient plusieurs jointures, ClickHouse vérifie ce paramètre pour chaque résultat intermédiaire. Lorsque la limite est atteinte, l’action dépend de la valeur choisie pour [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm) — consultez ce paramètre pour connaître le comportement propre à chaque algorithme (spill, repartitionnement, basculement ou throw/break selon [`join_overflow_mode`](/fr/reference/settings/session-settings/join#join_overflow_mode)).
 
-La limite comptabilise le contenu des tables de hachage : ainsi, une jointure ayant fait du spill l’atteint au fur et à mesure du chargement de chaque bucket plutôt que pendant la lecture du côté droit ; elle peut donc lire une plus grande part du côté droit avant de s’arrêter qu’une hash join en mémoire.
-
-Valeurs possibles :
+Valeurs possibles :
 
 * Entier positif.
 * 0 — Le contrôle de la mémoire est désactivé.
 
-## max_bytes_in_set {#max_bytes_in_set}
+<div id="max_bytes_in_set">
+  ## max_bytes_in_set
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Le nombre maximal d’octets (de données non compressées) qu’un ensemble dans la clause IN
 créé à partir d’une sous-requête peut utiliser.
 
-## max_bytes_ratio_before_external_distinct {#max_bytes_ratio_before_external_distinct}
-
-<SettingsInfoBlock type="Double" default_value="0.5" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "Nouveau paramètre permettant d'activer le déversement sur disque de `DISTINCT` lorsque l'utilisation de la mémoire dépasse le ratio donné de la mémoire disponible. Si 0, seul `max_bytes_before_external_distinct` s'applique."}]}]} />
-
-Fraction de la mémoire disponible du serveur ou de l&#39;utilisateur servant à calculer le seuil de `DISTINCT` externe
-au début de l&#39;exécution. Par exemple, `0.5` utilise la moitié de la mémoire disponible.
-
-Les valeurs doivent être supérieures ou égales à `0` et inférieures à `1`. La valeur `0` désactive ce seuil. En l&#39;absence de limite
-de mémoire applicable au serveur ou à l&#39;utilisateur, le ratio n&#39;a aucun effet.
-
-`max_memory_usage` n&#39;intervient pas dans ce calcul. Pour configurer le déversement par rapport à cette limite,
-utilisez `max_bytes_before_external_distinct`, en laissant de la marge pour une utilisation supplémentaire de la mémoire.
-
-## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
+<div id="max_bytes_ratio_before_external_group_by">
+  ## max_bytes_ratio_before_external_group_by
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -149,21 +131,25 @@ Par exemple, si cette valeur est définie sur `0.6`, `GROUP BY` pourra utiliser 
 (pour server/user/merges) au début de l’exécution ; ensuite, il
 commencera à utiliser l’agrégation externe.
 
-## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
+<div id="max_bytes_ratio_before_external_join">
+  ## max_bytes_ratio_before_external_join
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "Nouveau paramètre : ratio de mémoire disponible utilisé comme seuil de déversement sur disque pour les hash joins. Activé par défaut à `0.5`, à l'image de `max_bytes_ratio_before_external_group_by` et `max_bytes_ratio_before_external_sort`. Combiné avec la valeur absolue `max_bytes_before_external_join` (la plus petite des deux s'applique)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "Nouveau paramètre : ratio de mémoire disponible utilisé comme seuil de déversement sur disque pour les hash joins. Activé par défaut à `0.5`, à l'image de `max_bytes_ratio_before_external_group_by` et `max_bytes_ratio_before_external_sort`. Combiné avec la valeur absolue `max_bytes_before_external_join` (la plus petite des deux s'applique)."}]}]} />
 
 Ratio de mémoire disponible autorisé pour `JOIN`. Une fois ce seuil atteint, le hash join est converti en grace hash join afin de déverser les données du côté droit sur disque.
 
-Par exemple, si cette valeur est définie sur `0.6`, `JOIN` autorise l&#39;utilisation de `60%` de la mémoire disponible (pour le serveur/l&#39;utilisateur/les fusions) pour la table de hachage du côté droit au début de l&#39;exécution ; au-delà, le déversement sur disque commence.
+Par exemple, si cette valeur est définie sur `0.6`, `JOIN` autorise l&#39;utilisation de `60%` de la mémoire disponible (pour le serveur/l&#39;utilisateur/les fusions) pour la table de hachage du côté droit au début de l&#39;exécution ; au-delà, le déversement sur disque commence.
 
 Si `max_bytes_before_external_join` et `max_bytes_ratio_before_external_join` sont tous deux définis, c&#39;est le plus petit seuil obtenu qui est utilisé. Si le ratio vaut `0`, seule la valeur absolue s&#39;applique.
 
-A un effet pour tous les `join_algorithm` basés sur le hachage, y compris `grace_hash`, à condition qu&#39;un chemin de données temporaire soit configuré.
+N&#39;a d&#39;effet que lorsque `join_algorithm` vaut `hash`, `parallel_hash`, `default` ou `auto` et qu&#39;un chemin de données temporaire est configuré.
 
-## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
+<div id="max_bytes_ratio_before_external_sort">
+  ## max_bytes_ratio_before_external_sort
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -175,7 +161,9 @@ Par exemple, s&#39;il est défini sur `0.6`, `ORDER BY` pourra utiliser `60%` de
 
 Notez que `max_bytes_before_external_sort` reste pris en compte : le déversement sur disque n&#39;a lieu que si le bloc de tri est plus grand que `max_bytes_before_external_sort`.
 
-## max_bytes_to_read {#max_bytes_to_read}
+<div id="max_bytes_to_read">
+  ## max_bytes_to_read
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -184,7 +172,9 @@ La restriction est vérifiée pour chaque fragment de données traité, s’appl
 l’expression de table la plus imbriquée et, lors d’une lecture depuis un serveur distant, elle est vérifiée uniquement sur
 le serveur distant.
 
-## max_bytes_to_read_leaf {#max_bytes_to_read_leaf}
+<div id="max_bytes_to_read_leaf">
+  ## max_bytes_to_read_leaf
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -206,7 +196,9 @@ La restriction est vérifiée pour chaque fragment de données traité.
   Ce paramètre est instable avec `prefer_localhost_replica=1`.
 </Note>
 
-## max_bytes_to_sort {#max_bytes_to_sort}
+<div id="max_bytes_to_sort">
+  ## max_bytes_to_sort
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -214,7 +206,9 @@ Le nombre maximal d’octets avant le tri. Si l’opération ORDER BY doit trait
 plus d’octets non compressés que la quantité spécifiée, le comportement sera
 déterminé par `sort_overflow_mode`, qui est défini par défaut sur `throw`.
 
-## max_bytes_to_transfer {#max_bytes_to_transfer}
+<div id="max_bytes_to_transfer">
+  ## max_bytes_to_transfer
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

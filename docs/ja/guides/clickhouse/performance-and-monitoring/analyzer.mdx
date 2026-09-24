@@ -10,13 +10,15 @@ doc_type: 'reference'
 ClickHouse バージョン `24.3` では、アナライザがデフォルトで有効化されました。
 その動作の詳細については、[こちら](/ja/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer)をご覧ください。
 
-バージョン `26.9` 以降、アナライザは必須となりました。`enable_analyzer` 設定は廃止され、`0` に設定しようとしても拒否されます。また、`24.3` より前の ClickHouse で使用されていたクエリ解析はサポートされません。以下に挙げる非互換性は、その古い解析との違いを示すものであり、古い解析向けに書かれたクエリを更新する際の参考となります。古い解析の動作を確認したい場合は、`26.9` より古いバージョンの ClickHouse でクエリを実行してください。
-
-## 既知の非互換性 {#known-incompatibilities}
+<div id="known-incompatibilities">
+  ## 既知の非互換性
+</div>
 
 多数のバグ修正と新たな最適化の導入に伴い、ClickHouse の動作には互換性に影響する変更もいくつか含まれています。アナライザに対応するようクエリをどのように書き換える必要があるかを判断するために、以下の変更点を確認してください。
 
-### 無効なクエリは最適化されなくなりました {#invalid-queries-are-no-longer-optimized}
+<div id="invalid-queries-are-no-longer-optimized">
+  ### 無効なクエリは最適化されなくなりました
+</div>
 
 従来のクエリプランニング基盤では、クエリの検証ステップの前に AST レベルの最適化が適用されていました。
 その結果、元のクエリが有効で実行可能な形に書き換えられることがありました。
@@ -25,7 +27,9 @@ ClickHouse バージョン `24.3` では、アナライザがデフォルトで�
 つまり、以前は実行できていた無効なクエリは、現在ではサポートされません。
 そのような場合は、クエリを手動で修正する必要があります。
 
-#### 例 1 {#example-1}
+<div id="example-1">
+  #### 例 1
+</div>
 
 次のクエリでは、集約後に利用できるのは `toString(number)` のみであるにもかかわらず、PROJECTIONリストでカラム `number` を使用しています。
 古いアナライザでは、`GROUP BY toString(number)` は `GROUP BY number,` に最適化されることで、このクエリは有効とみなされていました。
@@ -36,7 +40,9 @@ FROM numbers(1)
 GROUP BY toString(number)
 ```
 
-#### 例 2 {#example-2}
+<div id="example-2">
+  #### 例 2
+</div>
 
 同じ問題はこのクエリでも発生します。カラム `number` は、別のキーで集約した後に使用されています。
 以前のクエリアナライザは、`number > 5` のフィルタを `HAVING` 句から `WHERE` 句へ移動することで、このクエリを修正していました。
@@ -63,7 +69,9 @@ GROUP BY n
 
 移行を支援するために、アナライザは、集約されていない AND 条件について、以前の `HAVING` 句から `WHERE` 句への 書き換え を再現できます。この動作を有効にするには、`analyzer_compatibility_allow_non_aggregate_in_having = 1` を設定してください。この設定は ClickHouse `26.7` 以降で利用できます。この設定は、`WITH CUBE`、`WITH ROLLUP`、`WITH TOTALS`、および `GROUPING SETS` では無視されます。集約、`grouping`、または非決定論的関数を含む条件は `HAVING` に残ります。いずれかの条件にウィンドウ関数または状態を持つ関数 (たとえば `rowNumberInBlock`) が含まれている場合は、従来の legacy の動作に合わせて、`HAVING` 全体に対する 書き換え が無効になります。
 
-### 無効なクエリを含む `CREATE VIEW` {#create-view-with-invalid-query}
+<div id="create-view-with-invalid-query">
+  ### 無効なクエリを含む `CREATE VIEW`
+</div>
 
 アナライザは常に型チェックを行います。
 以前は、無効な `SELECT` クエリを含む `VIEW` を作成できました。
@@ -71,7 +79,9 @@ GROUP BY n
 
 このような方法で `VIEW` を作成することは、現在ではできません。
 
-#### 例 {#example-view}
+<div id="example-view">
+  #### 例
+</div>
 
 ```sql
 CREATE TABLE source (data String)
@@ -83,9 +93,13 @@ AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
 FROM source;
 ```
 
-### `JOIN`句の既知の非互換性 {#known-incompatibilities-of-the-join-clause}
+<div id="known-incompatibilities-of-the-join-clause">
+  ### `JOIN`句の既知の非互換性
+</div>
 
-#### PROJECTIONのカラムを使った `JOIN` {#join-using-column-from-projection}
+<div id="join-using-column-from-projection">
+  #### PROJECTIONのカラムを使った `JOIN`
+</div>
 
 `SELECT` リストのエイリアスは、デフォルトでは `JOIN USING` のキーとして使用できません。
 
@@ -105,7 +119,9 @@ USING (b);
 この設定が `false` の場合、結合条件はデフォルトで `t1.b = t2.b` となり、クエリは `2, 'one'` を返します。
 `t1` に `b` が存在しない場合、クエリはエラーで失敗します。
 
-#### `JOIN USING` と `ALIAS`/`MATERIALIZED` カラムに関する動作の変更 {#changes-in-behavior-with-join-using-and-aliasmaterialized-columns}
+<div id="changes-in-behavior-with-join-using-and-aliasmaterialized-columns">
+  #### `JOIN USING` と `ALIAS`/`MATERIALIZED` カラムに関する動作の変更
+</div>
 
 アナライザでは、`ALIAS` または `MATERIALIZED` カラムを含む `JOIN USING` クエリで `*` を使用すると、デフォルトでそれらのカラムも結果セットに含まれます。
 
@@ -128,7 +144,9 @@ FULL JOIN t2 USING (payload);
 
 一貫性があり期待どおりの結果を得るため、特に古いクエリをアナライザに移行する際は、`*` を使うのではなく、`SELECT` 句でカラムを明示的に指定することを推奨します。
 
-#### `USING` 句におけるカラムの型修飾子の扱い {#handling-of-type-modifiers-for-columns-in-using-clause}
+<div id="handling-of-type-modifiers-for-columns-in-using-clause">
+  #### `USING` 句におけるカラムの型修飾子の扱い
+</div>
 
 アナライザでは、`USING` 句で指定されたカラムの共通スーパータイプを決定するルールが標準化され、より予測可能な結果が得られるようになりました。特に、`LowCardinality` や `Nullable` のような型修飾子を扱う場合にその傾向が顕著です。
 
@@ -146,7 +164,9 @@ USING (id);
 
 このクエリでは、`id` の共通スーパータイプは `String` と判定され、`t1` の `LowCardinality` 修飾子は無視されます。
 
-### PROJECTIONのカラム名に関する変更 {#projection-column-names-changes}
+<div id="projection-column-names-changes">
+  ### PROJECTIONのカラム名に関する変更
+</div>
 
 PROJECTION名の計算時には、別名は展開されません。
 
@@ -154,26 +174,27 @@ PROJECTION名の計算時には、別名は展開されません。
 SELECT
     1 + 1 AS x,
     x + 1
+SETTINGS enable_analyzer = 0
 FORMAT PrettyCompact
-```
 
-`24.3` より前のバージョンでは、2番目のカラムは展開された別名に基づいて命名されていました。
-
-```text
    ┌─x─┬─plus(plus(1, 1), 1)─┐
 1. │ 2 │                   3 │
    └───┴─────────────────────┘
-```
 
-アナライザは名前に別名をそのまま残します:
+SELECT
+    1 + 1 AS x,
+    x + 1
+SETTINGS enable_analyzer = 1
+FORMAT PrettyCompact
 
-```text
    ┌─x─┬─plus(x, 1)─┐
 1. │ 2 │          3 │
    └───┴────────────┘
 ```
 
-### 互換性のない関数引数の型 {#incompatible-function-arguments-types}
+<div id="incompatible-function-arguments-types">
+  ### 互換性のない関数引数の型
+</div>
 
 アナライザでは、型推論はクエリ分析の初期段階で行われます。
 この変更により、型チェックは短絡評価の前に行われるため、`if` 関数の引数は常に共通のスーパータイプを持っている必要があります。
@@ -184,24 +205,39 @@ FORMAT PrettyCompact
 SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 ```
 
-### 異種クラスター {#heterogeneous-clusters}
+<div id="heterogeneous-clusters">
+  ### 異種クラスター
+</div>
 
-アナライザによって、クラスター内のサーバー間通信プロトコルが大きく変更されます。そのため、アナライザを使用するかどうかが一致していないサーバー間では、分散クエリを実行できません。これは、`26.9` より古いサーバーで構成されるクラスターの場合、`enable_analyzer` 設定の値が異なるサーバーを意味します。
+アナライザによって、クラスター内のサーバー間通信プロトコルが大きく変更されます。そのため、`enable_analyzer` 設定の値が異なるサーバー間では、分散クエリを実行できません。
 
-バージョン `26.10` 以降のサーバーには他のクエリ解析手段が残っていないため、古いイニシエーターが送信した値は無視され、常にアナライザでクエリが解析されます。2 つの解析方式では結果カラムの名前の付け方が異なり、イニシエーターは分片が返した Block をカラム名で対応付けるため、このようなクエリはイニシエーター側で `NOT_FOUND_COLUMN_IN_BLOCK` により失敗する可能性があります。例えば、非正規な大文字小文字表記で書かれた関数 (`hostname()`) を選択した場合、アナライザはそれを正規名 (`hostName()`) に解決します。したがって、古いクエリ解析で稼働しているクラスターでは、いずれかのサーバーを `26.10` にアップグレードする前に、すべてのサーバーで `enable_analyzer = 1` を設定する必要があります。
+<div id="mutations-are-interpreted-by-previous-analyzer">
+  ### ミューテーションは従来のアナライザで解釈されます
+</div>
 
-### サポートされていない機能 {#unsupported-features}
+ミューテーションでは、現在も従来のアナライザが使用されます。
+そのため、ClickHouse SQL の新機能の一部はミューテーションでは使用できません。たとえば、`QUALIFY` 句です。
+状況は[こちら](https://github.com/ClickHouse/ClickHouse/issues/61563)で確認できます。
+
+<div id="unsupported-features">
+  ### サポートされていない機能
+</div>
 
 現在アナライザがサポートしていない機能は、以下のとおりです。
 
 * Annoy 索引。
 * Hypothesis 索引。[こちら](https://github.com/ClickHouse/ClickHouse/pull/48381)で実装が進められています。
+* Window view はサポートされていません。今後もサポートされる予定はありません。
 
-## Cloud 移行 {#cloud-migration}
+<div id="cloud-migration">
+  ## Cloud 移行
+</div>
 
 新たな機能とパフォーマンスの最適化をサポートするため、現在無効になっているすべてのインスタンスでアナライザを有効化しています。この変更により SQL のスコープ規則がより厳格になり、準拠していないクエリはお客様側で手動で更新する必要があります。
 
-### 移行ワークフロー {#migration-workflow}
+<div id="migration-workflow">
+  ### 移行ワークフロー
+</div>
 
 1. `normalized_query_hash` で `system.query_log` をフィルタリングし、クエリを特定します。
 
@@ -213,18 +249,21 @@ LIMIT 1
 SETTINGS skip_unavailable_shards=1
 ```
 
-2. アナライザを有効にしてクエリを実行します。その際、クエリが依存している場合は、旧来の解析における識別子解決を復元する互換性設定を追加します。
+2. これらの設定を追加してアナライザを有効にし、クエリを実行します。
 
 ```sql
 SETTINGS
+    enable_analyzer=1,
     analyzer_compatibility_join_using_top_level_identifier=1
 ```
 
-3. クエリを見直して結果を検証し、移行前にそのクエリが生成していた出力と一致することを確認します。
+3. クエリを見直して結果を検証し、アナライザを無効にした場合に生成される出力と一致することを確認します。
 
 社内テストで頻繁に見られた主な非互換性については、以下を参照してください。
 
-### 不明な式識別子 {#unknown-expression-identifier}
+<div id="unknown-expression-identifier">
+  ### 不明な式識別子
+</div>
 
 エラー: `Unknown expression identifier ... in scope ... (UNKNOWN_IDENTIFIER)`. 例外コード: 47
 
@@ -237,7 +276,9 @@ SETTINGS
 * JOIN の結合キー: キーが別名の場合は、USING ではなく完全な式を指定した ON を使用します。
 * 外側のクエリでは、その内部のテーブルではなく、サブクエリ/CTE 自体の別名を参照します。
 
-### GROUP BY における非集計カラム {#non-aggregated-columns-in-group-by}
+<div id="non-aggregated-columns-in-group-by">
+  ### GROUP BY における非集計カラム
+</div>
 
 エラー: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. Exception code: 215
 
@@ -256,7 +297,9 @@ SELECT user_id, any(device_id) FROM table GROUP BY user_id
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
 ```
 
-### HAVING 内の非集約カラム {#non-aggregated-columns-in-having}
+<div id="non-aggregated-columns-in-having">
+  ### HAVING 内の非集約カラム
+</div>
 
 エラー: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`。Exception code: 215
 
@@ -272,38 +315,33 @@ SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
 SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
-### CTE 名の重複 {#duplicate-cte-names}
+<div id="duplicate-cte-names">
+  ### 重複するCTE名
+</div>
 
 エラー: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`。Exception code: 179
 
-原因: 旧アナライザでは、同じ名前の共通テーブル式 (WITH ...) を複数定義でき、後の定義によって前の定義が隠されていました。新しいアナライザは、デフォルトでこのような曖昧な定義を拒否します。
+原因: 以前のアナライザでは、同じ名前の共通テーブル式 (WITH ...) を複数定義し、先に定義したものを後から定義したものでシャドーイングすることが許可されていました。アナライザでは、このような曖昧さは許可されません。
 
-解決策: 重複している CTE をリネームし、名前が一意になるようにしてください。移行を支援する手段として、`analyzer_compatibility_allow_cte_redefinition = 1` (ClickHouse `26.10` 以降で利用可能) を有効にすると、レガシーな動作を復元できます。この場合、参照は同名の定義のうち、その時点で解決中ではない最新の定義に束縛されます。そのため、再定義からは直前の定義を読み取ることができ、クエリのボディからは最後の定義が読み取られます。
-
-制限事項: `MATERIALIZED` として宣言された CTE と、`WITH RECURSIVE` 句内の CTE は、この設定を有効にしても再定義できません。また、旧アナライザと動作が異なるケースが 1 つあります。同じ名前の 2 つの定義の間で宣言された CTE も最後の定義に束縛されます。一方、旧アナライザでは、その CTE の宣言位置から参照できる定義に束縛されていました。
+解決策: 重複するCTEの名前を変更して、一意にしてください。
 
 ```sql
-/* ORIGINAL QUERY */
-WITH
-  data AS (SELECT 1 AS id),
-  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
+/* 元のクエリ */
+WITH 
+  data AS (SELECT 1 AS id), 
+  data AS (SELECT 2 AS id) -- 再定義
 SELECT * FROM data;
 
-/* FIXED QUERY */
-WITH
-  raw_data AS (SELECT 1 AS id),
-  processed_data AS (SELECT id + 1 AS id FROM raw_data)
+/* 修正後のクエリ */
+WITH 
+  raw_data AS (SELECT 1 AS id), 
+  processed_data AS (SELECT 2 AS id)
 SELECT * FROM processed_data;
-
-/* LEGACY BEHAVIOR AS A MIGRATION AID */
-WITH
-  data AS (SELECT 1 AS id),
-  data AS (SELECT id + 1 AS id FROM data)
-SELECT * FROM data
-SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
-### 曖昧なカラム識別子 {#ambiguous-column-identifiers}
+<div id="ambiguous-column-identifiers">
+  ### 曖昧なカラム識別子
+</div>
 
 エラー: `JOIN [JOIN TYPE] ambiguous identifier ... (AMBIGUOUS_IDENTIFIER)` Exception code: 207
 
@@ -319,7 +357,9 @@ SELECT table1.ID AS ID FROM table1, table2 WHERE ID...
 SELECT table1.ID AS ID_RENAMED FROM table1, table2 WHERE ID_RENAMED...
 ```
 
-### FINAL の無効な使用 {#invalid-usage-of-final}
+<div id="invalid-usage-of-final">
+  ### FINAL の無効な使用
+</div>
 
 エラー: `Table expression modifiers FINAL are not supported for subquery...` または `Storage ... doesn't support FINAL` (`UNSUPPORTED_METHOD`)。例外コード: 1, 181
 
@@ -338,7 +378,9 @@ SELECT * FROM (SELECT * FROM my_table) AS subquery FINAL ...
 SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
 ```
 
-### `countDistinct()` 関数の大文字・小文字の区別 {#countdistinct-case-insensitivity}
+<div id="countdistinct-case-insensitivity">
+  ### `countDistinct()` 関数の大文字・小文字の区別
+</div>
 
 エラー: `Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`。Exception code: 46
 

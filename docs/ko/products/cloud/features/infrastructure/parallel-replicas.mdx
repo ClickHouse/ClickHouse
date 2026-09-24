@@ -9,7 +9,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <div id="introduction">
-  ## 소개 {#introduction}
+  ## 소개
 </div>
 
 ClickHouse는 쿼리를 매우 빠르게 처리합니다. 그렇다면 이러한 쿼리는
@@ -19,7 +19,9 @@ ClickHouse는 쿼리를 매우 빠르게 처리합니다. 그렇다면 이러한
 > 어떻게 분산하는지 설명하고, 이어서 쿼리 실행에 여러 레플리카를
 > 어떻게 활용할 수 있는지 설명합니다.
 
-## 세그먼트 아키텍처 {#sharded-architecture}
+<div id="sharded-architecture">
+  ## 세그먼트 아키텍처
+</div>
 
 shared-nothing 아키텍처에서는 일반적으로 클러스터를
 여러 세그먼트로 나누며, 각 세그먼트는 전체 데이터의 부분 집합을 포함합니다. 이
@@ -63,7 +65,9 @@ shared-nothing 아키텍처에서는 일반적으로 클러스터를
 각 세그먼트에서 단 하나의 레플리카만 쿼리를 실행한다는 점뿐입니다.
 즉, 더 많은 쿼리를 병렬로 처리할 수 있습니다.
 
-## 세그먼트 분할이 없는 아키텍처 {#non-sharded-architecture}
+<div id="non-sharded-architecture">
+  ## 세그먼트 분할이 없는 아키텍처
+</div>
 
 ClickHouse Cloud는 위에서 설명한 아키텍처와는 매우 다른 구조를 사용합니다.
 (자세한 내용은 [&quot;ClickHouse Cloud 아키텍처&quot;](/ko/products/cloud/reference/architecture)를
@@ -85,7 +89,9 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 아키텍처에서는 각 세그먼트가 실제로 데이터의 부분 집합에 대해 쿼리를
 실행할 수 있으므로 그 방식이 비교적 분명했습니다. 세그먼트 분할이 없을 때는 어떻게 동작할까요?
 
-## 병렬 레플리카 소개 {#introducing-parallel-replicas}
+<div id="introducing-parallel-replicas">
+  ## 병렬 레플리카 소개
+</div>
 
 여러 서버를 통해 쿼리 실행을 병렬화하려면 먼저 서버 중 하나를 코디네이터로 지정할 수 있어야 합니다. 코디네이터는 실행해야 할 작업 목록을 만들고, 모든 작업이 실행 및 집계된 뒤 결과가 클라이언트에 반환되도록 보장합니다. 대부분의 분산 시스템과 마찬가지로 이 역할은 최초 쿼리를 수신한 노드가 맡습니다. 또한 작업 단위를 정의해야 합니다. 세그먼트 기반 아키텍처에서는 작업 단위가 데이터의 부분 집합인 세그먼트입니다. 병렬 레플리카에서는 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)이라고 하는 테이블의 작은 부분을 작업 단위로 사용합니다.
 
@@ -140,7 +146,9 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 
 다음 섹션에서는 이러한 요인을 어떻게 극복하는지 살펴보겠습니다.
 
-### Announcements {#announcements}
+<div id="announcements">
+  ### Announcements
+</div>
 
 위 목록의 (1)과 (2)를 해결하기 위해 announcement라는 개념을 도입했습니다. 아래 그림을 통해 이것이 어떻게 동작하는지 살펴보겠습니다:
 
@@ -165,7 +173,9 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
   </li>
 </ol>
 
-### 동적 조정 {#dynamic-coordination}
+<div id="dynamic-coordination">
+  ### 동적 조정
+</div>
 
 테일 지연 시간 문제를 해결하기 위해 동적 조정을 추가했습니다. 즉,
 모든 그래뉼을 한 번의 요청으로 레플리카에 보내는 대신, 각 레플리카가
@@ -223,7 +233,7 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 </ol>
 
 <div id="managing-cache-locality">
-  ### 캐시 지역성 관리 {#managing-cache-locality}
+  ### 캐시 지역성 관리
 </div>
 
 마지막으로 남아 있는 잠재적인 문제는 캐시 지역성을 어떻게 처리할지입니다. 쿼리가
@@ -276,12 +286,14 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 레플리카 수보다 적으면, 쿼리 실행을 위해 무작위 레플리카가 선택됩니다.
 
 <div id="task-stealing">
-  ### 작업 스틸링 {#task-stealing}
+  ### 작업 스틸링
 </div>
 
 일부 레플리카가 다른 레플리카보다 작업을 더 느리게 처리하면, 테일 지연 시간을 줄이기 위해 다른 레플리카가 원칙적으로는 해시에 따라 해당 레플리카에 할당된 작업을 &#39;스틸링&#39;하려고 시도합니다.
 
-### 제한 사항 {#limitations}
+<div id="limitations">
+  ### 제한 사항
+</div>
 
 이 기능에는 알려진 제한 사항이 있으며, 주요 제한 사항은 이 섹션에
 설명되어 있습니다.
@@ -302,7 +314,7 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 | 분석기와의 호환성                     | 분석기는 특정 시나리오에서 쿼리 실행 속도를 크게 늦추거나 높일 수 있습니다.                                                                                                                                                                                                                                                                           |
 
 <div id="settings-related-to-parallel-replicas">
-  ## 병렬 레플리카 관련 설정 {#settings-related-to-parallel-replicas}
+  ## 병렬 레플리카 관련 설정
 </div>
 
 | Setting                                            | Description                                                                                                                                 |
@@ -311,8 +323,11 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
 | `cluster_for_parallel_replicas`                    | 병렬 레플리카에 사용할 클러스터 이름입니다. ClickHouse Cloud를 사용하는 경우 `default`를 사용합니다.                                                                        |
 | `max_parallel_replicas`                            | 여러 레플리카에서 쿼리를 실행할 때 사용할 최대 레플리카 수입니다. 클러스터의 레플리카 수보다 작은 값을 지정하면 노드가 무작위로 선택됩니다. 이 값은 수평 스케일링을 고려해 오버커밋할 수도 있습니다.                            |
 | `parallel_replicas_min_number_of_rows_per_replica` | 처리해야 하는 행 수를 기준으로 사용할 레플리카 수를 제한하는 데 도움이 됩니다. 사용되는 레플리카 수는 다음과 같이 정의됩니다. <br /> `estimated rows to read` / `min_number_of_rows_per_replica` |
+| `enable_analyzer`                                  | 병렬 레플리카를 사용한 쿼리 실행은 분석기가 활성화된 경우에만 지원됩니다                                                                                                    |
 
-## 병렬 레플리카 문제 조사 {#investigating-issues-with-parallel-replicas}
+<div id="investigating-issues-with-parallel-replicas">
+  ## 병렬 레플리카 문제 조사
+</div>
 
 각 쿼리에 어떤 설정이 사용되었는지는
 [`system.query_log`](/ko/reference/system-tables/query_log) 테이블에서 확인할 수 있습니다. 또한

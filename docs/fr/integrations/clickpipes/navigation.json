@@ -101,7 +101,6 @@
             {
               "group": "Source",
               "pages": [
-                "fr/integrations/clickpipes/postgres/source/managed-postgres",
                 "fr/integrations/clickpipes/postgres/source/alloydb",
                 "fr/integrations/clickpipes/postgres/source/rds",
                 "fr/integrations/clickpipes/postgres/source/aurora",

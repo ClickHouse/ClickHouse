@@ -15,11 +15,15 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-## 说明 {#description}
+<div id="description">
+  ## 说明
+</div>
 
 `ArrowStream` 是 Apache Arrow 的“流模式”格式，专为内存中的流式处理而设计。
 
-## 示例用法 {#example-usage}
+<div id="example-usage">
+  ## 示例用法
+</div>
 
 在下面的示例中，我们使用 `forex` 数据集，可在
 [ClickHouse SQL playground](https://sql.clickhouse.com) 中使用。你可以使用主机 `sql-clickhouse.clickhouse.com`
@@ -121,26 +125,25 @@ for await (const recordBatch of reader) {
 这篇博客文章
 [使用 ClickHouse、Apache Arrow 和 Perspective 实现实时流式可视化](https://clickhouse.com/blog/streaming-real-time-visualizations-clickhouse-apache-arrow-perpsective).
 
-## 格式设置 {#format-settings}
+<div id="format-settings">
+  ## 格式设置
+</div>
 
 `ArrowStream` 与 [`Arrow`](/zh/reference/formats/Arrow/Arrow) 格式共享相同的格式设置。
 
-| Setting                                                                      | Description                                                                                                                                                                                                                                                                           | Default     |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `input_format_arrow_allow_missing_columns`                                   | 读取 Arrow 输入格式时允许缺失列                                                                                                                                                                                                                                                                   | `1`         |
-| `input_format_arrow_case_insensitive_column_matching`                        | 匹配 Arrow 列与 CH 列时忽略大小写。                                                                                                                                                                                                                                                               | `0`         |
-| `input_format_arrow_import_nested`                                           | 已废弃，不执行任何操作。                                                                                                                                                                                                                                                                          | `0`         |
-| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | 对 Arrow 格式进行 schema inference 时，跳过包含不支持类型的列                                                                                                                                                                                                                                           | `0`         |
-| `output_format_arrow_compression_method`                                     | Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd、none (未压缩)                                                                                                                                                                                                                                 | `lz4_frame` |
-| `output_format_arrow_date_as_uint16`                                         | 将 Date 值写为普通的 16 比特数值 (读取时为 UInt16) ，而不是转换为 32 比特的 Arrow DATE32 类型 (读取时为 Date32) 。                                                                                                                                                                                                    | `0`         |
-| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | 对 FixedString 列使用 Arrow FIXED&#95;SIZE&#95;BINARY 类型，而不是 Binary 类型。                                                                                                                                                                                                                   | `1`         |
-| `output_format_arrow_low_cardinality_as_dictionary`                          | 启用将 LowCardinality 类型输出为 Arrow 的 Dictionary 类型                                                                                                                                                                                                                                        | `0`         |
-| `output_format_arrow_record_batch_size`                                      | 合并小块时，每个记录批次的目标行数。缓冲可能会增加内存占用，并使第一个批次延迟到查询结束后才输出。`0` 表示禁用行数目标。                                                                                                                                                                                                              | `0`         |
-| `output_format_arrow_record_batch_size_bytes`                                | 每个记录批次累积块数据的目标字节数。缓冲可能会增加内存占用，并使第一个批次延迟到查询结束后才输出。`0` 表示禁用字节数目标。                                                                                                                                                                                                             | `0`         |
-| `output_format_arrow_string_as_string`                                       | 对 String 列使用 Arrow String 类型，而不是 Binary 类型                                                                                                                                                                                                                                            | `1`         |
-| `output_format_arrow_unsupported_types`                                      | 对于没有对应 Arrow 等价类型的类型 (例如 `JSON`、`Dynamic`、`QBit`、`AggregateFunction`) 写入何种内容：`throw`、`text` (每行一个 `serializeText` 值，使用 `String` 列所采用的 Arrow 类型) 或 `binary` (每行一个 `serializeBinary` 值，以 Arrow `Binary` 表示) 。`AggregateFunction` 在 `text` 模式下同样为 `Binary`，因为其文本形式就是原始的 aggregate state。 | `binary`    |
-| `output_format_arrow_unsupported_types_as_binary`                            | 已被 `output_format_arrow_unsupported_types` 取代：`0` 表示 `throw`，`1` 表示 `binary`。仅当该设置保持默认值时才生效。                                                                                                                                                                                          | `1`         |
-| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | 在 Arrow 格式中始终对字典索引使用 64 比特整数                                                                                                                                                                                                                                                          | `0`         |
-| `output_format_arrow_use_signed_indexes_for_dictionary`                      | 在 Arrow 格式中对字典索引使用有符号整数                                                                                                                                                                                                                                                               | `1`         |
+| Setting                                                                      | Description                                                                             | Default     |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ----------- |
+| `input_format_arrow_allow_missing_columns`                                   | 读取 Arrow 输入格式时允许缺失列                                                                     | `1`         |
+| `input_format_arrow_case_insensitive_column_matching`                        | 匹配 Arrow 列与 CH 列时忽略大小写。                                                                 | `0`         |
+| `input_format_arrow_import_nested`                                           | 已废弃，不执行任何操作。                                                                            | `0`         |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | 对 Arrow 格式进行 schema inference 时，跳过包含不支持类型的列                                             | `0`         |
+| `output_format_arrow_compression_method`                                     | Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd、none (未压缩)                                   | `lz4_frame` |
+| `output_format_arrow_date_as_uint16`                                         | 将 Date 值写为普通的 16 比特数值 (读取时为 UInt16) ，而不是转换为 32 比特的 Arrow DATE32 类型 (读取时为 Date32) 。      | `0`         |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | 对 FixedString 列使用 Arrow FIXED&#95;SIZE&#95;BINARY 类型，而不是 Binary 类型。                     | `1`         |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | 启用将 LowCardinality 类型输出为 Arrow 的 Dictionary 类型                                          | `0`         |
+| `output_format_arrow_string_as_string`                                       | 对 String 列使用 Arrow String 类型，而不是 Binary 类型                                              | `1`         |
+| `output_format_arrow_unsupported_types_as_binary`                            | 将没有对应 Arrow 等价类型的类型 (例如 `BFloat16`、`AggregateFunction`) 输出为原始二进制数据。如果为 false，此类类型将引发异常。 | `1`         |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | 在 Arrow 格式中始终对字典索引使用 64 比特整数                                                            | `0`         |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | 在 Arrow 格式中对字典索引使用有符号整数                                                                 | `1`         |
 
 {/*AUTOGENERATED_END*/}

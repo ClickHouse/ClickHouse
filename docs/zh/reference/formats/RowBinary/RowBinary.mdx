@@ -17,7 +17,9 @@ import RowBinaryFormatSettings from '/snippets/zh/common-row-binary-format-setti
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-## 描述 {#description}
+<div id="description">
+  ## 描述
+</div>
 
 `RowBinary` 格式以二进制形式按行解析数据。
 各行和值会连续排列，中间没有分隔符。
@@ -36,7 +38,9 @@ import RowBinaryFormatSettings from '/snippets/zh/common-row-binary-format-setti
   由于该格式按行处理数据，因此其效率低于 [Native](/zh/reference/formats/Native) 格式。
 </Note>
 
-## 数据类型的传输格式 {#data-types-wire-format}
+<div id="data-types-wire-format">
+  ## 数据类型的传输格式
+</div>
 
 <Tip>
   示例中提供的大多数查询都可以使用 curl 执行，并将输出保存到文件中。
@@ -49,26 +53,36 @@ import RowBinaryFormatSettings from '/snippets/zh/common-row-binary-format-setti
 
 然后，可以用十六进制编辑器查看数据。
 
-### 无符号 LEB128 (小端序 Base 128) {#unsigned-leb128}
+<div id="unsigned-leb128">
+  ### 无符号 LEB128 (小端序 Base 128)
+</div>
 
 这是一种**无符号小端序**可变长度整数编码，用于编码 `String`、`Array` 和 `Map` 等可变大小数据类型的长度。示例实现可参见 [LEB128 wiki 页面](https://en.wikipedia.org/wiki/LEB128#Decode_unsigned_integer)。
 
-### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256 {#integer-types}
+<div id="integer-types">
+  ### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256
+</div>
 
 所有整数类型都会使用适当数量的字节按**小端序**编码。有符号类型 (`Int8` 到 `Int256`) 采用**二进制补码**表示。大多数编程语言都支持使用内置工具或常见库从字节数组中提取这类整数。对于 `Int128`/`Int256` 和 `UInt128`/`UInt256`，由于它们超出了大多数语言的原生整数位宽，可能需要自定义反序列化。
 
-### Bool {#bool}
+<div id="bool">
+  ### Bool
+</div>
 
 布尔值编码为单个字节，其反序列化方式与 `UInt8` 类似。
 
 * `0` 表示 `false`
 * `1` 表示 `true`
 
-### Float32, Float64 {#float32-float64}
+<div id="float32-float64">
+  ### Float32, Float64
+</div>
 
 **小端序**浮点数，`Float32` 为 4 字节，`Float64` 为 8 字节。与整数类似，大多数语言都提供了适合对这些值进行反序列化的工具。
 
-### BFloat16 {#bfloat16}
+<div id="bfloat16">
+  ### BFloat16
+</div>
 
 [BFloat16](/zh/reference/data-types/float#bfloat16) (Brain Floating Point) 是一种 16 位浮点格式，具有 Float32 的取值范围，但精度较低，因此适合机器学习负载。其传输格式本质上就是 Float32 值的高 16 位。如果你的编程语言不原生支持它，最简单的处理方式是按 UInt16 读写，再与 Float32 相互转换：
 
@@ -101,7 +115,9 @@ SELECT CAST(1.25, 'BFloat16')
 0xA0, 0x3F, // 1.25 的 BFloat16 表示
 ```
 
-### Decimal32, Decimal64, Decimal128, Decimal256 {#decimal}
+<div id="decimal">
+  ### Decimal32, Decimal64, Decimal128, Decimal256
+</div>
 
 Decimal 类型以具有相应位宽的 **小端序** 整数表示。
 
@@ -130,7 +146,9 @@ let result = whole_part * scale_multiplier + fractional_part
 
 更多详情，请参见 [ClickHouse 文档中的 Decimal 类型](/zh/reference/data-types/decimal)。
 
-### String {#string}
+<div id="string">
+  ### String
+</div>
 
 ClickHouse 字符串是**任意的字节序列**。它们不必是有效的 UTF-8。长度前缀表示的是**字节长度**，而不是字符数。
 
@@ -151,7 +169,9 @@ ClickHouse 字符串是**任意的字节序列**。它们不必是有效的 UTF-
 0x72, // 'r'
 ```
 
-### FixedString {#fixedstring}
+<div id="fixedstring">
+  ### FixedString
+</div>
 
 与 `String` 不同，`FixedString` 的长度是固定的，并在 schema 中定义。如果值短于 `N`，它会被编码为一个字节序列，并在末尾用零字节填充。
 
@@ -183,7 +203,9 @@ ClickHouse 字符串是**任意的字节序列**。它们不必是有效的 UTF-
 
 在最后一个示例中，不需要填充，因为 *三个* 字节都已用上。
 
-### Date {#date}
+<div id="date">
+  ### Date
+</div>
 
 存储为 `UInt16` (两个字节) ，表示自 `1970-01-01` 起的天数。
 
@@ -199,7 +221,9 @@ SELECT CAST('2024-01-15', 'Date') AS d
 0x19, 0x4D, // 19737 以 UInt16 表示（小端序）= 自 1970-01-01 起第 19737 天
 ```
 
-### Date32 {#date32}
+<div id="date32">
+  ### Date32
+</div>
 
 以 `Int32` (4 字节) 存储，表示相对于 `1970-01-01` ***之前或之后*** 的天数。
 
@@ -225,7 +249,9 @@ SELECT CAST('1900-01-01', 'Date32') AS d
 0x21, 0x9C, 0xFF, 0xFF, // -25567 as Int32 (小端序) = 25567 days before 1970-01-01
 ```
 
-### DateTime {#datetime}
+<div id="datetime">
+  ### DateTime
+</div>
 
 存储为 `UInt32` (四个字节) ，表示自 `1970-01-01 00:00:00 UTC` 起经过的秒数。
 
@@ -253,7 +279,9 @@ SELECT CAST('2024-01-15 10:30:00', 'DateTime(\'UTC\')') AS d
 0x28, 0x09, 0xA5, 0x65, // 1705314600 以 UInt32 表示（小端序）
 ```
 
-### DateTime64 {#datetime64}
+<div id="datetime64">
+  ### DateTime64
+</div>
 
 存储为 `Int64` (8 字节) ，表示相对于 `1970-01-01 00:00:00 UTC` ***之前或之后*** 的 **tick** 数。tick 的分辨率由 `precision` 参数定义，参见下方语法：
 
@@ -289,7 +317,9 @@ DateTime64(precision, [timezone])
   由于底层 `Int64` tick 的取值范围在更高精度下会更窄，因此支持的最大值也会变小：精度为 8 时为 `4892-10-07`，精度为 9 (纳秒) 时为 UTC 时间 `2262-04-11 23:47:16`。
 </Note>
 
-### Time {#time}
+<div id="time">
+  ### Time
+</div>
 
 存储为 `Int32`，表示以秒为单位的时间值。负值有效。
 
@@ -310,7 +340,9 @@ SELECT CAST('15:32:16', 'Time') AS t
 0x80, 0xDA, 0x00, 0x00, // 55936 秒 = 15:32:16
 ```
 
-### Time64 {#time64}
+<div id="time64">
+  ### Time64
+</div>
 
 在内部，Time64 以 `Decimal64` 形式存储 (而 `Decimal64` 本身以 `Int64` 存储) ，用于表示带有小数秒且精度可配置的时间值。负值也是有效的。
 
@@ -343,7 +375,9 @@ SELECT CAST('15:32:16.123456', 'Time64(6)') AS t
 // 55936123456 / 10^6 = 55936.123456 Seconds = 15:32:16.123456
 ```
 
-### 时间间隔类型 {#interval-types}
+<div id="interval-types">
+  ### 时间间隔类型
+</div>
 
 所有时间间隔类型都存储为 `Int64` (8 字节，小端序) 。该值表示相应时间单位的数量。负值也是有效的。
 
@@ -376,7 +410,9 @@ SELECT INTERVAL 5 SECOND   AS a,
 0xF4, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ```
 
-### Enum8, Enum16 {#enum8-enum16}
+<div id="enum8-enum16">
+  ### Enum8, Enum16
+</div>
 
 存储为单字节 (`Enum8` == `Int8`) 或双字节 (`Enum16` == `Int16`) ，表示该枚举值在枚举定义中的索引。请注意，存储类型是**有符号**的——枚举值可以是负数 (例如 `Enum8('a' = -128, 'b' = 0)`) 。
 
@@ -427,7 +463,9 @@ Map<Int16, String> {
 
 对于数据类型解析器来说，主要难点在于识别枚举定义中的转义符号 (如 `\'`) ，以及可能出现在带引号字符串中的特殊符号 (如 `=`) 。
 
-### UUID {#uuid}
+<div id="uuid">
+  ### UUID
+</div>
 
 表示为一个由 16 个字节构成的序列。UUID 以 **两个小端序 `UInt64` 值** 存储：标准 UUID 表示中的前 8 个字节会进行字节倒序，后 8 个字节也会分别进行字节倒序。
 
@@ -455,7 +493,9 @@ Map<Int16, String> {
 
 当插入新记录但未指定 UUID 值时，可以使用它。
 
-### IPv4 {#ipv4}
+<div id="ipv4">
+  ### IPv4
+</div>
 
 以 `UInt32` 形式存储，占 4 个字节，字节序为**小端序**。请注意，这不同于 IP 地址通常使用的传统网络字节序 (大端序) 。`IPv4` 的示例底层值：
 
@@ -476,7 +516,9 @@ SELECT
 0xcc, 0xe2, 0xd4, 0xa8, // 168.212.226.204
 ```
 
-### IPv6 {#ipv6}
+<div id="ipv6">
+  ### IPv6
+</div>
 
 以 16 个字节存储，采用 **大端序 / 网络字节序** (MSB 优先) 。`IPv6` 的底层值示例：
 
@@ -499,7 +541,9 @@ SELECT
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
 ```
 
-### Nullable {#nullable}
+<div id="nullable">
+  ### Nullable
+</div>
 
 Nullable 数据类型的编码方式如下：
 
@@ -522,7 +566,9 @@ SELECT
 0x01,                   // NULL - 后无任何内容
 ```
 
-### LowCardinality {#lowcardinality}
+<div id="lowcardinality">
+  ### LowCardinality
+</div>
 
 在 RowBinary format 中，低基数标记不会影响传输格式。例如，`LowCardinality(String)` 的编码方式与普通 `String` 相同。
 
@@ -536,7 +582,9 @@ SELECT
 
 在测试时，可以将 [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) 设置为 `1`，以允许在 `LowCardinality` 中使用大多数数据类型，从而获得更好的覆盖率。
 
-### 数组 {#array}
+<div id="array">
+  ### 数组
+</div>
 
 数组按以下方式编码：
 
@@ -599,7 +647,9 @@ SELECT CAST([NULL, 'foo'], 'Array(Nullable(String))') AS arr;
 
 有关如何处理多维数组的示例，请参见 [Geo 部分](#geo-types)。
 
-### Tuple {#tuple}
+<div id="tuple">
+  ### Tuple
+</div>
 
 Tuple 的编码方式是：其所有元素按顺序依次排列，每个元素都采用各自对应的传输格式，且不包含任何额外的元信息或分隔符。
 
@@ -639,7 +689,9 @@ CREATE OR REPLACE TABLE foo
 ) ENGINE = Memory;
 ```
 
-### Map {#map}
+<div id="map">
+  ### Map
+</div>
 
 Map 可视为 `Array(Tuple(K, V))`，其中 `K` 为键类型，`V` 为值类型。Map 的编码方式如下：
 
@@ -666,7 +718,9 @@ SELECT CAST(map('foo', 1, 'bar', 2), 'Map(String, UInt32)') AS m
   也可以使用具有深层嵌套结构的 Map，例如 `Map(String, Map(Int32, Array(Nullable(String))))`，其编码方式与上文所述类似。
 </Note>
 
-### Variant {#variant}
+<div id="variant">
+  ### Variant
+</div>
 
 该类型表示其他数据类型的 union。类型 `Variant(T1, T2, ..., TN)` 表示此类型的每一行都可以是 `T1`、`T2`、……、`TN` 中的任一种类型的值，也可以都不是 (即 `NULL` 值) 。
 
@@ -732,7 +786,9 @@ SELECT NULL :: Variant(UInt32, String)
 
 [allow&#95;suspicious&#95;variant&#95;types](/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) 设置可用于更充分地测试 `Variant` 类型。
 
-### Dynamic {#dynamic}
+<div id="dynamic">
+  ### Dynamic
+</div>
 
 `Dynamic` 类型可以保存任意类型的值，具体类型在运行时确定。在 RowBinary format 中，每个值都是自描述的：第一部分是以[这种格式](/zh/reference/data-types/data-types-binary-encoding)表示的类型说明。随后是具体内容，其值编码方式如本文档所述。因此，要解析某个值，你只需使用类型索引来确定合适的解析器，然后复用你在其他地方已有的 RowBinary 解析逻辑。
 
@@ -776,7 +832,9 @@ SELECT toDateTime64('2024-01-15 10:30:00', 3, 'America/New_York')::Dynamic
 c0 6c be 0d 8d 01 00 00   # Int64: timestamps（时间戳）
 ```
 
-### JSON {#json}
+<div id="json">
+  ### JSON
+</div>
 
 JSON 类型将数据编码为以下两个不同的类别：
 
@@ -928,7 +986,9 @@ Schema: `JSON()`
 
 设置 `output_format_binary_write_json_as_string=1` 后，JSON 列会被序列化为单个 JSON 文本字符串，而不是结构化的二进制格式。对于写入 JSON 列，也有对应的设置 `input_format_binary_read_json_as_string`。这里选择哪种设置，取决于你希望在客户端还是服务端解析 JSON。
 
-### Geo 类型 {#geo-types}
+<div id="geo-types">
+  ### Geo 类型
+</div>
 
 Geo 是一类用于表示地理数据的数据类型，包括：
 
@@ -1013,7 +1073,9 @@ SELECT    (1.0, 2.0)                                       :: Point           AS
      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x40,
 ```
 
-### Geometry {#geometry}
+<div id="geometry">
+  ### Geometry
+</div>
 
 `Geometry` 是一种 `Variant` 类型，可容纳上文列出的任意 Geo 类型。在传输格式中，它的编码方式与 `Variant` 完全相同，通过一个判别值字节指示后续的是哪种 geo 类型。
 
@@ -1061,7 +1123,9 @@ SELECT ((1.0, 2.0)::Point)::Geometry
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40, // Y = 6.0
 ```
 
-### Nested {#nested}
+<div id="nested">
+  ### Nested
+</div>
 
 `Nested` 的传输格式取决于 `flatten_nested` 设置。
 
@@ -1069,7 +1133,9 @@ SELECT ((1.0, 2.0)::Point)::Geometry
   单行中的所有 component 数组**长度必须相同**。这是由 server 强制执行的约束。长度不一致会导致插入错误。
 </Warning>
 
-#### `flatten_nested = 1` (默认) {#nested-flattened}
+<div id="nested-flattened">
+  #### `flatten_nested = 1` (默认)
+</div>
 
 在默认设置下，`Nested` 会被展平为多个独立数组。每个子列都会成为一个单独的 `Array` 列，列名以点号分隔：
 
@@ -1104,7 +1170,9 @@ INSERT INTO foo VALUES (['foo', 'bar'], [42, 144]);
  0x90, 0x00, 0x00, 0x00, // 144，Int32 格式
 ```
 
-#### `flatten_nested = 0` {#nested-unflattened}
+<div id="nested-unflattened">
+  #### `flatten_nested = 0`
+</div>
 
 当 `flatten_nested = 0` 时，`Nested` 会保留为一个类型为 `Array(Tuple(...))` 的单独列。列名不使用点号分隔：
 
@@ -1139,7 +1207,9 @@ INSERT INTO foo VALUES ([('foo', 42), ('bar', 144)]);
 
 请注意，这里的各字段是按元素交错排列的 (a₁, b₁, a₂, b₂) ，而不是像扁平化表示那样按列分组排列 (a₁, a₂, b₁, b₂) 。
 
-### SimpleAggregateFunction {#simpleaggregatefunction}
+<div id="simpleaggregatefunction">
+  ### SimpleAggregateFunction
+</div>
 
 `SimpleAggregateFunction(func, T)` 的编码与其底层数据类型 `T` 完全一致。聚合函数名称不会影响传输格式。
 
@@ -1162,12 +1232,14 @@ RowBinaryWithNamesAndTypes 请求头将类型标示为 `SimpleAggregateFunction(
 0x2A, 0x00, 0x00, 0x00, // 42 的 UInt32 编码
 ```
 
-### AggregateFunction {#aggregatefunction}
+<div id="aggregatefunction">
+  ### AggregateFunction
+</div>
 
-`AggregateFunction(func, T)` 存储聚合函数的完整中间状态。与 `SimpleAggregateFunction` 不同，后者也存储中间状态，但其编码方式与底层数据类型完全一致；`AggregateFunction` 存储的是不透明的二进制 blob，其格式因具体聚合函数而异。
+`AggregateFunction(func, T)` 存储聚合函数的完整中间状态。与 `SimpleAggregateFunction` 不同，后者也存储中间状态，但其编码方式与底层 Data type 完全一致；`AggregateFunction` 存储的是不透明的二进制 blob，其格式因具体聚合函数而异。
 
 <Warning>
-  聚合状态在 RowBinary 中**没有长度前缀**。解析器必须了解每个具体聚合函数的内部 serialization 格式，才能知道应读取多少字节。实际使用中，大多数客户端都会将聚合状态视为不透明对象，并使用 `*State` / `*Merge` 组合器，由 server 处理 serialization。
+  聚合状态在 RowBinary 中**没有长度前缀**。parser 必须了解每个具体聚合函数的内部 serialization 格式，才能知道应读取多少字节。实际使用中，大多数客户端都会将聚合状态视为不透明对象，并使用 `*State` / `*Merge` 组合器，由 server 处理 serialization。
 </Warning>
 
 内部格式因函数而异。下面是几个简单示例：
@@ -1185,21 +1257,21 @@ SELECT countState(number) FROM numbers(5)
 **`sumState`** — 将累加和存储为定长整数。其位宽取决于参数类型 (整型参数为 `UInt64`) ：
 
 ```sql
-SELECT sumState(toUInt32(number)) FROM numbers(5) -- sum = 0+1+2+3+4 = 10
+SELECT sumState(toUInt32(number)) FROM numbers(5) -- 总和 = 0+1+2+3+4 = 10
 ```
 
 ```text
-0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 10 as UInt64
+0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 10，以 UInt64 表示
 ```
 
 **`minState` / `maxState`** — 存储一个标志字节，后面跟着底层类型的值。空状态 (未见到任何值) 时，标志为 `0x00`；存在值时，标志为 `0x01`：
 
 ```sql
-SELECT maxState(toUInt32(number)) FROM numbers(5) -- max = 4
+SELECT maxState(toUInt32(number)) FROM numbers(5) -- 最大值 = 4
 ```
 
 ```text
-0x01,                   // flag: has value
+0x01,                   // 标志：有值
 0x04, 0x00, 0x00, 0x00, // 4 as UInt32
 ```
 
@@ -1210,16 +1282,16 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 ```
 
 ```text
-0x00, // flag: no value
+0x00, // 标志：无值
 ```
 
 <Note>
   `uniq`、`quantile` 或 `groupArray` 等较复杂的函数使用特定于其实现的格式。如果你需要读取或写入这些状态，请查阅 ClickHouse 中相应函数的源代码。
 </Note>
 
-当设置 `aggregate_function_input_format` 为 `value` 或 `array` 时，`AggregateFunction(func, T)` 列会按类型 `T` 的值读取 (如果有多个参数，则为这些参数类型组成的 `Tuple`) ，或按由这类值组成的 `Array` 读取，其编码方式与该类型在 RowBinary 中的编码完全一致。状态由这些值在 server 端构建。例如，当 `aggregate_function_input_format = 'array'` 时，`AggregateFunction(avg, UInt32)` 的一个单元就是一个 `Array(UInt32)`：先是 LEB128 长度，后面跟着各个元素。
-
-### QBit {#qbit}
+<div id="qbit">
+  ### QBit
+</div>
 
 `QBit` 是一种向量类型，可在不同精度级别下实现高效查找。它在内部以转置格式存储。在传输格式中，QBit 只是由底层元素类型 (`Int8`、`Float32`、`Float64` 或 `BFloat16`) 组成的 `Array`。用于存储的位转置优化是在服务端完成的，而不是在 RowBinary 协议中完成的。
 
@@ -1252,7 +1324,9 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 0x00, 0x00, 0x80, 0x40, // 4.0 as Float32
 ```
 
-## 格式设置 {#format-settings}
+<div id="format-settings">
+  ## 格式设置
+</div>
 
 <RowBinaryFormatSettings />
 

@@ -33,7 +33,9 @@ ClickHouse にデータが入ったので、いくつかのクエリを実行し
 
 クエリ実行時に各要素がどのように機能するのかを見ていきましょう。いくつかのクエリを取り上げ、`EXPLAIN` ステートメントを使って確認します。
 
-## パーサー {#parser}
+<div id="parser">
+  ## パーサー
+</div>
 
 パーサーの目的は、クエリテキストを AST (抽象構文木) へ変換することです。この処理は、`EXPLAIN AST` を使って可視化できます。
 
@@ -78,21 +80,22 @@ graph TD
     tisqe --> te["TableExpression"]
     te --> ti["TableIdentifier session_events"]
 ```
-
 各ノードには対応する子ノードがあり、木全体でクエリ全体の構造を表しています。これはクエリを処理するための論理構造です。エンドユーザーの観点では (クエリ実行に関心がある場合を除き) 、それほど有用ではありません。このツールは主に開発者が使用します。
 
-## アナライザ {#analyzer}
+<div id="analyzer">
+  ## アナライザ
+</div>
 
-アナライザは ClickHouse `24.3` 以降デフォルトで有効になっており、`26.9` 以降は唯一のクエリ解析方式となりました。`26.9` では `enable_analyzer` は廃止された設定となり、無効化できなくなりました。
+ClickHouse には現在、アナライザに 2 つのアーキテクチャがあります。古いアーキテクチャは、`enable_analyzer=0` を設定することで使用できます。現在のアーキテクチャは、ClickHouse `24.3` 以降デフォルトで有効になっています。古いものは非推奨であり、後方互換性のためだけに維持されているため、ここでは現在のアーキテクチャについてのみ説明します。
 
 <Note>
-  アナライザはクエリ処理の中核となるコンポーネントであり、一部のクエリに悪影響を及ぼす可能性があります。アナライザに合わせて更新が必要なクエリについては、[既知の非互換性](/ja/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities) を参照してください。
+  現在のアーキテクチャは、ClickHouse のパフォーマンスを改善するための、より優れた基盤を提供するはずです。ただし、クエリ処理の中核となるコンポーネントであるため、一部のクエリに悪影響を及ぼす可能性があり、[既知の非互換性](/ja/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities) もあります。`enable_analyzer` 設定をクエリレベルまたはユーザーレベルで変更すれば、古いアーキテクチャに戻せます。
 </Note>
 
 アナライザは、クエリ実行における重要な段階です。AST を受け取り、それをクエリツリーに変換します。AST に対するクエリツリーの主な利点は、たとえばストレージのように、多くの部分が解決済みになることです。どのテーブルから読み取るかも分かり、別名も解決され、ツリーは使われているさまざまなデータ型も把握します。こうした利点により、アナライザは最適化を適用できます。これらの最適化は「パス」を通じて行われます。各パスは異なる最適化を探します。すべてのパスは [こちら](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249) で確認できます。では、前のクエリを使って実際に見てみましょう。
 
 ```sql
-EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
 ```
 
 ```response
@@ -110,11 +113,12 @@ EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp
 │             IDENTIFIER id: 7, identifier: timestamp                                    │
 │   JOIN TREE                                                                            │
 │     IDENTIFIER id: 8, identifier: session_events                                       │
+│   SETTINGS allow_experimental_analyzer=1                                               │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
-EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
 ```
 
 ```response
@@ -135,13 +139,14 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 │             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
 │   JOIN TREE                                                                               │
 │     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
+│   SETTINGS allow_experimental_analyzer=1                                                  │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 2回の実行を比較すると、別名とPROJECTIONの解決を確認できます。
 
 <div id="planner">
-  ## プランナー {#planner}
+  ## プランナー
 </div>
 
 プランナーはクエリツリーを受け取り、それを基にクエリプランを構築します。クエリツリーは特定のクエリで何を行いたいかを示し、クエリプランはそれをどのように実行するかを示します。追加の最適化もクエリプランの一部として行われます。クエリプランを確認するには、`EXPLAIN PLAN` または `EXPLAIN` を使用できます (`EXPLAIN` は `EXPLAIN PLAN` を実行します) 。
@@ -261,7 +266,7 @@ GROUP BY type
 これで、使用されているすべての入力、関数、別名、データ型を確認できます。プランナーが適用する最適化の一部は、[こちら](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h)で確認できます。
 
 <div id="query-pipeline">
-  ## クエリパイプライン {#query-pipeline}
+  ## クエリパイプライン
 </div>
 
 クエリパイプラインはクエリプランから生成されます。クエリパイプラインはクエリプランと非常に似ていますが、ツリーではなくグラフである点が異なります。ClickHouse がクエリをどのように実行するか、またどのリソースが使用されるかを把握できます。クエリパイプラインを分析することで、入出力のどこにボトルネックがあるかを特定できます。前述のクエリを使って、クエリパイプラインの実行を確認してみましょう。
@@ -462,7 +467,7 @@ digraph
 つまり、データ量が十分でなかったため、エグゼキュータは処理を並列化しないと判断しました。さらに行を追加すると、グラフに示されているように、エグゼキュータは複数のスレッドを使用するようになりました。
 
 <div id="executor">
-  ## エグゼキュータ {#executor}
+  ## エグゼキュータ
 </div>
 
 最後に、クエリ実行の最終段階はエグゼキュータが担います。エグゼキュータはクエリパイプラインを受け取り、実行します。`SELECT`、`INSERT`、`INSERT SELECT` のどれを実行するかによって、使用されるエグゼキュータの種類は異なります。

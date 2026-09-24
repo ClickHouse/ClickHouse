@@ -21,7 +21,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Frame>
 
 <div id="when-should-refreshable-materialized-views-be-used">
-  ## Когда следует использовать refreshable materialized views? {#when-should-refreshable-materialized-views-be-used}
+  ## Когда следует использовать refreshable materialized views?
 </div>
 
 ClickHouse incremental materialized views чрезвычайно эффективны и, как правило, масштабируются значительно лучше, чем подход с refreshable materialized views, особенно когда требуется выполнить агрегацию по одной таблице. Поскольку агрегация вычисляется только для каждого блока данных по мере его вставки, а инкрементальные состояния затем сливаются в итоговой таблице, запрос всегда выполняется лишь на подмножестве данных. Этот метод может масштабироваться до PB данных и обычно является предпочтительным.
@@ -30,7 +30,9 @@ ClickHouse incremental materialized views чрезвычайно эффекти�
 
 > Refreshable materialized views могут запускать батч-процессы и выполнять такие задачи, как денормализация. Между refreshable materialized views можно задавать зависимости, чтобы одно представление зависело от результатов другого и выполнялось только после его завершения. Это может заменить запланированные рабочие процессы или простые DAG, например задачу [dbt](https://www.getdbt.com/). Подробнее о том, как задавать зависимости между refreshable materialized views, см. в разделе `Dependencies` страницы [CREATE VIEW](/ru/reference/statements/create/view#refresh-dependencies).
 
-## Как обновить refreshable materialized view? {#how-do-you-refresh-a-refreshable-materialized-view}
+<div id="how-do-you-refresh-a-refreshable-materialized-view">
+  ## Как обновить refreshable materialized view?
+</div>
 
 Refreshable materialized views автоматически обновляются с интервалом, который задаётся при создании.
 Например, materialized view ниже обновляется каждую минуту:
@@ -50,12 +52,8 @@ SYSTEM REFRESH VIEW table_name_mv;
 Вы также можете отменить, остановить или запустить refreshable materialized view.
 Подробнее см. в документации [по управлению refreshable materialized views](/ru/reference/statements/system#managing-refreshable-materialized-views).
 
-<Warning>
-  Refreshable materialized views, обновления которых не координируются через ClickHouse Keeper, не помнят, когда обновлялись в последний раз, поэтому после перезапуска сервера все они могут обновиться одновременно. В статье [Что происходит с refreshable materialized views при перезапуске сервера](/ru/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) описано, какие представления это затрагивает и как снова запустить их по одному.
-</Warning>
-
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## Когда в последний раз обновлялась refreshable materialized view? {#when-was-a-refreshable-materialized-view-last-refreshed}
+  ## Когда в последний раз обновлялась refreshable materialized view?
 </div>
 
 Чтобы узнать, когда refreshable materialized view обновлялась в последний раз, вы можете выполнить запрос к системной таблице [`system.view_refreshes`](/ru/reference/system-tables/view_refreshes), как показано ниже:
@@ -74,7 +72,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## Как изменить частоту обновления? {#how-can-i-change-the-refresh-rate}
+  ## Как изменить частоту обновления?
 </div>
 
 Чтобы изменить частоту обновления refreshable materialized view, используйте синтаксис [`ALTER TABLE...MODIFY REFRESH`](/ru/reference/statements/alter/view#alter-table--modify-refresh-statement).
@@ -93,7 +91,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## Использование `APPEND` для добавления новых строк {#using-append-to-add-new-rows}
+  ## Использование `APPEND` для добавления новых строк
 </div>
 
 Функция `APPEND` позволяет добавлять новые строки в конец таблицы, не заменяя представление целиком.
@@ -199,13 +197,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## Примеры {#examples}
+  ## Примеры
 </div>
 
 Теперь рассмотрим, как использовать refreshable materialized views на примере нескольких наборов данных.
 
 <div id="stack-overflow">
-  ### Stack Overflow {#stack-overflow}
+  ### Stack Overflow
 </div>
 
 В [руководстве по денормализации данных](/ru/guides/clickhouse/data-modelling/denormalization) показаны различные методы денормализации данных на примере набора данных Stack Overflow. Мы загружаем данные в следующие таблицы: `votes`, `users`, `badges`, `posts` и `postlinks`.
@@ -257,7 +255,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb {#imdb}
+  ### IMDb
 </div>
 
 В [руководстве по интеграции dbt и ClickHouse](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/index) мы заполнили набор данных IMDb следующими таблицами: `actors`, `directors`, `genres`, `movie_directors`, `movies` и `roles`.

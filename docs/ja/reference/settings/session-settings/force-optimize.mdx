@@ -12,20 +12,22 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## force_optimize_projection {#force_optimize_projection}
+<div id="force_optimize_projection">
+  ## force_optimize_projection
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 プロジェクションの最適化が有効な場合 ([optimize&#95;use&#95;projections](/ja/reference/settings/session-settings/optimize-use#optimize_use_projections) 設定を参照) 、`SELECT` クエリで [プロジェクション](/ja/reference/engines/table-engines/mergetree-family/mergetree#projections) の使用を必須にする設定を有効または無効にします。
-
-有効にすると、クエリを処理できるプロジェクションは、テーブル自体よりも多くの marks を読み取る必要がある場合でも使用され、使用できるプロジェクションがない場合はクエリが `PROJECTION_NOT_USED` エラーで失敗します。
 
 設定可能な値:
 
 * 0 — プロジェクションの最適化は必須ではありません。
 * 1 — プロジェクションの最適化は必須です。
 
-## force_optimize_projection_name {#force_optimize_projection_name}
+<div id="force_optimize_projection_name">
+  ## force_optimize_projection_name
+</div>
 
 空でない文字列が設定されている場合、このプロジェクションがクエリ内で少なくとも1回使用されていることを確認します。
 
@@ -33,7 +35,9 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 * string: クエリ内で使用されるプロジェクション名
 
-## force_optimize_skip_unused_shards {#force_optimize_skip_unused_shards}
+<div id="force_optimize_skip_unused_shards">
+  ## force_optimize_skip_unused_shards
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -45,7 +49,9 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 * 1 — 有効。テーブルにシャーディングキーがある場合にのみ、クエリ実行が無効になります。
 * 2 — 有効。テーブルにシャーディングキーが定義されているかどうかに関係なく、クエリ実行は無効になります。
 
-## force_optimize_skip_unused_shards_nesting {#force_optimize_skip_unused_shards_nesting}
+<div id="force_optimize_skip_unused_shards_nesting">
+  ## force_optimize_skip_unused_shards_nesting
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

@@ -13,6 +13,10 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.jsx";
 
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="مصادقة JWT باستخدام موفر هوية مخصص" />
@@ -26,7 +30,7 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 يمكنك تهيئة موفري JWKS بنفسك لكل خدمة من **Settings → Security** في ClickHouse Cloud console.
 
 <div id="before-you-begin">
-  ## قبل البدء {#before-you-begin}
+  ## قبل البدء
 </div>
 
 لتهيئة موفّري JWT لخدمة، تحتاج إلى:
@@ -40,7 +44,9 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
   يقبل الموفّرون المستندون إلى JWKS مفاتيح **RSA**، وبدءًا من الإصدار 26.8، مفاتيح **EC** على المنحنيات P-256 وP-384 وP-521. قد يحتوي مستند JWKS على أنواع مفاتيح أخرى، ولكن يجب أن يحتوي على مفتاح صالح للاستخدام واحد على الأقل.
 </Note>
 
-## آلية العمل {#how-it-works}
+<div id="how-it-works">
+  ## آلية العمل
+</div>
 
 ينشئ العميل (موفّر الهوية أو تطبيقك) JWT ويوقّعه باستخدام **مفتاحه الخاص**. يجب أن يتبع الرمز المميز [تنسيق الرمز المميز](/ar/concepts/features/security/external-authenticators/jwt#token-claims) المتوقع. ثم يتحقق ClickHouse منه باستخدام المفاتيح **العامة** المنشورة على عنوان URL الخاص بـ JWKS:
 
@@ -51,7 +57,7 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 يتحقق ClickHouse من عنوان URL الخاص بـ JWKS ويجلبه عند إضافة موفّر أو تحديثه، لذا يُرفض مسبقًا أي عنوان URL مُهيأ بشكل خاطئ أو يتعذر الوصول إليه.
 
 <div id="add-a-jwt-provider">
-  ## إضافة موفّر JWT {#add-a-jwt-provider}
+  ## إضافة موفّر JWT
 </div>
 
 <Steps>
@@ -87,7 +93,7 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 </Warning>
 
 <div id="limits">
-  ## القيود {#limits}
+  ## القيود
 </div>
 
 * الحد الأقصى هو **خمسة** موفري JWT لكل خدمة.
@@ -95,7 +101,7 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 * يجب أن يكون عنوان URL لـ JWKS نقطة نهاية HTTPS عامة. تُرفض العناوين الخاصة أو الداخلية أو المحلية للارتباط.
 
 <div id="related">
-  ## مواضيع ذات صلة {#related}
+  ## مواضيع ذات صلة
 </div>
 
 * [مصادقة JWT](/ar/concepts/features/security/external-authenticators/jwt) — مطالبات الرمز المميز، والمستخدمون المؤقتون، واستخدام العميل.

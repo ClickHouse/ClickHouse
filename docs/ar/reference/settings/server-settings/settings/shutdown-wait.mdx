@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُعِدّ هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-## shutdown_wait_backups_and_restores {#shutdown_wait_backups_and_restores}
+<div id="shutdown_wait_backups_and_restores">
+  ## shutdown_wait_backups_and_restores
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />إذا ضُبطت هذه القيمة على true، فسينتظر ClickHouse اكتمال عمليات النسخ الاحتياطي والاستعادة الجارية قبل إيقاف التشغيل.
 
-## shutdown_wait_unfinished {#shutdown_wait_unfinished}
+<div id="shutdown_wait_unfinished">
+  ## shutdown_wait_unfinished
+</div>
 
-<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />مهلة بالثواني لانتظار الاستعلامات غير المكتملة عند إيقاف التشغيل. كما تحدّ من مدة انتظار عمليات النسخ الاحتياطي والاستعادة الجارية عندما يكون `shutdown_wait_backups_and_restores` معطّلاً.
+<SettingsInfoBlock type="UInt64" default_value="120" changeable_without_restart="No" />مهلة بالثواني لانتظار الاستعلامات غير المكتملة
 
-## shutdown_wait_unfinished_queries {#shutdown_wait_unfinished_queries}
+<div id="shutdown_wait_unfinished_queries">
+  ## shutdown_wait_unfinished_queries
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />إذا ضُبط على true، فسوف ينتظر ClickHouse حتى تكتمل الاستعلامات قيد التشغيل قبل إيقاف التشغيل.
 

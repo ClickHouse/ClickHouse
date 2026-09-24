@@ -17,7 +17,7 @@ ClickHouse Cloud 目前不支持自动故障转移，也不支持跨多个地理
 </Tip>
 
 <div id="definitions">
-  ## 定义 {#definitions}
+  ## 定义
 </div>
 
 先了解几个定义会更有帮助。
@@ -29,7 +29,7 @@ ClickHouse Cloud 目前不支持自动故障转移，也不支持跨多个地理
 **数据库备份与快照**：备份通过保存一份独立的数据副本来提供持久的长期存储。快照不会创建额外的数据副本，通常速度更快，并且可以实现更好的 RPO。
 
 <div id="database-backups">
-  ## 数据库 Backup {#database-backups}
+  ## 数据库 Backup
 </div>
 
 为主服务保留 Backup，是在主服务发生停机时利用 Backup进行恢复的有效方式。
@@ -60,23 +60,26 @@ ClickHouse Cloud 支持以下 Backup能力。
 此部分还会显示每个 Backup的成功/失败状态。
 
 <div id="restoring-from-a-backup">
-  ## 从Backup中恢复 {#restoring-from-a-backup}
+  ## 从Backup中恢复
 </div>
 
 1. 位于 ClickHouse Cloud 存储桶中的默认Backup可恢复到同一区域中的新服务。
 2. 外部Backup (位于客户对象存储中) 可恢复到同一区域或不同区域中的新服务。
 
 <div id="backup-and-restore-duration-guidance">
-  ## Backup和恢复耗时指南 {#backup-and-restore-duration-guidance}
+  ## Backup和恢复耗时指南
 </div>
 
-Backup和恢复耗时会因数据规模、schema复杂度和表数量而有显著差异。以下数据来自内部测试观察结果，并非性能承诺。
+Backup和恢复所需的时间取决于多种因素，例如数据库大小、schema，以及数据库中的表数量。
 
-在我们的测试中，Backup约 1 TB 的数据耗时约 10 到 15 分钟，而Backup 20 TB 的数据约需一小时。更大的数据集所需时间会相应增加，数百 TB 或更大的Backup可能需要数小时，不过规模越大，规模效应越明显。
+根据我们的测试，较小的Backup (约 1 TB) 可能需要 10–15 分钟甚至更长时间。
+小于 20 TB 的Backup通常可在 1 小时内完成，而备份约 50 TB 的数据预计需要 2–3 小时。
+随着规模增大，Backup会体现出规模效应；我们还观察到，一些内部服务中高达 1 PB 的Backup可在 10 小时内完成。
 
-恢复通常比同等规模的Backup更慢，尤其是恢复涉及较长的增量Backup链时，因为必须应用全量Backup及Backup链中后续的所有增量Backup。恢复非常大的服务可能需要超过一天。
+我们建议使用你自己的数据库或样本数据进行测试，以获得更准确的估算，因为实际耗时取决于上述多种因素。
 
-由于耗时在很大程度上取决于你的数据、schema和Backup配置，我们强烈建议在依赖任何目标恢复时间之前，先使用自己的数据测试恢复过程。
+对于相近的数据规模，恢复耗时与Backup耗时大致相当。
+如上所述，我们建议使用你自己的数据库进行测试，以大致了解恢复Backup需要多长时间。
 
 <Note>
   当前不支持在两个 ClickHouse Cloud 实例之间进行自动故障转移，无论它们位于同一区域还是不同区域。
@@ -84,19 +87,21 @@ Backup和恢复耗时会因数据规模、schema复杂度和表数量而有显�
 </Note>
 
 <div id="recovery-process">
-  ## 恢复流程 {#recovery-process}
+  ## 恢复流程
 </div>
 
 本节介绍各种恢复选项，以及每种情况下可采用的恢复流程。
 
 <div id="primary-service-data-corruption">
-  ### 主服务数据损坏 {#primary-service-data-corruption}
+  ### 主服务数据损坏
 </div>
 
 在这种情况下，数据[可以从备份恢复](/zh/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup)到同一区域中的另一项服务。
 如果使用默认备份策略，备份的数据最多可能滞后 24 小时；如果使用频率为 6 小时的可配置备份，则最多可能滞后 6 小时。
 
-#### 恢复步骤 {#restoration-steps}
+<div id="restoration-steps">
+  #### 恢复步骤
+</div>
 
 从现有 Backup 中恢复：
 
@@ -107,7 +112,7 @@ Backup和恢复耗时会因数据规模、schema复杂度和表数量而有显�
 <Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="从 Backup 中恢复" />
 
 <div id="primary-region-downtime">
-  ### 主区域停机 {#primary-region-downtime}
+  ### 主区域停机
 </div>
 
 您可以将[备份导出](/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)到您自己的云提供商存储桶。
@@ -127,7 +132,7 @@ Backup和恢复耗时会因数据规模、schema复杂度和表数量而有显�
 </Note>
 
 <div id="additional-options">
-  ## 其他选项 {#additional-options}
+  ## 其他选项
 </div>
 
 还有一些可进一步考虑的选项。

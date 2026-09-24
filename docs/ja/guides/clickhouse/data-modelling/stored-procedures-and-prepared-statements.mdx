@@ -10,7 +10,9 @@ doc_type: 'guide'
 従来のリレーショナルデータベースに慣れている方は、ClickHouse にもストアドプロシージャやプリペアドステートメントがあると考えるかもしれません。
 このガイドでは、これらの概念に対する ClickHouse の考え方を説明し、推奨される代替手段を紹介します。
 
-## ClickHouseでのストアドプロシージャの代替手段 {#alternatives-to-stored-procedures}
+<div id="alternatives-to-stored-procedures">
+  ## ClickHouseでのストアドプロシージャの代替手段
+</div>
 
 ClickHouse は、制御フローロジック (`IF`/`ELSE`、ループなど) を含む従来型のストアドプロシージャをサポートしていません。
 これは、分析データベースとしての ClickHouse のアーキテクチャに基づく意図的な設計です。
@@ -24,11 +26,15 @@ ClickHouse は、次のような用途に最適化されています。
 
 手続き型ロジックを含むストアドプロシージャは、こうした最適化と相性がよくありません。代わりに、ClickHouse にはその強みを生かせる代替手段が用意されています。
 
-### ユーザー定義関数 (UDFs) {#user-defined-functions}
+<div id="user-defined-functions">
+  ### ユーザー定義関数 (UDFs)
+</div>
 
 ユーザー定義関数 (UDFs) を使うと、制御フローを伴わない再利用可能なロジックをまとめて定義できます。ClickHouse は次の 2 種類をサポートしています。
 
-#### ラムダベースのUDF {#lambda-based-udfs}
+<div id="lambda-based-udfs">
+  #### ラムダベースのUDF
+</div>
 
 SQL 式とラムダ構文を使用して関数を作成します。
 
@@ -101,7 +107,9 @@ SELECT format_phone('5551234567');
 
 完全な構文は [`CREATE FUNCTION`](/ja/reference/statements/create/function) を参照してください。
 
-#### 実行可能 UDF {#executable-udfs}
+<div id="executable-udfs">
+  #### 実行可能 UDF
+</div>
 
 より複雑なロジックには、外部プログラムを呼び出す実行可能 UDF を使用できます。
 
@@ -133,7 +141,9 @@ FROM customer_reviews;
 
 詳細については、[実行可能 UDF](/ja/reference/functions/regular-functions/udf) を参照してください。
 
-### パラメーター化ビュー {#parameterized-views}
+<div id="parameterized-views">
+  ### パラメーター化ビュー
+</div>
 
 パラメーター化ビューは、データセットを返す関数のように動作します。
 動的なフィルタリングを伴う再利用可能なクエリに最適です。
@@ -188,7 +198,9 @@ FROM sales_by_date(start_date='2024-01-01', end_date='2024-01-31')
 WHERE product_id = 12345;
 ```
 
-#### 一般的なユースケース {#common-use-cases}
+<div id="common-use-cases">
+  #### 一般的なユースケース
+</div>
 
 * 動的な日付範囲フィルタリング
 * ユーザー別のデータの切り分け
@@ -233,7 +245,9 @@ SELECT * FROM top_products_by_category(
 
 詳しくは、[パラメーター化ビュー](/ja/reference/statements/create/view#parameterized-view)のセクションをご覧ください。
 
-### materialized view {#materialized-views}
+<div id="materialized-views">
+  ### materialized view
+</div>
 
 materialized view は、従来であればストアドプロシージャで行っていた高コストな集計を事前計算するのに最適です。従来のデータベースに慣れている場合は、materialized view を、データがソーステーブルに挿入される際に自動的に変換と集計を行う **INSERT トリガー** のようなものと考えてください。
 
@@ -286,7 +300,9 @@ WHERE date BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY user_id;
 ```
 
-#### リフレッシュ可能な materialized view {#refreshable-materialized-views}
+<div id="refreshable-materialized-views">
+  #### リフレッシュ可能な materialized view
+</div>
 
 定期実行するバッチ処理 (夜間実行のストアドプロシージャなど) 向け:
 
@@ -312,11 +328,15 @@ WHERE month = toStartOfMonth(today());
 
 高度な活用パターンについては、[カスケード型 materialized view](/ja/concepts/features/materialized-views/cascading-materialized-views)を参照してください。
 
-### 外部オーケストレーション {#external-orchestration}
+<div id="external-orchestration">
+  ### 外部オーケストレーション
+</div>
 
 複雑なビジネスロジック、ETL ワークフロー、または複数段階の処理では、言語クライアントを使用して、ClickHouse の外部にロジックを実装することも可能です。
 
-#### アプリケーションコードを使用する {#using-application-code}
+<div id="using-application-code">
+  #### アプリケーションコードを使用する
+</div>
 
 以下は、MySQL のストアドプロシージャを ClickHouse でアプリケーションコードに置き換える場合の比較を左右に並べて示したものです。
 
@@ -549,7 +569,9 @@ WHERE month = toStartOfMonth(today());
 
 <br />
 
-#### 主な違い {#key-differences}
+<div id="key-differences">
+  #### 主な違い
+</div>
 
 1. **制御フロー** - MySQL のストアドプロシージャでは `IF/ELSE` や `WHILE` ループを使用できます。ClickHouse では、このロジックはアプリケーションコード (Python、Java など) に実装します
 2. **トランザクション** - MySQL は ACID トランザクションのための `BEGIN/COMMIT/ROLLBACK` をサポートしています。ClickHouse はトランザクション更新ではなく、追記中心のワークロード向けに最適化された分析データベースです
@@ -560,12 +582,14 @@ WHERE month = toStartOfMonth(today());
 <Tip>
   **各アプローチの使い分け:**
 
-  * **OLTP ワークロード** (注文、支払い、ユーザーアカウント) → アプリケーションのトランザクションとストアドプロシージャには MySQL または PostgreSQL を使用します。ClickHouse Cloud では [ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) を利用できます。
+  * **OLTP ワークロード** (注文、支払い、ユーザーアカウント) → ストアドプロシージャを使うなら MySQL/PostgreSQL を使用します
   * **分析ワークロード** (レポート、集計、時系列) → ClickHouse をアプリケーションによるオーケストレーションと組み合わせて使用します
-  * **ハイブリッドアーキテクチャ** → アプリケーションのトランザクションは Postgres に保持し、コミットされた変更を分析のために ClickHouse にレプリケートします。[Postgres と ClickHouse の連携方法](/ja/products/managed-postgres/overview#transactions-and-analytics) および [インテグレーションのクイックスタート](/ja/products/managed-postgres/quickstart#part-2) を参照してください。
+  * **ハイブリッドアーキテクチャ** → 両方を使います。分析のために、トランザクションデータを OLTP から ClickHouse にストリーミングします
 </Tip>
 
-#### ワークフローオーケストレーションツールの活用 {#using-workflow-orchestration-tools}
+<div id="using-workflow-orchestration-tools">
+  #### ワークフローオーケストレーションツールの活用
+</div>
 
 * **Apache Airflow** - ClickHouseクエリの複雑なDAGをスケジュール・監視
 * **dbt** - SQLベースのワークフローでデータを変換
@@ -581,15 +605,21 @@ WHERE month = toStartOfMonth(today());
 * 監視とアラート
 * より柔軟なスケジュール設定
 
-## ClickHouse におけるプリペアドステートメントの代替手段 {#alternatives-to-prepared-statements-in-clickhouse}
+<div id="alternatives-to-prepared-statements-in-clickhouse">
+  ## ClickHouse におけるプリペアドステートメントの代替手段
+</div>
 
 ClickHouse には、RDBMS における従来型の「プリペアドステートメント」はありませんが、同じ目的を果たす **クエリパラメータ** が用意されています。これにより、SQL インジェクションを防ぐ安全なパラメータ化クエリを実現できます。
 
-### 構文 {#query-parameters-syntax}
+<div id="query-parameters-syntax">
+  ### 構文
+</div>
 
 クエリパラメータを定義する方法は2つあります。
 
-#### 方法 1: `SET` を使用する {#method-1-using-set}
+<div id="method-1-using-set">
+  #### 方法 1: `SET` を使用する
+</div>
 
 <Accordion title="例: テーブルとデータ">
   ```sql
@@ -639,7 +669,9 @@ WHERE user_id = {user_id: UInt64}
 GROUP BY event_name;
 ```
 
-#### 方法 2：CLI パラメータを使用する {#method-2-using-cli-parameters}
+<div id="method-2-using-cli-parameters">
+  #### 方法 2：CLI パラメータを使用する
+</div>
 
 ```bash
 clickhouse-client \
@@ -651,14 +683,18 @@ clickhouse-client \
              AND event_date BETWEEN {start_date: Date} AND {end_date: Date}"
 ```
 
-### パラメータの構文 {#parameter-syntax}
+<div id="parameter-syntax">
+  ### パラメータの構文
+</div>
 
 パラメータは次の形式で参照します：`{parameter_name: DataType}`
 
 * `parameter_name` - パラメータ名 (`param_` プレフィックスを除く)
 * `DataType` - パラメータを CAST する先の ClickHouse のデータ型
 
-### データ型の例 {#data-type-examples}
+<div id="data-type-examples">
+  ### データ型の例
+</div>
 
 <Accordion title="例で使用するテーブルとサンプルデータ">
   ```sql
@@ -773,7 +809,9 @@ clickhouse-client \
 [language clients](/ja/integrations/language-clients/index) でのクエリパラメータの使用については、関心のある
 各言語クライアントのドキュメントを参照してください。
 
-### クエリパラメータの制限事項 {#limitations-of-query-parameters}
+<div id="limitations-of-query-parameters">
+  ### クエリパラメータの制限事項
+</div>
 
 クエリパラメータは**汎用的なテキスト置換ではありません**。いくつかの明確な制限があります。
 
@@ -813,7 +851,9 @@ ALTER TABLE {table: Identifier} ADD COLUMN new_col String;  -- 非サポート
 {statements: String};  -- 非サポート
 ```
 
-### セキュリティのベストプラクティス {#security-best-practices}
+<div id="security-best-practices">
+  ### セキュリティのベストプラクティス
+</div>
 
 **ユーザー入力には必ずクエリパラメータを使用してください：**
 
@@ -849,7 +889,9 @@ def get_user_orders(user_id: int, start_date: str):
     )
 ```
 
-### MySQL プロトコルのプリペアドステートメント {#mysql-protocol-prepared-statements}
+<div id="mysql-protocol-prepared-statements">
+  ### MySQL プロトコルのプリペアドステートメント
+</div>
 
 ClickHouse の [MySQL インターフェイス](/ja/concepts/features/interfaces/mysql) には、プリペアドステートメント (`COM_STMT_PREPARE`、`COM_STMT_EXECUTE`、`COM_STMT_CLOSE`) の最小限のサポートがあります。これは主に、クエリをプリペアドステートメントでラップする Tableau Online のようなツールとの接続を可能にするためのものです。
 
@@ -879,9 +921,13 @@ EXECUTE stmt USING @user_id;  -- パラメータバインディングはサポ�
 
 詳細は、[MySQL インターフェイスのドキュメント](/ja/concepts/features/interfaces/mysql)および[MySQL サポートに関するブログ記事](https://clickhouse.com/blog/mysql-support-in-clickhouse-the-journey)を参照してください。
 
-## 概要 {#summary}
+<div id="summary">
+  ## 概要
+</div>
 
-### ストアドプロシージャに代わるClickHouseの選択肢 {#summary-stored-procedures}
+<div id="summary-stored-procedures">
+  ### ストアドプロシージャに代わるClickHouseの選択肢
+</div>
 
 | 従来のストアドプロシージャのパターン | ClickHouseの代替手段                                            |
 | ------------------ | ---------------------------------------------------------- |
@@ -892,7 +938,9 @@ EXECUTE stmt USING @user_id;  -- パラメータバインディングはサポ�
 | 複雑な多段階ETL          | materialized viewの連鎖、または外部オーケストレーション (Python、Airflow、dbt)  |
 | 制御フローを含むビジネスロジック   | アプリケーションコード                                                |
 
-### クエリパラメータの用途 {#summary-query-parameters}
+<div id="summary-query-parameters">
+  ### クエリパラメータの用途
+</div>
 
 クエリパラメータは、次のような用途に使用できます。
 
@@ -901,7 +949,9 @@ EXECUTE stmt USING @user_id;  -- パラメータバインディングはサポ�
 * アプリケーションでの動的なフィルタリング
 * 再利用可能なクエリテンプレート
 
-## 関連ドキュメント {#related-documentation}
+<div id="related-documentation">
+  ## 関連ドキュメント
+</div>
 
 * [`CREATE FUNCTION`](/ja/reference/statements/create/function) - ユーザー定義関数
 * [`CREATE VIEW`](/ja/reference/statements/create/view) - パラメーター化ビューと materialized view

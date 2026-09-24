@@ -12,7 +12,9 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Fournit une interface de type table en lecture seule pour des tables Apache [Iceberg](https://iceberg.apache.org/) stockées dans Amazon S3, Azure, HDFS ou localement.
 
-## Syntaxe {#syntax}
+<div id="syntax">
+  ## Syntaxe
+</div>
 
 ```sql
 icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
@@ -28,28 +30,36 @@ icebergLocal(path_to_table, [,format] [,compression_method])
 icebergLocal(named_collection[, option=value [,..]])
 ```
 
-## Arguments {#arguments}
+<div id="arguments">
+  ## Arguments
+</div>
 
 La description des arguments est identique à celle des fonctions de table `s3`, `azureBlobStorage`, `HDFS` et `file`.
 `format` désigne le format des fichiers de données de la table Iceberg.
 
 Pour `icebergS3`, le paramètre facultatif `extra_credentials` peut être utilisé pour transmettre un `role_arn` afin d’activer l’accès basé sur les rôles dans ClickHouse Cloud. Voir [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour connaître les étapes de configuration.
 
-### Valeur renvoyée {#returned-value}
+<div id="returned-value">
+  ### Valeur renvoyée
+</div>
 
 Une table ayant la structure spécifiée pour lire les données de la table Iceberg indiquée.
 
-### Exemple {#example}
+<div id="example">
+  ### Exemple
+</div>
 
 ```sql
 SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
 ```
 
 <Warning>
-  ClickHouse prend actuellement en charge la lecture des versions v1 et v2 du format Iceberg via les fonctions de table `icebergS3`, `icebergAzure`, `icebergHDFS` et `icebergLocal`, ainsi que les moteurs de table `IcebergS3`, `IcebergAzure`, `IcebergHDFS` et `IcebergLocal`. La prise en charge de v3 est partielle : la lecture des vecteurs de suppression est prise en charge ; la compaction des manifestes ne l&#39;est pas.
+  ClickHouse prend actuellement en charge la lecture des versions v1 et v2 du format Iceberg via les fonctions de table `icebergS3`, `icebergAzure`, `icebergHDFS` et `icebergLocal`, ainsi que les moteurs de table `IcebergS3`, `icebergAzure`, `IcebergHDFS` et `IcebergLocal`. La prise en charge de v3 est partielle ; les vecteurs de suppression et la compaction des manifestes ne sont pas pris en charge.
 </Warning>
 
-## Définir une collection nommée {#defining-a-named-collection}
+<div id="defining-a-named-collection">
+  ## Définir une collection nommée
+</div>
 
 Voici un exemple de configuration d’une collection nommée pour stocker l’URL et les informations d’authentification :
 
@@ -72,7 +82,9 @@ SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
 DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 ```
 
-## Utilisation d’un catalogue de données {#iceberg-writes-catalogs}
+<div id="iceberg-writes-catalogs">
+  ## Utilisation d’un catalogue de données
+</div>
 
 Les tables Iceberg peuvent également être utilisées avec différents catalogues de données, tels que [REST Catalog](https://iceberg.apache.org/rest-catalog-spec/), [AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html) et [Unity Catalog](https://www.unitycatalog.io/).
 
@@ -104,7 +116,9 @@ ENGINE = IcebergS3(
 )
 ```
 
-## Évolution du schéma {#schema-evolution}
+<div id="schema-evolution">
+  ## Évolution du schéma
+</div>
 
 À ce stade, avec CH, vous pouvez lire des tables Iceberg dont le schéma a évolué au fil du temps. Nous prenons actuellement en charge la lecture de tables dans lesquelles des colonnes ont été ajoutées ou supprimées, et dont l&#39;ordre a été modifié. Vous pouvez également transformer une colonne où une valeur est obligatoire en colonne où NULL est autorisé. De plus, nous prenons en charge les conversions de type autorisées pour les types simples, à savoir :  
 
@@ -114,21 +128,31 @@ ENGINE = IcebergS3(
 
 À l&#39;heure actuelle, il n&#39;est pas possible de modifier des structures imbriquées ni les types des éléments au sein des Array et des Map.
 
-## Élagage des partitions {#partition-pruning}
+<div id="partition-pruning">
+  ## Élagage des partitions
+</div>
 
 ClickHouse prend en charge l’élagage des partitions lors des requêtes SELECT sur les tables Iceberg, ce qui permet d’optimiser les performances des requêtes en ignorant les fichiers de données non pertinents. Pour activer l’élagage des partitions, définissez `use_iceberg_partition_pruning = 1`. Pour en savoir plus sur l’élagage des partitions dans Iceberg, consultez https://iceberg.apache.org/spec/#partitioning
 
-## Time travel {#time-travel}
+<div id="time-travel">
+  ## Time travel
+</div>
 
 ClickHouse prend en charge le time travel pour les tables Iceberg, ce qui permet d’interroger des données historiques à l’aide d’un horodatage spécifique ou d’un ID de snapshot.
 
-## Traitement des tables contenant des lignes supprimées {#deleted-rows}
+<div id="deleted-rows">
+  ## Traitement des tables contenant des lignes supprimées
+</div>
 
 ClickHouse prend en charge les tables Iceberg avec des [suppressions par position](https://iceberg.apache.org/spec/#position-delete-files) et des [suppressions par égalité](https://iceberg.apache.org/spec/#equality-delete-files). Les suppressions par égalité sont prises en charge à partir de la v25.8.
 
-ClickHouse prend également en charge la lecture des [vecteurs de suppression](https://iceberg.apache.org/spec/#deletion-vectors) (introduits en v3). Cette prise en charge est en lecture seule : ClickHouse n’écrit, ne met à jour ni ne compacte les vecteurs de suppression, et `ALTER TABLE ... DELETE` et `ALTER TABLE ... UPDATE` ne sont pas pris en charge pour les tables Iceberg au format version 3.
+La méthode de suppression suivante n’est **pas prise en charge** :
 
-### Utilisation de base {#basic-usage}
+* [Vecteurs de suppression](https://iceberg.apache.org/spec/#deletion-vectors) (à partir de la v3)
+
+<div id="basic-usage">
+  ### Utilisation de base
+</div>
 
 ```sql
  SELECT * FROM example_table ORDER BY 1 
@@ -142,7 +166,9 @@ ClickHouse prend également en charge la lecture des [vecteurs de suppression](h
 
 Remarque : vous ne pouvez pas spécifier à la fois les paramètres `iceberg_timestamp_ms` et `iceberg_snapshot_id` dans une même requête.
 
-### Points importants {#important-considerations}
+<div id="important-considerations">
+  ### Points importants
+</div>
 
 * **Les snapshots** sont généralement créés dans les cas suivants :
 
@@ -152,11 +178,15 @@ Remarque : vous ne pouvez pas spécifier à la fois les paramètres `iceberg_ti
 
 * **Les modifications du schéma ne créent généralement pas de snapshots** - Cela entraîne des comportements importants lors de l&#39;utilisation du time travel sur des tables ayant subi une évolution du schéma.
 
-### Exemples de scénarios {#example-scenarios}
+<div id="example-scenarios">
+  ### Exemples de scénarios
+</div>
 
 Ces scénarios utilisent Spark pour illustrer les modifications de schéma effectuées par un writer Iceberg externe.
 
-#### Scénario 1 : Modifications de schéma sans nouveaux snapshots {#scenario-1}
+<div id="scenario-1">
+  #### Scénario 1 : Modifications de schéma sans nouveaux snapshots
+</div>
 
 Considérez la séquence d’opérations suivante :
 
@@ -216,7 +246,9 @@ Résultats de la requête à différents horodatages :
 * À ts1 &amp; ts2 : seules les deux colonnes d’origine sont présentes
 * À ts3 : les trois colonnes sont présentes, avec NULL pour le prix de la première ligne
 
-#### Scénario 2 : Différences entre le schéma historique et le schéma actuel {#scenario-2}
+<div id="scenario-2">
+  #### Scénario 2 : Différences entre le schéma historique et le schéma actuel
+</div>
 
 Une requête de time travel exécutée à l’instant présent peut afficher un schéma différent de celui de la table actuelle :
 
@@ -258,7 +290,9 @@ Une requête de time travel exécutée à l’instant présent peut afficher un 
 
 Cela s’explique par le fait que `ALTER TABLE` ne crée pas de nouvel instantané ; pour la table actuelle, Spark prend la valeur de `schema_id` dans le fichier de métadonnées le plus récent, et non dans un instantané.
 
-#### Scénario 3 : Différences entre le schéma historique et le schéma actuel {#scenario-3}
+<div id="scenario-3">
+  #### Scénario 3 : Différences entre le schéma historique et le schéma actuel
+</div>
 
 Le second point est que, lors d’un time travel, vous ne pouvez pas obtenir l’état de la table avant que des données n’y aient été écrites :
 
@@ -279,11 +313,15 @@ Le second point est que, lors d’un time travel, vous ne pouvez pas obtenir l�
 
 Dans ClickHouse, le comportement est le même que dans Spark. Vous pouvez considérer les requêtes Select de Spark comme des requêtes Select de ClickHouse, et cela fonctionnera de la même manière.
 
-## Résolution du fichier de métadonnées {#metadata-file-resolution}
+<div id="metadata-file-resolution">
+  ## Résolution du fichier de métadonnées
+</div>
 
 Lors de l&#39;utilisation de la fonction de table `iceberg` dans ClickHouse, le système doit trouver le fichier metadata.json approprié, qui décrit la structure de la table Iceberg. Voici comment ce processus de résolution fonctionne :
 
-### Recherche des candidats (par ordre de priorité) {#candidate-search}
+<div id="candidate-search">
+  ### Recherche des candidats (par ordre de priorité)
+</div>
 
 1. **Spécification directe du chemin** :
    *Si vous définissez `iceberg_metadata_file_path`, le système utilisera exactement ce chemin en le combinant avec le chemin du répertoire de la table Iceberg.
@@ -298,7 +336,9 @@ Lors de l&#39;utilisation de la fonction de table `iceberg` dans ClickHouse, le 
 3. **Recherche par défaut** :
    *Si aucun des paramètres ci-dessus n’est fourni, tous les fichiers `.metadata.json` du répertoire `metadata` deviennent des candidats
 
-### Sélection du fichier le plus récent {#most-recent-file}
+<div id="most-recent-file">
+  ### Sélection du fichier le plus récent
+</div>
 
 Après avoir identifié les fichiers candidats à l’aide des règles ci-dessus, le système détermine lequel est le plus récent :
 
@@ -321,15 +361,21 @@ SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
 
 **Remarque** : si les catalogues Iceberg assurent généralement la résolution des métadonnées, la fonction de table `iceberg` de ClickHouse interprète directement les fichiers stockés dans S3 comme des tables Iceberg ; il est donc important de comprendre ces règles de résolution.
 
-## Cache de métadonnées {#metadata-cache}
+<div id="metadata-cache">
+  ## Cache de métadonnées
+</div>
 
 Le moteur de table `Iceberg` et la fonction de table prennent en charge un cache de métadonnées qui stocke les informations des fichiers manifest, de la liste des manifests et du JSON de métadonnées. Ce cache est stocké en mémoire. Cette fonctionnalité est contrôlée par le paramètre `use_iceberg_metadata_files_cache`, activé par défaut.
 
-## Aliases {#aliases}
+<div id="aliases">
+  ## Aliases
+</div>
 
 La fonction de table `iceberg` est désormais un alias pour `icebergS3`.
 
-## Colonnes virtuelles {#virtual-columns}
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
 
 * `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
 * `_file` — Nom du fichier. Type : `LowCardinality(String)`.
@@ -337,7 +383,9 @@ La fonction de table `iceberg` est désormais un alias pour `icebergS3`.
 * `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si cette date et heure sont inconnues, la valeur est `NULL`.
 * `_etag` — ETag du fichier. Type : `LowCardinality(String)`. Si l’ETag est inconnu, la valeur est `NULL`.
 
-## Écriture dans une table Iceberg {#writes-into-iceberg-table}
+<div id="writes-into-iceberg-table">
+  ## Écriture dans une table Iceberg
+</div>
 
 À partir de la version 25.7, ClickHouse prend en charge la modification des tables Iceberg sur des backends de stockage accessibles en écriture.
 
@@ -347,12 +395,16 @@ Avant de modifier ou de maintenir une table Iceberg, activez le [paramètre `all
 SET allow_insert_into_iceberg = 1;
 ```
 
-### Création d&#39;une table {#create-iceberg-table}
+<div id="create-iceberg-table">
+  ### Création d&#39;une table
+</div>
 
 Pour créer une nouvelle table Iceberg autonome sur un backend accessible en écriture, utilisez un moteur de table Iceberg et indiquez explicitement le schéma.
 L&#39;écriture prend en charge tous les formats de données définis par la spécification Iceberg, tels que Parquet, Avro et ORC.
 
-### Exemple {#example-iceberg-writes-create}
+<div id="example">
+  ### Exemple
+</div>
 
 ```sql
 CREATE TABLE iceberg_writes_example
@@ -366,13 +418,17 @@ ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
 Remarque : pour créer un fichier d’indice de version, activez le paramètre `iceberg_use_version_hint`.
 Si vous souhaitez compresser le fichier metadata.json, indiquez le nom du codec dans le paramètre `iceberg_metadata_compression_method`.
 
-### INSERT {#writes-inserts}
+<div id="writes-inserts">
+  ### INSERT
+</div>
 
 <BetaBadge />
 
 Après avoir créé une nouvelle table, vous pouvez insérer des données à l’aide de la syntaxe ClickHouse standard.
 
-### Exemple {#example-iceberg-writes-insert}
+<div id="example">
+  ### Exemple
+</div>
 
 ```sql
 INSERT INTO iceberg_writes_example VALUES ('Pavel', 777), ('Ivanov', 993);
@@ -392,12 +448,16 @@ x: Ivanov
 y: 993
 ```
 
-### DELETE {#iceberg-writes-delete}
+<div id="iceberg-writes-delete">
+  ### DELETE
+</div>
 
 La suppression des lignes supplémentaires dans le format merge-on-read est également prise en charge par ClickHouse.
 Cette requête créera un nouveau snapshot avec des fichiers de suppression par position.
 
-### Exemple {#example-iceberg-writes-delete}
+<div id="example">
+  ### Exemple
+</div>
 
 ```sql
 ALTER TABLE iceberg_writes_example DELETE WHERE x != 'Ivanov';
@@ -412,11 +472,15 @@ x: Ivanov
 y: 993
 ```
 
-### Évolution du schéma {#iceberg-writes-schema-evolution}
+<div id="iceberg-writes-schema-evolution">
+  ### Évolution du schéma
+</div>
 
 ClickHouse vous permet d’ajouter, de supprimer, de modifier ou de renommer des colonnes à types simples (hors Tuple, Array et Map).
 
-### Exemple {#example-iceberg-writes-evolution}
+<div id="example">
+  ### Exemple
+</div>
 
 ```sql
 ALTER TABLE iceberg_writes_example MODIFY COLUMN y Nullable(Int64);
@@ -496,7 +560,9 @@ x: Ivanov
 value: 993
 ```
 
-### Compaction {#iceberg-writes-compaction}
+<div id="iceberg-writes-compaction">
+  ### Compaction
+</div>
 
 ClickHouse prend en charge la compaction des tables Iceberg. Actuellement, elle peut fusionner les fichiers de suppression par position avec les fichiers de données tout en mettant à jour les métadonnées. Les ID et les timestamps des snapshots précédents restent inchangés, de sorte que la fonctionnalité de time travel peut toujours être utilisée avec les mêmes valeurs.
 
@@ -517,7 +583,9 @@ x: Ivanov
 y: 993
 ```
 
-### Expiration des snapshots {#iceberg-expire-snapshots}
+<div id="iceberg-expire-snapshots">
+  ### Expiration des snapshots
+</div>
 
 Les tables Iceberg accumulent des snapshots à chaque opération INSERT, DELETE ou UPDATE. Au fil du temps, cela peut entraîner un grand nombre de snapshots et de fichiers de données associés. La commande `expire_snapshots` supprime les anciens snapshots et nettoie les fichiers de données qui ne sont plus référencés par aucun snapshot conservé.
 
@@ -601,7 +669,9 @@ La commande effectue les étapes suivantes :
 6. En mode normal : supprime physiquement les listes de manifests, les fichiers manifest et les fichiers de données devenus inaccessibles
 7. En mode `dry_run = 1` : ignore les étapes 5 et 6 et renvoie uniquement les métriques calculées
 
-#### Politique de rétention des snapshots {#iceberg-snapshot-retention-policy}
+<div id="iceberg-snapshot-retention-policy">
+  #### Politique de rétention des snapshots
+</div>
 
 La commande `expire_snapshots` respecte la [politique de rétention des snapshots d’Iceberg](https://iceberg.apache.org/spec/#snapshot-retention-policy). La rétention se configure via les propriétés de table Iceberg et des remplacements par référence :
 
@@ -643,7 +713,9 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
   * Le mécanisme d’autorisation propre au catalog (authentification du catalogue REST, AWS Glue IAM, etc.) est appliqué indépendamment lorsque ClickHouse met à jour les métadonnées
 </Note>
 
-### Supprimer les fichiers orphelins {#iceberg-remove-orphan-files}
+<div id="iceberg-remove-orphan-files">
+  ### Supprimer les fichiers orphelins
+</div>
 
 Les fichiers orphelins sont des fichiers présents dans le stockage qui ne sont référencés par aucun snapshot dans les métadonnées de la table Iceberg. Ils s’accumulent à la suite d’écritures ayant échoué, d’un nettoyage partiel après la compaction et d’opérations interrompues, ce qui entraîne une augmentation incontrôlée du stockage. La commande `remove_orphan_files` identifie et supprime ces fichiers orphelins.
 
@@ -725,7 +797,9 @@ La commande renvoie une table avec les colonnes `metric_name` et `metric_value`,
   * Le seuil `older_than` évite la suppression de fichiers issus d’écritures en cours — le seuil par défaut de 3 jours offre une marge de sécurité confortable
 </Note>
 
-## Voir aussi {#see-also}
+<div id="see-also">
+  ## Voir aussi
+</div>
 
 * [moteur Iceberg](/fr/reference/engines/table-engines/integrations/iceberg)
 * [fonction de table cluster Iceberg](/fr/reference/functions/table-functions/icebergCluster)

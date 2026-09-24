@@ -14,7 +14,9 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## filesystem_cache_allow_background_download {#filesystem_cache_allow_background_download}
+<div id="filesystem_cache_allow_background_download">
+  ## filesystem_cache_allow_background_download
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,15 +24,19 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 リモートストレージから読み取ったデータについて、ファイルシステムキャッシュがバックグラウンドダウンロードをキューに追加できるようにします。無効にすると、現在のクエリ/セッションではダウンロードはフォアグラウンドで実行されます。
 
-## filesystem_cache_boundary_alignment {#filesystem_cache_boundary_alignment}
+<div id="filesystem_cache_boundary_alignment">
+  ## filesystem_cache_boundary_alignment
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-ファイルシステムキャッシュの境界アラインメント。ディスク以外からの読み取り (たとえば、リモートテーブルエンジン / テーブル関数の cache) の場合、値が 0 であればアラインメントは行われません。ディスクからの読み取り (たとえば、cache 付きディスク上の MergeTree テーブル) の場合、値が 0 であればキャッシュ構成の `boundary_alignment` が使用されます。
+ファイルシステムキャッシュの境界アラインメント。この設定は、ディスク以外からの読み取りにのみ適用されます (たとえば、リモートテーブルエンジン / テーブル関数の cache には適用されますが、MergeTree テーブルのストレージ構成には適用されません) 。値が 0 の場合、アラインメントは行われません。
 
-## filesystem_cache_enable_background_download_during_fetch {#filesystem_cache_enable_background_download_during_fetch}
+<div id="filesystem_cache_enable_background_download_during_fetch">
+  ## filesystem_cache_enable_background_download_during_fetch
+</div>
 
 <CloudOnlyBadge />
 
@@ -40,7 +46,9 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 ClickHouse Cloud でのみ有効です。ファイルシステムキャッシュで領域を予約するためにcacheをロックするまでの待機時間
 
-## filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage {#filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage}
+<div id="filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage">
+  ## filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage
+</div>
 
 <CloudOnlyBadge />
 
@@ -50,19 +58,25 @@ ClickHouse Cloud でのみ有効です。ファイルシステムキャッシュ
 
 ClickHouse Cloud でのみ有効です。ファイルシステムキャッシュ内の領域を予約するためにキャッシュをロックするまでの待機時間
 
-## filesystem_cache_max_download_size {#filesystem_cache_max_download_size}
+<div id="filesystem_cache_max_download_size">
+  ## filesystem_cache_max_download_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="137438953472" />
 
 1 回のクエリでダウンロードできるリモートファイルシステムキャッシュの最大サイズ
 
-## filesystem_cache_name {#filesystem_cache_name}
+<div id="filesystem_cache_name">
+  ## filesystem_cache_name
+</div>
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": ""},{"label": "ステートレスなテーブルエンジンまたはデータレイクで使用するファイルシステムキャッシュの名前"}]}]} />
 
 ステートレスなテーブルエンジンまたはデータレイクで使用するファイルシステムキャッシュの名前
 
-## filesystem_cache_prefer_bigger_buffer_size {#filesystem_cache_prefer_bigger_buffer_size}
+<div id="filesystem_cache_prefer_bigger_buffer_size">
+  ## filesystem_cache_prefer_bigger_buffer_size
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -70,7 +84,9 @@ ClickHouse Cloud でのみ有効です。ファイルシステムキャッシュ
 
 ファイルシステムキャッシュが有効な場合、cache のパフォーマンスを低下させる小さなファイルセグメントの書き込みを避けるため、より大きなバッファサイズを優先します。一方、この設定を有効にすると、メモリ使用量が増える可能性があります。
 
-## filesystem_cache_reserve_space_wait_lock_timeout_milliseconds {#filesystem_cache_reserve_space_wait_lock_timeout_milliseconds}
+<div id="filesystem_cache_reserve_space_wait_lock_timeout_milliseconds">
+  ## filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -78,13 +94,17 @@ ClickHouse Cloud でのみ有効です。ファイルシステムキャッシュ
 
 ファイルシステムキャッシュで領域を予約するためにキャッシュをロックするまでの待機時間
 
-## filesystem_cache_segments_batch_size {#filesystem_cache_segments_batch_size}
+<div id="filesystem_cache_segments_batch_size">
+  ## filesystem_cache_segments_batch_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
 読み取りバッファが cache から 1 回のバッチでリクエストできるファイルセグメント数の上限です。値が低すぎると cache へのリクエストが過剰になり、値が大きすぎると cache からのエビクションが遅くなる可能性があります
 
-## filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit {#filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit}
+<div id="filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit">
+  ## filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit
+</div>
 
 **別名**: `skip_download_if_exceeds_query_cache`
 
@@ -94,7 +114,9 @@ ClickHouse Cloud でのみ有効です。ファイルシステムキャッシュ
 
 クエリキャッシュのサイズ制限を超える場合、リモートファイルシステムからのダウンロードをスキップします
 
-## filesystem_cache_verbose_logging {#filesystem_cache_verbose_logging}
+<div id="filesystem_cache_verbose_logging">
+  ## filesystem_cache_verbose_logging
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -102,7 +124,9 @@ ClickHouse Cloud でのみ有効です。ファイルシステムキャッシュ
 
 ファイルシステムキャッシュのバッファ再充填ごとに、`TEST` レベルのログメッセージ (読み取りの状態、残りの読み取りサイズ、読み取ったバイト数) を出力します。デバッグ専用です。メッセージは読み取りごとに一度整形されるため、多数の小さなキャッシュ済み読み取りを行うクエリで有効にすると、大きなロギングオーバーヘッドが発生します。メッセージが表示されるのは、いずれにしてもログレベルが `test` の場合のみです (`send_logs_level` を参照) 。
 
-## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds {#filesystem_cache_wait_for_concurrent_download_timeout_milliseconds}
+<div id="filesystem_cache_wait_for_concurrent_download_timeout_milliseconds">
+  ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 

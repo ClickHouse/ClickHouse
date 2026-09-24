@@ -17,7 +17,9 @@ import DataTypesMatching from '/snippets/zh/data-types-matching.mdx';
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-## 描述 {#description}
+<div id="description">
+  ## 描述
+</div>
 
 [Apache Avro](https://avro.apache.org/) 是一种面向行的序列化格式，使用二进制编码来高效处理数据。`AvroConfluent` 格式支持借助 [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (或与其 API 兼容的服务) 读取和写入采用 Avro 编码的消息。
 
@@ -25,28 +27,36 @@ import DataTypesMatching from '/snippets/zh/data-types-matching.mdx';
 
 <a id="data-types-matching" />
 
-## 数据类型映射 {#data-type-mapping}
+<div id="data-type-mapping">
+  ## 数据类型映射
+</div>
 
 <DataTypesMatching />
 
-## 格式设置 {#format-settings}
+<div id="format-settings">
+  ## 格式设置
+</div>
 
 [//]: # "NOTE 这些设置也可以在会话级别设置，但这种用法并不常见，过于突出地说明这一点可能会让用户感到困惑。"
 
-| Setting                                          | Description                                                                                 | Default |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------- | ------- |
-| `input_format_avro_allow_missing_fields`         | 当 schema 中找不到某个字段时，是否使用默认值而不是报错。                                                            | `0`     |
-| `input_format_avro_null_as_default`              | 当向不可为空的列中插入 `null` 值时，是否使用默认值而不是报错。                                                         | `0`     |
-| `format_avro_schema_registry_url`                | Confluent Schema Registry 的 URL。对于基本身份验证，可以将经过 URL 编码的凭据直接包含在 URL 路径中。                      |         |
-| `format_avro_schema_registry_connection_timeout` | Schema Registry HTTP 客户端的连接超时时间 (秒) ，用于 schema 拉取和注册。必须大于 0；若取值为 600 (10 分钟) 或更大，则会被降为 599。 | `1`     |
-| `format_avro_schema_registry_send_timeout`       | Schema Registry HTTP 客户端的发送超时时间 (秒) 。必须大于 0；若取值为 600 (10 分钟) 或更大，则会被降为 599。                 | `1`     |
-| `format_avro_schema_registry_receive_timeout`    | Schema Registry HTTP 客户端的接收超时时间 (秒) 。必须大于 0；若取值为 600 (10 分钟) 或更大，则会被降为 599。                 | `1`     |
-| `output_format_avro_confluent_subject`           | 用于输出：schema 在 Schema Registry 中注册时使用的 subject 名称。写入时必填。                                     |         |
-| `output_format_avro_string_column_pattern`       | 用于输出：将 String 列序列化为 Avro `string` 的正则表达式 (默认为 `bytes`) 。                                    |         |
+| Setting                                          | Description                                                                   | Default |
+| ------------------------------------------------ | ----------------------------------------------------------------------------- | ------- |
+| `input_format_avro_allow_missing_fields`         | 当 schema 中找不到某个字段时，是否使用默认值而不是报错。                                              | `0`     |
+| `input_format_avro_null_as_default`              | 当向不可为空的列中插入 `null` 值时，是否使用默认值而不是报错。                                           | `0`     |
+| `format_avro_schema_registry_url`                | Confluent Schema Registry 的 URL。对于基本身份验证，可以将经过 URL 编码的凭据直接包含在 URL 路径中。        |         |
+| `format_avro_schema_registry_connection_timeout` | Schema Registry HTTP 客户端的连接超时时间 (秒) ，用于 schema 拉取和注册。必须大于 0 且小于 600 (10 分钟) 。 | `1`     |
+| `format_avro_schema_registry_send_timeout`       | Schema Registry HTTP 客户端的发送超时时间 (秒) 。必须大于 0 且小于 600 (10 分钟) 。                 | `1`     |
+| `format_avro_schema_registry_receive_timeout`    | Schema Registry HTTP 客户端的接收超时时间 (秒) 。必须大于 0 且小于 600 (10 分钟) 。                 | `1`     |
+| `output_format_avro_confluent_subject`           | 用于输出：schema 在 Schema Registry 中注册时使用的 subject 名称。写入时必填。                       |         |
+| `output_format_avro_string_column_pattern`       | 用于输出：将 String 列序列化为 Avro `string` 的正则表达式 (默认为 `bytes`) 。                      |         |
 
-## 示例 {#examples}
+<div id="examples">
+  ## 示例
+</div>
 
-### 从 Kafka 读取 {#reading-from-kafka}
+<div id="reading-from-kafka">
+  ### 从 Kafka 读取
+</div>
 
 要使用 [Kafka 表引擎](/zh/reference/engines/table-engines/integrations/kafka) 读取采用 Avro 编码的 Kafka topic，请使用 `format_avro_schema_registry_url` 设置指定 Schema Registry 的 URL。
 
@@ -67,7 +77,9 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 SELECT * FROM topic1_stream;
 ```
 
-### 写入 Kafka {#writing-to-kafka}
+<div id="writing-to-kafka">
+  ### 写入 Kafka
+</div>
 
 要将 AvroConfluent 消息写入 Kafka topic，需要同时设置 Schema Registry URL 和 subject 名称。首次写入时，schema 会自动注册到 registry。
 
@@ -88,7 +100,9 @@ output_format_avro_confluent_subject = 'topic1-value';
 INSERT INTO topic1_sink VALUES ('hello', 'world');
 ```
 
-#### 使用基本身份验证 {#using-basic-authentication}
+<div id="using-basic-authentication">
+  #### 使用基本身份验证
+</div>
 
 如果您的 Schema Registry 需要使用基本身份验证 (例如您使用的是 Confluent Cloud) ，可以在 `format_avro_schema_registry_url` 设置中提供经过 URL 编码的凭据。
 
@@ -107,7 +121,9 @@ kafka_format = 'AvroConfluent',
 format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
 ```
 
-## 故障排除 {#troubleshooting}
+<div id="troubleshooting">
+  ## 故障排除
+</div>
 
 要监控摄取进度并排查 Kafka 消费者错误，可以查询 [`system.kafka_consumers` 系统表](/zh/reference/system-tables/kafka_consumers)。如果你的部署包含多个副本 (例如 ClickHouse Cloud) ，则必须使用 [`clusterAllReplicas`](/zh/reference/functions/table-functions/cluster) 表函数。
 

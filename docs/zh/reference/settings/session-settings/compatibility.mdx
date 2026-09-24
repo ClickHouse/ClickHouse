@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## compatibility {#compatibility}
+<div id="compatibility">
+  ## compatibility
+</div>
 
-`compatibility` 设置会使 ClickHouse 使用先前某个 ClickHouse 版本的默认设置，但设置变更历史中记录的例外情况除外。
+`compatibility` 设置会使 ClickHouse 使用先前某个 ClickHouse 版本的默认设置，而该先前版本由此设置指定。
 
 如果某些设置已被设为非默认值，则会保留这些设置 (只有未被修改的设置才会受到 `compatibility` 设置的影响) 。
-
-在 [`system.settings_changes`](/zh/reference/system-tables/settings_changes) 中被标记为 `Ignore` 的变更会阻止该变更以及针对同一设置的所有更早变更的 rollback。
 
 该设置接受一个以字符串表示的 ClickHouse 版本号，例如 `22.3`、`22.8`。空值表示此设置已禁用。
 
@@ -30,7 +30,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
   不过，也可以通过标准的 ClickHouse 设置机制，在用户、角色、profile、查询或 会话 级别覆盖 `compatibility` 设置，例如在 会话 中使用 `SET compatibility = '22.3'`，或在查询中使用 `SETTINGS compatibility = '22.3'`。
 </Note>
 
-## compatibility_s3_presigned_url_query_in_path {#compatibility_s3_presigned_url_query_in_path}
+<div id="compatibility_s3_presigned_url_query_in_path">
+  ## compatibility_s3_presigned_url_query_in_path
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -13,13 +13,17 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## alter_move_to_space_execute_async {#alter_move_to_space_execute_async}
+<div id="alter_move_to_space_execute_async">
+  ## alter_move_to_space_execute_async
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 ALTER TABLE MOVE ... TO [DISK|VOLUME] を非同期で実行します
 
-## alter_partition_verbose_result {#alter_partition_verbose_result}
+<div id="alter_partition_verbose_result">
+  ## alter_partition_verbose_result
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -54,7 +58,9 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-## alter_sync {#alter_sync}
+<div id="alter_sync">
+  ## alter_sync
+</div>
 
 **別名**: `replication_alter_partitions_sync`
 
@@ -67,7 +73,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 * `0` — 待機しません。
 * `1` — 自身での実行完了を待機します。
 * `2` — すべてのレプリカでの実行完了を待機します。
-* `3` - アクティブなレプリカでの実行完了のみを待機します。非アクティブなレプリカは、アクティブになった時点で変更を適用します。
+* `3` - アクティブなレプリカでの実行完了のみを待機します。
 
 Cloud でのデフォルト値: `0`.
 
@@ -75,7 +81,9 @@ Cloud でのデフォルト値: `0`.
   `alter_sync` は `Replicated` テーブルおよび `SharedMergeTree` テーブルにのみ適用され、`Replicated` でも `Shared` でもないテーブルに対する alter には影響しません。
 </Note>
 
-## alter_update_mode {#alter_update_mode}
+<div id="alter_update_mode">
+  ## alter_update_mode
+</div>
 
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
 

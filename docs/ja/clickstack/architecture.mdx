@@ -12,7 +12,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 ClickStack のアーキテクチャは、デプロイ方法によって異なります。すべてのコンポーネントをセルフマネージドで運用する **ClickStack Open Source** と、ClickHouse と HyperDX UI が ClickHouse Cloud でホストおよび運用される **Managed ClickStack** では、アーキテクチャ上の重要な違いがあります。どちらのモデルでも中核コンポーネントは共通ですが、各コンポーネントのホスティング、スケーリング、セキュリティ確保に関する責任範囲は異なります。
 
 <div id="architecture-overview">
-  ## アーキテクチャの概要 {#architecture-overview}
+  ## アーキテクチャの概要
 </div>
 
 以下では、マネージド版とオープンソース版の ClickStack のアーキテクチャの概要を説明します。
@@ -25,7 +25,7 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="マネージド アーキテクチャ" size="lg" />
 
-    ### ClickHouse Cloud: エンジン {#clickhouse-cloud}
+    ### ClickHouse Cloud: エンジン
 
     Managed ClickStack の中核となるのが ClickHouse Cloud です。これは ClickHouse のサーバーレス版であり、大規模なリアルタイム分析向けに設計されたカラム指向データベースです。これにより、オブザーバビリティ データのインジェストとクエリが可能になり、次のことを実現できます。
 
@@ -41,13 +41,13 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     * ストレージとは独立したコンピュートの自動スケーリング
     * object storage をベースにした低コストかつ実質無制限の保持
-    * Warehouses による[読み取り workload と書き込み workload の個別分離](/ja/clickstack/managing/isolating-read-write)
+    * Warehouses による読み取り workload と書き込み workload の個別分離
     * 統合認証
     * 自動バックアップ
     * セキュリティおよびコンプライアンス機能
     * シームレスなアップグレード
 
-    ### OpenTelemetry collector: データ インジェスト {#open-telemetry-collector-managed}
+    ### OpenTelemetry collector: データ インジェスト
 
     ClickStack Managed には、オープンで標準化された方法でテレメトリーを取り込むため、事前設定済みの OpenTelemetry (OTel) collector が含まれています。データは OTLP プロトコルを使用して次の方法で送信できます。
 
@@ -58,7 +58,7 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     **このアーキテクチャ コンポーネントはユーザーが管理します**
 
-    ### ClickStack UI (HyperDX) : インターフェイス {#hyperdx}
+    ### ClickStack UI (HyperDX) : インターフェイス
 
     ClickStack UI (HyperDX) は ClickStack のユーザー インターフェイスです。次の機能を提供します。
 
@@ -79,7 +79,7 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     <Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="アーキテクチャ" size="lg" />
 
-    ### ClickHouse: データベースエンジン {#clickhouse}
+    ### ClickHouse: データベースエンジン
 
     ClickStack の中核にあるのは、大規模なリアルタイム分析向けに設計されたカラム指向データベース、ClickHouse です。ClickHouse はオブザーバビリティデータのインジェストとクエリを支え、次のことを可能にします。
 
@@ -91,7 +91,7 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     ClickHouse はオブザーバビリティデータを wide イベントとして扱うため、単一の統合構造内でログ、メトリクス、トレースをまたいだ詳細な相関分析が可能です。
 
-    ### OpenTelemetry collector: データのインジェスト {#open-telemetry-collector}
+    ### OpenTelemetry collector: データのインジェスト
 
     ClickStack には、オープンで標準化された方法でテレメトリーを取り込むために、事前設定済みの OpenTelemetry (OTel) collector が含まれています。次の方法で OTLP プロトコルを使用してデータを送信できます。
 
@@ -100,7 +100,7 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     collector はテレメトリーを効率的なバッチ単位で ClickHouse にエクスポートします。データソースごとに最適化されたテーブルスキーマをサポートしており、あらゆるシグナルタイプでスケーラブルなパフォーマンスを確保します。
 
-    ### ClickStack UI (HyperDX): インターフェイス {#hyperdx-ui}
+    ### ClickStack UI (HyperDX): インターフェイス
 
     ClickStack UI (HyperDX) は ClickStack のユーザーインターフェイスです。次の機能を提供します。
 
@@ -113,7 +113,7 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     ClickHouse 向けに特化して設計された HyperDX は、強力な検索機能と直感的なワークフローを組み合わせることで、異常の発見、問題の調査、インサイトの迅速な取得を可能にします。
 
-    ### MongoDB: アプリケーション状態 {#mongo}
+    ### MongoDB: アプリケーション状態
 
     ClickStack は MongoDB を使用して、次のようなアプリケーションレベルの状態を保存します。
 

@@ -22,16 +22,18 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 PostgreSQL テーブルの初期データダンプを基に ClickHouse テーブルを作成し、レプリケーションプロセスを開始します。つまり、リモート PostgreSQL データベース内の PostgreSQL テーブルで新しい変更が発生すると、それを適用するバックグラウンドジョブを実行します。
 
 <Note>
-  このテーブルエンジンは実験的機能です。使用するには、設定ファイルで `enable_materialized_postgresql_table` を 1 に設定するか、`SET` コマンドを使用してください。
+  このテーブルエンジンは実験的機能です。使用するには、設定ファイルで `allow_experimental_materialized_postgresql_table` を 1 に設定するか、`SET` コマンドを使用してください。
 
   ```sql
-  SET enable_materialized_postgresql_table=1
+  SET allow_experimental_materialized_postgresql_table=1
   ```
 </Note>
 
 複数のテーブルが必要な場合は、テーブルエンジンではなく [MaterializedPostgreSQL](/ja/reference/engines/database-engines/materialized-postgresql) データベースエンジンを使用し、レプリケートするテーブルを指定する `materialized_postgresql_tables_list` 設定を使用することを強く推奨します (今後はデータベース `schema` の追加も可能になる予定です) 。その方が、CPU 使用量、接続数、リモート PostgreSQL データベース内のレプリケーションスロット数の面で大幅に効率的です。
 
-## テーブルの作成 {#creating-a-table}
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
 
 ```sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
@@ -47,7 +49,9 @@ PRIMARY KEY key;
 * `user` — PostgreSQLユーザー。
 * `password` — ユーザーのパスワード。
 
-## TLS/SSL {#tls-ssl}
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
 
 TLS/SSL パラメータは `libpq` に渡され、[named collection](/ja/concepts/features/configuration/server-config/named-collections) を通じて、またはエンジンの末尾にキー・バリュー引数として指定できます。指定できるのは `sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`。未設定の場合は `libpq` のデフォルトである `prefer` が適用されます) と、2 種類の形式で指定できる証明書および秘密鍵です。`sslrootcert` (CA 証明書) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルのファイルへのパスであり、サーバー設定ファイルで定義された named collection からのみ受け付けられます。一方、`sslrootcert_pem`、`sslcert_pem`、`sslkey_pem` には対応するファイルの内容をリテラルとして指定でき、SQL からも指定できます。また、パスワードと同様にログおよび `SHOW` クエリではマスクされます。
 
@@ -62,7 +66,9 @@ PRIMARY KEY key;
 
 TLS/SSL パラメータは PostgreSQL の接続パラメータに含まれ、テーブルの作成時に固定されます。
 
-## 要件 {#requirements}
+<div id="requirements">
+  ## 要件
+</div>
 
 1. PostgreSQL の設定ファイルで、[wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) の値を `logical` に設定し、`max_replication_slots` パラメータの値を少なくとも `2` に設定する必要があります。
 
@@ -72,7 +78,9 @@ TLS/SSL パラメータは PostgreSQL の接続パラメータに含まれ、テ
 
 4. `MaterializedPostgreSQL` テーブルエンジンは、実装上 PostgreSQL の [pg&#95;replication&#95;slot&#95;advance](https://pgpedia.info/p/pg_replication_slot_advance.html) 関数を必要とするため、PostgreSQL バージョン 11 以上でのみ動作します。
 
-## 仮想カラム {#virtual-columns}
+<div id="virtual-columns">
+  ## 仮想カラム
+</div>
 
 * `_version` — トランザクションカウンター。Type: [UInt64](/ja/reference/data-types/int-uint)。
 

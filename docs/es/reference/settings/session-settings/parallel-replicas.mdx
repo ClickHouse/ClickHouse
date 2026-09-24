@@ -15,7 +15,9 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## parallel_replicas_allow_in_with_subquery {#parallel_replicas_allow_in_with_subquery}
+<div id="parallel_replicas_allow_in_with_subquery">
+  ## parallel_replicas_allow_in_with_subquery
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,7 +25,9 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 Si es true, la subconsulta de IN se ejecutará en cada réplica seguidora.
 
-## parallel_replicas_allow_materialized_views {#parallel_replicas_allow_materialized_views}
+<div id="parallel_replicas_allow_materialized_views">
+  ## parallel_replicas_allow_materialized_views
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -31,17 +35,9 @@ Si es true, la subconsulta de IN se ejecutará en cada réplica seguidora.
 
 Permite usar vistas materializadas con réplicas paralelas
 
-## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración que permite leer de una tabla `Merge` con réplicas paralelas basadas en el plan, expandiendo la lectura de `Merge` en una unión de las lecturas de las tablas `MergeTree` subyacentes. Solo tiene efecto junto con `parallel_replicas_plan_based`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva configuración que permite leer de una tabla `Merge` con réplicas paralelas basadas en el plan, expandiendo la lectura de `Merge` en una unión de las lecturas de las tablas `MergeTree` subyacentes. Solo tiene efecto junto con `parallel_replicas_plan_based`."}]}]} />
-
-Permite leer de una tabla `Merge` con réplicas paralelas. Solo es efectivo junto con [parallel&#95;replicas&#95;plan&#95;based](/es/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based): la lectura de la tabla `Merge` se expande en una unión de las lecturas de las tablas `MergeTree` subyacentes, que luego se distribuye como cualquier otra unión. Una tabla `Merge` se asigna a una sola réplica cuando no se puede leer de este modo alguna de sus tablas subyacentes (una tabla que no es `MergeTree` o una lectura `FINAL`). Establézcalo en `false` para leer cada tabla `Merge` en una sola réplica, como antes de que se añadiera esta compatibilidad. Experimental.
-
-## parallel_replicas_allow_view_over_mergetree {#parallel_replicas_allow_view_over_mergetree}
+<div id="parallel_replicas_allow_view_over_mergetree">
+  ## parallel_replicas_allow_view_over_mergetree
+</div>
 
 <BetaBadge />
 
@@ -51,15 +47,19 @@ Permite leer de una tabla `Merge` con réplicas paralelas. Solo es efectivo junt
 
 Permite que las réplicas paralelas ejecuten la consulta externa de una vista simple sobre tablas `MergeTree` (en lugar de la consulta interna de la vista), lo que mejora la paralelización entre nodos. También se aplica a las vistas `UNION ALL` cuyas ramas leen todas de tablas `MergeTree` diferentes.
 
-## parallel_replicas_connect_timeout_ms {#parallel_replicas_connect_timeout_ms}
+<div id="parallel_replicas_connect_timeout_ms">
+  ## parallel_replicas_connect_timeout_ms
+</div>
 
 <SettingsInfoBlock type="Milliseconds" default_value="300" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "300"},{"label": "Tiempo de espera de conexión específico para consultas con réplicas paralelas"}]}]} />
 
-Tiempo de espera, en milisegundos, para conectarse a una réplica remota durante la ejecución de consultas con réplicas paralelas. Si se agota el tiempo de espera, la réplica correspondiente no se utiliza para la ejecución de la consulta
+Tiempo de espera, en milisegundos, para conectarse a una réplica remota durante la ejecución de consultas con réplicas paralelas. Si se agota el tiempo de espera, la réplica correspondiente no se utiliza para la ejecuc
 
-## parallel_replicas_count {#parallel_replicas_count}
+<div id="parallel_replicas_count">
+  ## parallel_replicas_count
+</div>
 
 <BetaBadge />
 
@@ -67,7 +67,9 @@ Tiempo de espera, en milisegundos, para conectarse a una réplica remota durante
 
 Se trata de una configuración interna que no debe usarse directamente y representa un detalle de implementación del modo de &#39;parallel replicas&#39;. El servidor iniciador la establecerá automáticamente, en las consultas distribuidas, con el número de réplicas paralelas que participan en el procesamiento de la consulta.
 
-## parallel_replicas_custom_key {#parallel_replicas_custom_key}
+<div id="parallel_replicas_custom_key">
+  ## parallel_replicas_custom_key
+</div>
 
 <BetaBadge />
 
@@ -79,9 +81,9 @@ Se prefieren las expresiones simples que usan claves primarias.
 Si la configuración se usa en un clúster que consta de un solo segmento con varias réplicas, esas réplicas se convertirán en segmentos virtuales.
 De lo contrario, se comportará igual que con la clave `SAMPLE`: usará varias réplicas de cada segmento.
 
-La expresión se comprueba con respecto a los permisos `SELECT` de nivel de columna del usuario. En el caso de una vista con `SQL SECURITY DEFINER` o `NONE`, se aplica a las columnas de la vista; el cuerpo de la vista se lee sin ella.
-
-## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
+<div id="parallel_replicas_custom_key_range_lower">
+  ## parallel_replicas_custom_key_range_lower
+</div>
 
 <BetaBadge />
 
@@ -95,7 +97,9 @@ Cuando se usa junto con [parallel&#95;replicas&#95;custom&#95;key&#95;range&#95;
 
 Nota: Esta configuración no hará que se filtren datos adicionales durante el procesamiento de consultas; más bien, cambia los puntos en los que el filtro de rango divide el intervalo `[0, INT_MAX]` para el procesamiento en paralelo.
 
-## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
+<div id="parallel_replicas_custom_key_range_upper">
+  ## parallel_replicas_custom_key_range_upper
+</div>
 
 <BetaBadge />
 
@@ -109,7 +113,9 @@ Cuando se usa junto con [parallel&#95;replicas&#95;custom&#95;key&#95;range&#95;
 
 Nota: esta configuración no hará que se filtren datos adicionales durante el procesamiento de consultas; más bien, cambia los puntos en los que el filtro de rango divide el intervalo `[0, INT_MAX]` para el procesamiento paralelo
 
-## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
+<div id="parallel_replicas_filter_pushdown">
+  ## parallel_replicas_filter_pushdown
+</div>
 
 <BetaBadge />
 
@@ -119,7 +125,9 @@ Nota: esta configuración no hará que se filtren datos adicionales durante el p
 
 Permite trasladar los filtros a la parte de la consulta que ejecutan las réplicas paralelas
 
-## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
+<div id="parallel_replicas_for_cluster_engines">
+  ## parallel_replicas_for_cluster_engines
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -127,21 +135,27 @@ Permite trasladar los filtros a la parte de la consulta que ejecutan las réplic
 
 Sustituye los motores de las funciones de tabla por sus alternativas -Cluster
 
-## parallel_replicas_for_non_replicated_merge_tree {#parallel_replicas_for_non_replicated_merge_tree}
+<div id="parallel_replicas_for_non_replicated_merge_tree">
+  ## parallel_replicas_for_non_replicated_merge_tree
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Si es true, ClickHouse también usará el algoritmo de réplicas paralelas en las tablas MergeTree no replicadas
 
-## parallel_replicas_index_analysis_only_on_coordinator {#parallel_replicas_index_analysis_only_on_coordinator}
+<div id="parallel_replicas_index_analysis_only_on_coordinator">
+  ## parallel_replicas_index_analysis_only_on_coordinator
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "El análisis de índices se realiza solo en el coordinador de réplicas y se omite en las demás réplicas. Solo surte efecto cuando parallel_replicas_local_plan está habilitado"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "El análisis de índices se realiza solo en el coordinador de réplicas y se omite en las demás réplicas. Solo surte efecto cuando parallel_replicas_local_plan está habilitado"}]}]} />
 
-El análisis de índices se realiza solo en el coordinador de réplicas y se omite en las demás réplicas. Solo surte efecto cuando parallel&#95;replicas&#95;local&#95;plan está habilitado
+El análisis de índices se realiza solo en el coordinador de réplicas y se omite en las demás réplicas. Solo surte efecto cuando parallel&#95;replicas&#95;local&#95;pla
 
-## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
+<div id="parallel_replicas_insert_select_local_pipeline">
+  ## parallel_replicas_insert_select_local_pipeline
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -149,7 +163,9 @@ El análisis de índices se realiza solo en el coordinador de réplicas y se omi
 
 Usa la canalización local durante INSERT SELECT distribuido con réplicas paralelas
 
-## parallel_replicas_local_plan {#parallel_replicas_local_plan}
+<div id="parallel_replicas_local_plan">
+  ## parallel_replicas_local_plan
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -157,7 +173,9 @@ Usa la canalización local durante INSERT SELECT distribuido con réplicas paral
 
 Generar el plan local para la réplica local
 
-## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
+<div id="parallel_replicas_mark_segment_size">
+  ## parallel_replicas_mark_segment_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -165,13 +183,17 @@ Generar el plan local para la réplica local
 
 Las partes se dividen virtualmente en segmentos para distribuirlas entre réplicas para la lectura paralela. Esta configuración controla el tamaño de estos segmentos. No se recomienda cambiarla hasta que estés completamente seguro de lo que haces. El valor debe estar en el rango [128; 16384]
 
-## parallel_replicas_min_number_of_rows_per_replica {#parallel_replicas_min_number_of_rows_per_replica}
+<div id="parallel_replicas_min_number_of_rows_per_replica">
+  ## parallel_replicas_min_number_of_rows_per_replica
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limita el número de réplicas usadas en una consulta a (filas estimadas por leer / min&#95;number&#95;of&#95;rows&#95;per&#95;replica). El máximo sigue estando limitado por &#39;max&#95;parallel&#95;replicas&#39;
 
-## parallel_replicas_mode {#parallel_replicas_mode}
+<div id="parallel_replicas_mode">
+  ## parallel_replicas_mode
+</div>
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />
 
@@ -179,7 +201,19 @@ Limita el número de réplicas usadas en una consulta a (filas estimadas por lee
 
 Tipo de filtro que se utiliza con la clave personalizada para las réplicas paralelas. default - usa la operación de módulo sobre la clave personalizada, range - usa un filtro de rango sobre la clave personalizada utilizando todos los valores posibles del tipo de valor de la clave personalizada.
 
-## parallel_replicas_plan_based {#parallel_replicas_plan_based}
+<div id="parallel_replicas_only_with_analyzer">
+  ## parallel_replicas_only_with_analyzer
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Las réplicas paralelas solo se admiten con el analizador habilitado"}]}]} />
+
+El analizador debe estar habilitado para usar réplicas paralelas. Si el analizador está deshabilitado, la ejecución de la consulta vuelve a la ejecución local, incluso si la lectura en paralelo desde réplicas está habilitada. No se admite usar réplicas paralelas sin el analizador habilitado
+
+<div id="parallel_replicas_plan_based">
+  ## parallel_replicas_plan_based
+</div>
 
 <ExperimentalBadge />
 
@@ -189,15 +223,19 @@ Tipo de filtro que se utiliza con la clave personalizada para las réplicas para
 
 Decide si se utilizan réplicas paralelas y dónde, mediante el análisis del plan de consulta en lugar del análisis basado en el árbol de consultas. Como resultado, se envía un fragmento del plan a las réplicas remotas en lugar de una consulta SQL. Experimental.
 
-## parallel_replicas_prefer_local_join {#parallel_replicas_prefer_local_join}
+<div id="parallel_replicas_prefer_local_join">
+  ## parallel_replicas_prefer_local_join
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Si es true, y JOIN puede ejecutarse con el algoritmo de réplicas paralelas, y todos los motores de almacenamiento de la parte derecha del JOIN son *MergeTree, se usará JOIN local en lugar de GLOBAL JOIN."}]}]} />
 
-Si es true, y `JOIN` puede ejecutarse con el algoritmo de réplicas paralelas, y cada motor de almacenamiento de la parte del `JOIN` que de otro modo se materializaría en una tabla temporal puede ser leído por cada réplica por su cuenta, se usará `JOIN` local en lugar de `GLOBAL JOIN`. Esa parte es la derecha, salvo en un `RIGHT JOIN`, donde es la izquierda y donde cada motor de almacenamiento debe ser apto para réplicas paralelas y no simplemente `*MergeTree`. Un motor de almacenamiento situado bajo el lado materializado de un `GLOBAL JOIN` anidado, o bajo un `GLOBAL IN`, no cuenta, porque el iniciador los materializa por su cuenta.
+Si es true, y JOIN puede ejecutarse con el algoritmo de réplicas paralelas, y todos los motores de almacenamiento de la parte derecha del JOIN son *MergeTree, se usará JOIN local en lugar de GLOBAL JOIN.
 
-## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
+<div id="parallel_replicas_prefer_local_replica">
+  ## parallel_replicas_prefer_local_replica
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -207,7 +245,9 @@ Cuando está habilitada (de forma predeterminada), la réplica local siempre se 
 Cuando está deshabilitada, no se da preferencia a la réplica local y las réplicas se seleccionan únicamente mediante el algoritmo de balanceo de carga.
 Esto permite que las consultas con `max_parallel_replicas = 1` se dirijan a otro nodo, lo que puede mejorar la localidad de la caché cuando muchas consultas cortas se distribuyen en un clúster.
 
-## parallel_replicas_support_projection {#parallel_replicas_support_projection}
+<div id="parallel_replicas_support_projection">
+  ## parallel_replicas_support_projection
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

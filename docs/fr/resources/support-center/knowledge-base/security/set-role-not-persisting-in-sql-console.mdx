@@ -10,13 +10,15 @@ tags: ['Sécurité et authentification', 'Gestion du Cloud', 'Résolution des pr
 keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'Contrôle d’accès']
 ---
 
-Lorsque vous exécutez `SET ROLE` dans la SQL Console de ClickHouse Cloud, le rôle peut sembler changer pour une requête, puis revenir à son état précédent lors de la requête suivante. Utilisez un rôle SQL Console propre à l’utilisateur lorsque les autorisations doivent persister d’une requête et d’une session à l’autre.
+Lorsque vous exécutez `SET ROLE` dans la SQL Console de ClickHouse Cloud, le rôle peut sembler changer pour une requête, puis revenir à son état précédent lors de la requête suivante. Utilisez un rôle SQL Console propre à chaque utilisateur lorsque les autorisations doivent persister d’une requête et d’une session à l’autre.
 
 <Tip>
-  Préférez les [rôles de base de données gérés par le Cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) pour gérer l’accès à la base de données depuis la console. Les rôles `sql-console-role:<email>` ne sont pas compatibles avec les sessions JWT dans la SQL Console.
+  Préférez les [rôles de base de données gérés par le Cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (bêta) pour gérer l’accès à la base de données depuis la console. Les rôles `sql-console-role:<email>` ne sont pas compatibles avec [l’authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
 </Tip>
 
-## Symptômes {#symptoms}
+<div id="symptoms">
+  ## Symptômes
+</div>
 
 Vous pouvez observer un ou plusieurs des symptômes suivants :
 
@@ -35,7 +37,9 @@ SELECT
     defaultRoles();
 ```
 
-## Pourquoi ce comportement se produit {#why-this-happens}
+<div id="why-this-happens">
+  ## Pourquoi ce comportement se produit
+</div>
 
 La SQL Console envoie des requêtes via des connexions HTTP sans état vers un service ClickHouse Cloud comportant plusieurs réplicas. Rien ne garantit que des requêtes consécutives utilisent la même connexion ou le même réplica.
 
@@ -43,7 +47,9 @@ La SQL Console envoie des requêtes via des connexions HTTP sans état vers un s
 
 Pour cette raison, n&#39;utilisez pas `SET ROLE` comme mécanisme persistant de contrôle d&#39;accès dans la SQL Console.
 
-## Fonctionnement des rôles utilisateur de SQL Console {#how-sql-console-user-roles-work}
+<div id="how-sql-console-user-roles-work">
+  ## Fonctionnement des rôles utilisateur de SQL Console
+</div>
 
 Lorsqu’un utilisateur ouvre la SQL Console, ClickHouse Cloud crée un utilisateur de base de données selon la convention de nommage suivante :
 
@@ -65,7 +71,9 @@ Lorsqu’il existe, ClickHouse Cloud affecte ce rôle à l’utilisateur SQL Con
 | `sql_console_admin` et `sql_console_read_only` | Rôles SQL Console intégrés                                                                   | Oui, géré par ClickHouse Cloud                |
 | `sql-console-role:<email>`                     | Rôle personnalisé créé pour un utilisateur par un administrateur                             | Oui, appliqué à la connexion de l’utilisateur |
 
-## Configurer des autorisations persistantes {#configure-persistent-permissions}
+<div id="configure-persistent-permissions">
+  ## Configurer des autorisations persistantes
+</div>
 
 Exécutez les instructions suivantes avec un utilisateur disposant de privilèges administratifs sur le service, tel qu’un utilisateur SQL Console ayant le rôle `sql_console_admin` ou tout autre utilisateur disposant du privilège `ACCESS MANAGEMENT`.
 
@@ -127,7 +135,9 @@ Exécutez les instructions suivantes avec un utilisateur disposant de privilège
   </Step>
 </Steps>
 
-## Évitez de modifier les rôles gérés {#avoid-modifying-managed-roles}
+<div id="avoid-modifying-managed-roles">
+  ## Évitez de modifier les rôles gérés
+</div>
 
 Ne modifiez pas `sql_console_admin` ni `sql_console_read_only` afin d’accorder des autorisations personnalisées. ClickHouse Cloud gère ces rôles intégrés. Utilisez plutôt `sql-console-role:<email>` pour définir des autorisations par utilisateur.
 

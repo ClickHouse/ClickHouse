@@ -10,13 +10,15 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHistory.jsx";
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## ai_function_allow_insecure_endpoint {#ai_function_allow_insecure_endpoint}
+<div id="ai_function_allow_insecure_endpoint">
+  ## ai_function_allow_insecure_endpoint
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,17 +26,21 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Si la valeur est false (valeur par défaut), les fonctions d’IA refusent d’utiliser un `endpoint` d’une collection nommée qui enverrait des prompts et des clés API via une connexion non chiffrée vers un hôte distant : tout endpoint non HTTPS dont l’hôte n’est pas une adresse de bouclage est rejeté avec une exception. Les endpoints de bouclage (par exemple, un serveur de modèle local `http://localhost`) sont toujours autorisés. Définissez cette valeur sur true pour autoriser les endpoints `http://` en clair sur des hôtes distants.
 
-## ai_function_embedding_default_credentials {#ai_function_embedding_default_credentials}
+<div id="ai_function_embedding_default_credentials">
+  ## ai_function_embedding_default_credentials
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre"}]}]} />
 
 Nom de la collection nommée utilisée par les fonctions d’embedding (`aiEmbed`, `aiSimilarity`) lorsque l’appel ne fournit pas `credentials` dans son mappage de paramètres. Une valeur vide signifie qu’il n’existe aucune valeur par défaut : ces appels doivent donc fournir `credentials` explicitement. Ces fonctions prennent `model` comme argument positionnel obligatoire, et non depuis la collection nommée. Ce paramètre est distinct de `ai_function_text_default_credentials`, car un endpoint d’embeddings diffère d’un endpoint de chat.
 
-## ai_function_embedding_max_batch_size {#ai_function_embedding_max_batch_size}
+<div id="ai_function_embedding_max_batch_size">
+  ## ai_function_embedding_max_batch_size
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -42,9 +48,11 @@ Nom de la collection nommée utilisée par les fonctions d’embedding (`aiEmbed
 
 Nombre maximal de textes pouvant être inclus dans une seule requête HTTP envoyée par les fonctions d’embedding (`aiEmbed`, `aiSimilarity`). Les textes sont regroupés en lots de cette taille afin de réduire la surcharge liée aux appels d’API. Par exemple, 500 textes uniques avec une taille de lot de 100 entraînent 5 requêtes HTTP.
 
-## ai_function_max_api_calls_per_query {#ai_function_max_api_calls_per_query}
+<div id="ai_function_max_api_calls_per_query">
+  ## ai_function_max_api_calls_per_query
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -52,9 +60,11 @@ Nombre maximal de textes pouvant être inclus dans une seule requête HTTP envoy
 
 Nombre maximal de requêtes HTTP que les fonctions d’IA peuvent émettre au cours d’une requête. Cette limite est appliquée indépendamment par chaque serveur et fragment de requête : dans un même contexte d’exécution, elle constitue un plafond strict partagé par toutes les fonctions d’IA, tous les blocs et tous les threads concernés. Toutefois, une requête distribuée (sur plusieurs segments ou fragments de répliques parallèles) peut émettre jusqu’à ce nombre de requêtes par segment ou fragment. Elle doit être définie dans la requête de niveau supérieur ; une surcharge `SETTINGS` dans une sous-requête est ignorée. Définissez cette valeur sur 0 pour désactiver.
 
-## ai_function_max_input_tokens_per_query {#ai_function_max_input_tokens_per_query}
+<div id="ai_function_max_input_tokens_per_query">
+  ## ai_function_max_input_tokens_per_query
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -64,9 +74,11 @@ Nombre total maximal de tokens d’entrée (`prompt`) sur l’ensemble des appel
 
 Cette limite n’est appliquée qu’aux fournisseurs qui renvoient un objet `usage` dans leur réponse (OpenAI, Anthropic, vLLM). Les fournisseurs qui n’indiquent pas l’usage des tokens (notamment HuggingFace TEI) laissent le compteur à 0 — utilisez plutôt `ai_function_max_api_calls_per_query` pour plafonner ces appels.
 
-## ai_function_max_output_tokens_per_query {#ai_function_max_output_tokens_per_query}
+<div id="ai_function_max_output_tokens_per_query">
+  ## ai_function_max_output_tokens_per_query
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="500000" />
 
@@ -76,19 +88,23 @@ Nombre total maximal de tokens de sortie (complétion) pour l’ensemble des app
 
 Cette limite n’est appliquée qu’aux fournisseurs qui renvoient un objet `usage` dans leur réponse (OpenAI, Anthropic, vLLM). Elle ne s’applique pas aux fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui ne produisent jamais de tokens de sortie.
 
-## ai_function_max_retries {#ai_function_max_retries}
+<div id="ai_function_max_retries">
+  ## ai_function_max_retries
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Réessayer par défaut une fois une erreur d’API transitoire, afin qu’un seul code 429 ou 5xx du fournisseur n’entraîne pas l’échec de la requête."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
 Nombre maximal de tentatives en cas d&#39;erreurs transitoires pour chaque requête d’API. Chaque tentative utilise un backoff exponentiel à partir de `ai_function_retry_initial_delay_ms`.
 
-## ai_function_request_timeout_sec {#ai_function_request_timeout_sec}
+<div id="ai_function_request_timeout_sec">
+  ## ai_function_request_timeout_sec
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
@@ -96,9 +112,11 @@ Nombre maximal de tentatives en cas d&#39;erreurs transitoires pour chaque requ�
 
 Délai d’expiration, en secondes, pour chaque requête HTTP effectuée par les fonctions d’IA (complétions de chat AI Chat et appels à l’API d’embedding). Si une requête ne se termine pas dans ce délai, elle est considérée comme échouée et peut être retentée conformément à `ai_function_max_retries`.
 
-## ai_function_retry_initial_delay_ms {#ai_function_retry_initial_delay_ms}
+<div id="ai_function_retry_initial_delay_ms">
+  ## ai_function_retry_initial_delay_ms
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -106,17 +124,21 @@ Délai d’expiration, en secondes, pour chaque requête HTTP effectuée par les
 
 Délai initial, en millisecondes, avant la première nouvelle tentative d’une requête d’API de fonction d’IA ayant échoué. Le délai est doublé à chaque tentative suivante (backoff exponentiel). Par exemple, avec les paramètres par défaut : 1000ms, 2000ms, 4000ms.
 
-## ai_function_text_default_credentials {#ai_function_text_default_credentials}
+<div id="ai_function_text_default_credentials">
+  ## ai_function_text_default_credentials
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre"}]}]} />
 
 Nom de la collection nommée utilisée par les fonctions d’IA de texte (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) lorsque l&#39;appel ne transmet pas `credentials` dans son mappage de paramètres. Une valeur vide signifie qu&#39;il n&#39;y a pas de valeur par défaut : ces appels doivent donc transmettre `credentials` explicitement. Un endpoint de chat-completions étant différent d&#39;un endpoint d&#39;embeddings, ce paramètre est distinct de `ai_function_embedding_default_credentials`.
 
-## ai_function_throw_on_error {#ai_function_throw_on_error}
+<div id="ai_function_throw_on_error">
+  ## ai_function_throw_on_error
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -124,9 +146,11 @@ Nom de la collection nommée utilisée par les fonctions d’IA de texte (`aiGen
 
 Si true (par défaut), un appel à une fonction d’IA qui échoue de façon définitive après épuisement de toutes les tentatives interrompt la requête en générant une exception. Si false, la ligne en échec reçoit la valeur par défaut du type de colonne (chaîne vide pour String) et le traitement se poursuit.
 
-## ai_function_throw_on_quota_exceeded {#ai_function_throw_on_quota_exceeded}
+<div id="ai_function_throw_on_quota_exceeded">
+  ## ai_function_throw_on_quota_exceeded
+</div>
 
-<BetaBadge />
+<ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-## s3_base {#s3_base}
+<div id="s3_base">
+  ## s3_base
+</div>
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "s3 테이블 함수 및 S3 테이블 엔진에서 상대 URL을 해석할 기준 URL을 지정하는 새로운 설정입니다."}]}]} />
 
@@ -25,13 +27,17 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 기준 URL에는 `s3` 테이블 함수가 허용하는 모든 형식을 사용할 수 있습니다. 예: `s3://bucket/`, `https://bucket.s3.amazonaws.com/` 또는 `https://endpoint/bucket/`.
 
-## s3_check_objects_after_upload {#s3_check_objects_after_upload}
+<div id="s3_check_objects_after_upload">
+  ## s3_check_objects_after_upload
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 업로드 성공 여부를 확인하기 위해 S3에 업로드된 각 객체에 대해 HEAD 요청을 수행합니다
 
-## s3_connect_timeout_ms {#s3_connect_timeout_ms}
+<div id="s3_connect_timeout_ms">
+  ## s3_connect_timeout_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -39,7 +45,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 S3 디스크의 호스트에 대한 연결 타임아웃입니다.
 
-## s3_create_new_file_on_insert {#s3_create_new_file_on_insert}
+<div id="s3_create_new_file_on_insert">
+  ## s3_create_new_file_on_insert
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -54,7 +62,17 @@ initial: `data.Parquet.gz` -&gt; `data.1.Parquet.gz` -&gt; `data.2.Parquet.gz` �
 
 자세한 내용은 [여기](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)를 참조하십시오.
 
-## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
+<div id="s3_disable_checksum">
+  ## s3_disable_checksum
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+파일을 S3로 전송할 때 체크섬을 계산하지 않습니다. 이렇게 하면 파일에 대해 불필요하게 많은 처리 패스를 거치지 않아 쓰기 속도가 빨라집니다. 일반적으로는 안전합니다. 어차피 MergeTree 테이블의 데이터는 ClickHouse가 체크섬으로 검증하며, HTTPS를 통해 S3에 접근하는 경우 네트워크 전송 중 무결성은 이미 TLS 계층에서 보장됩니다. 다만 S3에서 추가 체크섬을 사용하면 심층 방어 효과를 얻을 수 있습니다.
+
+<div id="s3_ignore_file_doesnt_exist">
+  ## s3_ignore_file_doesnt_exist
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -67,19 +85,25 @@ initial: `data.Parquet.gz` -&gt; `data.1.Parquet.gz` -&gt; `data.2.Parquet.gz` �
 * 1 — `SELECT`는 빈 결과를 반환합니다.
 * 0 — `SELECT`는 예외를 발생시킵니다.
 
-## s3_list_object_keys_size {#s3_list_object_keys_size}
+<div id="s3_list_object_keys_size">
+  ## s3_list_object_keys_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 ListObject 요청으로 한 번에 반환할 수 있는 최대 파일 수
 
-## s3_min_upload_part_size {#s3_min_upload_part_size}
+<div id="s3_min_upload_part_size">
+  ## s3_min_upload_part_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
 S3에 멀티파트 업로드를 수행할 때 업로드할 파트의 최소 크기입니다.
 
-## s3_path_filter_limit {#s3_path_filter_limit}
+<div id="s3_path_filter_limit">
+  ## s3_path_filter_limit
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -88,13 +112,17 @@ S3에 멀티파트 업로드를 수행할 때 업로드할 파트의 최소 크�
 글롭 목록 조회 대신 파일 반복 처리에 사용하기 위해 쿼리 필터에서 추출할 수 있는 `_path` 값의 최대 개수입니다.
 0은 비활성화를 의미합니다.
 
-## s3_request_timeout_ms {#s3_request_timeout_ms}
+<div id="s3_request_timeout_ms">
+  ## s3_request_timeout_ms
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
 S3로 데이터를 송수신할 때의 유휴 상태 타임아웃입니다. 단일 TCP read 또는 write 호출이 이 시간 동안 블로킹되면 실패합니다.
 
-## s3_skip_empty_files {#s3_skip_empty_files}
+<div id="s3_skip_empty_files">
+  ## s3_skip_empty_files
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -107,7 +135,9 @@ S3로 데이터를 송수신할 때의 유휴 상태 타임아웃입니다. 단�
 * 0 — 빈 파일이 요청한 포맷과 호환되지 않으면 `SELECT`가 예외를 발생시킵니다.
 * 1 — 빈 파일에 대해 `SELECT`는 빈 결과를 반환합니다.
 
-## s3_slow_all_threads_after_network_error {#s3_slow_all_threads_after_network_error}
+<div id="s3_slow_all_threads_after_network_error">
+  ## s3_slow_all_threads_after_network_error
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -118,19 +148,25 @@ socket timeout과 같은 재시도 가능한 네트워크 오류가 발생한 �
 해당 엔드포인트로 S3 요청을 수행하는 모든 스레드의 처리가 느려집니다.
 `false`로 설정하면 각 스레드는 다른 스레드와 관계없이 S3 요청의 백오프를 개별적으로 처리합니다.
 
-## s3_strict_upload_part_size {#s3_strict_upload_part_size}
+<div id="s3_strict_upload_part_size">
+  ## s3_strict_upload_part_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 S3에 멀티파트 업로드를 수행할 때 업로드할 파트의 정확한 크기입니다(일부 구현은 가변 크기의 파트를 지원하지 않습니다).
 
-## s3_throw_on_zero_files_match {#s3_throw_on_zero_files_match}
+<div id="s3_throw_on_zero_files_match">
+  ## s3_throw_on_zero_files_match
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 ListObjects 요청으로 일치하는 파일을 하나도 찾지 못하면 오류를 발생시킵니다
 
-## s3_truncate_on_insert {#s3_truncate_on_insert}
+<div id="s3_truncate_on_insert">
+  ## s3_truncate_on_insert
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -143,7 +179,9 @@ S3 엔진 테이블에서 삽입 전에 truncate를 수행할지 설정합니다
 
 자세한 내용은 [여기](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)를 참조하십시오.
 
-## s3_uri_style {#s3_uri_style}
+<div id="s3_uri_style">
+  ## s3_uri_style
+</div>
 
 <SettingsInfoBlock type="S3UriStyle" default_value="auto" />
 
@@ -151,7 +189,9 @@ S3 엔진 테이블에서 삽입 전에 truncate를 수행할지 설정합니다
 
 S3 endpoint 스타일을 강제로 지정합니다. 가능한 값: auto, virtual&#95;hosted, path.
 
-## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts}
+<div id="s3_use_adaptive_timeouts">
+  ## s3_use_adaptive_timeouts
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -53,7 +53,7 @@ Los atributos se describen en el cuerpo de la consulta:
 * `AttrName AttrType` — Columna de datos. Puede haber múltiples atributos.
 
 <div id="key">
-  ## Clave {#key}
+  ## Clave
 </div>
 
 ClickHouse admite los siguientes tipos de claves:
@@ -68,7 +68,7 @@ Una estructura XML puede contener `<id>` o `<key>`. La sentencia DDL debe conten
 </Note>
 
 <div id="numeric-key">
-  ### Clave numérica {#numeric-key}
+  ### Clave numérica
 </div>
 
 Tipo: `UInt64`.
@@ -98,7 +98,9 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – El nombre de la columna que contiene las claves.
 
-### Clave compuesta {#composite-key}
+<div id="composite-key">
+  ### Clave compuesta
+</div>
 
 La clave puede ser una `tuple` formada por campos de cualquier tipo. El [layout](/es/reference/statements/create/dictionary/layouts/overview) en este caso debe ser `complex_key_hashed` o `complex_key_cache`.
 
@@ -142,7 +144,7 @@ En una consulta a la función `dictGet*`, se pasa una tupla como clave. Ejemplo:
 Cuando la clave compuesta consta de un solo atributo, el valor de la clave puede pasarse directamente, sin necesidad de envolverlo en `tuple`. Por ejemplo, tanto `dictGetString('dict_name', 'attr_name', 'key')` como `dictGetString('dict_name', 'attr_name', tuple('key'))` son válidos.
 
 <div id="attributes">
-  ## Atributos {#attributes}
+  ## Atributos
 </div>
 
 Ejemplo de configuración:

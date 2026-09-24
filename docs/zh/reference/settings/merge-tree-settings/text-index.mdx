@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中找到，且由 ClickHouse 源代码自动生成。
 
-## text_index_dictionary_block_frontcoding_compression {#text_index_dictionary_block_frontcoding_compression}
+<div id="text_index_dictionary_block_frontcoding_compression">
+  ## text_index_dictionary_block_frontcoding_compression
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +24,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 文本索引字典块默认使用的前缀编码压缩方式。
 可由显式指定的索引参数 `dictionary_block_frontcoding_compression` 覆盖。
 
-## text_index_dictionary_block_size {#text_index_dictionary_block_size}
+<div id="text_index_dictionary_block_size">
+  ## text_index_dictionary_block_size
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
 
@@ -31,7 +35,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 文本索引的默认字典块大小。
 可通过显式指定的 `dictionary_block_size` 索引参数覆盖。
 
-## text_index_max_memory_usage_before_flush {#text_index_max_memory_usage_before_flush}
+<div id="text_index_max_memory_usage_before_flush">
+  ## text_index_max_memory_usage_before_flush
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
@@ -39,7 +45,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 刷新临时片段前，文本索引构建器可保留的估算内存上限。
 
-## text_index_max_processed_tokens_before_flush {#text_index_max_processed_tokens_before_flush}
+<div id="text_index_max_processed_tokens_before_flush">
+  ## text_index_max_processed_tokens_before_flush
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100000000" />
 
@@ -47,7 +55,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 文本索引构建器在刷新临时片段之前累计处理的最大标记数。
 
-## text_index_posting_list_block_size {#text_index_posting_list_block_size}
+<div id="text_index_posting_list_block_size">
+  ## text_index_posting_list_block_size
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
 
@@ -56,16 +66,20 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 文本索引的默认倒排列表块大小 (行数) 。
 可通过显式指定的 `posting_list_block_size` 索引参数覆盖。
 
-## text_index_posting_list_codec {#text_index_posting_list_codec}
+<div id="text_index_posting_list_codec">
+  ## text_index_posting_list_codec
+</div>
 
 <SettingsInfoBlock type="TextIndexPostingListCodec" default_value="none" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "none"},{"label": "新增设置"}]}]} />
 
-文本索引的默认倒排列表编解码器。可选值为 `none`、`bitpacking`、`pfor` 之一。
+文本索引的默认倒排列表编解码器。
 可通过显式指定 `posting_list_codec` 索引参数覆盖。
 
-## text_index_serialization_version {#text_index_serialization_version}
+<div id="text_index_serialization_version">
+  ## text_index_serialization_version
+</div>
 
 <SettingsInfoBlock type="MergeTreeTextIndexSerializationVersion" default_value="v2_with_positions" />
 

@@ -30,7 +30,9 @@ doc_type: 'reference'
 
 {/* */}
 
-## DETACH PARTITION|PART {#detach-partitionpart}
+<div id="detach-partitionpart">
+  ## DETACH PARTITION|PART
+</div>
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
@@ -51,7 +53,9 @@ ALTER TABLE mt DETACH PART 'all_2_2_0';
 
 Этот запрос реплицируется — он перемещает данные в каталог `detached` на всех репликах. Обратите внимание, что выполнить этот запрос можно только на реплике-лидере. Чтобы узнать, является ли реплика лидером, выполните запрос `SELECT` к таблице [system.replicas](/ru/reference/system-tables/replicas). Либо, что проще, выполните запрос `DETACH` на всех репликах — все реплики сгенерируют исключение, кроме реплик-лидеров (поскольку допускается наличие нескольких лидеров).
 
-## DROP PARTITION|PART {#drop-partitionpart}
+<div id="drop-partitionpart">
+  ## DROP PARTITION|PART
+</div>
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
@@ -70,7 +74,9 @@ ALTER TABLE mt DROP PARTITION '2020-11-21';
 ALTER TABLE mt DROP PART 'all_4_4_0';
 ```
 
-## DROP DETACHED PARTITION|PART {#drop-detached-partitionpart}
+<div id="drop-detached-partitionpart">
+  ## DROP DETACHED PARTITION|PART
+</div>
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
@@ -79,7 +85,9 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|par
 Удаляет указанную часть или все части указанной партиции из каталога `detached`.
 Подробнее о том, как задать выражение партиционирования, читайте в разделе [Как задать выражение партиционирования](#how-to-set-partition-expression).
 
-## FORGET PARTITION {#forget-partition}
+<div id="forget-partition">
+  ## FORGET PARTITION
+</div>
 
 ```sql
 ALTER TABLE table_name FORGET PARTITION partition_expr
@@ -95,7 +103,9 @@ ALTER TABLE table_name FORGET PARTITION partition_expr
 ALTER TABLE mt FORGET PARTITION '20201121';
 ```
 
-## ATTACH PARTITION|PART {#attach-partitionpart}
+<div id="attach-partitionpart">
+  ## ATTACH PARTITION|PART
+</div>
 
 ```sql
 ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
@@ -118,7 +128,9 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Вы можете поместить данные в каталог `detached` на одной реплике и использовать запрос `ALTER ... ATTACH`, чтобы добавить их в таблицу на всех репликах.
 
-## ATTACH PARTITION FROM {#attach-partition-from}
+<div id="attach-partition-from">
+  ## ATTACH PARTITION FROM
+</div>
 
 ```sql
 ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
@@ -136,10 +148,11 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 * Обе таблицы должны иметь одинаковую структуру.
 * Обе таблицы должны иметь одинаковые ключ партиционирования, ключ ORDER BY и первичный ключ.
 * Обе таблицы должны иметь одинаковую политику хранения.
-* Если исходная часть имеет неадаптивную гранулярность индекса, обе таблицы должны иметь одинаковое значение `index_granularity`: такая часть не хранит количество строк для каждой метки, поэтому для интерпретации её меток используется значение целевой таблицы.
 * Целевая таблица должна включать все индексы и проекции из исходной таблицы. Если в целевой таблице включена настройка `enforce_index_structure_match_on_partition_manipulation`, индексы и проекции должны быть идентичны. В противном случае целевая таблица может содержать надмножество индексов и проекций исходной таблицы.
 
-## REPLACE PARTITION {#replace-partition}
+<div id="replace-partition">
+  ## REPLACE PARTITION
+</div>
 
 ```sql
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
@@ -157,10 +170,11 @@ ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM ta
 * Обе таблицы должны иметь одинаковую структуру.
 * Обе таблицы должны иметь одинаковый ключ партиционирования, одинаковый ключ ORDER BY и одинаковый первичный ключ.
 * Обе таблицы должны использовать одинаковую политику хранения.
-* Если исходная часть имеет неадаптивную гранулярность индекса, обе таблицы должны иметь одинаковое значение `index_granularity`: такая часть не хранит количество строк для каждой метки, поэтому для интерпретации её меток используется значение целевой таблицы.
 * Целевая таблица должна включать все индексы и проекции исходной таблицы. Если в целевой таблице включена настройка `enforce_index_structure_match_on_partition_manipulation`, индексы и проекции должны быть идентичны. В противном случае целевая таблица может содержать надмножество индексов и проекций исходной таблицы.
 
-## MOVE PARTITION TO TABLE {#move-partition-to-table}
+<div id="move-partition-to-table">
+  ## MOVE PARTITION TO TABLE
+</div>
 
 ```sql
 ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
@@ -174,10 +188,11 @@ ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO T
 * Обе таблицы должны иметь одинаковый ключ партиционирования, одинаковый ключ ORDER BY и одинаковый первичный ключ.
 * Обе таблицы должны иметь одинаковую политику хранения.
 * Обе таблицы должны использовать движки одного семейства (реплицируемые или нереплицируемые).
-* Если исходная часть имеет неадаптивную гранулярность индекса, обе таблицы должны иметь одинаковое значение `index_granularity`: такая часть не хранит количество строк для каждой метки, поэтому для интерпретации её меток используется значение целевой таблицы.
 * Целевая таблица должна включать все индексы и проекции из исходной таблицы. Если в целевой таблице включена настройка `enforce_index_structure_match_on_partition_manipulation`, индексы и проекции должны быть идентичны. В противном случае целевая таблица может иметь надмножество индексов и проекций исходной таблицы.
 
-## CLEAR COLUMN IN PARTITION {#clear-column-in-partition}
+<div id="clear-column-in-partition">
+  ## CLEAR COLUMN IN PARTITION
+</div>
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
@@ -191,7 +206,9 @@ ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITIO
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
-## FREEZE PARTITION {#freeze-partition}
+<div id="freeze-partition">
+  ## FREEZE PARTITION
+</div>
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
@@ -235,7 +252,9 @@ ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [W
 
 Дополнительные сведения о резервном копировании и восстановлении данных см. в разделе [&quot;Backup and Restore in ClickHouse&quot;](/ru/concepts/features/backup-restore/overview).
 
-## UNFREEZE PARTITION {#unfreeze-partition}
+<div id="unfreeze-partition">
+  ## UNFREEZE PARTITION
+</div>
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
@@ -243,7 +262,9 @@ ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WIT
 
 Удаляет с диска `frozen`-партиции с указанным именем. Если предложение `PARTITION` опущено, запрос удаляет резервные копии всех партиций сразу.
 
-## CLEAR INDEX IN PARTITION {#clear-index-in-partition}
+<div id="clear-index-in-partition">
+  ## CLEAR INDEX IN PARTITION
+</div>
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
@@ -251,7 +272,9 @@ ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION 
 
 Этот запрос аналогичен `CLEAR COLUMN`, но сбрасывает индекс, а не данные столбца.
 
-## FETCH PARTITION|PART {#fetch-partitionpart}
+<div id="fetch-partitionpart">
+  ## FETCH PARTITION|PART
+</div>
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
@@ -289,7 +312,9 @@ ALTER TABLE users ATTACH PART 201901_2_2_0;
 
 Хотя запрос называется `ALTER TABLE`, он не изменяет структуру таблицы и не сразу изменяет данные, доступные в таблице.
 
-## MOVE PARTITION|PART {#move-partitionpart}
+<div id="move-partitionpart">
+  ## MOVE PARTITION|PART
+</div>
 
 Перемещает партиции или части данных на другой том или диск в таблицах с движком `MergeTree`. См. [Использование нескольких блочных устройств для хранения данных](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes).
 
@@ -310,7 +335,9 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
-## UPDATE IN PARTITION {#update-in-partition}
+<div id="update-in-partition">
+  ## UPDATE IN PARTITION
+</div>
 
 Изменяет данные в указанной партиции, которые соответствуют заданному выражению фильтрации. Реализовано как [мутация](/ru/reference/statements/alter/index#mutations).
 
@@ -320,7 +347,9 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
-### Пример {#example}
+<div id="example">
+  ### Пример
+</div>
 
 ```sql
 -- использование имени партиции
@@ -330,11 +359,15 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ```
 
-### См. также {#see-also}
+<div id="see-also">
+  ### См. также
+</div>
 
 * [UPDATE](/ru/reference/statements/alter/partition#update-in-partition)
 
-## DELETE IN PARTITION {#delete-in-partition}
+<div id="delete-in-partition">
+  ## DELETE IN PARTITION
+</div>
 
 Удаляет данные в указанной партиции, соответствующие заданному выражению фильтрации. Реализовано в виде [мутации](/ru/reference/statements/alter/index#mutations).
 
@@ -344,7 +377,9 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
-### Пример {#example-1}
+<div id="example">
+  ### Пример
+</div>
 
 ```sql
 -- используя имя партиции
@@ -354,22 +389,30 @@ ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 ```
 
-## ПЕРЕСОЗДАНИЕ ЧАСТЕЙ {#rewrite-parts}
+<div id="rewrite-parts">
+  ## ПЕРЕСОЗДАНИЕ ЧАСТЕЙ
+</div>
 
 Это полностью пересоздаст части с использованием всех новых настроек. Это оправданно, поскольку настройки на уровне таблицы, такие как `use_const_adaptive_granularity`, по умолчанию применяются только к новым частям.
 
-### Пример {#example-rewrite-parts}
+<div id="example">
+  ### Пример
+</div>
 
 ```sql
 ALTER TABLE mt REWRITE PARTS;
 ALTER TABLE mt REWRITE PARTS IN PARTITION 2;
 ```
 
-### См. также {#see-also-1}
+<div id="see-also">
+  ### См. также
+</div>
 
 * [DELETE](/ru/reference/statements/alter/delete)
 
-## Как задать выражение партиционирования {#how-to-set-partition-expression}
+<div id="how-to-set-partition-expression">
+  ## Как задать выражение партиционирования
+</div>
 
 Вы можете задавать выражение партиционирования в запросах `ALTER ... PARTITION` разными способами:
 

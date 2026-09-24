@@ -12,11 +12,15 @@ doc_type: 'reference'
 新しいテーブルを作成します。デフォルトでは、テーブルは現在のサーバー上にのみ作成されます。
 分散 DDL クエリは `ON CLUSTER` 句によって実現されており、これについては[別途説明しています](/ja/reference/statements/distributed-ddl)。
 
-## 構文形式 {#syntax-forms}
+<div id="syntax-forms">
+  ## 構文形式
+</div>
 
 ユースケースに応じて、このクエリにはさまざまな構文形式があります。
 
-### 明示的なスキーマを指定してテーブルを作成する {#with-explicit-schema}
+<div id="with-explicit-schema">
+  ### 明示的なスキーマを指定してテーブルを作成する
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -41,7 +45,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 カラムおよびテーブルにコメントを追加できます。
 
-### 既存テーブルのスキーマを使用してテーブルを作成する {#with-a-schema-similar-to-other-table}
+<div id="with-a-schema-similar-to-other-table">
+  ### 既存テーブルのスキーマを使用してテーブルを作成する
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
@@ -53,7 +59,9 @@ ClickHouse では、既存テーブルのスキーマとデータをコピーで
 
 これにより、別のテーブルと同じ構造を持つテーブルが作成されます。
 
-### 既存テーブルのスキーマとデータを使用してテーブルを作成する {#with-a-schema-and-data-cloned-from-another-table}
+<div id="with-a-schema-and-data-cloned-from-another-table">
+  ### 既存テーブルのスキーマとデータを使用してテーブルを作成する
+</div>
 
 既存テーブルのスキーマとデータを複製するには:
 
@@ -61,23 +69,18 @@ ClickHouse では、既存テーブルのスキーマとデータをコピーで
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-これにより、既存のテーブルと同じスキーマとデータを持つテーブルが作成されます。新しいテーブルの作成後、`db.table` のすべてのパーティションがそのテーブルにアタッチされます。つまり、`db.table` のデータは作成時に `db2.table_clone` に複製されます。
+これにより、既存のテーブルと同じスキーマとデータを持つテーブルが作成されます。新しいテーブルの作成後、`db.table` のすべてのパーティションがそのテーブルにアタッチされます。つまり、`db.table` のデータは作成時に `db2.table_clone` に複製されます。このクエリは、次のものと同等です。
 
-<Note>
-  宛先データベースが [Replicated](/ja/reference/engines/database-engines/replicated) データベースエンジンを使用している場合、`CLONE AS` はサポートされていません。
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+```
 
-  代わりに次を使用してください:
+どちらの機能でも、テーブルには別のエンジンを指定できます。エンジンを指定しない場合は、元のテーブル (`db.table`) と同じエンジンが使用されます。
 
-  ```sql
-  CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
-  ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
-  ```
-</Note>
-
-どちらの機能でも、テーブルには別のエンジンを指定できます。
-エンジンを指定しない場合は、元のテーブル (`db.table`) と同じエンジンが使用されます。
-
-### table function を使用してテーブルを作成する {#from-a-table-function}
+<div id="from-a-table-function">
+  ### table function を使用してテーブルを作成する
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -85,7 +88,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 指定した[table function](/ja/reference/functions/table-functions/index)と同じ結果を返すテーブルを作成します。作成されたテーブルも、指定した対応する table function と同じように動作します。
 
-### SELECT クエリでテーブルを作成する {#from-select-query}
+<div id="from-select-query">
+  ### SELECT クエリでテーブルを作成する
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
@@ -110,7 +115,9 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
-## カラムのデフォルト値を指定する {#default_values}
+<div id="default_values">
+  ## カラムのデフォルト値を指定する
+</div>
 
 カラム定義では、`DEFAULT expr`、`MATERIALIZED expr`、または `ALIAS expr` の形式でデフォルト値の式を指定できます。例: `URLDomain String DEFAULT domain(URL)`。
 
@@ -122,7 +129,9 @@ SELECT x, toTypeName(x) FROM t1;
 
 デフォルト値の式 `expr` では、任意のテーブルカラムや定数を参照できます。ClickHouse は、テーブル構造の変更によって式の計算にループが生じないことを確認します。INSERT では、式を解決可能であること、つまり式の計算に必要なすべてのカラムが渡されていることを確認します。
 
-### DEFAULT {#default}
+<div id="default">
+  ### DEFAULT
+</div>
 
 `DEFAULT expr`
 
@@ -148,7 +157,9 @@ SELECT * FROM test;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-### MATERIALIZED {#materialized}
+<div id="materialized">
+  ### MATERIALIZED
+</div>
 
 `MATERIALIZED expr`
 
@@ -186,7 +197,9 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-### EPHEMERAL {#ephemeral}
+<div id="ephemeral">
+  ### EPHEMERAL
+</div>
 
 `EPHEMERAL [expr]`
 
@@ -222,7 +235,9 @@ hexed:      Z��
 hex(hexed): 5A90B714
 ```
 
-### ALIAS {#alias}
+<div id="alias">
+  ### ALIAS
+</div>
 
 `ALIAS expr`
 
@@ -259,7 +274,9 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
-## NULL または NOT NULL 修飾子 {#null-or-not-null-modifiers}
+<div id="null-or-not-null-modifiers">
+  ## NULL または NOT NULL 修飾子
+</div>
 
 カラム定義では、データ型の後ろに `NULL` および `NOT NULL` 修飾子を付けることで、その型を [Nullable](/ja/reference/data-types/nullable) にできるかどうかを指定できます。
 
@@ -267,7 +284,9 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 
 関連項目: [data&#95;type&#95;default&#95;nullable](/ja/reference/settings/session-settings/other#data_type_default_nullable) 設定。
 
-## 主キー {#primary-key}
+<div id="primary-key">
+  ## 主キー
+</div>
 
 テーブルの作成時に[主キー](/ja/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries)を定義できます。主キーは、次の2つの方法で指定できます。
 
@@ -303,11 +322,15 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
   1つのクエリで両方の方法を併用することはできません。
 </Tip>
 
-## テーブル制約を指定する {#constraints}
+<div id="constraints">
+  ## テーブル制約を指定する
+</div>
 
 カラムの説明に加えて、制約も定義できます:
 
-### CONSTRAINT {#constraint}
+<div id="constraint">
+  ### CONSTRAINT
+</div>
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -325,7 +348,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 すべてのテーブルにある既存の制約は、[`system.constraints`](/ja/reference/system-tables/constraints) テーブルで確認できます。
 
-### ASSUME {#assume}
+<div id="assume">
+  ### ASSUME
+</div>
 
 `ASSUME` 句は、真であると仮定されるテーブルに対する `CONSTRAINT` を定義するために使用されます。この制約は、その後オプティマイザによって SQL queries のパフォーマンス向上に利用されます。
 
@@ -349,11 +374,15 @@ ORDER BY (name_len, name);
 
 `ASSUME CONSTRAINT` **は制約を強制するものではありません**。これは、その制約が成り立つことをオプティマイザに知らせるだけです。制約が実際には成り立っていない場合、クエリの結果が不正確になる可能性があります。したがって、`ASSUME CONSTRAINT` は、その制約が正しいと確信できる場合にのみ使用してください。
 
-## TTL で保存期間を定義する {#ttl-expression}
+<div id="ttl-expression">
+  ## TTL で保存期間を定義する
+</div>
 
 値の保存期間を定義します。指定できるのは MergeTree ファミリーのテーブルのみです。詳細は、[カラムとテーブルの TTL](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) を参照してください。
 
-## カラム圧縮コーデックを選択する {#column_compression_codec}
+<div id="column_compression_codec">
+  ## カラム圧縮コーデックを選択する
+</div>
 
 {/* /reference/statements/create/table/codec に移動したセクションへのリンク用アンカー */}
 
@@ -418,11 +447,15 @@ ENGINE = <Engine>
 
 利用可能な汎用、特殊用途、および暗号化 コーデック については、[カラム圧縮 コーデック](/ja/reference/statements/create/table/codec)を参照してください。
 
-## 一時テーブルの作成 {#temporary-tables}
+<div id="temporary-tables">
+  ## 一時テーブルの作成
+</div>
 
 ClickHouse は一時テーブルをサポートしています。一時テーブルはセッションの終了時に削除されます。詳細については、[CREATE TEMPORARY TABLE](/ja/reference/statements/create/table/temporary-table) を参照してください。
 
-## REPLACE TABLE でテーブルをアトミックに更新する {#replace-table}
+<div id="replace-table">
+  ## REPLACE TABLE でテーブルをアトミックに更新する
+</div>
 
 {/* /reference/statements/create/table/replace-table に移動したセクションへのリンク先アンカー */}
 
@@ -432,7 +465,9 @@ ClickHouse は一時テーブルをサポートしています。一時テーブ
 
 `REPLACE` ステートメントを使用すると、テーブルを[アトミックに](/ja/concepts/core-concepts/glossary#atomicity)更新できます。詳細については、[REPLACE TABLE](/ja/reference/statements/create/table/replace-table)を参照してください。
 
-## テーブルコメントを追加する {#comment-clause}
+<div id="comment-clause">
+  ## テーブルコメントを追加する
+</div>
 
 テーブルの作成時にコメントを追加できます。
 
@@ -473,7 +508,9 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 └──────┴─────────────────────┘
 ```
 
-## 関連コンテンツ {#related-content}
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
 
 * ブログ: [スキーマとコーデックによるClickHouseの最適化](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * ブログ: [ClickHouseで時系列データを扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

@@ -11,18 +11,20 @@ doc_type: 'reference'
 
 > Задаёт имена одного или нескольких столбцов, которые нужно исключить из результата. Все совпадающие имена столбцов не включаются в вывод.
 
-## Синтаксис {#syntax}
+<div id="syntax">
+  ## Синтаксис
+</div>
 
 ```sql
 SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
 ```
 
-При исключении одного столбца круглые скобки необязательны.
-
-## Примеры {#examples}
+<div id="examples">
+  ## Примеры
+</div>
 
 ```sql title="Query"
-SELECT * EXCEPT i FROM columns_transformers;
+SELECT * EXCEPT (i) from columns_transformers;
 ```
 
 ```response title="Response"

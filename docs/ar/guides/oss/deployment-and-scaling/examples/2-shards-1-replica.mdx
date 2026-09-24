@@ -30,7 +30,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 <DedicatedKeeperServers />
 
 <div id="pre-requisites">
-  ## المتطلبات الأساسية {#pre-requisites}
+  ## المتطلبات الأساسية
 </div>
 
 * سبق أن قمتَ بإعداد [خادم ClickHouse محلي](/ar/get-started/setup/install)
@@ -161,7 +161,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
   </Step>
 
   <Step title="تهيئة عقد ClickHouse" id="configure-clickhouse-servers">
-    ### إعداد الخادم {#server-setup}
+    ### إعداد الخادم
 
     قم الآن بتعديل كل ملف تهيئة فارغ `config.xml` الموجود في
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. يجب تغيير الأسطر
@@ -235,7 +235,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 
     يُشرح كل قسم من أقسام ملف الإعداد أعلاه بمزيد من التفاصيل في ما يلي.
 
-    #### الشبكة والتسجيل {#networking}
+    #### الشبكة والتسجيل
 
     <ListenHost />
 
@@ -254,7 +254,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     لمزيد من المعلومات حول تهيئة التسجيل، راجع التعليقات المضمّنة في
     [ملف التهيئة](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) الافتراضي لـ ClickHouse.
 
-    #### تهيئة الكلستر {#cluster-configuration}
+    #### تهيئة الكلستر
 
     يتم ضبط إعداد الكتلة في القسم `<remote_servers>`.
     هنا يُحدَّد اسم الكتلة `cluster_2S_1R`.
@@ -284,10 +284,10 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 
     <ServerParameterTable />
 
-    #### تهيئة Keeper {#keeper-config-explanation}
+    #### تهيئة Keeper
 
     يُحدِّد القسم `<ZooKeeper>` لـ ClickHouse موقع تشغيل ClickHouse Keeper (أو ZooKeeper).
-    نظرًا لاستخدامنا ClickHouse Keeper cluster، يجب تحديد كل `<node>` من عقد الـ cluster،
+    نظرًا لاستخدامنا Keeper cluster، يجب تحديد كل `<node>` من عقد الـ cluster،
     مع اسم الـ hostname ورقم المنفذ الخاص به باستخدام الوسمَين `<host>` و`<port>` على التوالي.
 
     سيُشرح إعداد ClickHouse Keeper في الخطوة التالية من الدليل العملي.
@@ -314,9 +314,9 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
       فإننا نوصي بشدة، في بيئات الإنتاج، بتشغيل ClickHouse Keeper على مضيفات مخصصة.
     </Note>
 
-    #### تهيئة الماكرو {#macros-config-explanation}
+    #### تهيئة الماكرو
 
-    بالإضافة إلى ذلك، يُستخدم قسم `<macros>` لتعريف استبدالات المعلمات للجداول المُتماثلة. وتُدرج هذه الاستبدالات في `system.macros`، مما يتيح استخدام استبدالات مثل `{shard}` و`{replica}` في الاستعلامات.
+    بالإضافة إلى ذلك، يُستخدم قسم `<macros>` لتعريف استبدالات المعاملات للجداول المُتماثلة. وتُدرج هذه الاستبدالات في `system.macros`، مما يتيح استخدام استبدالات مثل `{shard}` و`{replica}` في الاستعلامات.
 
     ```xml
     <macros>
@@ -326,10 +326,10 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
 
     <Note>
-      سيُحدَّد كلٌّ منها بشكل مختلف بحسب بنية العنقود.
+      سيُحدَّد كلٌّ منها بشكل مختلف بحسب بنية العنقود.
     </Note>
 
-    ### تهيئة المستخدم {#user-config}
+    ### تهيئة المستخدم
 
     عدِّل الآن كل ملف تهيئة فارغ `users.xml` الموجود في
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` بالمحتوى التالي:
@@ -347,6 +347,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
+                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -354,6 +355,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
+                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -386,7 +388,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
   </Step>
 
   <Step title="تكوين ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
-    ### إعداد ClickHouse Keeper {#configuration-explanation}
+    ### إعداد ClickHouse Keeper
 
     <KeeperConfig />
 
@@ -567,7 +569,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     دليل مجموعة البيانات المثال [UK property prices](/ar/get-started/sample-datasets/uk-price-paid)،
     باستثناء عبارة `ON CLUSTER`.
 
-    صُمِّمت عبارة `ON CLUSTER` للتنفيذ الموزّع لاستعلامات DDL ‏(لغة تعريف البيانات)
+    صُمِّمت عبارة `ON CLUSTER` للتنفيذ الموزّع لاستعلامات DDL ‏(لغة تعريف البيانات)
     مثل `CREATE` و`DROP` و`ALTER` و`RENAME`، بما يضمن تطبيق
     هذه التغييرات على المخطط عبر جميع العقد في العنقود.
 
@@ -584,9 +586,9 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ```
 
     قبل أن نُدرج بيانات الأسعار المدفوعة في المملكة المتحدة، دعونا نجري تجربة سريعة لمعرفة
-    ما الذي يحدث عند إدراج البيانات في جدول عادي من أيٍّ من الخادمين.
+    ما الذي يحدث عند إدراج البيانات في جدول عادي من أيٍّ من الخادمين.
 
-    أنشئ قاعدة بيانات وجدولًا اختباريًا باستخدام الاستعلام التالي من أيٍّ من الخادمين:
+    أنشئ قاعدة بيانات وجدولًا اختباريًا باستخدام الاستعلام التالي من أيٍّ من الخادمين:
 
     ```sql
     CREATE DATABASE IF NOT EXISTS test ON CLUSTER cluster_2S_1R;
@@ -649,7 +651,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     في هذا المثال، اختيرت الدالة `rand()` كمفتاح للتجزئة بحيث
     تتوزع عمليات الإدراج عشوائيًا على الأجزاء.
 
-    الآن نفّذ استعلامًا على الجدول الموزّع من أيٍّ من المضيفين، وستحصل
+    الآن نفّذ استعلامًا على الجدول الموزّع من أيٍّ من المضيفين، وستحصل
     على كلا الصفين اللذين أُدرجا على المضيفين كليهما، بخلاف مثالنا السابق:
 
     ```sql
@@ -663,7 +665,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
        └────┴────────────────────┘
     ```
 
-    لنفعل الأمر نفسه مع بيانات أسعار العقارات في المملكة المتحدة. من أيٍّ من الأجهزة المضيفة التي تشغّل العميل،
+    لنفعل الأمر نفسه مع بيانات أسعار العقارات في المملكة المتحدة. من أيٍّ من الأجهزة المضيفة التي تشغّل العميل،
     شغّل الاستعلام التالي لإنشاء جدول موزّع باستخدام الجدول الحالي
     الذي أنشأناه سابقًا باستخدام `ON CLUSTER`:
 
@@ -791,7 +793,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 </Steps>
 
 <div id="conclusion">
-  ## الخاتمة {#conclusion}
+  ## الخاتمة
 </div>
 
 تتمثل ميزة طوبولوجيا هذا العنقود في أن البيانات تُوزَّع عبر

@@ -11,7 +11,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
-  ## 소개 {#introduction}
+  ## 소개
 </div>
 
 ClickHouse는 실시간 환경에서 대규모 데이터를 대상으로 하는 분석 쿼리를
@@ -30,7 +30,9 @@ ClickHouse는 실시간 환경에서 대규모 데이터를 대상으로 하는 
   <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## PROJECTION은 어떻게 작동합니까? {#how-do-projections-work}
+<div id="how-do-projections-work">
+  ## PROJECTION은 어떻게 작동합니까?
+</div>
 
 실제로 PROJECTION은 원본 테이블에 추가된 숨겨진 테이블이라고 생각할 수
 있습니다. PROJECTION은 원본 테이블과 다른 행 순서를 가질 수 있으므로,
@@ -54,7 +56,7 @@ ClickHouse는 프라이머리 키를 자동으로 샘플링하여 동일하게 �
 <Image img="/images/data-modeling/projections_1.webp" size="md" alt="ClickHouse의 프로젝션" />
 
 <div id="smarter_storage_with_part_offset">
-  ### `_part_offset`를 활용한 더 스마트한 스토리지 {#smarter_storage_with_part_offset}
+  ### `_part_offset`를 활용한 더 스마트한 스토리지
 </div>
 
 버전 25.5부터 ClickHouse는 프로젝션에서 가상 컬럼 `_part_offset`을 지원하며,
@@ -75,7 +77,7 @@ ClickHouse는 프라이머리 키를 자동으로 샘플링하여 동일하게 �
 나머지는 `_part_offset`을 통해 간접적으로 참조할 수 있습니다.
 
 <div id="when-to-use-projections">
-  ## 프로젝션은 언제 사용해야 하나요? {#when-to-use-projections}
+  ## 프로젝션은 언제 사용해야 하나요?
 </div>
 
 프로젝션은 데이터가 삽입될 때 자동으로 유지되므로 처음 사용하는 사용자에게 매력적인 기능입니다.
@@ -112,11 +114,11 @@ ClickHouse는 프라이머리 키를 자동으로 샘플링하여 동일하게 �
   [저장 공간 오버헤드도 평가하세요](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="examples">
-  ## 예시 {#examples}
+  ## 예시
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### 프라이머리 키에 없는 컬럼으로 필터링하기 {#filtering-without-using-primary-keys}
+  ### 프라이머리 키에 없는 컬럼으로 필터링하기
 </div>
 
 이 예시에서는 테이블에 프로젝션을 추가하는 방법을 보여드립니다.
@@ -204,7 +206,9 @@ WHERE query_id='<query_id>'
    └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
 ```
 
-### PROJECTION을 사용해 영국 부동산 실거래가 쿼리 속도 높이기 {#using-projections-to-speed-up-UK-price-paid}
+<div id="using-projections-to-speed-up-UK-price-paid">
+  ### PROJECTION을 사용해 영국 부동산 실거래가 쿼리 속도 높이기
+</div>
 
 PROJECTION을 사용해 쿼리 성능을 어떻게 높일 수 있는지 보여주기 위해,
 실제 데이터셋을 사용하는 예시를 살펴보겠습니다. 이 예시에서는 3,003만 개의 행이 있는
@@ -416,7 +420,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### 추가 예시 {#further-examples}
+  ### 추가 예시
 </div>
 
 다음 예시에서는 동일한 UK price 데이터셋을 사용하여 프로젝션이 있는 쿼리와 없는 쿼리를 비교합니다.
@@ -428,36 +432,31 @@ CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
 INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 ```
 
-#### PROJECTION 만들기 {#build-projection}
+<div id="build-projection">
+  #### PROJECTION 만들기
+</div>
 
-`year`, `district`, `town` 차원을 기준으로 집계 PROJECTION을 생성하겠습니다.
-이 PROJECTION은 각 판매를 판매 연도별로 그룹화하므로, 해당 표현식을 필터에서
-참조할 수 있도록 컬럼으로 구체화합니다:
-
-```sql
-ALTER TABLE uk.uk_price_paid_with_projections_v2
-    ADD COLUMN year UInt16 MATERIALIZED toYear(date)
-```
+`toYear(date)`, `district`, `town`을 기준으로 집계 PROJECTION을 생성하겠습니다:
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
     ADD PROJECTION projection_by_year_district_town
     (
         SELECT
-            year,
+            toYear(date),
             district,
             town,
             avg(price),
             sum(price),
             count()
         GROUP BY
-            year,
+            toYear(date),
             district,
             town
     )
 ```
 
-기존 데이터에 대해 PROJECTION을 채우십시오. (구체화하지 않으면 PROJECTION은 새로 삽입되는 데이터에 대해서만 생성됩니다):
+기존 데이터에 대해 프로젝션을 채우십시오. (구체화하지 않으면 프로젝션은 새로 삽입되는 데이터에 대해서만 생성됩니다):
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
@@ -465,16 +464,16 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-다음 쿼리는 PROJECTION 사용 여부에 따른 성능 차이를 보여줍니다. PROJECTION 사용을 비활성화하려면 기본적으로 활성화된 설정 [`optimize_use_projections`](/ko/reference/settings/session-settings/optimize-use#optimize_use_projections)을 비활성화하십시오.
+다음 쿼리는 프로젝션 사용 여부에 따른 성능 차이를 보여줍니다. 프로젝션 사용을 비활성화하려면 기본적으로 활성화된 설정 [`optimize_use_projections`](/ko/reference/settings/session-settings/optimize-use#optimize_use_projections)을 비활성화하십시오.
 
 <div id="average-price-projections">
-  #### 쿼리 1. 연도별 평균 가격 {#average-price-projections}
+  #### 쿼리 1. 연도별 평균 가격
 </div>
 
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -487,7 +486,7 @@ SETTINGS mutations_sync = 1
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -500,13 +499,13 @@ SETTINGS mutations_sync = 1
 결과는 동일해야 하지만, 두 번째 예시가 성능 면에서 더 뛰어납니다!
 
 <div id="average-price-london-projections">
-  #### 쿼리 2. 런던의 연도별 평균 가격 {#average-price-london-projections}
+  #### 쿼리 2. 런던의 연도별 평균 가격
 </div>
 
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -520,7 +519,7 @@ SETTINGS mutations_sync = 1
 <RunnableCode>
   ```sql
   SELECT
-      year,
+      toYear(date) AS year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -531,10 +530,10 @@ SETTINGS mutations_sync = 1
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### 쿼리 3. 가장 비싼 지역 {#most-expensive-neighborhoods-projections}
+  #### 쿼리 3. 가장 비싼 지역
 </div>
 
-2020년 이후 행을 필터링하는 조건은 저장된 PROJECTION 차원인 `year`를 직접 참조합니다:
+조건 `(date >= '2020-01-01')`은 프로젝션 차원인 `toYear(date) >= 2020`에 맞게 수정해야 합니다:
 
 <RunnableCode>
   ```sql
@@ -545,7 +544,7 @@ SETTINGS mutations_sync = 1
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE year >= 2020
+  WHERE toYear(date) >= 2020
   GROUP BY
       town,
       district
@@ -565,7 +564,7 @@ SETTINGS mutations_sync = 1
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE year >= 2020
+  WHERE toYear(date) >= 2020
   GROUP BY
       town,
       district
@@ -577,12 +576,8 @@ SETTINGS mutations_sync = 1
 
 이번에도 결과는 동일하지만, 2번째 쿼리의 성능이 향상된 점을 확인할 수 있습니다.
 
-<Note>
-  필터는 저장된 차원인 `year`를 직접 참조해야 합니다. `WHERE toYear(date) >= 2020`과 같이 작성하면 PROJECTION이 사용되지 않습니다. 최적화기가 해당 조건을 `date`에 대한 범위 조건으로 재작성하지만, PROJECTION에는 `date` 컬럼이 저장되어 있지 않으므로 ClickHouse는 기본 테이블을 스캔하는 방식으로 폴백합니다.
-</Note>
-
 <div id="combining-projections">
-  ### 하나의 쿼리에서 프로젝션 결합하기 {#combining-projections}
+  ### 하나의 쿼리에서 프로젝션 결합하기
 </div>
 
 25.6 버전부터는 이전 버전에서 도입된 `_part_offset` 지원을 바탕으로, ClickHouse는 이제 여러 필터가 있는 단일 쿼리를 가속하기 위해 여러 프로젝션을 사용할 수 있습니다.
@@ -702,7 +697,9 @@ SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
 여러 프로젝션의 인덱스 분석을 결합하면 ClickHouse는 스캔하는 데이터 양을 크게 줄여
 스토리지 오버헤드는 낮게 유지하면서 성능을 향상합니다.
 
-## 관련 콘텐츠 {#related-content}
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
 
 * [ClickHouse의 프라이머리 인덱스에 대한 실용적인 소개](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [구체화된 뷰(materialized view)](/ko/concepts/features/materialized-views/index)
