@@ -380,9 +380,9 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
-            checkRowPoliciesBeforeAlter(table->getStorageID(), *alter_commands, context);
+            checkRowPoliciesBeforeAlter(table->getStorageID(), metadata_snapshot->getColumns(), *alter_commands, context);
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
-            renameColumnsInRowPolicies(table->getStorageID(), *alter_commands, context);
+            renameColumnsInRowPolicies(table->getStorageID(), metadata_snapshot->getColumns(), *alter_commands, context);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
