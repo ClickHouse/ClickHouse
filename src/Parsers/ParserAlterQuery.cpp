@@ -1343,6 +1343,16 @@ These `ALTER` statements modify entities related to role-based access control:
 | [ALTER DATABASE ... MODIFY COMMENT](/reference/statements/alter/database-comment) | Adds, modifies, or removes comments to the database, regardless if it was set before or not. |
 | [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection) | Modifies [Named Collections](/concepts/features/configuration/server-config/named-collections).                   |
 
+## Combining actions in one `ALTER` {#combining-actions}
+
+One `ALTER TABLE` accepts several comma-separated actions, so work that would otherwise be submitted as a sequence of statements can go in a single one:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, DROP COLUMN referrer;
+```
+
+A client that waits for each statement to finish then waits once instead of once per action. See [Synchronicity of ALTER Queries](#synchronicity-of-alter-queries) for what that wait covers, and [Combining `MATERIALIZE INDEX` clauses](#combining-materialize-index-clauses) for a restriction on mixing actions of different kinds.
+
 ## Mutations {#mutations}
 
 `ALTER` queries that are intended to manipulate table data are implemented with a mechanism called "mutations", most notably [ALTER TABLE ... DELETE](/reference/statements/alter/delete) and [ALTER TABLE ... UPDATE](/reference/statements/alter/update). They are asynchronous background processes similar to merges in [MergeTree](/reference/engines/table-engines/mergetree-family/index) tables that to produce new "mutated" versions of parts.
@@ -1389,7 +1399,7 @@ On replicated tables, submitting several separate `ALTER` statements against the
 
 Approaches that avoid the race:
 
-- Combine independent metadata operations into a **single** multi-clause `ALTER` when the grammar allows it (for example multiple `ADD INDEX` clauses).
+- Combine independent metadata operations into a **single** multi-clause `ALTER` when the grammar allows it (for example multiple `ADD INDEX` clauses), as described in [Combining actions in one `ALTER`](#combining-actions).
 - Serialize `ALTER` statements and retry on code 517 until previous `ALTER`s have been applied on the replica.
 - For mutation-producing `ALTER`s, wait for the previous mutation to finish using a documented observable such as [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) or `is_done` in [`system.mutations`](/reference/system-tables/mutations) before submitting the next one.
 
@@ -1429,6 +1439,14 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 
 In the query, specify a list of one or more comma-separated actions.
 Each action is an operation on a column.
+
+For example, one statement can drop one column and add another:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+Whether such a query returns before its work on existing data has finished follows [`alter_sync`](/reference/settings/session-settings/alter#alter_sync), or [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) for the actions that run as mutations; both are described in [Synchronicity of ALTER Queries](/reference/statements/alter/index#synchronicity-of-alter-queries).
 
 The following actions are supported:
 
