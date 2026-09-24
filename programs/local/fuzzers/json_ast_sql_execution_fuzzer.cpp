@@ -328,7 +328,7 @@ bool isDeterministicForOracle(const std::string & sql_original)
         /// lower case; clauses whose result is not a multiset of rows or depends on the plan, randomness,
         /// time, environment, ordering-dependent or sampling aggregates and their aliases, approximate
         /// algorithms. Floating point values are allowed: they are hashed rounded (see `hashRow`).
-        " limit ", " offset ", " fetch ", " over (", " over ", " window ", " settings ", " format ", "into outfile", "system.", "rand",
+        " limit ", " offset ", " fetch ", " over (", " over ", " window ", " settings ", " format ", "into outfile", "system.", "information_schema", "stochastic", "rand",
         "generateuuid", "generaterandom", "generateserialid", "now(", "now64(", "today(", "yesterday(",
         "currentdatabase(", "currentuser(", "hostname(", "uptime(", "version(", "timezone(", "servertimezone(",
         "getsetting(", "getmacro", "shardnum", "shardcount", "sleep", "randomstring", "randomprintable",
