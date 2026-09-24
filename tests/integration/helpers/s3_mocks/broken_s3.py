@@ -65,6 +65,9 @@ class MockControl:
     def setup_at_object_upload(self, **kwargs):
         self.setup_action("at_object_upload", **kwargs)
 
+    def setup_at_object_delete(self, **kwargs):
+        self.setup_action("at_object_delete", **kwargs)
+
     def setup_at_part_upload(self, **kwargs):
         self.setup_action("at_part_upload", **kwargs)
 
@@ -360,6 +363,19 @@ class _ServerRuntime:
     class ConnectionRefusedAction(RedirectAction):
         pass
 
+    class LostResponseAction:
+        """Proxy mode only: the request reaches the upstream and takes effect there, but the client
+        never sees the answer (the connection is reset instead), as with a network fault after the
+        upstream has applied a PUT."""
+
+        def inject_error(self, request_handler):
+            server = request_handler.server
+            request_handler.forward(server.upstream_host, server.upstream_port, relay_response=False)
+            request_handler.connection.setsockopt(
+                socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
+            )
+            request_handler.connection.close()
+
     class CountAfter:
         def __init__(
             self, lock, count_=None, after_=None, action_=None, action_args_=[]
@@ -397,6 +413,8 @@ class _ServerRuntime:
                 )
             elif self.action == "timeout":
                 self.error_handler = _ServerRuntime.TimeoutAction()
+            elif self.action == "lost_response":
+                self.error_handler = _ServerRuntime.LostResponseAction()
             else:
                 self.error_handler = _ServerRuntime.Expected500ErrorAction()
 
@@ -437,6 +455,7 @@ class _ServerRuntime:
         self.at_create_multi_part_upload = None
         # Was only set by reset(): a listing before the first reset crashed the handler.
         self.at_listing = None
+        self.at_object_delete = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -458,6 +477,7 @@ class _ServerRuntime:
             self.slow_get = None
             self.fake_multipart_upload = None
             self.at_create_multi_part_upload = None
+            self.at_object_delete = None
             self.at_listing = None
 
 
@@ -510,11 +530,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"Redirected")
 
-    def forward(self, host, port):
+    def forward(self, host, port, relay_response=True):
         """Proxy the request upstream instead of redirecting. The `Host` header is passed
         through unchanged so an AWS SigV4 signature computed for this mock stays valid: clients
         such as delta-kernel-rs follow a 307 without re-signing and would get 403 from the
-        upstream."""
+        upstream. With `relay_response=False` the upstream answer is read and dropped."""
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length) if content_length > 0 else b""
         headers = {
@@ -524,7 +544,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         conn.request(self.command, self.path, body=body, headers=headers)
         upstream = conn.getresponse()
         data = b"" if self.command == "HEAD" else upstream.read()
-        self.log_message("forward %s %s -> %s", self.command, self.path, upstream.status)
+        self.log_message("forward %s %s -> %s%s", self.command, self.path, upstream.status, "" if relay_response else " (response dropped)")
+        if not relay_response:
+            conn.close()
+            return
         self.send_response(upstream.status)
         for k, v in upstream.getheaders():
             if k.lower() in ("transfer-encoding", "connection"):
@@ -677,6 +700,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             )
             return self._ok()
 
+        if path[1] == "at_object_delete":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.at_object_delete = _ServerRuntime.CountAfter.from_cgi_params(
+                _runtime.lock, params
+            )
+            self.log_message("set at_object_delete %s", _runtime.at_object_delete)
+            return self._ok()
+
         if path[1] == "at_listing":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.at_listing = _ServerRuntime.CountAfter.from_cgi_params(
@@ -797,6 +828,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.redirect()
 
     def do_DELETE(self):
+        if _runtime.at_object_delete is not None:
+            if _runtime.at_object_delete.has_effect():
+                self.log_message("delete error_at_object_delete %s, %s", _runtime.at_object_delete, self.path)
+                return _runtime.at_object_delete.inject_error(self)
         self.redirect()
 
 

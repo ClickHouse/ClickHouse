@@ -5,6 +5,7 @@ failpoint matrix over the stages of a write on S3, and S3 faults injected by the
 (in proxy mode, in front of MinIO) at the data-file and the commit upload.
 """
 
+import json
 import logging
 import os
 import threading
@@ -105,6 +106,25 @@ FEATURES = {
     "row_tracking": ("TBLPROPERTIES (delta.enableRowTracking = true)", None, None),
     "timestamp_ntz": (None, None, None),
     "column_mapping_name": ("TBLPROPERTIES (delta.columnMapping.mode = 'name')", None, None),
+    "identity_column": (None, None, None),
+    "in_commit_timestamps": ("TBLPROPERTIES (delta.enableInCommitTimestamps = true)", None, None),
+    "type_widening": ("TBLPROPERTIES (delta.enableTypeWidening = true)", "ALTER TABLE {t} ALTER COLUMN id TYPE BIGINT", None),
+    "variant_column": (None, None, None),
+}
+
+
+# Outcome observed with the pinned kernel: a change in either direction must be a deliberate edit here.
+# Features missing from the map are kernel-decided in a way not pinned yet (Spark in the runner could
+# not create them when this was written).
+EXPECTED_OUTCOME = {
+    "append_only": "accepted",
+    "not_null": "accepted",
+    "deletion_vectors": "accepted",
+    "timestamp_ntz": "accepted",
+    "change_data_feed": "rejected",
+    "check_constraint": "rejected",
+    "column_mapping_name": "rejected",
+    "liquid_clustering": "rejected",
 }
 
 
@@ -117,11 +137,20 @@ def create_feature_table(spark, name, path):
         columns = "id INT, v STRING, id2 INT GENERATED ALWAYS AS (id + 1)"
     elif name == "timestamp_ntz":
         columns = "id INT, v STRING, ts TIMESTAMP_NTZ"
+    elif name == "identity_column":
+        columns = "id INT, v STRING, seq BIGINT GENERATED ALWAYS AS IDENTITY"
+    elif name == "variant_column":
+        columns = "id INT, v STRING, var VARIANT"
     clause, extra, _ = FEATURES[name]
     spark.sql(f"CREATE TABLE {table} ({columns}) USING delta {clause or ''}")
     if extra:
         spark.sql(extra.format(t=table))
-    spark.sql(f"INSERT INTO {table} VALUES (1, 'spark'" + (", TIMESTAMP_NTZ '2024-01-01 00:00:00'" if name == "timestamp_ntz" else "") + ")")
+    if name == "identity_column":
+        spark.sql(f"INSERT INTO {table} (id, v) VALUES (1, 'spark')")
+    elif name == "variant_column":
+        spark.sql(f"INSERT INTO {table} VALUES (1, 'spark', parse_json('{{\"k\": 1}}'))")
+    else:
+        spark.sql(f"INSERT INTO {table} VALUES (1, 'spark'" + (", TIMESTAMP_NTZ '2024-01-01 00:00:00'" if name == "timestamp_ntz" else "") + ")")
 
 
 @pytest.mark.parametrize(
@@ -158,15 +187,34 @@ def test_write_to_table_with_writer_feature(started_cluster, feature):
         ch_columns = "id Int32, v String, id2 Int32"
     elif feature == "timestamp_ntz":
         ch_columns = "id Int32, v String, ts DateTime64(6)"
-    node.query(f"CREATE TABLE {table_name} ({ch_columns}) ENGINE = DeltaLakeLocal('{path}')")
+    elif feature == "identity_column":
+        ch_columns = "id Int32, v String, seq Int64"
+    elif feature == "type_widening":
+        ch_columns = "id Int64, v String"
+    elif feature == "variant_column":
+        ch_columns = "id Int32, v String, var String"
+    _, error = node.query_and_get_answer_with_error(f"CREATE TABLE {table_name} ({ch_columns}) ENGINE = DeltaLakeLocal('{path}')")
+    if error:
+        # The table cannot even be attached (e.g. a Variant column): nothing to write into, nothing committed.
+        logging.info("%s: attach rejected: %s", feature, error.splitlines()[0][:200])
+        assert "NOT_IMPLEMENTED" in error or "DELTA_KERNEL_ERROR" in error, error
+        assert spark.sql(f"DESCRIBE HISTORY {table}").count() == 2
+        return
 
     versions_before = spark.sql(f"DESCRIBE HISTORY {table}").count()
-    valid_row = {"generated_column": "(2, 'clickhouse', 3)", "timestamp_ntz": "(2, 'clickhouse', '2024-06-01 12:00:00')"}.get(feature, "(2, 'clickhouse')")
+    valid_row = {
+        "generated_column": "(2, 'clickhouse', 3)",
+        "timestamp_ntz": "(2, 'clickhouse', '2024-06-01 12:00:00')",
+        "identity_column": "(2, 'clickhouse', 2)",
+        "variant_column": "(2, 'clickhouse', '{\"k\": 2}')",
+    }.get(feature, "(2, 'clickhouse')")
     _, error = node.query_and_get_answer_with_error(f"INSERT INTO {table_name} VALUES {valid_row}")
     pull_from_node(node, path)
     versions_after = spark.sql(f"DESCRIBE HISTORY {table}").count()
     rows = spark.sql(f"SELECT id, v FROM {table} ORDER BY id").collect()
 
+    if feature in EXPECTED_OUTCOME:
+        assert ("rejected" if error else "accepted") == EXPECTED_OUTCOME[feature], (feature, error)
     if error:
         # Fail closed: a kernel/engine rejection with nothing committed.
         logging.info("%s: rejected: %s", feature, error.splitlines()[0][:200])
@@ -192,6 +240,33 @@ def test_write_to_table_with_writer_feature(started_cluster, feature):
         assert error, f"{feature}: a row violating the constraint was committed"
         pull_from_node(node, path)
         assert spark.sql(f"SELECT count(*) AS c FROM {table}").collect()[0].c == 2
+
+
+def test_write_to_table_with_unknown_writer_feature_is_rejected(started_cluster):
+    """Protocol (3, 7) with a writer feature this kernel does not know: the INSERT must be refused
+    before anything is committed, whatever the feature turns out to mean."""
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_unknown_writer_feature")
+    path = f"{USER_FILES}/{table_name}"
+    os.makedirs(f"{path}/_delta_log", exist_ok=True)
+    schema = '{"type":"struct","fields":[{"name":"id","type":"integer","nullable":false,"metadata":{}},{"name":"v","type":"string","nullable":true,"metadata":{}}]}'
+    with open(f"{path}/_delta_log/00000000000000000000.json", "w") as f:
+        f.write('{"protocol":{"minReaderVersion":3,"minWriterVersion":7,"readerFeatures":[],"writerFeatures":["futureWriterFeatureFromANewerProtocol"]}}\n')
+        f.write(
+            '{"metaData":{"id":"' + table_name + '","format":{"provider":"parquet","options":{}},"schemaString":"'
+            + schema.replace('"', '\\"')
+            + '","partitionColumns":[],"configuration":{},"createdTime":1700000000000}}\n'
+        )
+    push_to_node(node, path)
+
+    _, error = node.query_and_get_answer_with_error(f"CREATE TABLE {table_name} (id Int32, v String) ENGINE = DeltaLakeLocal('{path}')")
+    if not error:
+        _, error = node.query_and_get_answer_with_error(f"INSERT INTO {table_name} VALUES (1, 'clickhouse')")
+    assert error, "an INSERT into a table with an unknown writer feature was committed"
+    assert "DELTA_KERNEL_ERROR" in error or "NOT_IMPLEMENTED" in error, error
+    pull_from_node(node, path)
+    assert sorted(os.listdir(f"{path}/_delta_log")) == ["00000000000000000000.json"]
+    assert [f for f in os.listdir(path) if f.endswith(".parquet")] == []
 
 
 def log_versions(started_cluster, path):
@@ -315,6 +390,72 @@ def test_persistent_s3_fault_fails_closed(started_cluster, stage, partitioned):
     # The table keeps working once the fault is gone.
     node.query(f"INSERT INTO {path} SELECT number + 200 AS id, number % 2 AS part FROM numbers(6)")
     _assert_consistent(started_cluster, node, path, 2, partitioned)
+    node.query(f"DROP TABLE {path}")
+
+
+def _all_parquet_objects(started_cluster, path):
+    return {obj.object_name for obj in started_cluster.minio_client.list_objects(started_cluster.minio_bucket, f"{path}/", recursive=True) if obj.object_name.endswith(".parquet")}
+
+
+def _committed_add_objects(started_cluster, path):
+    result = set()
+    for obj in started_cluster.minio_client.list_objects(started_cluster.minio_bucket, f"{path}/_delta_log/", recursive=True):
+        if not obj.object_name.endswith(".json"):
+            continue
+        for line in started_cluster.minio_client.get_object(started_cluster.minio_bucket, obj.object_name).read().decode().splitlines():
+            action = json.loads(line)
+            if "add" in action:
+                result.add(f"{path}/{action['add']['path']}")
+    return result
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+@pytest.mark.xfail(
+    strict=True,
+    reason="https://github.com/ClickHouse/ClickHouse/issues/112096: a lost response on the commit PUT makes the writer delete the data files of the version it just committed",
+)
+def test_lost_commit_response_keeps_committed_data(started_cluster, partitioned):
+    """The commit PUT reaches the object storage and lands as version 1, but the writer never sees
+    the 200. Whatever the INSERT then reports, the log must never reference a missing data file and
+    the table must stay readable."""
+    node = started_cluster.instances["node1"]
+    path = _new_mock_table(started_cluster, node, "test_lost_commit_response", partitioned)
+    error = _insert_through_fault(started_cluster, node, path, "commit", "lost_response", 1, partitioned)
+    logging.info("lost commit response: %s", (error or "acknowledged").splitlines()[0][:200])
+    # The PUT was applied upstream: version 2 exists.
+    assert log_versions(started_cluster, path) == [0, 1, 2]
+    missing = _committed_add_objects(started_cluster, path) - _all_parquet_objects(started_cluster, path)
+    assert not missing, f"committed data files were deleted: {missing}"
+    assert node.query(f"SELECT count() FROM {path}").strip() == "12"
+    node.query(f"DROP TABLE {path}")
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
+    """The commit fails and the removal of the already-uploaded data files fails too: the INSERT
+    reports an error, the table is unchanged and readable, the next INSERT works. The uploaded
+    files may remain as orphans (documented; nothing references them)."""
+    node = started_cluster.instances["node1"]
+    broken_s3 = started_cluster.broken_s3
+    path = _new_mock_table(started_cluster, node, "test_commit_and_cleanup_fail", partitioned)
+    data_files_per_insert = 2 if partitioned else 1
+    broken_s3.reset()
+    broken_s3.setup_at_object_upload(count=100000, after=data_files_per_insert, action="connection_reset_by_peer")
+    broken_s3.setup_at_object_delete(count=100000, action="connection_reset_by_peer")
+    try:
+        _, error = node.query_and_get_answer_with_error(f"INSERT INTO {path} SELECT number + 100 AS id, number % 2 AS part FROM numbers(6)")
+    finally:
+        broken_s3.reset()
+    assert error, "the INSERT succeeded although the commit upload was reset"
+    logging.info("commit and cleanup failed: %s", error.splitlines()[0][:200])
+    assert log_versions(started_cluster, path) == [0, 1]
+    assert node.query(f"SELECT count() FROM {path}").strip() == "6"
+    # Orphans, if any, are exactly the files of the failed INSERT and none is referenced by the log.
+    orphans = _all_parquet_objects(started_cluster, path) - _committed_add_objects(started_cluster, path)
+    assert len(orphans) <= data_files_per_insert, orphans
+    node.query(f"INSERT INTO {path} SELECT number + 200 AS id, number % 2 AS part FROM numbers(6)")
+    assert log_versions(started_cluster, path) == [0, 1, 2]
+    assert node.query(f"SELECT count() FROM {path}").strip() == "12"
     node.query(f"DROP TABLE {path}")
 
 

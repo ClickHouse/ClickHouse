@@ -76,6 +76,18 @@ def started_cluster():
                 with_minio=True,
                 stay_alive=True,
             )
+        # A replica where the operator did not enable writes and pinned the feature tier to production:
+        # the shape Cloud customers hit when only some replicas of a service carry the profile change.
+        cluster.add_instance(
+            "node_production_only",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/allow_feature_tier_production.xml",
+            ],
+            user_configs=["configs/users.d/users.xml"],
+            with_minio=True,
+            stay_alive=True,
+        )
         cluster.add_instance(
             "node_old_writes",
             main_configs=["configs/config.d/named_collections.xml"],
@@ -153,7 +165,8 @@ def test_spark_add_column_then_clickhouse_append(started_cluster):
 
 def test_write_with_stale_declared_schema_and_pinned_snapshot(started_cluster):
     """A ClickHouse table declared before Spark added a column, and an INSERT pinned to the
-    pre-evolution snapshot: either is rejected or commits rows Spark reads consistently."""
+    pre-evolution snapshot: both are rejected (the write schema always comes from the latest
+    snapshot), and whatever were accepted would have to read back consistently in Spark."""
     node = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     table_name = randomize_table_name("test_stale_schema")
@@ -175,6 +188,7 @@ def test_write_with_stale_declared_schema_and_pinned_snapshot(started_cluster):
         if error:
             assert "INCOMPATIBLE_COLUMNS" in error or "DELTA_KERNEL_ERROR" in error, error
     logging.info("outcomes: %s", outcomes)
+    assert outcomes == {"stale_declared_schema": "rejected", "pinned_snapshot": "rejected"}, outcomes
     pull_from_node(node, path)
 
     rows = spark_rows(spark, path)
@@ -227,6 +241,44 @@ def test_spark_optimize_and_zorder_after_clickhouse_writes(started_cluster):
 # ---------------------------------------------------------------------------------------------
 # cluster table function, grants, named collections
 # ---------------------------------------------------------------------------------------------
+
+
+def test_writes_gate_differs_per_replica(started_cluster):
+    """Two replicas of one table, writes enabled on one only, and the Beta tier locked on the other:
+    every rejection is deterministic and names what to change, nothing is half-committed."""
+    node_on = started_cluster.instances["node1"]
+    node_off = started_cluster.instances["node_production_only"]
+    path = randomize_table_name("test_gate_per_replica")
+    create_empty_delta_table(started_cluster, "s3", path, pa.schema([("id", pa.int32(), False)]))
+    for node in (node_on, node_off):
+        node.query(f"CREATE TABLE {path} (id Int32) ENGINE = {delta_engine_definition(started_cluster, 's3', path)}")
+
+    assert node_off.query("SELECT value FROM system.server_settings WHERE name = 'allow_feature_tier'").strip() == "3"
+    assert node_off.query("SELECT value FROM system.settings WHERE name = 'allow_delta_lake_writes'").strip() == "0"
+
+    # The replica without the setting rejects the INSERT and tells the user which setting to change.
+    _, error = node_off.query_and_get_answer_with_error(f"INSERT INTO {path} VALUES (1)")
+    assert "SUPPORT_IS_DISABLED" in error and "allow_delta_lake_writes" in error, error
+    # ...and the production-only tier stops the user from turning the Beta setting on by any spelling.
+    for query in (
+        "SET allow_delta_lake_writes = 1",
+        "SET allow_experimental_delta_lake_writes = 1",
+        f"INSERT INTO {path} SETTINGS allow_delta_lake_writes = 1 VALUES (1)",
+    ):
+        _, error = node_off.query_and_get_answer_with_error(query)
+        assert "READONLY" in error and "allow_feature_tier" in error, (query, error)
+    # The Experimental CREATE setting is locked the same way.
+    _, error = node_off.query_and_get_answer_with_error("SET allow_delta_lake_create_table = 1")
+    assert "READONLY" in error and "allow_feature_tier" in error, error
+    assert log_versions(started_cluster, path) == [0]
+    assert list_delta_data_files(started_cluster, "s3", path) == []
+
+    # The enabled replica writes; both replicas read the same table afterwards.
+    node_on.query(f"INSERT INTO {path} VALUES (1), (2)")
+    assert log_versions(started_cluster, path) == [0, 1]
+    for node in (node_on, node_off):
+        assert node.query(f"SELECT count() FROM {path}").strip() == "2"
+        node.query(f"DROP TABLE {path}")
 
 
 def test_delta_lake_cluster_table_function_insert(started_cluster):

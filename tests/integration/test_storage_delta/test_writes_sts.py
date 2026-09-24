@@ -134,14 +134,11 @@ def test_stale_token_during_write_fails_closed(started_cluster):
         node.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_stale_token_error")
         node.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
     logging.info("stale token during write: %s", (error or "refreshed and committed").splitlines()[0][:200])
-    versions = log_versions(started_cluster, path)
-    if error:
-        assert versions == [0], versions
-        assert data_files(started_cluster, path) == []
-    else:
-        assert versions == [0, 1], versions
-        assert node.query(f"SELECT count() FROM {path}").strip() == "5"
+    # Fails closed: the stale token is not refreshed inside the INSERT, nothing is committed.
+    assert error, "the INSERT succeeded with a stale token"
+    assert log_versions(started_cluster, path) == [0]
+    assert data_files(started_cluster, path) == []
     # Recovered: the next write works.
     node.query(f"INSERT INTO {path} SELECT number + 100 FROM numbers(5)")
-    assert node.query(f"SELECT count() FROM {path}").strip() == ("5" if error else "10")
+    assert node.query(f"SELECT count() FROM {path}").strip() == "5"
     node.query(f"DROP TABLE {path}")
