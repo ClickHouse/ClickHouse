@@ -1296,6 +1296,10 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
                     {
                         pl->add_parts(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
                     }
+                    else if (rg.nextBool())
+                    {
+                        pl->add_parts(FuzzConfig::getRandomFuzzedPartName(rg.nextInFullRange()));
+                    }
                 }
             }
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}, string_tp.get()));
@@ -2285,8 +2289,25 @@ void StatementGenerator::generateLimitBy(RandomGenerator & rg, LimitByStatement 
 
 void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_order_by, LimitStatement * lim)
 {
-    generateLimitExpr(rg, lim->mutable_limit());
+    /// ClickHouse-only syntax, and a peer query runs verbatim on MySQL, PostgreSQL and SQLite.
+    const bool allow_range = this->peer_query != PeerQuery::AllPeers;
+    const bool add_after = allow_range && rg.nextSmallNumber() < 3;
+    const bool add_until = allow_range && rg.nextSmallNumber() < 3;
+
+    if ((!add_after && !add_until) || rg.nextBool())
+    {
+        generateLimitExpr(rg, lim->mutable_limit());
+    }
     lim->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.nextBool()));
+    if (add_after)
+    {
+        generateWherePredicate(rg, lim->mutable_limit_after());
+        lim->set_after_all(rg.nextBool());
+    }
+    if (add_until)
+    {
+        generateWherePredicate(rg, lim->mutable_limit_until());
+    }
 }
 
 void StatementGenerator::generateOffset(RandomGenerator & rg, const bool has_order_by, const bool has_limit, OffsetStatement * off)

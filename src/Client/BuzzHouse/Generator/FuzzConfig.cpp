@@ -411,7 +411,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_policies", [&](const JSONObjectType & value) { max_policies = static_cast<uint32_t>(value.getUInt64()); }},
-        {"max_hypotheticals", [&](const JSONObjectType & value) { max_hypotheticals = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_hypothetical_indexes",
+         [&](const JSONObjectType & value) { max_hypothetical_indexes = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_hypothetical_projections",
+         [&](const JSONObjectType & value) { max_hypothetical_projections = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
@@ -1149,6 +1152,29 @@ String FuzzConfig::getRandomFileSystemCacheValue()
             res.pop_back();
     }
     return res;
+}
+
+String FuzzConfig::getRandomFuzzedPartName(const uint64_t rand_val)
+{
+    static const DB::Strings fuzzedPartNames = {"all_1_1_0", "all_0_0_0", "20000101_1_1_0", "invalid_part"};
+
+    return fuzzedPartNames[rand_val % fuzzedPartNames.size()];
+}
+
+String FuzzConfig::getRandomFuzzedPartitionValue(const uint64_t rand_val)
+{
+    static const DB::Strings fuzzedPartitionValues
+        = {"tuple()", "0", "-1", "202101", "20000101", "'x'", "(202101, 'x')", "(0, 'a', NULL)"};
+
+    return fuzzedPartitionValues[rand_val % fuzzedPartitionValues.size()];
+}
+
+String FuzzConfig::getRandomFuzzedPartitionId(const uint64_t rand_val)
+{
+    static const DB::Strings fuzzedPartitionIds
+        = {"all", "0", "202101", "20000101", "5-7", "8a4f3b2c1d0e9f8a7b6c5d4e3f2a1b0c", "invalid partition", ""};
+
+    return fuzzedPartitionIds[rand_val % fuzzedPartitionIds.size()];
 }
 
 String FuzzConfig::tableGetRandomPartitionOrPart(
