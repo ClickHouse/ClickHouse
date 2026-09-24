@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
+from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.find_tests import Targeting
+from ci.jobs.scripts.integration_coverage_export import IntegrationCoverageExporter
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
@@ -1566,6 +1568,7 @@ def main():
     is_sequential = False
     is_targeted_check = False
     is_llvm_coverage = False
+    is_per_test_coverage = False
     llvm_profdata_cmd = None
 
     # Set on_error_hook to collect logs on hard timeout
@@ -1626,8 +1629,24 @@ tar -czf ./ci/tmp/logs.tar.gz \
             is_bugfix_validation = True
         elif "targeted" in to:
             is_targeted_check = True
+        elif to == "per_test_coverage":
+            is_per_test_coverage = True
         else:
             assert False, f"Unknown job option [{to}]"
+    assert (
+        not is_per_test_coverage or is_llvm_coverage
+    ), "per_test_coverage requires an amd_llvm_coverage* build"
+
+    per_test_coverage_dir = f"{temp_path}/per_test_coverage"
+    cidb_cluster = None
+    if is_per_test_coverage:
+        Shell.check(f"rm -rf {per_test_coverage_dir}", verbose=True)
+        os.makedirs(per_test_coverage_dir)
+        if not info.is_local_run:
+            # Fail before the tests, not after hours of them.
+            os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+            cidb_cluster = CIDBCluster()
+            assert cidb_cluster.is_ready(), "CIDB is not ready for the coverage export"
 
     if args.count:
         repeat_option = f"--count {args.count} --random-order"
@@ -1923,7 +1942,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
             "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
         ),
     }
-    if is_llvm_coverage:
+    if is_per_test_coverage:
+        # Read by tests/integration/helpers/cluster.py: every instance attributes its
+        # coverage to the test module and the cluster dumps it here on shutdown.
+        test_env["CLICKHOUSE_TESTS_PER_TEST_COVERAGE_DIR"] = per_test_coverage_dir
+        # No continuous mode (see cluster.py) and no profile merge: the coverage is
+        # taken from the servers' `system.coverage_log`, not from .profraw files.
+        test_env["LLVM_PROFILE_FILE"] = "it-%4m.profraw"
+    elif is_llvm_coverage:
         # %c enables continuous mode: the counters are memory-mapped into the
         # file and updated as the code runs, so the file is structurally valid
         # at every instant. Without it the profile is written only at process
@@ -2493,6 +2519,23 @@ tar -czf ./ci/tmp/logs.tar.gz \
         ), "LLVM coverage with bugfix validation is not supported"
         has_error = finalize_llvm_coverage_status(R, has_error)
 
+    if is_per_test_coverage and not info.is_local_run:
+        # Unlike the profile merge, a partial run is still exported: every module's
+        # coverage stands on its own, and the missing modules are simply absent.
+        export_result = Result.from_commands_run(
+            name="Collect coverage",
+            command=lambda: IntegrationCoverageExporter(
+                clickhouse_path=clickhouse_path,
+                coverage_dir=per_test_coverage_dir,
+                dest=cidb_cluster,
+                job_name=info.job_name,
+            ).do(),
+        )
+        R.results.append(export_result)
+        if not export_result.is_ok():
+            has_error = True
+            error_info.append("Per-module coverage export failed")
+
     # Capture whether this run saw any infrastructure problems BEFORE the
     # clearing block below resets `has_error`. If the answer is yes, the
     # bugfix-validation inversion path further down must be skipped: we have
@@ -2624,6 +2667,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+    elif is_per_test_coverage:
+        force_ok_exit = True
+        print("NOTE: Per-module coverage job - do not block pipeline")
 
     # After the last `/init` work, so the peaks cover the coverage merge too.
     print_leaf_peak_usage(os.environ)
