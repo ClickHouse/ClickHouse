@@ -46,6 +46,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
+#include <algorithm>
 #include <fmt/format.h>
 
 
@@ -62,6 +63,8 @@ namespace Setting
 {
     extern const SettingsBool enable_promql_native_plan;
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_promql_query_block_size;
 }
 
 namespace TimeSeriesSetting
@@ -267,10 +270,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     /// The table-function path owns native-plan selection and the SQL fallback. Keep custom
     /// lookback evaluation on the direct converter path until the table function can represent it.
-    if (params.type == Type::Range
+    const bool use_table_function = params.type == Type::Range
         && params.lookback_delta_param.empty()
         && evaluation_settings.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES
-        && getContext()->getSettingsRef()[Setting::enable_promql_native_plan])
+        && getContext()->getSettingsRef()[Setting::enable_promql_native_plan];
+    if (use_table_function)
     {
         sql_query = makePrometheusQueryRangeTableFunctionQuery(
             evaluation_settings.time_series_storage_id,
@@ -293,6 +297,20 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         query_context->setSetting("enable_materialized_cte", true);
 
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+
+    /// The table-function path applies this cap inside its generated plan. Apply it here only
+    /// for SQL generated directly by the converter, without overriding a stricter request limit.
+    if (!use_table_function)
+    {
+        const auto configured_promql_block_size = getContext()->getSettingsRef()[Setting::max_promql_query_block_size];
+        if (configured_promql_block_size.value)
+        {
+            const auto request_max_block_size = getContext()->getSettingsRef()[Setting::max_block_size].value;
+            query_context->setSetting(
+                "max_block_size",
+                Field(std::min(request_max_block_size, configured_promql_block_size.value)));
+        }
+    }
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 

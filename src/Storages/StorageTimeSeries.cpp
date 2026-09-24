@@ -1295,8 +1295,13 @@ This is safe here because those columns are functionally dependent on `id`, whic
 rows that a background merge collapses together share the same values. When the inner tags table is generated or its
 engine is specified inline as above, `TimeSeries` sets `allow_dimensions_outside_sorting_key = 1` on it automatically;
 for a manually created [external](#external-target-tables) aggregating tags table you must set it yourself.
-The same setting is set on the inner [samples](#samples-table) and [recent samples](#recent-samples-table) tables,
-so that extra columns can be declared in them.
+For inner [samples](#samples-table) and [recent samples](#recent-samples-table) tables using `AggregatingMergeTree`,
+`samples`, `min_time`, and `max_time` must use their matching `SimpleAggregateFunction` types. Extra columns outside
+the sorting key must be aggregate measures (`AggregateFunction` or `SimpleAggregateFunction`). Otherwise background
+merges could keep an arbitrary value. If an extra column is functionally dependent on the sorting key,
+`allow_dimensions_outside_sorting_key = 1` can be set explicitly on that inner engine. For bucketed samples,
+`ReplacingMergeTree`, `SummingMergeTree`, and other `MergeTree` variants that collapse or modify rows with the same
+sorting key are not supported as inner samples engines; plain `MergeTree` keeps all rows and is allowed.
 
 The default partition keys and the TTL of the inner samples tables are expressions over the `bucket` column, which has the type
 of the timestamps. If the timestamps are raw `UInt32`, these expressions use `toDateTime(bucket)` instead of `bucket`.

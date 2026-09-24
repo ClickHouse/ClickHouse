@@ -598,13 +598,13 @@ namespace
         if (const auto * value = get_new_value("version"); value && (SettingFieldUInt64{*value}.value < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES))
         {
             old_settings.removeSettings({
-                "samples_bucket_step_seconds", "samples_partition_by", "samples_index_granularity_bytes",
-                "recent_samples_bucket_step_seconds", "recent_samples_index_granularity_bytes"});
+                "samples_bucket_step_seconds", "samples_partition_by", "samples_index_granularity_bytes", "samples_compression_codec",
+                "recent_samples_bucket_step_seconds", "recent_samples_index_granularity_bytes", "recent_samples_compression_codec"});
         }
 
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
-            old_settings.removeSettings({"recent_samples_bucket_step_seconds", "recent_samples_partition_by", "recent_samples_index_granularity", "recent_samples_index_granularity_bytes"});
+            old_settings.removeSettings({"recent_samples_bucket_step_seconds", "recent_samples_partition_by", "recent_samples_index_granularity", "recent_samples_index_granularity_bytes", "recent_samples_compression_codec"});
 
         /// The default value of `store_min_time_and_max_time` is true, so an absent setting doesn't disable the columns.
         if (const auto * value = get_new_value("store_min_time_and_max_time"); value && !SettingFieldBool{*value}.value)
@@ -1853,7 +1853,8 @@ namespace
         ViewTarget::Kind target_kind,
         const TimeSeriesSettings & time_series_settings,
         const ResolvedTimeSeriesTypes & resolved_types,
-        const StorageID & table_id)
+        const StorageID & table_id,
+        bool require_aggregating_samples_column = false)
     {
         auto check_column = [&](std::string_view column_name)
         {
@@ -1930,12 +1931,16 @@ namespace
             bool types_match = types && types->first->equals(*resolved_types.timestamp_type)
                 && types->second->equals(*resolved_types.scalar_type);
             const auto * simple_aggregate = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(col->type->getCustomName());
-            bool aggregate_matches = !simple_aggregate || (simple_aggregate->getFunctionName() == "timeSeriesGroupArray");
+            bool aggregate_matches = simple_aggregate
+                ? (simple_aggregate->getFunctionName() == "timeSeriesGroupArray")
+                : !require_aggregating_samples_column;
             if (!types_match || !aggregate_matches)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-                    "{}: Column {} in the {} table has type {}, but expected Array(Tuple({}, {})) optionally wrapped in SimpleAggregateFunction(timeSeriesGroupArray, ...)",
+                    "{}: Column {} in the {} table has type {}, but expected {}Array(Tuple({}, {})){}",
                     table_id.getNameForLogs(), TimeSeriesColumnNames::Samples, target_kind, col->type->getName(),
-                    resolved_types.timestamp_type->getName(), resolved_types.scalar_type->getName());
+                    require_aggregating_samples_column ? "SimpleAggregateFunction(timeSeriesGroupArray, " : "",
+                    resolved_types.timestamp_type->getName(), resolved_types.scalar_type->getName(),
+                    require_aggregating_samples_column ? ")" : " optionally wrapped in SimpleAggregateFunction(timeSeriesGroupArray, ...)");
         };
 
         auto check_column_not_exists = [&](std::string_view column_name)
@@ -1951,6 +1956,19 @@ namespace
         {
             check_column(column_name);
             const auto * col = target_table_columns.tryGet(String(column_name));
+            if (require_aggregating_samples_column)
+            {
+                const auto * simple_aggregate = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(col->type->getCustomName());
+                const auto * function_name = (column_name == TimeSeriesColumnNames::MinTime) ? "min" : "max";
+                if (simple_aggregate && (simple_aggregate->getFunctionName() == function_name)
+                    && removeNullable(col->type)->equals(*resolved_types.timestamp_type))
+                    return;
+
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                    "{}: Column {} in the {} table has type {}, but expected SimpleAggregateFunction({}, {}), optionally with Nullable({})",
+                    table_id.getNameForLogs(), column_name, target_kind, col->type->getName(), function_name,
+                    resolved_types.timestamp_type->getName(), resolved_types.timestamp_type->getName());
+            }
             if (removeNullable(col->type)->equals(*resolved_types.timestamp_type))
                 return;
             if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(col->type->getCustomName()))
@@ -2425,12 +2443,32 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 if (normalizeInnerColumns(*inner_columns, kind, settings, resolved_types, table_id))
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
-                /// Validate the user-provided types of the inner columns the same way external targets are validated.
-                checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, settings, resolved_types, table_id);
-
                 auto inner_engine = create_query.getTargetInnerEngine(kind)
                     ? boost::static_pointer_cast<ASTStorage>(create_query.getTargetInnerEngine(kind)->clone())
                     : make_intrusive<ASTStorage>();
+
+                /// A bucketed samples table must not use a MergeTree variant that discards or otherwise
+                /// changes rows sharing the same sorting key without merging their samples.
+                if (hasBucketedSamples(settings) && ((kind == ViewTarget::Samples) || (kind == ViewTarget::RecentSamples))
+                    && inner_engine->engine)
+                {
+                    const auto & engine_name = inner_engine->engine->name;
+                    bool plain_merge_tree = (engine_name == "MergeTree") || (engine_name == "ReplicatedMergeTree")
+                        || (engine_name == "SharedMergeTree");
+                    if (engine_name.ends_with("MergeTree") && !engine_name.ends_with("AggregatingMergeTree") && !plain_merge_tree)
+                        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                            "{}: The inner {} table cannot use {} with bucketed samples; use `AggregatingMergeTree` or `MergeTree`",
+                            table_id.getNameForLogs(), kind, engine_name);
+                }
+
+                /// An `AggregatingMergeTree` collapses rows with the same sorting key. Its bucketed
+                /// `samples`, `min_time`, and `max_time` columns must use the matching aggregate functions.
+                bool require_aggregating_samples_column = hasBucketedSamples(settings)
+                    && ((kind == ViewTarget::Samples) || (kind == ViewTarget::RecentSamples))
+                    && (!inner_engine->engine || inner_engine->engine->name.ends_with("AggregatingMergeTree"));
+                checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, settings, resolved_types, table_id,
+                    require_aggregating_samples_column);
+
                 if (normalizeInnerEngine(*inner_engine, kind, settings, resolved_types, table_id, *params.query_settings))
                     create_query.setTargetInnerEngine(kind, inner_engine);
 

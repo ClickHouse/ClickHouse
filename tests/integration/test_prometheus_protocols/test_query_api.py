@@ -559,3 +559,32 @@ def test_generated_sql_always_runs_with_materialized_cte():
             retry_count=30,
             sleep_time=1,
         )
+
+
+def test_direct_promql_http_query_respects_block_size_cap():
+    for promql_block_size, request_block_size, expected_block_size in (
+        (8, 64, 8),
+        (64, 1, 1),
+        (0, 64, 64),
+    ):
+        query_id = f"promql-block-size-{uuid.uuid4()}"
+        url = (
+            f"http://{node.ip_address}:9093/api/v1/query"
+            f"?query=post_body_metric&time=1000"
+            f"&max_promql_query_block_size={promql_block_size}"
+            f"&max_block_size={request_block_size}"
+        )
+        response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
+        extract_data_from_http_api_response(response)  # raises unless a success envelope
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        # QueryFinish may be queued after the response is flushed, so retry through the
+        # query-log flush interval and verify the effective cap recorded for this request.
+        assert_eq_with_retry(
+            node,
+            "SELECT Settings['max_block_size'] "
+            f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+            f"{expected_block_size}\n",
+            retry_count=30,
+            sleep_time=1,
+        )

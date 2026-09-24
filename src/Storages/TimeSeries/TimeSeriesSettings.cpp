@@ -136,8 +136,10 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
             = settings[TimeSeriesSetting::samples_bucket_step_seconds].isChanged()
             || settings[TimeSeriesSetting::samples_partition_by].value
             || settings[TimeSeriesSetting::samples_index_granularity_bytes].isChanged()
+            || settings[TimeSeriesSetting::samples_compression_codec].isChanged()
             || settings[TimeSeriesSetting::recent_samples_bucket_step_seconds].isChanged()
-            || settings[TimeSeriesSetting::recent_samples_index_granularity_bytes].isChanged();
+            || settings[TimeSeriesSetting::recent_samples_index_granularity_bytes].isChanged()
+            || settings[TimeSeriesSetting::recent_samples_compression_codec].isChanged();
         if (has_bucket_layout_setting)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                 "Bucket-layout settings require `version` to be at least {}, but the table has version {}",
