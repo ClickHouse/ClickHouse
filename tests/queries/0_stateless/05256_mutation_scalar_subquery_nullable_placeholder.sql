@@ -4,7 +4,7 @@
 -- the enclosing conversion to the non-Nullable column type is evaluated while the header is computed, so
 -- the mutation failed with `Cannot convert NULL value to non-Nullable type` before the value was ever
 -- read. The mutation runs in the server's own context, so this covers the analyzer the server runs by
--- default; the old-analyzer path is covered by 05213_mutation_scalar_subquery_with_skip_index.
+-- default; the old-analyzer path is covered by 05255_mutation_scalar_subquery_with_skip_index.
 
 DROP TABLE IF EXISTS t_upd_src;
 DROP TABLE IF EXISTS t_upd_dst;

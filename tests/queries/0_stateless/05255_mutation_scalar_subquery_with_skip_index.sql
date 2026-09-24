@@ -3,9 +3,9 @@
 -- subquery is a placeholder, and the placeholder of a `Nullable` result was `NULL`: the enclosing
 -- conversion to the non-Nullable column type is evaluated while the header is computed, so the
 -- mutation failed with `Cannot convert NULL value to non-Nullable type` before the value was ever
--- read. The mutation runs in the server's own context, so the case is reached when the old analyzer
--- is the server default; with the new one the placeholder is built differently and the test only
--- pins the result.
+-- read. The mutation runs in the server's own context, so the old-analyzer path is reached when the
+-- old analyzer is the server default; the analyzer path is covered by
+-- 05256_mutation_scalar_subquery_nullable_placeholder.
 
 DROP TABLE IF EXISTS t_upd_src;
 DROP TABLE IF EXISTS t_upd_idx;
