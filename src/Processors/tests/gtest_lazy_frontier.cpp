@@ -261,3 +261,57 @@ TEST(LazyFrontier, ComputesAnUnusedNonDeterministicValueLate)
     EXPECT_EQ(frontier.at(random_in_merged).above, Placement::Above::Recomputed);
     EXPECT_FALSE(frontier.at(random_in_merged).computed_below);
 }
+
+/// Values a join can stuff: `a + b` and `intDiv(heavy, b)` are computed from one side of an outer join,
+/// and the result reads both above the LIMIT. Recomputing one there under the join's mask evaluates it
+/// on the stuffed rows too, which only a value that cannot throw survives.
+TEST(LazyFrontier, RecomputesAGatedValueOnlyUnderAMaskAndWhenItCannotThrow)
+{
+    tryRegisterFunctions();
+    const Block header{column("a"), column("b"), column("heavy")};
+
+    TestPlan plan;
+    auto & source = plan.addSource(header);
+
+    ActionsDAG dag(header.getColumnsWithTypeAndName());
+    const auto * a = dag.getOutputs()[0];
+    const auto * b = dag.getOutputs()[1];
+    const auto * heavy = dag.getOutputs()[2];
+    const auto & sum = addFunction(dag, "plus", {a, b});
+    const auto & quotient = addFunction(dag, "intDiv", {heavy, b});
+    dag.getOutputs() = {a, &dag.addAlias(sum, "sum"), &dag.addAlias(quotient, "quotient")};
+
+    auto & expression = plan.addStep(std::make_unique<ExpressionStep>(source.step->getOutputHeader(), std::move(dag)), source);
+
+    auto merged = buildMergedPlanDAG(expression);
+
+    /// What the builder records for a subtree on the side of an outer join that can be left unmatched.
+    const auto & stuffing = merged.stuffings.emplace_back();
+    for (const auto & node : merged.getDAG().getNodes())
+    {
+        merged.nodes_with_join_above.insert(&node);
+        merged.nearest_stuffing[&node] = &stuffing;
+    }
+
+    const auto * sum_in_merged = findNodeContaining(merged, "plus(");
+    const auto * quotient_in_merged = findNodeContaining(merged, "intDiv(");
+    ASSERT_TRUE(sum_in_merged != nullptr);
+    ASSERT_TRUE(quotient_in_merged != nullptr);
+    const std::vector<size_t> sort_keys{outputPosition(merged, "a")};
+
+    /// With no mask, neither can be recomputed: both are computed below the LIMIT, where the join stuffs them.
+    {
+        const auto frontier = chooseLazyFrontier(merged, sort_keys, {true});
+        EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Crossing);
+        EXPECT_EQ(frontier.at(quotient_in_merged).above, Placement::Above::Crossing);
+    }
+
+    /// With a mask, the sum is recomputed, reading `b` lazily, and the division still crosses, since it
+    /// throws for a stuffed row where `b` is zero.
+    {
+        const auto frontier = chooseLazyFrontier(merged, sort_keys, {true}, {&stuffing});
+        EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Recomputed);
+        EXPECT_EQ(frontier.at(quotient_in_merged).above, Placement::Above::Crossing);
+        EXPECT_TRUE(frontier.at(quotient_in_merged).computed_below);
+    }
+}

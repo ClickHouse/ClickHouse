@@ -167,6 +167,11 @@ struct Built
     /// filling `nodes_with_join_above` once from here at the end says the same thing as filling it at
     /// every join would.
     std::optional<NodeIterator> last_node_below_top_join;
+
+    /// Values a join's own DAG computes before the join: its keys, and what it passes through, such as
+    /// the `toNullable` wrappers of `join_use_nulls`. Those are below that join even though they come after
+    /// the mark above in the node list.
+    ActionsDAG::NodeRawConstPtrs pre_join_nodes;
 };
 
 Built buildImpl(QueryPlan::Node & node);
@@ -289,6 +294,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     built.dag.nearest_stuffing.merge(right.dag.nearest_stuffing);
     built.dag.origins.merge(right.dag.origins);
     built.dag.step_mappings.merge(right.dag.step_mappings);
+    built.pre_join_nodes.append_range(right.pre_join_nodes);
 
     /// This join sits above everything either side computed, and above everything the joins below them
     /// sit above, so its own mark is the only one the result needs.
@@ -303,6 +309,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     const std::array<bool, 2> side_is_stuffed{stuffed_sides.first, stuffed_sides.second};
     const std::array<ActionsDAG::NodeRawConstPtrs *, 2> side_ungated{&built.ungated_nodes, &right.ungated_nodes};
 
+    std::array<const MergedPlanDAG::Stuffing *, 2> side_stuffing{nullptr, nullptr};
     ActionsDAG::NodeRawConstPtrs still_ungated;
     for (size_t side = 0; side < 2; ++side)
     {
@@ -313,6 +320,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
         }
 
         const auto & stuffing = built.dag.stuffings.emplace_back(MergedPlanDAG::Stuffing{&node, side});
+        side_stuffing[side] = &stuffing;
         for (const auto * ungated : *side_ungated[side])
             built.dag.nearest_stuffing.emplace(ungated, &stuffing);
     }
@@ -321,6 +329,57 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     ActionsDAG::NodeMapping clone_mapping;
     if (!mergeAndTrack(built, step_dag, clone_mapping))
         return {};
+
+    /// The join's own DAG computes some values before the join - its keys, and the columns it hands on,
+    /// wrapped in `toNullable` under `join_use_nulls` - and the rest after it, from `actions_after_join`
+    /// up. A value of the first kind reads one side only and is stuffed by the join like any column of
+    /// that side, so it is gated by the join's stuffing of that side, and it is below the join.
+    {
+        ActionsDAG::NodeRawConstPtrs roots;
+        for (const auto * after_join : join_step->getActionsAfterJoin())
+            roots.push_back(clone_mapping.at(after_join));
+        for (const auto & key : join_step->getJoinOperator().expression)
+            roots.push_back(clone_mapping.at(key.getNode()));
+
+        NodeSet created_here;
+        for (const auto & [original, merged_node] : clone_mapping)
+            if (original->type != ActionsDAG::ActionType::INPUT)
+                created_here.insert(merged_node);
+
+        const auto is_below = [&](const ActionsDAG::Node * candidate) { return !created_here.contains(candidate); };
+
+        NodeSet gated_here;
+        for (const auto * pre_join : findReachableNodes(roots, is_below))
+        {
+            if (!created_here.contains(pre_join))
+                continue;
+
+            built.pre_join_nodes.push_back(pre_join);
+
+            const auto & node_sources = built.dag.getSources(pre_join);
+            if (node_sources.count() == 0)
+                continue;
+
+            bool reads_left = false;
+            bool reads_right = false;
+            for (auto it = node_sources.begin(); it != node_sources.end(); ++it)
+                (*it < source_shift ? reads_left : reads_right) = true;
+
+            const bool reads_left_only = reads_left && !reads_right;
+            const bool reads_right_only = reads_right && !reads_left;
+
+            const MergedPlanDAG::Stuffing * stuffing = nullptr;
+            if (reads_left_only)
+                stuffing = side_stuffing[0];
+            else if (reads_right_only)
+                stuffing = side_stuffing[1];
+
+            if (stuffing && built.dag.nearest_stuffing.emplace(pre_join, stuffing).second)
+                gated_here.insert(pre_join);
+        }
+
+        std::erase_if(built.ungated_nodes, [&](const auto * ungated) { return gated_here.contains(ungated); });
+    }
 
     /// A join outputs what its DAG outputs and drops the rest, while the merge kept the columns of both
     /// sides that the join does not read. Those come after in the output list.
@@ -370,13 +429,15 @@ MergedPlanDAG buildMergedPlanDAG(QueryPlan::Node & root)
 {
     auto built = buildImpl(root);
 
-    /// Filled once, from the outermost join: everything created before it is what some join sits above.
+    /// Filled once, from the outermost join: everything created before it is what some join sits above,
+    /// and so is what a join's own DAG computes before that join.
     if (built.last_node_below_top_join)
     {
         const auto & nodes = built.dag.getDAG().getNodes();
         for (auto it = nodes.begin(); it != std::next(*built.last_node_below_top_join); ++it)
             built.dag.nodes_with_join_above.insert(&*it);
     }
+    built.dag.nodes_with_join_above.insert(built.pre_join_nodes.begin(), built.pre_join_nodes.end());
 
     return std::move(built.dag);
 }
