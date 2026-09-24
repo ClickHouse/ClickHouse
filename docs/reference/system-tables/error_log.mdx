@@ -36,13 +36,9 @@ It is safe to truncate or drop this table at any time.
 - `last_error_symbols` ([Array(LowCardinality(String))](/reference/data-types/array)) — Demangled symbol names corresponding to last_error_trace.
 - `last_error_lines` ([Array(LowCardinality(String))](/reference/data-types/array)) — File names with line numbers corresponding to last_error_trace.
 
-<Note>
 `last_error_symbols` and `last_error_lines` are resolved from the binary's symbol table and debug info.
 `last_error_symbols` is populated wherever the symbol table is available (Linux and macOS builds).
-`last_error_lines` additionally requires DWARF debug info — read directly from the binary on Linux, or
-from a co-located `.dSYM` bundle on macOS — so it is empty when that debug info is not available. Both
-arrays are empty on platforms without introspection support (for example FreeBSD).
-</Note>
+`last_error_lines` additionally requires DWARF debug info - read directly from the binary on Linux, or from a co-located `.dSYM` bundle on macOS - so it is empty when that debug info is not available. Both arrays are empty on platforms without introspection support (for example FreeBSD).
 
 ## Example {#example}
 
