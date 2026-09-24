@@ -38,6 +38,7 @@ import argparse
 import logging
 import os
 import shlex
+import sys
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -72,9 +73,13 @@ from github_helper import (
 )
 from pr_info import Labels
 from report import GITHUB_JOB_URL
-from s3_helper import S3Helper
 from ssh import SSHKey
 from synchronizer_utils import SYNC_PR_PREFIX
+
+# The siblings above resolve through `sys.path[0]`, which is this script's own
+# directory; `ci.praktika` needs the repo root on the path as well.
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+from ci.praktika.s3 import S3  # noqa: E402
 
 
 class BackportException(Exception):
@@ -1600,7 +1605,7 @@ def run_once(args):
 
     gh = GitHub(token)
     temp_path = Path(TEMP_PATH)
-    gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
+    gh_cache = GitHubCache(gh.cache_path, temp_path, S3)
     gh_cache.download()
 
     bpp = BackportPRs(gh, args.repo, args.dry_run)
