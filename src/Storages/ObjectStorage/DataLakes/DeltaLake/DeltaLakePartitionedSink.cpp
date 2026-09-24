@@ -450,7 +450,18 @@ void DeltaLakePartitionedSink::onFinish()
         for (auto & [_, partition_info] : partitions_data)
         {
             for (const auto & [sink, written_bytes, written_rows] : partition_info->data_files)
-                object_storage->removeObjectIfExists(StoredObject(sink->getPath()));
+            {
+                const auto & path = sink->getPath();
+                /// This handler's `throw;` below must reach the caller, so a failing removal is logged, not propagated.
+                try
+                {
+                    object_storage->removeObjectIfExists(StoredObject(path));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to remove uncommitted data file after a failed commit: " + path);
+                }
+            }
         }
         throw;
     }

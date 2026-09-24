@@ -4921,10 +4921,15 @@ def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
     assert "_delta_log" in error, f"unexpected insert error: {error}"
 
     # O2: the removal that failed is reported, naming the data file it was left on.
-    removal_log = instance.grep_in_log("Failed to remove uncommitted data file")
-    assert f"{table_name}_data" in removal_log and ".parquet" in removal_log, (
-        f"the failed data-file removal was not logged with its path: {removal_log}"
+    # The message is the full one only the commit-failure cleanup emits; the cancel path
+    # logs a different one, and the path has to be on the matched line itself.
+    removal_log = instance.grep_in_log(
+        "Failed to remove uncommitted data file after a failed commit"
     )
+    assert any(
+        f"{table_name}_data" in line and ".parquet" in line
+        for line in removal_log.splitlines()
+    ), f"the failed data-file removal was not logged with its path: {removal_log}"
 
     # O3: the failed INSERT committed nothing, and left the committed data files alone.
     assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
