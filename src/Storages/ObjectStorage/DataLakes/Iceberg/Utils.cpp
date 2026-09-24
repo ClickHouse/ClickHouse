@@ -905,7 +905,10 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
         }
     }
     else
-        partition_iter = 0;
+    {
+        /// Partition field ids start at 1000. Iceberg Java assigns the next id from this value.
+        partition_iter = 999;
+    }
 
     result->set(Iceberg::f_fields, fields);
     return {result, partition_iter};
@@ -1134,13 +1137,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_last_partition_id, last_partition_id);
     new_metadata_file_content->set(Iceberg::f_current_snapshot_id, -1);
 
-    Poco::JSON::Object::Ptr refs = new Poco::JSON::Object;
-    Poco::JSON::Object::Ptr main_branch = new Poco::JSON::Object;
-    main_branch->set(Iceberg::f_metadata_snapshot_id, -1);
-    main_branch->set(Iceberg::f_type, "branch");
-    refs->set(Iceberg::f_main, main_branch);
-
-    new_metadata_file_content->set(Iceberg::f_refs, refs);
+    /// No snapshots yet, so no refs.
+    new_metadata_file_content->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
     new_metadata_file_content->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
