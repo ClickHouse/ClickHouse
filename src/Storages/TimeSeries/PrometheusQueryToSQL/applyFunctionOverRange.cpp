@@ -195,10 +195,15 @@ namespace
                  /* needs_cast_to_float64 = */ true,
              }},
 
+            {"mad_over_time",
+             {
+                 "timeSeriesMadToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
             /// stddev_over_time
             /// stdvar_over_time
-            /// mad_over_time
         };
 
         auto it = impl_map.find(function_name);
