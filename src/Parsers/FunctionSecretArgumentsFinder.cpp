@@ -655,7 +655,8 @@ void FunctionSecretArgumentsFinder::findRemoteFunctionSecretArguments()
     {
         /// remote(named_collection, ..., password = 'password', ...)
         findSecretNamedArgument("password", 1);
-        return;
+        /// An identifier is also a cluster name when no such collection exists, and that form keeps the
+        /// password in a positional slot, so the walk below has to run for it too.
     }
 
     /// We're going to replace 'password' with '[HIDDEN'] for the following signatures:
