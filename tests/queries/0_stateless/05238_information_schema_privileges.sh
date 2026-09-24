@@ -28,6 +28,17 @@ ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS 'q''\\\\05238_${db}'"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER 'q''\\\\05238_${db}'"
 ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TEMPORARY TABLE ON *.* TO 'q''\\\\05238_${db}'"
 
+# A user and a role may share a name; grantee_type tells them apart.
+# A GRANT to an ambiguous name goes to the user, so the role gets its grant first.
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS clash_05238_${db}"
+${CLICKHOUSE_CLIENT} -q "DROP ROLE IF EXISTS clash_05238_${db}"
+${CLICKHOUSE_CLIENT} -q "CREATE ROLE clash_05238_${db}"
+${CLICKHOUSE_CLIENT} -q "GRANT SHOW DATABASES ON *.* TO clash_05238_${db}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER clash_05238_${db}"
+${CLICKHOUSE_CLIENT} -q "GRANT OPTIMIZE ON *.* TO clash_05238_${db}"
+# An `ON *` grant of a parameterized type is a plain global privilege and must be visible:
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON * TO clash_05238_${db}"
+
 # Not representable in MySQL terms, must not appear in any of the views:
 ${CLICKHOUSE_CLIENT} -q "REVOKE SHOW TABLES ON secret_05238.* FROM $user"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON wildcard_05238*.* TO $user"
@@ -53,8 +64,12 @@ echo "-- grantee with a quote and a backslash in the name"
 ${CLICKHOUSE_CLIENT} -q "SELECT replaceAll(grantee, '$db', '[db]'), privilege_type FROM information_schema.user_privileges
     WHERE privilege_type = 'CREATE TEMPORARY TABLE' AND grantee LIKE '%05238_$db%'"
 
+echo "-- user/role name collision and ON * parameterized grant"
+${CLICKHOUSE_CLIENT} -q "SELECT replaceAll(grantee, '$db', '[db]'), privilege_type, grantee_type FROM information_schema.user_privileges
+    WHERE grantee LIKE '%clash_05238_$db%' ORDER BY ALL"
+
 echo "-- not representable grants are hidden"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM information_schema.user_privileges WHERE grantee LIKE '%_05238_$db%' AND privilege_type = 'TABLE ENGINE'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM information_schema.user_privileges WHERE grantee LIKE '%user_05238_$db%' AND privilege_type = 'TABLE ENGINE'"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM information_schema.schema_privileges WHERE table_schema LIKE 'secret_05238%' OR table_schema LIKE 'wildcard_05238%'"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM information_schema.table_privileges WHERE grantee LIKE '%_05238_$db%' AND table_name != 't'"
 
@@ -65,4 +80,6 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM INFORMATION_SCHEMA.user_privileges 
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER $user"
 ${CLICKHOUSE_CLIENT} -q "DROP USER 'q''\\\\05238_${db}'"
+${CLICKHOUSE_CLIENT} -q "DROP USER clash_05238_${db}"
+${CLICKHOUSE_CLIENT} -q "DROP ROLE clash_05238_${db}"
 ${CLICKHOUSE_CLIENT} -q "DROP ROLE $role"

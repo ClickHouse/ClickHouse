@@ -1,4 +1,7 @@
 -- user_privileges
+\'clash_05238_[db]\'@\'%\'	def	OPTIMIZE	NO
+\'clash_05238_[db]\'@\'%\'	def	SHOW DATABASES	NO
+\'clash_05238_[db]\'@\'%\'	def	TABLE ENGINE	NO
 \'q\\\'\\\\05238_[db]\'@\'%\'	def	CREATE TEMPORARY TABLE	NO
 \'user_05238_[db]\'@\'%\'	def	SELECT	NO
 \'user_05238_[db]\'@\'%\'	def	SHOW TABLES	NO
@@ -11,6 +14,10 @@
 \'role_05238_[db]\'@\'%\'	def	[db]	t	b	SELECT	NO
 -- grantee with a quote and a backslash in the name
 \'q\\\'\\\\05238_[db]\'@\'%\'	CREATE TEMPORARY TABLE
+-- user/role name collision and ON * parameterized grant
+\'clash_05238_[db]\'@\'%\'	OPTIMIZE	USER
+\'clash_05238_[db]\'@\'%\'	SHOW DATABASES	ROLE
+\'clash_05238_[db]\'@\'%\'	TABLE ENGINE	USER
 -- not representable grants are hidden
 0
 0

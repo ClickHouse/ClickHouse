@@ -419,7 +419,7 @@ Columns:
 
 Provides information about global privileges, read from the [system.grants](/reference/system-tables/grants) system table (rows with no database).
 
-The `*_PRIVILEGES` views show only positive, non-wildcard, non-parameterized grants: partial revokes, wildcard grants (e.g. `GRANT SELECT ON db_prefix*.*`) and parameterized grants (e.g. `GRANT TABLE ENGINE ON TinyLog`) cannot be represented in the MySQL-compatible format and are omitted, so a grantee restricted by a partial revoke is shown with the unrestricted grant. `system.grants` is the authoritative source. Unlike MySQL, the views show the grants of all users and roles, and reading them requires access to `system.grants`; without it the query fails with an `ACCESS_DENIED` exception. There is no `GRANTOR` column because ClickHouse does not record who issued a grant.
+The `*_PRIVILEGES` views show only positive, non-wildcard grants: partial revokes, wildcard grants (e.g. `GRANT SELECT ON db_prefix*.*`) and grants on specific named objects of parameterized privilege types (e.g. `GRANT TABLE ENGINE ON TinyLog`) cannot be represented in the MySQL-compatible format and are omitted, so a grantee restricted by a partial revoke is shown with the unrestricted grant. `ON *` grants of parameterized types are shown as plain global privileges. `system.grants` is the authoritative source. Unlike MySQL, the views show the grants of all users and roles, and reading them requires access to `system.grants`; without it the query fails with an `ACCESS_DENIED` exception. There is no `GRANTOR` column because ClickHouse does not record who issued a grant.
 
 Columns:
 
@@ -427,6 +427,7 @@ Columns:
 - `table_catalog` ([String](/reference/data-types/string)) — Always `def`.
 - `privilege_type` ([String](/reference/data-types/string)) — The name of the privilege, e.g. `SELECT` or `ALTER UPDATE`. See [system.privileges](/reference/system-tables/privileges) for the full list.
 - `is_grantable` ([String](/reference/data-types/string)) — `YES` if the privilege is granted `WITH GRANT OPTION`, otherwise `NO`.
+- `grantee_type` ([String](/reference/data-types/string)) — `USER` or `ROLE`. Non-standard column: a user and a role may share the same name in ClickHouse, and this column tells such grantees apart.
 
 ## SCHEMA_PRIVILEGES {#schema_privileges}
 
@@ -439,6 +440,7 @@ Columns:
 - `table_schema` ([String](/reference/data-types/string)) — The name of the database.
 - `privilege_type` ([String](/reference/data-types/string)) — The name of the privilege.
 - `is_grantable` ([String](/reference/data-types/string)) — `YES` if the privilege is granted `WITH GRANT OPTION`, otherwise `NO`.
+- `grantee_type` ([String](/reference/data-types/string)) — `USER` or `ROLE`. Non-standard column: a user and a role may share the same name in ClickHouse, and this column tells such grantees apart.
 
 ## TABLE_PRIVILEGES {#table_privileges}
 
@@ -452,6 +454,7 @@ Columns:
 - `table_name` ([String](/reference/data-types/string)) — The name of the table.
 - `privilege_type` ([String](/reference/data-types/string)) — The name of the privilege.
 - `is_grantable` ([String](/reference/data-types/string)) — `YES` if the privilege is granted `WITH GRANT OPTION`, otherwise `NO`.
+- `grantee_type` ([String](/reference/data-types/string)) — `USER` or `ROLE`. Non-standard column: a user and a role may share the same name in ClickHouse, and this column tells such grantees apart.
 
 ## COLUMN_PRIVILEGES {#column_privileges}
 
@@ -466,3 +469,4 @@ Columns:
 - `column_name` ([String](/reference/data-types/string)) — The name of the column.
 - `privilege_type` ([String](/reference/data-types/string)) — The name of the privilege.
 - `is_grantable` ([String](/reference/data-types/string)) — `YES` if the privilege is granted `WITH GRANT OPTION`, otherwise `NO`.
+- `grantee_type` ([String](/reference/data-types/string)) — `USER` or `ROLE`. Non-standard column: a user and a role may share the same name in ClickHouse, and this column tells such grantees apart.

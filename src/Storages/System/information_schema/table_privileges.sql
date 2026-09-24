@@ -1,9 +1,11 @@
--- The *_PRIVILEGES views show only positive, non-wildcard, non-parameterized grants:
--- partial revokes, wildcard grants (e.g. `GRANT SELECT ON db_prefix*.*`) and parameterized grants
--- (e.g. `GRANT TABLE ENGINE ON TinyLog`, `GRANT READ ON S3`) cannot be represented in the
--- MySQL-compatible format and are omitted. `system.grants` is the authoritative source.
+-- The *_PRIVILEGES views show only positive, non-wildcard grants: partial revokes, wildcard
+-- grants (e.g. `GRANT SELECT ON db_prefix*.*`) and grants on specific named objects of
+-- parameterized privilege types (e.g. `GRANT TABLE ENGINE ON TinyLog`) cannot be represented
+-- in the MySQL-compatible format and are omitted, while `ON *` grants of parameterized types
+-- are shown as plain global privileges. `system.grants` is the authoritative source.
 -- The grantee (a user or a role - ClickHouse roles have no MySQL analog) is rendered
--- MySQL-style as 'name'@'%', with backslashes and quotes in names escaped as \\ and \'.
+-- MySQL-style as 'name'@'%', with backslashes and quotes in names escaped as \\ and \';
+-- a user and a role may share the same name, the non-standard `grantee_type` column tells them apart.
 ATTACH VIEW table_privileges
     (
      `grantee` String,
@@ -17,7 +19,9 @@ ATTACH VIEW table_privileges
      `TABLE_SCHEMA` String,
      `TABLE_NAME` String,
      `PRIVILEGE_TYPE` String,
-     `IS_GRANTABLE` String
+     `IS_GRANTABLE` String,
+     `grantee_type` String,
+     `GRANTEE_TYPE` String
 )
 SQL SECURITY INVOKER
 AS SELECT
@@ -32,7 +36,9 @@ AS SELECT
     table_schema                  AS TABLE_SCHEMA,
     table_name                    AS TABLE_NAME,
     privilege_type                AS PRIVILEGE_TYPE,
-    is_grantable                  AS IS_GRANTABLE
+    is_grantable                  AS IS_GRANTABLE,
+    if(user_name IS NOT NULL, 'USER', 'ROLE') AS grantee_type,
+    grantee_type                  AS GRANTEE_TYPE
 FROM system.grants
 WHERE (table IS NOT NULL)
     AND (column IS NULL)
