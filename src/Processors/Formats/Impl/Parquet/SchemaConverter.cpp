@@ -20,6 +20,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/Write.h>
 
 #include <array>
 #include <fmt/ranges.h>
@@ -169,7 +170,6 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
         /// the table schema, e.g. the v3 row-lineage fields `_row_id` (2147483540) and
         /// `_last_updated_sequence_number` (2147483539) that spec-compliant writers materialize
         /// into data files. Those are requested by their physical name, so they are matched by name.
-        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
         if (element.field_id > iceberg_max_user_field_id)
             return element.name;
 

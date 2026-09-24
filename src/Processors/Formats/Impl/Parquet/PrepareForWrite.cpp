@@ -890,6 +890,22 @@ void prepareColumnRecursive(
 
 }
 
+bool isGeoColumnWrittenAsWKBScalar(const DataTypePtr & type)
+{
+    const auto * custom_name = type->getCustomName();
+    if (!custom_name)
+        return false;
+
+    const auto & name = custom_name->getName();
+    return name == "Geometry"
+        || name == WKBPointTransform::name
+        || name == WKBMultiPointTransform::name
+        || name == WKBLineStringTransform::name
+        || name == WKBPolygonTransform::name
+        || name == WKBMultiLineStringTransform::name
+        || name == WKBMultiPolygonTransform::name;
+}
+
 bool IcebergOptionality::isOptional(const String & path) const
 {
     /// No mapper, or a mapper that carries only field ids / string paths: keep today's behavior.
@@ -916,7 +932,24 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
         /// tree (not just top-level names): every logical field must have a field id, else the block
         /// and the sink's latest schema disagree and the footer would silently mismatch its manifest.
         if (column_field_ids)
-            validateIcebergFieldIds(c.type, c.name, *column_field_ids);
+        {
+            /// A geo column collapses to a single WKB `String` field when GeoParquet output is on
+            /// (prepareGeoColumn runs inside prepareColumnForWrite below). The emitted schema then has
+            /// only the top-level field, so validate just that — walking the original `Tuple`/`Array`
+            /// shape would demand nested field ids the writer never emits, matching the rule
+            /// buildColumnFieldIds already applies when constructing the map.
+            if (options.write_geometadata && isGeoColumnWrittenAsWKBScalar(c.type))
+            {
+                if (!column_field_ids->contains(c.name))
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Column '{}' has no field id in the Iceberg schema being written. The table schema "
+                        "likely changed concurrently (e.g. a column was renamed); retry the INSERT.",
+                        c.name);
+            }
+            else
+                validateIcebergFieldIds(c.type, c.name, *column_field_ids);
+        }
 
         prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema, column_field_ids, iceberg_optionality);
     }
