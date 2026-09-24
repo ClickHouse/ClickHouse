@@ -29,7 +29,15 @@ InterpreterShowColumnsQuery::InterpreterShowColumnsQuery(const ASTPtr & query_pt
 }
 
 
-String InterpreterShowColumnsQuery::getRewrittenQuery()
+StorageID InterpreterShowColumnsQuery::resolveTable() const
+{
+    const auto & query = query_ptr->as<const ASTShowColumnsQuery &>();
+    /// A hierarchical name (`a.b.c`, or `c` inside `USE a.b`) is the database and the table of the table it refers to
+    /// (see `DatabaseCatalog`).
+    return DatabaseCatalog::instance().resolveHierarchicalName({getContext()->resolveDatabase(query.database), query.table}, getContext());
+}
+
+String InterpreterShowColumnsQuery::getRewrittenQuery(const StorageID & table_id)
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
 
@@ -41,9 +49,8 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     const bool remap_fixed_string_as_text = settings[Setting::mysql_map_fixed_string_to_text_in_show_columns];
 
     WriteBufferFromOwnString buf_database;
-    String resolved_database = getContext()->resolveDatabase(query.database);
-    String database = escapeString(resolved_database);
-    String table = escapeString(query.table);
+    String database = escapeString(table_id.database_name);
+    String table = escapeString(table_id.table_name);
 
     String rewritten_query;
     if (use_mysql_types)
@@ -172,15 +179,17 @@ WHERE
 
 BlockIO InterpreterShowColumnsQuery::execute()
 {
-    const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
-    String database = getContext()->resolveDatabase(query.database);
+    /// The visibility of the source database in `system.columns` / `system.tables` is decided by the database the
+    /// table was resolved to, not by the prefix as written (`catalog.ns` of `catalog.ns.t`).
+    StorageID table_id = resolveTable();
+    const String & database = table_id.database_name;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
         query_context->setSetting("show_remote_databases_in_system_tables", true);
 
-    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
+    return executeQuery(getRewrittenQuery(table_id), query_context, QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowColumnsQuery(InterpreterFactory & factory);

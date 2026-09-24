@@ -154,9 +154,9 @@ void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary
     loadOrReload(resolved_dictionary_name);
 }
 
-void ExternalDictionariesLoader::reloadDictionary(const QualifiedTableName & dictionary_name) const
+void ExternalDictionariesLoader::reloadDictionary(const QualifiedTableName & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name);
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
     loadOrReload(resolved_dictionary_name);
 }
 
@@ -166,9 +166,9 @@ bool ExternalDictionariesLoader::unloadDictionary(const std::string & dictionary
     return unload(resolved_dictionary_name);
 }
 
-bool ExternalDictionariesLoader::unloadDictionary(const QualifiedTableName & dictionary_name) const
+bool ExternalDictionariesLoader::unloadDictionary(const QualifiedTableName & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name);
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
     return unload(resolved_dictionary_name);
 }
 
@@ -261,9 +261,9 @@ std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name));
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryName(const QualifiedTableName & dictionary_name) const
+std::string ExternalDictionariesLoader::resolveDictionaryName(const QualifiedTableName & dictionary_name, const std::string & current_database_name) const
 {
-    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name);
+    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
 
     if (has(resolved_name))
         return resolved_name;
@@ -277,33 +277,34 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     /// Try to split name and get id from associated StorageDictionary.
     /// If something went wrong, return name as is.
 
-    String res = name;
+    if (name.empty())
+        return name;
 
-    auto qualified_name = QualifiedTableName::tryParseFromString(name);
-    if (!qualified_name)
-        return res;
+    /// `db.dict`, or a hierarchical name: `a.b.dict`, or `dict` inside `USE a.b` (see `DatabaseCatalog`).
+    StorageID dictionary_id = DatabaseCatalog::parseHierarchicalName(name);
 
-    if (qualified_name->database.empty())
+    if (dictionary_id.database_name.empty())
     {
         /// Either database name is not specified and we should use current one
         /// or it's an XML dictionary.
         bool is_xml_dictionary = has(name);
         if (is_xml_dictionary)
-            return res;
-
-        qualified_name->database = current_database_name;
+            return name;
     }
 
-    return resolveDictionaryNameFromDatabaseCatalog(*qualified_name);
+    return resolveDictionaryNameFromDatabaseCatalog({dictionary_id.database_name, dictionary_id.table_name}, current_database_name);
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const QualifiedTableName & name) const
+std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const QualifiedTableName & name, const std::string & current_database_name) const
 {
-    String res = name.getFullName();
+    auto context = const_pointer_cast<Context>(getContext());
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
-        {name.database, name.table},
-        const_pointer_cast<Context>(getContext()));
+    /// The name is taken as written when such a dictionary exists (`db`.`dict.with.dots`); otherwise the other
+    /// splits of the hierarchical name are tried, also inside the current database (see `DatabaseCatalog`).
+    StorageID dictionary_id = DatabaseCatalog::instance().resolveHierarchicalName({name.database, name.table}, current_database_name, context);
+    String res = dictionary_id.getFullNameNotQuoted();
+
+    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(dictionary_id, context);
 
     if (!db)
         return res;

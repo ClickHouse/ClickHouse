@@ -1,4 +1,5 @@
 #include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/CommonParsers.h>
 
@@ -37,8 +38,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ParserKeyword s_cleanup(Keyword::CLEANUP);
     ParserKeyword s_manifest(Keyword::MANIFEST);
     ParserKeyword s_by(Keyword::BY);
-    ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier name_p(true);
     ParserPartition partition_p;
 
     ASTPtr database;
@@ -55,15 +54,9 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (!s_optimize_table.ignore(pos, expected))
         return false;
 
-    if (!name_p.parse(pos, table, expected))
+    /// [db.]table, possibly a hierarchical name `a.b.c`
+    if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
         return false;
-
-    if (s_dot.ignore(pos, expected))
-    {
-        database = table;
-        if (!name_p.parse(pos, table, expected))
-            return false;
-    }
 
     if (ParserKeyword{Keyword::ON}.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
         return false;

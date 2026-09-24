@@ -471,7 +471,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (table_id)
     {
+        /// Both parts: a hierarchical name (`ALTER TABLE a.b.c`, `a.b` in `USE a`) may be split differently from
+        /// how it was written, see `DatabaseCatalog::resolveHierarchicalName`.
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+        query_ptr->as<ASTAlterQuery &>().setTable(table_id.table_name);
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 

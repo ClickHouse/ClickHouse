@@ -1511,10 +1511,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
+            /// Any number of parts: `a.b.c` is a hierarchical name (see `DatabaseCatalog`), resolved by the dictionaries
+            /// loader or the catalog below.
             size_t parts_size = identifier.getPartsSize();
-            if (parts_size < 1 || parts_size > 2)
+            if (parts_size < 1)
                 throw Exception(ErrorCodes::INVALID_IDENTIFIER,
-                    "Expected {} function first argument identifier to contain 1 or 2 parts. Actual '{}'. In scope {}",
+                    "Expected {} function first argument identifier to contain at least 1 part. Actual '{}'. In scope {}",
                     function_name,
                     identifier.getFullName(),
                     scope.scope_node->formatASTForErrorMessage());

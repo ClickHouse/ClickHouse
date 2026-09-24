@@ -221,14 +221,20 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
         return {};
     }
 
-    /// same privilege as the real ADD PROJECTION, before the table is resolved so nothing about it leaks;
+    /// The (hierarchical, see `DatabaseCatalog`) name is bound to the table it denotes, or to its placement when there
+    /// is no such table, without throwing, so that the privilege is checked on the same table that is acted upon and
+    /// nothing about the table leaks before the check.
+    auto table_id = context->tryResolveStorageID(StorageID(query.getDatabase(), query.getTable()));
+    if (!table_id)
+        table_id = StorageID(context->resolveDatabase(query.getDatabase()), query.getTable());
+
+    /// same privilege as the real ADD PROJECTION, before the table is looked up so nothing about it leaks;
     /// dropping needs it too, otherwise the drop alone would answer what the caller may not ask
     if (is_projection)
-        context->checkAccess(
-            AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
+        context->checkAccess(AccessType::ALTER_ADD_PROJECTION, table_id.getDatabaseName(), table_id.getTableName());
 
-    auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    table_id = table->getStorageID();
 
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
     if (!merge_tree)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 
 
@@ -25,7 +26,10 @@ public:
 private:
     ASTPtr query_ptr;
 
-    String getRewrittenQuery();
+    String getRewrittenQuery(const StorageID & table_id);
+
+    /// The table the (hierarchical, see `DatabaseCatalog`) name refers to.
+    StorageID resolveTable() const;
 };
 
 
