@@ -21,3 +21,29 @@ plain IN
 1	7
 1
 2
+explain, one operand
+1
+nullable, null-skipping
+Nullable(UInt8)	0	3
+Nullable(UInt8)	\N	1
+nullable, null-comparing
+UInt8	0	4
+low cardinality
+LowCardinality(UInt8)	0	4
+low cardinality nullable
+LowCardinality(Nullable(UInt8))	0	3
+LowCardinality(Nullable(UInt8))	\N	1
+remote pushdown
+2
+0
+0
+0
+remote pushdown is reachable
+1
+remote pushdown keeps the convertible conjunct
+1
+serialized plan round trip
+0
+0
+0
+0
