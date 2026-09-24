@@ -24,6 +24,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_rewrite_array_exists_to_has;
+    extern const SettingsBool optimize_rewrite_array_exists_over_tokens;
 }
 
 namespace
@@ -76,7 +77,10 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_rewrite_array_exists_to_has])
+        const auto & settings = getSettings();
+        const bool rewrite_to_has = settings[Setting::optimize_rewrite_array_exists_to_has];
+        const bool rewrite_over_tokens = settings[Setting::optimize_rewrite_array_exists_over_tokens];
+        if (!rewrite_to_has && !rewrite_over_tokens)
             return;
 
         auto * array_exists_function_node = node->as<FunctionNode>();
@@ -87,7 +91,6 @@ public:
         if (array_exists_function_arguments_nodes.size() != 2)
             return;
 
-        /// lambda function must be like: x -> x = elem
         auto * lambda_node = array_exists_function_arguments_nodes[0]->as<LambdaNode>();
         if (!lambda_node)
             return;
@@ -107,9 +110,14 @@ public:
                 && column_node->getColumnSourceOrNull() == lambda_arguments_node;
         };
 
-        if (tryRewriteToHasTokenFunction(*array_exists_function_node, lambda_node->getExpression(), is_lambda_argument))
+        if (rewrite_over_tokens
+            && tryRewriteToHasTokenFunction(*array_exists_function_node, lambda_node->getExpression(), is_lambda_argument))
             return;
 
+        if (!rewrite_to_has)
+            return;
+
+        /// lambda function must be like: x -> x = elem
         auto * filter_node = lambda_node->getExpression()->as<FunctionNode>();
         if (!filter_node || filter_node->getFunctionName() != "equals")
             return;
@@ -191,7 +199,8 @@ public:
 private:
     /// Rewrite arrayExists(x -> f(x, c), tokens(input[, tokenizer])) to hasTokenLike/hasTokenMatch(input, pattern, tokenizer),
     /// which a text index on `input` can answer. Unlike hasTokenPrefix, they never apply the preprocessor of that index.
-    bool tryRewriteToHasTokenFunction(FunctionNode & array_exists_function_node, const QueryTreeNodePtr & lambda_expression, const auto & is_lambda_argument)
+    bool tryRewriteToHasTokenFunction(
+        FunctionNode & array_exists_function_node, const QueryTreeNodePtr & lambda_expression, const auto & is_lambda_argument)
     {
         auto & arguments = array_exists_function_node.getArguments().getNodes();
         const auto * tokens_function_node = arguments[1]->as<FunctionNode>();

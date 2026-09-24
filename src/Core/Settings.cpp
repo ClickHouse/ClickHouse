@@ -6443,8 +6443,11 @@ Rewrite aggregate functions with if expression as argument when logically equiva
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 )", 0) \
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
-Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1).
-Also rewrite arrayExists() over the tokens of a string to `hasTokenLike` or `hasTokenMatch`, which can use a text index. For example, arrayExists(x -> startsWith(x, 'err'), tokens(s)) can be rewritten to hasTokenLike(s, 'err%', 'splitByNonAlpha')
+Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
+)", 0) \
+    DECLARE(Bool, optimize_rewrite_array_exists_over_tokens, true, R"(
+Rewrite `arrayExists` over `tokens` of a string to `hasTokenLike` or `hasTokenMatch` when logically equivalent, so it can use a text index.
+For example, `arrayExists(x -> startsWith(x, 'err'), tokens(s))` can be rewritten to `hasTokenLike(s, 'err%', 'splitByNonAlpha')`
 )", 0) \
     DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
 Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays

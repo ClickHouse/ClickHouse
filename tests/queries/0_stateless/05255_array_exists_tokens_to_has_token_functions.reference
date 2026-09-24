@@ -98,3 +98,6 @@ FixedString	[]
 FixedString	[]
 FixedString	[3]
 FixedString	[3]
+-- the rewrite is on by default, and compatibility with 26.9 turns it off
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE hasTokenLike(__table1.msg, \'50\\\\%\\\\_%\', \'splitByNonAlpha\')
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), startsWith(x, \'50%_\')), tokens(__table1.msg))

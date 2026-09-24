@@ -21,7 +21,11 @@ class RewriteArrayExistsToHasPass final : public IQueryTreePass
 public:
     String getName() override { return "RewriteArrayExistsToHas"; }
 
-    String getDescription() override { return "Rewrite arrayExists(func, arr) functions to has(arr, elem), or to hasTokenLike/hasTokenMatch over tokens(), when logically equivalent"; }
+    String getDescription() override
+    {
+        return "Rewrite arrayExists(func, arr) functions to has(arr, elem), or to hasTokenLike/hasTokenMatch over tokens(), "
+               "when logically equivalent";
+    }
 
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 };
