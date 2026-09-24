@@ -39,7 +39,11 @@ SET log_queries = 1;
 
 DROP TABLE IF EXISTS t_no_order_freeze;
 
-CREATE TABLE t_no_order_freeze (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+-- CI randomizes `index_granularity` down to a few rows, which turns the 700000 rows into
+-- tens of thousands of granules and makes every query here take minutes under the flaky
+-- check. The granularity is irrelevant to the heap mechanics under test, so pin it.
+CREATE TABLE t_no_order_freeze (k UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- The first 200000 rows hold 5 distinct keys, so the heap fills to its capacity
 -- with nothing to reject and outlives the observation window; the next 500000
