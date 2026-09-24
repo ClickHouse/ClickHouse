@@ -46,7 +46,7 @@ namespace Setting
 
 namespace QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_limit_by;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_limit_by;
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
