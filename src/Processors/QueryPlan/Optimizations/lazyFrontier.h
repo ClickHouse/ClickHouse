@@ -56,10 +56,17 @@ struct LazyFrontier
 /// sort description. Filters and join conditions are taken from `merged` itself.
 /// `lazy_sources` says which sources support a second, row-addressed read; a value reading one that does
 /// not is computed below the `LIMIT` and crosses instead.
+///
+/// `masked_stuffings` are the stuffings the caller has a mask for above the `LIMIT`. A value gated by one
+/// of them is recomputed there as `if(mask, value, default)`, which evaluates it on the rows the join
+/// stuffed as well - so only a value that cannot throw is recomputed this way, which is what a function
+/// not suitable for short-circuit evaluation is: cheap and never throwing. Any other gated value, and one
+/// whose stuffing has no mask, is computed below the `LIMIT`, where the join stuffs it itself.
 LazyFrontier chooseLazyFrontier(
     const MergedPlanDAG & merged,
     const std::vector<size_t> & eager_output_positions,
-    const std::vector<bool> & lazy_sources);
+    const std::vector<bool> & lazy_sources,
+    const std::unordered_set<const MergedPlanDAG::Stuffing *> & masked_stuffings = {});
 
 /// The inputs each source's lazy read has to produce, indexed by source. Derived from the frontier, so
 /// that the one answer lives in one place.

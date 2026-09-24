@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/lazyFrontier.h>
 
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 
 namespace DB::QueryPlanOptimizations
@@ -55,11 +56,27 @@ std::optional<size_t> findSourceOfInput(const MergedPlanDAG & merged, const Acti
     return *node_sources.begin();
 }
 
+/// Whether evaluating the node on rows it was never meant to see is harmless: a function that is not
+/// suitable for short-circuit evaluation is cheap and cannot throw, which is exactly what makes it not
+/// worth skipping on the rows short-circuit evaluation would skip.
+bool canEvaluateOnStuffedRows(const ActionsDAG::Node * node)
+{
+    DataTypesWithConstInfo arguments;
+    arguments.reserve(node->children.size());
+    for (const auto * child : node->children)
+        arguments.push_back({child->result_type, child->column && isColumnConst(*child->column)});
+
+    return !node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments);
+}
+
 class FrontierChooser
 {
 public:
-    FrontierChooser(const MergedPlanDAG & merged_, const std::vector<bool> & lazy_sources_)
-        : merged(merged_), lazy_sources(lazy_sources_)
+    FrontierChooser(
+        const MergedPlanDAG & merged_,
+        const std::vector<bool> & lazy_sources_,
+        const std::unordered_set<const MergedPlanDAG::Stuffing *> & masked_stuffings_)
+        : merged(merged_), lazy_sources(lazy_sources_), masked_stuffings(masked_stuffings_)
     {
     }
 
@@ -159,6 +176,17 @@ private:
         /// second time, anything else is computed a second time.
         const auto have_it_above = source ? Decision::LazyRead : Decision::Recompute;
 
+        /// A function a join can stuff is recomputed above the `LIMIT` under that join's mask, so on every
+        /// row, the stuffed ones included. That needs a mask and a function harmless to evaluate there. A
+        /// source column read lazily needs neither, as the lazy read stands the default at a row nothing
+        /// matched, and nor does an alias, which is whatever its child is, stuffed rows included.
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (const auto * stuffing = merged.getNearestStuffing(node))
+                if (!masked_stuffings.contains(stuffing) || !canEvaluateOnStuffedRows(node))
+                    return Decision::Cross;
+        }
+
         /// Nothing below the `LIMIT` computes it, so there is nothing to hand over or to agree with.
         if (!frontier.at(node).computed_below)
             return have_it_above;
@@ -203,6 +231,7 @@ private:
 
     const MergedPlanDAG & merged;
     const std::vector<bool> & lazy_sources;
+    const std::unordered_set<const MergedPlanDAG::Stuffing *> & masked_stuffings;
     NodeSet free_to_cross;
     LazyFrontier frontier;
 };
@@ -212,13 +241,14 @@ private:
 LazyFrontier chooseLazyFrontier(
     const MergedPlanDAG & merged,
     const std::vector<size_t> & eager_output_positions,
-    const std::vector<bool> & lazy_sources)
+    const std::vector<bool> & lazy_sources,
+    const std::unordered_set<const MergedPlanDAG::Stuffing *> & masked_stuffings)
 {
     chassert(lazy_sources.size() == merged.sources.size());
 
     const auto & outputs = merged.getOutputs();
 
-    FrontierChooser chooser(merged, lazy_sources);
+    FrontierChooser chooser(merged, lazy_sources, masked_stuffings);
 
     ActionsDAG::NodeRawConstPtrs computed_below_roots = merged.filter_nodes;
     computed_below_roots.append_range(merged.join_condition_nodes);
