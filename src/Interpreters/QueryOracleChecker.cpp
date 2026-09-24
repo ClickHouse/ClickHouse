@@ -368,6 +368,23 @@ bool namesNonDeterministicFunction(const String & name, const ContextPtr & conte
     return false;
 }
 
+/// The sub-ASTs of `ast` that its `children` do not contain.
+/// `ASTColumnsApplyTransformer` copies `parameters` and `lambda` by hand in
+/// `clone()` rather than through `cloneChildren()`, so neither is a child.
+ASTs hiddenApplyMembers(const ASTPtr & ast)
+{
+    const auto * apply = ast->as<ASTColumnsApplyTransformer>();
+    if (!apply)
+        return {};
+
+    ASTs members;
+    if (apply->lambda)
+        members.push_back(apply->lambda);
+    if (apply->parameters)
+        members.push_back(apply->parameters);
+    return members;
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
@@ -431,19 +448,18 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
 
     if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
     {
-        /// `func_name`, `parameters` and `lambda` are not in this node's
-        /// `children`, so the recursion below does not reach them.
         if (!apply->func_name.empty() && namesNonDeterministicFunction(apply->func_name, context))
-            return true;
-        if (hasNonDeterministicFunctionsImpl(apply->lambda, context))
-            return true;
-        if (hasNonDeterministicFunctionsImpl(apply->parameters, context))
             return true;
     }
 
     for (const auto & child : ast->children)
     {
         if (hasNonDeterministicFunctionsImpl(child, context))
+            return true;
+    }
+    for (const auto & member : hiddenApplyMembers(ast))
+    {
+        if (hasNonDeterministicFunctionsImpl(member, context))
             return true;
     }
     return false;
@@ -567,6 +583,9 @@ bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
     }
     for (const auto & child : ast->children)
         if (hasWindowFunctionWithoutOrderBy(child))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (hasWindowFunctionWithoutOrderBy(member))
             return true;
     return false;
 }
@@ -706,6 +725,9 @@ bool hasNonStrippableInlineSettings(const ASTPtr & ast)
     for (const auto & child : ast->children)
         if (hasNonStrippableInlineSettings(child))
             return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (hasNonStrippableInlineSettings(member))
+            return true;
     return false;
 }
 
@@ -727,6 +749,9 @@ bool hasNestedThreadSettings(const ASTPtr & ast, const ASTPtr & top_level_settin
     }
     for (const auto & child : ast->children)
         if (hasNestedThreadSettings(child, top_level_settings))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (hasNestedThreadSettings(member, top_level_settings))
             return true;
     return false;
 }
@@ -808,6 +833,9 @@ bool hasWithFillAnywhere(const ASTPtr & ast)
     for (const auto & child : ast->children)
         if (hasWithFillAnywhere(child))
             return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (hasWithFillAnywhere(member))
+            return true;
     return false;
 }
 
@@ -829,6 +857,9 @@ bool usesFinalAnywhere(const ASTPtr & ast)
     for (const auto & child : ast->children)
         if (usesFinalAnywhere(child))
             return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (usesFinalAnywhere(member))
+            return true;
     return false;
 }
 
@@ -845,6 +876,9 @@ bool hasAsofJoinAnywhere(const ASTPtr & ast)
             return true;
     for (const auto & child : ast->children)
         if (hasAsofJoinAnywhere(child))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (hasAsofJoinAnywhere(member))
             return true;
     return false;
 }
@@ -929,6 +963,9 @@ bool referencesSystemDatabaseAnywhere(const ASTPtr & ast, const String & current
     for (const auto & child : ast->children)
         if (referencesSystemDatabaseAnywhere(child, current_database))
             return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (referencesSystemDatabaseAnywhere(member, current_database))
+            return true;
     return false;
 }
 
@@ -1004,6 +1041,9 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
     }
     for (const auto & child : ast->children)
         if (referencesDistributedTableAnywhere(child, context))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (referencesDistributedTableAnywhere(member, context))
             return true;
     return false;
 }
@@ -1123,6 +1163,9 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
 
     for (const auto & child : ast->children)
         if (referencesUnscreenedDefinitionAnywhere(child, context, depth))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (referencesUnscreenedDefinitionAnywhere(member, context, depth))
             return true;
     return false;
 }
