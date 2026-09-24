@@ -77,13 +77,13 @@ SELECT '-- invalid patterns raise an exception with the index as well';
 SELECT count() FROM tab WHERE hasTokenMatch(msg, '('); -- { serverError CANNOT_COMPILE_REGEXP }
 
 SELECT '-- too many matching posting lists: the functions are evaluated on the column';
-SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'u') SETTINGS text_index_like_max_postings_to_read = 0, log_comment = '05244_fallback';
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'u') SETTINGS text_index_like_max_postings_to_read = 0, log_comment = 'has_token_pattern_fallback';
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'u') SETTINGS use_skip_indexes = 0;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['TextIndexDiscardPatternScan'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment = '05244_fallback';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment = 'has_token_pattern_fallback';
 
 DROP TABLE tab;
 
@@ -195,10 +195,10 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 -- Every row has its own token, so all postings are small and embedded.
 INSERT INTO tab SELECT number, concat('req id', toString(number), ' ok') FROM numbers(2000);
 
-SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = '05244_matched_tokens_prefix';
-SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = '05244_matched_tokens_match';
-SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = '05244_matched_tokens_like';
-SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = '05244_matched_tokens_unlimited';
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_prefix';
+SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_match';
+SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_like';
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = 'has_token_pattern_matched_tokens_unlimited';
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS use_skip_indexes = 0;
@@ -206,7 +206,7 @@ SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS use_skip_indexes = 0;
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['TextIndexDiscardPatternScan'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment LIKE '05244_matched_tokens_%'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment LIKE 'has_token_pattern_matched_tokens_%'
 ORDER BY log_comment;
 
 DROP TABLE tab;

@@ -88,10 +88,10 @@ Granules: 8/8
 1111
 200
 111
-05244_matched_tokens_like	1
-05244_matched_tokens_match	1
-05244_matched_tokens_prefix	1
-05244_matched_tokens_unlimited	0
+has_token_pattern_matched_tokens_like	1
+has_token_pattern_matched_tokens_match	1
+has_token_pattern_matched_tokens_prefix	1
+has_token_pattern_matched_tokens_unlimited	0
 -- the result does not depend on settings, only on the index definition
 hasTokenPrefix(tag, \'env:prod\')	8
 hasTokenPrefix(tag, \'env:prod\')	8
