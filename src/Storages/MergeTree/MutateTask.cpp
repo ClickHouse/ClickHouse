@@ -1338,6 +1338,29 @@ static NameSet collectFilesToSkip(
     return files_to_skip;
 }
 
+/** The serialization of a column that a wide part physically stores, or nullptr for a column the
+  * part holds no data for: a column absent from the part, or one the part records only as a
+  * missing-column marker. Such a column has no stream files of its own, so there is nothing to
+  * remove or rename for it, and its serialization must not be looked up in the part by name: the
+  * part's lookup covers subcolumn names too, so a column named like a subcolumn of another column
+  * (`a.size0` next to an `Array` column `a`) resolves to that subcolumn's serialization, and the
+  * stream enumerated from it is the array's offsets file. Removing or renaming that file on behalf
+  * of the marker leaves the array unreadable in the mutated part.
+  */
+static SerializationPtr getSerializationOfPhysicalColumn(const IMergeTreeDataPart & part, const String & column_name)
+{
+    const auto & serialization_infos = part.getSerializationInfos();
+    auto part_column = part.getColumns().tryGetByName(column_name);
+
+    if (!part_column || serialization_infos.isMissingColumn(column_name))
+        return nullptr;
+
+    auto info_it = serialization_infos.find(column_name);
+    return info_it == serialization_infos.end()
+        ? IDataType::getSerialization(*part_column, serialization_infos.getSettings())
+        : IDataType::getSerialization(*part_column, *info_it->second);
+}
+
 /// Apply commands to source_part i.e. remove and rename some columns in
 /// source_part and return set of files, that have to be removed or renamed
 /// from filesystem and in-memory checksums. Ordered result is important,
@@ -1458,7 +1481,7 @@ static NameToNameVector collectFilesForRenames(
                     }
                 };
 
-                if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                if (auto serialization = getSerializationOfPhysicalColumn(*source_part, command.column_name))
                     serialization->enumerateStreams(callback);
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
@@ -1521,7 +1544,7 @@ static NameToNameVector collectFilesForRenames(
                         }
                     };
 
-                    if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                    if (auto serialization = getSerializationOfPhysicalColumn(*source_part, command.column_name))
                         serialization->enumerateStreams(callback);
                 }
             }
