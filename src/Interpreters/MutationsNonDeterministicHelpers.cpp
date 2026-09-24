@@ -7,9 +7,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
+#include <Interpreters/StorageID.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -36,12 +38,32 @@ public:
     {
         ContextPtr context;
         const NameSet & nondeterministic_virtual_columns;
+        const StorageID * storage_id;
         FirstNonDeterministicFunctionResult result;
     };
 
-    static bool needChildVisit(const ASTPtr & /*node*/, const ASTPtr & /*child*/)
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & /*child*/)
     {
-        return true;
+        /// The body of a lambda is visited separately in `visit`, with the lambda parameters masked.
+        const auto * function = node->as<ASTFunction>();
+        return !function || function->name != "lambda";
+    }
+
+    /// Returns the column name that `identifier` refers to in the mutated table: the short name when
+    /// the identifier is qualified with the mutated table (`t._table`, `db.t._table`), the name itself
+    /// otherwise. A qualifier which does not name the mutated table (e.g. a tuple element access)
+    /// leaves the full compound name, which is not a virtual column name.
+    static const String & getColumnName(const ASTIdentifier & identifier, const StorageID * storage_id)
+    {
+        if (!storage_id || !identifier.compound())
+            return identifier.name();
+
+        const auto & parts = identifier.name_parts;
+        if (parts.size() == 2 && parts[0] == storage_id->table_name)
+            return parts[1];
+        if (parts.size() == 3 && parts[0] == storage_id->database_name && parts[1] == storage_id->table_name)
+            return parts[2];
+        return identifier.name();
     }
 
     static void visit(const ASTPtr & node, Data & data)
@@ -58,8 +80,20 @@ public:
         else if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
         {
             /// Property of being deterministic for lambda expression is completely determined
-            /// by the contents of its definition, so we just proceed to it.
-            if (function->name != "lambda")
+            /// by the contents of its definition, so we just proceed to it. Its parameters shadow
+            /// the virtual columns with the same names inside the body.
+            if (function->name == "lambda")
+            {
+                NameSet masked_virtual_columns = data.nondeterministic_virtual_columns;
+                for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+                    masked_virtual_columns.erase(name);
+
+                Data body_data{data.context, masked_virtual_columns, data.storage_id, {}};
+                ASTPtr body = function->arguments->children[1];
+                InDepthNodeVisitor<FirstNonDeterministicFunctionMatcher, true>(body_data).visit(body);
+                data.result = std::move(body_data.result);
+            }
+            else
             {
                 /// NOTE It may be an aggregate function, so get(...) may throw.
                 /// However, an aggregate function can be used only in subquery and we do not go into subquery.
@@ -72,8 +106,9 @@ public:
         {
             /// A virtual column such as `_table` or `_database` is a constant on one server, but replicas
             /// of the same table may have different local names, so it is as non-deterministic as `hostName`.
-            if (data.nondeterministic_virtual_columns.contains(identifier->name()))
-                data.result.nondeterministic_virtual_column_name = identifier->name();
+            const auto & column_name = getColumnName(*identifier, data.storage_id);
+            if (data.nondeterministic_virtual_columns.contains(column_name))
+                data.result.nondeterministic_virtual_column_name = column_name;
         }
     }
 };
@@ -149,9 +184,9 @@ using ExecuteNonDeterministicConstFunctionsVisitor = InDepthNodeVisitor<ExecuteN
 }
 
 FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(
-    const MutationCommand & command, ContextPtr context, const NameSet & nondeterministic_virtual_columns)
+    const MutationCommand & command, ContextPtr context, const NameSet & nondeterministic_virtual_columns, const StorageID * storage_id)
 {
-    FirstNonDeterministicFunctionMatcher::Data finder_data{context, nondeterministic_virtual_columns, {}};
+    FirstNonDeterministicFunctionMatcher::Data finder_data{context, nondeterministic_virtual_columns, storage_id, {}};
 
     switch (command.type)
     {

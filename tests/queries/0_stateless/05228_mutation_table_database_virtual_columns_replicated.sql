@@ -21,8 +21,19 @@ ALTER TABLE t_repl_05228 DELETE WHERE _table = 't_repl_05228'; -- { serverError 
 ALTER TABLE t_repl_05228 DELETE WHERE _database != ''; -- { serverError BAD_ARGUMENTS }
 DELETE FROM t_repl_05228 WHERE _table = 't_repl_05228'; -- { serverError BAD_ARGUMENTS }
 
+-- A qualifier naming the mutated table does not hide the virtual column.
+ALTER TABLE t_repl_05228 UPDATE value = t_repl_05228._table WHERE key = 1; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_repl_05228 DELETE WHERE t_repl_05228._database != ''; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_repl_05228 DELETE WHERE {CLICKHOUSE_DATABASE:Identifier}.t_repl_05228._table != ''; -- { serverError BAD_ARGUMENTS }
+
+-- Inside a lambda body, the virtual column is still read unless a lambda parameter shadows it.
+ALTER TABLE t_repl_05228 DELETE WHERE arrayExists(x -> x = _table, ['t_repl_05228']); -- { serverError BAD_ARGUMENTS }
+
 -- Deterministic virtual columns are fine.
 ALTER TABLE t_repl_05228 UPDATE value = _part WHERE key = 1 SETTINGS mutations_sync = 2;
+
+-- A lambda parameter named like a non-deterministic virtual column does not read it.
+ALTER TABLE t_repl_05228 DELETE WHERE arrayExists(_table -> _table = 0, [key]) SETTINGS mutations_sync = 2;
 
 -- A real column shadowing a non-deterministic virtual is deterministic, so the replicated guard lets it
 -- through. Reading it in a mutation then hits a separate pre-existing failure (see

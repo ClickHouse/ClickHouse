@@ -8,6 +8,7 @@ namespace DB
 {
 
 struct MutationCommand;
+struct StorageID;
 class ASTAlterCommand;
 
 struct FirstNonDeterministicFunctionResult
@@ -23,9 +24,14 @@ struct FirstNonDeterministicFunctionResult
 /// may also be non-deterministic in expressions of mutation command.
 /// Identifiers found in `nondeterministic_virtual_columns` are reported as non-deterministic
 /// virtual columns; pass the virtual columns of the storage that are declared non-deterministic
-/// and are not shadowed by a real column of the table.
+/// and are not shadowed by a real column of the table. When `storage_id` of the mutated table is
+/// given, identifiers qualified with it (`t._table`, `db.t._table`) are matched by their short name.
+/// Lambda parameters shadow the virtual columns with the same names inside the lambda body.
 FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(
-    const MutationCommand & command, ContextPtr context, const NameSet & nondeterministic_virtual_columns = {});
+    const MutationCommand & command,
+    ContextPtr context,
+    const NameSet & nondeterministic_virtual_columns = {},
+    const StorageID * storage_id = nullptr);
 
 /// Executes non-deterministic functions and subqueries in expressions of mutation
 /// command and replaces them to the literals with a result of expressions.
