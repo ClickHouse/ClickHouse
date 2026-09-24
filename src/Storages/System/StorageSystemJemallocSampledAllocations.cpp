@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/System/StorageSystemJemallocSampledAllocations.h>
+#include <Interpreters/Context.h>
+#include <Access/Common/AccessFlags.h>
 
 #if USE_JEMALLOC
 #    include <Core/Field.h>
@@ -226,11 +228,13 @@ Pipe StorageSystemJemallocSampledAllocations::read(
     [[maybe_unused]] const Names & column_names,
     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     [[maybe_unused]] const size_t max_block_size,
     const size_t /*num_streams*/)
 {
+    context->checkAccess(AccessType::SYSTEM_JEMALLOC);
+
 #if USE_JEMALLOC
     storage_snapshot->check(column_names);
 
