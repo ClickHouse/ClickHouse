@@ -1,5 +1,3 @@
-#include <WindowFunctions/registerWindowFunctions.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/WindowFunction.h>
 #include <Core/DecimalFunctions.h>
@@ -20,6 +18,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+namespace
+{
 
 struct NonNegativeDerivativeState
 {
@@ -150,6 +151,9 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
     }
 };
 
+}
+
+void registerWindowFunctionsNonNegativeDerivative(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
 void registerWindowFunctionsNonNegativeDerivative(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("nonNegativeDerivative", {[](const std::string & name,

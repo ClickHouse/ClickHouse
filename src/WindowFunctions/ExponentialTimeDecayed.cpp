@@ -1,5 +1,3 @@
-#include <WindowFunctions/registerWindowFunctions.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/WindowFunction.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -19,6 +17,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+namespace
+{
 
 struct ExponentialTimeDecayedSumState
 {
@@ -404,6 +405,9 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
         const Float64 decay_length;
 };
 
+}
+
+void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
 void registerWindowFunctionsExponentialTimeDecayed(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(

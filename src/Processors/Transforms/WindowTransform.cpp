@@ -1,31 +1,15 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/DecimalFunctions.h>
-#include <Core/SortCursor.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/WindowTransform.h>
-#include <WindowFunctions/Helpers.h>
-#include <WindowFunctions/registerWindowFunctions.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/VectorWithMemoryTracking.h>
-
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <limits>
@@ -62,10 +46,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -1728,47 +1708,4 @@ void WindowTransform::releaseUnusedBlocks()
     }
 }
 
-
-void registerWindowFunctions(AggregateFunctionFactory & factory);
-void registerWindowFunctions(AggregateFunctionFactory & factory)
-{
-    // Why didn't I implement lag/lead yet? Because they are a mess. I imagine
-    // they are from the older generation of window functions, when the concept
-    // of frame was not yet invented, so they ignore the frame and use the
-    // partition instead. This means we have to track a separate frame for
-    // these functions, which would  make the window transform completely
-    // impenetrable to human mind. We can't just get away with materializing
-    // the whole partition like Postgres does, because using a linear amount
-    // of additional memory is not an option when we have a lot of data. We must
-    // be able to process at least the lag/lead in streaming fashion.
-    // A partial solution for constant offsets is rewriting, say `lag(value, offset)
-    // to `any(value) over (rows between offset preceding and offset preceding)`.
-    // We also implement non-standard functions `lag/leadInFrame`, that are
-    // analogous to `lag/lead`, but respect the frame.
-    // Functions like cume_dist() do require materializing the entire
-    // partition, but it's probably also simpler to implement them by rewriting
-    // to a (rows between unbounded preceding and unbounded following) frame,
-    // instead of adding separate logic for them.
-
-    const AggregateFunctionProperties properties = {
-        // By default, if an aggregate function has a null argument, it will be
-        // replaced with AggregateFunctionNothing. We don't need this behavior
-        // e.g. for lagInFrame(number, 1, null).
-        .returns_default_when_only_null = true,
-        // This probably doesn't make any difference for window functions because
-        // it is an Aggregator-specific setting.
-        .is_order_dependent = true,
-        .is_window_function = true};
-
-    registerWindowFunctionsRanking(factory, properties);
-
-    registerWindowFunctionsDistribution(factory, properties);
-
-    registerWindowFunctionsNthValue(factory, properties);
-    registerWindowFunctionsLagLead(factory, properties);
-
-    registerWindowFunctionsExponentialTimeDecayed(factory, properties);
-
-    registerWindowFunctionsNonNegativeDerivative(factory, properties);
-}
 }

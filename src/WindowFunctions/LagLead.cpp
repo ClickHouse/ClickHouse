@@ -1,5 +1,3 @@
-#include <WindowFunctions/registerWindowFunctions.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/WindowFunction.h>
 #include <Columns/ColumnConst.h>
@@ -17,6 +15,9 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
+
+namespace
+{
 
 // ClickHouse-specific lag/lead family implementation.
 /// `full_partition_default_frame` controls whether the function supplies a default window frame:
@@ -193,6 +194,9 @@ using WindowFunctionLagLead = WindowFunctionLagLeadImpl<is_lead, true>;
 template <bool is_lead>
 using WindowFunctionLagLeadInFrame = WindowFunctionLagLeadImpl<is_lead, false>;
 
+}
+
+void registerWindowFunctionsLagLead(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
 void registerWindowFunctionsLagLead(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("lagInFrame", {[](const std::string & name,

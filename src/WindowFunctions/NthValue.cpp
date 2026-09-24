@@ -1,5 +1,3 @@
-#include <WindowFunctions/registerWindowFunctions.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/WindowFunction.h>
 #include <Processors/Transforms/WindowTransform.h>
@@ -13,6 +11,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+namespace
+{
 
 struct WindowFunctionNthValue final : public StatelessWindowFunction
 {
@@ -84,6 +85,9 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
     }
 };
 
+}
+
+void registerWindowFunctionsNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
 void registerWindowFunctionsNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("nth_value", {[](const std::string & name,

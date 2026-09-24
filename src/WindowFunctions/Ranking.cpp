@@ -1,5 +1,3 @@
-#include <WindowFunctions/registerWindowFunctions.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/WindowFunction.h>
 #include <Columns/ColumnsNumber.h>
@@ -20,6 +18,9 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+namespace
+{
 
 struct WindowFunctionRank final : public StatelessWindowFunction
 {
@@ -75,6 +76,9 @@ struct WindowFunctionRowNumber final : public StatelessWindowFunction
     }
 };
 
+}
+
+void registerWindowFunctionsRanking(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
 void registerWindowFunctionsRanking(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("rank", {[](const std::string & name,

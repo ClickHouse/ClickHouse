@@ -1,5 +1,3 @@
-#include <WindowFunctions/registerWindowFunctions.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/WindowFunction.h>
 #include <Columns/ColumnConst.h>
@@ -401,6 +399,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
 
 }
 
+void registerWindowFunctionsDistribution(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
 void registerWindowFunctionsDistribution(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
 {
     factory.registerFunction("percentRank", {[](const std::string & name,
