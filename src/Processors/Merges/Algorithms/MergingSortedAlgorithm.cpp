@@ -1,6 +1,7 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/FieldVisitorDump.h>
 #include <IO/WriteBuffer.h>
@@ -121,6 +122,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , filter_column_position(filter_column_name_ ? header->getPositionByName(filter_column_name_.value()) : -1)
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)
     , current_inputs(num_inputs)
+    , source_row_filter_masks(num_inputs, nullptr)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
 {
@@ -149,8 +151,22 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
 void MergingSortedAlgorithm::addInput()
 {
     current_inputs.emplace_back();
+    source_row_filter_masks.emplace_back(nullptr);
     cursors.emplace_back();
     virtual_row_boundary.emplace_back();
+}
+
+const IColumnFilter * MergingSortedAlgorithm::resolveRowFilterMask(const Chunk & chunk) const
+{
+    if (filter_column_position != -1)
+    {
+        /// One merge filters on one predicate: `canVerticalTTLDelete` gives up when a source part
+        /// has a lightweight delete, so a merge never gets a mask from both directions.
+        chassert(!chunk.getChunkInfos().has<RowFilterInfo>());
+        return &assert_cast<const ColumnUInt8 &>(*chunk.getColumns()[filter_column_position]).getData();
+    }
+
+    return getRowFilterMask(chunk);
 }
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
@@ -179,6 +195,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 
     current_inputs = std::move(inputs);
     virtual_row_boundary.assign(current_inputs.size(), {});
+    source_row_filter_masks.assign(current_inputs.size(), nullptr);
 
     for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
@@ -187,6 +204,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             continue;
 
         cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
+        source_row_filter_masks[source_num] = resolveRowFilterMask(chunk);
     }
 
     if constexpr (do_debug_checks)
@@ -239,6 +257,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
+    source_row_filter_masks[source_num] = resolveRowFilterMask(current_inputs[source_num].chunk);
 
     if constexpr (do_debug_checks)
     {
@@ -291,15 +310,12 @@ void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
 
     size_t current_row = current.getRow();
 
-    if (hasFilter())
+    if (const auto * mask = source_row_filter_masks[current.order])
     {
-        const auto & filter_column = current.all_columns[filter_column_position];
-        const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
-
-        if (filter_data[current_row])
+        if ((*mask)[current_row])
             merged_data.insertRow(current.all_columns, current_row, current.rows);
 
-        write_row_source(!filter_data[current_row]);
+        write_row_source(!(*mask)[current_row]);
     }
     else
     {
@@ -310,18 +326,15 @@ void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
 
 void MergingSortedAlgorithm::insertRows(const SortCursorImpl & current, size_t num_rows)
 {
-    if (hasFilter())
+    if (const auto * mask = source_row_filter_masks[current.order])
     {
-        const auto & filter_column = current.all_columns[filter_column_position];
-        const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
-
         size_t start_index = current.getRow();
         RowSourcePart row_source(current.order, false);
         RowSourcePart row_source_skipped(current.order, true);
 
         for (size_t i = start_index; i < start_index + num_rows; ++i)
         {
-            if (filter_data[i])
+            if ((*mask)[i])
             {
                 merged_data.insertRow(current.all_columns, i, current.rows);
                 out_row_sources_buf->write(row_source.data);
@@ -351,12 +364,11 @@ void MergingSortedAlgorithm::insertChunk(size_t source_num)
     Chunk chunk = std::move(current_inputs[source_num].chunk);
     size_t chunk_num_rows = chunk.getNumRows();
 
-    if (hasFilter())
+    const auto * mask = source_row_filter_masks[source_num];
+
+    if (mask)
     {
         auto columns = chunk.detachColumns();
-
-        const auto & filter_column = columns[filter_column_position];
-        const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
 
         if (out_row_sources_buf)
         {
@@ -364,12 +376,12 @@ void MergingSortedAlgorithm::insertChunk(size_t source_num)
             RowSourcePart row_source_skipped(source_num, true);
 
             for (size_t i = 0; i < chunk_num_rows; ++i)
-                out_row_sources_buf->write(filter_data[i] ? row_source.data : row_source_skipped.data);
+                out_row_sources_buf->write((*mask)[i] ? row_source.data : row_source_skipped.data);
         }
 
         for (auto & column : columns)
         {
-            column = column->filter(filter_data, -1);
+            column = column->filter(*mask, -1);
         }
 
         chunk_num_rows = columns.empty() ? 0 : columns.front()->size();
