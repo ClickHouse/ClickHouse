@@ -98,6 +98,20 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Slow endpoints, used to observe how many requests an AI function has in flight at once.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_slow AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/slow', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_embed_slow AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_slow', "
+            f"api_key = 'test-key'"
+        )
         instance.query(
             f"CREATE NAMED COLLECTION ai_error AS "
             f"provider = 'openai', "
@@ -2365,3 +2379,101 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
     assert subquery_only == 64, (
         f"expected all 64 rows to run (a quota set only in the subquery is ignored), got {subquery_only}"
     )
+
+
+SLOW_CHAT_CALL = "aiClassify(toString(number), ['positive','negative'], map('credentials', 'ai_slow'))"
+SLOW_EMBED_CALL = "aiEmbed(toString(number), 'test-model', map('credentials', 'ai_embed_slow'))"
+
+
+def _concurrency_stats():
+    return json.loads(
+        instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/concurrency"]
+        )
+    )
+
+
+def _reset_concurrency():
+    instance.exec_in_container(
+        ["curl", "-s", f"http://localhost:{MOCK_PORT}/reset-concurrency"]
+    )
+
+
+def _observe_concurrency(call, concurrency, rows, expected_requests, extra_settings=None):
+    """Run `call` over `rows` rows at the given `ai_function_max_concurrent_requests` and return
+    the high-water mark of requests the mock saw in flight at the same time."""
+    _reset_concurrency()
+    qid = unique_query_id(f"ai_concurrency_{concurrency}")
+    instance.query(
+        f"SELECT {call} FROM numbers({rows}) FORMAT Null",
+        settings={
+            "ai_function_max_concurrent_requests": concurrency,
+            **(extra_settings or {}),
+        },
+        query_id=qid,
+    )
+    stats = _concurrency_stats()
+    assert stats["requests"] == expected_requests, (
+        f"expected {expected_requests} requests, got {stats['requests']} at "
+        f"ai_function_max_concurrent_requests={concurrency}"
+    )
+    assert int(get_profile_events(qid)["api_calls"]) == expected_requests
+    return stats["max_concurrency"]
+
+
+def test_max_concurrent_requests_controls_requests_in_flight(started_cluster):
+    """`ai_function_max_concurrent_requests` decides how many provider requests a text AI function
+    has in flight, and nothing else does: the same query shape and the same data give one request
+    at a time at 1, and several at 8."""
+    one = _observe_concurrency(SLOW_CHAT_CALL, concurrency=1, rows=16, expected_requests=16)
+    many = _observe_concurrency(SLOW_CHAT_CALL, concurrency=8, rows=16, expected_requests=16)
+
+    assert one == 1, (
+        f"ai_function_max_concurrent_requests=1 must issue requests one at a time, saw {one} in flight"
+    )
+    assert 2 <= many <= 8, (
+        f"ai_function_max_concurrent_requests=8 must overlap requests without exceeding the "
+        f"limit, saw {many} in flight"
+    )
+
+
+def test_max_concurrent_requests_applies_to_embeddings(started_cluster):
+    """The same setting governs the embedding path, where the unit in flight is a batch of texts
+    rather than a row: 16 rows at a batch size of 2 are 8 requests."""
+    batching = {"ai_function_embedding_max_batch_size": 2}
+    one = _observe_concurrency(
+        SLOW_EMBED_CALL, concurrency=1, rows=16, expected_requests=8, extra_settings=batching
+    )
+    many = _observe_concurrency(
+        SLOW_EMBED_CALL, concurrency=4, rows=16, expected_requests=8, extra_settings=batching
+    )
+
+    assert one == 1, (
+        f"ai_function_max_concurrent_requests=1 must issue batches one at a time, saw {one} in flight"
+    )
+    assert 2 <= many <= 4, (
+        f"ai_function_max_concurrent_requests=4 must overlap batches without exceeding the "
+        f"limit, saw {many} in flight"
+    )
+
+
+def test_max_concurrent_requests_keeps_api_call_quota_exact(started_cluster):
+    """Concurrency must not let the API-call quota drift: a slot is reserved before each request is
+    dispatched, so the cap stays exact no matter how many requests are in flight."""
+    _reset_concurrency()
+    qid = unique_query_id("ai_concurrency_quota")
+    instance.query(
+        f"SELECT {SLOW_CHAT_CALL} FROM numbers(64) FORMAT Null",
+        settings={
+            "ai_function_max_concurrent_requests": 8,
+            "ai_function_max_api_calls_per_query": 5,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    stats = _concurrency_stats()
+    assert stats["requests"] == 5, (
+        f"the provider saw {stats['requests']} requests, but ai_function_max_api_calls_per_query = 5 "
+        "is an exact cap even with concurrent requests"
+    )
+    assert int(get_profile_events(qid)["api_calls"]) == 5

@@ -8,6 +8,14 @@ Endpoints:
       `aiTranslate`'s `instructions` argument is forwarded in the prompt, or that the
       `Authorization` header is omitted when the named collection has no `api_key`).
       Header names are lower-cased for case-insensitive lookup.
+  GET  /concurrency                  — returns JSON `{"requests": N, "max_concurrency": M}` describing
+      the requests the slow endpoints below have served since the last `/reset-concurrency`, where
+      `max_concurrency` is the highest number that were ever being served at the same moment. Used
+      to assert that `ai_function_max_concurrent_requests` controls how many requests are in flight.
+  GET  /reset-concurrency            — zeroes the counters above
+  POST /v1/chat/slow                 — like `/v1/chat/completions`, but sleeps SLOW_RESPONSE_SECONDS
+      before answering, so overlapping requests are observable in `/concurrency`.
+  POST /v1/embeddings_slow           — like `/v1/embeddings`, but slow in the same way.
   GET  /set-flaky?count=N            — arm the flaky endpoints below to fail their next N requests
       with a simulated transient network error (used to exercise retries). `count=0` disarms.
   POST /v1/chat/flaky                — like `/v1/chat/completions`, but drops the connection without
@@ -59,6 +67,7 @@ Endpoints:
 import http.server
 import json
 import threading
+import time
 from urllib.parse import urlparse, parse_qs
 
 MOCK_PORT = 18123
@@ -73,6 +82,14 @@ LAST_REQUEST = {"path": None, "body": None, "headers": {}}
 # that should fail with a simulated transient network error before they start succeeding.
 # Set via `GET /set-flaky?count=N`. Used to exercise the network-error retry path.
 FLAKY = {"fails_remaining": 0}
+
+# How long the slow endpoints take to answer. Long enough that concurrent requests overlap
+# observably, short enough not to slow the test down.
+SLOW_RESPONSE_SECONDS = 0.5
+
+# Requests the slow endpoints have served, and the high-water mark of how many they were serving
+# simultaneously, since the last `/reset-concurrency`. Guarded by `_LOCK`.
+CONCURRENCY = {"requests": 0, "in_flight": 0, "max_concurrency": 0}
 
 
 def extract_user_message(body):
@@ -237,6 +254,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, snapshot)
             return
 
+        if parsed.path == "/concurrency":
+            with _LOCK:
+                snapshot = {
+                    "requests": CONCURRENCY["requests"],
+                    "max_concurrency": CONCURRENCY["max_concurrency"],
+                }
+            self._send_json(200, snapshot)
+            return
+
+        if parsed.path == "/reset-concurrency":
+            with _LOCK:
+                CONCURRENCY.update(requests=0, in_flight=0, max_concurrency=0)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+            return
+
         if parsed.path == "/set-flaky":
             qs = parse_qs(parsed.query)
             with _LOCK:
@@ -259,6 +294,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             LAST_REQUEST["path"] = parsed.path
             LAST_REQUEST["body"] = body
             LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
+
+        if parsed.path == "/v1/chat/slow":
+            self._serve_slowly(lambda: make_success_response(extract_user_message(body)))
+            return
+
+        if parsed.path == "/v1/embeddings_slow":
+            self._serve_slowly(lambda: make_embeddings_response(body))
+            return
 
         if parsed.path in ("/v1/chat/flaky", "/v1/embeddings_flaky"):
             with _LOCK:
@@ -434,6 +477,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         self.send_response(404)
         self.end_headers()
+
+    def _serve_slowly(self, make_response):
+        """Sleep, then answer, counting the request as in flight for the duration of the sleep.
+        The window closes before the response is written, so a handler that has already answered
+        can never overlap in `max_concurrency` with the request that answer unblocks."""
+        with _LOCK:
+            CONCURRENCY["requests"] += 1
+            CONCURRENCY["in_flight"] += 1
+            CONCURRENCY["max_concurrency"] = max(
+                CONCURRENCY["max_concurrency"], CONCURRENCY["in_flight"]
+            )
+        try:
+            time.sleep(SLOW_RESPONSE_SECONDS)
+            response = make_response()
+        finally:
+            with _LOCK:
+                CONCURRENCY["in_flight"] -= 1
+
+        self._send_json(200, response)
 
     def _send_json(self, status, obj):
         body = json.dumps(obj).encode("utf-8")

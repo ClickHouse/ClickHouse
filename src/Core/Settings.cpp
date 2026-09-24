@@ -9032,6 +9032,20 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", BETA) \
+    DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests, 1, R"(
+Maximum number of provider requests one AI function call has in flight at the same time, within one block of rows. The default `1` issues them one at a time.
+
+AI function calls are network-bound, so throughput is `concurrency / request latency` rather than a function of CPU. The requests are issued from a server-wide thread pool (`max_ai_request_thread_pool_size`) that caps the total across all queries; this setting bounds a single function call's share of it. It applies identically to a function evaluated in an `INSERT ... SELECT` and to one evaluated inside a materialized view, and does not depend on how the data happens to be laid out in parts, on block sizes, or on `parallel_view_processing`.
+
+The limit is per AI function call per block, so a query whose pipeline runs several streams may have more requests in flight than this. Use a settings profile constraint (`<constraints><ai_function_max_concurrent_requests><max>...</max></...>`) to put a ceiling on it that a query cannot raise.
+
+Raising this above `1` loosens two guarantees, which is why the default is `1`:
+
+- A request's token usage is only known once its response arrives, so the token quotas (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) may overshoot by one request's worth per request in flight - that is, by up to this many requests' worth rather than by one.
+- A whole wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, up to this many requests.
+
+`ai_function_max_api_calls_per_query` is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
+)", BETA) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
 Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", BETA) \
