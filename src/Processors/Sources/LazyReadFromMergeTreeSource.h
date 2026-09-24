@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <map>
 #include <unordered_map>
 
 namespace DB
@@ -58,10 +59,16 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
+    /// Sources keyed by the global row offset of the part they read. `prepare` drains the input ports in order and
+    /// the consumer expects the lazy stream in global row order, so keying by part is what lets the two kinds of
+    /// source be mixed: iterating the map yields them correctly interleaved.
+    using SourcesByPart = std::multimap<UInt64, ProcessorPtr>;
+
     Processors buildReaders();
     /// Point-read fast path for a `Quantized(...)` vector column stored one vector per block: fetch each shortlisted
-    /// row's single block instead of whole granules. Empty result = fall back to the granule read. See MergeTreePointReadSource.
-    Processors tryBuildPointReadSources();
+    /// row's single block instead of whole granules. See MergeTreePointReadSource. Takes the parts it can serve out
+    /// of `parts`, leaving the rest to the granule read.
+    void takePointReadSources(RangesInDataParts & parts, SourcesByPart & sources);
     RangesInDataParts splitRanges(RangesInDataParts parts_with_ranges, size_t total_marks) const;
 };
 

@@ -278,17 +278,13 @@ IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
-Processors LazyReadFromMergeTreeSource::tryBuildPointReadSources()
+void LazyReadFromMergeTreeSource::takePointReadSources(RangesInDataParts & parts, SourcesByPart & sources)
 {
     const Block & lazy_header = outputs.front().getHeader();
 
     auto vector_column = findPointReadVectorColumn(lazy_header, storage_snapshot->metadata->getColumns());
     if (!vector_column)
-        return {};
-
-    for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
-        if (!canPointReadPart(part_with_ranges, *vector_column, lazy_header, mutations_snapshot, context))
-            return {};
+        return;
 
     /// The remaining lazy columns (in header order, minus the vector column) are read with a standard reader.
     NamesAndTypesList other_columns;
@@ -297,12 +293,24 @@ Processors LazyReadFromMergeTreeSource::tryBuildPointReadSources()
             other_columns.emplace_back(col.name, col.type);
 
     auto mark_cache = context->getMarkCache();
-    Processors processors;
     auto lazy_header_ptr = std::make_shared<const Block>(lazy_header);
-    for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
+
+    RangesInDataParts not_taken;
+    not_taken.reserve(parts.size());
+
+    for (auto & part_with_ranges : parts)
     {
+        /// Each part is judged on its own: a part the point read cannot serve - a Compact one from a recent insert,
+        /// a pending mutation, an unaligned layout - costs only its own granule read, not the whole fast path.
+        if (!canPointReadPart(part_with_ranges, *vector_column, lazy_header, mutations_snapshot, context))
+        {
+            not_taken.push_back(std::move(part_with_ranges));
+            continue;
+        }
+
         auto & offsets = lazy_materializing_rows->rows_in_parts[part_with_ranges.part_index_in_query];
         const size_t total_rows = offsets.size();
+        const UInt64 part_starting_offset = part_with_ranges.part_starting_offset_in_query;
         auto source = std::make_shared<MergeTreePointReadSource>(
             lazy_header_ptr,
             part_with_ranges,
@@ -315,21 +323,33 @@ Processors LazyReadFromMergeTreeSource::tryBuildPointReadSources()
             mark_cache,
             max_block_size);
         source->addTotalRowsApprox(total_rows);
-        processors.emplace_back(std::move(source));
+        sources.emplace(part_starting_offset, std::move(source));
     }
 
-    return processors;
+    parts = std::move(not_taken);
 }
 
 Processors LazyReadFromMergeTreeSource::buildReaders()
 {
     const auto & ctx_settings = context->getSettingsRef();
 
-    if (auto point_read_sources = tryBuildPointReadSources(); !point_read_sources.empty())
-        return point_read_sources;
+    auto & parts = lazy_materializing_rows->ranges_in_data_parts;
+    SourcesByPart sources;
+    takePointReadSources(parts, sources);
 
-    size_t sum_marks = lazy_materializing_rows->ranges_in_data_parts.getMarksCountAllParts();
-    size_t sum_rows = lazy_materializing_rows->ranges_in_data_parts.getRowsCountAllParts();
+    auto collect = [&sources]
+    {
+        Processors processors;
+        for (auto & source : sources)
+            processors.push_back(std::move(source.second));
+        return processors;
+    };
+
+    if (parts.empty())
+        return collect();
+
+    size_t sum_marks = parts.getMarksCountAllParts();
+    size_t sum_rows = parts.getRowsCountAllParts();
 
     MergeTreeReadPoolBase::PoolSettings pool_settings{
         .threads = max_threads,
@@ -346,7 +366,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         .preferred_block_size_bytes = ctx_settings[Setting::preferred_block_size_bytes],
         .preferred_max_column_in_block_size_bytes = ctx_settings[Setting::preferred_max_column_in_block_size_bytes]};
 
-    auto ranges_in_data_parts = splitRanges(std::move(lazy_materializing_rows->ranges_in_data_parts), sum_marks);
+    auto ranges_in_data_parts = splitRanges(std::move(parts), sum_marks);
     /// Why this is needed?
     VirtualFields shared_virtual_fields;
     shared_virtual_fields.emplace("_sample_factor", 1.0);
@@ -374,7 +394,6 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         context,
         updater);
 
-    Processors processors;
     for (size_t i = 0; i < ranges_in_data_parts.size(); ++i)
     {
         const auto & part_with_ranges = ranges_in_data_parts[i];
@@ -396,9 +415,9 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
         source->addTotalRowsApprox(total_rows);
 
-        processors.emplace_back(std::move(source));
+        sources.emplace(part_with_ranges.part_starting_offset_in_query, std::move(source));
     }
-    return processors;
+    return collect();
 }
 
 }
