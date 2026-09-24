@@ -2,7 +2,8 @@
 # Tags: log-engine
 # (log-engine: `GRANT TABLE ENGINE ON TinyLog` throws UNKNOWN_STORAGE on builds without TinyLog registered)
 # INFORMATION_SCHEMA *_PRIVILEGES views (issue #29068): each grant level is routed
-# into exactly one view; partial revokes, wildcard and parameterized grants are hidden.
+# into exactly one view; partial revokes, wildcard grants and grants on specific named
+# objects of parameterized types are hidden, while their ON * form is shown as a global privilege.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

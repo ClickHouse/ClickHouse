@@ -31,6 +31,8 @@ TO File('${WORK_DIR}/backups/b1') FORMAT Null;
 # Simulate a backup taken on a version with a different view definition
 # (the replacement preserves the file size recorded in the backup metadata).
 sed -i "s/'def'/'dex'/" "${WORK_DIR}"/backups/b1/metadata/information_schema/*.sql "${WORK_DIR}"/backups/b1/metadata/INFORMATION_SCHEMA/*.sql
+# Guard against the test silently degrading into restoring an unmodified backup:
+grep -q "'dex'" "${WORK_DIR}"/backups/b1/metadata/information_schema/user_privileges.sql || echo "sed did not change the view definition"
 
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG}" --path "${WORK_DIR}/data_restored" -q "
 RESTORE TABLE information_schema.user_privileges FROM File('${WORK_DIR}/backups/b1') FORMAT Null;
