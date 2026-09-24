@@ -606,7 +606,10 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeDateTime64>(9);
     if (type_name == f_timestamptz_ns)
         return std::make_shared<DataTypeDateTime64>(9, "UTC");
-    if (type_name == f_string || type_name == f_binary)
+    /// AWS Glue reports an Iceberg `binary` column with the Redshift type name `varbyte`, whose
+    /// optional argument is a maximum length and so has no ClickHouse counterpart.
+    if (type_name == f_string || type_name == f_binary || type_name == f_varbyte
+        || (type_name.starts_with("varbyte(") && type_name.ends_with(')')))
         return std::make_shared<DataTypeString>();
 
     if (type_name.starts_with(f_geometry) || type_name.starts_with(f_geography))
