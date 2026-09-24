@@ -5,9 +5,9 @@
 #include <Access/Common/AuthenticationType.h>
 #include <Access/Credentials.h>
 #include <Access/SSH/SSHPublicKey.h>
+#include <base/scope_guard.h>
 #include <Common/clibssh.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include <Core/Names.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Pipe.h>
@@ -102,7 +102,7 @@ public:
     }
 
     bool hasClientFinished() { return client_runner.has_value() && client_runner->hasFinished(); }
-    int getClientExitCode() { return client_runner.has_value() ? client_runner->getExitCode() : 0; }
+    int getClientExitCode() { return client_runner.has_value() && client_runner->getExitCode(); }
 
 
     DescriptorSet client_input_output;
@@ -346,8 +346,7 @@ public:
         server_cb.userdata = this;
         server_cb.auth_pubkey_function = authPublickeyAdapter<ssh_session, const char *, ssh_key, char>;
         server_cb.auth_password_function = authPasswordAdapter<ssh_session, const char *, const char *>;
-        server_cb.auth_none_function = authNoneAdapter<ssh_session, const char *>;
-        ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PASSWORD | SSH_AUTH_METHOD_PUBLICKEY | SSH_AUTH_METHOD_NONE);
+        ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PASSWORD | SSH_AUTH_METHOD_PUBLICKEY);
         server_cb.channel_open_request_session_function = channelOpenAdapter<ssh_session>;
 
         ssh_callbacks_init(&server_cb)
@@ -454,30 +453,6 @@ public:
 
     GENERATE_ADAPTER_FUNCTION(SessionCallback, authPassword, int)
 
-    int authNone(ssh_session, const char * user) noexcept
-    {
-        try
-        {
-            LOG_TRACE(log, "Authenticating user '{}' with none", user);
-            auto db_session_created = std::make_unique<Session>(server_context, ClientInfo::Interface::LOCAL);
-            /// Accept the "none" method whenever an empty password authenticates the user.
-            /// This covers both `NO_PASSWORD` and any password-type method whose stored
-            /// credential happens to be the empty string (e.g. `IDENTIFIED WITH plaintext_password BY ''`).
-            db_session_created->authenticate(BasicCredentials{String(user), ""}, peer_address);
-            authenticated = true;
-            db_session = std::move(db_session_created);
-            return SSH_AUTH_SUCCESS;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            ++auth_attempts;
-            return SSH_AUTH_DENIED;
-        }
-    }
-
-    GENERATE_ADAPTER_FUNCTION(SessionCallback, authNone, int)
-
     ssh_server_callbacks_struct server_cb = {};
 };
 
@@ -503,8 +478,6 @@ SSHPtyHandler::~SSHPtyHandler()
 
 void SSHPtyHandler::run()
 {
-    DB::setThreadName(ThreadName::SSH_HANDLER);
-
     ::ssh::SSHEvent event;
     auto peer_addr = socket().peerAddress();
     socket().close();
@@ -528,6 +501,18 @@ void SSHPtyHandler::run()
     }
     bool fds_set = false;
 
+    /// `ssh_event_add_fd` allocates a wrapper that is released only by `ssh_event_remove_fd`:
+    /// `ssh_event_free` does not know about it. The fds therefore have to be removed on every exit
+    /// path, including when `poll` throws because the connection with the client is already gone.
+    int registered_out_fd = -1;
+    int registered_err_fd = -1;
+    SCOPE_EXIT({
+        if (registered_out_fd != -1)
+            event.removeFd(registered_out_fd);
+        if (registered_err_fd != -1)
+            event.removeFd(registered_err_fd);
+    });
+
     do
     {
         /* Poll the main event which takes care of the session, the channel and
@@ -544,10 +529,16 @@ void SSHPtyHandler::run()
 
         /* If stdout valid, add stdout to be monitored by the poll event. */
         if (sdata.channel_callback->client_input_output.out != -1)
+        {
             event.addFd(sdata.channel_callback->client_input_output.out, POLLIN, process_stdout, sdata.channel_callback->channel.getCChannelPtr());
+            registered_out_fd = sdata.channel_callback->client_input_output.out;
+        }
 
         if (sdata.channel_callback->client_input_output.err != -1)
+        {
             event.addFd(sdata.channel_callback->client_input_output.err, POLLIN, process_stderr, sdata.channel_callback->channel.getCChannelPtr());
+            registered_err_fd = sdata.channel_callback->client_input_output.err;
+        }
 
     }
     while (sdata.channel_callback->channel.isOpen() && !sdata.channel_callback->hasClientFinished() && !server.isCancelled());
@@ -558,8 +549,16 @@ void SSHPtyHandler::run()
         sdata.channel_callback->channel.isOpen(), sdata.channel_callback->hasClientFinished(), server.isCancelled()
     );
 
-    event.removeFd(sdata.channel_callback->client_input_output.out);
-    event.removeFd(sdata.channel_callback->client_input_output.err);
+    if (registered_out_fd != -1)
+    {
+        event.removeFd(registered_out_fd);
+        registered_out_fd = -1;
+    }
+    if (registered_err_fd != -1)
+    {
+        event.removeFd(registered_err_fd);
+        registered_err_fd = -1;
+    }
 
     /// Drain any remaining data from stdout/stderr pipes before closing the channel.
     /// The client may have finished writing to the pipes before the event loop had a chance

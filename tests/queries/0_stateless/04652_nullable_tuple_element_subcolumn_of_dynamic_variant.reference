@@ -4,10 +4,10 @@ Nullable(UInt32)
 3	\N
 1	s
 2	s
-3	\N
+3	
 1	0
 2	1
-3	\N
+3	1
 1
 1
 1	1
@@ -41,11 +41,11 @@ Nullable(UInt32)	\N
 Nullable(UInt32)	\N
 Nullable(UInt32)	\N
 Nullable(UInt32)	\N
-Nullable(UInt32)	\N
-Nullable(UInt32)	1
-Nullable(UInt32)	\N
-Nullable(UInt32)	\N
-Nullable(UInt32)	\N
+UInt32	0
+UInt32	1
+UInt32	0
+UInt32	0
+UInt32	0
 []
 []
 [1]

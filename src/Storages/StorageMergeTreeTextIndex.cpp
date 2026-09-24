@@ -4,11 +4,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/Range.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ClientInfo.h>
@@ -36,7 +34,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class MergeTreeTextIndexSource final : public ISource
+class MergeTreeTextIndexSource : public ISource
 {
 public:
     MergeTreeTextIndexSource(
@@ -67,8 +65,6 @@ protected:
     Chunk generate() override
     {
         using enum PostingsSerialization::Flags;
-
-        auto component_guard = Coordination::setCurrentComponent("MergeTreeTextIndexSource::generate");
 
         size_t total_rows = 0;
         size_t num_columns = header->columns();
@@ -104,12 +100,12 @@ protected:
                 else if (column_name == "part_name")
                 {
                     auto column = col_with_type.type->createColumnConst(block_size, current_part_name);
-                    result_columns[pos]->insertManyFrom(column->getDataColumn(), 0, block_size);
+                    result_columns[pos]->insertManyFrom(assert_cast<const ColumnConst &>(*column).getDataColumn(), 0, block_size);
                 }
                 else if (column_name == "dictionary_compression")
                 {
                     auto column = col_with_type.type->createColumnConst(block_size, static_cast<Int8>(dict_block->tokens_format));
-                    result_columns[pos]->insertManyFrom(column->getDataColumn(), 0, block_size);
+                    result_columns[pos]->insertManyFrom(assert_cast<const ColumnConst &>(*column).getDataColumn(), 0, block_size);
                 }
                 else if (column_name == "num_posting_blocks")
                 {
@@ -176,7 +172,7 @@ private:
 
                 size_t block_idx = matching_blocks[next_matching_block++];
                 dictionary_buf->seek(sparse_index.getOffsetInFile(block_idx), 0);
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
             else /// Sequential reading without filtering.
             {
@@ -186,7 +182,7 @@ private:
                     continue;
                 }
 
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
         }
     }
@@ -224,7 +220,7 @@ private:
                 auto idx_file = storage.readFile(sparse_file_name, read_settings, part->checksums.files.at(sparse_file_name).file_size);
 
                 CompressedReadBufferFromFile idx_buf(std::move(idx_file));
-                sparse_index = TextIndexSerialization::deserializeHeader(idx_buf).sparse_index;
+                sparse_index = TextIndexSerialization::deserializeSparseIndex(idx_buf);
 
                 if (sparse_index.empty())
                     continue;
@@ -259,8 +255,7 @@ private:
         DataTypes key_types = {string_type};
 
         /// FieldRef can reference a column cell by pointer, avoiding string copies.
-        /// The sparse index is loaded without a cache here, so tokens are stored as a raw column.
-        ColumnsWithTypeAndName ref_columns = {{sparse_index.getTokensColumn(), string_type, "token"}};
+        ColumnsWithTypeAndName ref_columns = {{sparse_index.tokens, string_type, "token"}};
 
         for (size_t i = 0; i < num_blocks; ++i)
         {
@@ -348,7 +343,7 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 
         /// Build a KeyCondition for the `token` column to skip dictionary blocks
         /// whose token range does not match the filter.
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().at(0), context, /* boolean_context */ true);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().at(0), context);
 
         auto token_column = ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "token");
         auto key_expr = std::make_shared<ExpressionActions>(ActionsDAG({token_column}));
@@ -406,7 +401,7 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     const StoragePtr & source_table_,
     MergeTreeIndexPtr text_index_,
     const ColumnsDescription & columns)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , source_table(source_table_)
     , text_index(std::move(text_index_))
 {
@@ -415,31 +410,19 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const StorageID & source_storage_id, const IMergeTreeIndex & index)
 {
-    /// The checks below are for the user who runs the query, so a shard of a distributed query may run it only as the
-    /// initiating user: authenticated by the interserver secret, or reached by `remote(...)` as the same user, which the
-    /// initiator confirms by pushing its roles (it does not when it rewrote the initial user to the connection user).
+    /// The checks below are for the user who runs the query. A shard reached through an ordinary connection runs a
+    /// distributed query as the user of that connection and does not know who initiated it; only through an
+    /// interserver connection does the shard authenticate the initiating user itself.
     const auto & client_info = context->getClientInfo();
-    const bool same_user = client_info.initial_user == client_info.current_user && client_info.current_roles.has_value();
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && client_info.interface != ClientInfo::Interface::TCP_INTERSERVER && !same_user)
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.interface != ClientInfo::Interface::TCP_INTERSERVER)
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Table function `mergeTreeTextIndex` checks the access of the user who runs the query, so a shard of a "
-            "distributed query can execute it only as the initiating user: through a cluster with an interserver secret, "
-            "or through `remote` with the credentials of that user");
+            "distributed query can execute it only when the cluster uses an interserver secret");
 
     context->checkAccess(AccessType::SELECT, source_storage_id, index.getColumnsRequiredForIndexCalc());
 
@@ -455,7 +438,7 @@ void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const St
             source_storage_id.getNameForLogs());
 }
 
-void StorageMergeTreeTextIndex::readImpl(
+void StorageMergeTreeTextIndex::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
