@@ -108,9 +108,9 @@
 
     <!-- Wide: count() with PREWHERE over conditions that the read step splitter treats as a step
          boundary, because they report true from isSuitableForShortCircuitArgumentsExecution.
-         Each such condition gets its own step, so the same Map data is deserialized once per
-         condition. These two queries measure that cost against the `!= ''` shapes above, which
-         stay in a single step, and guard it against future changes to the boundary predicate. -->
+         Each such condition gets its own step, but all their Map keys are read by the first step,
+         so the Map is deserialized once. These two queries measure the remaining cost against the
+         `!= ''` shapes above, which stay in a single step. -->
     <query>
         SELECT count() FROM map_subcol_pw_wide
         PREWHERE startsWith(tags['k0'], '1') AND startsWith(tags['k1'], '1') AND startsWith(tags['k2'], '1') AND startsWith(tags['k3'], '1')

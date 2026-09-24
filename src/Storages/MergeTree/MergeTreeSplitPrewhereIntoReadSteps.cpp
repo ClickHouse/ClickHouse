@@ -111,6 +111,25 @@ void flattenConjunction(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstP
     atoms.push_back(node);
 }
 
+/// Appends the INPUT nodes of the sub-DAG rooted at `node` to `inputs`, each at most once.
+void collectInputNodes(
+    const ActionsDAG::Node * node,
+    std::unordered_set<const ActionsDAG::Node *> & visited,
+    ActionsDAG::NodeRawConstPtrs & inputs)
+{
+    if (!visited.insert(node).second)
+        return;
+
+    if (node->type == ActionsDAG::ActionType::INPUT)
+    {
+        inputs.push_back(node);
+        return;
+    }
+
+    for (const auto * child : node->children)
+        collectInputNodes(child, visited, inputs);
+}
+
 /// Stores information about a node that has already been cloned or added to one of the new DAGs.
 /// This allows to avoid cloning the same sub-DAG into multiple step DAGs but reference previously cloned nodes from earlier steps.
 struct DAGNodeRef
@@ -288,13 +307,19 @@ bool tryBuildPrewhereSteps(
     /// on the rows that step rejects. Recorded for every such group regardless of which columns the
     /// two steps read, because a step never filters the block it hands over on its own.
     std::unordered_set<size_t> groups_requiring_filtered_input;
+    /// For every group, the index of the group whose step reads its columns. A group that was split
+    /// from the previous one only because it may throw reads the same storage columns, so its columns
+    /// are read by the first step of that run: reading is safe, only the evaluation must wait for the
+    /// filter. Otherwise every such step would deserialize the same storage column again (for example a
+    /// whole `Map` for each of its keys).
+    std::vector<size_t> group_read_step;
     for (const auto & node : condition_nodes)
     {
         const auto & node_info = nodes_info[node];
-        const bool merge_into_previous_group = !condition_groups.empty() && !node_info.may_throw
+        const bool same_storage_columns = !condition_groups.empty()
             && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns;
 
-        if (merge_into_previous_group)
+        if (same_storage_columns && !node_info.may_throw)
         {
             condition_groups.back().push_back(node);
             continue;
@@ -303,7 +328,22 @@ bool tryBuildPrewhereSteps(
         if (!condition_groups.empty() && node_info.may_throw)
             groups_requiring_filtered_input.insert(condition_groups.size());
 
+        group_read_step.push_back(same_storage_columns ? group_read_step.back() : condition_groups.size());
         condition_groups.push_back({node});
+    }
+
+    /// Inputs of the later groups that are read by each step, see group_read_step.
+    std::vector<ActionsDAG::NodeRawConstPtrs> inputs_read_ahead(condition_groups.size());
+    {
+        std::vector<std::unordered_set<const ActionsDAG::Node *>> visited(condition_groups.size());
+        for (size_t group_index = 0; group_index < condition_groups.size(); ++group_index)
+        {
+            const size_t read_step = group_read_step[group_index];
+            if (read_step == group_index)
+                continue;
+            for (const auto * node : condition_groups[group_index])
+                collectInputNodes(node, visited[read_step], inputs_read_ahead[read_step]);
+        }
     }
 
     /// 5. Build DAGs for each step
@@ -333,6 +373,10 @@ bool tryBuildPrewhereSteps(
             const auto & node_in_new_dag = addClonedDAGToDAG(step_index, node, step_dag, node_remap, node_to_step);
             new_condition_nodes.push_back(&node_in_new_dag);
         }
+
+        /// Only added as inputs here: the later step that uses such a column adds it to the outputs of this one.
+        for (const auto * input : inputs_read_ahead[step_index])
+            addClonedDAGToDAG(step_index, input, step_dag, node_remap, node_to_step);
 
         if (new_condition_nodes.size() > 1)
         {

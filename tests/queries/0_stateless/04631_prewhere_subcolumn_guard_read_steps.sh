@@ -45,6 +45,7 @@ query_id_throwing=throwing_$CLICKHOUSE_DATABASE
 query_id_interleaved=interleaved_$CLICKHOUSE_DATABASE
 query_id_nested=nested_$CLICKHOUSE_DATABASE
 query_id_nested_split=nested_split_$CLICKHOUSE_DATABASE
+query_id_read_ahead=read_ahead_$CLICKHOUSE_DATABASE
 
 opts=(
   --enable_analyzer 1
@@ -62,6 +63,16 @@ ${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_group" -q "
 ${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_throwing" -q "
   SELECT count() FROM t_steps_throwing
   PREWHERE tags['safe'] != '' AND toUInt64(tags['val']) > 50
+  FORMAT Null
+"
+
+# Conditions that may throw get a step each, but the columns of that run of steps are read by its
+# first step, so the Map is deserialized once, as for the grouped query above. Every row passes, so
+# a step per condition that read its own key would deserialize the whole Map four times.
+${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_read_ahead" -q "
+  SELECT count() FROM t_steps_group
+  PREWHERE NOT startsWith(tags['k0'], 'z') AND NOT startsWith(tags['k1'], 'z')
+       AND NOT startsWith(tags['k2'], 'z') AND NOT startsWith(tags['k3'], 'z')
   FORMAT Null
 "
 
@@ -102,11 +113,20 @@ ${CLICKHOUSE_CLIENT} -q "
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_group' AND type = 'QueryFinish';
 
-  -- The throwing condition gets its own step, so the rows are read by two prewhere readers. The
-  -- second reader sees fewer rows because the first step filters them.
+  -- The throwing condition gets its own step, so the rows pass two prewhere readers. The second one
+  -- reads no columns (its key was read ahead by the first step) and sees only the rows the first step kept.
+  -- A reader that reads no columns still counts the rows it passes.
   SELECT 'split steps', ProfileEvents['RowsReadByPrewhereReaders'] > 100000
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_throwing' AND type = 'QueryFinish';
+
+  -- Four steps, one per condition, that read the Map once: at most as many bytes as the grouped query
+  -- (the marks may already be cached), far fewer than four reads of the Map.
+  SELECT 'read ahead bytes', ra.b < 2 * g.b
+    FROM (SELECT ProfileEvents['ReadCompressedBytes'] AS b FROM system.query_log
+           WHERE current_database = currentDatabase() AND query_id = '$query_id_read_ahead' AND type = 'QueryFinish') AS ra,
+         (SELECT ProfileEvents['ReadCompressedBytes'] AS b FROM system.query_log
+           WHERE current_database = currentDatabase() AND query_id = '$query_id_group' AND type = 'QueryFinish') AS g;
 
   -- Exactly three steps, a count no single step plan can produce.
   SELECT 'interleaved steps', ProfileEvents['RowsReadByPrewhereReaders'] = 300000
