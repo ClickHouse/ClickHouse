@@ -70,8 +70,9 @@ class LocalCacheTable
 public:
     using RegexpPtr = std::shared_ptr<OptimizedRegularExpression>;
 
+    /// Returns a reference into the bucket to avoid a refcount pair per call; the next call may overwrite it.
     template <bool like, bool no_capture, bool case_insensitive>
-    RegexpPtr getOrSet(const String & pattern)
+    const RegexpPtr & getOrSet(std::string_view pattern)
     {
         Bucket & bucket = known_regexps[hasher(pattern) % CACHE_SIZE];
 
@@ -79,7 +80,9 @@ public:
         {
             /// insert new entry
             ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
-            bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+            String key(pattern);
+            auto compiled = std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(key));
+            bucket = {std::move(key), std::move(compiled)};
         }
         else
         {
@@ -87,7 +90,9 @@ public:
             {
                 /// replace existing entry
                 ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
-                bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+                String key(pattern);
+                auto compiled = std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(key));
+                bucket = {std::move(key), std::move(compiled)};
             }
             else
                 ProfileEvents::increment(ProfileEvents::RegexpLocalCacheHit);
@@ -99,7 +104,7 @@ public:
 private:
     constexpr static size_t CACHE_SIZE = 1'000; /// collision probability
 
-    std::hash<String> hasher;
+    std::hash<std::string_view> hasher;
     struct Bucket
     {
         String pattern;   /// key
