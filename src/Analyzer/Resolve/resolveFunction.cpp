@@ -3122,8 +3122,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
         }
 
-        /// Find the "reference" type from non-NumberLiteral numeric arguments.
-        DataTypePtr reference_type;
+        /// Type the literals by the common supertype of the other numeric arguments, so a mixed-type
+        /// call does not depend on which of them comes first.
+        DataTypes sibling_types;
         for (size_t i = 0; i < function_arguments_size; ++i)
         {
             const auto * const_node = function_arguments[i]->as<ConstantNode>();
@@ -3131,11 +3132,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 continue;
             auto arg_type = removeLowCardinalityAndNullable(argument_types[i]);
             if (isNumber(*arg_type) || isDecimal(*arg_type))
-            {
-                reference_type = arg_type;
-                break;
-            }
+                sibling_types.push_back(std::move(arg_type));
         }
+        DataTypePtr reference_type = sibling_types.empty() ? nullptr : tryGetLeastSupertype(sibling_types);
 
         for (size_t i = 0; i < function_arguments_size; ++i)
         {
