@@ -20,17 +20,17 @@
     <fill_query>SYSTEM STOP MERGES t_json_merge_statistics_{shared_data_version}</fill_query>
     <fill_query>
         INSERT INTO t_json_merge_statistics_{shared_data_version}
-        SELECT number, CAST(arrayMap(x -> tuple('key' || toString(cityHash64(number, x) % 5000), toString(x)), range(40)), 'Map(String, String)')
+        SELECT number, CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 125) % 5000), toString(x)), range(40)), 'Map(String, String)')
         FROM numbers(0, 100000)
     </fill_query>
     <fill_query>
         INSERT INTO t_json_merge_statistics_{shared_data_version}
-        SELECT number, CAST(arrayMap(x -> tuple('key' || toString(cityHash64(number, x) % 5000), toString(x)), range(40)), 'Map(String, String)')
+        SELECT number, CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 125) % 5000), toString(x)), range(40)), 'Map(String, String)')
         FROM numbers(100000, 100000)
     </fill_query>
     <fill_query>
         INSERT INTO t_json_merge_statistics_{shared_data_version}
-        SELECT number, CAST(arrayMap(x -> tuple('key' || toString(cityHash64(number, x) % 5000), toString(x)), range(40)), 'Map(String, String)')
+        SELECT number, CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 125) % 5000), toString(x)), range(40)), 'Map(String, String)')
         FROM numbers(200000, 100000)
     </fill_query>
 
