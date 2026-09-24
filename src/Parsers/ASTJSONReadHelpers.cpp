@@ -4,6 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/checkStackSize.h>
 #include <IO/ReadHelpers.h>
 
 #include <algorithm>
