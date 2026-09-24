@@ -1,0 +1,68 @@
+<!--
+    Dictionary-based row group pruning in the `Parquet` reader, controlled by
+    `input_format_parquet_dictionary_filter_push_down`: for an equality or `IN`
+    condition on a fully dictionary-encoded column chunk, the reader reads the
+    dictionary page and skips the whole row group when it holds none of the
+    values that are searched for.
+
+    The fixture reproduces the situation this is for, the one a real
+    `hits.parquet` is in. `model` is a low-cardinality string column whose
+    values are spread over the whole file, so
+
+    * min/max statistics prune nothing - an empty string and a `zzz...` value
+      occur in every row group, so every row group's range spans every value
+      searched for below - and
+    * there are no bloom filters, which is what most Parquet writers produce;
+      `output_format_parquet_write_bloom_filter = 0` turns off the ones
+      ClickHouse would write.
+
+    The dictionary page is then the only per-row-group structure that can rule a
+    value out. `rare_model` is in 30 of the 300 row groups and `absent_model` in
+    none of them, so the reader decodes `model` for 10% resp. 0% of the rows
+    instead of all of them.
+
+    The last query is the counterweight: `model_7` is in every row group, so
+    nothing can be skipped and the dictionary pages are read and hashed for
+    nothing. It must not become slower.
+
+    The measured queries run with `max_threads = 1`: the file is small and the
+    work per row is tiny, so otherwise the numbers would mostly reflect how many
+    cores the runner has. The setting is per query rather than in `<settings>`
+    so that the fill query keeps writing the file in parallel - the placement of
+    the values over the row groups does not depend on it, because every burst of
+    `rare_model` falls inside a single `max_block_size` block and every block
+    becomes one row group.
+-->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_dictionary_filter.parquet', Parquet)
+        SELECT
+            multiIf(
+                number % 64 = 0, '',
+                number % 64 = 1, 'zzzzzzzzzzzzzzzz',
+                number % 10000000 < 1000, 'rare_model',
+                concat('model_', toString(number % 512))) AS model,
+            toUInt32(number % 1000) AS region
+        FROM numbers(300000000)
+        SETTINGS output_format_parquet_row_group_size = 1000000,
+                 output_format_parquet_write_bloom_filter = 0,
+                 engine_file_truncate_on_insert = 1,
+                 max_block_size = 1000000,
+                 max_insert_block_size = 1000000
+    ]]></fill_query>
+
+    <!-- 30 of the 300 row groups contain the value. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter.parquet', Parquet) WHERE model = 'rare_model' SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <!-- No row group contains the value: the whole file is skipped. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter.parquet', Parquet) WHERE model = 'absent_model' SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <!-- The same for an `IN` condition. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter.parquet', Parquet) WHERE model IN ('rare_model', 'absent_model') SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <!-- Skipping a row group skips its other columns as well. -->
+    <query><![CDATA[SELECT sum(region) FROM file('test_parquet_dictionary_filter.parquet', Parquet) WHERE model = 'rare_model' SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <!-- Counterweight: the value is in every row group, nothing is skipped. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_dictionary_filter.parquet', Parquet) WHERE model = 'model_7' SETTINGS max_threads = 1 FORMAT Null]]></query>
+</test>
