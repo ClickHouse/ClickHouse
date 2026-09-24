@@ -162,6 +162,13 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
     assert_privilege_error(
         analyzer_source_access_error, "SELECT", "default.cluster_set_rp"
     )
+    assert (
+        initiator.query(
+            "SELECT inIgnoreSet(tuple(1, 10), cluster_set_rp)",
+            user="cluster_mutator",
+        )
+        == "0\n"
+    )
 
     source_access_error = initiator.query_and_get_error(
         "ALTER TABLE cluster_data_rp ON CLUSTER cluster "
