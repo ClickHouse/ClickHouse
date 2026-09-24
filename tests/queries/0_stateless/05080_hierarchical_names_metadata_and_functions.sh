@@ -32,7 +32,6 @@ run "INSERT INTO ${db}.ns.j VALUES (1, 'one')"
 run "SELECT joinGet(${db}.ns.j, 'v', toUInt64(1))"
 run "SELECT joinGet('${db}.ns.j', 'v', toUInt64(1))"
 run "SELECT joinGet(ns.j, 'v', toUInt64(1))"
-run "SELECT joinGet(${db}.ns.j, 'v', toUInt64(1)) SETTINGS enable_analyzer = 0"
 $CLICKHOUSE_CLIENT -m -q "USE ${db}.ns; SELECT joinGet(j, 'v', toUInt64(1))"
 
 echo '--- dictGet'
@@ -43,7 +42,6 @@ run "SHOW DICTIONARIES FROM ${db}"
 run "SELECT dictGet(${db}.ns.d, 'v', 1)"
 run "SELECT dictGet('${db}.ns.d', 'v', 1)"
 run "SELECT dictGet(ns.d, 'v', 1)"
-run "SELECT dictGet(${db}.ns.d, 'v', 1) SETTINGS enable_analyzer = 0"
 $CLICKHOUSE_CLIENT -m -q "USE ${db}.ns; SELECT dictGet(d, 'v', 1)"
 run "EXISTS DICTIONARY ${db}.ns.d"
 
