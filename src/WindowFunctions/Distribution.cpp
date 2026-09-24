@@ -4,7 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Transforms/WindowTransform.h>
-#include <WindowFunctions/Helpers.h>
+#include <WindowFunctions/helpers.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>

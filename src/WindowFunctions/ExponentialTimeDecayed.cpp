@@ -2,7 +2,7 @@
 #include <AggregateFunctions/WindowFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Transforms/WindowTransform.h>
-#include <WindowFunctions/Helpers.h>
+#include <WindowFunctions/helpers.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 

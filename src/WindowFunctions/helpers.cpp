@@ -1,4 +1,4 @@
-#pragma once
+#include <WindowFunctions/helpers.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Processors/Transforms/WindowTransform.h>
@@ -10,25 +10,25 @@ namespace DB
 namespace WindowRowAccess
 {
 
-inline Float64 getArgumentFloat64(const WindowTransform * transform, size_t function_index, size_t argument_index, RowNumber row)
+Float64 getArgumentFloat64(const WindowTransform * transform, size_t function_index, size_t argument_index, RowNumber row)
 {
     const auto & workspace = transform->workspaces[function_index];
     const auto & column = transform->blockAt(row.block).input_columns[workspace.argument_column_indices[argument_index]];
     return column->getFloat64(row.row);
 }
 
-inline void insertResultFloat64(const WindowTransform * transform, size_t function_index, Float64 value)
+void insertResultFloat64(const WindowTransform * transform, size_t function_index, Float64 value)
 {
     IColumn & to = *transform->blockAt(transform->current_row).output_columns[function_index];
     assert_cast<ColumnFloat64 &>(to).getData().push_back(value);
 }
 
-ALWAYS_INLINE inline bool isPartitionFirstRow(const WindowTransform * transform)
+bool isPartitionFirstRow(const WindowTransform * transform)
 {
     return transform->current_row_number == 1;
 }
 
-ALWAYS_INLINE inline bool isPartitionLastRow(const WindowTransform * transform)
+bool isPartitionLastRow(const WindowTransform * transform)
 {
     /// This is for fast check.
     if (!transform->partition_ended)
