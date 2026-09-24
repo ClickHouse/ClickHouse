@@ -706,7 +706,10 @@ private:
     /// Builds a complete comparison atom, including type conversion, relaxation and the final range.
     /// Returns `std::nullopt` when the candidate cannot supply a sound constraint.
     std::optional<RPNElement> tryBuildComparisonAtom(
-        const ComparisonAtomCandidate & candidate, std::string func_name, const ContextPtr & context) const;
+        const ComparisonAtomCandidate & candidate,
+        std::string func_name,
+        const ColumnWithTypeAndName & original_constant,
+        const ContextPtr & context) const;
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
