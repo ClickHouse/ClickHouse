@@ -18,8 +18,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/copyData.h>
 #include <Common/ErrnoException.h>
 
 #include <tins/tins.h>
@@ -47,7 +45,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
 /// One row per packet; up to this many packets per Chunk.
@@ -190,34 +187,64 @@ void PCAPBlockInputFormat::initializeIfNeeded()
         }
     }
 
-    /// Otherwise copy the whole stream into a temporary file: `libpcap` reads a capture only
-    /// from a path or from a `FILE *`, and it seeks, while the input stream is not seekable.
-    capture_file = tmpfile();
+    /// Otherwise let `libpcap` read the capture straight from the input buffer. `libpcap` reads
+    /// a capture only through a path or a `FILE *`, but it reads it strictly sequentially, so a
+    /// `FILE *` backed by the input buffer is enough and nothing has to be spooled anywhere.
+    stream_cookie.in = &input;
+    stream_cookie.exception = nullptr;
+
+    cookie_io_functions_t functions{};
+    functions.read = &PCAPBlockInputFormat::readFromInput;
+    functions.close = &PCAPBlockInputFormat::closeInput;
+    capture_file = fopencookie(&stream_cookie, "r", functions);
     if (capture_file == nullptr)
-        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create a temporary file to read a PCAP capture");
+        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open a stream to read a PCAP capture");
 
+    try
     {
-        WriteBufferFromFileDescriptor out(fileno(capture_file));
-        /// The static analyzer models a failed `dynamic_cast` above as if the operand pointer
-        /// itself could be null, but `in` is never null here.
-        copyData(input, out, is_stopped); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
-        out.finalize();
+        sniffer = std::make_unique<Tins::FileSniffer>(capture_file, config);
     }
-
-    /// The stream is only partially copied if the query has been cancelled;
-    /// do not open a sniffer over a truncated capture.
-    if (is_stopped)
-        return;
-
-    if (fseek(capture_file, 0, SEEK_SET) != 0)
-        throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot rewind the temporary file with a PCAP capture");
-
-    sniffer = std::make_unique<Tins::FileSniffer>(capture_file, config);
+    catch (...)
+    {
+        /// `libpcap` reports a failed read of the header with its own message; the error
+        /// thrown by the input buffer is the actual cause.
+        rethrowInputException();
+        throw;
+    }
 
     /// `pcap_fopen_offline` succeeded, and `pcap_close` (run by the sniffer's destructor)
     /// closes the underlying `FILE *` itself, so ownership has been transferred to `libpcap`.
     /// On failure the `FILE *` stays ours and `closeFile` releases it.
     capture_file = nullptr;
+}
+
+ssize_t PCAPBlockInputFormat::readFromInput(void * cookie, char * buf, size_t size)
+{
+    auto & state = *static_cast<InputStreamCookie *>(cookie);
+    /// Called from `libpcap` through `stdio`, so an exception must not escape; it is kept and
+    /// rethrown once `libpcap` reports the failed read.
+    try
+    {
+        return static_cast<ssize_t>(state.in->read(buf, size));
+    }
+    catch (...)
+    {
+        state.exception = std::current_exception();
+        errno = EIO;
+        return -1;
+    }
+}
+
+int PCAPBlockInputFormat::closeInput(void *)
+{
+    /// The input buffer is owned by the caller of the format.
+    return 0;
+}
+
+void PCAPBlockInputFormat::rethrowInputException()
+{
+    if (stream_cookie.exception)
+        std::rethrow_exception(std::exchange(stream_cookie.exception, nullptr));
 }
 
 namespace
@@ -447,8 +474,11 @@ Chunk PCAPBlockInputFormat::read()
         if (res == -2 || res == 0) /// -2: end of savefile, 0: timeout (not applicable offline).
             break;
         if (res < 0)
+        {
+            rethrowInputException();
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Failed to read packet from PCAP: {}", pcap_geterr(handle));
+        }
 
         const UInt32 caplen = pkthdr->caplen;
         const UInt32 wire_len = pkthdr->len;

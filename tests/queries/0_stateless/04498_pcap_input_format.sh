@@ -128,8 +128,8 @@ echo "--- subset of columns (only number, dst_port) ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT number, dst_port FROM file('$DATA_DIR/packets.pcap', PCAP) ORDER BY number FORMAT TSV"
 
-# A capture that does not come from a plain local file is copied into a
-# temporary file first, because libpcap reads only from a file.
+# A capture that does not come from a plain local file is read by libpcap
+# through a stream over the input buffer, without being spooled anywhere.
 echo "--- from a stream: standard input ---"
 $CLICKHOUSE_LOCAL --input-format PCAP -q "SELECT count(), countIf(ip_protocol = 'TCP') FROM table FORMAT TSV" < "$DATA_DIR/packets.pcap"
 
@@ -137,6 +137,11 @@ echo "--- from a stream: compressed file ---"
 gzip -c "$DATA_DIR/packets.pcap" > "$DATA_DIR/packets.pcap.gz"
 $CLICKHOUSE_LOCAL -q "
 SELECT count(), countIf(ip_protocol = 'TCP') FROM file('$DATA_DIR/packets.pcap.gz', PCAP) FORMAT TSV"
+
+echo "--- from a stream: an error of the input buffer is reported as is ---"
+head -c 200 "$DATA_DIR/packets.pcap.gz" > "$DATA_DIR/broken.pcap.gz"
+$CLICKHOUSE_LOCAL -q "
+SELECT count() FROM file('$DATA_DIR/broken.pcap.gz', PCAP) FORMAT TSV" 2>&1 | grep -o -m1 'CANNOT_DECOMPRESS'
 
 echo "--- schema inference via file() extension is PCAP-explicit only (count) ---"
 $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_DIR/packets.pcap', PCAP)"

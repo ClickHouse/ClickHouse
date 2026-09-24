@@ -8,6 +8,7 @@
 
 #include <cstdio>
 #include <atomic>
+#include <exception>
 #include <memory>
 
 namespace Tins
@@ -44,8 +45,15 @@ private:
     bool initialized = false;
     std::unique_ptr<Tins::FileSniffer> sniffer;
 
-    /// When the input is not a local file, we copy it into a temporary file;
-    /// the FILE * must outlive the sniffer.
+    /// When the input is not a local file, `libpcap` reads it through a `FILE *` backed by the
+    /// input buffer. The stream is owned by the sniffer once it is created.
+    struct InputStreamCookie
+    {
+        ReadBuffer * in = nullptr;
+        /// The exception thrown by the input buffer while `libpcap` was reading from it.
+        std::exception_ptr exception;
+    };
+    InputStreamCookie stream_cookie;
     FILE * capture_file = nullptr;
 
     /// 1-based packet counter across the whole capture.
@@ -55,6 +63,10 @@ private:
 
     void initializeIfNeeded();
     void closeFile();
+    void rethrowInputException();
+
+    static ssize_t readFromInput(void * cookie, char * buf, size_t size);
+    static int closeInput(void * cookie);
 };
 
 class PCAPSchemaReader final : public ISchemaReader

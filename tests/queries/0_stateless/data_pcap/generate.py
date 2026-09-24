@@ -84,6 +84,16 @@ packets.append(ethernet(ipv6(0, hop_by_hop_then_routing + tcp), ether_type=0x86D
 fragment = bytes([17, 0]) + struct.pack(">HI", 185 << 3, 0x12345678)
 packets.append(ethernet(ipv6(44, fragment + b"a fragment of a UDP datagram"), ether_type=0x86DD))
 
+# IPv6 with an Authentication Header (51) before TCP. The AH length field is in
+# 4-byte units minus 2 (RFC 4302), unlike the generic 8-byte units, so a reader
+# that uses the generic rule looks for the TCP header at the wrong offset.
+authentication_header = bytes([6, 4]) + bytes(2) + struct.pack(">II", 0x1000, 1) + bytes(12)  # 24 bytes, 96-bit ICV
+packets.append(ethernet(ipv6(51, authentication_header + tcp), ether_type=0x86DD))
+
+# IPv6 with a Shim6 header (140, generic extension-header format per RFC 7045)
+# before UDP: the ports come from the UDP header after it.
+packets.append(ethernet(ipv6(140, ipv6_extension_header(140, 17, bytes(6)) + udp), ether_type=0x86DD))
+
 
 def write_pcap(path, records, snaplen=65535):
     """Classic pcap; every record is a (captured bytes, original wire length) pair."""
