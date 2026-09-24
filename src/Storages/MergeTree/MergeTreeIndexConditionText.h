@@ -92,6 +92,7 @@ public:
     MergeTreeIndexConditionText(
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
+        StorageMetadataPtr metadata_snapshot_,
         const Block & index_sample_block,
         const std::optional<String> & normalized_index_column_name_,
         TokenizerPtr tokenizer_,
@@ -220,6 +221,8 @@ private:
     /// E.g. "hasAnyTokens(s, 'tokens')" or "hasAllTokens(s, 'tokens1') OR hasAllTokens(s, 'tokens2')""
     static bool requiresReadingAllTokens(const RPNElement & element);
 
+    /// The table's columns, to tell a JSON path apart from a column merely named like one.
+    StorageMetadataPtr metadata_snapshot;
     Block header;
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
