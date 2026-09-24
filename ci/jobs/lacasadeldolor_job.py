@@ -237,6 +237,72 @@ def _copy_node_cores_to_workspace(workspace_path: Path) -> list[Path]:
     return copied
 
 
+def _classify_genuine_failure(
+    logs: list[Path], fuzzer_out: Path, sw: Utils.Stopwatch, info: str
+) -> tuple[Result | None, bool]:
+    """Name the genuine, non-OOM report `logs` hold, if any.
+
+    Returns (failure, saw_signal): a nameable report yields the `FuzzerLogParser` verdict
+    for it as a `Result` still to be given the caller's artifacts, and `saw_signal` says
+    whether a genuine line was there at all - a signal the parser cannot name still has to
+    stop an OOM found elsewhere from passing the run.
+    """
+    if not logs:
+        return None, False
+    paths_to_scan = " ".join(str(p) for p in logs)
+    # `-z` because rotation gzips all but the newest file, and a report in a `.gz` is
+    # exactly the one this looks for. The second `rg` filters the already-decompressed
+    # pipe, so it needs no `-z`.
+    # `-H` so the surviving lines name their file: which file matched is what the parser
+    # has to be pointed at, see below.
+    genuine_matches = Shell.get_output(
+        f"rg -z --text -H '{SANITIZER_NON_OOM_PATTERN}' {paths_to_scan}"
+        f" | rg --text -v '{SANITIZER_OOM_PATTERN}'"
+    )
+    if not genuine_matches:
+        return None, False
+    print(info)
+    # Hand the parser only the files that survived the OOM filter. It defers the expected
+    # `Child process was terminated by signal 9 (KILL)` on its own now, but this filter is
+    # the wider net, so it still points the parser at the file holding the genuine report.
+    by_path = {str(p): p for p in logs}
+    genuine_logs: list[Path] = []
+    for line in genuine_matches.splitlines():
+        path = by_path.get(line.split(":", 1)[0])
+        if path is not None and path not in genuine_logs:
+            genuine_logs.append(path)
+    if not genuine_logs:
+        genuine_logs = logs
+    # Every log is passed as `server_logs`: `parse_failure` searches `stderr_logs +
+    # server_logs` for a sanitizer report either way, and the per-node pairing `stderr_logs`
+    # would buy is meaningless for a list filtered down to the files that matched.
+    # `fuzzer_out` is what the reproduce commands are built from, so it goes in here
+    # exactly as `analyze_job_logs` passes it for a failure it reports itself.
+    # `genuine_matches` above already found a real report, so let an expected-only line
+    # name it if the parser's own patterns disagree with the filter, as before.
+    name, description, files = FuzzerLogParser(
+        server_logs=genuine_logs, fuzzer_log=fuzzer_out
+    ).parse_failure(allow_expected_only=True)
+    if not name:
+        # Nothing nameable despite the signal - let the caller report its own error.
+        return None, True
+    return (
+        Result.create_from(
+            results=[
+                Result(
+                    name=name,
+                    info=description,
+                    status=Result.Status.FAIL,
+                    files=files,
+                )
+            ],
+            info=info,
+            stopwatch=sw,
+        ),
+        True,
+    )
+
+
 def _classify_rotated_logs(
     rotated_logs: list[Path], fuzzer_out: Path, sw: Utils.Stopwatch
 ) -> tuple[Result | None, bool]:
@@ -248,67 +314,21 @@ def _classify_rotated_logs(
     run the report may live only in a rotated file, and dropping that on the floor turns
     both a benign and a genuine report into the same nondescript wrapper error.
 
-    Returns (failure, is_oom_only): a genuine non-OOM report yields the `FuzzerLogParser`
-    verdict for it as a `Result` still to be given the caller's artifacts, a report that is
-    only an OOM yields (None, True) so the caller can pass the run, and no report at all
-    yields (None, False).
+    Returns (failure, is_oom_only): a genuine non-OOM report yields its named verdict, a
+    report that is only an OOM yields (None, True) so the caller can pass the run, and no
+    report at all yields (None, False).
     """
     if not rotated_logs:
         return None, False
-    paths_to_scan = " ".join(str(p) for p in rotated_logs)
-    # `-z` because rotation gzips all but the newest file, and a report in a `.gz` is
-    # exactly the one this looks for. The second `rg` filters the already-decompressed
-    # pipe, so it needs no `-z`.
-    # `-H` so the surviving lines name their file: which file matched is what the parser
-    # has to be pointed at, see below.
-    genuine_matches = Shell.get_output(
-        f"rg -z --text -H '{SANITIZER_NON_OOM_PATTERN}' {paths_to_scan}"
-        f" | rg --text -v '{SANITIZER_OOM_PATTERN}'"
+    failed_result, saw_genuine = _classify_genuine_failure(
+        rotated_logs, fuzzer_out, sw, "Failure found only in a rotated log"
     )
-    if genuine_matches:
-        print("Genuine failure found in a rotated log")
-        # Hand the parser only the files that survived the OOM filter. It defers the expected
-        # `Child process was terminated by signal 9 (KILL)` on its own now, but this filter is
-        # the wider net, so it still points the parser at the file holding the genuine report.
-        by_path = {str(p): p for p in rotated_logs}
-        genuine_logs: list[Path] = []
-        for line in genuine_matches.splitlines():
-            path = by_path.get(line.split(":", 1)[0])
-            if path is not None and path not in genuine_logs:
-                genuine_logs.append(path)
-        if not genuine_logs:
-            genuine_logs = rotated_logs
-        # Rotated stderr logs are passed as `server_logs`: `parse_failure` searches
-        # `stderr_logs + server_logs` for a sanitizer report either way, and none of these
-        # files is the current log of a node that `stderr_logs` pairs up by index.
-        # `fuzzer_out` is what the reproduce commands are built from, so it goes in here
-        # exactly as `analyze_job_logs` passes it for a current-log failure.
-        # `genuine_matches` above already found a real report, so let an expected-only line
-        # name it if the parser's own patterns disagree with the filter, as before.
-        name, description, files = FuzzerLogParser(
-            server_logs=genuine_logs, fuzzer_log=fuzzer_out
-        ).parse_failure(allow_expected_only=True)
-        if not name:
-            # Nothing nameable despite the signal - let the caller report its own error.
-            return None, False
-        return (
-            Result.create_from(
-                results=[
-                    Result(
-                        name=name,
-                        info=description,
-                        status=Result.Status.FAIL,
-                        files=files,
-                    )
-                ],
-                info="Failure found only in a rotated log",
-                stopwatch=sw,
-            ),
-            False,
-        )
+    if saw_genuine:
+        return failed_result, False
     # Report pattern only: `SANITIZER_OOM_PATTERN` also matches the watchdog's SIGKILL fatal,
     # which Dolor writes on purpose on every killed restart and forced stop, and passing a run
     # needs a real OOM report rather than a line the run was always going to produce.
+    paths_to_scan = " ".join(str(p) for p in rotated_logs)
     if Shell.get_output(
         f"rg -z --text '{SANITIZER_OOM_REPORT_PATTERN}' {paths_to_scan}"
     ):
@@ -359,6 +379,7 @@ def _classify_failed_run(
     stop_failed: bool = False,
     generator_early_exit_code: int | None = None,
     exit_unaccounted: bool = False,
+    current_logs: list[Path] | None = None,
 ) -> tuple[Result | None, str | None]:
     """Decide what a non-zero `dolor.py` exit means when `analyze_job_logs` returned OK.
 
@@ -376,15 +397,25 @@ def _classify_failed_run(
             "Server hit its memory limit (Code 241) but stayed alive",
         )
     )
+    # `analyze_job_logs` reads no log at all when the run ended the way a Dolor run normally
+    # does - no server death, generator exit 0 or 137 - so what `dolor.py` failed on may be
+    # sitting unparsed in a current log. Look there first: a current report outranks a
+    # rotated one, and even one the parser cannot name has to veto the OOM downgrade below
+    # rather than be passed off by it.
+    failed_result, current_genuine = _classify_genuine_failure(
+        current_logs or [], fuzzer_out, sw, "Genuine failure found in a current log"
+    )
     # Whatever dolor.py failed on may live only in a rotated log, which the verdict above
     # never looked at. A genuine report there wins over a benign current-log verdict and is
     # reported by name; one that is only an OOM passes the run the same way
     # `_classify_sanitizer_oom` passes an OOM in a current log.
-    failed_result, rotated_oom_only = _classify_rotated_logs(
+    rotated_failure, rotated_oom_only = _classify_rotated_logs(
         rotated_logs, fuzzer_out, sw
     )
+    if failed_result is None:
+        failed_result = rotated_failure
     info_override = None
-    if rotated_oom_only and not benign_downgrade:
+    if rotated_oom_only and not benign_downgrade and not current_genuine:
         info_override = (
             "WARNING: Sanitizer OOM in a rotated log - test considered passed"
         )
@@ -980,6 +1011,11 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
     # fatal_logs by index, so `stderr_logs` keeps exactly one entry per node. Appending an
     # error log here only lets the log parser read it - `error_logs` is what puts it in
     # front of the OOM classifier, which sees the per-node slice alone.
+    # The current per-node logs, captured before the loop below appends the error and
+    # rotated files to `server_logs`: `_classify_failed_run` has to tell a report in one of
+    # these from one only a rotated log holds, and `analyze_job_logs` may have returned OK
+    # without reading any of them.
+    current_logs = [p for p in (*server_logs, *error_logs, *stderr_logs) if p.is_file()]
     rotated_logs = []
     for i in range(number_of_nodes):
         if error_logs[i].is_file():
@@ -1035,6 +1071,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             stop_failed,
             generator_early_exit_code,
             exit_unaccounted,
+            current_logs=current_logs,
         )
         if info_override and not expected_kill_only:
             print(info_override)
