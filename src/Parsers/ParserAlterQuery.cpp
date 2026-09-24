@@ -1446,7 +1446,7 @@ For example, one statement can drop one column and add another:
 ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
 ```
 
-Whether such a query returns before its work on existing data has finished follows [`alter_sync`](/reference/settings/session-settings/alter#alter_sync), or [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) for the actions that run as mutations; both are described in [Synchronicity of ALTER Queries](/reference/statements/alter/index#synchronicity-of-alter-queries).
+Whether such a query returns before its work on existing data has finished follows [`alter_sync`](/reference/settings/session-settings/alter#alter_sync), which also covers the mutation that `DROP COLUMN` or a `MODIFY COLUMN` type change creates; [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) applies to [MATERIALIZE COLUMN](#materialize-column), which runs on the mutation path. Both are described in [Synchronicity of ALTER Queries](/reference/statements/alter/index#synchronicity-of-alter-queries).
 
 The following actions are supported:
 
