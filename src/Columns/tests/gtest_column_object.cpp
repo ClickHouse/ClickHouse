@@ -358,29 +358,6 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
     ASSERT_EQ(col_object2[2], (Object{{"b.d", Field(442u)}, {"a.b", Array{"Str11", "Str22"}}, {"a.a", Tuple{"Str33", 444u}}, {"a.c", Field("Str44")}, {"a.d", Array{Field(445), Field(446)}}, {"a.e", Field(447)}}));
 }
 
-TEST(ColumnObject, SkipSerializedInArena)
-{
-    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, b.d UInt32, a.b Array(String))");
-    auto col = type->createColumn();
-    auto & col_object = assert_cast<ColumnObject &>(*col);
-    col_object.insert(Object{{"b.d", Field(42u)}, {"a.b", Array{"Str1", "Str2"}}, {"a.a", Tuple{"Str3", 441u}}, {"a.c", Field("Str4")}, {"a.d", Array{Field(45), Field(46)}}, {"a.e", Field(47)}});
-    col_object.insert(Object{{"b.a", Field(48)}, {"b.b", Array{Field(49), Field(50)}}});
-    col_object.insert(Object{{"b.d", Field(442u)}, {"a.b", Array{"Str11", "Str22"}}, {"a.a", Tuple{"Str33", 444u}}, {"a.c", Field("Str44")}, {"a.d", Array{Field(445), Field(446)}}, {"a.e", Field(447)}});
-
-    Arena arena;
-    const char * pos = nullptr;
-    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos, nullptr);
-    col_object.serializeValueIntoArena(1, arena, pos, nullptr);
-    col_object.serializeValueIntoArena(2, arena, pos, nullptr);
-
-    auto col2 = type->createColumn();
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    col2->skipSerializedInArena(in);
-    col2->skipSerializedInArena(in);
-    col2->skipSerializedInArena(in);
-    ASSERT_TRUE(in.eof());
-}
-
 TEST(ColumnObject, rollback)
 {
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.a UInt32, a.b UInt32)");

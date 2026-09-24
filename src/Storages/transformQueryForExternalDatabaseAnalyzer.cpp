@@ -89,7 +89,10 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
     }
 
-    auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });
+    /// The external database parses this text itself, so a date-time constant must stay in its text form.
+    auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false,
+                                              .date_time_constants_as_numbers = false,
+                                              .fully_qualified_identifiers = false });
     const IAST * ast = query_node_ast.get();
 
     if (const auto * ast_subquery = ast->as<ASTSubquery>())
@@ -107,7 +110,15 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     if (!select_query_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectQuery, got {}", select_query ? select_query->formatForErrorMessage() : "nullptr");
     if (!allow_where)
+    {
+        /// Nothing is pushed down from this side of the join, so neither filter may reach the external
+        /// database. `PREWHERE` has to go as well: the external table engines do not support it, so a
+        /// surviving `PREWHERE` can only belong to the other, joined table and must not be presented to
+        /// the caller as a filter on this one (`rejectOuterFilterForQueryBackedExternalSourceIfStrict`
+        /// would otherwise reject it).
         select_query_typed->setExpression(ASTSelectQuery::Expression::WHERE, nullptr);
+        select_query_typed->setExpression(ASTSelectQuery::Expression::PREWHERE, nullptr);
+    }
     return select_query;
 }
 

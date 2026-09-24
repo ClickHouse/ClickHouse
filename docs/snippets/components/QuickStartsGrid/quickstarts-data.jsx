@@ -53,15 +53,15 @@ export const quickStartsData = [
   },
   {
     "id": "create-your-first-service-on-cloud",
-    "title": "Create your first Cloud service and load example data",
-    "description": "Create a ClickHouse Cloud service, explore the SQL console, and load an example dataset to start querying real data in minutes.",
-    "href": "/get-started/quickstarts/create-your-first-service-on-cloud",
+    "title": "ClickHouse Cloud quick start",
+    "description": "Quick start guide for ClickHouse Cloud",
     "useCases": [
       "all"
     ],
     "products": [
       "cloud"
-    ]
+    ],
+    "href": "/get-started/setup/cloud"
   },
   {
     "id": "creating-tables",
@@ -109,20 +109,6 @@ export const quickStartsData = [
     ],
     "products": [
       "cloud"
-    ]
-  },
-  {
-    "id": "tutorial",
-    "title": "Advanced tutorial",
-    "description": "Learn how to ingest and query data in ClickHouse using a New York City taxi example dataset.",
-    "href": "/get-started/quickstarts/tutorial",
-    "useCases": [
-      "real-time-analytics",
-      "data-warehousing"
-    ],
-    "products": [
-      "cloud",
-      "self-managed"
     ]
   },
   {

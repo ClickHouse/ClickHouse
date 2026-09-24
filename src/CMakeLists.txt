@@ -505,6 +505,7 @@ add_object_library(clickhouse_server_distributedquery Server/DistributedQuery)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
+add_object_library(clickhouse_processors_executors_runtime Processors/Executors/Runtime)
 add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_framing Processors/Formats/Framing)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
@@ -839,6 +840,10 @@ endif()
 
 if (TARGET ch_contrib::vectorscan)
     target_link_libraries(dbms PRIVATE ch_contrib::vectorscan)
+endif()
+
+if (TARGET ch_contrib::simsimd)
+    target_link_libraries(dbms PRIVATE ch_contrib::simsimd)
 endif()
 
 if (TARGET ch_contrib::brotli)

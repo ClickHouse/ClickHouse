@@ -1,5 +1,77 @@
 [
   {
+    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "source": "/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ar/get-started/sample-datasets/nyc-taxi",
+    "source": "/ar/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/es/get-started/sample-datasets/nyc-taxi",
+    "source": "/es/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/fr/get-started/sample-datasets/nyc-taxi",
+    "source": "/fr/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "source": "/ja/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "source": "/ko/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/pt-BR/get-started/sample-datasets/nyc-taxi",
+    "source": "/pt-BR/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "source": "/ru/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "source": "/zh/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/get-started/setup/cloud",
+    "source": "/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ar/get-started/setup/cloud",
+    "source": "/ar/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/es/get-started/setup/cloud",
+    "source": "/es/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/fr/get-started/setup/cloud",
+    "source": "/fr/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ja/get-started/setup/cloud",
+    "source": "/ja/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ko/get-started/setup/cloud",
+    "source": "/ko/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/pt-BR/get-started/setup/cloud",
+    "source": "/pt-BR/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ru/get-started/setup/cloud",
+    "source": "/ru/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/zh/get-started/setup/cloud",
+    "source": "/zh/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
     "destination": "/clickstack/ingesting-data/overview",
     "source": "/clickstack/ingesting-data"
   },
@@ -1660,7 +1732,7 @@
     "source": "/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -1672,7 +1744,7 @@
     "source": "/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -1864,8 +1936,16 @@
     "source": "/cloud/managed-postgres/branching"
   },
   {
-    "destination": "/products/managed-postgres/clickhouse-integration",
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
     "source": "/cloud/managed-postgres/clickhouse-integration"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/cloud/managed-postgres/walshadow"
   },
   {
     "destination": "/products/managed-postgres/connection",
@@ -1906,6 +1986,18 @@
   {
     "destination": "/products/managed-postgres/migrations/clickpipes",
     "source": "/cloud/managed-postgres/migrations/clickpipes"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/products/managed-postgres/clickhouse-integration"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/products/managed-postgres/walshadow"
   },
   {
     "destination": "/products/managed-postgres/migrations/data-validation",
@@ -3708,7 +3800,7 @@
     "source": "/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/get-started/sample-datasets/nyc-taxi",
     "source": "/getting-started/tutorial"
   },
   {
@@ -3756,7 +3848,7 @@
     "source": "/getting_started/playground"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/get-started/sample-datasets/nyc-taxi",
     "source": "/getting_started/tutorial"
   },
   {
@@ -3768,7 +3860,7 @@
     "source": "/guides"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/apply_catboost_model"
   },
   {
@@ -3784,7 +3876,7 @@
     "source": "/guides/developer/alternative-query-languages"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/developer/apply-catboost-model"
   },
   {
@@ -6568,7 +6660,7 @@
     "source": "/jp/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/jp/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -6580,7 +6672,7 @@
     "source": "/jp/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/jp/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -8560,7 +8652,7 @@
     "source": "/jp/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
     "source": "/jp/getting-started/tutorial"
   },
   {
@@ -8608,7 +8700,7 @@
     "source": "/jp/getting_started/playground"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
     "source": "/jp/getting_started/tutorial"
   },
   {
@@ -15248,7 +15340,7 @@
     "source": "/jp/troubleshooting"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
     "source": "/jp/tutorial"
   },
   {
@@ -17332,7 +17424,7 @@
     "source": "/ko/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ko/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -17344,7 +17436,7 @@
     "source": "/ko/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ko/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -19324,7 +19416,7 @@
     "source": "/ko/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
     "source": "/ko/getting-started/tutorial"
   },
   {
@@ -19372,7 +19464,7 @@
     "source": "/ko/getting_started/playground"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
     "source": "/ko/getting_started/tutorial"
   },
   {
@@ -26008,7 +26100,7 @@
     "source": "/ko/troubleshooting"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
     "source": "/ko/tutorial"
   },
   {
@@ -29448,7 +29540,7 @@
     "source": "/ru/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ru/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -29460,7 +29552,7 @@
     "source": "/ru/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ru/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -31440,7 +31532,7 @@
     "source": "/ru/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
     "source": "/ru/getting-started/tutorial"
   },
   {
@@ -31488,7 +31580,7 @@
     "source": "/ru/getting_started/playground"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
     "source": "/ru/getting_started/tutorial"
   },
   {
@@ -38124,7 +38216,7 @@
     "source": "/ru/troubleshooting"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
     "source": "/ru/tutorial"
   },
   {
@@ -40836,7 +40928,7 @@
     "source": "/sql-reference/table-functions/sqlite"
   },
   {
-    "destination": "/reference/functions/table-functions/timeSeriesMetrics",
+    "destination": "/reference/functions/table-functions/timeSeriesMetricFamilies",
     "source": "/sql-reference/table-functions/timeSeriesMetrics"
   },
   {
@@ -41424,7 +41516,7 @@
     "source": "/troubleshooting"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/get-started/sample-datasets/nyc-taxi",
     "source": "/tutorial"
   },
   {
@@ -43020,7 +43112,7 @@
     "source": "/zh/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/zh/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -43032,7 +43124,7 @@
     "source": "/zh/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/zh/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -45012,7 +45104,7 @@
     "source": "/zh/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
     "source": "/zh/getting-started/tutorial"
   },
   {
@@ -45060,7 +45152,7 @@
     "source": "/zh/getting_started/playground"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
     "source": "/zh/getting_started/tutorial"
   },
   {
@@ -51696,7 +51788,7 @@
     "source": "/zh/troubleshooting"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
     "source": "/zh/tutorial"
   },
   {
@@ -52626,6 +52718,10 @@
   {
     "destination": "/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
     "source": "/integrations/airflow"
+  },
+  {
+    "destination": "/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin",
+    "source": "/integrations/airflow/migrating-from-airflow-clickhouse-plugin"
   },
   {
     "destination": "/concepts/features/interfaces/documentation-search",
@@ -54990,5 +55086,41 @@
   {
     "destination": "/zh/reference/settings/session-settings",
     "source": "/zh/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/es/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/fr/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
   }
 ]

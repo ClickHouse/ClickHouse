@@ -56,15 +56,15 @@ Sorting (Sorting for ORDER BY)
    │            Parts: 3/3
    │            Granules: 80/80
    │          Skip
-   │            Name: auto_minmax_index__block_number
-   │            Description: minmax GRANULARITY 1
-   │            Condition: and(or((_block_number in [3, 3]), (_block_number in [4, +Inf))), (_block_number in (-Inf, 8]))
-   │            Parts: 3/3
-   │            Granules: 80/80
-   │          Skip
    │            Name: auto_minmax_index__block_offset
    │            Description: minmax GRANULARITY 1
    │            Condition: true
+   │            Parts: 3/3
+   │            Granules: 80/80
+   │          Skip
+   │            Name: auto_minmax_index__block_number
+   │            Description: minmax GRANULARITY 1
+   │            Condition: and(or((_block_number in [3, 3]), (_block_number in [4, +Inf))), (_block_number in (-Inf, 8]))
    │            Parts: 3/3
    │            Granules: 80/80
    │          Skip
