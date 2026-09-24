@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 #include <base/scope_guard.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -11,6 +12,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
+}
+
+namespace FailPoints
+{
+    extern const char async_insert_flush_pause_in_executor[];
 }
 
 StreamingFormatExecutor::StreamingFormatExecutor(
@@ -97,6 +103,8 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
         port.setNeeded();
         while (true)
         {
+            FailPointInjection::pauseFailPoint(FailPoints::async_insert_flush_pause_in_executor);
+
             auto status = format->prepare();
 
             switch (status)
