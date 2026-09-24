@@ -13,11 +13,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The failpoint delays the first pull of a query whose id starts with the prefix by two seconds, which is longer
 # than `max_execution_time`; the query itself finishes at once, so the whole result is sitting in the format when
 # the connection thread finally pulls it.
+#
+# The failpoint is deliberately left enabled at the end: it is global to the server, so disabling it would remove
+# the delay from a concurrently running copy of this test (the flaky check runs it in parallel with itself), which
+# then gets its result before the time limit. It affects only the queries whose id starts with the prefix.
 
 FP=pulling_async_pipeline_executor_delay_first_pull
 QID_PREFIX=pulling_async_pipeline_executor_delay_first_pull_
 
-trap '${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT $FP"' EXIT
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT $FP"
 
 echo "-- break: the rows that were already produced are returned"
