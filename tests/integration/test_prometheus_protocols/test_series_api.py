@@ -87,7 +87,7 @@ def setup():
             "SETTINGS store_min_time_and_max_time = 0"
         )
         node.query(
-            "INSERT INTO prometheus_no_bounds (metric_name, tags, time_series) VALUES "
+            "INSERT INTO prometheus_no_bounds (metric_name, tags, samples) VALUES "
             "('cpu_usage', {'host': 'server1'}, [(toDateTime64(1000, 3), 0.5)])"
         )
         send_test_data()

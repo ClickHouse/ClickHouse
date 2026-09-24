@@ -28,7 +28,7 @@
          The samples share one 17-hour window, which keeps the default recent-samples target
          (partitioned by 5-hour interval) under max_partitions_per_insert_block. -->
     <fill_query>
-        INSERT INTO promql_row_cost_ts (metric_name, tags, time_series)
+        INSERT INTO promql_row_cost_ts (metric_name, tags, samples)
         SELECT
             'rowcost_metric',
             map('instance', toString(number), 'dc', toString(number % 8)),
