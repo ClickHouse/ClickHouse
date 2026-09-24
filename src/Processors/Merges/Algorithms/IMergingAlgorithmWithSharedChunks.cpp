@@ -1,6 +1,8 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
+#include <Core/Block.h>
+
 namespace DB
 {
 
@@ -37,6 +39,7 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
 
         source.chunk->all_columns = cursors[source_num].all_columns;
         source.chunk->sort_columns = cursors[source_num].sort_columns;
+        source.chunk->row_filter_mask = getRowFilterMask(*source.chunk);
 
         sources_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(*source.chunk);
     }
@@ -119,6 +122,7 @@ void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num
 
     source.chunk->all_columns = cursors[source_num].all_columns;
     source.chunk->sort_columns = cursors[source_num].sort_columns;
+    source.chunk->row_filter_mask = getRowFilterMask(*source.chunk);
 
     sources_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(*source.chunk);
 
