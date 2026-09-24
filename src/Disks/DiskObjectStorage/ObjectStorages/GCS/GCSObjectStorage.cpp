@@ -379,7 +379,7 @@ void GCSObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeObjectImpl(object, *client_ptr, blob_storage_log);
 }
 
-void GCSObjectStorage::removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects)
+void GCSObjectStorage::removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects) /// NOLINT
 {
     /// GCS has no batch-delete API (see https://issuetracker.google.com/issues/162653700), delete one by one.
     auto client_ptr = getClient();
