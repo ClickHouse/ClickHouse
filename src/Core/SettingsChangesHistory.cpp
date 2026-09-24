@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"enable_join_runtime_filters_index_analysis", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."},
+            {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
             {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"ai_function_max_output_tokens_per_query", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
@@ -55,7 +57,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"parallel_replicas_plan_based", false, true, "Enable plan-based parallel replicas by default on this experiment branch. previous_value=false so `compatibility` with versions before 26.9 restores the old behavior."},
             {"parallel_replicas_allow_merge_tables", false, true, "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`. Enabled by default on this experiment branch."},
+            {"validate_mutation_query", true, true, "Obsolete setting: mutation queries are always validated before being accepted. The recorded value does not change, because validation was already enabled by default and `compatibility` must not turn it back off."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
+            {"parallel_replicas_for_queries_with_multiple_tables", true, true, "New setting to control whether parallel replicas are used for queries joining multiple tables (queries with JOIN). It does not affect a UNION query without a JOIN, nor ARRAY JOIN."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
