@@ -1016,6 +1016,28 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
 
+        /// The copied column codecs become part of a definition this query introduces, so they have to pass
+        /// the codec gates of the current session, as an explicit column list does in `getColumnsDescription`:
+        /// otherwise `CREATE TABLE ... AS` / `CLONE AS` would create a table with a codec the session may not
+        /// use. Only the gates: the suspicious-codec checks were applied when the source table was created.
+        if (mode <= LoadingStrictnessLevel::CREATE || is_full_definition_attach)
+        {
+            const auto codec_validation_settings = CodecValidationSettings::withoutSanityCheck(getContext()->getSettingsRef());
+            Names columns_with_codecs;
+            for (const auto & column : properties.columns)
+                if (column.codec)
+                    columns_with_codecs.push_back(column.name);
+
+            for (const auto & column_name : columns_with_codecs)
+            {
+                properties.columns.modify(column_name, [&](ColumnDescription & column)
+                {
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                        column.codec, column.type, codec_validation_settings);
+                });
+            }
+        }
+
         if (!create.comment && !as_storage_metadata->comment.empty())
             create.set(create.comment, make_intrusive<ASTLiteral>(as_storage_metadata->comment));
 
