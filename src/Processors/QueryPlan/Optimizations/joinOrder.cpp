@@ -64,7 +64,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
-    /// Merge column stats from both children, then update NDVs for equi-join key columns.
+    /// Merge column stats from both children, then update distinct-value counts for equi-join key columns.
     column_stats = left->column_stats;
     column_stats.insert(right->column_stats.begin(), right->column_stats.end());
 
@@ -92,11 +92,18 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         }
     }
 
-    /// Cap all NDVs at the estimated output rows.
+    /// Cap all distinct-value counts at the estimated output rows. The estimate is not a proven row-count
+    /// upper bound, so an NDV reduced by it is no longer a proven upper bound either.
     if (cardinality_)
     {
         for (auto & [_, stats] : column_stats)
-            stats.num_distinct_values = std::min(stats.num_distinct_values, *cardinality_);
+        {
+            if (stats.num_distinct_values > *cardinality_)
+            {
+                stats.num_distinct_values = *cardinality_;
+                stats.ndv_provenance.add(EstimatedRowCountClamp);
+            }
+        }
     }
 }
 

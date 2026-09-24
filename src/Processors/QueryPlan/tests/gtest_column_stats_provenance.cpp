@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -405,6 +406,29 @@ TEST(ColumnStatsProvenance, GroupingKeyPreservesDistinctCountAndRange)
     const auto exact = makeGroupingKeyStats(input, 1000, /*rows_exact=*/true);
     EXPECT_TRUE(exact.ndv_provenance.has(ExactRowCountClamp));
     EXPECT_FALSE(exact.ndv_provenance.has(EstimatedRowCountClamp));
+}
+
+TEST(ColumnStatsProvenance, JoinCardinalityClampInvalidatesDistinctCountUpperBound)
+{
+    auto clamped_stats = measuredColumnStats();
+    clamped_stats.num_distinct_values = 1000;
+    auto retained_stats = measuredColumnStats();
+
+    auto left = std::make_shared<DPJoinEntry>(
+        0, 1000, std::unordered_map<String, ColumnStats>{{"clamped", clamped_stats}, {"retained", retained_stats}});
+    auto right = std::make_shared<DPJoinEntry>(1, 1000);
+    DPJoinEntry joined(left, right, 0, 1, 100, JoinOperator{});
+
+    const auto & clamped = joined.column_stats.at("clamped");
+    EXPECT_EQ(clamped.num_distinct_values, 100);
+    EXPECT_TRUE(clamped.ndv_provenance.has(EstimatedRowCountClamp));
+    EXPECT_FALSE(isDistinctCountUpperBound(clamped.ndv_provenance));
+    EXPECT_FALSE(clamped.range_provenance.has(EstimatedRowCountClamp));
+
+    const auto & retained = joined.column_stats.at("retained");
+    EXPECT_EQ(retained.num_distinct_values, 50);
+    EXPECT_FALSE(retained.ndv_provenance.has(EstimatedRowCountClamp));
+    EXPECT_TRUE(isDistinctCountUpperBound(retained.ndv_provenance));
 }
 
 TEST(ColumnStatsProvenance, FilterAddsRowSubsetAndMakesRowsInexact)
