@@ -50,6 +50,7 @@ static struct InitFiu
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
+    ONCE(remote_query_executor_cancel_in_finish_drain) \
     REGULAR(remote_query_executor_local_packet_processing_error) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     ONCE(connection_stale_on_establish) \
