@@ -57,7 +57,7 @@ Granules: 1/8
 8
 8
 8
-0
+8
 Parts: 1 | Granules: 1
 Granules: 8/8
 Granules: 1/8
@@ -92,3 +92,125 @@ Granules: 8/8
 05244_matched_tokens_match	1
 05244_matched_tokens_prefix	1
 05244_matched_tokens_unlimited	0
+-- the result does not depend on settings, only on the index definition
+hasTokenPrefix(tag, \'env:prod\')	8
+hasTokenPrefix(tag, \'env:prod\')	8
+hasTokenPrefix(tag, \'env:prod\')	8
+hasTokenPrefix(tag, \'env:prod\')	8
+hasTokenPrefix(tag, \'env:prod\')	8
+hasTokenPrefix(tag, \'env:prod\')	8
+hasTokenPrefix(tag, \'env:prod\')	8
+hasTokenPrefix(tag, \'prod\')	0
+hasTokenPrefix(tag, \'prod\')	0
+hasTokenPrefix(tag, \'prod\')	0
+hasTokenPrefix(tag, \'prod\')	0
+hasTokenPrefix(tag, \'prod\')	0
+hasTokenPrefix(tag, \'prod\')	0
+hasTokenPrefix(tag, \'prod\')	0
+hasTokenLike(tag, \'env:%-eu\')	8
+hasTokenLike(tag, \'env:%-eu\')	8
+hasTokenLike(tag, \'env:%-eu\')	8
+hasTokenLike(tag, \'env:%-eu\')	8
+hasTokenLike(tag, \'env:%-eu\')	8
+hasTokenLike(tag, \'env:%-eu\')	8
+hasTokenLike(tag, \'env:%-eu\')	8
+hasTokenMatch(tag, \'^env:[a-z]+-\')	8
+hasTokenMatch(tag, \'^env:[a-z]+-\')	8
+hasTokenMatch(tag, \'^env:[a-z]+-\')	8
+hasTokenMatch(tag, \'^env:[a-z]+-\')	8
+hasTokenMatch(tag, \'^env:[a-z]+-\')	8
+hasTokenMatch(tag, \'^env:[a-z]+-\')	8
+hasTokenMatch(tag, \'^env:[a-z]+-\')	8
+hasTokenPrefix(tag, \'\')	64
+hasTokenPrefix(tag, \'\')	64
+hasTokenPrefix(tag, \'\')	64
+hasTokenPrefix(tag, \'\')	64
+hasTokenPrefix(tag, \'\')	64
+hasTokenPrefix(tag, \'\')	64
+hasTokenPrefix(tag, \'\')	64
+NOT hasTokenPrefix(tag, \'env:prod\')	56
+NOT hasTokenPrefix(tag, \'env:prod\')	56
+NOT hasTokenPrefix(tag, \'env:prod\')	56
+NOT hasTokenPrefix(tag, \'env:prod\')	56
+NOT hasTokenPrefix(tag, \'env:prod\')	56
+NOT hasTokenPrefix(tag, \'env:prod\')	56
+NOT hasTokenPrefix(tag, \'env:prod\')	56
+hasTokenPrefix(msg, \'Charg\')	8
+hasTokenPrefix(msg, \'Charg\')	8
+hasTokenPrefix(msg, \'Charg\')	8
+hasTokenPrefix(msg, \'Charg\')	8
+hasTokenPrefix(msg, \'Charg\')	8
+hasTokenPrefix(msg, \'Charg\')	8
+hasTokenPrefix(msg, \'Charg\')	8
+hasTokenPrefix(msg, \'CHARG\')	8
+hasTokenPrefix(msg, \'CHARG\')	8
+hasTokenPrefix(msg, \'CHARG\')	8
+hasTokenPrefix(msg, \'CHARG\')	8
+hasTokenPrefix(msg, \'CHARG\')	8
+hasTokenPrefix(msg, \'CHARG\')	8
+hasTokenPrefix(msg, \'CHARG\')	8
+hasTokenLike(msg, \'charg%\')	0
+hasTokenLike(msg, \'charg%\')	0
+hasTokenLike(msg, \'charg%\')	0
+hasTokenLike(msg, \'charg%\')	0
+hasTokenLike(msg, \'charg%\')	0
+hasTokenLike(msg, \'charg%\')	0
+hasTokenLike(msg, \'charg%\')	0
+hasTokenLike(msg, \'Charg%\')	8
+hasTokenLike(msg, \'Charg%\')	8
+hasTokenLike(msg, \'Charg%\')	8
+hasTokenLike(msg, \'Charg%\')	8
+hasTokenLike(msg, \'Charg%\')	8
+hasTokenLike(msg, \'Charg%\')	8
+hasTokenLike(msg, \'Charg%\')	8
+hasTokenMatch(msg, \'^C\')	8
+hasTokenMatch(msg, \'^C\')	8
+hasTokenMatch(msg, \'^C\')	8
+hasTokenMatch(msg, \'^C\')	8
+hasTokenMatch(msg, \'^C\')	8
+hasTokenMatch(msg, \'^C\')	8
+hasTokenMatch(msg, \'^C\')	8
+hasTokenMatch(msg, \'^c\')	0
+hasTokenMatch(msg, \'^c\')	0
+hasTokenMatch(msg, \'^c\')	0
+hasTokenMatch(msg, \'^c\')	0
+hasTokenMatch(msg, \'^c\')	0
+hasTokenMatch(msg, \'^c\')	0
+hasTokenMatch(msg, \'^c\')	0
+hasTokenPrefix(msg, \'\')	64
+hasTokenPrefix(msg, \'\')	64
+hasTokenPrefix(msg, \'\')	64
+hasTokenPrefix(msg, \'\')	64
+hasTokenPrefix(msg, \'\')	64
+hasTokenPrefix(msg, \'\')	64
+hasTokenPrefix(msg, \'\')	64
+NOT hasTokenPrefix(msg, \'charg\')	56
+NOT hasTokenPrefix(msg, \'charg\')	56
+NOT hasTokenPrefix(msg, \'charg\')	56
+NOT hasTokenPrefix(msg, \'charg\')	56
+NOT hasTokenPrefix(msg, \'charg\')	56
+NOT hasTokenPrefix(msg, \'charg\')	56
+NOT hasTokenPrefix(msg, \'charg\')	56
+8	0
+8	0
+hasTokenPrefix(msg, \'charg\')	5
+hasTokenPrefix(msg, \'charg\')	5
+hasTokenPrefix(msg, \'charg\')	5
+hasTokenPrefix(msg, \'charg\')	5
+hasTokenPrefix(msg, \'charg\')	5
+hasTokenPrefix(msg, \'charg\')	5
+hasTokenPrefix(msg, \'charg\')	5
+NOT hasTokenPrefix(msg, \'charg\')	37
+NOT hasTokenPrefix(msg, \'charg\')	37
+NOT hasTokenPrefix(msg, \'charg\')	37
+NOT hasTokenPrefix(msg, \'charg\')	37
+NOT hasTokenPrefix(msg, \'charg\')	37
+NOT hasTokenPrefix(msg, \'charg\')	37
+NOT hasTokenPrefix(msg, \'charg\')	37
+hasTokenPrefix(msg, \'charg\') IS NULL	22
+hasTokenPrefix(msg, \'charg\') IS NULL	22
+hasTokenPrefix(msg, \'charg\') IS NULL	22
+hasTokenPrefix(msg, \'charg\') IS NULL	22
+hasTokenPrefix(msg, \'charg\') IS NULL	22
+hasTokenPrefix(msg, \'charg\') IS NULL	22
+hasTokenPrefix(msg, \'charg\') IS NULL	22
