@@ -15,8 +15,11 @@ $CLICKHOUSE_CLIENT -q "
   DROP ROW POLICY IF EXISTS policy_with_array_join ON row_policy_table;
   DROP ROW POLICY IF EXISTS policy_with_unnest ON row_policy_table;
   DROP ROW POLICY IF EXISTS policy_with_udf ON row_policy_table;
+  DROP ROW POLICY IF EXISTS policy_with_apply_lambda ON row_policy_table;
+  DROP ROW POLICY IF EXISTS policy_with_apply_udf ON row_policy_table;
   DROP ROW POLICY IF EXISTS valid_policy ON row_policy_table;
   DROP FUNCTION IF EXISTS ${CLICKHOUSE_DATABASE}_row_policy_arrayjoin_udf;
+  DROP FUNCTION IF EXISTS ${CLICKHOUSE_DATABASE}_row_policy_apply_udf;
   DROP TABLE IF EXISTS row_policy_table;
 
   CREATE TABLE row_policy_table (id UInt32, value UInt32) ENGINE = MergeTree ORDER BY id;
@@ -33,6 +36,13 @@ $CLICKHOUSE_CLIENT -q "
   CREATE FUNCTION ${CLICKHOUSE_DATABASE}_row_policy_arrayjoin_udf AS (x) -> (unnest([1, 2]) OR x = 0);
   CREATE ROW POLICY policy_with_udf ON row_policy_table FOR SELECT USING ${CLICKHOUSE_DATABASE}_row_policy_arrayjoin_udf(value) TO ALL; -- { serverError ILLEGAL_PREWHERE }
   DROP FUNCTION ${CLICKHOUSE_DATABASE}_row_policy_arrayjoin_udf;
+
+  -- An APPLY column transformer is a third way the call hides: its lambda and its function name are
+  -- kept outside the node's children, so a walk over the children alone does not see them.
+  CREATE ROW POLICY policy_with_apply_lambda ON row_policy_table FOR SELECT USING * APPLY (x -> arrayJoin([x])) TO ALL; -- { serverError ILLEGAL_PREWHERE }
+  CREATE FUNCTION ${CLICKHOUSE_DATABASE}_row_policy_apply_udf AS (x) -> (unnest([1, 2]) OR x = 0);
+  CREATE ROW POLICY policy_with_apply_udf ON row_policy_table FOR SELECT USING * APPLY ${CLICKHOUSE_DATABASE}_row_policy_apply_udf TO ALL; -- { serverError ILLEGAL_PREWHERE }
+  DROP FUNCTION ${CLICKHOUSE_DATABASE}_row_policy_apply_udf;
 
   -- Altering a valid policy to introduce arrayJoin is rejected too; the original filter is kept.
   CREATE ROW POLICY valid_policy ON row_policy_table FOR SELECT USING value > 0 TO ALL;
