@@ -24,31 +24,11 @@ public:
     /// Fills `out_filter` with 1 for series to write and 0 for series to skip.
     void checkBulk(const ColumnPtr & id_column, UInt32 current_time, IColumn::Filter & out_filter, size_t & out_written_count) const;
 
-    /// Compatibility wrapper that checks committed entries without publishing uncommitted IDs.
-    void checkAndTouchBulk(
-        const ColumnPtr & id_column,
-        UInt32 current_time,
-        IColumn::Filter & out_filter,
-        size_t & out_written_count,
-        std::vector<UInt128> & out_needed_ids) const;
-
     /// Commits series IDs to the shared cache once the tags pipeline has finished.
     void commit(const std::vector<UInt128> & ids, UInt32 commit_time = 0) const;
 
-    /// Alias for commit to support insertCommitted terminology.
-    void insertCommitted(const std::vector<UInt128> & ids, UInt32 commit_time = 0) const { commit(ids, commit_time); }
-
-    /// Rolls back the cache entries in case of errors.
-    void rollbackBulk(const std::vector<UInt128> & ids) const;
-
-    /// Clears all entries from the cache (called e.g. on TRUNCATE).
-    void clear() const;
-
     /// Updates cache configuration settings (called e.g. on ALTER TABLE SETTINGS).
     void updateSettings(size_t max_entries, UInt32 ttl_seconds) const;
-
-    /// Returns the approximate total number of entries across all shards.
-    size_t size() const;
 
     /// Helper to extract a 128-bit series identifier from any column type.
     static UInt128 extractId(const IColumn & id_column, size_t row);

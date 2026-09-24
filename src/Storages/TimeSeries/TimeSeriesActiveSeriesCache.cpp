@@ -53,26 +53,6 @@ void TimeSeriesActiveSeriesCache::updateSettings(size_t max_entries, UInt32 ttl_
     }
 }
 
-void TimeSeriesActiveSeriesCache::clear() const
-{
-    for (auto & shard : shards)
-    {
-        std::lock_guard lock(shard.mutex);
-        shard.map.clear();
-    }
-}
-
-size_t TimeSeriesActiveSeriesCache::size() const
-{
-    size_t total = 0;
-    for (const auto & shard : shards)
-    {
-        std::lock_guard lock(shard.mutex);
-        total += shard.map.size();
-    }
-    return total;
-}
-
 UInt128 TimeSeriesActiveSeriesCache::extractId(const IColumn & id_column, size_t row)
 {
     if (const auto * col_uuid = typeid_cast<const ColumnUUID *>(&id_column))
@@ -163,23 +143,6 @@ void TimeSeriesActiveSeriesCache::checkBulk(
     }
 }
 
-void TimeSeriesActiveSeriesCache::checkAndTouchBulk(
-    const ColumnPtr & id_column,
-    UInt32 current_time,
-    IColumn::Filter & out_filter,
-    size_t & out_written_count,
-    std::vector<UInt128> & out_needed_ids) const
-{
-    checkBulk(id_column, current_time, out_filter, out_written_count);
-    out_needed_ids.clear();
-    out_needed_ids.reserve(out_written_count);
-    for (size_t i = 0; i < out_filter.size(); ++i)
-    {
-        if (out_filter[i])
-            out_needed_ids.push_back(extractId(*id_column, i));
-    }
-}
-
 void TimeSeriesActiveSeriesCache::commit(const std::vector<UInt128> & ids, UInt32 commit_time) const
 {
     if (ids.empty())
@@ -228,31 +191,6 @@ void TimeSeriesActiveSeriesCache::commit(const std::vector<UInt128> & ids, UInt3
                 shard.map[id] = commit_time;
             }
         }
-    }
-}
-
-void TimeSeriesActiveSeriesCache::rollbackBulk(const std::vector<UInt128> & ids) const
-{
-    if (ids.empty())
-        return;
-
-    std::vector<std::vector<UInt128>> shard_ids(NUM_SHARDS);
-    for (const auto & id : ids)
-    {
-        size_t shard_idx = getShardIndex(id);
-        shard_ids[shard_idx].push_back(id);
-    }
-
-    for (size_t shard_idx = 0; shard_idx < NUM_SHARDS; ++shard_idx)
-    {
-        const auto & ids_in_shard = shard_ids[shard_idx];
-        if (ids_in_shard.empty())
-            continue;
-
-        auto & shard = shards[shard_idx];
-        std::lock_guard lock(shard.mutex);
-        for (const auto & id : ids_in_shard)
-            shard.map.erase(id);
     }
 }
 
