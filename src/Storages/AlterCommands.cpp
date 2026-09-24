@@ -795,10 +795,10 @@ void AlterCommand::apply(
     /// COLUMN - not MODIFY QUERY, which replaces a materialized view's columns with its new query's output.
     auto skip_absent_column_or_fail = [&](std::string_view action) -> bool
     {
+        if (should_skip_column_operation())
+            return true;
         if (metadata.columns.has(column_name))
             return false;
-        if (if_exists)
-            return true;
 
         auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(column_name), action);
         metadata.columns.appendHintsMessage(message.text, column_name);
