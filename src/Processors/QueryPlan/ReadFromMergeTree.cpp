@@ -2329,16 +2329,7 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
         if (!primary_key_columns_set.contains(required_column.name))
             return false;
 
-        if (isFloat(removeLowCardinalityAndNullable(required_column.type)))
-            return false;
-
-        bool has_float = false;
-        required_column.type->forEachChild([&](const IDataType & child)
-        {
-            if (!has_float && WhichDataType(child).isFloat())
-                has_float = true;
-        });
-        if (has_float)
+        if (anyInTypeTree(*required_column.type, [](const IDataType & type) { return isFloat(type); }))
             return false;
     }
 

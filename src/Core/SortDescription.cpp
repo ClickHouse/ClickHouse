@@ -24,6 +24,7 @@
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
+#include <DataTypes/TypeTree.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #endif
@@ -111,12 +112,7 @@ bool comparisonCanMergeDistinctValues(const IDataType & type)
         return which.isFloat() || which.isDynamic() || which.isVariant() || which.isObject();
     };
 
-    if (is_ambiguous(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child) { result = result || is_ambiguous(child); });
-    return result;
+    return anyInTypeTree(type, is_ambiguous);
 }
 
 }
