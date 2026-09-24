@@ -481,9 +481,16 @@ void RestCatalog::commitSettingsChanges(ICatalog::PreparedSettingsChangesPtr pre
     if (prepared_auth->new_access_token)
         access_token.set(std::move(prepared_auth->new_access_token));
 
-    /// Cached storage credentials were vended under the old auth identity; do not reuse them.
+    std::lock_guard lock(credentials_cache_mutex);
+    credentials_cache.clear();
+}
+
+void RestCatalog::setVendedCredentialsCacheTTL(std::chrono::seconds ttl)
+{
+    std::lock_guard lock(credentials_cache_mutex);
+    if (ttl != vended_credentials_cache_ttl)
     {
-        std::lock_guard lock(credentials_cache_mutex);
+        vended_credentials_cache_ttl = ttl;
         credentials_cache.clear();
     }
 }
@@ -1822,19 +1829,15 @@ bool RestCatalog::getTableMetadataImpl(
     const std::string table_uuid = parseTableUuid(metadata_object);
 
     std::string location;
-    if (result.requiresLocation())
+    if (metadata_object->has("location"))
     {
-        if (metadata_object->has("location"))
-        {
-            location = metadata_object->get("location").extract<String>();
+        location = metadata_object->get("location").extract<String>();
+        if (result.requiresLocation())
             result.setLocation(location);
-            LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
-        }
-        else
-        {
-            result.setTableIsNotReadable(fmt::format("Cannot read table {}, because no 'location' in response", table_name));
-        }
+        LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
     }
+    else if (result.requiresLocation())
+        result.setTableIsNotReadable(fmt::format("Cannot read table {}, because no 'location' in response", table_name));
 
     if (result.requiresSchema())
     {
@@ -1850,7 +1853,7 @@ bool RestCatalog::getTableMetadataImpl(
     {
         if (cached_credentials)
         {
-            if (table_uuid.empty() || cached_credentials->table_uuid != table_uuid)
+            if (table_uuid.empty() || cached_credentials->table_uuid != table_uuid || cached_credentials->location != location)
             {
                 {
                     std::lock_guard lock(credentials_cache_mutex);
@@ -1867,6 +1870,7 @@ bool RestCatalog::getTableMetadataImpl(
         {
             auto parsed = getCredentialsAndEndpoint(config_object, location);
             parsed.table_uuid = table_uuid;
+            parsed.location = location;
             if (parsed.credentials)
             {
                 result.setStorageCredentials(parsed.credentials);
@@ -2188,28 +2192,20 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
 
 namespace
 {
-/// Parse a "...-expires-at-ms" value (ms since epoch); nullopt if absent, epoch (= don't cache)
-/// if invalid; values beyond the representable range are clamped to the maximum time point.
 std::optional<std::chrono::system_clock::time_point>
 parseExpiresAtMs(const Poco::JSON::Object::Ptr & object, const std::string & key)
 {
     if (!object->has(key))
         return std::nullopt;
-    try
-    {
-        static constexpr Int64 max_representable_sec
-            = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::duration::max()).count();
-        const Int64 expires_at_ms = object->get(key).convert<Int64>();
-        if (expires_at_ms <= 0)
-            return std::chrono::system_clock::time_point{};
-        if (expires_at_ms / 1000 < max_representable_sec)
-            return std::chrono::system_clock::from_time_t(static_cast<std::time_t>(expires_at_ms / 1000));
-        return std::chrono::system_clock::time_point::max();
-    }
-    catch (...) // NOLINT(bugprone-empty-catch) Ok: fail close below
-    {
-    }
-    return std::chrono::system_clock::time_point{};
+
+    static constexpr Int64 max_representable_sec
+        = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::duration::max()).count();
+    const Int64 expires_at_ms = object->get(key).convert<Int64>();
+    if (expires_at_ms <= 0)
+        return std::chrono::system_clock::time_point{};
+    if (expires_at_ms / 1000 < max_representable_sec)
+        return std::chrono::system_clock::from_time_t(static_cast<std::time_t>(expires_at_ms / 1000));
+    return std::chrono::system_clock::time_point::max();
 }
 
 std::chrono::system_clock::time_point parseSasTokenExpiry(const std::string & sas_token)
@@ -2224,26 +2220,18 @@ std::chrono::system_clock::time_point parseSasTokenExpiry(const std::string & sa
         if (!param.starts_with("se="))
             continue;
 
-        try
-        {
-            std::string decoded;
-            Poco::URI::decode(param.substr(3), decoded);
+        std::string decoded;
+        Poco::URI::decode(param.substr(3), decoded);
 
-            int time_zone_differential = 0;
-            Poco::DateTime date_time;
-            if (Poco::DateTimeParser::tryParse(Poco::DateTimeFormat::ISO8601_FORMAT, decoded, date_time, time_zone_differential))
-            {
-                date_time.makeUTC(time_zone_differential);
-                return std::chrono::system_clock::from_time_t(date_time.timestamp().epochTime());
-            }
-        }
-        catch (...) // NOLINT(bugprone-empty-catch) Ok: handled by the fail-close return below
-        {
-        }
+        int time_zone_differential = 0;
+        Poco::DateTime date_time;
+        if (!Poco::DateTimeParser::tryParse(Poco::DateTimeFormat::ISO8601_FORMAT, decoded, date_time, time_zone_differential))
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot parse Azure SAS token expiration `{}`", decoded);
 
-        break;
+        date_time.makeUTC(time_zone_differential);
+        return std::chrono::system_clock::from_time_t(date_time.timestamp().epochTime());
     }
-    /// Absent or unparseable 'se': do not cache.
+
     return std::chrono::system_clock::time_point{};
 }
 }
@@ -2268,7 +2256,6 @@ VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Obje
             {
                 auto gcs_token = object->get(gcs_token_str).extract<String>();
                 LOG_DEBUG(log, "Using GCS OAuth2 token for location {}", location);
-                /// Do not cache if expiry was not parsed.
                 auto expires_at = parseExpiresAtMs(object, gcs_token_expires_at_str).value_or(std::chrono::system_clock::time_point{});
                 return {std::make_shared<GCSCredentials>(gcs_token), "", expires_at};
             }
@@ -2287,7 +2274,6 @@ VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Obje
             if (object->has(storage_endpoint_str))
                 storage_endpoint = object->get(storage_endpoint_str).extract<String>();
             expires_at = parseExpiresAtMs(object, session_token_expires_at_ms_str);
-            /// Temporary credentials (session token) with unreported expiry must not be cached (fail close).
             if (!expires_at.has_value() && !session_token.empty())
                 expires_at = std::chrono::system_clock::time_point{};
 
@@ -2326,10 +2312,10 @@ VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Obje
 std::optional<VendedStorageCredentials> RestCatalog::tryGetCachedCredentials(
     const std::string & namespace_name, const std::string & table_name) const
 {
-    if (vended_credentials_cache_ttl.load(std::memory_order_relaxed) <= std::chrono::seconds::zero())
+    std::lock_guard lock(credentials_cache_mutex);
+    if (vended_credentials_cache_ttl <= std::chrono::seconds::zero())
         return std::nullopt;
 
-    std::lock_guard lock(credentials_cache_mutex);
     auto it = credentials_cache.find({namespace_name, table_name});
     if (it == credentials_cache.end())
         return std::nullopt;
@@ -2348,16 +2334,16 @@ void RestCatalog::cacheCredentials(
     const VendedStorageCredentials & parsed,
     const CatalogStateVersion & state_snapshot) const
 {
-    const auto ttl = vended_credentials_cache_ttl.load(std::memory_order_relaxed);
-    if (ttl <= std::chrono::seconds::zero())
-        return;
-
     if (!parsed.credentials || parsed.credentials->isEmpty())
         return;
 
     const auto now = std::chrono::system_clock::now();
 
-    auto refresh_after = now + ttl;
+    std::lock_guard lock(credentials_cache_mutex);
+    if (vended_credentials_cache_ttl <= std::chrono::seconds::zero() || state.get() != state_snapshot)
+        return;
+
+    auto refresh_after = now + vended_credentials_cache_ttl;
     if (parsed.expires_at)
     {
         const auto safe_expiry = parsed.expires_at.value() - credentials_expiry_safety_window;
@@ -2367,22 +2353,16 @@ void RestCatalog::cacheCredentials(
     if (refresh_after <= now)
         return;
 
-    std::lock_guard lock(credentials_cache_mutex);
-
-    /// Do not cache credentials vended under an outdated auth state.
-    if (state.get() != state_snapshot)
-        return;
-
     if (credentials_cache.size() >= credentials_cache_cleanup_threshold)
         std::erase_if(credentials_cache, [&now](const auto & entry) { return now >= entry.second.expires_at.value(); });
     credentials_cache[{namespace_name, table_name}]
-        = VendedStorageCredentials{parsed.credentials, parsed.endpoint, refresh_after, parsed.table_uuid};
+        = VendedStorageCredentials{parsed.credentials, parsed.endpoint, refresh_after, parsed.table_uuid, parsed.location};
 }
 
 ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCallback(
-    const DB::StorageID & storage_id, const TableMetadata & /* table_metadata */)
+    const DB::StorageID & storage_id, const TableMetadata & table_metadata)
 {
-    return [this, storage_id] () -> std::shared_ptr<IStorageCredentials>
+    return [this, storage_id, expected_table_uuid = table_metadata.getTableUUID()] () -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
@@ -2422,6 +2402,13 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table {}, because no location in response", table_name);
         LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
 
+        const auto table_uuid = parseTableUuid(metadata_object);
+        if (expected_table_uuid && table_uuid != *expected_table_uuid)
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Cannot refresh credentials for table {} because its identity changed",
+                table_name);
+
         const auto config_object = effectiveVendedConfig(object, location);
         if (!config_object)
         {
@@ -2430,8 +2417,8 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         }
 
         auto parsed = getCredentialsAndEndpoint(config_object, location);
-        if (metadata_object)
-            parsed.table_uuid = parseTableUuid(metadata_object);
+        parsed.table_uuid = table_uuid;
+        parsed.location = location;
         cacheCredentials(namespace_name, table_name, parsed, state_snapshot);
         return parsed.credentials;
     };

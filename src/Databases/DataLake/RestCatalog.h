@@ -9,7 +9,6 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/defines.h>
-#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <map>
@@ -44,7 +43,8 @@ struct VendedStorageCredentials
     std::shared_ptr<IStorageCredentials> credentials;
     std::string endpoint;
     std::optional<std::chrono::system_clock::time_point> expires_at;
-    std::string table_uuid = {};
+    std::string table_uuid{};
+    std::string location{};
 };
 
 class RestCatalog : public ICatalog, public DB::WithContext
@@ -109,7 +109,7 @@ public:
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
 
-    void setVendedCredentialsCacheTTL(std::chrono::seconds ttl) override { vended_credentials_cache_ttl.store(ttl, std::memory_order_relaxed); }
+    void setVendedCredentialsCacheTTL(std::chrono::seconds ttl) override;
 
     struct Config
     {
@@ -179,12 +179,11 @@ protected:
     bool flat_namespaces = false;
     mutable MultiVersion<AccessToken> access_token;
 
-    std::atomic<std::chrono::seconds> vended_credentials_cache_ttl{std::chrono::seconds::zero()};
-
     static constexpr size_t credentials_cache_cleanup_threshold = 1000;
 
     static constexpr std::chrono::seconds credentials_expiry_safety_window{60};
     mutable std::mutex credentials_cache_mutex;
+    std::chrono::seconds vended_credentials_cache_ttl TSA_GUARDED_BY(credentials_cache_mutex){std::chrono::seconds::zero()};
 
     mutable std::map<std::pair<std::string, std::string>, VendedStorageCredentials> credentials_cache
         TSA_GUARDED_BY(credentials_cache_mutex);

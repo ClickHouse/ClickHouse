@@ -163,7 +163,6 @@ struct ConnectionParams
     std::unique_ptr<ContainerClient> createForContainer() const;
 };
 
-/// Both return an empty value if no fresh credentials are available.
 using ConnectionParamsRefreshCallback = std::function<std::optional<ConnectionParams>()>;
 using ContainerClientRefreshCallback = std::function<std::unique_ptr<const ContainerClient>()>;
 

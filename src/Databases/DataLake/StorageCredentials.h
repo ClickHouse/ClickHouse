@@ -18,8 +18,6 @@ public:
     virtual ~IStorageCredentials() = default;
 
     virtual void addCredentialsToEngineArgs(DB::ASTs & engine_args) const = 0;
-
-    /// True when the credentials are unusable (mandatory fields empty); such credentials are not cached.
     virtual bool isEmpty() const = 0;
 };
 

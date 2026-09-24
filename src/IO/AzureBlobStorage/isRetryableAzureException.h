@@ -9,7 +9,6 @@ namespace DB
 
 bool isRetryableAzureException(const Azure::Core::RequestFailedException & e);
 
-/// True for HTTP 401/403, which indicate the SAS token (or other credentials) is rejected or expired.
 bool isAzureAccessTokenExpiredError(const Azure::Core::RequestFailedException & e);
 
 }
