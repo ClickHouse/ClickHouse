@@ -20,12 +20,16 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/IStorage.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
-#include <Storages/StorageValues.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <TableFunctions/ITableFunction.h>
@@ -159,30 +163,31 @@ void TableFunctionTraceView::parseArguments(const ASTPtr & ast_function, Context
     {
         {"trace_id", [&](const ASTPtr & value)
         {
-            trace_id = parseTraceId(value);
+            arguments.trace_id = parseTraceId(value);
             has_trace_id = true;
         }},
         {"query_id", [&](const ASTPtr & value)
         {
-            query_id = checkAndGetLiteralArgument<String>(value, "query_id");
-            if (query_id.empty())
+            arguments.query_id = checkAndGetLiteralArgument<String>(value, "query_id");
+            if (arguments.query_id.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': query_id must not be empty", getName());
         }},
         {"timeline_width", [&](const ASTPtr & value)
         {
-            timeline_width = checkAndGetLiteralArgument<UInt64>(value, "timeline_width");
-            if (timeline_width == 0 || timeline_width > max_timeline_width)
+            arguments.timeline_width = checkAndGetLiteralArgument<UInt64>(value, "timeline_width");
+            if (arguments.timeline_width == 0 || arguments.timeline_width > TraceViewArguments::max_timeline_width)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function '{}': timeline_width must be in [1, {}], got {}", getName(), max_timeline_width, timeline_width);
+                    "Table function '{}': timeline_width must be in [1, {}], got {}",
+                    getName(), TraceViewArguments::max_timeline_width, arguments.timeline_width);
         }},
         {"cluster", [&](const ASTPtr & value)
         {
-            cluster = checkAndGetLiteralArgument<String>(value, "cluster");
+            arguments.cluster = checkAndGetLiteralArgument<String>(value, "cluster");
             /// Fail early with a clear error instead of a confusing one from the internal query.
-            context->getCluster(cluster);
+            context->getCluster(arguments.cluster);
         }},
-        {"since", [&](const ASTPtr & value) { since = parseDate(value, "since"); }},
-        {"until", [&](const ASTPtr & value) { until = parseDate(value, "until"); }},
+        {"since", [&](const ASTPtr & value) { arguments.since = parseDate(value, "since"); }},
+        {"until", [&](const ASTPtr & value) { arguments.until = parseDate(value, "until"); }},
     };
 
     UnorderedSetWithMemoryTracking<String> seen;
@@ -204,7 +209,7 @@ void TableFunctionTraceView::parseArguments(const ASTPtr & ast_function, Context
         parser->second(evaluateConstantExpressionOrIdentifierAsLiteral(argument.value, context));
     }
 
-    if (has_trace_id == !query_id.empty())
+    if (has_trace_id == !arguments.query_id.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function '{}' requires exactly one of trace_id and query_id", getName());
 }
@@ -612,9 +617,10 @@ VectorWithMemoryTracking<size_t> replicasWithTable(const Cluster & replicas, con
     return with_table;
 }
 
-}
-
-String TableFunctionTraceView::spanLogSource(ContextMutablePtr context) const
+/// The table the spans are read from, as the internal queries in `context` name it: the local span
+/// log, or a Distributed table over the span logs of the replicas of `cluster` that have one.
+/// Throws when there is no span log to read.
+String spanLogSource(const TraceViewArguments & arguments, ContextMutablePtr context)
 {
     const StorageID span_log_id{"system", "opentelemetry_span_log"};
 
@@ -622,7 +628,7 @@ String TableFunctionTraceView::spanLogSource(ContextMutablePtr context) const
     /// is itself a fact about the guarded table, so a caller without access is denied before it is looked up.
     context->checkAccess(AccessType::SELECT, span_log_id);
 
-    if (cluster.empty())
+    if (arguments.cluster.empty())
     {
         /// The span log is created on its first flush: a server that never wrote a span has no table.
         if (!DatabaseCatalog::instance().tryGetTable(span_log_id, context))
@@ -635,14 +641,14 @@ String TableFunctionTraceView::spanLogSource(ContextMutablePtr context) const
     /// In a cluster the spans of each node are written to that node's own span log, so an explicitly
     /// given cluster reads the log of every replica. A replica that never flushed a span has no log table yet.
     context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::REMOTE), /* filter */ "");
-    const ClusterPtr all_replicas = context->getCluster(cluster)->getClusterWithReplicasAsShards(context->getSettingsRef());
+    const ClusterPtr all_replicas = context->getCluster(arguments.cluster)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
     const VectorWithMemoryTracking<size_t> indices = replicasWithTable(*all_replicas, span_log_id, context);
     if (indices.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "No replica of cluster '{}' has the table system.opentelemetry_span_log yet: it is created by the first flush of spans."
             " Run a query with tracing enabled, then SYSTEM FLUSH LOGS opentelemetry_span_log on the nodes that ran it and retry",
-            cluster);
+            arguments.cluster);
     const ClusterPtr span_log_replicas = all_replicas->getClusterWithMultipleShards(
         std::vector<size_t>(indices.begin(), indices.end())); // STYLE_CHECK_ALLOW_STD_CONTAINERS: the type it takes
 
@@ -672,22 +678,24 @@ String TableFunctionTraceView::spanLogSource(ContextMutablePtr context) const
     return source;
 }
 
-String TableFunctionTraceView::spanLogTimeFilter() const
+/// The `finish_date` window of `since` and `until` as an ` AND ...` condition on the span log, or empty.
+String spanLogTimeFilter(const TraceViewArguments & arguments)
 {
     /// The span log is partitioned and ordered by `finish_date`, and neither `trace_id` nor the
     /// attributes are in the key: without this window every call scans the whole log.
     String filter;
-    if (!since.empty())
-        filter += fmt::format(" AND finish_date >= {}", quoteString(since));
-    if (!until.empty())
-        filter += fmt::format(" AND finish_date <= {}", quoteString(until));
+    if (!arguments.since.empty())
+        filter += fmt::format(" AND finish_date >= {}", quoteString(arguments.since));
+    if (!arguments.until.empty())
+        filter += fmt::format(" AND finish_date <= {}", quoteString(arguments.until));
     return filter;
 }
 
-UUID TableFunctionTraceView::resolveTraceId(const String & source, const String & time_filter, ContextPtr context) const
+/// The trace to render: `trace_id`, or the most recent trace of `query_id` looked up in `source`.
+UUID resolveTraceId(const TraceViewArguments & arguments, const String & source, const String & time_filter, ContextPtr context)
 {
-    if (query_id.empty())
-        return trace_id;
+    if (arguments.query_id.empty())
+        return arguments.trace_id;
 
     /// The query's root span ('query') carries its id in the `clickhouse.query_id` attribute.
     /// A custom query id can be reused across runs, so several traces may match: take the most recent one.
@@ -695,7 +703,7 @@ UUID TableFunctionTraceView::resolveTraceId(const String & source, const String 
         fmt::format(
             "SELECT trace_id FROM {} WHERE operation_name = 'query'"
             " AND attribute['clickhouse.query_id'] = {}{} ORDER BY finish_time_us DESC LIMIT 1",
-            source, quoteString(query_id), time_filter),
+            source, quoteString(arguments.query_id), time_filter),
         context);
 
     if (lookup.rows() == 0)
@@ -703,27 +711,74 @@ UUID TableFunctionTraceView::resolveTraceId(const String & source, const String 
             "No trace found for query_id '{}'{}. The query must run with tracing enabled"
             " (a traceparent or opentelemetry_start_trace_probability); spans are flushed"
             " to the log in background: run SYSTEM FLUSH LOGS opentelemetry_span_log and retry",
-            query_id, time_filter.empty() ? "" : " within the since/until window");
+            arguments.query_id, time_filter.empty() ? "" : " within the since/until window");
 
     return (*lookup.getByPosition(0).column)[0].safeGet<UUID>();
+}
+
+/// The rendered trace: the internal queries run in a context of their own: with `cluster`, the table
+/// they read from is registered in it, and the caller's context must not see it.
+Block renderTraceView(const TraceViewArguments & arguments, ContextPtr context, const NamesAndTypesList & result_structure)
+{
+    ContextMutablePtr internal_context = Context::createCopy(context);
+
+    const String source = spanLogSource(arguments, internal_context);
+    const String time_filter = spanLogTimeFilter(arguments);
+    const UUID effective_trace_id = resolveTraceId(arguments, source, time_filter, internal_context);
+    const Block spans = loadSpans(source, time_filter, effective_trace_id, internal_context);
+
+    return renderTrace(SpanColumns(spans), arguments.timeline_width, result_structure);
+}
+
+/// The table traceView returns. It holds only the arguments and reads the span log when it is read,
+/// in the context of the reading query: nothing runs when the table is created or loaded.
+class StorageTraceView final : public IStorage
+{
+public:
+    StorageTraceView(const StorageID & table_id, const ColumnsDescription & columns, TraceViewArguments arguments_)
+        : IStorage(table_id), arguments(std::move(arguments_))
+    {
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(columns);
+        setInMemoryMetadata(storage_metadata);
+    }
+
+    std::string getName() const override { return "TraceView"; }
+
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & /*query_info*/,
+        ContextPtr context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/) override
+    {
+        storage_snapshot->check(column_names);
+
+        const Block rendered = renderTraceView(arguments, context, storage_snapshot->metadata->getColumns().getAllPhysical());
+
+        Block block;
+        for (const auto & name : column_names)
+            block.insert(rendered.getByName(name));
+
+        Chunk chunk(block.getColumns(), block.rows());
+        return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(block.cloneEmpty()), std::move(chunk)));
+    }
+
+    bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
+
+private:
+    const TraceViewArguments arguments;
+};
+
 }
 
 StoragePtr TableFunctionTraceView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    /// The internal queries run in a context of their own: with `cluster`, the table they read
-    /// from is registered in it, and the caller's context must not see it.
-    ContextMutablePtr internal_context = Context::createCopy(context);
-
-    const String source = spanLogSource(internal_context);
-    const String time_filter = spanLogTimeFilter();
-    const UUID effective_trace_id = resolveTraceId(source, time_filter, internal_context);
-    const Block spans = loadSpans(source, time_filter, effective_trace_id, internal_context);
-
-    const ColumnsDescription structure = getActualTableStructure(context, is_insert_query);
-    Block rendered = renderTrace(SpanColumns(spans), timeline_width, structure.getAllPhysical());
-
-    auto storage = std::make_shared<StorageValues>(StorageID(getDatabaseName(), table_name), structure, std::move(rendered));
+    auto storage = std::make_shared<StorageTraceView>(
+        StorageID(getDatabaseName(), table_name), getActualTableStructure(context, is_insert_query), arguments);
     storage->startup();
     return storage;
 }
@@ -747,6 +802,8 @@ Arguments: `trace_id` (String or UUID), optional `timeline_width` (default 40, a
 The named arguments `since` and `until` (`'YYYY-MM-DD'` strings, e.g. `since = toString(today() - 7)`) restrict the search to spans whose `finish_date` is within the window, inclusive. The span log is partitioned and ordered by `finish_date` and has no TTL by default, so without a window every call scans the whole log, and the cost grows with the age of the server. The `event_date` of the query in `system.query_log` is a good value for both.
 
 Spans are flushed to the log in background: run `SYSTEM FLUSH LOGS opentelemetry_span_log` first.
+
+A table created `AS traceView(...)` reads the span log every time it is read; nothing is read when it is created.
 Example:
 [example:trace_view]
 )",
