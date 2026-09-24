@@ -4,6 +4,10 @@
 MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(864000) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 -- inserted samples are written to the recent samples table as well
 3	3
+-- the table function timeSeriesRecentSamples returns the recent samples table
+42
+43
+100
 -- a query fitting in the TTL window reads from the recent samples table and returns the same data
 1	0
 43
@@ -26,6 +30,7 @@ MergeTree PARTITION BY toStartOfDay(timestamp) ORDER BY (id, timestamp) TTL toDa
 1
 1
 7
+-- timeSeriesRecentSamples throws if the table has no recent samples table
 -- settings of the recent samples table require a non-zero recent_samples_ttl_seconds
 -- a RECENT SAMPLES clause requires a non-zero recent_samples_ttl_seconds
 -- the recent samples inner table requires a MergeTree-family engine

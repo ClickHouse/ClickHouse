@@ -62,12 +62,6 @@ namespace Setting
     extern const SettingsBool enable_materialized_cte;
 }
 
-namespace TimeSeriesSetting
-{
-    extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
-    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
-}
-
 namespace
 {
 constexpr UInt32 LOOKBACK_DELTA_SCALE = 9;
@@ -540,14 +534,8 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     if (min_time && max_time && (*max_time < *min_time))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'start' must not be greater than 'end'");
 
-    /// Like the query path, filter by the [min_time, max_time] stored in the tags table; without stored bounds the range is ignored (a superset is allowed).
+    /// Like the query path, the series are filtered by their stored time ranges; without stored time ranges the range is ignored (a superset is allowed).
     auto time_series_settings = time_series_storage->getStorageSettings();
-    if (!(*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
-        || !(*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
-    {
-        min_time.reset();
-        max_time.reset();
-    }
 
     auto tags_table_id = tags_table->getStorageID();
 
@@ -575,7 +563,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
                             quoteString(match_param));
 
         auto select_ids_query = StorageTimeSeriesSelector::makeSelectIDsQuery(
-            tags_table_id, *time_series_settings, table_timestamp_type, table_id_type, matchers, min_time, max_time, time_scale);
+            *time_series_storage, tags_table_id, *time_series_settings, table_timestamp_type, table_id_type, matchers, min_time, max_time, time_scale, getContext());
         const auto & select_ids = typeid_cast<const ASTSelectWithUnionQuery &>(*select_ids_query);
         list_of_selects->children.push_back(select_ids.list_of_selects->children.at(0));
     }

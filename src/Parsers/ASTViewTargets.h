@@ -41,6 +41,10 @@ struct ViewTarget
         /// The "tags" table for a TimeSeries table, contains identifiers for each combination of a metric name and tags (labels).
         Tags,
 
+        /// The optional "time ranges" table of a TimeSeries table: the minimum and the maximum timestamp of each time series,
+        /// used to filter time series by time. Tables of versions before 7 keep these columns in the "tags" table.
+        TimeRanges,
+
         /// The "metric families" table for a TimeSeries table, contains general information (metadata) about metric families.
         /// The keyword `METRICS` is an old name of this target, it's kept for compatibility.
         MetricFamilies,

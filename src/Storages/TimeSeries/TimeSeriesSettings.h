@@ -50,12 +50,28 @@ struct TimeSeriesSettings
 
     static bool hasBuiltin(std::string_view name);
 
+    /// Whether the setting was explicitly set (even to its default value).
+    bool isChanged(std::string_view name) const;
+
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;
 };
 
 /// Checks that the combination of settings is consistent.
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings);
+
+/// Whether the "tags" table stores the columns `min_time` and `max_time`: tables of versions before 7
+/// with the `store_min_time_and_max_time` setting enabled (see TimeSeriesVersion.h).
+bool hasTimeSeriesMinTimeAndMaxTimeInTagsTable(const TimeSeriesSettings & settings);
+
+/// Whether the columns `min_time` and `max_time` of the "tags" table are used to filter time series by time:
+/// the columns are stored and the `filter_by_min_time_and_max_time` setting is enabled.
+bool filterTimeSeriesByMinTimeAndMaxTimeInTagsTable(const TimeSeriesSettings & settings);
+
+/// Whether a table has the "time ranges" target: tables of version 7 and later with the `store_time_ranges` setting enabled.
+/// For an existing table `StorageTimeSeries::hasTarget` is the source of truth, these functions are for definitions.
+bool isTimeSeriesTimeRangesTargetEnabled(const TimeSeriesSettings & settings);
+bool isTimeSeriesTimeRangesTargetEnabled(const ASTCreateQuery & query);
 
 /// Whether a CREATE TABLE ... ENGINE=TimeSeries query has `recent_samples_ttl_seconds` in its SETTINGS clause.
 bool hasExplicitTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);

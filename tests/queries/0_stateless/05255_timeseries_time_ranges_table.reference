@@ -1,0 +1,41 @@
+-- the inner tags table is ReplacingMergeTree, the inner time ranges table is AggregatingMergeTree ordered by id
+tags	ReplacingMergeTree	metric_name, id	metric_name
+timeranges	AggregatingMergeTree	id	id
+id	Tuple(UInt64, LowCardinality(UUID))
+min_time	SimpleAggregateFunction(min, DateTime64(3))
+max_time	SimpleAggregateFunction(max, DateTime64(3))
+-- the tags table has no min_time and max_time columns
+0
+-- an insert writes the time range of each inserted time series with samples
+1970-01-01 00:16:40.000	1970-01-01 00:17:40.000
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+-- a second insert extends the time range, the ranges of a time series are merged into one
+2
+1970-01-01 00:08:20.000	1970-01-01 00:25:00.000
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+-- the selector reads the time ranges table to filter time series by time
+4
+1
+-- the table survives DETACH/ATTACH: the write path keeps working
+1970-01-01 00:50:00.000
+-- store_time_ranges = 0 disables the time ranges table and the filtering
+1
+1
+0
+-- a TIME RANGES clause requires store_time_ranges to be enabled
+-- the settings of the columns min_time and max_time of the tags table apply to tables of versions before 7
+-- a table of version 6 keeps min_time and max_time in the tags table and has no time ranges table
+1
+max_time
+min_time
+1970-01-01 00:16:40.000	1970-01-01 00:16:40.000
+1
+0
+1
+-- an external time ranges table is written by inserts and read by the selector
+1970-01-01 00:16:40.000	1970-01-01 00:16:40.000
+1
+-- the filter is applied: a time range which does not intersect the requested one hides the time series
+0
+-- DROP TABLE drops the inner tables
+0

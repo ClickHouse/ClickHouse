@@ -459,8 +459,8 @@ def test_data_keyword():
     assert node.query("DESCRIBE timeSeriesData(prometheus)") == node.query("DESCRIBE timeSeriesSamples(prometheus)")
 
 
-# Checks that ALTER TABLE works and can modify settings
-# `id_generator` and `filter_by_min_time_and_max_time`.
+# Checks that ALTER TABLE works and can modify the `id_generator` setting,
+# and that `filter_by_min_time_and_max_time` can be modified in a table of a version before 7 only.
 def test_alter_modify_settings():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
@@ -472,18 +472,16 @@ def test_alter_modify_settings():
     )
     node.query("ALTER TABLE prometheus RESET SETTING id_generator")
 
-    # `filter_by_min_time_and_max_time` is a pure query-time setting, so it can be altered.
-    node.query("ALTER TABLE prometheus MODIFY SETTING filter_by_min_time_and_max_time = 0")
-    assert re.search(
-        r"\bfilter_by_min_time_and_max_time\s*=\s*false",
-        node.query("SHOW CREATE TABLE prometheus"),
+    # `filter_by_min_time_and_max_time` applies to tables of versions before 7 only.
+    assert "INVALID_SETTING_VALUE" in node.query_and_get_error(
+        "ALTER TABLE prometheus MODIFY SETTING filter_by_min_time_and_max_time = 0"
     )
-    node.query("ALTER TABLE prometheus RESET SETTING filter_by_min_time_and_max_time")
 
     # Settings which can't be altered because they affect inner-table schemas.
     bound_settings = [
         "tags_to_columns = {'job': 'job'}",
         "use_all_tags_column_to_generate_id = 0",
+        "store_time_ranges = 0",
         "store_min_time_and_max_time = 0",
         "aggregate_min_time_and_max_time = 0",
     ]
@@ -491,3 +489,14 @@ def test_alter_modify_settings():
         assert "NOT_IMPLEMENTED" in node.query_and_get_error(
             f"ALTER TABLE prometheus MODIFY SETTING {change}"
         )
+
+    drop_prometheus_table()
+
+    # In a table of version 6 `filter_by_min_time_and_max_time` is a pure query-time setting, so it can be altered.
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 6")
+    node.query("ALTER TABLE prometheus MODIFY SETTING filter_by_min_time_and_max_time = 0")
+    assert re.search(
+        r"\bfilter_by_min_time_and_max_time\s*=\s*false",
+        node.query("SHOW CREATE TABLE prometheus"),
+    )
+    node.query("ALTER TABLE prometheus RESET SETTING filter_by_min_time_and_max_time")

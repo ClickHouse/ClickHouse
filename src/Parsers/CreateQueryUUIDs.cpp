@@ -127,6 +127,17 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 }
                 if (recent_samples_enabled)
                     generate_target_uuid(ViewTarget::RecentSamples);
+
+                bool time_ranges_enabled = isTimeSeriesTimeRangesTargetEnabled(query);
+                if (for_restore && !hasExplicitTimeSeriesSettingVersion(query))
+                {
+                    /// A query restored from a backup can come from a version before the `version` setting existed,
+                    /// where the absent setting means version 0 (see convertDefinitionWithoutExplicitVersion),
+                    /// which has no time ranges table.
+                    time_ranges_enabled = false;
+                }
+                if (time_ranges_enabled)
+                    generate_target_uuid(ViewTarget::TimeRanges);
             }
         }
     }

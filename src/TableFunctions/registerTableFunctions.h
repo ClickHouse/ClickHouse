@@ -79,7 +79,9 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory);
 void registerDataLakeTableFunctions(TableFunctionFactory & factory);
 void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory);
 
-void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
+void registerTableFunctionTimeSeriesTargets(TableFunctionFactory & factory);
+void registerTableFunctionTimeSeriesSelector(TableFunctionFactory & factory);
+void registerTableFunctionTimeSeriesPrometheusQuery(TableFunctionFactory & factory);
 
 void registerTableFunctions();
 

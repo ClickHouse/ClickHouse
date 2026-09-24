@@ -5,6 +5,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
@@ -27,9 +28,10 @@ namespace ErrorCodes
     DECLARE(ASTFunction, id_generator, String{}, "Expression that computes the identifier (fingerprint) of a time series from its tags. If the 'tags' target is an external table and 'version' is at least 2, the setting is set automatically when the table is created: to the DEFAULT expression of the 'id' column of that table if any, otherwise to the expression chosen automatically for the 'id' type", 0) \
     DECLARE(Map, tags_to_columns, Map{}, "Map specifying which tags should be put to separate columns of the 'tags' table. Syntax: {'tag1': 'column1', 'tag2' : column2, ...}", 0) \
     DECLARE(Bool, use_all_tags_column_to_generate_id, false, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE) \
-    DECLARE(Bool, store_min_time_and_max_time, true, "If set to true then the table will store 'min_time' and 'max_time' for each time series", 0) \
-    DECLARE(Bool, aggregate_min_time_and_max_time, true, "When creating an inner target 'tags' table, this flag enables using 'SimpleAggregateFunction(min, Nullable(DateTime64(3)))' instead of just 'Nullable(DateTime64(3))' as the type of the 'min_time' column, and the same for the 'max_time' column", 0) \
-    DECLARE(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns for filtering time series", 0) \
+    DECLARE(Bool, store_time_ranges, true, "If set to true then the table stores the time range (the minimum and the maximum timestamp) of each time series in the 'time ranges' target table, and uses it to filter time series by time. Requires 'version' to be at least 7", 0) \
+    DECLARE(Bool, store_min_time_and_max_time, true, "If set to true then the table will store 'min_time' and 'max_time' for each time series in the 'tags' table. Applies to tables of versions before 7 only, the later versions use the 'store_time_ranges' setting instead", 0) \
+    DECLARE(Bool, aggregate_min_time_and_max_time, true, "When creating an inner target 'tags' table, this flag enables using 'SimpleAggregateFunction(min, Nullable(DateTime64(3)))' instead of just 'Nullable(DateTime64(3))' as the type of the 'min_time' column, and the same for the 'max_time' column. Applies to tables of versions before 7 only", 0) \
+    DECLARE(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns of the 'tags' table for filtering time series. Applies to tables of versions before 7 only", 0) \
     DECLARE(UInt64, samples_index_granularity, 32768, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
     DECLARE(UInt64, recent_samples_ttl_seconds, 345600, "Retention of the additional 'recent samples' target table, which every inserted sample is written to as well. An inner recent samples table always gets 'TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)' derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data, which is the user's responsibility. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting 'time_series_prefer_recent_samples_table'). The default is 4 days; set to 0 to disable the recent samples table", 0) \
     DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(timestamp)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))' is used. Ignored for an external recent samples table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
@@ -106,6 +108,44 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
     return TimeSeriesSettingsImpl::hasBuiltin(name);
 }
 
+bool TimeSeriesSettings::isChanged(std::string_view name) const
+{
+    return impl->isChanged(name);
+}
+
+bool hasTimeSeriesMinTimeAndMaxTimeInTagsTable(const TimeSeriesSettings & settings)
+{
+    return (settings[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITH_TIME_RANGES_TARGET)
+        && settings[TimeSeriesSetting::store_min_time_and_max_time];
+}
+
+bool filterTimeSeriesByMinTimeAndMaxTimeInTagsTable(const TimeSeriesSettings & settings)
+{
+    return hasTimeSeriesMinTimeAndMaxTimeInTagsTable(settings) && settings[TimeSeriesSetting::filter_by_min_time_and_max_time];
+}
+
+bool isTimeSeriesTimeRangesTargetEnabled(const TimeSeriesSettings & settings)
+{
+    return (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_TIME_RANGES_TARGET)
+        && settings[TimeSeriesSetting::store_time_ranges];
+}
+
+bool isTimeSeriesTimeRangesTargetEnabled(const ASTCreateQuery & query)
+{
+    if (getTimeSeriesSettingVersion(query) < TimeSeriesVersion::MIN_WITH_TIME_RANGES_TARGET)
+        return false;
+
+    if (query.storage && query.storage->settings)
+    {
+        if (const auto * value = query.storage->settings->changes.tryGet("store_time_ranges"))
+        {
+            /// The conversion must be the same as in the `store_time_ranges` setting itself.
+            return SettingFieldBool{*value}.value;
+        }
+    }
+    return TimeSeriesSettings{}[TimeSeriesSetting::store_time_ranges];
+}
+
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
 {
     UInt64 version = settings[TimeSeriesSetting::version];
@@ -131,6 +171,26 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
         if (settings[TimeSeriesSetting::recent_samples_index_granularity].isChanged())
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting `recent_samples_index_granularity` requires `recent_samples_ttl_seconds` to be set to a non-zero value");
+    }
+
+    /// The time range of a time series is stored in the "time ranges" table from version 7 and in the "tags" table before
+    /// (see TimeSeriesVersion.h), so the settings of the other form must not be set.
+    if (version >= TimeSeriesVersion::MIN_WITH_TIME_RANGES_TARGET)
+    {
+        for (std::string_view setting_name : {"store_min_time_and_max_time", "aggregate_min_time_and_max_time", "filter_by_min_time_and_max_time"})
+        {
+            if (settings.isChanged(setting_name))
+                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting `{}` applies to tables of versions before {} only, but the table has version {}; "
+                    "use the `store_time_ranges` setting instead",
+                    setting_name, TimeSeriesVersion::MIN_WITH_TIME_RANGES_TARGET, version);
+        }
+    }
+    else if (settings[TimeSeriesSetting::store_time_ranges].isChanged())
+    {
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting `store_time_ranges` requires `version` to be at least {}, but the table has version {}",
+            TimeSeriesVersion::MIN_WITH_TIME_RANGES_TARGET, version);
     }
 
     if (!settings[TimeSeriesSetting::store_min_time_and_max_time])

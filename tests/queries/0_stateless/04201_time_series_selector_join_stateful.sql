@@ -11,15 +11,21 @@ SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS prometheus;
 DROP TABLE IF EXISTS tags_table;
+DROP TABLE IF EXISTS time_ranges_table;
 DROP TABLE IF EXISTS samples_table;
 
--- We create a TimeSeries table `prometheus` with external target tables `tags_table`
--- and `samples_table`.
+-- We create a TimeSeries table `prometheus` with external target tables `tags_table`,
+-- `time_ranges_table` and `samples_table`.
 CREATE TABLE tags_table
 (
     id UInt64,
     metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String),
+    tags Map(LowCardinality(String), String)
+) ENGINE = MergeTree() ORDER BY id;
+
+CREATE TABLE time_ranges_table
+(
+    id UInt64,
     min_time DateTime64(3),
     max_time DateTime64(3)
 ) ENGINE = MergeTree() ORDER BY id;
@@ -32,13 +38,18 @@ CREATE TABLE samples_table
 ) ENGINE = MergeTree() ORDER BY (id, timestamp);
 
 CREATE TABLE prometheus ENGINE = TimeSeries
-SAMPLES samples_table TAGS tags_table;
+SAMPLES samples_table TAGS tags_table TIME RANGES time_ranges_table;
 
 -- Three metrics: `foo`, `bar`, `baz`.
-INSERT INTO tags_table (id, metric_name, tags, min_time, max_time) VALUES
-    (1583154, 'foo', map(), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (2836623, 'bar', map(), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (3691271, 'baz', map(), toDateTime64(0, 3), toDateTime64(1000, 3));
+INSERT INTO tags_table (id, metric_name, tags) VALUES
+    (1583154, 'foo', map()),
+    (2836623, 'bar', map()),
+    (3691271, 'baz', map());
+
+INSERT INTO time_ranges_table (id, min_time, max_time) VALUES
+    (1583154, toDateTime64(0, 3), toDateTime64(1000, 3)),
+    (2836623, toDateTime64(0, 3), toDateTime64(1000, 3)),
+    (3691271, toDateTime64(0, 3), toDateTime64(1000, 3));
 
 INSERT INTO samples_table (id, timestamp, value) VALUES
     (1583154, toDateTime64(100, 3), 10.),
@@ -54,9 +65,9 @@ INSERT INTO samples_table (id, timestamp, value) VALUES
 --     SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
 --     FROM samples_table
 --     WHERE id IN (
---         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
---         FROM tags_table
---         WHERE metric_name = 'foo' AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
+--         SELECT id FROM time_ranges_table
+--         WHERE id IN (SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name) FROM tags_table WHERE metric_name = 'foo')
+--           AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
 --       AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
 -- ) AS foo
 -- ANY INNER JOIN
@@ -64,9 +75,9 @@ INSERT INTO samples_table (id, timestamp, value) VALUES
 --     SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
 --     FROM samples_table
 --     WHERE id IN (
---         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
---         FROM tags_table
---         WHERE metric_name = 'bar' AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
+--         SELECT id FROM time_ranges_table
+--         WHERE id IN (SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name) FROM tags_table WHERE metric_name = 'bar')
+--           AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
 --       AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
 -- ) AS bar
 -- ON timeSeriesRemoveTag(foo.group, '__name__') = timeSeriesRemoveTag(bar.group, '__name__')
@@ -78,4 +89,5 @@ SELECT * FROM prometheusQuery('prometheus', '(foo == bar)[50:10]', toDateTime64(
 
 DROP TABLE prometheus;
 DROP TABLE tags_table;
+DROP TABLE time_ranges_table;
 DROP TABLE samples_table;
