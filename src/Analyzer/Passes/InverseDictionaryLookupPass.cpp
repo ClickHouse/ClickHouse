@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <optional>
 
 #include <Analyzer/ColumnNode.h>
@@ -298,19 +299,34 @@ bool convertSimpleKeyProbe(QueryTreeNodePtr & key_expr_node, const ContextPtr & 
     return true;
 }
 
-/// Each key returned by `dictGetKeys` is a key-column value or a tuple of key-column values.
+/// Check whether equality with this key column value differs from a dictionary lookup, which matches
+/// keys by their stored representation, as membership in a set does.
 /// Equality with a null key column can produce `NULL` for a non-null probe, whereas a dictionary
 /// lookup misses that key. Nulls inside `Array` or `Map` values do not propagate through the
 /// container comparison.
-bool hasNullKeyColumn(const Field & key)
+/// Equality compares floating-point values numerically: `NaN` equals nothing, although the lookup
+/// finds a `NaN` key, and `0` equals `-0`, although the lookup tells them apart.
+bool keyColumnDiffersUnderEquality(const Field & component)
 {
-    if (key.isNull())
+    if (component.isNull())
         return true;
 
-    if (key.getType() == Field::Types::Tuple)
-        return std::ranges::any_of(key.safeGet<Tuple>(), [](const Field & component) { return component.isNull(); });
+    if (component.getType() == Field::Types::Float64)
+    {
+        const Float64 value = component.safeGet<Float64>();
+        return std::isnan(value) || value == 0;
+    }
 
     return false;
+}
+
+/// Each key returned by `dictGetKeys` is a key-column value or a tuple of key-column values.
+bool keyDiffersUnderEquality(const Field & key)
+{
+    if (key.getType() == Field::Types::Tuple)
+        return std::ranges::any_of(key.safeGet<Tuple>(), keyColumnDiffersUnderEquality);
+
+    return keyColumnDiffersUnderEquality(key);
 }
 
 bool isRewriteSemanticallySafe(
@@ -667,10 +683,10 @@ public:
                     return;
                 }
 
-                /// A single key without null components can use equality. Keep membership for
-                /// null keys and tuples containing `NULL`: equality would turn a false lookup
-                /// predicate into `NULL` for non-null probes.
-                if (keys_size == 1 && !hasNullKeyColumn(keys_array.front()))
+                /// A single key can use equality unless equality matches different rows than the lookup.
+                /// Keep membership for keys containing `NULL`, where equality would turn a false lookup
+                /// predicate into `NULL` for non-null probes, and for floating-point `NaN` and zero keys.
+                if (keys_size == 1 && !keyDiffersUnderEquality(keys_array.front()))
                 {
                     const Field & single_key_field = keys_array.front();
 
@@ -688,7 +704,7 @@ public:
                     return;
                 }
 
-                /// Multiple keys or a key containing `NULL` use membership in the constant array of keys.
+                /// Multiple keys and the keys above use membership in the constant array of keys.
                 /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
                 const auto in_function_name = getInFunctionNameForPassCreatedNode(
                     "in", dictget_function_info.key_expr_node->getResultType(), getContext());
