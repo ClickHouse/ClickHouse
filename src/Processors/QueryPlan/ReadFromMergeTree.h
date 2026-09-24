@@ -618,6 +618,9 @@ public:
     void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
+    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
+    /// their part offsets. Reading a projection instead would address other rows.
+    bool hasLazilyReadColumns() const { return has_lazily_read_columns; }
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
@@ -843,6 +846,7 @@ private:
     bool allow_top_k_prewhere_query_condition_cache = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
+    bool has_lazily_read_columns = false;
 
     ExpressionActionsPtr virtual_row_conversion;
 

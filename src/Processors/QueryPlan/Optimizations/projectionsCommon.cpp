@@ -85,6 +85,9 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     if (reading->isQueryWithFinal())
         return std::unexpected("the query uses FINAL");
 
+    if (reading->hasLazilyReadColumns())
+        return false;
+
     if (reading->isQueryWithSampling())
         return std::unexpected("the query uses SAMPLE");
 
