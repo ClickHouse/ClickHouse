@@ -517,6 +517,11 @@ public:
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
+    /// A UDF not declared `DETERMINISTIC` may return different values for the same arguments even
+    /// within a single query - the module can keep state or read entropy - so it must not be treated
+    /// as query-deterministic. `IFunction` answers `true` by default, which would let query plan
+    /// optimizations duplicate or reorder such a call. `Executable` UDFs answer `false` here as well.
+    bool isDeterministicInScopeOfQuery() const override { return user_defined_function->getIsDeterministic(); }
     bool isSpatialPredicate() const override
     {
         auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");

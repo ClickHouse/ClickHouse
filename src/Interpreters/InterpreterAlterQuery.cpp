@@ -61,7 +61,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
-    extern const SettingsBool validate_mutation_query;
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -154,7 +153,15 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         }
         else if (auto alter_command = AlterCommand::parse(command_ast))
         {
-            segments_holder.take<AlterCommands>().push_back(std::move(alter_command.value()));
+            auto reset_command = alter_command->extractSettingsResets();
+            auto & alter_commands = segments_holder.take<AlterCommands>();
+            /// The reset goes first, as it does inside one command, where the resets are applied
+            /// before the changes: an engine which maps a compatibility name of a setting onto its
+            /// canonical one can have both halves end up on the same setting, and then the change
+            /// is what the command asked for.
+            if (reset_command)
+                alter_commands.push_back(std::move(reset_command.value()));
+            alter_commands.push_back(std::move(alter_command.value()));
         }
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {
@@ -337,15 +344,22 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
-BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context)
+BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, bool no_ddl_lock)
 {
     BlockIO res;
     const auto & settings = context->getSettingsRef();
 
+    /// Each segment takes its own locks, a multi-segment ALTER is not atomic against concurrent DDL.
     for (auto & segment : segments)
     {
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
+            /// DDLGuard before the table locks, same order as RENAME/EXCHANGE/DROP take them. Re-acquiring
+            /// it after a released wait inverts this order, both sides are bounded by lock_acquire_timeout.
+            DDLGuardPtr ddl_guard;
+            if (!no_ddl_lock)
+                ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(table, settings[Setting::lock_acquire_timeout]);
+            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
             /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
             /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
@@ -364,30 +378,27 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
-            table->alter(*alter_commands, context, alter_lock);
+            table->alter(*alter_commands, context, alter_lock, ddl_guard);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
+                auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
-                /// Replicated-storage non-determinism check must always run, even when
-                /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
-                /// diverge replicas.  The heavier query-shape validation that constructs a full
-                /// `MutationsInterpreter` is gated by the setting, since invalid mutations may
-                /// reference not-yet-existing objects when the user opts out of validation.
+                /// Checked ahead of the full validation below, which repeats it, so that a
+                /// nondeterministic mutation is reported as such even when the predicate also
+                /// fails to analyze.
                 MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
-                if (settings[Setting::validate_mutation_query])
-                {
-                    MutationsInterpreter::Settings mutation_settings(false);
-                    MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
-                }
+                MutationsInterpreter::Settings mutation_settings(false);
+                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
                 table->mutate(*mutation_commands, context);
             }
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
         {
+            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
@@ -396,6 +407,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
         {
+            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             for (const auto * execute_command : *execute_commands)
             {
                 ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
@@ -482,6 +494,17 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database)
+        {
+            const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
+            const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
+            for (const auto & child : captured_alter.command_list->children)
+            {
+                const auto & command = child->as<const ASTAlterCommand &>();
+                if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
+                    checkNoRowPolicyForSetOperands(child, default_database, context, /* throw_if_unresolved = */ true);
+            }
+        };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -492,6 +515,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
+            checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
+    }
+
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
@@ -505,6 +535,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
     }
 #endif
+
+    /// Re-resolve by name: the resolution above pins a UUID, and a concurrent EXCHANGE can move it
+    /// to another name, making the UUID lookup return nothing. Temporary tables cannot be renamed.
+    /// Queries with an explicit UUID (internal ones, e.g. the fill step of CREATE) address exactly
+    /// that table, and it may not be visible by name yet, so keep the storage resolved above.
+    if (alter.uuid == UUIDHelpers::Nil && table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+        table = database->tryGetTable(table_id.table_name, getContext());
 
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
@@ -523,8 +560,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-
     if (modify_query)
     {
         // Expand CTE before filling default database
@@ -541,17 +576,22 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     validateMutationsAllowed(segments, database, getContext());
     validateReplicatedDatabaseSegments(segments, database);
 
-    if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
     {
-        /// The patch part is committed while the pipeline runs, so the share lock must outlive this
-        /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
-        QueryPlanResourceHolder update_resources;
-        update_resources.table_locks.emplace_back(std::move(table_lock));
-        lightweight_result->pipeline.addResources(std::move(update_resources));
-        return std::move(lightweight_result.value());
+        auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+        if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
+        {
+            /// The patch part is committed while the pipeline runs, so the share lock must outlive this
+            /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
+            QueryPlanResourceHolder update_resources;
+            update_resources.table_locks.emplace_back(std::move(table_lock));
+            lightweight_result->pipeline.addResources(std::move(update_resources));
+            return std::move(lightweight_result.value());
+        }
+        /// Released here: holding a share lock across the segments' DDLGuard acquisition
+        /// would invert the lock order of RENAME/EXCHANGE/DROP.
     }
 
-    return runCommandSegments(segments, table, getContext());
+    return runCommandSegments(segments, table, getContext(), alter.no_ddl_lock);
 }
 
 BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
@@ -620,7 +660,8 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     return res;
 }
 
-bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr & storage, const ContextPtr & context_)
+InterpreterAlterQuery::RowExistsColumnKind InterpreterAlterQuery::getRowExistsColumnKind(
+    const StoragePtr & storage, const ContextPtr & context_)
 {
     /// `_row_exists` is the hidden lightweight-delete marker only on storages that register it as a
     /// virtual column (the MergeTree family). Testing merely for the absence of a physical `_row_exists`
@@ -628,27 +669,31 @@ bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr 
     /// physical column either, so a user could `ADD COLUMN _row_exists, UPDATE _row_exists = 0` and edit
     /// a real physical column with only `ALTER DELETE`. `isVirtualColumn` is true only when `_row_exists`
     /// is a registered virtual and not shadowed by a real column, which precisely identifies the marker.
-    /// A null storage (non-local ON CLUSTER target) fails closed -> treated as a regular column.
     if (!storage)
-        return false;
+        return RowExistsColumnKind::Unknown;
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
-    return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
+    return metadata_snapshot->isVirtualColumn(RowExistsColumn::name)
+        ? RowExistsColumnKind::LightweightDeleteMarker
+        : RowExistsColumnKind::Regular;
 }
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
+    const auto row_exists_column_kind = getRowExistsColumnKind(storage, getContext());
     for (const auto & child : alter.command_list->children)
         required_access.append_range(
-            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_column_kind));
 
     return required_access;
 }
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
-    const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker)
+    const ASTAlterCommand & command,
+    const String & database,
+    const String & table,
+    RowExistsColumnKind row_exists_column_kind)
 {
     AccessRightsElements required_access;
 
@@ -670,10 +715,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
             for (const ASTPtr & assignment_ast : command.update_assignments->children)
             {
                 const auto & assignment = assignment_ast->as<const ASTAssignment &>();
-                if (row_exists_is_lightweight_marker && isLightweightDeleteAssignment(assignment))
-                    deletes_via_row_exists = true;
-                else
+                const bool is_lightweight_delete_assignment = isLightweightDeleteAssignment(assignment);
+                if (!is_lightweight_delete_assignment || row_exists_column_kind != RowExistsColumnKind::LightweightDeleteMarker)
                     updated_columns.emplace_back(assignment.column_name);
+                if (is_lightweight_delete_assignment && row_exists_column_kind != RowExistsColumnKind::Regular)
+                    deletes_via_row_exists = true;
             }
             if (!updated_columns.empty())
                 required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, updated_columns);
