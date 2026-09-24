@@ -135,6 +135,14 @@ SELECT 'Exact numeric conversion',
     has(materialize(range(64)::Array(Int32)), nan),
     indexOf(materialize(range(64)::Array(Int32)), nan);
 
+SELECT 'Bare UInt32 max',
+    has(materialize(arrayMap(x -> if(x = 12, toUInt32(4294967295), toUInt32(x)), range(32))), 4294967295),
+    indexOf(materialize(arrayMap(x -> if(x = 12, toUInt32(4294967295), toUInt32(x)), range(32))), 4294967295);
+
+SELECT 'Bare UInt64 max',
+    has(materialize(arrayMap(x -> if(x = 8, toUInt64('18446744073709551615'), toUInt64(x)), range(32))), 18446744073709551615),
+    indexOf(materialize(arrayMap(x -> if(x = 8, toUInt64('18446744073709551615'), toUInt64(x)), range(32))), 18446744073709551615);
+
 -- Exercise matches near the scalar-prefix/continuation threshold for each supported width.
 
 SELECT 'UInt8 threshold middle',
