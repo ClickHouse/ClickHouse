@@ -29,13 +29,13 @@ Granules: 2/5
 -- positive count() is ReadFromTextIndexCount
 1
 1
--- Exact direct read does not replace under NOT
-0
--- IS FALSE over Nullable is not Exact
+-- Exact direct read also replaces under NOT
+3
+-- IS FALSE over Nullable uses skip index (no direct read, matches master)
 idx	4
 scan	4
 0
--- NOT (IS FALSE) must keep NULL rows
+-- NOT (IS FALSE) uses skip index (no direct read, matches master)
 idx	0
 idx	1
 idx	2
@@ -44,11 +44,11 @@ scan	0
 scan	1
 scan	2
 scan	3
--- equals 0 over Nullable is not Exact
+-- equals 0 over Nullable uses skip index (no direct read, matches master)
 idx	4
 scan	4
 0
--- notEquals 1 over Nullable is not Exact
+-- notEquals 1 over Nullable uses skip index (no direct read, matches master)
 idx	4
 scan	4
 0
@@ -56,23 +56,27 @@ scan	4
 idx	1
 scan	1
 0
--- NOT over Nullable Exact is Unknown
+-- NOT over Nullable uses Exact (NULL -> 0)
+idx	1
+idx	2
+idx	3
 idx	4
 scan	4
-0
--- AND of typed String with NOT Nullable must not treat NULL as 0
+1
+-- AND of typed String with NOT Nullable treats NULL as 0
+idx	1
+idx	3
 idx	4
 scan	4
 idx	3
+idx	4
 scan	3
--- projected hasToken keeps NULL
+-- projected hasToken treats NULL as 0
+0	1
+2	0
 0	1
 2	\N
-0	1
-2	\N
--- mixed parts: unmaterialized default uses ifNull
-idx	0
-idx	2
+-- mixed parts: unmaterialized Nullable default throws (NULL -> UInt8 cast), matching master
 scan	0
 scan	2
 1

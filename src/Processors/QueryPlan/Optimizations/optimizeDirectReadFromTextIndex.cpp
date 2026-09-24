@@ -1,6 +1,4 @@
 #include <algorithm>
-#include <optional>
-#include <unordered_map>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -103,135 +101,6 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
         return applyVisitor(FieldVisitorToString(), node->column->getField());
 
     return node->result_name;
-}
-
-enum class FilterPolarity : uint8_t
-{
-    Positive,
-    Negative,
-    Unsafe,
-};
-
-const ActionsDAG::Node * unwrapAliases(const ActionsDAG::Node * node)
-{
-    while (node && node->type == ActionsDAG::ActionType::ALIAS)
-        node = node->children[0];
-    return node;
-}
-
-FilterPolarity flipFilterPolarity(FilterPolarity polarity)
-{
-    switch (polarity)
-    {
-        case FilterPolarity::Positive:
-            return FilterPolarity::Negative;
-        case FilterPolarity::Negative:
-            return FilterPolarity::Positive;
-        case FilterPolarity::Unsafe:
-            return FilterPolarity::Unsafe;
-    }
-    UNREACHABLE();
-}
-
-FilterPolarity mergeFilterPolarity(FilterPolarity lhs, FilterPolarity rhs)
-{
-    return lhs == rhs ? lhs : FilterPolarity::Unsafe;
-}
-
-std::optional<UInt64> tryGetConstUInt64(const ActionsDAG::Node * node)
-{
-    node = unwrapAliases(node);
-    if (!node || node->type != ActionsDAG::ActionType::COLUMN || !node->column || node->column->empty())
-        return {};
-
-    const Field value = (*node->column)[0];
-    if (value.isNull())
-        return {};
-    if (value.getType() == Field::Types::UInt64)
-        return value.safeGet<UInt64>();
-    if (value.getType() == Field::Types::Int64)
-    {
-        const auto signed_value = value.safeGet<Int64>();
-        if (signed_value < 0)
-            return {};
-        return static_cast<UInt64>(signed_value);
-    }
-    return {};
-}
-
-/// `equals 0` / `notEquals 1` flip; `equals 1` / `notEquals 0` keep. Other constants are unknown.
-std::optional<bool> tryBooleanEqualityFlip(const String & function_name, const ActionsDAG::Node & node)
-{
-    if ((function_name != "equals" && function_name != "notEquals") || node.children.size() != 2)
-        return {};
-
-    const auto lhs = tryGetConstUInt64(node.children[0]);
-    const auto rhs = tryGetConstUInt64(node.children[1]);
-    std::optional<UInt64> constant;
-    if (lhs && !rhs)
-        constant = lhs;
-    else if (rhs && !lhs)
-        constant = rhs;
-    else
-        return {};
-
-    const bool is_equals = function_name == "equals";
-    if (*constant == 0)
-        return is_equals;
-    if (*constant == 1)
-        return !is_equals;
-    return {};
-}
-
-void collectFilterPolarity(
-    const ActionsDAG::Node * node,
-    FilterPolarity polarity,
-    std::unordered_map<const ActionsDAG::Node *, FilterPolarity> & polarities)
-{
-    node = unwrapAliases(node);
-    if (!node)
-        return;
-
-    const auto [it, inserted] = polarities.try_emplace(node, polarity);
-    if (!inserted)
-    {
-        const auto merged = mergeFilterPolarity(it->second, polarity);
-        if (merged == it->second)
-            return;
-        it->second = merged;
-        polarity = merged;
-    }
-
-    if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
-        return;
-
-    const auto & function_name = node->function_base->getName();
-    if (function_name == "not" && node->children.size() == 1)
-    {
-        collectFilterPolarity(node->children[0], flipFilterPolarity(polarity), polarities);
-        return;
-    }
-    if (function_name == "and" || function_name == "or")
-    {
-        for (const auto * child : node->children)
-            collectFilterPolarity(child, polarity, polarities);
-        return;
-    }
-    if (const auto flip = tryBooleanEqualityFlip(function_name, *node))
-    {
-        const auto child_polarity = *flip ? flipFilterPolarity(polarity) : polarity;
-        for (const auto * child : node->children)
-        {
-            if (!tryGetConstUInt64(child))
-                collectFilterPolarity(child, child_polarity, polarities);
-        }
-        return;
-    }
-
-    /// `isNotDistinctFrom` (`IS FALSE` / `IS TRUE`), `isNull`, `if`, and anything unrecognized
-    /// are NULL-sensitive: do not treat them as a boolean polarity flip.
-    for (const auto * child : node->children)
-        collectFilterPolarity(child, FilterPolarity::Unsafe, polarities);
 }
 
 /// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
@@ -565,17 +434,6 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
     }
 }
 
-ASTPtr wrapIfNullZero(ASTPtr expr)
-{
-    auto function = make_intrusive<ASTFunction>();
-    function->name = "ifNull";
-    function->arguments = make_intrusive<ASTExpressionList>();
-    function->children.push_back(function->arguments);
-    function->arguments->children.push_back(std::move(expr));
-    function->arguments->children.push_back(make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0))));
-    return function;
-}
-
 }
 
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
@@ -627,27 +485,13 @@ public:
     /// Example: hasAllTokens(text_col, 'token1 token2') -> hasAllTokens(lower(text_col), ['token1', 'token2'], 'splitByNonAlpha').
     /// Pass an empty `filter_column_name` for DAGs without a single filter output (e.g. a SELECT-list ExpressionStep)
     /// then only `result.is_dag_rewritten` is meaningful, not `result.filter_node`.
-    ResultReplacement replace(const ContextPtr & context, const String & filter_column_name, bool removes_filter_column = true)
+    ResultReplacement replace(const ContextPtr & context, const String & filter_column_name)
     {
         ResultReplacement result;
         NodesReplacementMap replacements;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
         const bool has_filter_column = !filter_column_name.empty();
         const auto * filter_node = has_filter_column ? &actions_dag.findInOutputs(filter_column_name) : nullptr;
-        node_filter_polarity.clear();
-        if (filter_node)
-            collectFilterPolarity(filter_node, FilterPolarity::Positive, node_filter_polarity);
-
-        /// A node used as a projected value cannot become a non-Nullable UInt8 virtual column: NULL and 0
-        /// agree in WHERE but not in SELECT. Shared filter/output nodes merge to Unsafe.
-        for (const auto * output : actions_dag.getOutputs())
-        {
-            if (output == filter_node)
-                continue;
-            collectFilterPolarity(output, FilterPolarity::Unsafe, node_filter_polarity);
-        }
-        if (filter_node && !removes_filter_column)
-            collectFilterPolarity(filter_node, FilterPolarity::Unsafe, node_filter_polarity);
         std::vector<std::pair<String, VirtualColumnDescription>> candidate_virtual_columns;
 
         /// Cache for added input nodes for each virtual column.
@@ -730,8 +574,6 @@ private:
     bool require_index_analyzed_predicate = false;
     /// Per-index cache of the node names in the index-analysis filter DAG.
     std::unordered_map<String, NameSet> index_analyzed_predicate_names;
-    /// Polarity of each unwrapped node reachable from the filter output. Missing means Unsafe.
-    std::unordered_map<const ActionsDAG::Node *, FilterPolarity> node_filter_polarity;
 
     struct SelectedCondition
     {
@@ -741,7 +583,6 @@ private:
         const TextIndexReadInfo * info = nullptr;
         /// Whether this predicate participated in skip-index analysis (always true unless `require_index_analyzed_predicate`).
         bool is_index_analyzed = true;
-        bool requires_positive_filter = false;
     };
 
     /// True if index analysis saw this exact predicate, i.e. it also appears in a filter that was not deferred.
@@ -785,8 +626,7 @@ private:
             || function_name == "hasPhrase";
     }
 
-    std::vector<SelectedCondition> selectConditions(
-        const ActionsDAG::Node & function_node, const ContextPtr & context, FilterPolarity polarity)
+    std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
     {
         /// Canonicalize the function-node subtree so that the serialized column names
         /// fed to MergeTreeIndexConditionText::traverseFunctionNode match the ones
@@ -808,11 +648,9 @@ private:
             if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
                 continue;
 
-            auto search_match = text_index_condition.createTextSearchQuery(canonical_node);
-            if (!search_match)
+            auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
+            if (!search_query)
                 continue;
-
-            auto search_query = search_match->query;
 
             /// The search query is built from the canonicalized subtree, but the rewrites below apply to
             /// the original node, so check that node as well.
@@ -822,19 +660,13 @@ private:
             const bool is_index_analyzed
                 = !require_index_analyzed_predicate || isIndexAnalyzedPredicate(index_name, info, canonical_node);
 
-            /// Nullable / `.:String` Exact is only valid as a positive filter. Tokenizer injection still runs.
-            const bool block_positive_only_direct_read
-                = search_match->requires_positive_filter && polarity != FilterPolarity::Positive;
-
             /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`) and has no
             /// patched parts. Otherwise just inject the tokenizer/preprocessor/postprocessor (no virtual column),
             /// same as None mode.
             if (!direct_read_from_text_index || !info.index || info.has_patched_parts
-                || search_query->getDirectReadMode() == TextIndexDirectReadMode::None
-                || block_positive_only_direct_read)
+                || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {
-                selected_conditions.emplace_back(
-                    search_query, index_name, String{}, &info, is_index_analyzed, search_match->requires_positive_filter);
+                selected_conditions.emplace_back(search_query, index_name, String{}, &info, is_index_analyzed);
                 used_index_columns.insert(index_header.begin()->name);
                 continue;
             }
@@ -843,8 +675,7 @@ private:
             if (!virtual_column_name)
                 continue;
 
-            selected_conditions.emplace_back(
-                search_query, index_name, *virtual_column_name, &info, is_index_analyzed, search_match->requires_positive_filter);
+            selected_conditions.emplace_back(search_query, index_name, *virtual_column_name, &info, is_index_analyzed);
             used_index_columns.insert(index_header.begin()->name);
         }
 
@@ -889,11 +720,7 @@ private:
         if (!need_transform_function && !direct_read_from_text_index)
             return replacement;
 
-        FilterPolarity polarity = FilterPolarity::Unsafe;
-        if (const auto it = node_filter_polarity.find(unwrapAliases(&function_node)); it != node_filter_polarity.end())
-            polarity = it->second;
-
-        auto selected_conditions = selectConditions(function_node, context, polarity);
+        auto selected_conditions = selectConditions(function_node, context);
         if (selected_conditions.empty())
             return replacement;
 
@@ -1175,15 +1002,6 @@ private:
                     function_node.result_name);
                 return;
             }
-
-            const bool null_as_zero = std::ranges::any_of(
-                selected_conditions,
-                [](const SelectedCondition & condition)
-                {
-                    return condition.requires_positive_filter;
-                });
-            if (null_as_zero)
-                exact_default_expression = wrapIfNullZero(std::move(exact_default_expression));
         }
 
         auto add_condition_to_input = [&](const SelectedCondition & condition)
@@ -1253,11 +1071,10 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     const TextIndexReadInfos & text_index_read_infos,
     const String & filter_column_name,
     bool direct_read_from_text_index,
-    bool require_index_analyzed_predicate = false,
-    bool removes_filter_column = true)
+    bool require_index_analyzed_predicate = false)
 {
     TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index, /*is_filter_dag=*/ true, require_index_analyzed_predicate);
-    auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name, removes_filter_column);
+    auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
 
     /// Even when no virtual columns are added (added_columns is empty),
     /// the DAG may have been modified by text index preprocessing
@@ -1329,14 +1146,7 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
 {
     read_from_merge_tree_step.updatePrewhereInfo({});
     auto cloned_prewhere_info = prewhere_info->clone();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(
-        read_from_merge_tree_step,
-        cloned_prewhere_info.prewhere_actions,
-        text_index_read_infos,
-        cloned_prewhere_info.prewhere_column_name,
-        direct_read_from_text_index,
-        require_index_analyzed_predicate,
-        cloned_prewhere_info.remove_prewhere_column);
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_column_name, direct_read_from_text_index, require_index_analyzed_predicate);
 
     if (!result_filter_node)
     {
@@ -1457,13 +1267,7 @@ void processAndOptimizeTextIndexFunctions(
             ActionsDAG & filter_dag = filter_step->getExpression();
             bool direct_read_allowed = direct_read_from_text_index && !prewhere_optimized && !already_has_direct_read;
             const auto * result_filter_node = processAndOptimizeTextIndexDAG(
-                *read_from_merge_tree_step,
-                filter_dag,
-                text_index_infos,
-                filter_step->getFilterColumnName(),
-                direct_read_allowed,
-                /*require_index_analyzed_predicate=*/ false,
-                filter_step->removesFilterColumn());
+                *read_from_merge_tree_step, filter_dag, text_index_infos, filter_step->getFilterColumnName(), direct_read_allowed);
 
             if (!result_filter_node)
                 continue;

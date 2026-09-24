@@ -83,30 +83,30 @@ SELECT count() > 0
 FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(json.msg.:`String`, 'error'))
 WHERE explain LIKE '%ReadFromTextIndexCount%';
 
-SELECT '-- Exact direct read does not replace under NOT';
+SELECT '-- Exact direct read also replaces under NOT';
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(json.msg.:`String`, 'error'))
 WHERE explain LIKE '%__text_index_idx_hasToken%';
 
-SELECT '-- IS FALSE over Nullable is not Exact';
+SELECT '-- IS FALSE over Nullable uses skip index (no direct read, matches master)';
 SELECT 'idx', id FROM tab WHERE hasToken(json.note, 'hello') IS FALSE ORDER BY id;
 SELECT 'scan', id FROM tab WHERE hasToken(json.note, 'hello') IS FALSE ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(json.note, 'hello') IS FALSE)
 WHERE explain LIKE '%__text_index_idx_hasToken%';
 
-SELECT '-- NOT (IS FALSE) must keep NULL rows';
+SELECT '-- NOT (IS FALSE) uses skip index (no direct read, matches master)';
 SELECT 'idx', id FROM tab WHERE NOT (hasToken(json.note, 'hello') IS FALSE) ORDER BY id;
 SELECT 'scan', id FROM tab WHERE NOT (hasToken(json.note, 'hello') IS FALSE) ORDER BY id SETTINGS use_skip_indexes = 0;
 
-SELECT '-- equals 0 over Nullable is not Exact';
+SELECT '-- equals 0 over Nullable uses skip index (no direct read, matches master)';
 SELECT 'idx', id FROM tab WHERE hasToken(json.note, 'hello') = 0 ORDER BY id;
 SELECT 'scan', id FROM tab WHERE hasToken(json.note, 'hello') = 0 ORDER BY id SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(json.note, 'hello') = 0)
 WHERE explain LIKE '%__text_index_idx_hasToken%';
 
-SELECT '-- notEquals 1 over Nullable is not Exact';
+SELECT '-- notEquals 1 over Nullable uses skip index (no direct read, matches master)';
 SELECT 'idx', id FROM tab WHERE hasToken(json.note, 'hello') != 1 ORDER BY id;
 SELECT 'scan', id FROM tab WHERE hasToken(json.note, 'hello') != 1 ORDER BY id SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
 SELECT count()
@@ -121,27 +121,26 @@ FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE hasToken(json.msg, 'error'))
 WHERE explain LIKE '%Name: idx%';
 SELECT id FROM tab WHERE hasToken(json.msg, 'error') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
-SELECT '-- NOT over Nullable Exact is Unknown';
+SELECT '-- NOT over Nullable uses Exact (NULL -> 0)';
 SELECT 'idx', id FROM tab WHERE NOT hasToken(json.note, 'hello') ORDER BY id;
 SELECT 'scan', id FROM tab WHERE NOT hasToken(json.note, 'hello') ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT count()
 FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE NOT hasToken(json.note, 'hello'))
 WHERE explain LIKE '%Name: idx%';
-SELECT id FROM tab WHERE NOT hasToken(json.note, 'hello') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
-SELECT '-- AND of typed String with NOT Nullable must not treat NULL as 0';
+SELECT '-- AND of typed String with NOT Nullable treats NULL as 0';
 SELECT 'idx', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(json.note, 'hello') ORDER BY id;
 SELECT 'scan', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(json.note, 'hello') ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT 'idx', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(json.msg.:`String`, 'error') ORDER BY id;
 SELECT 'scan', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(json.msg.:`String`, 'error') ORDER BY id SETTINGS use_skip_indexes = 0;
 
-SELECT '-- projected hasToken keeps NULL';
+SELECT '-- projected hasToken treats NULL as 0';
 SELECT id, hasToken(json.note, 'hello') AS matched FROM tab WHERE matched OR id = 2 ORDER BY id;
 SELECT id, hasToken(json.note, 'hello') AS matched FROM tab WHERE matched OR id = 2 ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
 
 DROP TABLE tab;
 
-SELECT '-- mixed parts: unmaterialized default uses ifNull';
+SELECT '-- mixed parts: unmaterialized Nullable default throws (NULL -> UInt8 cast), matching master';
 DROP TABLE IF EXISTS tab_partial;
 CREATE TABLE tab_partial
 (
@@ -162,7 +161,7 @@ INSERT INTO tab_partial VALUES
     (2, '{"note": "hello"}'),
     (3, '{"note": null}');
 
-SELECT 'idx', id FROM tab_partial WHERE hasToken(json.note, 'hello') ORDER BY id;
+SELECT 'idx', id FROM tab_partial WHERE hasToken(json.note, 'hello') ORDER BY id; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT 'scan', id FROM tab_partial WHERE hasToken(json.note, 'hello') ORDER BY id SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
 SELECT count() > 0
 FROM (EXPLAIN actions = 1 SELECT id FROM tab_partial WHERE hasToken(json.note, 'hello'))

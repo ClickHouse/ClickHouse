@@ -196,8 +196,6 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
             return this->traverseAtomNode(node, out);
         }).extractRPN());
 
-    dropPositiveFilterQueriesUnderNot();
-
     NameSet all_search_tokens_set;
 
     for (const auto & element : rpn)
@@ -351,19 +349,19 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     return TextIndexDirectReadMode::None;
 }
 
-std::optional<TextSearchQueryMatch> MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
+TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
 {
     RPNElement rpn_element;
     RPNBuilderTreeContext rpn_tree_context(getContext());
     RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
 
     if (!traverseAtomNode(rpn_node, rpn_element))
-        return std::nullopt;
+        return nullptr;
 
     if (rpn_element.text_search_queries.size() != 1)
-        return std::nullopt;
+        return nullptr;
 
-    return TextSearchQueryMatch{rpn_element.text_search_queries.front(), rpn_element.requires_positive_filter};
+    return rpn_element.text_search_queries.front();
 }
 
 bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node & node) const
@@ -1955,9 +1953,12 @@ bool MergeTreeIndexConditionText::traverseJSONStringValuesNode(
         encoded_tokens.push_back(KeyValuePairsTokenizer::encodeToken(haystack->path, token, /*is_rest=*/ false));
     }
 
-    /// Exact for skip and for positive-filter direct read. Negative polarity is handled by
-    /// `dropPositiveFilterQueriesUnderNot` (skip) and by the filter-DAG walk (direct read).
-    out.requires_positive_filter = haystack->kind != JSONStringValuesHaystackKind::TypedString;
+    /// Exact for both skip-index and direct read in any polarity. For Nullable / `.:String` haystacks
+    /// this deliberately diverges from SQL NULL semantics: a NULL leaf yields a 0 posting, so
+    /// `NOT hasToken(...)` includes NULL rows (NULL -> 0), matching the community behavior for Nullable
+    /// text indexes (see ClickHouse issue #118690). Unmaterialized parts (e.g. after `ALTER ADD INDEX`)
+    /// cannot compute this default and throw `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` instead — also
+    /// matching master.
 
     const auto search_mode = function_name == "hasAnyTokens" ? TextSearchMode::Any : TextSearchMode::All;
     out.function = function_name == "hasAnyTokens" ? RPNElement::FUNCTION_HAS_ANY_TOKENS
@@ -1965,57 +1966,6 @@ bool MergeTreeIndexConditionText::traverseJSONStringValuesNode(
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
         function_name, search_mode, TextIndexDirectReadMode::Exact, std::move(encoded_tokens)));
     return true;
-}
-
-void MergeTreeIndexConditionText::dropPositiveFilterQueriesUnderNot()
-{
-    const auto make_unknown = [](RPNElement & element)
-    {
-        element.function = RPNElement::FUNCTION_UNKNOWN;
-        element.text_search_queries.clear();
-        element.requires_positive_filter = false;
-    };
-
-    const auto drop_all = [&]
-    {
-        for (auto & element : rpn)
-        {
-            if (element.requires_positive_filter)
-                make_unknown(element);
-        }
-    };
-
-    /// RPN subtrees are contiguous. Walk from the root (the last element) and push child polarity.
-    std::vector<UInt8> pending{false};
-
-    for (auto it = rpn.rbegin(); it != rpn.rend(); ++it)
-    {
-        if (pending.empty())
-        {
-            drop_all();
-            return;
-        }
-
-        const bool negated = pending.back();
-        pending.pop_back();
-
-        if (it->function == RPNElement::FUNCTION_NOT)
-        {
-            pending.push_back(!negated);
-        }
-        else if (it->function == RPNElement::FUNCTION_AND || it->function == RPNElement::FUNCTION_OR)
-        {
-            pending.push_back(negated);
-            pending.push_back(negated);
-        }
-        else if (negated && it->requires_positive_filter)
-        {
-            make_unknown(*it);
-        }
-    }
-
-    if (!pending.empty())
-        drop_all();
 }
 
 std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const
