@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
 
@@ -48,6 +49,22 @@ const NamesAndTypesList & TimeSeriesHistogramsColumns::getOuterPayloadColumns()
         return result;
     }();
     return columns;
+}
+
+const DataTypePtr & TimeSeriesHistogramsColumns::getHistogramColumnType()
+{
+    static const DataTypePtr data_type = []
+    {
+        DataTypes element_types;
+        Strings element_names;
+        for (auto column : getAll())
+        {
+            element_types.push_back(getDataType(column));
+            element_names.emplace_back(getName(column));
+        }
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(std::move(element_types), std::move(element_names)));
+    }();
+    return data_type;
 }
 
 }

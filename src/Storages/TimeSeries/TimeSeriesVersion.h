@@ -90,6 +90,12 @@ namespace TimeSeriesVersion
 /// Whether a version is in the range [MIN_SUPPORTED, LATEST].
 bool isTimeSeriesVersionSupported(UInt64 version);
 
+/// Whether tables of the specified version have the histograms target (and the outer `histograms.*` columns).
+inline bool timeSeriesVersionSupportsHistograms(UInt64 version)
+{
+    return version >= TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET;
+}
+
 /// Checks that the version of a TimeSeries table is in the range [MIN_SUPPORTED, LATEST], throws otherwise.
 /// A table with a newer version can appear after a downgrade of ClickHouse; it can still be attached,
 /// inspected and dropped, but the server must not read, write or alter it (that could corrupt data

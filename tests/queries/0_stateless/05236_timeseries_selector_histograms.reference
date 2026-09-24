@@ -1,0 +1,30 @@
+--- the columns ---
+id	Tuple(UInt64, LowCardinality(UUID))					
+timestamp	DateTime64(3)					
+value	Float64					
+histogram	Array(Tuple(is_float Bool, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), negative_spans Array(Tuple(offset Int32, length UInt32)), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64), count_float Float64, zero_count_float Float64, positive_values_float Array(Float64), negative_values_float Array(Float64)))					
+--- a float-only time series: empty histogram ---
+2026-01-01 00:00:00.000	1.5	[]
+2026-01-01 00:01:00.000	2.5	[]
+--- a histogram-only time series: both flavours as stored, value 0 ---
+2026-01-01 00:00:00.000	0	[(false,0,3,0.001,12.5,[(-2,2),(1,2)],[(0,1)],[],50,2,[3,10,20,9],[6],0,0,[],[])]
+2026-01-01 00:01:00.000	0	[(true,3,2,0.002,3.25,[(0,3)],[],[],0,0,[],[],7.5,0.5,[1.5,2.5,3],[])]
+--- custom buckets ---
+2026-01-01 00:00:00.000	[(false,0,-53,0,4.2,[(0,4)],[],[0.1,0.5,1],15,0,[1,2,4,8],[],0,0,[],[])]
+--- a float sample and a histogram sample of one time series ---
+2026-01-01 00:00:00.000	7	0
+2026-01-01 00:01:00.000	0	1
+--- integer counts are exact, the stale marker is bit-exact ---
+9007199254740993	[9007199254740993]
+7FF0000000000002
+--- the time range applies to both kinds of samples ---
+3	6
+1	2
+--- prometheus queries fail on histogram samples until they support them ---
+2.5
+7
+--- a table of version 5: three columns ---
+id	Tuple(UInt64, LowCardinality(UUID))					
+timestamp	DateTime64(3)					
+value	Float64					
+2026-01-01 00:00:00.000	1.5

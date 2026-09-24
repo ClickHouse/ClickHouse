@@ -1,0 +1,6 @@
+--- the id set is built once for both tables ---
+1
+--- a whole metric: the probe runs once ---
+1
+--- a whole metric: the id range is applied to both tables ---
+2

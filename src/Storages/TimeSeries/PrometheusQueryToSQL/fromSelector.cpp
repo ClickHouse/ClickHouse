@@ -9,6 +9,8 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
+#include <fmt/format.h>
+
 
 namespace DB::PrometheusQueryToSQL
 {
@@ -45,7 +47,28 @@ namespace
 
         /// The columns `timestamp` and `value` keep the types they have in the table, see the comment for StoreMethod::RAW_DATA.
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+        if (timeSeriesVersionSupportsHistograms(context.time_series_version))
+        {
+            /// For a TimeSeries table with histograms `timeSeriesSelector` returns histogram samples too, which the evaluation
+            /// of prometheus queries doesn't support yet, so the query fails if the selected time series have any:
+            /// if(empty(histogram), value, throwIf(notEmpty(histogram), '<message>')) AS value
+            /// The check is in the SELECT list rather than in WHERE: a WHERE condition could be evaluated before the id filter
+            /// of the selector, on histogram samples of other time series.
+            const String message = fmt::format(
+                "Evaluation of prometheus queries over native histograms is not implemented yet, but the selector {} selected histogram samples",
+                instant_selector_text);
+            builder.select_list.push_back(makeASTFunction(
+                "if",
+                makeASTFunction("empty", make_intrusive<ASTIdentifier>(ColumnNames::Histogram)),
+                make_intrusive<ASTIdentifier>(ColumnNames::Value),
+                makeASTFunction("throwIf", makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Histogram)), make_intrusive<ASTLiteral>(message))));
+            builder.select_list.back()->setAlias(ColumnNames::Value);
+        }
+        else
+        {
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+        }
 
         /// The range is (start_time - window, end_time] at the result scale. The table function converts the bounds to the scale
         /// of the table itself, rounding them towards the inside of the range.

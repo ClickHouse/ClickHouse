@@ -137,6 +137,11 @@ public:
     /// The outer columns mirroring the payload columns, in the canonical order: `histograms.is_float Array(Bool)`, ...
     /// Their types don't depend on the table, so the list is built once.
     static const NamesAndTypesList & getOuterPayloadColumns();
+
+    /// The type of the `histogram` column returned by `timeSeriesSelector`: `Array(Tuple(is_float Bool, ...))` with the payload
+    /// columns as named elements, built once. It holds no element for a float sample and one element for a histogram sample,
+    /// which is a row of the "histograms" inner table as stored.
+    static const DataTypePtr & getHistogramColumnType();
 };
 
 }

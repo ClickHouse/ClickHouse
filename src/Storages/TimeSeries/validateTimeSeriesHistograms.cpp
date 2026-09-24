@@ -1,14 +1,10 @@
 #include <Storages/TimeSeries/validateTimeSeriesHistograms.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
 #include <cmath>
 #include <limits>
@@ -32,81 +28,7 @@ namespace
 
     constexpr UInt8 max_counter_reset_hint = 3;
 
-    const IColumn & getColumn(const Block & block, TimeSeriesHistogramsColumn column)
-    {
-        return *block.getByName(String{TimeSeriesHistogramsColumns::getName(column)}).column;
-    }
-
-    /// Read-only view of a column with numeric values.
-    template <typename T>
-    class ScalarView
-    {
-    public:
-        ScalarView(const Block & block, TimeSeriesHistogramsColumn column)
-            : data(assert_cast<const ColumnVector<T> &>(getColumn(block, column)).getData())
-        {
-        }
-
-        T operator[](size_t row) const { return data[row]; }
-
-    private:
-        const PaddedPODArray<T> & data;
-    };
-
-    /// Read-only view of an `Array(T)` column with numeric elements.
-    template <typename T>
-    class ArrayView
-    {
-    public:
-        ArrayView(const Block & block, TimeSeriesHistogramsColumn column)
-            : array(assert_cast<const ColumnArray &>(getColumn(block, column)))
-            , data(assert_cast<const ColumnVector<T> &>(array.getData()).getData())
-        {
-        }
-
-        size_t sizeAt(size_t row) const { return array.getSize(row); }
-        std::span<const T> operator[](size_t row) const { return {data.data() + array.getOffset(row), array.getSize(row)}; }
-
-    private:
-        const ColumnArray & array;
-        const PaddedPODArray<T> & data;
-    };
-
-    /// The spans of one side of a histogram: `offsets[i]` and `lengths[i]` describe span `i`.
-    struct Spans
-    {
-        std::span<const Int32> offsets;
-        std::span<const UInt32> lengths;
-
-        size_t size() const { return offsets.size(); }
-    };
-
-    /// Read-only view of an `Array(Tuple(offset Int32, length UInt32))` column.
-    class SpansView
-    {
-    public:
-        SpansView(const Block & block, TimeSeriesHistogramsColumn column)
-            : array(assert_cast<const ColumnArray &>(getColumn(block, column)))
-        {
-            const auto & tuple = assert_cast<const ColumnTuple &>(array.getData());
-            offsets = &assert_cast<const ColumnInt32 &>(tuple.getColumn(0)).getData();
-            lengths = &assert_cast<const ColumnUInt32 &>(tuple.getColumn(1)).getData();
-        }
-
-        size_t sizeAt(size_t row) const { return array.getSize(row); }
-
-        Spans operator[](size_t row) const
-        {
-            const size_t start = array.getOffset(row);
-            const size_t size = array.getSize(row);
-            return {{offsets->data() + start, size}, {lengths->data() + start, size}};
-        }
-
-    private:
-        const ColumnArray & array;
-        const PaddedPODArray<Int32> * offsets;
-        const PaddedPODArray<UInt32> * lengths;
-    };
+    using Spans = TimeSeriesHistogramsColumnsView::Spans;
 
     /// Throws INCORRECT_DATA about the histogram sample in the specified row.
     class InvalidHistogramThrower
@@ -262,6 +184,18 @@ namespace
             fail("the zero bucket has a negative count {}", zero_count);
     }
 
+    /// Prometheus keeps the bucket counts of an integer histogram as `int64` (they travel as `int64` deltas),
+    /// so a bucket count above the maximum `Int64` can't be read back by remote read.
+    template <typename Fail>
+    void checkIntBuckets(std::span<const UInt64> buckets, std::string_view side, const Fail & fail)
+    {
+        for (size_t i = 0; i != buckets.size(); ++i)
+        {
+            if (buckets[i] > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                fail("{} side: bucket #{} has a count {} above the maximum {}", side, i, buckets[i], std::numeric_limits<Int64>::max());
+        }
+    }
+
     /// The count check of Prometheus's `Histogram.Validate`: the buckets and the zero bucket sum up to `count` exactly,
     /// or to at most `count` when `sum` is NaN (NaN observations are counted but fall into no bucket).
     /// The buckets are UInt64 here, so they can't be negative, but their sum can overflow.
@@ -284,52 +218,6 @@ namespace
         if (std::isnan(sum) ? (sum_of_buckets > count) : (sum_of_buckets != count))
             fail("{} observations are found in the buckets, but count_int is {}", sum_of_buckets, count);
     }
-
-    /// All the typed views of the columns of a block with the shape of the "histograms" table.
-    struct HistogramsColumns
-    {
-        const ScalarView<UInt8> is_float;
-        const ScalarView<UInt8> counter_reset_hint;
-        const ScalarView<Int8> schema;
-        const ScalarView<Float64> zero_threshold;
-        const ScalarView<Float64> sum;
-        const SpansView positive_spans;
-        const SpansView negative_spans;
-        const ArrayView<Float64> custom_values;
-        const ScalarView<UInt64> count_int;
-        const ScalarView<UInt64> zero_count_int;
-        const ArrayView<UInt64> positive_values_int;
-        const ArrayView<UInt64> negative_values_int;
-        const ScalarView<Float64> count_float;
-        const ScalarView<Float64> zero_count_float;
-        const ArrayView<Float64> positive_values_float;
-        const ArrayView<Float64> negative_values_float;
-
-        explicit HistogramsColumns(const Block & block)
-            : is_float(block, TimeSeriesHistogramsColumn::IsFloat)
-            , counter_reset_hint(block, TimeSeriesHistogramsColumn::CounterResetHint)
-            , schema(block, TimeSeriesHistogramsColumn::Schema)
-            , zero_threshold(block, TimeSeriesHistogramsColumn::ZeroThreshold)
-            , sum(block, TimeSeriesHistogramsColumn::Sum)
-            , positive_spans(block, TimeSeriesHistogramsColumn::PositiveSpans)
-            , negative_spans(block, TimeSeriesHistogramsColumn::NegativeSpans)
-            , custom_values(block, TimeSeriesHistogramsColumn::CustomValues)
-            , count_int(block, TimeSeriesHistogramsColumn::CountInt)
-            , zero_count_int(block, TimeSeriesHistogramsColumn::ZeroCountInt)
-            , positive_values_int(block, TimeSeriesHistogramsColumn::PositiveValuesInt)
-            , negative_values_int(block, TimeSeriesHistogramsColumn::NegativeValuesInt)
-            , count_float(block, TimeSeriesHistogramsColumn::CountFloat)
-            , zero_count_float(block, TimeSeriesHistogramsColumn::ZeroCountFloat)
-            , positive_values_float(block, TimeSeriesHistogramsColumn::PositiveValuesFloat)
-            , negative_values_float(block, TimeSeriesHistogramsColumn::NegativeValuesFloat)
-        {
-        }
-
-        /// The number of buckets of a side is the size of the values array of the flavour the row uses.
-        size_t numPositiveBuckets(size_t row) const { return is_float[row] ? positive_values_float.sizeAt(row) : positive_values_int.sizeAt(row); }
-        size_t numNegativeBuckets(size_t row) const { return is_float[row] ? negative_values_float.sizeAt(row) : negative_values_int.sizeAt(row); }
-        bool zeroCountIsZero(size_t row) const { return is_float[row] ? (zero_count_float[row] == 0) : (zero_count_int[row] == 0); }
-    };
 
     /// Binds `InvalidHistogramThrower::fail` to a row.
     class FailAtRow
@@ -356,7 +244,7 @@ void validateTimeSeriesHistograms(const Block & histograms_block, UInt64 max_buc
     if (!num_rows)
         return;
 
-    const HistogramsColumns columns{histograms_block};
+    const TimeSeriesHistogramsColumnsView columns{histograms_block};
     const InvalidHistogramThrower thrower{histograms_block};
 
     for (size_t row = 0; row != num_rows; ++row)
@@ -392,6 +280,8 @@ void validateTimeSeriesHistograms(const Block & histograms_block, UInt64 max_buc
         }
         else
         {
+            checkIntBuckets(columns.positive_values_int[row], "positive", fail);
+            checkIntBuckets(columns.negative_values_int[row], "negative", fail);
             checkIntCount(columns.count_int[row], columns.zero_count_int[row],
                 columns.positive_values_int[row], columns.negative_values_int[row], columns.sum[row], fail);
         }

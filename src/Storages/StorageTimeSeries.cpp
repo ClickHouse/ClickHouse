@@ -1073,6 +1073,7 @@ The Prometheus remote-write protocol fills the group from the native histograms 
 with `send_native_histograms: true`: the integer bucket deltas are decoded to absolute counts, everything else is stored as sent.
 A table of a version before 6 has no histograms table, so it stores the float samples of a request and drops its native
 histograms with a warning, counting them in the `PrometheusRemoteWriteDroppedHistograms` profile event.
+The Prometheus remote-read protocol returns the native histograms exactly as they were written.
 
 Reading the group returns the histogram samples of every time series, for example the buckets of every histogram:
 

@@ -86,12 +86,6 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Whether tables of the specified version have the histograms target.
-    bool versionSupportsHistograms(UInt64 version)
-    {
-        return version >= TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET;
-    }
-
     /// Parses a codec written as `CODEC(...)`.
     ASTPtr parseCodec(std::string_view codec)
     {
@@ -550,7 +544,7 @@ namespace
             old_settings.removeSetting("id_type");
 
         /// The settings of the histograms table aren't copied into a table pinned to a version without that table.
-        if (const auto * value = get_new_value("version"); value && !versionSupportsHistograms(SettingFieldUInt64{*value}.value))
+        if (const auto * value = get_new_value("version"); value && !timeSeriesVersionSupportsHistograms(SettingFieldUInt64{*value}.value))
         {
             const auto & names = TimeSeriesHistogramsSettings::getNames();
             old_settings.removeSettings(Strings{names.begin(), names.end()});
@@ -2105,7 +2099,7 @@ namespace
                 continue;
 
             /// A table pinned to a version without the histograms target needs nothing for it from the old table.
-            if ((kind == ViewTarget::Histograms) && !versionSupportsHistograms(new_settings[TimeSeriesSetting::version]))
+            if ((kind == ViewTarget::Histograms) && !timeSeriesVersionSupportsHistograms(new_settings[TimeSeriesSetting::version]))
                 continue;
 
             if (!hasTargetTableID(create_query, kind) && !hasInnerColumns(create_query, kind))
@@ -2166,7 +2160,7 @@ namespace
 
         /// The `histograms` group is generated in its flattened form regardless of the `flatten_nested` setting,
         /// so the definition doesn't depend on a query-level setting.
-        if (versionSupportsHistograms(version))
+        if (timeSeriesVersionSupportsHistograms(version))
         {
             const auto timestamp_column = TimeSeriesHistogramsColumns::getOuterTimestampColumn(timestamp_type);
             add_column(timestamp_column.name, timestamp_column.type);
@@ -2323,7 +2317,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 create_query.targets->removeTarget(ViewTarget::RecentSamples);
         }
 
-        const bool histograms_enabled = versionSupportsHistograms(settings[TimeSeriesSetting::version]);
+        const bool histograms_enabled = timeSeriesVersionSupportsHistograms(settings[TimeSeriesSetting::version]);
         if (!histograms_enabled && create_query.targets)
             create_query.targets->removeTarget(ViewTarget::Histograms);
 
@@ -2387,7 +2381,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
 
         const UInt64 version = getTimeSeriesSettingVersion(create_query);
         const bool has_histograms_target = create_query.targets && create_query.targets->tryGetTarget(ViewTarget::Histograms);
-        if (versionSupportsHistograms(version) && !has_histograms_target)
+        if (timeSeriesVersionSupportsHistograms(version) && !has_histograms_target)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "The definition of TimeSeries table {} has version {} but no HISTOGRAMS target, which every table of version {} and later must have",
                 table_id.getNameForLogs(), version, TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET);

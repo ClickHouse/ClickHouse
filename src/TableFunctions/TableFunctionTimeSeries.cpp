@@ -243,6 +243,16 @@ The function returns three columns:
 - `timestamp` - Contains timestamps.
 - `value` - Contains values.
 
+For a TimeSeries table of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 6 and later,
+which stores native histograms, the function returns the histogram samples too, with a fourth column:
+- `histogram` - An empty array for a float sample, and an array with one element for a histogram sample. The element is a tuple
+  with the fields of the histogram as they are stored in the [histograms table](/reference/functions/table-functions/timeSeriesHistograms):
+  `is_float`, `counter_reset_hint`, `schema`, `zero_threshold`, `sum`, `positive_spans`, `negative_spans`, `custom_values`,
+  and the counts of the flavour the histogram uses: `count_int`, `zero_count_int`, `positive_values_int`, `negative_values_int`
+  for an integer histogram (`is_float = false`), `count_float`, `zero_count_float`, `positive_values_float`, `negative_values_float`
+  for a float histogram (`is_float = true`). The fields of the other flavour must be ignored.
+  The `value` of a histogram sample is 0.
+
 There is no specific order for returned data.
 
 ## Example {#example}

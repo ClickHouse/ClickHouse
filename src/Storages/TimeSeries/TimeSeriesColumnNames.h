@@ -48,6 +48,10 @@ struct TimeSeriesColumnNames
     /// Tables of versions before `TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET` have no such columns.
     static constexpr const char * Histograms = "histograms";
 
+    /// The column with the histogram samples returned by `timeSeriesSelector` for tables of versions
+    /// `TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET` and later, see `TimeSeriesHistogramsColumns::getHistogramColumnType`.
+    static constexpr const char * Histogram = "histogram";
+
     /// Internal columns used by steps of prometheus query evaluation.
     /// The function prometheusQuery() doesn't output them.
     static constexpr const char * Group = "group";

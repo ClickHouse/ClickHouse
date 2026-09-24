@@ -5,6 +5,8 @@ import requests
 
 from helpers.cluster import ClickHouseCluster
 from .prometheus_test_utils import (
+    extract_protobuf_from_remote_read_response,
+    get_response_to_remote_read,
     get_response_to_remote_write,
     remote_pb2,
     send_protobuf_to_remote_write,
@@ -363,3 +365,107 @@ def test_table_without_histograms_drops_them():
     assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + 1
     assert events_after["PrometheusRemoteWriteDroppedHistograms"] == events_before["PrometheusRemoteWriteDroppedHistograms"] + 1
     assert node.contains_in_log("Dropped 1 native histogram samples: the table has no histograms table because its version 5 is older than 6")
+
+
+def remote_read(start_ms, end_ms):
+    """Reads every time series in [start_ms, end_ms] over remote read: {sorted labels: prompb.TimeSeries}."""
+    read_request = remote_pb2.ReadRequest()
+    query = read_request.queries.add()
+    query.start_timestamp_ms = start_ms
+    query.end_timestamp_ms = end_ms
+    query.matchers.append(types_pb2.LabelMatcher(type=types_pb2.LabelMatcher.Type.RE, name="__name__", value=".+"))
+    response = get_response_to_remote_read(node.ip_address, 9093, "/read", read_request)
+    read_response = extract_protobuf_from_remote_read_response(response)
+    return {tuple(sorted((label.name, label.value) for label in series.labels)): series for series in read_response.results[0].timeseries}
+
+
+def labels_key(**labels):
+    return tuple(sorted(labels.items()))
+
+
+def test_remote_read_returns_histograms_exactly():
+    # Every histogram written by remote write is read back by remote read as the same message. Both arms of the `count` and
+    # `zero_count` oneofs are set explicitly, as Prometheus sends them, so the messages compare equal. Every field has a
+    # distinct value, so a mix-up of two fields of the same type (e.g. the positive and the negative side) can't go unnoticed.
+    integer_histogram = types_pb2.Histogram(
+        count_int=15, zero_count_int=2, sum=12.5, schema=3, zero_threshold=0.001,
+        positive_spans=[span(-2, 2), span(1, 1)], positive_deltas=[3, -1, 1], negative_spans=[span(0, 1)], negative_deltas=[5],
+        reset_hint=types_pb2.Histogram.ResetHint.NO, timestamp=TIMESTAMP_MS,
+    )
+    float_histogram = types_pb2.Histogram(
+        count_float=5.75, zero_count_float=0.5, sum=3.25, schema=0, zero_threshold=0.002,
+        positive_spans=[span(0, 2)], positive_counts=[2.5, 2.5], negative_spans=[span(1, 1)], negative_counts=[0.25],
+        reset_hint=types_pb2.Histogram.ResetHint.GAUGE, timestamp=TIMESTAMP_MS + 1000,
+    )
+    custom_buckets_histogram = types_pb2.Histogram(
+        count_int=9, zero_count_int=0, sum=4.2, schema=-53, custom_values=[0.1, 0.5, 1],
+        positive_spans=[span(0, 3)], positive_deltas=[2, 1, 1], timestamp=TIMESTAMP_MS + 2000,
+    )
+    bucket = (1 << 53) + 1
+    zero_count = (1 << 60) + 3
+    big_histogram = types_pb2.Histogram(
+        count_int=bucket + zero_count, zero_count_int=zero_count, sum=1, positive_spans=[span(0, 1)], positive_deltas=[bucket],
+        timestamp=TIMESTAMP_MS,
+    )
+
+    send(
+        make_write_request(
+            ({"__name__": "hist", "job": "api"}, [integer_histogram, float_histogram, custom_buckets_histogram], {TIMESTAMP_MS + 3000: 1.5}),
+            ({"__name__": "big"}, [big_histogram]),
+            ({"__name__": "float_only"}, [], {TIMESTAMP_MS: 2.0}),
+        )
+    )
+
+    series = remote_read(TIMESTAMP_MS, TIMESTAMP_MS + 10000)
+    assert sorted(series) == [labels_key(__name__="big"), labels_key(__name__="float_only"), labels_key(__name__="hist", job="api")]
+
+    hist = series[labels_key(__name__="hist", job="api")]
+    assert list(hist.histograms) == [integer_histogram, float_histogram, custom_buckets_histogram]
+    assert [(sample.timestamp, sample.value) for sample in hist.samples] == [(TIMESTAMP_MS + 3000, 1.5)]
+
+    assert list(series[labels_key(__name__="big")].histograms) == [big_histogram]
+
+    float_only = series[labels_key(__name__="float_only")]
+    assert [(sample.timestamp, sample.value) for sample in float_only.samples] == [(TIMESTAMP_MS, 2.0)]
+    assert len(float_only.histograms) == 0
+
+    # The time range of the read applies to histograms too.
+    series = remote_read(TIMESTAMP_MS + 500, TIMESTAMP_MS + 1500)
+    assert list(series[labels_key(__name__="hist", job="api")].histograms) == [float_histogram]
+
+
+def test_remote_read_returns_stale_markers_bit_exactly():
+    stale = types_pb2.Histogram(count_int=0, zero_count_int=0, sum=STALE_NAN, timestamp=TIMESTAMP_MS)
+    send(make_write_request(({"__name__": "stale"}, [stale])))
+
+    [histogram] = remote_read(TIMESTAMP_MS, TIMESTAMP_MS + 1000)[labels_key(__name__="stale")].histograms
+    assert struct.pack("<d", histogram.sum) == struct.pack("<Q", 0x7FF0000000000002)
+    assert histogram.count_int == 0
+    assert histogram.timestamp == TIMESTAMP_MS
+
+
+def test_remote_read_resolves_conflicting_samples():
+    # Prometheus keeps the sample written first and rejects the others. ClickHouse doesn't keep the order of writes, so it
+    # resolves conflicts when reading: identical samples collapse into one, of different histograms the one with the greatest
+    # count wins regardless of the order of writes, and a float sample beats a histogram sample.
+    def histogram(count):
+        return types_pb2.Histogram(
+            count_int=count, zero_count_int=0, sum=1, positive_spans=[span(0, 1)], positive_deltas=[count], timestamp=TIMESTAMP_MS
+        )
+
+    for request in [
+        make_write_request(({"__name__": "identical"}, [histogram(3)]), ({"__name__": "smaller_first"}, [histogram(3)]),
+                           ({"__name__": "greater_first"}, [histogram(5)]), ({"__name__": "float_and_histogram"}, [histogram(3)])),
+        make_write_request(({"__name__": "identical"}, [histogram(3)]), ({"__name__": "smaller_first"}, [histogram(5)]),
+                           ({"__name__": "greater_first"}, [histogram(3)]), ({"__name__": "float_and_histogram"}, [], {TIMESTAMP_MS: 7.0})),
+    ]:
+        send(request)
+
+    series = remote_read(TIMESTAMP_MS, TIMESTAMP_MS + 1000)
+    assert list(series[labels_key(__name__="identical")].histograms) == [histogram(3)]
+    assert list(series[labels_key(__name__="smaller_first")].histograms) == [histogram(5)]
+    assert list(series[labels_key(__name__="greater_first")].histograms) == [histogram(5)]
+
+    float_and_histogram = series[labels_key(__name__="float_and_histogram")]
+    assert [(sample.timestamp, sample.value) for sample in float_and_histogram.samples] == [(TIMESTAMP_MS, 7.0)]
+    assert len(float_and_histogram.histograms) == 0
