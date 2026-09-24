@@ -1,14 +1,157 @@
-1
-1
-1
-1
-1
-1
+-- armed and demoted: memory-efficient merge over two producers, no shuffle scatter
+MergingAggregated
+Keys: __table1.k
+Aggregates:
+    sum(__table1.v)
+      Function: sum(UInt64) → UInt64
+      Arguments: __table1.v
+Mode: memory-efficient
+  ReadFromRemote (Read from remote replica)
+    MergingAggregated (merge)
+    Keys: __table1.k
+    Aggregates:
+        sum(__table1.v)
+          Function: sum(UInt64) → UInt64
+          Arguments: __table1.v
+    Mode: memory-efficient
+      GatherExchange
+        Aggregating (partial)
+        Keys: __table1.k
+        Aggregates:
+            sum(__table1.v)
+              Function: sum(UInt64) → UInt64
+              Arguments: __table1.v
+        Skip merging: 0
+          ShuffleExchange (any)
+            ReadFromMergeTree (default.t_shuffle_bucket_order)
+            ReadType: Default
+            Parts: 1
+            Granules: 782
+    MergingAggregated (merge)
+    Keys: __table1.k
+    Aggregates:
+        sum(__table1.v)
+          Function: sum(UInt64) → UInt64
+          Arguments: __table1.v
+    Mode: memory-efficient
+      GatherExchange
+        Aggregating (partial)
+        Keys: __table1.k
+        Aggregates:
+            sum(__table1.v)
+              Function: sum(UInt64) → UInt64
+              Arguments: __table1.v
+        Skip merging: 0
+          ShuffleExchange (any)
+            ReadFromMergeTree (default.t_shuffle_bucket_order)
+            ReadType: Default
+            Parts: 1
+            Granules: 782
+-- the force setting loses to the guard
+Expression ((Project names + Projection))
+  MergingAggregated
+    ReadFromRemote (Read from remote replica)
+      MergingAggregated (merge)
+        GatherExchange
+          Aggregating (partial)
+            ShuffleExchange (any)
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_shuffle_bucket_order)
+      MergingAggregated (merge)
+        GatherExchange
+          Aggregating (partial)
+            ShuffleExchange (any)
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_shuffle_bucket_order)
 7	600056
 7	600056
-1
-1
-1
-1
-1
-1
+-- nothing promises bucket order: the shuffle scatter stays
+Expression ((Project names + Projection))
+  MergingAggregated
+    ReadFromRemote (Read from remote replica)
+      GatherExchange
+        Aggregating
+          ShuffleExchange (by hash([__table1.k]))
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.t_shuffle_bucket_order)
+      GatherExchange
+        Aggregating
+          ShuffleExchange (by hash([__table1.k]))
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.t_shuffle_bucket_order)
+-- complete stage: the shuffle scatter stays
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      ShuffleExchange (by hash([__table1.k]))
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t_shuffle_bucket_order)
+-- complete stage under the force setting: the shuffle scatter stays
+GatherExchange
+  Expression ((Project names + Projection))
+    Aggregating
+      ShuffleExchange (by hash([__table1.k]))
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t_shuffle_bucket_order)
+-- promise from distributed_aggregation_memory_efficient alone
+Expression ((Project names + Projection))
+  MergingAggregated
+    ReadFromRemote (Read from remote replica)
+      MergingAggregated (merge)
+        GatherExchange
+          Aggregating (partial)
+            ShuffleExchange (any)
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_shuffle_bucket_order)
+      MergingAggregated (merge)
+        GatherExchange
+          Aggregating (partial)
+            ShuffleExchange (any)
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_shuffle_bucket_order)
+-- promise from enable_memory_bound_merging_of_aggregation_results alone
+MergingAggregated
+Keys: __table1.k
+Aggregates:
+    sum(__table1.v)
+      Function: sum(UInt64) → UInt64
+      Arguments: __table1.v
+  ReadFromRemote (Read from remote replica)
+    MergingAggregated (merge)
+    Keys: __table1.k
+    Aggregates:
+        sum(__table1.v)
+          Function: sum(UInt64) → UInt64
+          Arguments: __table1.v
+      GatherExchange
+        Aggregating (partial)
+        Keys: __table1.k
+        Aggregates:
+            sum(__table1.v)
+              Function: sum(UInt64) → UInt64
+              Arguments: __table1.v
+        Skip merging: 0
+          ShuffleExchange (any)
+            ReadFromMergeTree (default.t_shuffle_bucket_order)
+            ReadType: Default
+            Parts: 1
+            Granules: 782
+    MergingAggregated (merge)
+    Keys: __table1.k
+    Aggregates:
+        sum(__table1.v)
+          Function: sum(UInt64) → UInt64
+          Arguments: __table1.v
+      GatherExchange
+        Aggregating (partial)
+        Keys: __table1.k
+        Aggregates:
+            sum(__table1.v)
+              Function: sum(UInt64) → UInt64
+              Arguments: __table1.v
+        Skip merging: 0
+          ShuffleExchange (any)
+            ReadFromMergeTree (default.t_shuffle_bucket_order)
+            ReadType: Default
+            Parts: 1
+            Granules: 782
