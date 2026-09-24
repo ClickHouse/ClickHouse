@@ -446,6 +446,12 @@ then
 fi
 while IFS= read -r loop_registered_name
 do
+    # A name whose only carrier is an #if 0 region is not registered by any build,
+    # so the dead code filter above drops it and the output is right without it.
+    if grep -Fxq "$loop_registered_name" "$DEAD_CODE_NAMES_FILE"
+    then
+        continue
+    fi
     if ! grep -Fxq "\"$loop_registered_name\"" "$OUTPUT_FILE"
     then
         echo "error: $loop_registered_name is registered through a loop variable and was" \
