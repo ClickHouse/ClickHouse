@@ -503,10 +503,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (query.if_empty)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
 
-    /// Every later step waits for the database to start, and the last of them runs in the noexcept
-    /// `~LoadTask`, where a wait cannot be refused. Refuse here instead, while nothing has been
-    /// dropped yet. A startup that failed for any other reason must still leave the database
-    /// droppable.
+    /// The later waits for the database to start cannot be refused: the last of them runs in the
+    /// noexcept `~LoadTask`. A startup that failed for another reason must still leave it droppable.
     try
     {
         database->waitDatabaseStarted();

@@ -1162,8 +1162,7 @@ void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
             break;
     }
 
-    /// WARNING: it is important not to throw below this point, otherwise the matching
-    /// `decreaseWaitingQueryAmount` will never be called.
+    /// WARNING: do not throw below this point, or the matching `decreaseWaitingQueryAmount` is never called.
 
     CurrentMetrics::add(CurrentMetrics::WaitingQuery);
 }
@@ -1185,7 +1184,6 @@ void ProcessList::decreaseWaitingQueryAmount(const QueryStatusPtr &)
 void ProcessList::incrementWaiters(const QueryStatusPtr & status)
 {
     std::lock_guard lock(status->waiting_mutex);
-    /// The check runs before `waiting_threads` moves, so a refused query is left exactly as it was.
     if (status->waiting_threads == 0)
         increaseWaitingQueryAmount(status);
     ++status->waiting_threads;
@@ -1201,10 +1199,9 @@ void ProcessList::decrementWaiters(const QueryStatusPtr & status)
         decreaseWaitingQueryAmount(status);
 }
 
-/// The process list and the query to account for, or nullptr when the blocking thread is not one of
-/// the queries these counters cover: server or `clickhouse-local` startup, an AsyncLoader worker, or
-/// an internal query. All three inputs are fixed while the query's own thread is blocked, so the
-/// increment and the decrement of one wait always see the same verdict.
+/// Process list and the query to account for, or nullptr when the waiter is not a counted query:
+/// server or `clickhouse-local` startup, an AsyncLoader worker, or an internal query. A query's
+/// process list element does not change, so one wait's increment and decrement always agree.
 static ProcessList * getProcessListForWaitingQuery(QueryStatusPtr & status)
 {
     auto query_context = CurrentThread::tryGetQueryContext();

@@ -508,7 +508,7 @@ void AsyncLoader::remove(const LoadJobSet & jobs)
             chassert(info->second.isExecuting());
             lock.unlock();
             {
-                // Wait for job to finish. `~LoadTask` is noexcept, so this wait must not be refusable.
+                // Wait for job to finish
                 std::unique_lock job_lock{job->mutex};
                 wait(job_lock, job, /* run_waiter_callbacks = */ false);
             }

@@ -152,9 +152,8 @@ protected:
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
 
-    /// Guards this query's transition between waiting for load jobs and not waiting: the first
-    /// blocked thread registers the query in the waiting counters, the last one to wake up
-    /// unregisters it. Taken only when a thread enters or leaves a wait, never during query admission.
+    /// Guards this query's transition between waiting for load jobs and not waiting: the first blocked
+    /// thread registers the query in the waiting counters, the last one to wake up unregisters it.
     std::mutex waiting_mutex;
     /// Number of threads for the query that are waiting for load jobs
     UInt64 waiting_threads TSA_GUARDED_BY(waiting_mutex) = 0;
@@ -218,8 +217,7 @@ protected:
 
     bool is_internal;
 
-    /// `KILL ...` and introspection-port queries have to reach a server that is still loading, so they
-    /// are counted among the waiting queries but are never refused by `max_waiting_queries`.
+    /// `KILL` and introspection-port queries are counted as waiting queries, but never refused by `max_waiting_queries`.
     bool is_waiting_limit_exempt = false;
 public:
     QueryStatus(
@@ -601,7 +599,6 @@ public:
         return max_waiting_queries_amount.load();
     }
 
-    /// Register (unregister) `status` as waiting for load jobs. Both are plain counter updates.
     void incrementWaiters(const QueryStatusPtr & status);
     void decrementWaiters(const QueryStatusPtr & status);
 
@@ -633,9 +630,7 @@ public:
     void killAllQueries();
 };
 
-/// `LoadJob::on_waiters_increment` / `on_waiters_decrement` for load jobs that a user query may have
-/// to wait for. Such a query is registered as waiting in the process list while it is blocked in
-/// `AsyncLoader::wait`; past `max_waiting_queries` the increment throws, which cancels the wait.
+/// `LoadJob::on_waiters_increment` / `on_waiters_decrement` for load jobs a user query may wait for.
 void onLoadJobWaitersIncrement(const LoadJobPtr & job);
 void onLoadJobWaitersDecrement(const LoadJobPtr & job);
 
