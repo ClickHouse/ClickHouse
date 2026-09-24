@@ -193,6 +193,13 @@ def committed_add_paths(started_cluster, storage_type, path):
     return result
 
 
+def assert_committed_files_exist(started_cluster, path):
+    """Every `add.path` of every commit (from any writer) is an object in the bucket."""
+    objects = {obj.object_name for obj in started_cluster.minio_client.list_objects(started_cluster.minio_bucket, f"{path}/", recursive=True)}
+    missing = {f"{path}/{p}" for p in committed_add_paths(started_cluster, "s3", path)} - objects
+    assert not missing, missing
+
+
 # ---------------------------------------------------------------------------------------------
 # type and partition matrix, read back by Spark and delta-rs
 # ---------------------------------------------------------------------------------------------
@@ -364,9 +371,36 @@ def test_partition_types_spark_readback_and_pruning(started_cluster):
         (5, True, "2024-01-31", "2024-01-31 23:59:59.5", "1.50", 7, None),
     ], got
 
-    # delta-rs (kernel-based) cannot open this table: ClickHouse writes the decimal partition value
-    # as "1.5" instead of the scale-exact "1.50"; reported separately, Spark tolerates it.
     node.query(f"DROP TABLE {path}")
+
+    # delta-rs (kernel-based) cannot open a table with the decimal partition column: ClickHouse
+    # commits "1.5" instead of the scale-exact "1.50" (https://github.com/ClickHouse/ClickHouse/issues/120521),
+    # Spark tolerates it. The same rows without the decimal column must read back exactly in delta-rs.
+    path_rs = randomize_table_name("test_partition_types_rs")
+    spark.sql(
+        f"""
+        CREATE TABLE delta.`{s3_path(started_cluster, path_rs)}` (
+            id INT, p_bool BOOLEAN, p_date DATE, p_ts TIMESTAMP, p_int INT, p_str STRING
+        ) USING delta PARTITIONED BY (p_bool, p_date, p_ts, p_int, p_str)
+        """
+    )
+    node.query(
+        f"""
+        CREATE TABLE {path_rs} (
+            id Int32, p_bool Bool, p_date Date32, p_ts DateTime64(6), p_int Nullable(Int32), p_str Nullable(String)
+        ) ENGINE = {delta_engine_definition(started_cluster, "s3", path_rs)}
+        """
+    )
+    node.query(f"INSERT INTO {path_rs} VALUES " + ", ".join("(" + ", ".join(str(v) for v in (row[0], row[1], row[2], row[3], row[5], row[6])) + ")" for row in rows))
+    got = deltars_rows(deltars_table(started_cluster, "s3", path_rs), "id")
+    assert got == [
+        (1, True, "2024-01-31", "2024-01-31 23:59:59.500000", 7, "plain"),
+        (2, False, "1970-01-01", "1970-01-01 00:00:00", -1, "a b"),
+        (3, True, "2000-02-29", "2000-02-29 12:00:00", None, "x/y=z%"),
+        (4, False, "2024-01-31", "2024-01-31 23:59:59.500000", 7, "日本語"),
+        (5, True, "2024-01-31", "2024-01-31 23:59:59.500000", 7, None),
+    ], got
+    node.query(f"DROP TABLE {path_rs}")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -688,7 +722,9 @@ def test_concurrent_clickhouse_and_deltars_appends(started_cluster):
     assert "commit conflict at version 1" in slow_result[0][1], slow_result
     assert log_versions(started_cluster, "s3", path) == [0, 1]
     assert node.query(f"SELECT who, count() FROM {path} GROUP BY who FORMAT TSV") == "delta-rs\t10\n"
-    assert set(list_delta_data_files(started_cluster, "s3", path)) == {f"{path}/{p}" for p in committed_add_paths(started_cluster, "s3", path)}
+    # The loser removed its own data files, and the winner's file is still there.
+    assert list_delta_data_files(started_cluster, "s3", path) == []
+    assert_committed_files_exist(started_cluster, path)
 
     # Interleaved appends from both writers; every acknowledged commit must be visible to both readers.
     rounds = 8
@@ -736,6 +772,9 @@ def test_concurrent_clickhouse_and_deltars_appends(started_cluster):
         expected += f"delta-rs\t{len(rs_ok) * 10}\n"
     assert result == expected, result
     assert len(deltars_rows(deltars_table(started_cluster, "s3", path), "id")) == (len(ch_ok) + len(rs_ok)) * 10
+    # No orphan from a losing ClickHouse commit, no committed file missing from either writer.
+    assert len(list_delta_data_files(started_cluster, "s3", path)) == len(ch_ok)
+    assert_committed_files_exist(started_cluster, path)
     node.query(f"DROP TABLE {path}")
 
 
