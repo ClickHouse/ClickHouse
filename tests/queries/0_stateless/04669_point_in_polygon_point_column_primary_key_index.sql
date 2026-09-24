@@ -1,5 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- https://github.com/ClickHouse/ClickHouse/issues/54805
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- EXPLAIN output may differ between old and new format
 SET explain_query_plan_default = 'legacy';

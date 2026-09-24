@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: creates MergeTree table with ORDER BY, output row order depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 -- env SQL_FUZZY_FUNCTIONS=arrayEnumerateUniqRanked,arrayEnumerateDenseRanked SQL_FUZZY_RUNS=1000 clickhouse-test fuzzy
 
 SELECT arrayEnumerateUniq(         [1,1,2,2,1,1],    [1,2,1,2,2,2]);

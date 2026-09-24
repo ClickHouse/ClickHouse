@@ -1,4 +1,7 @@
 -- Redundant parentheses must not turn a unique sorting key into an empty effective patch key.
+-- Disable force_primary_key_reverse_order: `ALTER TABLE ... MODIFY ORDER BY` cannot express `DESC`, so it would change the direction of a forced descending key
+SET force_primary_key_reverse_order = 0;
+
 SET enable_lightweight_update = 1, apply_patch_parts = 1, max_threads = 1;
 SET log_queries = 1, log_queries_probability = 1, log_profile_events = 1;
 

@@ -1,6 +1,8 @@
 -- Test for ensuring correct accounting of SelectedMarks and SelectedRanges
 -- with use_skip_indexes_on_data_read = 1
 -- Tags: no-parallel-replicas : need accurate skip index filtering statistics
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;

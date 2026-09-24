@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
+
 DROP DICTIONARY IF EXISTS uk_mortgage_rates_dict;
 DROP TABLE IF EXISTS uk_mortgage_rates;
 DROP VIEW IF EXISTS uk_prices_aggs_view;

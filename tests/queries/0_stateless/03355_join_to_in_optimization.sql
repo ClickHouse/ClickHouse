@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
+
 -- Tags: no-random-settings, no-random-merge-tree-settings
 -- ^ EXPLAIN output is sensitive to randomized query-plan settings (e.g. parallel replicas,
 --   join rewrites), which would otherwise make this test flaky under the flaky check.

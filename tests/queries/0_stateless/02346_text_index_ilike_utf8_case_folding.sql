@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 -- no-fasttest: lowerUTF8/upperUTF8 require a build with ICU.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- `ILIKE '%needle%'` folds case per code point with `Poco::Unicode::toLower`, which agrees neither with the
 -- ICU full case mapping of `lowerUTF8`/`upperUTF8` nor with the ASCII-only matching of the dictionary scan.

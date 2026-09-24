@@ -4,6 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests refreshable materialized views, creates MergeTree tables internally
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 test_user="user_03258_$CLICKHOUSE_DATABASE"
 second_db="${CLICKHOUSE_DATABASE}_03258"
 $CLICKHOUSE_CLIENT -q "

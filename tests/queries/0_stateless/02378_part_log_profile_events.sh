@@ -18,6 +18,10 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO test SELECT number AS key, sipHash64(number) AS val FROM numbers(512);
 "
 
+
+# Disable force_primary_key_reverse_order: tests part_log profile events with MergeTree, output depends on key direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS part_log;
     SELECT

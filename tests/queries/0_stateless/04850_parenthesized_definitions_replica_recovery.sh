@@ -8,6 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 # A replica that failed after creating its ZooKeeper nodes but before saving the local metadata is
 # recognized and reused when the table is created again. The nodes may have been written by a server
 # that kept the redundant parentheses the user wrote (26.5..26.7), so `createReplicaAttempt` must

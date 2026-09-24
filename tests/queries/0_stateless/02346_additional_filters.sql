@@ -1,4 +1,7 @@
 -- Tags: distributed
+-- Disable force_primary_key_reverse_order: tests additional_table_filters on MergeTree, output row order depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 drop table if exists table_1;
 drop table if exists table_2;
 drop table if exists v_numbers;

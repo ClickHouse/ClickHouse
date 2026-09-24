@@ -120,18 +120,23 @@ struct MatchResult
 
 /// Optimize in case of exact match with order key element
 /// or in some simple cases when order key element is wrapped into monotonic function.
+/// reverse_indicator: 1 for normal (ASC) sorting key columns, -1 for reversed (DESC).
+/// When a sorting key column is reversed, the physical data order is opposite to what
+/// the sort description direction would normally imply. We multiply direction by
+/// reverse_indicator so the match reflects the actual physical read direction.
 MatchResult matchSortDescriptionAndKey(
     const ExpressionActions & elements_actions,
     const SortColumnDescription & sort_column,
     const String & sorting_key_column,
-    const DataTypePtr & sorting_key_type)
+    const DataTypePtr & sorting_key_type,
+    int reverse_indicator)
 {
     /// If required order depend on collation, it cannot be matched with primary key order.
     /// Because primary keys cannot have collations.
     if (sort_column.collator)
         return {};
 
-    MatchResult result{sort_column.direction, false};
+    MatchResult result{sort_column.direction * reverse_indicator, false};
 
     /// For the path: order by (sort_column, ...)
     if (sort_column.column_name == sorting_key_column)
@@ -224,6 +229,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     /// data_types is built from the key's own sample block, so it is parallel to column_names.
     const Names & sorting_key_columns = sorting_key.column_names;
     const DataTypes & sorting_key_types = sorting_key.data_types;
+    const auto & sorting_key_reverse_flags = sorting_key.reverse_flags;
     /// read_direction will be set from the first non-constant ORDER BY column
     int read_direction = 0;
 
@@ -240,8 +246,9 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
         if (forbidden_columns.contains(description[desc_pos].column_name))
             break;
 
+        int reverse_indicator = (!sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[key_pos]) ? -1 : 1;
         auto match = matchSortDescriptionAndKey(
-            *actions[desc_pos], description[desc_pos], sorting_key_columns[key_pos], sorting_key_types[key_pos]);
+            *actions[desc_pos], description[desc_pos], sorting_key_columns[key_pos], sorting_key_types[key_pos], reverse_indicator);
 
         /// If the ORDER BY column matches a fixed (constant) key column,
         /// add it to the sort description but don't let it set read_direction.

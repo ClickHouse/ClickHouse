@@ -5,6 +5,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: SHOW CREATE TABLE output checks ORDER BY clause
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS alter_mt"
 
 $CLICKHOUSE_CLIENT --query "CREATE TABLE alter_mt (key Int64, value String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/alter_mt', '1') ORDER BY key"

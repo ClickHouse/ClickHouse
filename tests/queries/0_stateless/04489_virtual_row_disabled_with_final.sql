@@ -1,4 +1,6 @@
 -- Tags: no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- SELECT ... FINAL must not lose rows when the read-in-order virtual row is enabled.
 -- ORDER BY with a LIMIT is required: without it the read-in-order plan is not built at all.

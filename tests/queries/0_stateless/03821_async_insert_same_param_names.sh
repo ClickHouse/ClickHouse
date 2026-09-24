@@ -5,7 +5,10 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_async_params"
+# Async inserts with reversed keys cause data cross-contamination between concurrent inserts
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_async_params"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_async_params (x UInt64) ENGINE = MergeTree ORDER BY x"
 
 # Send concurrent inserts with same param name, different values

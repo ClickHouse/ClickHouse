@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests negative limit/offset, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 -- Random settings limits: index_granularity=(8192, None)
 -- Reason: a tiny index_granularity (e.g. 4) creates ~250k granules per 1M-row MergeTree table, which slows the test down enough to time out.
 

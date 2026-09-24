@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-random-merge-tree-settings
 -- no-replicated-database: hypothetical indexes are session-scoped and not replicated
 -- no-random-merge-tree-settings: needs a deterministic granule layout
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_hypo_partial;
 CREATE TABLE t_hypo_partial (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a

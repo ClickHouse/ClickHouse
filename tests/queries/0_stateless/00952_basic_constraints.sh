@@ -4,6 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests constraints with MergeTree, output depends on key direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 EXCEPTION_TEXT=violated
 EXCEPTION_SUCCESS_TEXT=ok
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_constraints;"

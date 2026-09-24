@@ -2,6 +2,8 @@
 -- `CREATE TABLE dst AS src <storage_clause>` (e.g. SETTINGS or ORDER BY) without an explicit ENGINE
 -- must inherit the ENGINE of `src` (it used to be silently replaced with the default engine) and
 -- merge the explicitly specified settings on top of `src`'s settings (the latter used to be dropped).
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_47240_src;
 DROP TABLE IF EXISTS t_47240_settings;

@@ -1,4 +1,6 @@
 -- Tags: zookeeper, no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: tests VersionedCollapsingMergeTree, FINAL result depends on sort order
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS versioned_collapsing_table;
 

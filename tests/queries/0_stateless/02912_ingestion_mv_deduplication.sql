@@ -1,4 +1,6 @@
 -- Tags: zookeeper
+-- Reversed key order changes block deduplication hashes, breaking MV deduplication logic
+SET force_primary_key_reverse_order = 0;
 SET session_timezone = 'UTC';
 SET optimize_on_insert = 1;
 

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS bf_tokenbf_map_keys_test;
 DROP TABLE IF EXISTS bf_ngrambf_map_keys_test;
 

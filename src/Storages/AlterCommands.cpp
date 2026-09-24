@@ -1844,7 +1844,7 @@ void AlterCommands::apply(
             auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
             FunctionNameNormalizer::visit(partition_key.get());
             metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
+                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, metadata_copy.sorting_key, &metadata_copy.partition_key, context));
         }
     }
 
