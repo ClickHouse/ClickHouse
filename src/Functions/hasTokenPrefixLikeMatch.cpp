@@ -184,6 +184,7 @@ In these cases the function is evaluated on the raw `input` values, still with t
 constexpr auto tokenizer_description = R"(
 Prior to searching, the function tokenizes `input` using the tokenizer specified for the text index on `input`, and the `splitByNonAlpha` tokenizer if `input` has no text index.
 The optional `tokenizer` argument sets the tokenizer explicitly, then the text index is used only if it has the same tokenizer.
+If several text indexes on `input` would give the function a different tokenizer or preprocessor, it throws an exception, and the `tokenizer` argument selects among different tokenizers.
 )";
 
 FunctionDocumentation::Arguments commonArguments(const char * needle_name, const char * needle_description)

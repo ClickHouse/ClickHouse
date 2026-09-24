@@ -628,6 +628,49 @@ private:
             || function_name == "hasPhrase";
     }
 
+    /// A per-token pattern function takes the tokenizer and the preprocessor from the index it is analyzed for, so all such
+    /// indexes must agree on them, whatever the settings. Returns the first of them by name, which then serves the function.
+    std::optional<String> choosePerTokenPatternFunctionIndex(const ActionsDAG::Node & function_node, const ActionsDAG::Node & canonical_node) const
+    {
+        const auto function_name = function_node.function_base->getName();
+        const auto haystack_name = getNameWithoutAliases(function_node.children[0]);
+
+        std::map<String, String> rewrite_by_index;
+        for (const auto & [index_name, info] : text_index_read_infos)
+        {
+            const auto & condition = typeid_cast<const MergeTreeIndexConditionText &>(*info.condition);
+            if (condition.getHeader().columns() != 1)
+                continue;
+
+            auto search_query = condition.createTextSearchQuery(canonical_node);
+            if (!search_query || search_query->getFunctionName() != function_name || !condition.canAnswerFunctionNode(function_node))
+                continue;
+
+            String rewrite = "tokenizer = " + condition.getTokenizer()->getDescription();
+            auto preprocessor = condition.getPreprocessor();
+            if (preprocessor && MergeTreeIndexConditionText::perTokenPatternFunctionAppliesPreprocessor(function_name, *preprocessor))
+                rewrite += ", preprocessor = " + preprocessor->getExpressionAST(haystack_name)->formatForErrorMessage();
+
+            rewrite_by_index.emplace(index_name, std::move(rewrite));
+        }
+
+        if (rewrite_by_index.empty())
+            return {};
+
+        const auto & [chosen_index, chosen_rewrite] = *rewrite_by_index.begin();
+        for (const auto & [index_name, rewrite] : rewrite_by_index)
+        {
+            if (rewrite != chosen_rewrite)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Text indexes {} and {} on {} define function {} differently ({} vs {}). "
+                    "Pass the tokenizer as the third argument if the tokenizers differ, otherwise keep only one of these indexes",
+                    backQuote(chosen_index), backQuote(index_name), backQuote(haystack_name), function_name, chosen_rewrite, rewrite);
+        }
+
+        return chosen_index;
+    }
+
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
     {
         /// Canonicalize the function-node subtree so that the serialized column names
@@ -635,6 +678,11 @@ private:
         /// produced when the condition was originally constructed in ReadFromMergeTree::applyFilters.
         ActionsDAGWithInversionPushDown canonical_dag(&function_node, context, /* boolean_context */ false);
         const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : function_node;
+
+        const auto function_name = function_node.function_base->getName();
+        std::optional<String> per_token_pattern_index;
+        if (MergeTreeIndexConditionText::isPerTokenPatternFunction(function_name))
+            per_token_pattern_index = choosePerTokenPatternFunctionIndex(function_node, canonical_node);
 
         NameSet used_index_columns;
         std::vector<SelectedCondition> selected_conditions;
@@ -657,6 +705,10 @@ private:
             /// The search query is built from the canonicalized subtree, but the rewrites below apply to
             /// the original node, so check that node as well.
             if (!text_index_condition.canAnswerFunctionNode(function_node))
+                continue;
+
+            /// Only the chosen index serves a per-token pattern function, even if another one is analyzed for it as well.
+            if (per_token_pattern_index && search_query->getFunctionName() == function_name && index_name != *per_token_pattern_index)
                 continue;
 
             const bool is_index_analyzed

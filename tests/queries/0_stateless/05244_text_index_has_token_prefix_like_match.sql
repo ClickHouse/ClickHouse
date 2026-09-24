@@ -379,3 +379,157 @@ SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE
 SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE hasTokenPrefix(msg, 'charg') IS NULL SETTINGS text_index_like_max_postings_to_read = 0;
 
 DROP TABLE tab_nullable;
+
+SELECT '-- several text indexes on one expression must give the function the same tokenizer and preprocessor';
+
+-- A column has at most one text index.
+CREATE TABLE tab_two (id UInt32, msg String, INDEX idx_a(msg) TYPE text(tokenizer = splitByNonAlpha), INDEX idx_b(msg) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(msg))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
+-- But differently written expressions can both be the indexed expression: `tag != ''` is analyzed as `notEmpty(tag)`.
+-- Different tokenizers: the function throws whatever the settings, unless the tokenizer argument selects one index.
+CREATE TABLE tab_tokenizers
+(
+    id UInt32,
+    tag String,
+    INDEX idx_a(if(tag != '', tag, 'none')) TYPE text(tokenizer = array) GRANULARITY 1,
+    INDEX idx_b(if(notEmpty(tag), tag, 'none')) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+CREATE TABLE tab_tokenizers_swapped
+(
+    id UInt32,
+    tag String,
+    INDEX idx_b(if(tag != '', tag, 'none')) TYPE text(tokenizer = array) GRANULARITY 1,
+    INDEX idx_a(if(notEmpty(tag), tag, 'none')) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab_tokenizers SELECT number, if(number < 8, 'env:prod-eu', 'env:dev') FROM numbers(64);
+INSERT INTO tab_tokenizers_swapped SELECT * FROM tab_tokenizers;
+
+SELECT count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
+SELECT countIf(hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod')) FROM tab_tokenizers; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_tokenizers WHERE hasTokenLike(if(notEmpty(tag), tag, 'none'), 'env:%'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_tokenizers WHERE hasTokenMatch(if(notEmpty(tag), tag, 'none'), '^env'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_tokenizers_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_tokenizers_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_tokenizers_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
+SELECT countIf(hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod')) FROM tab_tokenizers_swapped; -- { serverError BAD_ARGUMENTS }
+
+SELECT 'array', count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod', 'array');
+SELECT 'array', count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'array', count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod', 'array') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'array', count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod', 'array');
+SELECT 'array', count() FROM tab_tokenizers_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod', 'array');
+SELECT 'array', count() FROM tab_tokenizers_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'splitByNonAlpha', count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod', 'splitByNonAlpha');
+SELECT 'splitByNonAlpha', count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod', 'splitByNonAlpha') SETTINGS use_skip_indexes = 0;
+SELECT 'splitByNonAlpha', count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod', 'splitByNonAlpha') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'splitByNonAlpha', count() FROM tab_tokenizers WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod', 'splitByNonAlpha');
+SELECT 'splitByNonAlpha', count() FROM tab_tokenizers_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod', 'splitByNonAlpha');
+SELECT 'splitByNonAlpha', count() FROM tab_tokenizers_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod', 'splitByNonAlpha') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_tokenizers;
+DROP TABLE tab_tokenizers_swapped;
+
+-- Same tokenizer, but only one index lowercases the input and the prefix of hasTokenPrefix, which the tokenizer argument
+-- cannot resolve. hasTokenLike and hasTokenMatch apply no preprocessor, so both indexes agree for them.
+CREATE TABLE tab_preprocessors
+(
+    id UInt32,
+    msg String,
+    INDEX idx_a(if(msg != '', msg, 'none')) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1,
+    INDEX idx_b(if(notEmpty(msg), msg, 'none')) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(if(notEmpty(msg), msg, 'none'))) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+CREATE TABLE tab_preprocessors_swapped
+(
+    id UInt32,
+    msg String,
+    INDEX idx_b(if(msg != '', msg, 'none')) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1,
+    INDEX idx_a(if(notEmpty(msg), msg, 'none')) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(if(notEmpty(msg), msg, 'none'))) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab_preprocessors SELECT number, multiIf(number < 8, 'Charged', number < 16, 'charged', 'other') FROM numbers(64);
+INSERT INTO tab_preprocessors_swapped SELECT * FROM tab_preprocessors;
+
+SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
+SELECT countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg', 'splitByNonAlpha'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg'); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
+SELECT countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors_swapped; -- { serverError BAD_ARGUMENTS }
+
+SELECT 'hasTokenLike', count() FROM tab_preprocessors WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%');
+SELECT 'hasTokenLike', count() FROM tab_preprocessors WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenLike', count() FROM tab_preprocessors WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenLike', countIf(hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%')) FROM tab_preprocessors;
+SELECT 'hasTokenLike', count() FROM tab_preprocessors_swapped WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%');
+SELECT 'hasTokenLike', count() FROM tab_preprocessors_swapped WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenMatch', count() FROM tab_preprocessors WHERE hasTokenMatch(if(notEmpty(msg), msg, 'none'), '^C');
+SELECT 'hasTokenMatch', count() FROM tab_preprocessors_swapped WHERE hasTokenMatch(if(notEmpty(msg), msg, 'none'), '^C') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_preprocessors;
+DROP TABLE tab_preprocessors_swapped;
+
+-- The indexes agree: the function uses their tokenizer whatever the settings, and the first index by name serves it.
+CREATE TABLE tab_agree
+(
+    id UInt32,
+    tag String,
+    INDEX idx_a(if(tag != '', tag, 'none')) TYPE text(tokenizer = array) GRANULARITY 1,
+    INDEX idx_b(if(notEmpty(tag), tag, 'none')) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+CREATE TABLE tab_agree_swapped
+(
+    id UInt32,
+    tag String,
+    INDEX idx_b(if(tag != '', tag, 'none')) TYPE text(tokenizer = array) GRANULARITY 1,
+    INDEX idx_a(if(notEmpty(tag), tag, 'none')) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab_agree SELECT number, if(number < 8, 'env:prod-eu', 'env:dev') FROM numbers(64);
+INSERT INTO tab_agree_swapped SELECT * FROM tab_agree;
+
+SELECT 'env:prod', count() FROM tab_agree WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod');
+SELECT 'env:prod', count() FROM tab_agree WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'env:prod', count() FROM tab_agree WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'env:prod', countIf(hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod')) FROM tab_agree;
+SELECT 'prod', count() FROM tab_agree WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod');
+SELECT 'prod', count() FROM tab_agree WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod') SETTINGS use_skip_indexes = 0;
+SELECT 'prod', count() FROM tab_agree WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'prod', countIf(hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod')) FROM tab_agree;
+SELECT 'env:prod', count() FROM tab_agree_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod');
+SELECT 'env:prod', count() FROM tab_agree_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'prod', count() FROM tab_agree_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod');
+SELECT 'prod', count() FROM tab_agree_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'prod') SETTINGS use_skip_indexes = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_agree WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod')) WHERE explain LIKE '%Granules:%';
+SELECT 'direct read by idx_a', countIf(explain LIKE '%\_\_text\_index\_idx\_a\_hasTokenPrefix%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_b\_%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab_agree WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod'));
+SELECT 'direct read by idx_a', countIf(explain LIKE '%\_\_text\_index\_idx\_a\_hasTokenPrefix%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_b\_%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab_agree_swapped WHERE hasTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod'));
+
+DROP TABLE tab_agree;
+DROP TABLE tab_agree_swapped;
