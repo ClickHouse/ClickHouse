@@ -186,6 +186,7 @@ void ExternalMergeSource::prepareMerge()
 {
     chassert(processors.empty());
     SharedHeaders headers;
+    size_t uncompressed_bytes = 0;
     const bool is_final_merge = !max_fan_in || num_files <= max_fan_in;
     if (is_final_merge)
     {
@@ -205,6 +206,7 @@ void ExternalMergeSource::prepareMerge()
         for (size_t i = 0; i < merged_inputs; ++i)
         {
             std::ranges::pop_heap(group.runs, std::greater{}, &Run::compressed_size);
+            uncompressed_bytes += group.runs.back().file.getHolder()->getStat().uncompressed_size;
             addRun(std::move(group.runs.back()), headers);
             group.runs.pop_back();
         }
@@ -223,9 +225,12 @@ void ExternalMergeSource::prepareMerge()
     }
     else
     {
+
+        /// Merging can change compression, so estimate the replacement from the inputs' uncompressed bytes.
+        /// The input files remain on disk during the write; preserve the free-space margin as well.
         auto header = merger->getOutputs().front().getSharedHeader();
         sink = std::make_shared<BufferingToFileSink>(
-            header, TemporaryBlockStreamHolder(header, tmp_data, min_free_disk_space), log);
+            header, TemporaryBlockStreamHolder(header, tmp_data, uncompressed_bytes + min_free_disk_space), log);
         LOG_TRACE(log, "Starting intermediate external merge with {} inputs "
             "(group: {} of {}, remaining files: {}, fan-in limit: {}, query memory: {})",
             merged_inputs, group_index + 1, groups.size(), num_files, max_fan_in,
