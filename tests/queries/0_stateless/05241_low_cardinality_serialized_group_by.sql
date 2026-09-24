@@ -31,7 +31,18 @@ DROP TABLE IF EXISTS lc_serialized_group_by;
 -- A top-K heap can freeze and fall back to ordinary aggregation in the middle of a query. The
 -- worst `(s, f)` pair in the sort order is rare and the deliberately small observation window makes
 -- the heap freeze after the first block, so the remaining blocks are aggregated without the ranked
--- columns.
+-- columns. Pin the settings the path depends on: CI randomizes some of them, and the top-K
+-- optimization does not apply to serialized plans.
+SET serialize_query_plan = 0;
+SET query_plan_max_limit_for_top_k_optimization = 1000;
+SET enable_group_by_top_k_optimization = 1;
+SET group_by_top_k_optimization_observation_rows = 1;
+-- One stream and small blocks, so the heap freezes deterministically at the start of the second block.
+SET max_threads = 1;
+SET max_block_size = 8192;
+SET enable_parallel_replicas = 0;
+SET log_queries = 1;
+
 DROP TABLE IF EXISTS lc_serialized_group_by_topk;
 CREATE TABLE lc_serialized_group_by_topk
 (
@@ -43,6 +54,21 @@ ENGINE = MergeTree ORDER BY v;
 
 INSERT INTO lc_serialized_group_by_topk SELECT if(number % 1000 < 995, 'a', 'b'), if(number % 1000 < 500, toFixedString('x', 4), toFixedString('y', 4)), number FROM numbers(200000);
 
+-- The probe discards its output; it exists so that the query_log assertion below can prove that the
+-- heap actually froze. The result query below would also pass if the optimization never engaged.
+SELECT s, f, count(), sum(v) FROM lc_serialized_group_by_topk GROUP BY s, f ORDER BY s, f LIMIT 2
+SETTINGS log_comment = '05241_lc_topk_freeze' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The heap must freeze on the second block, after which the remaining blocks serialize the
+-- LowCardinality keys directly instead of materializing the ranked columns.
+SELECT max(ProfileEvents['AggregationTopKHeapsFrozen']) > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND current_database = currentDatabase()
+    AND type = 'QueryFinish' AND log_comment = '05241_lc_topk_freeze';
+
+-- The results are the same whether or not the heap froze.
 SELECT s, f, count(), sum(v) FROM lc_serialized_group_by_topk GROUP BY s, f ORDER BY s, f LIMIT 2 SETTINGS max_threads = 1, max_block_size = 8192, group_by_top_k_optimization_observation_rows = 1;
 
 DROP TABLE IF EXISTS lc_serialized_group_by_topk;
