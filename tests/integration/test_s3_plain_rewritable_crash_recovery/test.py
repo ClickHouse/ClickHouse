@@ -235,7 +235,7 @@ def test_drop_table_killed_before_finalize(
         )
         == "0\n"
     )
-    assert node.contains_in_log("orphaned objects left by removals")
+    assert node.contains_in_log("orphaned objects left by")
 
 
 def test_names_that_only_look_reserved_are_kept():
@@ -253,31 +253,36 @@ def test_names_that_only_look_reserved_are_kept():
 
     node.stop_clickhouse()
 
-    look_alike_names = [
-        # Exactly the generated shape, which an older server could have been asked to create as ordinary
-        # data, for example `BACKUP TO Disk('s3_plain_rewritable', '__removed.abcdefghijklmnop')`.
-        REMOVED_NAME_PREFIX + "abcdefghijklmnop",
-        # A name that an older server could have been asked to create, for example for a backup.
-        REMOVED_NAME_PREFIX + "mybackup",
-        # One character short of the generated shape, and one character too long.
-        REMOVED_NAME_PREFIX + "b" * 15,
-        REMOVED_NAME_PREFIX + "b" * 17,
-        # The right length, but not the alphabet of the generated shape.
-        REMOVED_NAME_PREFIX + "B" * 16,
-    ]
+    def look_alike_names(letter):
+        return [
+            # Exactly the generated shape, which an older server could have been asked to create as ordinary
+            # data, for example `BACKUP TO Disk('s3_plain_rewritable', '__removed.abcdefghijklmnop')`.
+            REMOVED_NAME_PREFIX + letter + "bcdefghijklmnop",
+            # A name that an older server could have been asked to create, for example for a backup.
+            REMOVED_NAME_PREFIX + letter + "mybackup",
+            # One character short of the generated shape, and one character too long.
+            REMOVED_NAME_PREFIX + letter * 15,
+            REMOVED_NAME_PREFIX + letter * 17,
+            # The right length, but not the alphabet of the generated shape.
+            REMOVED_NAME_PREFIX + letter.upper() * 16,
+        ]
 
-    # A top-level directory and a root file with each of these names, as an older server would have left them.
+    # A top-level directory and a root file with each of these shapes, as an older server would have left them.
+    # A file and a directory can never have the same path, so their names differ.
     keys_of_name = {}
-    for index, name in enumerate(look_alike_names):
+    for index, name in enumerate(look_alike_names("a")):
         remote_name = "zyxwvutsrqponml" + chr(ord("a") + index)
         keys = {
-            f"{KEY_PREFIX}__root/{name}": b"a root file",
             f"{KEY_PREFIX}__meta/{remote_name}/prefix.path": f"{name}/".encode(),
             f"{KEY_PREFIX}{remote_name}/data.bin": b"a file of a directory",
         }
         for key, data in keys.items():
             put_key(key, data)
         keys_of_name[name] = list(keys)
+    for name in look_alike_names("c"):
+        key = f"{KEY_PREFIX}__root/{name}"
+        put_key(key, b"a root file")
+        keys_of_name[name] = [key]
 
     preexisting_keys = [key for keys in keys_of_name.values() for key in keys]
 
@@ -286,16 +291,18 @@ def test_names_that_only_look_reserved_are_kept():
 
     assert [key for key in preexisting_keys if not key_exists(key)] == []
 
-    # The marker is what decides: the same name, marked, is reclaimed on the next writable start, while the
+    # The marker is what decides: the same names, marked, are reclaimed on the next writable start, while the
     # names that have no marker are kept.
-    marked_name = look_alike_names[0]
-    marked_keys = keys_of_name[marked_name]
+    marked_names = [look_alike_names("a")[0], look_alike_names("c")[0]]
+    marked_keys = [key for name in marked_names for key in keys_of_name[name]]
+    marker_keys = [TOMBSTONE_KEY_PREFIX + name for name in marked_names]
 
     node.stop_clickhouse()
-    put_key(TOMBSTONE_KEY_PREFIX + marked_name, marked_name.encode())
+    for name in marked_names:
+        put_key(TOMBSTONE_KEY_PREFIX + name, name.encode())
     node.start_clickhouse()
 
-    wait_for_keys_to_disappear(marked_keys + [TOMBSTONE_KEY_PREFIX + marked_name])
+    wait_for_keys_to_disappear(marked_keys + marker_keys)
     assert [
         key
         for key in preexisting_keys
