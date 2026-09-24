@@ -330,6 +330,9 @@ ORDER BY day DESC
     def _post_with_retries(self, params, data, timeout, retries, what):
         """POST to CI DB, backing off progressively on transport errors and on
         non-OK responses alike: `requests` does not raise for 4xx/5xx."""
+        # At `max_concurrent_queries` the server waits this long for a free slot
+        # instead of rejecting the request with TOO_MANY_SIMULTANEOUS_QUERIES.
+        params = {**params, "queue_max_wait_ms": int(timeout * 1000) // 2}
         retry = 0
         while True:
             retry += 1
