@@ -22,6 +22,7 @@
 #include <Poco/Net/SocketAddress.h>
 
 #include <atomic>
+#include <thread>
 #include <limits>
 
 #include <gtest/gtest.h>
@@ -1164,6 +1165,62 @@ TEST_F(ConnectionPoolTest, RequestBodyWithoutFramingIsNotPreserved)
 
     /// No response is read here: the server cannot know that the body ended, which is the whole
     /// reason this connection is not reusable. The pool resets it.
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+/// A response with neither `Content-Length` nor chunked encoding carries a body that is delimited
+/// by the end of the connection (`BodyEncoding::UntilEOF`): the server closes its side to end it.
+/// Reading such a body to the end must not make the connection reusable - the pool only checks that
+/// the socket is still open, and the next borrower would write its request into a connection the
+/// server has already closed.
+TEST_F(ConnectionPoolTest, ResponseBodyUntilEOFIsNotPreserved)
+{
+    Poco::Net::ServerSocket server_socket(Poco::Net::SocketAddress("127.0.0.1", 0));
+    std::thread server_thread([&]
+    {
+        Poco::Net::StreamSocket socket = server_socket.acceptConnection();
+        std::string request;
+        char buf[1024];
+        while (request.find("\r\n\r\n") == std::string::npos)
+        {
+            const int n = socket.receiveBytes(buf, sizeof(buf));
+            if (n <= 0)
+                return;
+            request.append(buf, n);
+        }
+        /// HTTP/1.1 without `Connection: close` is keep-alive, and the body has no framing.
+        const std::string response = "HTTP/1.1 200 OK\r\n\r\nHello";
+        socket.sendBytes(response.data(), static_cast<int>(response.size()));
+        socket.shutdownSend();
+    });
+    SCOPE_EXIT({ server_thread.join(); });
+
+    auto uri = Poco::URI("http://" + server_socket.address().toString());
+    auto pool = DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
+    auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/", "HTTP/1.1");
+        DB::sendHTTPRequest(*connection, request)->finalize();
+
+        Poco::Net::HTTPResponse response;
+        auto response_body = DB::receiveHTTPResponse(*connection, response);
+        ASSERT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+        ASSERT_TRUE(response.getKeepAlive());
+
+        String result;
+        DB::readStringUntilEOF(result, *response_body);
+        ASSERT_EQ("Hello", result);
+        ASSERT_TRUE(response_body->isResponseComplete());
+    }
+
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
     ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
     ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);

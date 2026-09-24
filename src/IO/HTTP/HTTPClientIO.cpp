@@ -531,7 +531,13 @@ void HTTPResponseReadBuffer::markComplete()
         return;
 
     response_complete = true;
-    if (session)
+
+    /// A body delimited by the end of the connection has been read to the end, but the peer
+    /// has closed its side to say so: the connection cannot carry another request and must not
+    /// return to the pool, the same as `HTTPInputStream::isComplete` reported on the `std::iostream`
+    /// path. The pool only checks that the socket is still open, so reusing it would hand the
+    /// next borrower a dead connection.
+    if (session && encoding != Poco::Net::HTTPClientSession::BodyEncoding::UntilEOF)
         session->setResponseBodyComplete(true);
 }
 
