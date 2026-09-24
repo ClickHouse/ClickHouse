@@ -6,7 +6,6 @@ add_headers_and_sources(clickhouse_functions_array .)
 # createInternalFunctionHasOverloadResolver, FunctionArrayResize,  FunctionEmptyArrayToSingle
 # Used by ArrayExistsToHasPass.cpp and ArrayJoinAction.cpp
 set(DBMS_ARRAY_FUNCTIONS
-    arrayIndex.cpp
     arrayResize.cpp
     has.cpp
     emptyArrayToSingle.cpp

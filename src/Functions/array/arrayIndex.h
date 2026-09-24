@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <type_traits>
 
 #include <Functions/IFunction.h>
@@ -54,40 +56,131 @@ namespace ArrayIndexImpl
 template <typename T>
 concept SupportedNumeric = std::is_integral_v<T> || std::is_floating_point_v<T>;
 
-template <SupportedNumeric T>
-void findNumericHasBatch(
-    const T * data,
-    const ColumnArray::Offset * offsets,
-    UInt8 * result,
-    size_t rows,
-    T value);
+inline constexpr size_t NO_MATCH = static_cast<size_t>(-1);
+
+template <typename T, size_t N>
+ALWAYS_INLINE bool hasInBlock(const T * data, T value)
+{
+    unsigned found = 0;
+
+    for (size_t j = 0; j < N; ++j)
+        found |= static_cast<unsigned>(data[j] == value);
+
+    return found != 0;
+}
 
 template <SupportedNumeric T>
-void findNumericIndexOfBatch(
-    const T * data,
-    const ColumnArray::Offset * offsets,
-    UInt64 * result,
-    size_t rows,
-    T value);
+ALWAYS_INLINE bool findNumericHasInternal(const T * data, size_t size, T value)
+{
+    if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
+    {
+        return std::memchr(data, static_cast<unsigned char>(value), size) != nullptr;
+    }
+    else
+    {
+        constexpr size_t block_size = 64 / sizeof(T);
+        size_t i = 0;
 
-#define ARRAY_INDEX_INSTANTIATION(T) \
-    extern template void findNumericHasBatch<T>( \
-        const T * data, const ColumnArray::Offset * offsets, UInt8 * result, size_t rows, T value); \
-    extern template void findNumericIndexOfBatch<T>( \
-        const T * data, const ColumnArray::Offset * offsets, UInt64 * result, size_t rows, T value);
+        for (; size - i >= block_size; i += block_size)
+        {
+            if (hasInBlock<T, block_size>(data + i, value))
+                return true;
+        }
 
-ARRAY_INDEX_INSTANTIATION(Int8)
-ARRAY_INDEX_INSTANTIATION(UInt8)
-ARRAY_INDEX_INSTANTIATION(Int16)
-ARRAY_INDEX_INSTANTIATION(UInt16)
-ARRAY_INDEX_INSTANTIATION(Int32)
-ARRAY_INDEX_INSTANTIATION(UInt32)
-ARRAY_INDEX_INSTANTIATION(Int64)
-ARRAY_INDEX_INSTANTIATION(UInt64)
-ARRAY_INDEX_INSTANTIATION(Float32)
-ARRAY_INDEX_INSTANTIATION(Float64)
+        for (; i < size; ++i)
+        {
+            if (data[i] == value)
+                return true;
+        }
 
-#undef ARRAY_INDEX_INSTANTIATION
+        return false;
+    }
+}
+
+template <SupportedNumeric T>
+ALWAYS_INLINE bool findNumericHas(const T * data, size_t size, T value)
+{
+    constexpr size_t prefix_size = 8;
+
+    if constexpr (sizeof(T) == 2 || sizeof(T) == 4)
+    {
+        constexpr size_t block_size = 64 / sizeof(T);
+        if (size >= block_size && size < prefix_size + block_size)
+        {
+            if (data[0] == value)
+                return true;
+            return findNumericHasInternal(data, size, value);
+        }
+    }
+
+    const size_t actual_prefix_size = std::min(size, prefix_size);
+    for (size_t i = 0; i < actual_prefix_size; ++i)
+        if (data[i] == value)
+            return true;
+
+    if (actual_prefix_size == size)
+        return false;
+
+    return findNumericHasInternal(data + actual_prefix_size, size - actual_prefix_size, value);
+}
+
+template <SupportedNumeric T>
+ALWAYS_INLINE size_t findNumericIndexOfInternal(const T * data, size_t size, T value)
+{
+    if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
+    {
+        const auto * found = static_cast<const T *>(std::memchr(data, static_cast<unsigned char>(value), size));
+        return found ? static_cast<size_t>(found - data) : NO_MATCH;
+    }
+    else
+    {
+        constexpr size_t block_size = 64 / sizeof(T);
+        size_t i = 0;
+
+        for (; size - i >= block_size; i += block_size)
+        {
+            if (!hasInBlock<T, block_size>(data + i, value))
+                continue;
+
+            for (size_t j = 0; j < block_size; ++j)
+                if (data[i + j] == value)
+                    return i + j;
+        }
+
+        for (; i < size; ++i)
+        {
+            if (data[i] == value)
+                return i;
+        }
+
+        return NO_MATCH;
+    }
+}
+
+template <SupportedNumeric T>
+ALWAYS_INLINE size_t findNumericIndexOf(const T * data, size_t size, T value)
+{
+    const size_t prefix_size = std::min(size, size_t(8));
+    for (size_t i = 0; i < prefix_size; ++i)
+        if (data[i] == value)
+            return i;
+
+    if (prefix_size == size)
+        return NO_MATCH;
+
+    const size_t found = findNumericIndexOfInternal(data + prefix_size, size - prefix_size, value);
+    return found == NO_MATCH ? NO_MATCH : prefix_size + found;
+}
+
+template <SupportedNumeric T>
+ALWAYS_INLINE size_t findNumericScalarIndexOf(const T * data, size_t size, T value)
+{
+    for (size_t i = 0; i < size; ++i)
+        if (data[i] == value)
+            return i;
+
+    return NO_MATCH;
+}
 
 template <SupportedNumeric T, bool IsIndexOf>
 constexpr size_t getOptimizedSearchMinSize()
@@ -339,6 +432,63 @@ private:
 
         const size_t size = offsets.size();
         result.resize(size);
+
+        if constexpr (
+            Case == 1
+            && RightArgIsConstant
+            && ArrayIndexImpl::SupportedNumeric<Initial>
+            && std::is_same_v<Initial, Result>
+            && std::is_same_v<Data, PaddedPODArray<Initial>>
+            && std::is_same_v<Target, Result>
+            && (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>))
+        {
+            constexpr bool is_index_of = std::is_same_v<ConcreteAction, IndexOfAction>;
+            constexpr size_t min_array_size = ArrayIndexImpl::getOptimizedSearchMinSize<Initial, is_index_of>();
+
+            const Initial value = target;
+            const Initial * __restrict raw_data = data.data();
+            const ArrOffset * __restrict raw_offsets = offsets.data();
+            ResultType * __restrict raw_result = result.data();
+
+            ArrOffset current_offset = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                const ArrOffset next_offset = raw_offsets[i];
+                const size_t array_size = next_offset - current_offset;
+                const Initial * __restrict row_data = raw_data + current_offset;
+
+                if constexpr (is_index_of)
+                {
+                    const size_t found = array_size < min_array_size
+                        ? ArrayIndexImpl::findNumericScalarIndexOf(row_data, array_size, value)
+                        : ArrayIndexImpl::findNumericIndexOf(row_data, array_size, value);
+                    raw_result[i] = found == ArrayIndexImpl::NO_MATCH ? 0 : static_cast<ResultType>(found + 1);
+                }
+                else
+                {
+                    if (array_size < min_array_size)
+                    {
+                        ResultType found = 0;
+                        for (size_t j = 0; j < array_size; ++j)
+                        {
+                            if (row_data[j] == value)
+                            {
+                                found = 1;
+                                break;
+                            }
+                        }
+                        raw_result[i] = found;
+                    }
+                    else
+                    {
+                        raw_result[i] = ArrayIndexImpl::findNumericHas(row_data, array_size, value);
+                    }
+                }
+
+                current_offset = next_offset;
+            }
+            return;
+        }
 
         ArrOffset current_offset = 0;
 
@@ -927,25 +1077,13 @@ private:
                         return true;
                     }
 
-                    result.getData().resize(data.offsets.size());
-                    if constexpr (std::is_same_v<ConcreteAction, HasAction>)
-                    {
-                        ArrayIndexImpl::findNumericHasBatch<Initial>(
-                            left_typed->getData().data(),
-                            data.offsets.data(),
-                            result.getData().data(),
-                            data.offsets.size(),
-                            converted_needle);
-                    }
-                    else
-                    {
-                        ArrayIndexImpl::findNumericIndexOfBatch<Initial>(
-                            left_typed->getData().data(),
-                            data.offsets.data(),
-                            result.getData().data(),
-                            data.offsets.size(),
-                            converted_needle);
-                    }
+                    Impl::Main<ConcreteAction, true, Initial, Initial>::vector(
+                        left_typed->getData(),
+                        data.offsets,
+                        converted_needle,
+                        result.getData(),
+                        nullptr,
+                        nullptr);
                     return true;
                 }
             }
