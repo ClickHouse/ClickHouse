@@ -46,7 +46,7 @@ ASTPtr parseFilter(const String & filter, const String & policy_name)
     }
 }
 
-/// Don't go into subqueries, that's a different table.
+/// Don't go into subqueries: policies can't have correlated ones, so those columns are another table's.
 void renameOutsideSubqueries(ASTPtr & ast, const RenameColumnData & rename)
 {
     if (ast->as<ASTSubquery>())
@@ -87,9 +87,10 @@ std::vector<BoundPolicy> collectBoundPolicies(const StorageID & table_id, const 
     return result;
 }
 
+/// `ignore` is set by prepare() for IF EXISTS on a missing column, a no-op.
 bool touchesColumns(const AlterCommand & command)
 {
-    return command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN;
+    return !command.ignore && (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN);
 }
 
 }
@@ -134,7 +135,7 @@ void renameColumnsInRowPolicies(const StorageID & table_id, const AlterCommands 
 {
     std::vector<RenameColumnData> renames;
     for (const auto & command : commands)
-        if (command.type == AlterCommand::RENAME_COLUMN)
+        if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore)
             renames.push_back({command.column_name, command.rename_to});
     if (renames.empty())
         return;
