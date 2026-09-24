@@ -12,6 +12,11 @@
 -- update that caches the collected statistics, which runs only when at least one of them is
 -- non-zero, so their sum says the gate let the query through and the optimization instrumented it.
 
+-- Pinned to the query-based implementation: with `parallel_replicas_plan_based` the plan shapes do
+-- not hash-match, so no statistics are collected.
+-- https://github.com/ClickHouse/ClickHouse/issues/118265
+SET parallel_replicas_plan_based = 0;
+
 DROP TABLE IF EXISTS t_autopr_range_split;
 
 -- `small` is the only projected column and is far below the threshold. `bigkey` is in the sorting
