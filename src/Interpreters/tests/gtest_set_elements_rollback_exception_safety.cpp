@@ -20,25 +20,29 @@ namespace DB::ErrorCodes
 namespace
 {
 
-/// Few rows, each holding one large value, so that the cost of copying a batch is dominated by
-/// that one value per row and does not depend on how many rows there are. The memory limit below
-/// can then single out one copy, while every small allocation stays far inside the limit.
+/// Few rows, each holding one large value, so that the collected values end up in a buffer that
+/// is full: appending anything to them then has to grow that buffer, and growing it doubles it.
 constexpr size_t rows_per_batch = 32;
 constexpr size_t bytes_per_row = 1024 * 1024 - 64;
 
-/// Above the size of one batch and below the size the collected values grow to when a third
-/// batch is appended to them.
-constexpr Int64 memory_headroom = 64 * 1024 * 1024;
+/// The batch that gets refused only has to reach past the end of that buffer, so it is tiny:
+/// everything it allocates stays orders of magnitude below the limit, which leaves growing the
+/// collected values as the only allocation the limit can refuse.
+constexpr size_t refused_rows = 4;
+constexpr size_t refused_bytes_per_row = 16 * 1024;
 
-Columns makeBatch(const DataTypePtr & type, UInt64 first_id)
+/// Above everything the refused batch allocates and below the doubled buffer.
+constexpr Int64 memory_headroom = 32 * 1024 * 1024;
+
+Columns makeBatch(const DataTypePtr & type, UInt64 first_id, size_t rows, size_t value_bytes)
 {
     auto column = type->createColumn();
-    for (size_t i = 0; i < rows_per_batch; ++i)
+    for (size_t i = 0; i < rows; ++i)
     {
         /// Two values of different kinds per row. With values of a single kind the copy below
         /// takes a shortcut that appends in a different order, where the defect cannot appear.
         Array value;
-        value.push_back(Field(String(bytes_per_row, 'x')));
+        value.push_back(Field(String(value_bytes, 'x')));
         value.push_back(Field(first_id + i));
         column->insert(Field(std::move(value)));
     }
@@ -62,11 +66,10 @@ TEST(SetElements, CollectingValuesIsExceptionSafeUnderMemoryLimit)
     set.setHeader({ColumnWithTypeAndName(type->createColumn(), type, "k")});
     set.fillSetElements();
 
-    /// Two batches with no limit in force. The second one leaves the collected values in a buffer
-    /// that is full, so appending a third batch has to grow that buffer, and growing it is the one
-    /// allocation big enough to be refused below.
+    /// Two batches with no limit in force, which is what fills the buffer holding the collected
+    /// values right up to its end.
     for (UInt64 batch = 0; batch < 2; ++batch)
-        set.insertFromColumns(makeBatch(type, batch * rows_per_batch));
+        set.insertFromColumns(makeBatch(type, batch * rows_per_batch, rows_per_batch, bytes_per_row));
 
     /// Only so that the collected values can be read below; it does not close the set to inserts.
     set.finishInsert();
@@ -75,12 +78,13 @@ TEST(SetElements, CollectingValuesIsExceptionSafeUnderMemoryLimit)
     ASSERT_EQ(size_before, 2 * rows_per_batch);
 
     /// Built before the limit is armed, so only collecting it can fail.
-    const Columns refused_batch = makeBatch(type, 2 * rows_per_batch);
+    const Columns refused_batch = makeBatch(type, 2 * rows_per_batch, refused_rows, refused_bytes_per_row);
 
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
     const Int64 saved_untracked_limit = CurrentThread::get().untracked_memory_limit;
-    const Int64 saved_hard_limit = total_memory_tracker.getHardLimit();
+    const Int64 saved_hard_limit = thread_tracker.getHardLimit();
     SCOPE_EXIT_SAFE({
-        total_memory_tracker.setHardLimit(saved_hard_limit);
+        thread_tracker.setHardLimit(saved_hard_limit);
         CurrentThread::get().untracked_memory_limit = saved_untracked_limit;
     });
 
@@ -88,7 +92,10 @@ TEST(SetElements, CollectingValuesIsExceptionSafeUnderMemoryLimit)
     /// and not a buffer's worth of allocations later.
     CurrentThread::get().untracked_memory_limit = 0;
     CurrentThread::flushUntrackedMemory();
-    total_memory_tracker.setHardLimit(total_memory_tracker.get() + memory_headroom);
+
+    /// This thread's own limit, not the process wide one: every thread of the test binary reports
+    /// into the process wide tracker, so their allocations would decide where a limit on it trips.
+    thread_tracker.setHardLimit(thread_tracker.get() + memory_headroom);
 
     bool threw = false;
     int thrown_code = 0;
@@ -103,17 +110,17 @@ TEST(SetElements, CollectingValuesIsExceptionSafeUnderMemoryLimit)
     }
 
     /// Lift the limit before touching the set, so the assertions themselves can allocate.
-    total_memory_tracker.setHardLimit(saved_hard_limit);
+    thread_tracker.setHardLimit(saved_hard_limit);
     CurrentThread::get().untracked_memory_limit = saved_untracked_limit;
 
-    ASSERT_TRUE(threw) << "collecting the third batch was expected to exceed the memory limit";
+    ASSERT_TRUE(threw) << "collecting the refused batch was expected to exceed the memory limit";
 
     /// The rollback must rethrow the original exception, not replace it with one of its own.
     EXPECT_EQ(thrown_code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 
     /// The hash table is filled before the values are collected, so a full count proves the refusal
     /// happened while collecting them and not in a step before that.
-    EXPECT_EQ(set.getTotalRowCount(), 3 * rows_per_batch);
+    EXPECT_EQ(set.getTotalRowCount(), 2 * rows_per_batch + refused_rows);
 
     const Columns elements = set.getSetElements();
     ASSERT_EQ(elements.size(), 1u);
