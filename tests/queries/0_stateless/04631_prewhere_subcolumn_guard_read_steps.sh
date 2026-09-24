@@ -2,16 +2,16 @@
 # Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
 # no-parallel-replicas: the ProfileEvents with the expected values are reported on the replicas the query runs in,
 # and the coordinator does not collect all ProfileEvents values.
-# The assertions count PREWHERE read steps through RowsReadByPrewhereReaders, so the part format and
+# The assertions count PREWHERE read steps and the rows and bytes they read, so the part format and
 # the prewhere related settings must be fixed.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# RowsReadByPrewhereReaders counts the rows each prewhere read step reads, so it grows with the
-# number of steps: 4 grouped conditions over one Map read 1 x N rows, and a split that puts the
-# throwing condition into its own step reads 2 x N.
+# RowsReadByPrewhereReaders counts the rows each prewhere read step that reads columns reads, so it
+# grows with the number of steps that read: 4 grouped conditions over one Map read 1 x N rows, and
+# three steps over three different storage columns read 3 x N.
 # gate and gate2 are constant 1, so conditions on them filter nothing and only change how the
 # conditions are grouped into steps.
 ${CLICKHOUSE_CLIENT} -q "
@@ -54,92 +54,110 @@ opts=(
   --use_query_condition_cache 0
 )
 
-${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_group" -q "
+# The rows a step reads cannot count a run of steps over one storage column, because only its first
+# step reads: MergeTreeRangeReader::continueReadingChain returns before the row counter when a step
+# reads no columns, so such a run reads the rows once, exactly like a single step over them would.
+# MergeTreeSelectProcessor reports the number of steps at TEST level, so ask it directly.
+# Replace the level the runner passes instead of appending: boost multitoken may prefer the first one.
+if [ -n "${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:-}" ]; then
+  CLICKHOUSE_CLIENT_TEST_LOGS=${CLICKHOUSE_CLIENT//--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}/--send_logs_level=test}
+else
+  CLICKHOUSE_CLIENT_TEST_LOGS="${CLICKHOUSE_CLIENT} --send_logs_level=test"
+fi
+
+# Runs the query and prints the step counts its MergeTreeSelectProcessors reported, deduplicated, so
+# that a plan whose processors disagree prints a list and fails the comparison.
+read_steps() {
+  # shellcheck disable=SC2086
+  ${CLICKHOUSE_CLIENT_TEST_LOGS} "${opts[@]}" --query_id "$1" -q "$2" 2>&1 \
+    | sed -n 's/.*PREWHERE condition was split into \([0-9]*\) steps.*/\1/p' | sort -u | paste -sd,
+}
+
+steps_group=$(read_steps "$query_id_group" "
   SELECT count() FROM t_steps_group
   PREWHERE tags['k0'] != '' AND tags['k1'] != '' AND tags['k2'] != '' AND tags['k3'] != ''
   FORMAT Null
-"
+")
 
-${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_throwing" -q "
+steps_throwing=$(read_steps "$query_id_throwing" "
   SELECT count() FROM t_steps_throwing
   PREWHERE tags['safe'] != '' AND toUInt64(tags['val']) > 50
   FORMAT Null
-"
+")
 
 # Conditions that may throw get a step each, but the columns of that run of steps are read by its
 # first step, so the Map is deserialized once, as for the grouped query above. Every row passes, so
 # a step per condition that read its own key would deserialize the whole Map four times.
-${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_read_ahead" -q "
+steps_read_ahead=$(read_steps "$query_id_read_ahead" "
   SELECT count() FROM t_steps_group
   PREWHERE NOT startsWith(tags['k0'], 'z') AND NOT startsWith(tags['k1'], 'z')
        AND NOT startsWith(tags['k2'], 'z') AND NOT startsWith(tags['k3'], 'z')
   FORMAT Null
-"
+")
 
 # Only adjacent conditions over the same storage column are merged, so the condition on gate keeps
 # the two Map conditions in separate steps and the query reads the rows three times.
-${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_interleaved" -q "
+steps_interleaved=$(read_steps "$query_id_interleaved" "
   SELECT count() FROM t_steps_group
   PREWHERE tags['k0'] != '' AND gate = 1 AND tags['k1'] != ''
   FORMAT Null
-"
+")
 
 # A WHERE moved into an existing PREWHERE arrives as a nested conjunction. Flattening it must not
 # fragment conditions that used to be grouped, so these three non throwing conditions over one Map
 # still read the rows once.
-${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_nested" -q "
+steps_nested=$(read_steps "$query_id_nested" "
   SELECT count() FROM t_steps_group
   PREWHERE tags['k0'] != ''
   WHERE tags['k1'] != '' AND tags['k2'] != ''
   FORMAT Null
   SETTINGS optimize_prewhere_after_pushdown = 1
-"
+")
 
 # The same nested conjunction, but its conditions read different columns, so flattening it splits
 # the step it would otherwise be evaluated in: the rows are read three times, not twice.
-${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_nested_split" -q "
+steps_nested_split=$(read_steps "$query_id_nested_split" "
   SELECT count() FROM t_steps_group
   PREWHERE tags['k0'] != ''
   WHERE gate = 1 AND gate2 = 1
   FORMAT Null
   SETTINGS optimize_prewhere_after_pushdown = 1
-"
+")
 
 ${CLICKHOUSE_CLIENT} -q "
   SYSTEM FLUSH LOGS query_log;
 
   -- 4 non throwing conditions over the same Map stay in one step: 100000 rows read once.
-  SELECT 'grouped steps', ProfileEvents['RowsReadByPrewhereReaders'] = 100000
+  SELECT 'grouped steps', '$steps_group' = '1' AND ProfileEvents['RowsReadByPrewhereReaders'] = 100000
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_group' AND type = 'QueryFinish';
 
-  -- The throwing condition gets its own step, so the rows pass two prewhere readers. The second one
-  -- reads no columns (its key was read ahead by the first step) and sees only the rows the first step kept.
-  -- A reader that reads no columns still counts the rows it passes.
-  SELECT 'split steps', ProfileEvents['RowsReadByPrewhereReaders'] > 100000
+  -- The throwing condition gets its own step, which sees only the rows the first step kept. That step
+  -- reads no columns, its key was read ahead by the first step, so the Map is still read once.
+  SELECT 'split steps', '$steps_throwing' = '2' AND ProfileEvents['RowsReadByPrewhereReaders'] = 100000
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_throwing' AND type = 'QueryFinish';
 
   -- Four steps, one per condition, that read the Map once: at most as many bytes as the grouped query
   -- (the marks may already be cached), far fewer than four reads of the Map.
-  SELECT 'read ahead bytes', ra.b < 2 * g.b
+  SELECT 'read ahead bytes', '$steps_read_ahead' = '4' AND ra.b < 2 * g.b
     FROM (SELECT ProfileEvents['ReadCompressedBytes'] AS b FROM system.query_log
            WHERE current_database = currentDatabase() AND query_id = '$query_id_read_ahead' AND type = 'QueryFinish') AS ra,
          (SELECT ProfileEvents['ReadCompressedBytes'] AS b FROM system.query_log
            WHERE current_database = currentDatabase() AND query_id = '$query_id_group' AND type = 'QueryFinish') AS g;
 
-  -- Exactly three steps, a count no single step plan can produce.
-  SELECT 'interleaved steps', ProfileEvents['RowsReadByPrewhereReaders'] = 300000
+  -- Exactly three steps over three different storage columns, so each of them reads.
+  SELECT 'interleaved steps', '$steps_interleaved' = '3' AND ProfileEvents['RowsReadByPrewhereReaders'] = 300000
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_interleaved' AND type = 'QueryFinish';
 
   -- Flattening a nested conjunction of non throwing conditions over one Map keeps them in one step.
-  SELECT 'nested grouped steps', ProfileEvents['RowsReadByPrewhereReaders'] = 100000
+  SELECT 'nested grouped steps', '$steps_nested' = '1' AND ProfileEvents['RowsReadByPrewhereReaders'] = 100000
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_nested' AND type = 'QueryFinish';
 
   -- Without flattening the nested conjunction is one condition and the query reads the rows twice.
-  SELECT 'nested split steps', ProfileEvents['RowsReadByPrewhereReaders'] = 300000
+  SELECT 'nested split steps', '$steps_nested_split' = '3' AND ProfileEvents['RowsReadByPrewhereReaders'] = 300000
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_nested_split' AND type = 'QueryFinish';
 
