@@ -1,0 +1,88 @@
+---
+noindex: true
+title: "تهيئة remote_servers للاستعلامات الموزعة"
+sidebarTitle: "تهيئة remote_servers"
+description: "هيّئ ClickHouse `remote_servers` بأمان لتوزيع البيانات على عدة clusters من ClickHouse Private باستخدام Kubernetes Secrets وتوجيه `@from_env`."
+---
+
+هيّئ ClickHouse `remote_servers` بأمان لتوزيع البيانات على عدة clusters من ClickHouse Private باستخدام Kubernetes Secrets وتوجيه `@from_env`.
+
+<div id="when-to-use-remote_servers">
+  ## متى تستخدم remote_servers
+</div>
+
+يحدّد [`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) طوبولوجيا cluster مُسمّاة يستخدمها ClickHouse عند تنفيذ الاستعلامات الموزعة عبر [الجداول الموزعة](https://clickhouse.com/docs/engines/table-engines/special/distributed) أو دالة الجدول [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster).
+
+داخل cluster واحد من ClickHouse Private، تكون النسخ المتماثلة منسّقة بالفعل عبر ClickHouse Keeper و[SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) -- وهي البنية نفسها المستخدمة في ClickHouse Cloud -- لذلك لا حاجة إلى `remote_servers` لأغراض النسخ المتماثل. ويغطي هذا الإعداد الغالبية العظمى من حالات الاستخدام.
+
+تؤدي تجزئة البيانات عبر عدة clusters من ClickHouse Private إلى زيادة كبيرة في التعقيد التشغيلي، وينبغي اللجوء إليها كحل أخير. وإذا كنت تعتقد أن عبء العمل لديك يتطلب ذلك، فنوصي بشدة بمناقشة الأمر معنا أولًا حتى نتمكن من تقييم ما إذا كان هذا هو النهج المناسب فعلًا.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* إصدار **1.1.151 أو أحدث** من مخطط Helm ‏`onprem-clickhouse-cluster`
+* نشر clusters ClickHouse Private (يستخدم هذا الدليل `default-xx-01` و`default-xx-02`)
+* [Kubernetes Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) باسمَي `default-xx-01-password` و`default-xx-02-password`، وتحتوي على كلمات مرور clusters
+
+<div id="the-pattern">
+  ## النمط
+</div>
+
+1. تحتفظ Kubernetes Secrets بالقيم الحساسة (كلمات مرور cluster).
+2. يحقن `secretKeyRef` القيم على شكل متغيرات بيئة داخل حاوية ClickHouse.
+3. يقرأ إعداد ClickHouse هذه القيم في وقت التشغيل باستخدام التوجيه [`@from_env`](https://clickhouse.com/docs/operations/configuration-files#from_env_zk).
+
+وبذلك تبقى البيانات الحساسة خارج ملفات manifest المُولَّدة.
+
+> إذا كنت تتكامل مع مخازن أسرار خارجية (مثل HashiCorp Vault وAWS Secrets Manager)، فاستخدم [Kubernetes Secrets Store CSI Driver](https://github.com/kubernetes-sigs/secrets-store-csi-driver) لتركيب الأسرار و[تحميلها كمتغيرات بيئة](https://secrets-store-csi-driver.sigs.k8s.io/topics/set-as-env-var). يعمل نمط `@from_env` بالطريقة نفسها بغض النظر عن كيفية تعبئة متغير البيئة.
+
+<div id="helm-values-example">
+  ## مثال على قيم Helm
+</div>
+
+يتم الوصول إلى كل جزء تقسيم عبر خدمة `-any` الخاصة بـcluster -- وهي خدمة Kubernetes توجّه الطلبات إلى أي نسخة متماثلة متاحة في ذلك cluster. وهذا أكثر موثوقية من استخدام أسماء DNS الفردية لكل Pod، والتي قد تتغير بمرور الوقت.
+
+```yaml
+server:
+  additionalEnvVars:
+    - name: DEFAULT_XX_01_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-01-password
+          key: password
+    - name: DEFAULT_XX_02_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-02-password
+          key: password
+  config:
+    remote_servers:
+      my-distributed-cluster:
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_01_PASSWORD
+              host: c-default-xx-01-any.ns-default-xx-01.svc.cluster.local
+              port: 9000
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_02_PASSWORD
+              host: c-default-xx-02-any.ns-default-xx-02.svc.cluster.local
+              port: 9000
+```
+
+<div id="service-hostname-format">
+  ## صيغة اسم مضيف الخدمة
+</div>
+
+يأتي اسم مضيف الخدمة `-any` وفق النمط التالي:
+
+```text
+c-<cluster-name>-any.<namespace>.svc.cluster.local
+```
+
+يضمن هذا النمط عدم إدراج البيانات الحساسة مباشرةً في ملفات manifest. ويُعيّن الحقل `additionalEnvVars` متغيرات البيئة من أسرار Kubernetes باستخدام `secretKeyRef`، بينما يحمّل التوجيه `@from_env` في إعدادات ClickHouse هذه القيم في وقت التشغيل.
