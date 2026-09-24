@@ -144,6 +144,13 @@ namespace
         std::unique_ptr<antlr4::Token> nextToken() override
         {
             auto next_token = PromQLLexer::nextToken();
+            if (next_token->getType() == METRIC_NAME)
+            {
+                const auto token_text = next_token->getText();
+                if (token_text == "min_of" || token_text == "max_of")
+                    static_cast<antlr4::WritableToken *>(next_token.get())->setType(FUNCTION);
+            }
+
             if (!error_listener.hasError() && next_token->getType() == STRING && next_token->getLine() != getLine())
             {
                 const String token_text = next_token->getText();
@@ -776,7 +783,8 @@ namespace
         /// Returns the result type of a function.
         ResultType getFunctionResultType(std::string_view function_name)
         {
-            if (function_name == "scalar" || function_name == "time" || function_name == "pi")
+            if (function_name == "scalar" || function_name == "time" || function_name == "pi"
+                || function_name == "min_of" || function_name == "max_of")
                 return ResultType::SCALAR;
             else
                 return ResultType::INSTANT_VECTOR;
