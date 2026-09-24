@@ -312,8 +312,9 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
                 /// Add tag to find query later on
                 auto * union_sel = ast_to_process->as<ASTSelectWithUnionQuery>();
 
-                if ((select_query
-                     = typeid_cast<ASTSelectQuery *>(union_sel ? union_sel->list_of_selects->children[0].get() : ast_to_process.get())))
+                select_query
+                    = typeid_cast<ASTSelectQuery *>(union_sel ? union_sel->list_of_selects->children[0].get() : ast_to_process.get());
+                if (select_query)
                 {
                     if (!select_query->settings())
                     {
@@ -672,9 +673,15 @@ bool Client::buzzHouse()
     {
         std::ifstream infile(fuzz_config->log_path);
 
-        while (server_up && (no_timeout = (!deadline || clock::now() < *deadline))
-               && (no_eof = static_cast<bool>(std::getline(infile, full_query))))
+        while (server_up)
         {
+            no_timeout = !deadline || clock::now() < *deadline;
+            if (!no_timeout)
+                break;
+            no_eof = static_cast<bool>(std::getline(infile, full_query));
+            if (!no_eof)
+                break;
+
             String async_flag;
             String seed_str;
             String engine;
@@ -794,8 +801,12 @@ bool Client::buzzHouse()
             gen.clearHypotheticalIndexes();
         };
         SCOPE_EXIT({ after_fuzz_reconnect = {}; });
-        while (server_up && (no_timeout = (!deadline || clock::now() < *deadline)))
+        while (server_up)
         {
+            no_timeout = !deadline || clock::now() < *deadline;
+            if (!no_timeout)
+                break;
+
             sq1.Clear();
             full_query.resize(0);
 
