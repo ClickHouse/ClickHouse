@@ -78,6 +78,16 @@ function processes_grant_denial()
     fi
 }
 
+# A no-op on the reduced path is reported as an exception while `kill_throw_if_noop` is on.
+function noop_throw()
+{
+    if grep -q -F "NOTHING_TO_KILL" <<< "$1"; then
+        echo "throws NOTHING_TO_KILL"
+    else
+        echo "unexpected: $1"
+    fi
+}
+
 # A `SELECT` holder aimed at somebody else's id must be refused by the ordinary path, which reports
 # this instead of naming a grant. Answering it with an empty result would mean the reduced path had
 # taken a caller who can read the table, and with it their row policies.
@@ -122,15 +132,15 @@ echo "status: $(echo "$OUT" | cut -f1)"
 echo "victim: $(wait_gone "own_$ID")"
 drop_victim "own_$ID"
 
-echo "-- 2. another user's id: no rows, no error, victim untouched"
+echo "-- 2. another user's id: no rows, no error, victim untouched, kill_throw_if_noop off"
 start_victim "$U2" "other_$ID"
-OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'other_$ID' ASYNC" 2>&1)
+OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'other_$ID' ASYNC SETTINGS kill_throw_if_noop = 0" 2>&1)
 echo "rows: $(echo -n "$OUT" | grep -c .)"
 echo "victim: $(running "other_$ID")"
 drop_victim "other_$ID"
 
-echo "-- 3. an id nobody is running: no rows, no error"
-OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'absent_$ID' ASYNC" 2>&1)
+echo "-- 3. an id nobody is running: no rows, no error, kill_throw_if_noop off"
+OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'absent_$ID' ASYNC SETTINGS kill_throw_if_noop = 0" 2>&1)
 echo "rows: $(echo -n "$OUT" | grep -c .)"
 
 echo "-- 4. every condition other than the one matched shape behaves as before"
@@ -165,13 +175,13 @@ processes_grant_denial "$OUT"
 echo "victim: $(running "foreign_$ID")"
 drop_victim "foreign_$ID"
 
-echo "-- 8. a recreated name is a different principal and reaches nothing"
+echo "-- 8. a recreated name is a different principal and reaches nothing, kill_throw_if_noop off"
 $CLICKHOUSE_CLIENT -q "CREATE USER $A1 IDENTIFIED WITH no_password"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $A1"
 start_victim "$A1" "reused_$ID"
 $CLICKHOUSE_CLIENT -q "ALTER USER $A1 RENAME TO ${A1}_renamed"
 $CLICKHOUSE_CLIENT -q "CREATE USER $A1 IDENTIFIED WITH no_password"
-OUT=$($CLICKHOUSE_CLIENT --user "$A1" -q "KILL QUERY WHERE query_id = 'reused_$ID' ASYNC" 2>&1)
+OUT=$($CLICKHOUSE_CLIENT --user "$A1" -q "KILL QUERY WHERE query_id = 'reused_$ID' ASYNC SETTINGS kill_throw_if_noop = 0" 2>&1)
 echo "rows: $(echo -n "$OUT" | grep -c .)"
 echo "victim: $(running "reused_$ID")"
 drop_victim "reused_$ID"
@@ -221,9 +231,9 @@ foreign_kill_denial "$OUT"
 echo "victim: $(running "sel_$ID")"
 drop_victim "sel_$ID"
 
-echo "-- 14. a statement naming its own id skips itself instead of cancelling itself"
+echo "-- 14. a statement naming its own id skips itself instead of cancelling itself, kill_throw_if_noop off"
 OUT=$($CLICKHOUSE_CLIENT --user "$U2" --query_id "self_$ID" -q \
-    "KILL QUERY WHERE query_id = 'self_$ID' ASYNC" 2>&1)
+    "KILL QUERY WHERE query_id = 'self_$ID' ASYNC SETTINGS kill_throw_if_noop = 0" 2>&1)
 echo "rows: $(echo -n "$OUT" | grep -c .)"
 
 echo "-- 15. TEST names the match without cancelling it"
@@ -275,5 +285,18 @@ echo "names: $(names_marker "$OUT" "repl_b_$ID")"
 echo "status: $(echo "$OUT" | cut -f1)"
 echo "victim: $(wait_gone "repl_$ID")"
 drop_victim "repl_$ID"
+
+echo "-- 19. kill_throw_if_noop on (the default) reports the reduced path no-op as an exception"
+# `$U1` holds both grants since section 6, so `$U2` names an id run by `$U5` here.
+start_victim "$U5" "noop_$ID"
+OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE query_id = 'noop_$ID' ASYNC" 2>&1)
+noop_throw "$OUT"
+echo "victim: $(running "noop_$ID")"
+drop_victim "noop_$ID"
+OUT=$($CLICKHOUSE_CLIENT --user "$U2" -q "KILL QUERY WHERE query_id = 'absent2_$ID' ASYNC" 2>&1)
+noop_throw "$OUT"
+OUT=$($CLICKHOUSE_CLIENT --user "$U2" --query_id "self2_$ID" -q \
+    "KILL QUERY WHERE query_id = 'self2_$ID' ASYNC" 2>&1)
+noop_throw "$OUT"
 
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $U4, $U5, $U6, $A1, ${A1}_renamed, $A2, ${A2}_new"
