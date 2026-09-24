@@ -116,7 +116,9 @@ private:
     /// Dequeued requests are added to `throughput` in batches to keep clock reads and EWMA updates off the per-dequeue path.
     /// A batch is flushed when it is full, when the node deactivates and on introspection. The batch size spans about
     /// `throughput_batch_duration_ns` at the dequeue rate measured by the previous batch and restarts from one request
-    /// after deactivation, so a slowly served node is still updated on every dequeue.
+    /// after deactivation, so a slowly served node is still updated on every dequeue. A node that stays active but is not
+    /// dequeued for a while (e.g. starved by a sibling, or refilled after cancellations before its next dequeue) carries
+    /// its pending batch over that interval, so `throughput` is approximate within one batch.
     void flushThroughput(UInt64 now_ns)
     {
         if (pending_throughput_requests == 0)
