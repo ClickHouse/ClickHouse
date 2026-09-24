@@ -4,14 +4,21 @@
 #include <Common/ProfileEventsNonAllocatingEvents.h>
 #include <Common/MemoryTracker.h>
 #include <Common/VariableContext.h>
+#include <Common/PerCPU.h>
+#include <Common/ThreadStatus.h>
 
 #include <array>
 #include <atomic>
 #include <barrier>
+#include <cerrno>
 #include <memory>
 #include <limits>
 #include <thread>
 #include <vector>
+
+#if defined(OS_LINUX)
+#include <sched.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -129,8 +136,8 @@ TEST(ProfileEvents, ParentAttachedConcurrentlyWithIncrement)
     EXPECT_EQ((*parent)[ProfileEvents::Query], 1);
 }
 
-/// First updates may allocate cold pages in the `Process` parent. Subsequent updates reuse
-/// those pages; snapshots allocate only their dense result buffer.
+/// First updates allocate cold pages at every level. Subsequent updates reuse those pages;
+/// snapshots allocate only their dense result buffer.
 TEST(ProfileEvents, EveryEventPropagatesWithRetainedColdPages)
 {
     struct PerCPUGuard
@@ -152,6 +159,7 @@ TEST(ProfileEvents, EveryEventPropagatesWithRetainedColdPages)
         {
             thread.increment(event, 1);
             thread.incrementNoTrace(event, 2);
+            thread.preallocate(event);
         }
         {
             DENY_ALLOCATIONS_IN_SCOPE;
@@ -175,12 +183,15 @@ TEST(ProfileEvents, EveryEventPropagatesWithRetainedColdPages)
 
 TEST(ProfileEvents, MoveResetAndWrapEveryEvent)
 {
-    for (auto level : {VariableContext::Thread, VariableContext::Process})
+    for (auto level : {VariableContext::Thread, VariableContext::Process, VariableContext::User, VariableContext::Global})
     {
         ProfileEvents::Counters parent(VariableContext::Global, nullptr);
         ProfileEvents::Counters original(level, &parent);
         for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
+        {
             original.incrementNoTrace(event, std::numeric_limits<ProfileEvents::Count>::max());
+            original.preallocate(event);
+        }
         ProfileEvents::Counters moved(std::move(original));
         /// Verify that `reset` also accepts a moved-from `Counters`.
         // NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
@@ -264,14 +275,14 @@ TEST(ProfileEvents, AbsentColdPagesReadAsZeroWithoutAllocating)
         {
             counters.increment(event, 0);
             counters.incrementNoTrace(event, 0);
-            const auto expected = event == hot_event.value() ? 7 : 0;
+            const ProfileEvents::Count expected = event == hot_event.value() ? 7 : 0;
             values_match &= counters[event] == expected;
         }
     }
     EXPECT_TRUE(values_match);
     auto snapshot = counters.getPartiallyAtomicSnapshot();
     for (ProfileEvents::Event event(0); event < ProfileEvents::end(); ++event)
-        EXPECT_EQ(snapshot[event], event == hot_event.value() ? 7 : 0);
+        EXPECT_EQ(snapshot[event], event == hot_event.value() ? ProfileEvents::Count{7} : ProfileEvents::Count{0});
     {
         DENY_ALLOCATIONS_IN_SCOPE;
         counters.resetCounters();
@@ -314,4 +325,105 @@ TEST(ProfileEvents, ConcurrentFirstColdUpdatesAndSnapshots)
         thread.join();
     EXPECT_EQ(counters[cold_event], num_threads * increments);
     EXPECT_EQ(counters.getPartiallyAtomicSnapshot()[cold_event], num_threads * increments);
+}
+
+TEST(ProfileEvents, PreallocateColdEventAcrossParentsAndCPUs)
+{
+    const auto event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
+    const auto global_before = ProfileEvents::global_counters[event];
+    ProfileEvents::Counters user(VariableContext::User);
+    ProfileEvents::Counters process(VariableContext::Process, &user);
+    ProfileEvents::Counters thread(VariableContext::Thread, &process);
+    thread.preallocate(event);
+    EXPECT_EQ(thread[event], 0);
+    EXPECT_EQ(process[event], 0);
+    EXPECT_EQ(user[event], 0);
+    EXPECT_EQ(ProfileEvents::global_counters[event], global_before);
+
+    size_t updates = 0;
+#if defined(OS_LINUX)
+    cpu_set_t allowed;
+    if (sched_getaffinity(0, sizeof(allowed), &allowed) != 0)
+        GTEST_SKIP() << "CPU affinity is unavailable, errno=" << errno;
+    for (size_t cpu = 0; cpu < CPU_SETSIZE; ++cpu)
+    {
+        if (!CPU_ISSET(cpu, &allowed))
+            continue;
+        int affinity_error = 0;
+        int observed_cpu = -1;
+        std::thread worker([&]
+        {
+            cpu_set_t target;
+            CPU_ZERO(&target);
+            CPU_SET(cpu, &target);
+            if (sched_setaffinity(0, sizeof(target), &target) != 0)
+            {
+                affinity_error = errno;
+                return;
+            }
+            observed_cpu = sched_getcpu();
+            DENY_ALLOCATIONS_IN_SCOPE;
+            thread.preallocate(event);
+            thread.incrementNoTrace(event);
+        });
+        worker.join();
+        if (affinity_error)
+            GTEST_SKIP() << "Cannot set CPU affinity, errno=" << affinity_error;
+        ASSERT_EQ(observed_cpu, static_cast<int>(cpu));
+        ++updates;
+    }
+#else
+    {
+        DENY_ALLOCATIONS_IN_SCOPE;
+        thread.incrementNoTrace(event);
+        ++updates;
+    }
+#endif
+    EXPECT_EQ(thread[event], updates);
+    EXPECT_EQ(process[event], updates);
+    EXPECT_EQ(user[event], updates);
+    EXPECT_EQ(ProfileEvents::global_counters[event] - global_before, updates);
+    EXPECT_EQ(user.getPartiallyAtomicSnapshot()[event], updates);
+
+    {
+        DENY_ALLOCATIONS_IN_SCOPE;
+        thread.resetCounters();
+        process.resetCounters();
+        user.resetCounters();
+        thread.incrementNoTrace(event);
+    }
+    EXPECT_EQ(thread[event], 1);
+    EXPECT_EQ(process[event], 1);
+    EXPECT_EQ(user[event], 1);
+}
+
+TEST(ProfileEvents, SharedColdBackingDoesNotChargeTheTriggeringQuery)
+{
+    std::thread worker([]
+    {
+        DB::ThreadStatus status;
+        MemoryTracker query(VariableContext::Process);
+        status.memory_tracker.setParent(&query);
+        status.untracked_memory_limit = 0;
+        const auto before = query.get();
+        {
+            ProfileEvents::Counters user(VariableContext::User, nullptr);
+            ProfileEvents::Counters thread(VariableContext::Thread, &user);
+            thread.preallocate(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+            status.flushUntrackedMemory();
+            EXPECT_EQ(query.get(), before);
+        }
+        status.flushUntrackedMemory();
+        EXPECT_EQ(query.get(), before);
+        {
+            ProfileEvents::Counters process(VariableContext::Process, nullptr);
+            process.preallocate(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+            status.flushUntrackedMemory();
+            EXPECT_GT(query.get(), before);
+        }
+        status.flushUntrackedMemory();
+        EXPECT_EQ(query.get(), before);
+        status.memory_tracker.setParent(&total_memory_tracker);
+    });
+    worker.join();
 }

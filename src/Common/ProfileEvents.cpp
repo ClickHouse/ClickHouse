@@ -6,6 +6,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsHotEvents.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <array>
 #include <Common/PerCPU.h>
 #include <Common/CurrentThread.h>
@@ -1809,7 +1810,7 @@ namespace DB::ErrorCodes
 namespace ProfileEvents
 {
 
-#define M(NAME, DOCUMENTATION, VALUE_TYPE) extern const Event NAME = Event(__COUNTER__);
+#define M(NAME, DOCUMENTATION, VALUE_TYPE) extern constexpr Event NAME = Event(__COUNTER__);
     APPLY_FOR_EVENTS(M)
 #undef M
 constexpr Event END = Event(__COUNTER__);
@@ -1827,7 +1828,7 @@ struct CounterLayout
     std::array<size_t, event_count> slot_of{};
     std::array<size_t, event_count> event_at_slot{};
 
-    CounterLayout()
+    constexpr CounterLayout()
     {
         const std::array hot_events = {
 #define M(NAME) static_cast<size_t>(NAME),
@@ -1855,52 +1856,38 @@ struct CounterLayout
     }
 };
 
-const CounterLayout & counterLayout()
-{
-    /// Initialized before a query counter is published; no allocation or signal-path initialization.
-    static const CounterLayout layout;
-    return layout;
-}
+constexpr CounterLayout counter_layout;
 
 }
 
-struct Counters::PagedCounters
+/// Plain hot cells keep the static global rows in BSS. Cold pages are published once and
+/// retained across reset, so snapshots and updates never race page reclamation.
+struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
 {
-    const CounterLayout & layout = counterLayout();
     mutable std::array<Count, hot_counter_count> hot{};
     std::array<std::atomic<Count *>, cold_page_count> pages{};
 
-    ~PagedCounters()
+    /// Only owned rows are reclaimed. Global backing remains valid during static teardown.
+    void destroy()
     {
         for (auto & page : pages)
             delete[] page.load(std::memory_order_relaxed);
     }
 
-    void incrementHot(Event event, Count amount) noexcept
+    Count * ensurePage(size_t index, VariableContext allocation_level)
     {
-        const size_t slot = layout.slot_of[event];
-        chassert(slot < hot_counter_count);
-        std::atomic_ref<Count>(hot[slot]).fetch_add(amount, std::memory_order_relaxed);
-    }
-
-    void increment(Event event, Count amount)
-    {
-        if (!amount)
-            return;
-        const size_t slot = layout.slot_of[event];
-        if (slot < hot_counter_count)
-        {
-            std::atomic_ref<Count>(hot[slot]).fetch_add(amount, std::memory_order_relaxed);
-            return;
-        }
-        const size_t cold_slot = slot - hot_counter_count;
-        auto & page_pointer = pages[cold_slot / cold_page_size];
+        auto & page_pointer = pages[index];
         auto * page = page_pointer.load(std::memory_order_acquire);
         if (!page)
         {
-            /// Metrics can be published from destructors. Keep memory accounting, but do not
-            /// introduce a query memory-limit exception or overcommit wait for a counter page.
+            /// Counter publication must not introduce memory-limit exceptions or overcommit
+            /// waits. Allocator-hook events have inline hot backing to prevent recursion.
             LockMemoryExceptionInThread lock(VariableContext::Global);
+            /// Non-query rows are retained across queries. Charge their backing to total
+            /// memory, including a losing CAS allocation, rather than the first caller.
+            std::optional<MemoryTrackerBlockerInThread> blocker;
+            if (allocation_level != VariableContext::Process)
+                blocker.emplace(VariableContext::Global);
             auto fresh = std::make_unique<Count[]>(cold_page_size);
             Count * expected = nullptr;
             if (page_pointer.compare_exchange_strong(
@@ -1909,12 +1896,41 @@ struct Counters::PagedCounters
             else
                 page = expected;
         }
+        return page;
+    }
+
+    void preallocate(Event event, VariableContext allocation_level)
+    {
+        const size_t slot = counter_layout.slot_of[event];
+        if (slot >= hot_counter_count)
+            ensurePage((slot - hot_counter_count) / cold_page_size, allocation_level);
+    }
+
+    void incrementHot(Event event, Count amount) noexcept
+    {
+        const size_t slot = counter_layout.slot_of[event];
+        chassert(slot < hot_counter_count);
+        std::atomic_ref<Count>(hot[slot]).fetch_add(amount, std::memory_order_relaxed);
+    }
+
+    void increment(Event event, Count amount, VariableContext allocation_level)
+    {
+        if (!amount)
+            return;
+        const size_t slot = counter_layout.slot_of[event];
+        if (slot < hot_counter_count)
+        {
+            std::atomic_ref<Count>(hot[slot]).fetch_add(amount, std::memory_order_relaxed);
+            return;
+        }
+        const size_t cold_slot = slot - hot_counter_count;
+        auto * page = ensurePage(cold_slot / cold_page_size, allocation_level);
         std::atomic_ref<Count>(page[cold_slot % cold_page_size]).fetch_add(amount, std::memory_order_relaxed);
     }
 
     Count load(Event event) const
     {
-        const size_t slot = layout.slot_of[event];
+        const size_t slot = counter_layout.slot_of[event];
         if (slot < hot_counter_count)
             return std::atomic_ref<Count>(hot[slot]).load(std::memory_order_relaxed);
         const size_t cold_slot = slot - hot_counter_count;
@@ -1926,7 +1942,7 @@ struct Counters::PagedCounters
     {
         /// The caller supplies a zeroed dense snapshot, including cells in absent pages.
         for (size_t slot = 0; slot < hot_counter_count; ++slot)
-            output[layout.event_at_slot[slot]] = std::atomic_ref<Count>(hot[slot]).load(std::memory_order_relaxed);
+            output[counter_layout.event_at_slot[slot]] += std::atomic_ref<Count>(hot[slot]).load(std::memory_order_relaxed);
         for (size_t index = 0; index < cold_page_count; ++index)
         {
             auto * page = pages[index].load(std::memory_order_acquire);
@@ -1935,8 +1951,8 @@ struct Counters::PagedCounters
             const size_t first_slot = hot_counter_count + index * cold_page_size;
             const size_t cells = std::min(cold_page_size, event_count - first_slot);
             for (size_t cell_index = 0; cell_index < cells; ++cell_index)
-                output[layout.event_at_slot[first_slot + cell_index]]
-                    = std::atomic_ref<Count>(page[cell_index]).load(std::memory_order_relaxed);
+                output[counter_layout.event_at_slot[first_slot + cell_index]]
+                    += std::atomic_ref<Count>(page[cell_index]).load(std::memory_order_relaxed);
         }
     }
 
@@ -1957,48 +1973,17 @@ struct Counters::PagedCounters
 };
 
 
-/// Row stride padded so each per-CPU row ends on a cache-line boundary. Without this the last
-/// few events of one row share a cache line with the first events of the next row, causing
-/// false sharing across CPUs at row boundaries.
-constexpr size_t counts_per_cache_line = DB::CH_CACHE_LINE_SIZE / sizeof(Count);
-static_assert((counts_per_cache_line & (counts_per_cache_line - 1)) == 0);
-constexpr size_t per_cpu_stride = (static_cast<size_t>(END) + counts_per_cache_line - 1) & ~(counts_per_cache_line - 1);
+/// The global rows are constant-initialized, including their page pointers. The layout is
+/// also constexpr: allocator hooks may increment events before any dynamic initializer runs.
+constinit Counters::CounterRow Counters::global_storage[PerCPU::MAX_CPUS]{};
 
-/// Cell count for a layout: `cpus` padded rows, or a compact single row of raw events.
-ALWAYS_INLINE inline size_t cellCount(uint32_t cpus)
-{
-    return cpus ? static_cast<size_t>(cpus) * per_cpu_stride : static_cast<size_t>(END);
-}
-
-/// Cells are plain `Count` accessed via `std::atomic_ref`; over a suitably aligned object it is
-/// lock-free and generates the same code as a `std::atomic` member (required_alignment == 8).
-ALWAYS_INLINE inline std::atomic_ref<Count> cell(Count * counters, size_t cpu, Event event)
-{
-    return std::atomic_ref<Count>(counters[cpu * per_cpu_stride + event]);
-}
-
-ALWAYS_INLINE inline AlignedCounters allocateCounters(size_t n)
-{
-    return AlignedCounters(new (std::align_val_t{DB::CH_CACHE_LINE_SIZE}) Count[n] {});
-}
-
-/// Per-CPU storage for `global_counters`, cache-line aligned. `Count` is trivially default-
-/// constructible, so this static array is a guaranteed zero-init BSS with no dynamic initializer:
-/// valid before any dynamic initializer can touch `global_counters` (which points here), and only
-/// touched rows fault in. An `atomic` element is not trivially constructible and would reintroduce
-/// dynamic initialization for an array this large — hence plain `Count` cells + `atomic_ref`.
-static_assert(std::is_trivially_default_constructible_v<Count>);
-alignas(DB::CH_CACHE_LINE_SIZE) static Count global_counters_storage[PerCPU::MAX_CPUS * per_cpu_stride];
-
-/// `cpus` starts at 0 (single-row layout); `ProfileEventsPerCPUInitializer` flips it to
-/// `PerCPU::getNumCPUs()` before any worker thread exists.
-constexpr Counters::Counters(Count * allocated_counters) noexcept
-    : counters(allocated_counters)
+constexpr Counters::Counters(GlobalTag) noexcept
+    : counters(global_storage)
     , parent(nullptr)
     , level(VariableContext::Global)
 {}
 
-constinit Counters global_counters(global_counters_storage);
+constinit Counters global_counters(Counters::GlobalTag{});
 
 /// Per-CPU width applied to newly-created `User`-level `Counters`. Set to `getNumCPUs()` during
 /// dynamic static init; `setUserPerCPUEnabled(false)` resets it to 0 to force the compact single-row
@@ -2051,13 +2036,17 @@ void Timer::end()
     watch.reset();
 }
 
+std::unique_ptr<Counters::CounterRow[]> Counters::allocateRows(uint32_t rows, VariableContext allocation_level)
+{
+    std::optional<MemoryTrackerBlockerInThread> blocker;
+    if (allocation_level != VariableContext::Process)
+        blocker.emplace(VariableContext::Global);
+    return std::make_unique<CounterRow[]>(std::max(1U, rows));
+}
+
 Counters::Counters(VariableContext level_, Counters * parent_)
-    /// `User`-level instances snapshot `user_counters_cpus` (stable post-init, server-tunable);
-    /// other levels stay single-row (`cpus == 0`). `cpus` is read once and the allocation is
-    /// sized from it, so the layout and the row count cannot disagree.
     : cpus(level_ == VariableContext::User ? user_counters_cpus.load(std::memory_order_relaxed) : 0)
-    , counters_holder(level_ == VariableContext::Process ? AlignedCounters{} : allocateCounters(cellCount(cpus.load(std::memory_order_relaxed))))
-    , paged_counters(level_ == VariableContext::Process ? std::make_unique<PagedCounters>() : nullptr)
+    , counters_holder(allocateRows(cpus.load(std::memory_order_relaxed), level_))
     , parent(parent_)
     , level(level_)
 {
@@ -2068,7 +2057,6 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , cpus(src.cpus.exchange(0, std::memory_order_relaxed))
     , counters_holder(std::move(src.counters_holder))
-    , paged_counters(std::move(src.paged_counters))
     , parent(src.parent.exchange(nullptr, std::memory_order_acquire))
     , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_acquire))
     , should_trace_holder(std::move(src.should_trace_holder))
@@ -2077,33 +2065,50 @@ Counters::Counters(Counters && src) noexcept
 {
 }
 
-Counters::~Counters() = default;
+Counters::~Counters()
+{
+    if (counters_holder)
+    {
+        std::optional<MemoryTrackerBlockerInThread> blocker;
+        if (level != VariableContext::Process)
+            blocker.emplace(VariableContext::Global);
+        for (uint32_t row = 0; row < std::max(1U, cpus.load(std::memory_order_relaxed)); ++row)
+            counters[row].destroy();
+        counters_holder.reset();
+    }
+}
 
 void Counters::resetCounters()
 {
-    if (paged_counters)
-    {
-        paged_counters->reset();
-        return;
-    }
+    /// Only moved-from instances lack backing; every constructed counter owns its hot row.
     if (!counters)
         return;
-    const size_t total = cellCount(cpus.load(std::memory_order_relaxed));
-    for (size_t i = 0; i < total; ++i)
-        std::atomic_ref<Count>(counters[i]).store(0, std::memory_order_relaxed);
+    for (uint32_t row = 0; row < std::max(1U, cpus.load(std::memory_order_relaxed)); ++row)
+        counters[row].reset();
 }
 
 Count Counters::load(Event event) const
 {
-    if (paged_counters)
-        return paged_counters->load(event);
-    const uint32_t rows = cpus.load(std::memory_order_relaxed);
-    if (!rows)
-        return cell(counters, 0, event).load(std::memory_order_relaxed);
     Count sum = 0;
-    for (uint32_t s = 0; s < rows; ++s)
-        sum += cell(counters, s, event).load(std::memory_order_relaxed);
+    for (uint32_t row = 0; row < std::max(1U, cpus.load(std::memory_order_relaxed)); ++row)
+        sum += counters[row].load(event);
     return sum;
+}
+
+void Counters::preallocate(Event event)
+{
+    /// Hot cells are already present at every level, including any future parent.
+    if (counter_layout.slot_of[event] < hot_counter_count)
+        return;
+    for (Counters * current = this; current; current = current->parent.load(std::memory_order_acquire))
+    {
+        auto rows = current->cpus.load(std::memory_order_relaxed);
+        /// A reservation made before static initialization must survive enabling CPU sharding.
+        if (!rows && current == &global_counters)
+            rows = PerCPU::MAX_CPUS;
+        for (uint32_t row = 0; row < std::max(1U, rows); ++row)
+            current->counters[row].preallocate(event, current->level);
+    }
 }
 
 void Counters::setParent(Counters * parent_)
@@ -2132,21 +2137,10 @@ void Counters::setTraceAllProfileEvents()
 
 void Counters::fetchAdd(Event event, Count amount, int32_t cpu)
 {
-    if (paged_counters)
-    {
-        paged_counters->increment(event, amount);
-        return;
-    }
     const uint32_t rows = cpus.load(std::memory_order_relaxed);
-    if (rows)
-    {
-        /// `cpu` may be >= rows if a CPU above `MAX_CPUS` is online, and -1 on error. In both
-        /// cases, fall back to row 0 — still atomic, still correct, just with less cache locality.
-        const size_t row = (cpu >= 0 && static_cast<uint32_t>(cpu) < rows) ? static_cast<size_t>(cpu) : 0;
-        cell(counters, row, event).fetch_add(amount, std::memory_order_relaxed);
-    }
-    else
-        cell(counters, 0, event).fetch_add(amount, std::memory_order_relaxed);
+    /// Out-of-range CPUs use row zero, including the unsharded case.
+    const size_t row = (cpu >= 0 && static_cast<uint32_t>(cpu) < rows) ? static_cast<size_t>(cpu) : 0;
+    counters[row].increment(event, amount, level);
 }
 
 void Counters::reset()
@@ -2182,13 +2176,8 @@ Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
-    if (paged_counters)
-    {
-        paged_counters->snapshot(res.counters_holder.get());
-        return res;
-    }
-    for (Event i = Event(0); i < num_counters; ++i)
-        res.counters_holder[i] = load(i);
+    for (uint32_t row = 0; row < std::max(1U, cpus.load(std::memory_order_relaxed)); ++row)
+        counters[row].snapshot(res.counters_holder.get());
     return res;
 }
 
@@ -2350,6 +2339,11 @@ void incrementNoTrace(Event event, Count amount)
     DB::CurrentThread::getProfileEvents().incrementNoTrace(event, amount);
 }
 
+void preallocate(Event event)
+{
+    DB::CurrentThread::getProfileEvents().preallocate(event);
+}
+
 void incrementSignalSafe(NonAllocatingEvent event, Count amount)
 {
     DB::CurrentThread::getProfileEvents().incrementSignalSafe(event, amount);
@@ -2428,13 +2422,10 @@ void Counters::incrementSignalSafe(NonAllocatingEvent event, Count amount)
 
     Counters * current = this;
     /// Must stay async-signal-safe (called from signal/crash handlers), so unlike `incrementNoTrace`
-    /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.
+    /// it does not call `sched_getcpu` and updates row zero at every level.
     do
     {
-        if (current->paged_counters)
-            current->paged_counters->incrementHot(event.value(), amount);
-        else
-            current->fetchAdd(event.value(), amount, -1);
+        current->counters[0].incrementHot(event.value(), amount);
         current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }

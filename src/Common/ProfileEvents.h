@@ -25,16 +25,6 @@ namespace ProfileEvents
     using Count = UInt64;
     using Increment = Int64;
 
-    /// Counter cells are plain `Count`, accessed atomically via `std::atomic_ref`. Keeping the
-    /// storage trivially default-constructible is what lets the static `global_counters` backing
-    /// array be a guaranteed zero-init BSS with no dynamic initializer (an `atomic` element is not
-    /// trivially constructible, which reintroduces dynamic init for a large enough array).
-    struct AlignedCountersDeleter
-    {
-        void operator()(Count * p) const noexcept { ::operator delete[](p, std::align_val_t{DB::CH_CACHE_LINE_SIZE}); }
-    };
-    using AlignedCounters = std::unique_ptr<Count[], AlignedCountersDeleter>;
-
     class Counters;
     class NonAllocatingEvent;
 
@@ -71,19 +61,14 @@ namespace ProfileEvents
     class Counters
     {
     private:
-        /// Per-CPU: `cpus * per_cpu_stride` cells, cell for CPU `c`/event `e` at `c * per_cpu_stride + e`
-        /// (stride rounds `num_counters` up to keep rows on separate cache lines). An out-of-range CPU
-        /// falls back to row 0. Otherwise just `num_counters` cells indexed by event.
-        Count * counters = nullptr;
-        /// 0 → no per-CPU. Set once (static init flips it for `global_counters`, ctor for `User`)
-        /// and only grows the view over the same zeroed storage, so relaxed loads suffice; atomic
-        /// because a thread spawned during another TU's dynamic init may increment concurrently
-        /// with the flip.
+        struct CounterRow;
+        /// Every level uses the same hot/cold row. User/global counters shard rows by CPU.
+        CounterRow * counters = nullptr;
         std::atomic<uint32_t> cpus = 0;
-        AlignedCounters counters_holder;
-        struct PagedCounters;
-        /// Query counters keep hot cells inline and allocate cold pages on first use.
-        std::unique_ptr<PagedCounters> paged_counters;
+        std::unique_ptr<CounterRow[]> counters_holder;
+        /// Borrowed, process-lifetime backing, usable before dynamic initialization.
+        static CounterRow global_storage[];
+        static std::unique_ptr<CounterRow[]> allocateRows(uint32_t rows, VariableContext allocation_level);
 
         /// Used to propagate increments.
         /// Requires acquire-release:
@@ -116,7 +101,8 @@ namespace ProfileEvents
         explicit Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
 
         /// constexpr so `global_counters` can be `constinit` — usable before any dynamic init.
-        constexpr explicit Counters(Count * allocated_counters) noexcept;
+        struct GlobalTag {};
+        constexpr explicit Counters(GlobalTag) noexcept;
 
         friend struct ProfileEventsPerCPUInitializer;
 
@@ -128,6 +114,10 @@ namespace ProfileEvents
         Count operator[] (Event event) const { return load(event); }
 
         void increment(Event event, Count amount = 1);
+
+        /// Reserve an event in every CPU row and parent before entering an allocation-denied scope.
+        /// Reset retains reservations; a newly attached parent must be reserved separately.
+        void preallocate(Event event);
 
         /// The event must have reserved backing at every parent. Retains ordinary tracing.
         /// Debug allocation checks enforce the contract where supported.
@@ -210,6 +200,9 @@ namespace ProfileEvents
 
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
+
+    /// Reserve backing in the current thread and its parent chain without incrementing the event.
+    void preallocate(Event event);
 
     /// The same as above but ignores value of setting 'trace_profile_events'
     /// and never sends profile event to trace log.

@@ -1,7 +1,7 @@
 #pragma once
 
 /// Events published from signal handlers, allocator hooks, or allocation-denied scopes.
-/// Every event in this list has preallocated query-counter storage.
+/// Every event in this list has preallocated storage at every counter level.
 #define APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M) \
     M(QueryProfilerConcurrencyOverruns) \
     M(QueryProfilerSignalOverruns) \
@@ -10,6 +10,7 @@
     M(CannotWriteToWriteBufferDiscard) \
     M(MemoryAllocatedWithoutCheck) \
     M(MemoryAllocatedWithoutCheckBytes) \
+    M(MemoryLargeAllocationTraced) \
     M(QueryMemoryLimitExceeded) \
     M(GlobalMemoryLimitExceeded) \
     M(PageCacheOvercommitResize) \

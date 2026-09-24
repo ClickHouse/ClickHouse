@@ -76,5 +76,4 @@
     M(OpenedFileCacheMicroseconds) \
     M(OSCPUWaitMicroseconds) \
     M(FilteringMarksWithPrimaryKeyProcessedMarks) \
-    M(SharedPartsLockHoldMicroseconds) \
-    M(PartsLockHoldMicroseconds)
+    M(SharedPartsLockHoldMicroseconds)
