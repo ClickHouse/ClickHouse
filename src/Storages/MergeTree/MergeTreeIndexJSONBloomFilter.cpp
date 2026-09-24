@@ -682,6 +682,9 @@ private:
         const TypeInfo * last_type_info = nullptr;
         SerializationPtr last_serialization;
         ScalarPlan * last_scalar_plan = nullptr;
+        /// The previous value of this path in a column of the block, which stays alive for the whole call.
+        /// An equal value adds the same tokens, so it is skipped.
+        std::optional<std::string_view> last_value;
     };
 
     using SharedPathPlans = UnorderedMapWithMemoryTracking<
@@ -936,12 +939,21 @@ private:
                 auto & shared_plan = plan_it->second;
                 if (!shared_plan.should_visit)
                     continue;
+                const auto value_data = shared_data_values->getDataAt(shared_index);
+                const std::string_view value(value_data.data(), value_data.size());
+                /// Temporary columns are reused, so only the values in the columns of the block are remembered.
+                if (!temporary_column_depth)
+                {
+                    if (shared_plan.last_value == value)
+                        continue;
+                    shared_plan.last_value = value;
+                }
                 emitSharedValue(
                     shared_plan.hash_path,
                     shared_plan.logical_path,
                     role,
                     shared_plan.should_index,
-                    shared_data_values->getDataAt(shared_index),
+                    value,
                     &shared_plan);
             }
         }
