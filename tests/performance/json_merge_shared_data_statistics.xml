@@ -1,6 +1,7 @@
 <test>
-    <!-- A merge writes many blocks of a `JSON` column whose shared data has thousands of distinct paths.
-         The writer sets the statistics of its first block to every next block. -->
+    <!-- A merge writes many blocks of a `JSON` column whose shared data has thousands of distinct paths. The writer
+         sets the statistics of its first block to every next block. The merged parts are results of merges, so their
+         statistics have many paths, and `index_granularity` emulates the small granules and blocks of wide rows. -->
     <substitutions>
         <substitution>
             <name>shared_data_version</name>
@@ -14,27 +15,43 @@
     <create_query>
         CREATE TABLE t_json_merge_statistics_{shared_data_version} (id UInt64, json JSON(max_dynamic_paths = 0))
         ENGINE = MergeTree ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, object_shared_data_serialization_version = '{shared_data_version}'
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, object_shared_data_serialization_version = '{shared_data_version}',
+            index_granularity = 750, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE t_json_merge_statistics_{shared_data_version}_source_1 (id UInt64, json JSON(max_dynamic_paths = 0))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, object_shared_data_serialization_version = '{shared_data_version}',
+            index_granularity = 750, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE t_json_merge_statistics_{shared_data_version}_source_2 (id UInt64, json JSON(max_dynamic_paths = 0))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, object_shared_data_serialization_version = '{shared_data_version}',
+            index_granularity = 750, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE t_json_merge_statistics_{shared_data_version}_source_3 (id UInt64, json JSON(max_dynamic_paths = 0))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, object_shared_data_serialization_version = '{shared_data_version}',
+            index_granularity = 750, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1
     </create_query>
 
     <fill_query>SYSTEM STOP MERGES t_json_merge_statistics_{shared_data_version}</fill_query>
-    <fill_query>
-        INSERT INTO t_json_merge_statistics_{shared_data_version}
-        SELECT number, CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 125) % 5000), toString(x)), range(40)), 'Map(String, String)')
-        FROM numbers(0, 100000)
-    </fill_query>
-    <fill_query>
-        INSERT INTO t_json_merge_statistics_{shared_data_version}
-        SELECT number, CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 125) % 5000), toString(x)), range(40)), 'Map(String, String)')
-        FROM numbers(100000, 100000)
-    </fill_query>
-    <fill_query>
-        INSERT INTO t_json_merge_statistics_{shared_data_version}
-        SELECT number, CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 125) % 5000), toString(x)), range(40)), 'Map(String, String)')
-        FROM numbers(200000, 100000)
-    </fill_query>
+    <fill_query>INSERT INTO t_json_merge_statistics_{shared_data_version}_source_1 SELECT number, CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 250) % 10000), toString(x)), range(40)), 'Map(String, String)') FROM numbers(0, 100000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_json_merge_statistics_{shared_data_version}_source_1 FINAL</fill_query>
+    <fill_query>ALTER TABLE t_json_merge_statistics_{shared_data_version} ATTACH PARTITION tuple() FROM t_json_merge_statistics_{shared_data_version}_source_1</fill_query>
+    <fill_query>INSERT INTO t_json_merge_statistics_{shared_data_version}_source_2 SELECT number, CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 250) % 10000), toString(x)), range(40)), 'Map(String, String)') FROM numbers(100000, 100000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_json_merge_statistics_{shared_data_version}_source_2 FINAL</fill_query>
+    <fill_query>ALTER TABLE t_json_merge_statistics_{shared_data_version} ATTACH PARTITION tuple() FROM t_json_merge_statistics_{shared_data_version}_source_2</fill_query>
+    <fill_query>INSERT INTO t_json_merge_statistics_{shared_data_version}_source_3 SELECT number, CAST(arrayMap(x -> tuple('key' || toString((cityHash64(number) + x * 250) % 10000), toString(x)), range(40)), 'Map(String, String)') FROM numbers(200000, 100000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_json_merge_statistics_{shared_data_version}_source_3 FINAL</fill_query>
+    <fill_query>ALTER TABLE t_json_merge_statistics_{shared_data_version} ATTACH PARTITION tuple() FROM t_json_merge_statistics_{shared_data_version}_source_3</fill_query>
 
-    <query>OPTIMIZE TABLE t_json_merge_statistics_{shared_data_version} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0'</query>
+    <query>OPTIMIZE TABLE t_json_merge_statistics_{shared_data_version} DRY RUN PARTS 'all_1_1_1', 'all_2_2_1', 'all_3_3_1'</query>
 
     <drop_query>DROP TABLE IF EXISTS t_json_merge_statistics_{shared_data_version}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_json_merge_statistics_{shared_data_version}_source_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_json_merge_statistics_{shared_data_version}_source_2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_json_merge_statistics_{shared_data_version}_source_3</drop_query>
 </test>
