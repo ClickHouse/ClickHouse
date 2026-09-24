@@ -10,8 +10,11 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -21,7 +24,10 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -123,6 +129,7 @@ enum class UnaryStepStatsKind : UInt8
     Aggregating,
     Sorting,
     LogicalExchange,
+    ValuePreservingTransform,
     PreservingTransform,
 };
 
@@ -148,6 +155,26 @@ UnaryStepStatsKind classifyUnaryStepStats(const IQueryPlanStep & step)
         return UnaryStepStatsKind::Sorting;
     if (dynamic_cast<const LogicalExchangeStep *>(&step))
         return UnaryStepStatsKind::LogicalExchange;
+
+    /// Tees the same rows and columns to multiple consumers.
+    if (typeid_cast<const CommonSubplanStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// Copies selected columns to a buffer while passing the input through unchanged.
+    if (typeid_cast<const SaveSubqueryResultToBufferStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// Adds an extremes port without changing the main stream.
+    if (typeid_cast<const ExtremesStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// Appends window result columns while leaving existing columns unchanged.
+    if (typeid_cast<const WindowStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// Builds a runtime filter while passing the input through unchanged.
+    if (typeid_cast<const BuildRuntimeFilterStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+    /// Writes to the query-result cache while passing the input through unchanged.
+    if (typeid_cast<const StreamInQueryResultCacheStep *>(&step))
+        return UnaryStepStatsKind::ValuePreservingTransform;
+
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(&step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
         return UnaryStepStatsKind::PreservingTransform;
@@ -217,9 +244,12 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         case UnaryStepStatsKind::LogicalExchange:
             /// Exchanges do not change rows or values.
             return input_stats;
+        case UnaryStepStatsKind::ValuePreservingTransform:
+            return input_stats;
         case UnaryStepStatsKind::PreservingTransform:
-            /// Preserving row count alone does not prove that the key values are preserved. Keep the
-            /// observed values for diagnostics and make consumers fail closed through provenance.
+            /// Preserving row count alone does not prove that the key values are preserved. Known
+            /// value-preserving steps are allow-listed in `classifyUnaryStepStats`; anything else
+            /// fails closed. Keep observed values for diagnostics and record that they are unsupported.
             addTransformation(input_stats.column_stats, Unsupported);
             return input_stats;
         case UnaryStepStatsKind::Unsupported:

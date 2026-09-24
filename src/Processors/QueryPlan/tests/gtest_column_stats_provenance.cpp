@@ -10,8 +10,11 @@
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ISourceStep.h>
@@ -21,6 +24,7 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -623,6 +627,45 @@ TEST(ColumnStatsProvenance, FullAndPasteJoinEstimatesFailClosed)
         EXPECT_TRUE(stats.column_stats.at("l").range_provenance.has(Unsupported));
         EXPECT_FALSE(stats.rows_exact);
     }
+}
+
+TEST(ColumnStatsProvenance, ValuePreservingTransformsKeepFactsAndProvenance)
+{
+    const auto header = makeHeader();
+    CommonSubplanStep common_subplan(header);
+    ExtremesStep extremes(header);
+    SaveSubqueryResultToBufferStep save_to_buffer(header, {"k"}, {});
+
+    for (const auto * step : std::initializer_list<const IQueryPlanStep *>{&common_subplan, &extremes, &save_to_buffer})
+    {
+        SCOPED_TRACE(step->getName());
+        const auto result = estimateUnaryStepStats(*step, inputRelationStats());
+        ASSERT_TRUE(result.has_value());
+        EXPECT_TRUE(result->rows_exact);
+        ASSERT_EQ(result->estimated_rows, 100);
+
+        const auto & stats = result->column_stats.at("k");
+        EXPECT_EQ(stats.ndv_provenance.transformations, 0);
+        EXPECT_EQ(stats.range_provenance.transformations, 0);
+        EXPECT_TRUE(isRepresentativeValueRange(stats.range_provenance));
+    }
+}
+
+TEST(ColumnStatsProvenance, CommonSubplanReferenceSeesThroughCommonSubplanStep)
+{
+    const auto header = makeHeader();
+    QueryPlan::Node source;
+    source.step = std::make_unique<TestSystemOneStep>(header);
+    QueryPlan::Node common_subplan;
+    common_subplan.step = std::make_unique<CommonSubplanStep>(header);
+    common_subplan.children = {&source};
+    QueryPlan::Node reference;
+    reference.step = std::make_unique<CommonSubplanReferenceStep>(header, &common_subplan, ColumnIdentifiers{"k"});
+
+    const auto stats = estimateReadRowsCount(reference);
+    ASSERT_EQ(stats.estimated_rows, 1);
+    EXPECT_TRUE(stats.rows_exact);
+    EXPECT_TRUE(stats.column_stats.empty());
 }
 
 TEST(ColumnStatsProvenance, GenericPreservingTransformFailsClosedWithoutErasingFacts)
