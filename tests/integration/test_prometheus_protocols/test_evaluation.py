@@ -259,6 +259,21 @@ def send_test_data():
         ]
     )
 
+    # A NaN among real samples, for `mad_over_time`: a NaN sample makes the result NaN.
+    send_data(
+        [
+            (
+                {"__name__": "nan_among_values"},
+                {
+                    110: 1,
+                    120: float("nan"),
+                    130: 3,
+                    140: 4,
+                },
+            )
+        ]
+    )
+
     send_data(
         [
             (
@@ -1464,6 +1479,33 @@ def test_function_over_time():
         210,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "NaN"]}]}',
         [["[]", "1970-01-01 00:03:30.000", "nan"]],
+    )
+
+    # mad_over_time: the median absolute deviation `median(|x - median(x)|)`, on `resets` because it goes up and down.
+    # The windows hold one to five samples. At 140 the window holds {1,5,8,2}: median 3.5, deviations {2.5,1.5,1.5,4.5}
+    # -> 2. At 150 it holds {1,5,8,2,6}: median 5, deviations {4,0,3,3,1} -> 3. At 160 it holds {5,8,2,6}: median 5.5,
+    # deviations {0.5,2.5,3.5,0.5} -> 1.5. The metric name is dropped.
+    do_query_test(
+        "mad_over_time(resets[50s])[110s:10s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "0"], [120, "2"], [130, "3"], [140, "2"], [150, "3"], [160, "1.5"], [170, "2"], [180, "2"], [190, "2"], [200, "3.5"], [210, "1"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:50.000',0),('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:10.000',3),('1970-01-01 00:02:20.000',2),('1970-01-01 00:02:30.000',3),('1970-01-01 00:02:40.000',1.5),('1970-01-01 00:02:50.000',2),('1970-01-01 00:03:00.000',2),('1970-01-01 00:03:10.000',2),('1970-01-01 00:03:20.000',3.5),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # A NaN sample makes the result NaN, as in Prometheus since 3.14. The Prometheus image used by this test is older:
+    # it still sorts the NaN before the real values and gives 0 for the window {1,NaN,3} at 130 and 1 for {1,NaN,3,4}
+    # at 140. So only the window {1,NaN} at 120, where both versions give NaN, is compared with Prometheus here;
+    # the other windows are covered by 05241_timeseries_mad_to_grid.
+    do_query_test(
+        "mad_over_time(nan_among_values[45s])",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "nan"]],
     )
 
     # predict_linear over 2-3 sample windows with exact slopes; windows with fewer than
