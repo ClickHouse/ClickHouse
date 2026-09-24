@@ -269,6 +269,12 @@ std::shared_ptr<TSystemLog> createSystemLog(
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
 
+    /// Look at the parsed setting rather than at the text of the engine, because a substring
+    /// search would also match `map_serialization_version_for_zero_level_parts`.
+    const auto * engine_storage = storage_with_comment.storage ? storage_with_comment.storage->as<ASTStorage>() : nullptr;
+    const bool engine_sets_map_serialization_version = engine_storage && engine_storage->settings
+        && engine_storage->settings->changes.tryGet("map_serialization_version");
+
     /// Add comment to AST. So it will be saved when the table will be renamed.
     constexpr std::string_view comment_addendum = "It is safe to truncate or drop this table at any time.";
     String merged_comment = comment;
@@ -365,7 +371,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         /// The bucketed `Map` serialization is a part of the default table definition, which an
         /// explicit `engine` replaces, so say it out loud instead of quietly creating a table that
         /// has the shape of the `bucketed` schema without the bucketed reads that motivate it.
-        if (config.has(config_prefix + ".engine") && !log_settings.engine.contains("map_serialization_version"))
+        if (config.has(config_prefix + ".engine") && !engine_sets_map_serialization_version)
             LOG_WARNING(getLogger("SystemLog"),
                 "The '{}' schema of {} is requested together with an explicit 'engine' that does not set "
                 "'map_serialization_version', so the 'metrics' column will use the default Map serialization "

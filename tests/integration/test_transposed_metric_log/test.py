@@ -252,6 +252,34 @@ def test_default_schema_stays_wide_with_explicit_engine(start_cluster):
     assert int(node7.query("select count() from system.metric_log").strip()) > 0
 
 
+def test_bucketed_schema_with_explicit_engine_warns(start_cluster):
+    # An explicit `bucketed` schema with an explicit `engine` works, but the server warns when the
+    # engine does not set `map_serialization_version`. A setting that only shares the prefix,
+    # `map_serialization_version_for_zero_level_parts`, leaves the main serialization at its
+    # default, so it must not suppress the warning.
+    warning = "that does not set 'map_serialization_version'"
+    config_path = "/etc/clickhouse-server/config.d/metric_log_default_schema_with_engine.xml"
+
+    node7.replace_in_config(config_path, "<table>metric_log</table>", "<table>metric_log</table><schema_type>bucketed</schema_type>")
+    node7.replace_in_config(config_path, "</engine>", "SETTINGS map_serialization_version_for_zero_level_parts = 'basic'</engine>")
+    node7.restart_clickhouse()
+    node7.query("SYSTEM FLUSH LOGS metric_log")
+    assert "`metrics` Map(Enum16(" in node7.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
+    assert int(node7.count_in_log(warning)) > 0
+
+    node7.replace_in_config(config_path, "SETTINGS map_serialization_version_for_zero_level_parts", "SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts")
+    node7.stop_clickhouse()
+    node7.exec_in_container(["bash", "-c", "truncate -s 0 /var/log/clickhouse-server/clickhouse-server.log"])
+    node7.start_clickhouse()
+    node7.query("SYSTEM FLUSH LOGS metric_log")
+    assert "map_serialization_version = 'with_buckets'" in node7.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
+    assert int(node7.count_in_log(warning)) == 0
+
+    node7.replace_in_config(config_path, "<schema_type>bucketed</schema_type>", "")
+    node7.replace_in_config(config_path, "SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'basic'", "")
+    node7.restart_clickhouse()
+
+
 def insert_into_transposed_metric_log(node, table_name, size):
     INGEST_INTO_TRANSPOSED_LOG = f"""
     INSERT INTO system.{table_name} WITH
