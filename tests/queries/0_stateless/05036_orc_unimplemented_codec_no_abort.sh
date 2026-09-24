@@ -6,9 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Truncating this fixture to 289 bytes leaves byte 6 in the postscript's compression field. Codec 6
-# is BROTLI, which the ORC format declares but this reader does not implement, so the library throws
-# orc::NotImplementedYet - a std::logic_error, which the exception formatter used to treat as an
-# internal-invariant violation and abort on.
+# is BROTLI, which the ORC format declares but this reader does not implement. The reader rejects it
+# with orc::CompressionError, a std::runtime_error; it used to raise orc::NotImplementedYet, a
+# std::logic_error, which the exception formatter treats as an internal-invariant violation and
+# aborts on in debug and sanitizer builds.
 DATA_FILE="$CLICKHOUSE_TMP/05036_orc_codec6_${CLICKHOUSE_DATABASE}.orc"
 head -c 289 "$CUR_DIR"/data_orc/orc_nested_union_type.orc > "$DATA_FILE"
 
@@ -28,19 +29,19 @@ do
     if [ -z "$OUT" ]; then
         echo "no output at all"
     else
-        echo "$OUT" | grep -o -m1 'NOT_IMPLEMENTED\|Logical error\|Code: 1001' || echo "unexpected: $OUT"
+        echo "$OUT" | grep -o -m1 'orc::CompressionError\|Logical error' || echo "unexpected: $OUT"
     fi
 done
 
-# The message must not call the file corrupt: a well-formed Brotli-compressed ORC file takes this
-# same path.
+# The message must name the codec, and must not call the file corrupt: a well-formed
+# Brotli-compressed ORC file takes this same path.
 $CLICKHOUSE_LOCAL --query "SELECT * FROM file('$DATA_FILE', ORC, 'x Int32') FORMAT Null" 2>&1 \
-    | grep -o -m1 'is not implemented\|CORRUPTED\|INCORRECT_DATA'
+    | grep -o -m1 'Unknown compression codec 6\|CORRUPTED\|INCORRECT_DATA'
 
-# Neighbouring truncations are genuinely corrupt and must keep reporting corruption. Schema
-# inference wraps every non-retryable cause in one outer code, so that arm alone cannot tell
-# corruption from a feature gap; the explicit-structure arm bypasses the wrapper and surfaces the
-# inner classification, and asserting NOT_IMPLEMENTED is absent there pins the two apart.
+# Neighbouring truncations are genuinely corrupt and must keep reporting corruption rather than the
+# codec gap. Schema inference wraps every non-retryable cause in one outer code, so that arm alone
+# cannot tell the two apart; the explicit-structure arm bypasses the wrapper and surfaces the inner
+# classification, and counting orc::CompressionError there pins them apart.
 for length in 200 400
 do
     NEIGHBOUR="$CLICKHOUSE_TMP/05036_orc_${length}_${CLICKHOUSE_DATABASE}.orc"
@@ -49,7 +50,7 @@ do
         | grep -o -m1 'CANNOT_EXTRACT_TABLE_STRUCTURE\|Logical error'
     EXPLICIT=$($CLICKHOUSE_LOCAL --query "SELECT * FROM file('$NEIGHBOUR', ORC, 'x Int32') FORMAT Null" 2>&1)
     echo "$EXPLICIT" | grep -o -m1 'orc::ParseError\|Logical error' || echo "unexpected: $EXPLICIT"
-    echo "$EXPLICIT" | grep -c 'NOT_IMPLEMENTED'
+    echo "$EXPLICIT" | grep -c 'orc::CompressionError'
     rm "$NEIGHBOUR"
 done
 

@@ -1,9 +1,9 @@
-NOT_IMPLEMENTED
-NOT_IMPLEMENTED
-NOT_IMPLEMENTED
-NOT_IMPLEMENTED
-NOT_IMPLEMENTED
-is not implemented
+orc::CompressionError
+orc::CompressionError
+orc::CompressionError
+orc::CompressionError
+orc::CompressionError
+Unknown compression codec 6
 CANNOT_EXTRACT_TABLE_STRUCTURE
 orc::ParseError
 0
