@@ -5,6 +5,8 @@
 -- UNIQUE KEY DDL + metadata.
 -- Runtime dedup is out of scope; this test only exercises parsing, metadata,
 -- round-trip, guards, and restart survival.
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
 
 SET allow_experimental_unique_key = 1;
 SET async_insert = 0;

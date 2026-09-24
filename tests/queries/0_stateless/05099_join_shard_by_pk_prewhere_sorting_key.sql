@@ -4,6 +4,8 @@
 -- result against an unsharded oracle (hash where the algorithm can change), so a silent wrong
 -- result fails too; the rest are header and plan-shape guards. The guards matter because every
 -- result cell passes vacuously if the plan silently stops sharding, prewhering or reading in order.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET join_algorithm = 'full_sorting_merge';
 SET query_plan_join_shard_by_pk_ranges = 1;

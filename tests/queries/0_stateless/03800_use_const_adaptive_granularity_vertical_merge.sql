@@ -1,3 +1,5 @@
+-- Tags: long
+-- Tag long: inserts 400 thousand rows of up to 1000 bytes, which exceeds the flaky check time limit under randomized settings
 -- Marks count and granularity values depend on physical data sort order
 SET force_primary_key_reverse_order = 0;
 

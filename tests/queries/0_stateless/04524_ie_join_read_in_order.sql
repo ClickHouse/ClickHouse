@@ -2,6 +2,8 @@
 -- sort, which makes the inputs eligible for the read-in-order optimization: when a MergeTree
 -- table is ordered by that key, the sort turns into a streaming FinishSorting (or is elided)
 -- over an in-order read. Results must not depend on `optimize_read_in_order`.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 

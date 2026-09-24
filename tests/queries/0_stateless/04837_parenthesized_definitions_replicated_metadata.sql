@@ -3,6 +3,8 @@
 -- ReplicatedMergeTree table to compare what each of them has written to ZooKeeper.
 -- Tag no-random-merge-tree-settings: the test shows the definition of a table, and the randomized
 -- settings would be printed with it.
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
 
 -- A replica compares its own definitions with the ones stored in ZooKeeper, which may have been
 -- written by a server that did not remember the redundant parentheses the user wrote (they became

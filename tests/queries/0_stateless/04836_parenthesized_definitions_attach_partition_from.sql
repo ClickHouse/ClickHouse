@@ -1,6 +1,8 @@
 -- Tags: no-random-merge-tree-settings
 -- Tag no-random-merge-tree-settings: the test shows the definition of a table, and the randomized
 -- settings would be printed with it.
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
 
 -- Whether the user wrote redundant parentheses around a definition expression is not a property of
 -- the table: `PARTITION BY (a)` and `PARTITION BY a` are the same key. `ATTACH PARTITION FROM`

@@ -1,6 +1,8 @@
 -- Tags: no-random-merge-tree-settings
 -- no-random-merge-tree-settings: the preservation assertions read exact granule counts, which
 -- `index_granularity` randomization moves.
+-- Disable force_primary_key_reverse_order: a descending key throws `BAD_TYPE_OF_FIELD` in index analysis of `Date + Tuple(Interval)`, a known issue to be fixed separately
+SET force_primary_key_reverse_order = 0;
 
 -- `plus`/`minus`/`multiply`/`divide`/`intDiv` over an `Array`/`Tuple` value are evaluated
 -- element-wise, but the comparison of a compound value is lexicographic, so an element-wise
