@@ -207,9 +207,14 @@ def test_prepared_statement_execute_without_bind_no_params():
     ("string_with_quotes", pa.array(["it's a \"test\""], type=pa.string()), "it's a \"test\""),
     ("string_with_backslash", pa.array(["path\\to\\file"], type=pa.string()), "path\\to\\file"),
     ("large_string", pa.array(["large"], type=pa.large_string()), "large"),
-    # Binary types
+    # Binary types. Binary parameters are substituted as `unhex(...)` and the result comes back
+    # in a String column; invalid UTF-8 is replaced with U+FFFD on Flight output
+    # (see test_sql_server.py::test_statement_string_replaces_invalid_utf8).
     ("binary", pa.array([b"\x01\x02\x03"], type=pa.binary()), b"\x01\x02\x03"),
-    ("large_binary", pa.array([b"\xaa\xbb"], type=pa.large_binary()), b"\xaa\xbb"),
+    # Valid UTF-8 (U+00AA, U+00BB) roundtrips unchanged.
+    ("large_binary", pa.array([b"\xc2\xaa\xc2\xbb"], type=pa.large_binary()), b"\xc2\xaa\xc2\xbb"),
+    # Invalid UTF-8 is replaced with U+FFFD.
+    ("large_binary_invalid_utf8", pa.array([b"\xaa\xbb"], type=pa.large_binary()), "\ufffd".encode()),
     # Date types — Arrow date32 ToString produces "YYYY-MM-DD" which must be quoted
     ("date32", pa.array([datetime.date(2021, 6, 15)], type=pa.date32()), datetime.date(2021, 6, 15)),
     # Timestamp
