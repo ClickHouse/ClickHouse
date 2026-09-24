@@ -83,9 +83,10 @@ public:
     /// Rows where null_map[i] != 0 are skipped and emitted as empty strings.
     /// For FixedString, getDataAt returns the value with null-byte padding; trimRight removes it.
     /// For String, trailing zero bytes are valid data and must not be trimmed.
-    /// Snowball stemming never lengthens a word, so upper_bound bytes is a safe pre-allocation.
     MutableColumnPtr stemColumn(const IColumn & col, size_t input_rows_count, const NullMap * null_map = nullptr)
     {
+        /// upper_bound is only an initial estimate: some stemmers lengthen a word (e.g. Turkish maps
+        /// the ASCII 'i' to the 2-byte 'ı'), so the loop grows res_data when the output overflows it.
         size_t upper_bound = 0;
         const bool is_fixed_string = checkAndGetColumn<ColumnFixedString>(&col) != nullptr;
         if (const auto * col_str = checkAndGetColumn<ColumnString>(&col))
@@ -115,7 +116,10 @@ public:
             if (is_fixed_string)
                 trimRight(word, '\0');
             std::string_view stemmed = stem(word);
-            chassert(data_size + stemmed.size() <= res_data.size());
+
+            /// Stemming can lengthen the word, grow the output buffer.
+            if (data_size + stemmed.size() > res_data.size())
+                res_data.resize(data_size + stemmed.size());
 
             memcpy(res_data.data() + data_size, stemmed.data(), stemmed.size());
             data_size += stemmed.size();

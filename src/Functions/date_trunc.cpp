@@ -133,7 +133,7 @@ public:
         };
         ResultType result_type = {};
 
-        IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
+        IntervalKind datepart_kind;
 
         String datepart_param;
         auto check_first_argument = [&] {
@@ -247,7 +247,7 @@ public:
                 "name of datepart", getName());
 
         String datepart_param = Poco::toLower(datepart_column->getValue<String>());
-        IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
+        IntervalKind datepart_kind;
         if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 

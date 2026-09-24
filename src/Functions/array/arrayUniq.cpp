@@ -104,7 +104,11 @@ private:
     bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
     bool executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
     bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
-    void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
+    void executeHashed(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        const NullMap * null_map,
+        ColumnUInt32::Container & res_values) const;
 };
 
 
@@ -174,12 +178,12 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
             || executeNumber<Float64>(*offsets, *data_columns[0], null_map, res_values)
             || executeFixedString(*offsets, *data_columns[0], null_map, res_values)
             || executeString(*offsets, *data_columns[0], null_map, res_values)))
-            executeHashed(*offsets, data_columns, res_values);
+            executeHashed(*offsets, data_columns, null_map, res_values);
     }
     else
     {
         if (!execute128bit(*offsets, data_columns, res_values))
-            executeHashed(*offsets, data_columns, res_values);
+            executeHashed(*offsets, data_columns, nullptr, res_values);
     }
 
     return res;
@@ -293,9 +297,10 @@ bool FunctionArrayUniq::execute128bit(
 void FunctionArrayUniq::executeHashed(
         const ColumnArray::Offsets & offsets,
         const ColumnRawPtrs & columns,
+        const NullMap * null_map,
         ColumnUInt32::Container & res_values) const
 {
-    executeMethod<MethodHashed>(offsets, columns, {}, nullptr, res_values);
+    executeMethod<MethodHashed>(offsets, columns, {}, null_map, res_values);
 }
 
 REGISTER_FUNCTION(ArrayUniq)

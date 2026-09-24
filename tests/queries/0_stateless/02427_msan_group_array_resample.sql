@@ -1,1 +1,2 @@
-SELECT arrayMap(x -> finalizeAggregation(x), state) FROM (SELECT groupArrayResample(9223372036854775806, 1048575, 65537)(number, number % 3), groupArrayStateResample(10, 2147483648, 65535)(number, number % 9223372036854775806) AS state FROM numbers(100));
+SELECT arrayMap(x -> finalizeAggregation(x), state) FROM (SELECT groupArrayStateResample(10, 2147483648, 65535)(number, number % 9223372036854775806) AS state FROM numbers(100));
+SELECT groupArrayResample(9223372036854775806, 1048575, 65537)(number, number % 3) FROM numbers(100); -- { serverError ARGUMENT_OUT_OF_BOUND }

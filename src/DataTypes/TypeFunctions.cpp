@@ -1400,10 +1400,10 @@ public:
 
         const String name = args.front().field().safeGet<String>();
         IntervalKind kind;
-        if (!IntervalKind::tryParseString(Poco::toLower(name), kind.kind))
+        if (!IntervalKind::tryParseString(Poco::toLower(name), kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' doesn't look like an interval unit", name);
 
-        return Value(DataTypePtr(std::make_shared<DataTypeInterval>(kind.kind)));
+        return Value(DataTypePtr(std::make_shared<DataTypeInterval>(kind)));
     }
 
     std::string name() const override { return "IntervalType"; }
