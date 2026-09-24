@@ -14,10 +14,26 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the key column alone affords 8 parts, and one priced by the key and both block columns affords only two
 # (8 / 3, rounded down). A horizontal merge of all 16 columns affords two parts too. Every candidate range
 # is eligible for the vertical algorithm, see `05218_merge_width_memory_estimate_vertical`.
+#
+# Background merges may take some of the parts before `OPTIMIZE` does, so the test checks what every merge
+# of the table did rather than how many parts are left: each of them has to be a vertical merge of two parts.
 
 MEMORY_LIMIT=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'max_server_memory_usage'")
 # The same successive integer divisions as the server does: `limit / 16 / columns / estimate`.
 ESTIMATE=$(( MEMORY_LIMIT / 16 / 1 / 8 ))
+
+# A background merge may still be running when `OPTIMIZE` finds nothing left to take, and its `part_log`
+# entry appears only when it finishes.
+function wait_for_merges()
+{
+    local table=$1
+    for _ in {1..600}
+    do
+        [ "$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = '$table'")" = 0 ] && return
+        sleep 0.1
+    done
+    echo "Merges of $table did not finish"
+}
 
 $CLICKHOUSE_CLIENT --query "
 DROP TABLE IF EXISTS t_merge_width_minmax_block;
@@ -50,20 +66,20 @@ INSERT INTO t_merge_width_minmax_block SELECT number, number, number, number, nu
 INSERT INTO t_merge_width_minmax_block SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number FROM numbers(5, 1);
 INSERT INTO t_merge_width_minmax_block SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number FROM numbers(6, 1);
 INSERT INTO t_merge_width_minmax_block SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number FROM numbers(7, 1);
+SELECT 'before', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_width_minmax_block' AND active;
 SYSTEM START MERGES t_merge_width_minmax_block;
 
-SELECT 'before', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_width_minmax_block' AND active;
-
-SET optimize_throw_if_noop = 1;
-
 OPTIMIZE TABLE t_merge_width_minmax_block;
-SELECT 'vertical capped', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_width_minmax_block' AND active;
+"
 
+wait_for_merges t_merge_width_minmax_block
+
+$CLICKHOUSE_CLIENT --query "
 SELECT sum(k), sum(c15), count() FROM t_merge_width_minmax_block;
 
 SYSTEM FLUSH LOGS part_log;
 
-SELECT merge_algorithm, length(merged_from) FROM system.part_log
+SELECT DISTINCT merge_algorithm, length(merged_from) FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_merge_width_minmax_block' AND event_type = 'MergeParts';
 
 DROP TABLE t_merge_width_minmax_block;
