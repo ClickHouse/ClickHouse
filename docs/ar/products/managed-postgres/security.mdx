@@ -2,8 +2,8 @@
 slug: /cloud/managed-postgres/security
 sidebarTitle: 'الأمان'
 title: 'الأمان'
-description: 'ميزات الأمان في ClickHouse Managed Postgres، بما في ذلك قائمة سماح عناوين IP والتشفير وAWS PrivateLink وGCP Private Service Connect'
-keywords: ['أمان Postgres', 'قائمة سماح عناوين IP', 'التشفير', 'tls', 'ssl', 'private link', 'private service connect', 'psc', 'الاحتفاظ بالنسخ الاحتياطية']
+description: 'ميزات الأمان في ClickHouse Managed Postgres، بما في ذلك قائمة سماح عناوين IP والتشفير وPrivate Link'
+keywords: ['أمان Postgres', 'قائمة سماح عناوين IP', 'التشفير', 'tls', 'ssl', 'private link', 'الاحتفاظ بالنسخ الاحتياطية']
 doc_type: 'guide'
 ---
 
@@ -12,7 +12,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
-صُمِّم ClickHouse Managed Postgres بميزات أمان على مستوى المؤسسات لحماية بياناتك وتلبية متطلبات الامتثال. تتناول هذه الصفحة أمان الشبكة، والتشفير، وسياسات الاحتفاظ بالنسخ الاحتياطية.
+صُمِّم ClickHouse Managed Postgres بميزات أمان على مستوى المؤسسات لحماية بياناتك وتلبية متطلبات الامتثال. تتناول هذه الصفحة أمان الشبكة، والتشفير، وسياسات الاحتفاظ بالنسخ الاحتياطية.
 
 ## قائمة سماح عناوين IP {#ip-whitelisting}
 
@@ -123,33 +123,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ## GCP Private Service Connect {#gcp-private-service-connect}
 
-تتيح GCP Private Service Connect (PSC) اتصالاً خاصاً بين مثيل ClickHouse Managed Postgres الخاص بك وشبكة Virtual Private Cloud (VPC) الخاصة بك على Google Cloud، دون تعريض حركة البيانات للإنترنت العام. ويضيف ذلك طبقة إضافية من عزل الشبكة وتعزيز أمانها.
+يتيح Private Service Connect اتصالًا خاصًا بين مثيل ClickHouse Managed Postgres لديك وGCP Virtual Private Cloud (VPC) لديك، من دون تعريض حركة المرور للإنترنت العام.
 
-<Info>
-  **يتطلب إعداداً يدوياً**
-
-  تدعم الخدمة GCP Private Service Connect، لكن ذلك يتطلب تهيئة يدوية من قِبل فريق ClickHouse Support. وتُعد هذه الميزة مثالية لعملاء المؤسسات ذوي المتطلبات الصارمة في عزل الشبكة.
-</Info>
-
-### طلب إعداد GCP Private Service Connect {#requesting-gcp-private-service-connect}
-
-لتفعيل GCP Private Service Connect لمثيل ClickHouse Managed Postgres الخاص بك:
-
-1. **تواصل مع ClickHouse Support** بإنشاء تذكرة دعم
-
-2. **قدّم المعلومات التالية**:
-   * معرّف المؤسسة (Organization ID) الخاص بك في ClickHouse
-   * معرّف خدمة Postgres أو اسم المضيف الخاص بها
-   * معرّفات مشاريع GCP التي تريد الاتصال منها بنقطة نهاية Private Service Connect
-
-3. **سيتولى فريق ClickHouse Support ما يلي**:
-   * تجهيز service attachment الخاص بـ Private Service Connect من جهة ClickHouse Managed Postgres
-   * تزويدك بمعرّف service attachment لتستخدمه في إنشاء نقطة نهاية.
-
-4. **أعدّ GCP Private Service Connect من جهتك**:
-   * أنشئ نقطة نهاية Private Service Connect في شبكة VPC الخاصة بك، ضمن المنطقة نفسها التي توجد فيها خدمة Postgres، ومن أحد مشاريع GCP التي قدّمتها، مستخدمًا معرّف service attachment الذي زوّدك به ClickHouse Support.
-   * بمجرد أن تصبح نقطة النهاية في حالة &quot;Accepted&quot;، يمكنك الاتصال بها عبر عنوان IP لنقطة النهاية على المنفذ `5432` (اتصال مباشر) أو `6432` (عبر مجمّع الاتصالات).
-   * ليس لعنوان IP لنقطة النهاية اسم DNS مطابق لاسم مضيف Postgres، لذا استخدم `sslmode=require`، أو أضف سجل Cloud DNS خاصًا يربط اسم مضيف Postgres بعنوان IP لنقطة النهاية حتى تتمكن من استخدام `sslmode=verify-full`.
+لتمكين Private Service Connect لمثيل ClickHouse Managed Postgres لديك، تواصل مع ClickHouse Support عبر إنشاء تذكرة دعم.
 
 <div id="backup-retention">
   ## الاحتفاظ بالنسخ الاحتياطية {#backup-retention}

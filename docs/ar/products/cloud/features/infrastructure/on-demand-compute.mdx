@@ -59,17 +59,50 @@ On-Demand Compute هو إمكانية في ClickHouse Cloud تمنح خدمتك 
 
 استخدم هذه الإعدادات للبدء في استخدام الحوسبة عند الطلب:
 
-| Setting                        | القيمة المطلوبة      | الغرض                                                                                                                                                            |
-| ------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `make_distributed_plan`        | Yes                  | يُمكّن distributed query plan التجريبي. مطلوب لـ On-Demand Compute.                                                                                              |
-| `distributed_plan_workers_num` | Yes                  | عدد الـ workers المطلوب استئجارها لهذا الـ query. إذا كانت القيمة `0` (وهي القيمة الافتراضية)، فسيُنفَّذ الـ query على الـ service الخاص بك، لا على worker pool. |
-| `enable_parallel_replicas`     | Yes (اضبطها على `0`) | الـ parallel replicas غير متوافقة مع distributed plan.                                                                                                           |
+| Setting                                        | القيمة المطلوبة            | الغرض                                                                                                                                                            |
+| ---------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make_distributed_plan`                        | Yes                        | يُمكّن distributed query plan التجريبي. مطلوب للحوسبة عند الطلب.                                                                                              |
+| `distributed_plan_workers_num`                 | Yes                        | عدد الـ workers المطلوب استئجارها لهذا الـ query. إذا كانت القيمة `0` (وهي القيمة الافتراضية)، فسيُنفَّذ الـ query على الخدمة الخاصة بك، لا على worker pool. |
+| `enable_parallel_replicas`                     | Yes (اضبطها على `0`)       | الـ parallel replicas غير متوافقة مع distributed plan.                                                                                                           |
+| `distributed_plan_fallback_to_local_execution` | No (القيمة الافتراضية `0`) | إعداد للرجوع إلى التنفيذ المحلي عندما يتعذّر توزيع الـ plan (لا يسري إلا عند تفعيل `make_distributed_plan`)                                                      |
 
 <Tip>
-  خلال فترة المعاينة، اضبط الإعدادات على مستوى الـ query، أو أنشئ مستخدمًا منفصلًا بإعدادات مختلفة. فذلك يجعل من الواضح أي الـ statements تستخدم On-Demand Compute، ويتجنّب توريث default profiles في Cloud التي تُمكّن parallel replicas.
+  خلال فترة المعاينة، اضبط الإعدادات على مستوى الـ query، أو أنشئ مستخدمًا منفصلًا بإعدادات مختلفة. فذلك يجعل من الواضح أي الـ statements تستخدم الحوسبة عند الطلب.
 </Tip>
 
 ### مثال {#example}
+
+لا يمكن توزيع بعض الاستعلامات على العمال:
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 0, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c1c96ede-0c4c-414f-b103-f27f0b7d34c7
+
+
+Elapsed: 0.992 sec.
+
+Received exception from server (version 26.9.1):
+Code: 344. DB::Exception: Received from nuqae0jhz5.eu-west-1.aws.clickhouse-staging.com:9440. DB::Exception: make_distributed_plan cannot distribute this query: it contains the step ReadFromPreparedSource which could not execute remotely. (SUPPORT_IS_DISABLED)
+```
+
+لضمان عودة الاستعلامات إلى التنفيذ المحلي عند الحاجة، يمكنك استخدام الإعداد `distributed_plan_fallback_to_local_execution`:
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 1, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c7b09855-e3c3-40ef-9790-5374e0726f26
+
+   ┌─count()─┐
+1. │   21932 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.896 sec.
+```
 
 ```sql
 SELECT
@@ -86,7 +119,7 @@ SETTINGS
     enable_parallel_replicas = 0
 ```
 
-يطلب هذا الـ query خمسة workers. ويعتمد عدد الـ workers التي يوفّرها ClickHouse على حدّ المعاينة الخاصة (private preview) وعلى سعة الـ pool المتاحة.
+يطلب هذا الـ query خمسة عمال. ويعتمد عدد العمال التي يوفّرها ClickHouse على حدّ المعاينة الخاصة (private preview) وعلى سعة الـ pool المتاحة.
 
 ### الاستعلامات المتزامنة {#concurrent-queries}
 

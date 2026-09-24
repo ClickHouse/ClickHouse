@@ -693,7 +693,7 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
 | `path`                                | String  | -          | **필수**. 캐시가 저장될 디렉터리 경로입니다.                                                                                                 |
 | `max_size`                            | 크기      | -          | **필수**. 바이트 또는 읽기 쉬운 형식(예: `10Gi`)으로 지정하는 최대 캐시 크기입니다. 한도에 도달하면 파일은 LRU 정책에 따라 제거됩니다. `ki`, `Mi`, `Gi` 포맷을 지원합니다(v22.10부터). |
 | `cache_on_write_operations`           | 불리언     | `false`    | `INSERT` 쿼리와 백그라운드 머지에 대해 write-through 캐시를 활성화합니다. 쿼리별로 `enable_filesystem_cache_on_write_operations`를 사용해 재정의할 수 있습니다.    |
-| `enable_filesystem_query_cache_limit` | 불리언     | `false`    | `max_query_cache_size`를 기준으로 쿼리별 캐시 크기 제한을 활성화합니다.                                                                          |
+| `enable_filesystem_query_cache_limit` | 불리언     | `false`    | `filesystem_cache_max_download_size`를 기준으로 쿼리별 캐시 크기 제한을 활성화합니다.                                                            |
 | `cache_hits_threshold`                | Integer | `0`        | 더 이상 사용되지 않으며 효과가 없습니다.                                                                                                     |
 | `enable_bypass_cache_with_threshold`  | 불리언     | `false`    | 큰 읽기 범위에서는 캐시를 건너뜁니다.                                                                                                       |
 | `bypass_cache_threshold`              | 크기      | `256Mi`    | 이 값을 초과하는 읽기 범위 크기에서는 캐시를 우회합니다(`enable_bypass_cache_with_threshold` 필요).                                                   |
@@ -707,15 +707,15 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
 
 ## 파일 캐시 쿼리/프로필 설정 {#file-cache-query-profile-settings}
 
-| 설정                                                                      | 유형  | 기본값                     | 설명                                                                                                                                 |
-| ----------------------------------------------------------------------- | --- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `enable_filesystem_cache`                                               | 불리언 | `true`                  | `cache` 디스크 유형을 사용하는 경우에도 쿼리별로 캐시 사용을 활성화하거나 비활성화합니다.                                                                              |
-| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | 불리언 | `false`                 | 활성화하면 데이터가 있을 때만 캐시를 사용하며, 새 데이터는 캐시되지 않습니다.                                                                                       |
-| `enable_filesystem_cache_on_write_operations`                           | 불리언 | `false` (Cloud: `true`) | write-through 캐시를 활성화합니다. 캐시 구성에서 `cache_on_write_operations`를 설정해야 합니다.                                                           |
-| `enable_filesystem_cache_log`                                           | 불리언 | `false`                 | `system.filesystem_cache_log`에 상세한 캐시 사용 로깅을 활성화합니다.                                                                               |
-| `filesystem_cache_allow_background_download`                            | 불리언 | `true`                  | 부분적으로 다운로드된 세그먼트를 백그라운드에서 마저 다운로드하도록 허용합니다. 비활성화하면 현재 쿼리/세션에 대해 다운로드가 포그라운드에서 계속 진행됩니다.                                            |
-| `max_query_cache_size`                                                  | 크기  | `false`                 | 쿼리별 최대 캐시 크기입니다. 캐시 구성에서 `enable_filesystem_query_cache_limit`를 설정해야 합니다.                                                          |
-| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | 불리언 | `true`                  | `max_query_cache_size`에 도달했을 때의 동작을 제어합니다: <br />- `true`: 새 데이터 다운로드를 중지합니다 <br />- `false`: 새 데이터를 위한 공간을 확보하기 위해 오래된 데이터를 제거합니다 |
+| 설정                                                                      | 유형     | 기본값                      | 설명                                                                                                                                               |
+| ----------------------------------------------------------------------- | ------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `enable_filesystem_cache`                                               | 불리언    | `true`                   | `cache` 디스크 유형을 사용하는 경우에도 쿼리별로 캐시 사용을 활성화하거나 비활성화합니다.                                                                                            |
+| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | 불리언    | `false`                  | 활성화하면 데이터가 있을 때만 캐시를 사용하며, 새 데이터는 캐시되지 않습니다.                                                                                                     |
+| `enable_filesystem_cache_on_write_operations`                           | 불리언    | `false` (Cloud: `true`)  | write-through 캐시를 활성화합니다. 캐시 구성에서 `cache_on_write_operations`를 설정해야 합니다.                                                                         |
+| `enable_filesystem_cache_log`                                           | 불리언    | `false`                  | `system.filesystem_cache_log`에 상세한 캐시 사용 로깅을 활성화합니다.                                                                                             |
+| `filesystem_cache_allow_background_download`                            | 불리언    | `true`                   | 부분적으로 다운로드된 세그먼트를 백그라운드에서 마저 다운로드하도록 허용합니다. 비활성화하면 현재 쿼리/세션에 대해 다운로드가 포그라운드에서 계속 진행됩니다.                                                          |
+| `filesystem_cache_max_download_size`                                    | UInt64 | `137438953472` (128 GiB) | 단일 쿼리가 다운로드할 수 있는 원격 파일 시스템 캐시의 최대 크기입니다. 캐시 구성에서 `enable_filesystem_query_cache_limit`를 설정해야 합니다.                                               |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | 불리언    | `true`                   | `filesystem_cache_max_download_size`에 도달했을 때의 동작을 제어합니다: <br />- `true`: 새 데이터 다운로드를 중지합니다 <br />- `false`: 새 데이터를 위한 공간을 확보하기 위해 오래된 데이터를 제거합니다 |
 
 <Warning>
   캐시 구성 설정과 캐시 쿼리 설정은 최신 ClickHouse 버전에 해당하므로,

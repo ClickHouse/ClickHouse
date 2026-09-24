@@ -59,17 +59,50 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 使用以下设置即可开始使用按需计算：
 
-| 设置                             | 必需值           | 用途                                                           |
-| ------------------------------ | ------------- | ------------------------------------------------------------ |
-| `make_distributed_plan`        | Yes           | 启用实验性的分布式查询计划。使用 按需计算 时必需。                                   |
-| `distributed_plan_workers_num` | Yes           | 为该查询租用的工作线程数量。若为 `0` (默认值) ，查询将在你的 service 上运行，而不是在工作线程池上运行。 |
-| `enable_parallel_replicas`     | Yes (设置为 `0`) | 并行副本与分布式查询计划不兼容。                                             |
+| 设置                                             | 必需值           | 用途                                                           |
+| ---------------------------------------------- | ------------- | ------------------------------------------------------------ |
+| `make_distributed_plan`                        | Yes           | 启用实验性的分布式查询计划。使用 按需计算 时必需。                                   |
+| `distributed_plan_workers_num`                 | Yes           | 为该查询租用的工作线程数量。若为 `0` (默认值) ，查询将在你的 service 上运行，而不是在工作线程池上运行。 |
+| `enable_parallel_replicas`                     | Yes (设置为 `0`) | 并行副本与分布式查询计划不兼容。                                             |
+| `distributed_plan_fallback_to_local_execution` | No (默认为 `0`)  | 当查询计划无法分布式执行时，回退到本地执行 (仅在启用 `make_distributed_plan` 时生效)     |
 
 <Tip>
-  在预览期间，请在查询级别设置这些参数，或者单独创建一个使用不同设置的用户。这样可以一目了然地看出哪些语句使用了 按需计算，同时避免继承启用了并行副本的 Cloud 默认 profile。
+  在预览期间，请在查询级别设置这些参数，或者单独创建一个使用不同设置的用户。这样可以一目了然地看出哪些语句使用了 按需计算。
 </Tip>
 
 ### 示例 {#example}
+
+某些查询无法分发给工作线程执行：
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 0, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c1c96ede-0c4c-414f-b103-f27f0b7d34c7
+
+
+Elapsed: 0.992 sec.
+
+Received exception from server (version 26.9.1):
+Code: 344. DB::Exception: Received from nuqae0jhz5.eu-west-1.aws.clickhouse-staging.com:9440. DB::Exception: make_distributed_plan cannot distribute this query: it contains the step ReadFromPreparedSource which could not execute remotely. (SUPPORT_IS_DISABLED)
+```
+
+为确保查询能够回退到本地执行，可以使用设置 `distributed_plan_fallback_to_local_execution`：
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 1, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c7b09855-e3c3-40ef-9790-5374e0726f26
+
+   ┌─count()─┐
+1. │   21932 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.896 sec.
+```
 
 ```sql
 SELECT

@@ -59,17 +59,50 @@ On-Demand Compute は、まったく新しい機能群を活用しています�
 
 on-demand compute の利用を開始するには、これらの設定を使用します:
 
-| 設定                             | 必須値           | 目的                                                                               |
-| ------------------------------ | ------------- | -------------------------------------------------------------------------------- |
-| `make_distributed_plan`        | Yes           | 実験的な distributed query plan を有効にします。On-Demand Compute に必須です。                     |
-| `distributed_plan_workers_num` | Yes           | このクエリ用にリースする worker 数。`0` (デフォルト) の場合、クエリは worker pool ではなく自身の service 上で実行されます。 |
-| `enable_parallel_replicas`     | Yes (`0` に設定) | 並列レプリカは distributed plan と併用できません。                                               |
+| 設定                                             | 必須値             | 目的                                                                                |
+| ---------------------------------------------- | --------------- | --------------------------------------------------------------------------------- |
+| `make_distributed_plan`                        | Yes             | 実験的な distributed query plan を有効にします。On-Demand Compute に必須です。                      |
+| `distributed_plan_workers_num`                 | Yes             | このクエリ用にリースする worker 数。`0` (デフォルト) の場合、クエリは worker pool ではなく自身の service 上で実行されます。  |
+| `enable_parallel_replicas`                     | Yes (`0` に設定)   | 並列レプリカは distributed plan と併用できません。                                                |
+| `distributed_plan_fallback_to_local_execution` | No (デフォルトは `0`) | plan を分散できない場合に、ローカル実行へフォールバックするための設定です (`make_distributed_plan` が有効な場合にのみ適用されます) |
 
 <Tip>
-  プレビュー期間中は、設定をクエリレベルで指定するか、別の設定を持つユーザーを作成してください。そうすれば、どのステートメントが On-Demand Compute を使用しているかが一目で分かり、並列レプリカを有効にする Cloud のデフォルトプロファイルを継承してしまうことも避けられます。
+  プレビュー期間中は、設定をクエリレベルで指定するか、別の設定を持つユーザーを作成してください。そうすれば、どのステートメントが On-Demand Compute を使用しているかが一目で分かります。
 </Tip>
 
 ### 例 {#example}
+
+クエリによっては、workerに分散できないものがあります:
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 0, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c1c96ede-0c4c-414f-b103-f27f0b7d34c7
+
+
+Elapsed: 0.992 sec.
+
+Received exception from server (version 26.9.1):
+Code: 344. DB::Exception: Received from nuqae0jhz5.eu-west-1.aws.clickhouse-staging.com:9440. DB::Exception: make_distributed_plan cannot distribute this query: it contains the step ReadFromPreparedSource which could not execute remotely. (SUPPORT_IS_DISABLED)
+```
+
+クエリを確実にローカル実行へフォールバックさせるには、`distributed_plan_fallback_to_local_execution` 設定を使用します:
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 1, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c7b09855-e3c3-40ef-9790-5374e0726f26
+
+   ┌─count()─┐
+1. │   21932 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.896 sec.
+```
 
 ```sql
 SELECT
@@ -86,7 +119,7 @@ SETTINGS
     enable_parallel_replicas = 0
 ```
 
-このクエリは5つのワーカーをリクエストします。ClickHouseが実際に提供するワーカー数は、プライベートプレビューの上限と利用可能なプール容量によって決まります。
+このクエリは5つのworkerをリクエストします。ClickHouseが実際に提供するworker数は、プライベートプレビューの上限と利用可能なプール容量によって決まります。
 
 ### 同時実行クエリ {#concurrent-queries}
 

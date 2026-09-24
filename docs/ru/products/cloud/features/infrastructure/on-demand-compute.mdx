@@ -57,19 +57,52 @@ On-Demand Compute использует совершенно новые возм�
 
 ### Настройки {#settings}
 
-Используйте эти настройки, чтобы начать работу с on-demand compute:
+Используйте эти настройки, чтобы начать работу с On-Demand Compute:
 
-| Настройка                      | Требуемое значение   | Назначение                                                                                                                                                     |
-| ------------------------------ | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `make_distributed_plan`        | Yes                  | Включает экспериментальный distributed query plan. Требуется для On-Demand Compute.                                                                            |
-| `distributed_plan_workers_num` | Yes                  | Количество воркеров, арендуемых для этого запроса. Если значение равно `0` (значение по умолчанию), запрос выполняется на вашем сервисе, а не в пуле воркеров. |
-| `enable_parallel_replicas`     | Yes (установите `0`) | Параллельные реплики несовместимы с distributed plan.                                                                                                          |
+| Настройка                                      | Требуемое значение    | Назначение                                                                                                                                                     |
+| ---------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make_distributed_plan`                        | Yes                   | Включает экспериментальный distributed query plan. Требуется для On-Demand Compute.                                                                            |
+| `distributed_plan_workers_num`                 | Yes                   | Количество воркеров, арендуемых для этого запроса. Если значение равно `0` (значение по умолчанию), запрос выполняется на вашем сервисе, а не в пуле воркеров. |
+| `enable_parallel_replicas`                     | Yes (установите `0`)  | Параллельные реплики несовместимы с distributed plan.                                                                                                          |
+| `distributed_plan_fallback_to_local_execution` | No (по умолчанию `0`) | Позволяет вернуться к локальному выполнению, если план не удаётся распределить (действует только при включённом `make_distributed_plan`)                       |
 
 <Tip>
-  В период предварительного доступа задавайте настройки на уровне запроса либо создайте отдельного пользователя с другими настройками. Тогда сразу видно, какие операторы используют On-Demand Compute, и это помогает избежать наследования профилей Cloud по умолчанию, в которых включены параллельные реплики.
+  В период предварительного доступа задавайте настройки на уровне запроса либо создайте отдельного пользователя с другими настройками. Тогда сразу видно, какие операторы используют On-Demand Compute.
 </Tip>
 
 ### Пример {#example}
+
+Некоторые запросы нельзя распределить между воркерами:
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 0, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c1c96ede-0c4c-414f-b103-f27f0b7d34c7
+
+
+Elapsed: 0.992 sec.
+
+Received exception from server (version 26.9.1):
+Code: 344. DB::Exception: Received from nuqae0jhz5.eu-west-1.aws.clickhouse-staging.com:9440. DB::Exception: make_distributed_plan cannot distribute this query: it contains the step ReadFromPreparedSource which could not execute remotely. (SUPPORT_IS_DISABLED)
+```
+
+Чтобы запросы гарантированно переключались на локальное выполнение, если распределённое выполнение невозможно, используйте настройку `distributed_plan_fallback_to_local_execution`:
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 1, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c7b09855-e3c3-40ef-9790-5374e0726f26
+
+   ┌─count()─┐
+1. │   21932 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.896 sec.
+```
 
 ```sql
 SELECT

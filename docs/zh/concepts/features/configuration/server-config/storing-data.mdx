@@ -685,7 +685,7 @@ File Cache **磁盘配置设置**：
 | `path`                                | String  | -          | **必填**。用于存储缓存的目录路径。                                                                               |
 | `max_size`                            | Size    | -          | **必填**。缓存的最大大小，单位可以是字节或可读格式 (例如 `10Gi`) 。达到限制时，文件会按 LRU 策略被逐出。支持 `ki`、`Mi`、`Gi` 格式 (自 v22.10 起) 。 |
 | `cache_on_write_operations`           | Boolean | `false`    | 为 `INSERT` 查询和后台合并启用写穿缓存。可通过 `enable_filesystem_cache_on_write_operations` 按查询覆盖。                 |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`    | 基于 `max_query_cache_size` 启用按查询的缓存大小限制。                                                           |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`    | 基于 `filesystem_cache_max_download_size` 启用按查询的缓存大小限制。                                             |
 | `cache_hits_threshold`                | Integer | `0`        | 已弃用；无作用。                                                                                          |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 对较大的读取范围跳过缓存。                                                                                     |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | 触发绕过缓存的读取范围大小 (需要 `enable_bypass_cache_with_threshold`) 。                                         |
@@ -699,15 +699,15 @@ File Cache **磁盘配置设置**：
 
 ## File Cache 查询/profile 设置 {#file-cache-query-profile-settings}
 
-| Setting                                                                 | Type    | Default                 | Description                                                                            |
-| ----------------------------------------------------------------------- | ------- | ----------------------- | -------------------------------------------------------------------------------------- |
-| `enable_filesystem_cache`                                               | Boolean | `true`                  | 按查询启用/禁用缓存，即使使用的是 `cache` 磁盘类型也是如此。                                                    |
-| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | Boolean | `false`                 | 启用后，仅当数据已存在于缓存中时才使用缓存；新数据不会被缓存。                                                        |
-| `enable_filesystem_cache_on_write_operations`                           | Boolean | `false` (Cloud: `true`) | 启用写穿缓存。要求在缓存配置中启用 `cache_on_write_operations`。                                         |
-| `enable_filesystem_cache_log`                                           | Boolean | `false`                 | 启用详细的缓存使用日志，并将其写入 `system.filesystem_cache_log`。                                       |
-| `filesystem_cache_allow_background_download`                            | Boolean | `true`                  | 允许在后台完成部分已下载分段的剩余下载。禁用后，当前查询/session 的下载会保持在前台执行。                                      |
-| `max_query_cache_size`                                                  | Size    | `false`                 | 每个查询的最大缓存大小。要求在缓存配置中启用 `enable_filesystem_query_cache_limit`。                          |
-| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`                  | 控制达到 `max_query_cache_size` 时的行为：<br />- `true`：停止下载新数据 <br />- `false`：淘汰旧数据，为新数据腾出空间 |
+| Setting                                                                 | Type    | Default                  | Description                                                                                          |
+| ----------------------------------------------------------------------- | ------- | ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `enable_filesystem_cache`                                               | Boolean | `true`                   | 按查询启用/禁用缓存，即使使用的是 `cache` 磁盘类型也是如此。                                                                  |
+| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | Boolean | `false`                  | 启用后，仅当数据已存在于缓存中时才使用缓存；新数据不会被缓存。                                                                      |
+| `enable_filesystem_cache_on_write_operations`                           | Boolean | `false` (Cloud: `true`)  | 启用写穿缓存。要求在缓存配置中启用 `cache_on_write_operations`。                                                       |
+| `enable_filesystem_cache_log`                                           | Boolean | `false`                  | 启用详细的缓存使用日志，并将其写入 `system.filesystem_cache_log`。                                                     |
+| `filesystem_cache_allow_background_download`                            | Boolean | `true`                   | 允许在后台完成部分已下载分段的剩余下载。禁用后，当前查询/session 的下载会保持在前台执行。                                                    |
+| `filesystem_cache_max_download_size`                                    | UInt64  | `137438953472` (128 GiB) | 单个查询最多可下载的远程文件系统缓存大小。要求在缓存配置中启用 `enable_filesystem_query_cache_limit`。                               |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`                   | 控制达到 `filesystem_cache_max_download_size` 时的行为：<br />- `true`：停止下载新数据 <br />- `false`：淘汰旧数据，为新数据腾出空间 |
 
 <Warning>
   缓存配置设置和缓存查询设置对应的是最新版本的 ClickHouse，

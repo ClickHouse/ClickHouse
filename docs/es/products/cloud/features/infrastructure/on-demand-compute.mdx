@@ -59,17 +59,50 @@ Durante el private preview, cada worker cuenta con `8 vCPUs` y `32 GiB` de memor
 
 Utilice estos ajustes para empezar a usar on-demand compute:
 
-| Ajuste                         | Valor requerido          | Propósito                                                                                                                                                          |
-| ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `make_distributed_plan`        | Yes                      | Habilita el distributed query plan experimental. Necesario para On-Demand Compute.                                                                                 |
-| `distributed_plan_workers_num` | Yes                      | Número de workers que se van a arrendar para esta consulta. Si es `0` (el valor predeterminado), la consulta se ejecuta en su service y no en el grupo de workers. |
-| `enable_parallel_replicas`     | Yes (establecido en `0`) | Las parallel replicas no son compatibles con el distributed plan.                                                                                                  |
+| Ajuste                                         | Valor requerido            | Propósito                                                                                                                                                          |
+| ---------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `make_distributed_plan`                        | Yes                        | Habilita el distributed query plan experimental. Necesario para On-Demand Compute.                                                                                 |
+| `distributed_plan_workers_num`                 | Yes                        | Número de workers que se van a arrendar para esta consulta. Si es `0` (el valor predeterminado), la consulta se ejecuta en su servicio y no en el grupo de workers. |
+| `enable_parallel_replicas`                     | Yes (establecido en `0`)   | Las parallel replicas no son compatibles con el distributed plan.                                                                                                  |
+| `distributed_plan_fallback_to_local_execution` | No (predeterminado en `0`) | Ajuste para recurrir a la ejecución local cuando un plan no se puede distribuir (solo tiene efecto con `make_distributed_plan`)                                    |
 
 <Tip>
-  Durante la versión preliminar, defina los ajustes a nivel de consulta o cree un usuario aparte con ajustes distintos. De este modo queda claro qué sentencias usan On-Demand Compute y se evita heredar los default profiles de Cloud que habilitan las parallel replicas.
+  Durante la versión preliminar, defina los ajustes a nivel de consulta o cree un usuario aparte con ajustes distintos. De este modo queda claro qué sentencias usan On-Demand Compute.
 </Tip>
 
 ### Ejemplo {#example}
+
+Algunas consultas no se pueden distribuir entre los workers:
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 0, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c1c96ede-0c4c-414f-b103-f27f0b7d34c7
+
+
+Elapsed: 0.992 sec.
+
+Received exception from server (version 26.9.1):
+Code: 344. DB::Exception: Received from nuqae0jhz5.eu-west-1.aws.clickhouse-staging.com:9440. DB::Exception: make_distributed_plan cannot distribute this query: it contains the step ReadFromPreparedSource which could not execute remotely. (SUPPORT_IS_DISABLED)
+```
+
+Para asegurarse de que las consultas recurran a la ejecución local, puede usar la siguiente configuración: `distributed_plan_fallback_to_local_execution`:
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 1, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c7b09855-e3c3-40ef-9790-5374e0726f26
+
+   ┌─count()─┐
+1. │   21932 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.896 sec.
+```
 
 ```sql
 SELECT

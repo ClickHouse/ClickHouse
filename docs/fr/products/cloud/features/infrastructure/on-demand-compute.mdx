@@ -59,17 +59,50 @@ Pendant la private preview, chaque worker dispose de `8 vCPUs` et de `32 GiB` de
 
 Utilisez ces paramètres pour commencer à utiliser On-Demand Compute :
 
-| Setting                        | Valeur obligatoire | Objectif                                                                                                                                                           |
-| ------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `make_distributed_plan`        | Yes                | Active le distributed query plan expérimental. Obligatoire pour On-Demand Compute.                                                                                 |
-| `distributed_plan_workers_num` | Yes                | Nombre de workers à louer pour cette requête. Si la valeur est `0` (valeur par défaut), la requête s&#39;exécute sur votre service, et non sur le pool de workers. |
-| `enable_parallel_replicas`     | Yes (défini à `0`) | Les parallel replicas sont incompatibles avec le distributed plan.                                                                                                 |
+| Setting                                        | Valeur obligatoire  | Objectif                                                                                                                                                           |
+| ---------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `make_distributed_plan`                        | Yes                 | Active le distributed query plan expérimental. Obligatoire pour On-Demand Compute.                                                                                 |
+| `distributed_plan_workers_num`                 | Yes                 | Nombre de workers à louer pour cette requête. Si la valeur est `0` (valeur par défaut), la requête s&#39;exécute sur votre service, et non sur le pool de workers. |
+| `enable_parallel_replicas`                     | Yes (défini à `0`)  | Les répliques parallèles sont incompatibles avec le distributed plan.                                                                                                 |
+| `distributed_plan_fallback_to_local_execution` | No (`0` par défaut) | Paramètre permettant de basculer vers une exécution locale lorsqu&#39;un plan ne peut pas être distribué (ne s&#39;applique qu&#39;avec `make_distributed_plan`)   |
 
 <Tip>
-  Pendant la préversion, définissez ces paramètres au niveau de la requête, ou créez un utilisateur distinct doté de paramètres différents. On voit ainsi immédiatement quels statements utilisent On-Demand Compute, et l&#39;on évite d&#39;hériter des default profiles de Cloud, qui activent les parallel replicas.
+  Pendant la préversion, définissez ces paramètres au niveau de la requête, ou créez un utilisateur distinct doté de paramètres différents. On voit ainsi immédiatement quels statements utilisent On-Demand Compute.
 </Tip>
 
 ### Exemple {#example}
+
+Certaines requêtes ne peuvent pas être distribuées aux workers :
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 0, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c1c96ede-0c4c-414f-b103-f27f0b7d34c7
+
+
+Elapsed: 0.992 sec.
+
+Received exception from server (version 26.9.1):
+Code: 344. DB::Exception: Received from nuqae0jhz5.eu-west-1.aws.clickhouse-staging.com:9440. DB::Exception: make_distributed_plan cannot distribute this query: it contains the step ReadFromPreparedSource which could not execute remotely. (SUPPORT_IS_DISABLED)
+```
+
+Pour que les requêtes basculent vers une exécution locale, vous pouvez utiliser le paramètre `distributed_plan_fallback_to_local_execution` :
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 1, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c7b09855-e3c3-40ef-9790-5374e0726f26
+
+   ┌─count()─┐
+1. │   21932 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.896 sec.
+```
 
 ```sql
 SELECT
@@ -86,7 +119,7 @@ SETTINGS
     enable_parallel_replicas = 0
 ```
 
-Cette query demande cinq workers. Le nombre de workers alloués par ClickHouse dépend de la limite de la préversion privée et de la capacité disponible du pool.
+Cette requête demande cinq workers. Le nombre de workers alloués par ClickHouse dépend de la limite de l’aperçu privé et de la capacité disponible du pool.
 
 ### Requêtes concurrentes {#concurrent-queries}
 

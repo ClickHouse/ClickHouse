@@ -59,17 +59,50 @@ On-Demand Compute는 서비스 크기를 조정하거나 별도의 서비스를 
 
 on-demand 컴퓨트를 사용하려면 다음 설정을 지정하십시오.
 
-| 설정                             | 필요한 값          | 목적                                                                           |
-| ------------------------------ | -------------- | ---------------------------------------------------------------------------- |
-| `make_distributed_plan`        | Yes            | 실험적 분산 쿼리 계획을 활성화합니다. On-Demand Compute에 필요합니다.                              |
-| `distributed_plan_workers_num` | Yes            | 해당 쿼리에 임대할 worker 수입니다. 값이 `0`(기본값)이면 쿼리가 worker 풀이 아닌 사용자의 service에서 실행됩니다. |
-| `enable_parallel_replicas`     | Yes (`0`으로 설정) | 병렬 레플리카는 분산 계획과 호환되지 않습니다.                                                   |
+| 설정                                             | 필요한 값          | 목적                                                                                  |
+| ---------------------------------------------- | -------------- | ----------------------------------------------------------------------------------- |
+| `make_distributed_plan`                        | Yes            | 실험적 분산 쿼리 계획을 활성화합니다. On-Demand Compute에 필요합니다.                                     |
+| `distributed_plan_workers_num`                 | Yes            | 해당 쿼리에 임대할 worker 수입니다. 값이 `0`(기본값)이면 쿼리가 worker 풀이 아닌 사용자의 service에서 실행됩니다.        |
+| `enable_parallel_replicas`                     | Yes (`0`으로 설정) | 병렬 레플리카는 분산 계획과 호환되지 않습니다.                                                          |
+| `distributed_plan_fallback_to_local_execution` | No (기본값 `0`)   | 계획을 분산할 수 없을 때 로컬 실행으로 폴백할지 여부를 지정하는 설정입니다(`make_distributed_plan`이 활성화된 경우에만 적용됨). |
 
 <Tip>
-  프리뷰 기간에는 설정을 쿼리 수준에서 지정하거나, 설정이 다른 별도의 사용자를 생성하십시오. 이렇게 하면 어떤 SQL 문이 On-Demand Compute를 사용하는지 명확히 알 수 있고, 병렬 레플리카를 활성화하는 Cloud default profile을 상속받는 일도 방지할 수 있습니다.
+  프리뷰 기간에는 설정을 쿼리 수준에서 지정하거나, 설정이 다른 별도의 사용자를 생성하십시오. 이렇게 하면 어떤 SQL 문이 On-Demand Compute를 사용하는지 명확히 알 수 있습니다.
 </Tip>
 
 ### 예시 {#example}
+
+일부 쿼리는 worker에 분산할 수 없습니다.
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 0, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c1c96ede-0c4c-414f-b103-f27f0b7d34c7
+
+
+Elapsed: 0.992 sec.
+
+Received exception from server (version 26.9.1):
+Code: 344. DB::Exception: Received from nuqae0jhz5.eu-west-1.aws.clickhouse-staging.com:9440. DB::Exception: make_distributed_plan cannot distribute this query: it contains the step ReadFromPreparedSource which could not execute remotely. (SUPPORT_IS_DISABLED)
+```
+
+쿼리가 로컬 실행으로 폴백되도록 하려면 다음과 같이 `distributed_plan_fallback_to_local_execution` 설정을 사용하십시오:
+
+```sql
+SELECT count()
+FROM nyctaxi.trips
+SETTINGS distributed_plan_fallback_to_local_execution = 1, make_distributed_plan = 1, distributed_plan_workers_num = 5
+
+Query id: c7b09855-e3c3-40ef-9790-5374e0726f26
+
+   ┌─count()─┐
+1. │   21932 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.896 sec.
+```
 
 ```sql
 SELECT
@@ -86,7 +119,7 @@ SETTINGS
     enable_parallel_replicas = 0
 ```
 
-이 쿼리는 워커 5개를 요청합니다. ClickHouse가 실제로 제공하는 워커 수는 프라이빗 프리뷰 제한과 사용 가능한 풀 용량에 따라 달라집니다.
+이 쿼리는 worker 5개를 요청합니다. ClickHouse가 실제로 제공하는 worker 수는 비공개 프리뷰 제한과 사용 가능한 풀 용량에 따라 달라집니다.
 
 ### 동시 쿼리 {#concurrent-queries}
 

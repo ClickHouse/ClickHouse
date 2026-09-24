@@ -689,7 +689,7 @@ cache には `LRU` cache ポリシーが使用されます。
 | `path`                                | String  | -          | **必須**。cacheを保存するディレクトリのパス。                                                                                                     |
 | `max_size`                            | Size    | -          | **必須**。cacheの最大サイズ (バイト、または人間が読みやすい形式。例: `10Gi`) 。上限に達すると、ファイルは LRU ポリシーに従って追い出されます。`ki`、`Mi`、`Gi` フォーマットをサポートします (v22.10 以降) 。 |
 | `cache_on_write_operations`           | Boolean | `false`    | `INSERT` クエリおよびバックグラウンドマージに対して、ライトスルーcacheを有効にします。クエリごとに `enable_filesystem_cache_on_write_operations` で上書きできます。                |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`    | `max_query_cache_size` に基づく、クエリごとのcacheサイズ制限を有効にします。                                                                            |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`    | `filesystem_cache_max_download_size` に基づく、クエリごとのcacheサイズ制限を有効にします。                                                              |
 | `cache_hits_threshold`                | Integer | `0`        | 非推奨。効果はありません。                                                                                                                   |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 読み取り範囲が大きい場合はcacheをスキップします。                                                                                                     |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | cacheのバイパスをトリガーする読み取り範囲サイズ (`enable_bypass_cache_with_threshold` が必要) 。                                                         |
@@ -703,15 +703,15 @@ cache には `LRU` cache ポリシーが使用されます。
 
 ## ファイルcacheのクエリ/プロファイル設定 {#file-cache-query-profile-settings}
 
-| 設定                                                                      | 型   | デフォルト                   | 説明                                                                                                                         |
-| ----------------------------------------------------------------------- | --- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `enable_filesystem_cache`                                               | 真偽値 | `true`                  | `cache` ディスクタイプを使用している場合でも、クエリごとのcache使用を有効/無効にします。                                                                        |
-| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | 真偽値 | `false`                 | 有効にすると、データが存在する場合にのみcacheを使用し、新しいデータはcacheされません。                                                                           |
-| `enable_filesystem_cache_on_write_operations`                           | 真偽値 | `false` (Cloud: `true`) | ライトスルーcacheを有効にします。cache設定内の `cache_on_write_operations` が必要です。                                                            |
-| `enable_filesystem_cache_log`                                           | 真偽値 | `false`                 | `system.filesystem_cache_log` への詳細なcache使用ログの記録を有効にします。                                                                    |
-| `filesystem_cache_allow_background_download`                            | 真偽値 | `true`                  | 部分的にダウンロードされた segments のダウンロード完了をバックグラウンドで行えるようにします。無効にすると、現在のクエリ/セッションではダウンロードがフォアグラウンドで継続されます。                           |
-| `max_query_cache_size`                                                  | サイズ | `false`                 | クエリごとのcacheの最大サイズです。cache設定内の `enable_filesystem_query_cache_limit` が必要です。                                                 |
-| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | 真偽値 | `true`                  | `max_query_cache_size` に達したときの動作を制御します: <br />- `true`: 新しいデータのダウンロードを停止します <br />- `false`: 新しいデータ用の空きを確保するため、古いデータを削除します |
+| 設定                                                                      | 型      | デフォルト                    | 説明                                                                                                                                       |
+| ----------------------------------------------------------------------- | ------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `enable_filesystem_cache`                                               | 真偽値    | `true`                   | `cache` ディスクタイプを使用している場合でも、クエリごとのcache使用を有効/無効にします。                                                                                      |
+| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | 真偽値    | `false`                  | 有効にすると、データが存在する場合にのみcacheを使用し、新しいデータはcacheされません。                                                                                         |
+| `enable_filesystem_cache_on_write_operations`                           | 真偽値    | `false` (Cloud: `true`)  | ライトスルーcacheを有効にします。cache設定内の `cache_on_write_operations` が必要です。                                                                          |
+| `enable_filesystem_cache_log`                                           | 真偽値    | `false`                  | `system.filesystem_cache_log` への詳細なcache使用ログの記録を有効にします。                                                                                  |
+| `filesystem_cache_allow_background_download`                            | 真偽値    | `true`                   | 部分的にダウンロードされた segments のダウンロード完了をバックグラウンドで行えるようにします。無効にすると、現在のクエリ/セッションではダウンロードがフォアグラウンドで継続されます。                                         |
+| `filesystem_cache_max_download_size`                                    | UInt64 | `137438953472` (128 GiB) | 1つのクエリでダウンロードできるリモートファイルシステムキャッシュの最大サイズです。cache設定内の `enable_filesystem_query_cache_limit` が必要です。                                         |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | 真偽値    | `true`                   | `filesystem_cache_max_download_size` に達したときの動作を制御します: <br />- `true`: 新しいデータのダウンロードを停止します <br />- `false`: 新しいデータ用の空きを確保するため、古いデータを削除します |
 
 <Warning>
   cache設定およびcacheのクエリ設定は、最新バージョンの ClickHouse に対応しています。

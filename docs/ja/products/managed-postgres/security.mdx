@@ -2,8 +2,8 @@
 slug: /cloud/managed-postgres/security
 sidebarTitle: 'セキュリティ'
 title: 'セキュリティ'
-description: 'IP アドレスの許可リスト設定、暗号化、AWS PrivateLink、GCP Private Service Connect など、ClickHouse Managed Postgres のセキュリティ機能'
-keywords: ['Postgres セキュリティ', 'IP アドレスの許可リスト設定', '暗号化', 'TLS', 'SSL', 'プライベートリンク', 'Private Service Connect', 'PSC', 'バックアップ保持期間']
+description: 'IP アドレスの許可リスト設定、暗号化、プライベートリンクなど、ClickHouse Managed Postgres のセキュリティ機能'
+keywords: ['Postgres セキュリティ', 'IP アドレスの許可リスト設定', '暗号化', 'TLS', 'SSL', 'プライベートリンク', 'バックアップ保持期間']
 doc_type: 'guide'
 ---
 
@@ -123,33 +123,9 @@ ClickHouse Managed Postgres インスタンスで AWS PrivateLink を有効に�
 
 ## GCP Private Service Connect {#gcp-private-service-connect}
 
-GCP Private Service Connect (PSC) を使用すると、トラフィックをパブリックインターネットに公開することなく、ClickHouse Managed Postgres インスタンスと Google Cloud の Virtual Private Cloud (VPC) との間にプライベート接続を確立できます。これにより、ネットワークの分離とセキュリティをさらに強化できます。
+Private Service Connect を使用すると、ClickHouse Managed Postgres インスタンスとお客様の GCP Virtual Private Cloud (VPC) との間で、トラフィックをパブリックインターネットに公開することなく、プライベート接続を確立できます。
 
-<Info>
-  **手動セットアップが必要です**
-
-  GCP Private Service Connect は利用可能ですが、ClickHouse Support による手動設定が必要です。この機能は、ネットワーク分離に関して厳格な要件を持つエンタープライズのお客様に最適です。
-</Info>
-
-### GCP Private Service Connect のセットアップをリクエストする {#requesting-gcp-private-service-connect}
-
-ClickHouse Managed Postgres インスタンスで GCP Private Service Connect を有効にするには、次の手順を実行します。
-
-1. サポートチケットを作成して **ClickHouse Support に問い合わせます**
-
-2. **以下の情報を提供します**:
-   * ClickHouse の組織 ID
-   * Postgres サービスの ID/ホスト名
-   * Private Service Connect エンドポイントへの接続元となる GCP プロジェクトの ID
-
-3. **ClickHouse Support が以下を実施します**:
-   * ClickHouse Managed Postgres 側で Private Service Connect のサービスアタッチメントをプロビジョニングします
-   * エンドポイントの作成に使用するサービスアタッチメント ID をお知らせします。
-
-4. **GCP Private Service Connect をセットアップします**:
-   * ClickHouse Support から提供されたサービスアタッチメント ID を使用して、VPC 内に Private Service Connect エンドポイントを作成します。エンドポイントは、Postgres サービスと同じリージョン内に、事前に伝えた GCP プロジェクトのいずれかから作成してください。
-   * エンドポイントが &quot;Accepted&quot; 状態になると、エンドポイント IP のポート `5432` (直接接続) または `6432` (プーラー経由) で接続できるようになります。
-   * エンドポイント IP には Postgres のホスト名に対応する DNS 名がありません。そのため、`sslmode=require` を使用してください。`sslmode=verify-full` を使用する場合は、Postgres のホスト名をエンドポイント IP にマッピングするプライベート Cloud DNS レコードを追加してください。
+ClickHouse Managed Postgres インスタンスで Private Service Connect を有効にするには、サポートチケットを作成して ClickHouse Support にお問い合わせください。
 
 ## バックアップ保持期間 {#backup-retention}
 

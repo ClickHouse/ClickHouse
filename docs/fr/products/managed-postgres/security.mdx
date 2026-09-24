@@ -2,8 +2,8 @@
 slug: /cloud/managed-postgres/security
 sidebarTitle: 'Sécurité'
 title: 'Sécurité'
-description: 'Fonctionnalités de sécurité de ClickHouse Managed Postgres, notamment le filtrage par adresses IP, le chiffrement, AWS PrivateLink et GCP Private Service Connect'
-keywords: ['sécurité Postgres', 'filtrage par adresses IP', 'chiffrement', 'TLS', 'SSL', 'Private Link', 'Private Service Connect', 'PSC', 'rétention des sauvegardes']
+description: 'Fonctionnalités de sécurité de ClickHouse Managed Postgres, notamment le filtrage par adresses IP, le chiffrement et Private Link'
+keywords: ['sécurité Postgres', 'filtrage par adresses IP', 'chiffrement', 'TLS', 'SSL', 'Private Link', 'rétention des sauvegardes']
 doc_type: 'guide'
 ---
 
@@ -121,33 +121,9 @@ Pour activer AWS PrivateLink pour votre instance ClickHouse Managed Postgres :
 
 ## GCP Private Service Connect {#gcp-private-service-connect}
 
-GCP Private Service Connect (PSC) permet d&#39;établir une connectivité privée entre votre instance ClickHouse Managed Postgres et votre Virtual Private Cloud (VPC) Google Cloud, sans exposer le trafic à l&#39;Internet public. Vous bénéficiez ainsi d&#39;une couche supplémentaire d&#39;isolation réseau et de sécurité.
+Private Service Connect permet une connectivité privée entre votre instance ClickHouse Managed Postgres et votre Virtual Private Cloud (VPC) GCP, sans exposer le trafic à l’internet public.
 
-<Info>
-  **Configuration manuelle requise**
-
-  GCP Private Service Connect est pris en charge, mais doit être configuré manuellement par le ClickHouse Support. Cette fonctionnalité est particulièrement adaptée aux clients Enterprise soumis à des exigences strictes en matière d&#39;isolation réseau.
-</Info>
-
-### Demander la configuration de GCP Private Service Connect {#requesting-gcp-private-service-connect}
-
-Pour activer GCP Private Service Connect sur votre instance ClickHouse Managed Postgres :
-
-1. **Contactez ClickHouse Support** en créant un ticket de support
-
-2. **Fournissez les informations suivantes** :
-   * L&#39;ID de votre organisation ClickHouse
-   * L&#39;ID ou le nom d&#39;hôte du service Postgres
-   * Les ID des projets GCP depuis lesquels vous souhaitez connecter le point de terminaison Private Service Connect
-
-3. **ClickHouse Support se chargera de** :
-   * Provisionner le service attachment Private Service Connect côté ClickHouse Managed Postgres
-   * Vous communiquer l&#39;ID du service attachment, qui vous permettra de créer un endpoint.
-
-4. **Configurez votre GCP Private Service Connect** :
-   * Créez le point de terminaison Private Service Connect dans votre VPC, dans la même région que le service Postgres et depuis l&#39;un des projets GCP que vous avez indiqués, à l&#39;aide de l&#39;ID du service attachment fourni par ClickHouse Support.
-   * Une fois votre endpoint à l&#39;état « Accepted », vous pouvez vous y connecter via l&#39;IP de l&#39;endpoint sur le port `5432` (direct) ou `6432` (pooler).
-   * L&#39;IP de l&#39;endpoint ne dispose d&#39;aucun nom DNS correspondant au nom d&#39;hôte Postgres : utilisez donc `sslmode=require`, ou ajoutez un enregistrement Cloud DNS privé associant le nom d&#39;hôte Postgres à l&#39;IP de l&#39;endpoint pour pouvoir utiliser `sslmode=verify-full`.
+Pour activer Private Service Connect sur votre instance ClickHouse Managed Postgres, contactez le support ClickHouse en créant un ticket de support.
 
 ## Rétention des sauvegardes {#backup-retention}
 
