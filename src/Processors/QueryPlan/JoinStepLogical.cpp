@@ -557,16 +557,19 @@ JoinStepLogical::analyzeRequiredColumns(const std::vector<size_t> & required_out
     for (size_t side = 0; side < 2; ++side)
     {
         const auto & header = *input_headers[side];
-        const auto header_positions = mapInputsToHeaderPositions(side_inputs[side], header);
+        const auto header_columns = mapHeaderColumnsToInputs(side_inputs[side], header);
 
         std::vector<bool> is_required_input(header.columns(), false);
-        for (size_t index = 0; index < side_inputs[side].size(); ++index)
+        for (size_t position = 0; position < header_columns.size(); ++position)
         {
-            if (!surviving_nodes.contains(side_inputs[side][index]))
+            if (header_columns.passesThrough(position))
+                continue;
+
+            if (!surviving_nodes.contains(side_inputs[side][header_columns.read_by[position]]))
                 continue;
 
             ++surviving_input_count;
-            is_required_input[header_positions.matched[index]] = true;
+            is_required_input[position] = true;
         }
 
         std::vector<size_t> positions;

@@ -2,6 +2,8 @@
 
 #include <Interpreters/ActionsDAG.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -137,20 +139,26 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
 
-struct InputHeaderPositions
+/// What each column of a header is to a DAG's inputs: one entry per header column, in header order,
+/// holding the position in `inputs` of the input reading it, or `passes_through` when no input reads it
+/// and the column goes past the DAG untouched.
+///
+/// Names can repeat in both, so the n-th input named `x` reads the n-th header column named `x`, which
+/// is the rule `ActionsDAG::updateHeader` follows to build the block a step runs on. A caller holding
+/// some of the inputs can therefore ask where exactly those read from, which
+/// `ActionsDAG::matchInputPositionsToHeader` cannot answer: it returns a plain list of the positions
+/// something reads, with no way back to which input reads which.
+struct HeaderColumnsToInputs
 {
-    /// Header position of each input, in the order of `inputs`.
-    std::vector<size_t> matched;
-    /// Header positions no input consumes, ascending.
-    std::vector<size_t> passthrough;
+    static constexpr size_t passes_through = std::numeric_limits<size_t>::max();
+
+    std::vector<size_t> read_by;
+
+    size_t size() const { return read_by.size(); }
+    bool passesThrough(size_t header_position) const { return read_by[header_position] == passes_through; }
 };
 
-/// Maps every input to the header column it reads. Names can repeat in both, so the n-th input named
-/// `x` takes the n-th header column named `x`, which is the rule `ActionsDAG::updateHeader` follows.
-/// Unlike `ActionsDAG::matchInputPositionsToHeader`, the mapping is per input rather than a plain list
-/// of consumed positions, so a caller holding some subset of the inputs can ask where those inputs -
-/// and no others - read from.
-InputHeaderPositions mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header);
+HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header);
 
 /// All nodes reachable from `roots`, including the roots themselves. `roots` may hold duplicates.
 /// A node for which `is_barrier` returns true is included, but the walk does not descend into its

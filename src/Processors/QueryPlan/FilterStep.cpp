@@ -105,24 +105,29 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
 
     auto [required_dag_indices, required_passthrough_indices] = dag.splitOutputPositions(pre_erase_positions);
 
-    /// Build the list of pass-through input columns, and split it into the columns to keep and the
-    /// columns to drop. The caller's pass-through indices ascend, so one walk is enough.
-    const auto input_header_positions = mapInputsToHeaderPositions(dag.getInputs(), input_header);
-    const auto & passthrough_input_header_positions = input_header_positions.passthrough;
+    /// One entry per column of the input header: the input reading it, or nothing when it passes by.
+    /// The caller's pass-through indices ascend, and so do the pass-through columns, so one walk over
+    /// the header splits them into the columns to keep and the columns to drop.
+    const auto header_columns = mapHeaderColumnsToInputs(dag.getInputs(), input_header);
 
     std::vector<bool> is_required_input(input_header.columns(), false);
+    size_t passthrough_index = 0;
     size_t next_required_passthrough = 0;
-    for (size_t index = 0; index < passthrough_input_header_positions.size(); ++index)
+    for (size_t position = 0; position < header_columns.size(); ++position)
     {
-        const auto header_position = passthrough_input_header_positions[index];
+        if (!header_columns.passesThrough(position))
+            continue;
+
         if (next_required_passthrough < required_passthrough_indices.size()
-            && required_passthrough_indices[next_required_passthrough] == index)
+            && required_passthrough_indices[next_required_passthrough] == passthrough_index)
         {
             ++next_required_passthrough;
-            is_required_input[header_position] = true;
+            is_required_input[position] = true;
         }
         else
-            plan.dropped_passthrough_header_positions.push_back(header_position);
+            plan.dropped_passthrough_header_positions.push_back(position);
+
+        ++passthrough_index;
     }
 
     if (next_required_passthrough != required_passthrough_indices.size())
@@ -205,6 +210,11 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
         /// Every input reads a header position of its own, so record the position of each surviving
         /// input rather than re-deriving it from the name once the others are gone. A clone keeps the
         /// inputs in their order.
+        std::vector<size_t> input_header_read_positions(dag.getInputs().size());
+        for (size_t position = 0; position < header_columns.size(); ++position)
+            if (!header_columns.passesThrough(position))
+                input_header_read_positions[header_columns.read_by[position]] = position;
+
         const auto & inputs = analyzed_dag.getInputs();
         size_t surviving_input_count = 0;
         for (size_t position = 0; position < inputs.size(); ++position)
@@ -213,7 +223,7 @@ FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
                 continue;
 
             ++surviving_input_count;
-            is_required_input[input_header_positions.matched[position]] = true;
+            is_required_input[input_header_read_positions[position]] = true;
         }
 
         for (size_t position = 0; position < is_required_input.size(); ++position)
