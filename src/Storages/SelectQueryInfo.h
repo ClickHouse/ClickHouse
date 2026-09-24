@@ -209,9 +209,10 @@ struct SelectQueryInfo
     /// The plan this read belongs to is the in-process local fragment of a distributed query, or a
     /// subquery of one (`SelectQueryOptions::is_local_plan_for_distributed_query` or its sticky
     /// companion `inside_local_plan_for_distributed_query`). A storage that plans a query of its own
-    /// for the read - `StorageView` interprets the view body - starts from fresh `SelectQueryOptions`
-    /// and would otherwise lose the fact that the whole fragment stays in this process, which is what
-    /// allows the query result cache reads of the view body's subqueries (see
+    /// for the read - `StorageView` interprets the view body, `StorageTimeSeries`,
+    /// `StorageTimeSeriesSelector` and `StoragePrometheusQuery` interpret a generated query - starts
+    /// from fresh `SelectQueryOptions` and would otherwise lose the fact that the whole fragment stays
+    /// in this process, which is what allows the query result cache reads of the subqueries of that query (see
     /// `shouldReadFromQueryCacheForSubquery`).
     bool inside_local_plan_for_distributed_query = false;
     bool is_internal = false;

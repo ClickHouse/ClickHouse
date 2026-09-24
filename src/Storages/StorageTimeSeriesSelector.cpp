@@ -1069,6 +1069,10 @@ void StorageTimeSeriesSelector::readImpl(
     LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
+    /// Like the body of a `View` (see `StorageView::readImpl`), the generated query becomes part of the
+    /// plan that reads this table, so keep the "this fragment stays in-process" fact of a local
+    /// fragment of a distributed query for its subqueries.
+    options.inside_local_plan_for_distributed_query = query_info.inside_local_plan_for_distributed_query;
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, interpreter_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
