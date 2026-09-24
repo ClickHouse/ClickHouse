@@ -4,8 +4,6 @@
 #include <ranges>
 #include <vector>
 
-#include <fmt/ranges.h>
-
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -48,31 +46,8 @@ extern const SettingsBool use_statistics;
 namespace QueryPlanOptimizations
 {
 
-std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step, RelationStats input_stats);
-
 namespace
 {
-
-String dumpStatsForLogs(const RelationStats & stats)
-{
-    return fmt::format(
-        "{}: {} rows, columns: [{}]",
-        stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
-        fmt::join(
-            stats.column_stats
-                | std::views::transform(
-                    [](const auto & p)
-                    {
-                        return fmt::format(
-                            "{}: {} (ndv: {}, range: {})",
-                            p.first,
-                            p.second.num_distinct_values,
-                            p.second.ndv_provenance.toString(),
-                            p.second.range_provenance.toString());
-                    }),
-            ", "));
-}
 
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
@@ -369,7 +344,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                     addTransformation(stats.column_stats, RowSubset);
                 if (has_unsupported_value_changes)
                     addTransformation(stats.column_stats, Unsupported);
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", ::DB::dumpRelationStatsForLogs(stats));
                 return persistentRelationStats(std::move(stats));
             }
         }

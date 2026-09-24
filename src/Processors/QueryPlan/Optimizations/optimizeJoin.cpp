@@ -57,13 +57,11 @@ namespace ErrorCodes
 
 namespace Setting
 {
-extern const SettingsBool use_hash_table_stats_for_join_reordering;
+    extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
 namespace QueryPlanOptimizations
 {
-
-static String dumpStatsForLogs(const RelationStats & stats);
 
 struct RuntimeHashStatisticsContext
 {
@@ -399,28 +397,6 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
 
-static String dumpStatsForLogs(const RelationStats & stats)
-{
-    return fmt::format(
-        "{}: {} rows, columns: [{}]",
-        stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
-        fmt::join(
-            stats.column_stats
-                | std::views::transform(
-                    [](const auto & p)
-                    {
-                        return fmt::format(
-                            "{}: {} (ndv: {}, range: {})",
-                            p.first,
-                            p.second.num_distinct_values,
-                            p.second.ndv_provenance.toString(),
-                            p.second.range_provenance.toString());
-                    }),
-            ", "));
-}
-
-
 void optimizeJoinLogicalImpl(
     JoinStepLogical * join_step,
     QueryPlan::Node & node,
@@ -611,7 +587,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
-        node->step->getName(), dumpStatsForLogs(stats));
+        node->step->getName(), ::DB::dumpRelationStatsForLogs(stats));
     graph.relation_stats.push_back(stats);
     return 1;
 }

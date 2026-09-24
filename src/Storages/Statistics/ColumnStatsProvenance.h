@@ -11,6 +11,7 @@ enum class ColumnStatsOrigin : UInt8
     Unknown,
     PartStatistics,
     SyntheticFallback,
+    /// Produced by the runtime-filter planner (row-count-derived NDV bound); not emitted here yet.
     ExactRowCount,
 };
 

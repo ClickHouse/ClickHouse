@@ -46,8 +46,9 @@ bool isValueRangeSuperset(const ColumnStatsProvenance & provenance)
 
 bool isRepresentativeValueRange(const ColumnStatsProvenance & provenance)
 {
-    constexpr UInt16 forbidden = RowSubset | NonUniformRowSubset | NDVBoundExpression | PartialPartCoverage | Unsupported;
-    return provenance.origin == ColumnStatsOrigin::PartStatistics && !provenance.hasAny(forbidden);
+    /// Today an exact range is the only range known to be representative. Consumers must still call
+    /// the predicate that names the guarantee they need; the two may diverge (e.g. a uniform sample).
+    return isExactValueRange(provenance);
 }
 
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)

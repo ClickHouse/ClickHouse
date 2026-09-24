@@ -1,5 +1,7 @@
 #include <memory>
 #include <ranges>
+
+#include <fmt/ranges.h>
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Interpreters/Context.h>
@@ -26,6 +28,27 @@
  */
 namespace DB
 {
+
+String dumpRelationStatsForLogs(const RelationStats & stats)
+{
+    return fmt::format(
+        "{}: {} rows, columns: [{}]",
+        stats.table_name.empty() ? "<unknown>" : stats.table_name,
+        stats.estimated_rows ? fmt::format("{}", stats.estimated_rows.value()) : "unknown",
+        fmt::join(
+            stats.column_stats
+                | std::views::transform(
+                    [](const auto & p)
+                    {
+                        return fmt::format(
+                            "{}: {} (ndv: {}, range: {})",
+                            p.first,
+                            p.second.num_distinct_values,
+                            p.second.ndv_provenance.toString(),
+                            p.second.range_provenance.toString());
+                    }),
+            ", "));
+}
 
 /* Read a table statistics hint from the query parameter.
  * The parameter should be a JSON object with the following structure:
