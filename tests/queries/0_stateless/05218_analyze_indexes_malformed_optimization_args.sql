@@ -30,5 +30,7 @@ SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_analyze_optimization_
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_analyze_optimization_args, 1, [], 'vector_search_index_analysis', array('v', 'L2Distance', 3, [1.5, 2.5, 3.5], true, false));
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_analyze_optimization_args, 1, [], 'vector_search_index_analysis', array('v', 'L2Distance', 3, [1, 2, 3], 1, 0));
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_analyze_optimization_args, 1, [], 'vector_search_index_analysis', ['v', 'L2Distance', 3, [1.5, 2.5, 3.5], 1, 0]);
+-- A signed but non-negative limit is accepted as well.
+SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_analyze_optimization_args, 1, [], 'vector_search_index_analysis', array('v', 'L2Distance', toInt64(3), [1.0], 1, 0));
 
 DROP TABLE t_analyze_optimization_args;

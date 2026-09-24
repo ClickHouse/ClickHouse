@@ -141,12 +141,19 @@ static const String & getVectorSearchStringArgument(const Array & args, size_t i
     return field.safeGet<String>();
 }
 
+/// A signed literal such as `toInt64(3)` is accepted as long as it is non-negative.
 static UInt64 getVectorSearchUnsignedArgument(const Array & args, size_t index)
 {
     const Field & field = args[index];
-    if (field.getType() != Field::Types::UInt64)
-        throwBadVectorSearchArgument(field, index, "a non-negative integer");
-    return field.safeGet<UInt64>();
+    if (field.getType() == Field::Types::UInt64)
+        return field.safeGet<UInt64>();
+    if (field.getType() == Field::Types::Int64)
+    {
+        Int64 value = field.safeGet<Int64>();
+        if (value >= 0)
+            return static_cast<UInt64>(value);
+    }
+    throwBadVectorSearchArgument(field, index, "a non-negative integer");
 }
 
 /// `buildAnalyzeIndexQuery` formats the flags as `true` / `false`, a hand-written list is likely to use `1` / `0`.
