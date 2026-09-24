@@ -33,10 +33,3 @@ overwriting mutation applied on the fly
 3	0	3
 4	9	1000
 5	0	1000
-overwriting mutation materialized
-0	5	3
-1	0	1000
-2	7	1000
-3	0	3
-4	9	1000
-5	0	1000

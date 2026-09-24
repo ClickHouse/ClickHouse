@@ -36,7 +36,10 @@ SELECT 'mutation materialized';
 SELECT x, a, z, w FROM t_lwu_pending_mutation ORDER BY x;
 
 -- The pending mutation overwrites the `DEFAULT` column itself: the value the mutation gives stays, as it
--- does once the mutation has materialized the column in the part.
+-- does once the mutation has materialized the column in the part. The mutation predates the lightweight
+-- `UPDATE`, so it materializes `z` from `a = 0`: `3` where it matches and `1000` elsewhere.
+-- The result after materialization is not checked here: another mutation issued to wait for it may be
+-- squashed together with it into one mutation with a version above the patch, which then sees the patched `a`.
 
 CREATE TABLE t_lwu_pending_mutation_overwrites (x UInt32) ENGINE = MergeTree ORDER BY x
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
@@ -53,12 +56,6 @@ UPDATE t_lwu_pending_mutation_overwrites SET a = x + 5 WHERE x % 2 = 0;
 
 SELECT 'overwriting mutation applied on the fly';
 SELECT x, a, z FROM t_lwu_pending_mutation_overwrites ORDER BY x SETTINGS apply_mutations_on_fly = 1;
-
-SYSTEM START MERGES t_lwu_pending_mutation_overwrites;
-ALTER TABLE t_lwu_pending_mutation_overwrites UPDATE z = z WHERE 0 SETTINGS mutations_sync = 2;
-
-SELECT 'overwriting mutation materialized';
-SELECT x, a, z FROM t_lwu_pending_mutation_overwrites ORDER BY x;
 
 DROP TABLE t_lwu_pending_mutation;
 DROP TABLE t_lwu_pending_mutation_overwrites;
