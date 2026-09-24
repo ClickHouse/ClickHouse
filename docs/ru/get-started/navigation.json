@@ -27,7 +27,7 @@
             },
             {
               "expanded": false,
-              "group": "Real-time аналитика",
+              "group": "Аналитика в реальном времени",
               "pages": [
                 "ru/get-started/quickstarts/create-your-first-materialized-view",
                 "ru/get-started/quickstarts/create-your-first-projection"

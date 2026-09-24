@@ -14,36 +14,36 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "AMPLab Big Data Benchmark",
-          href: "/get-started/sample-datasets/amplab-benchmark",
+          href: "/ko/get-started/sample-datasets/amplab-benchmark",
           imgLight: "/images/sample-datasets-grid/amplab-benchmark-light.jpg",
           imgDark: "/images/sample-datasets-grid/amplab-benchmark-dark.jpg"
         },
         {
           title: "Brown University Benchmark",
-          href: "/get-started/sample-datasets/brown-benchmark",
+          href: "/ko/get-started/sample-datasets/brown-benchmark",
           imgLight: "/images/sample-datasets-grid/brown-benchmark-light.jpg",
           imgDark: "/images/sample-datasets-grid/brown-benchmark-dark.jpg"
         },
         {
           title: "Criteo 테라바이트 클릭 로그",
-          href: "/get-started/sample-datasets/criteo",
+          href: "/ko/get-started/sample-datasets/criteo",
           imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
           imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
         },
         {
           title: "JOB 벤치마크",
-          href: "/get-started/sample-datasets/job",
+          href: "/ko/get-started/sample-datasets/job",
           imgLight: "/images/sample-datasets-grid/benchmarks-light.jpg",
           imgDark: "/images/sample-datasets-grid/benchmarks-dark.jpg"
         },
         {
           title: "Star Schema Benchmark (SSB)",
-          href: "/get-started/sample-datasets/star-schema",
+          href: "/ko/get-started/sample-datasets/star-schema",
           imgLight: "/images/sample-datasets-grid/star-schema-light.jpg",
           imgDark: "/images/sample-datasets-grid/star-schema-dark.jpg"
         },
-        { title: "TPC-DS", href: "/get-started/sample-datasets/tpcds", imgLight: "/images/sample-datasets-grid/tpcds-light.jpg", imgDark: "/images/sample-datasets-grid/tpcds-dark.jpg" },
-        { title: "TPC-H", href: "/get-started/sample-datasets/tpch", imgLight: "/images/sample-datasets-grid/tpch-light.jpg", imgDark: "/images/sample-datasets-grid/tpch-dark.jpg" }
+        { title: "TPC-DS", href: "/ko/get-started/sample-datasets/tpcds", imgLight: "/images/sample-datasets-grid/tpcds-light.jpg", imgDark: "/images/sample-datasets-grid/tpcds-dark.jpg" },
+        { title: "TPC-H", href: "/ko/get-started/sample-datasets/tpch", imgLight: "/images/sample-datasets-grid/tpch-light.jpg", imgDark: "/images/sample-datasets-grid/tpch-dark.jpg" }
       ]
     },
     {
@@ -55,19 +55,19 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "기지국 (OpenCelliD)",
-          href: "/get-started/sample-datasets/cell-towers",
+          href: "/ko/get-started/sample-datasets/cell-towers",
           imgLight: "/images/sample-datasets-grid/cell-towers-light.jpg",
           imgDark: "/images/sample-datasets-grid/cell-towers-dark.jpg"
         },
         {
           title: "Foursquare 장소",
-          href: "/get-started/sample-datasets/foursquare-os-places",
+          href: "/ko/get-started/sample-datasets/foursquare-os-places",
           imgLight: "/images/sample-datasets-grid/foursquare-places-light.jpg",
           imgDark: "/images/sample-datasets-grid/foursquare-places-dark.jpg"
         },
         {
           title: "뉴욕 택시 데이터",
-          href: "/get-started/sample-datasets/nyc-taxi",
+          href: "/ko/get-started/sample-datasets/nyc-taxi",
           imgLight: "/images/sample-datasets-grid/nyc-taxi-light.jpg",
           imgDark: "/images/sample-datasets-grid/nyc-taxi-dark.jpg"
         }
@@ -82,31 +82,31 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "COVID-19 공개 데이터",
-          href: "/get-started/sample-datasets/covid19",
+          href: "/ko/get-started/sample-datasets/covid19",
           imgLight: "/images/sample-datasets-grid/covid19-light.jpg",
           imgDark: "/images/sample-datasets-grid/covid19-dark.jpg"
         },
         {
           title: "메뉴에 무엇이 있나요? (NYPL)",
-          href: "/get-started/sample-datasets/menus",
+          href: "/ko/get-started/sample-datasets/menus",
           imgLight: "/images/sample-datasets-grid/menus-light.jpg",
           imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
         },
         {
           title: "NYPD 민원 데이터",
-          href: "/get-started/sample-datasets/nypd-complaint-data",
+          href: "/ko/get-started/sample-datasets/nypd-complaint-data",
           imgLight: "/images/sample-datasets-grid/nypd-complaint-data-light.jpg",
           imgDark: "/images/sample-datasets-grid/nypd-complaint-data-dark.jpg"
         },
         {
           title: "OnTime (항공편)",
-          href: "/get-started/sample-datasets/ontime",
+          href: "/ko/get-started/sample-datasets/ontime",
           imgLight: "/images/sample-datasets-grid/ontime-light.jpg",
           imgDark: "/images/sample-datasets-grid/ontime-dark.jpg"
         },
         {
           title: "영국 부동산 가격",
-          href: "/get-started/sample-datasets/uk-price-paid",
+          href: "/ko/get-started/sample-datasets/uk-price-paid",
           imgLight: "/images/sample-datasets-grid/uk-price-paid-light.jpg",
           imgDark: "/images/sample-datasets-grid/uk-price-paid-dark.jpg"
         }
@@ -121,23 +121,23 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "환경 센서 데이터",
-          href: "/get-started/sample-datasets/environmental-sensors",
+          href: "/ko/get-started/sample-datasets/environmental-sensors",
           imgLight: "/images/sample-datasets-grid/environmental-sensors-light.jpg",
           imgDark: "/images/sample-datasets-grid/environmental-sensors-dark.jpg"
         },
         {
           title: "NOAA 글로벌 역사 기후 네트워크",
-          href: "/get-started/sample-datasets/noaa",
+          href: "/ko/get-started/sample-datasets/noaa",
           imgLight: "/images/sample-datasets-grid/noaa-light.jpg",
           imgDark: "/images/sample-datasets-grid/noaa-dark.jpg"
         },
         {
           title: "대만 역사 기상 데이터",
-          href: "/get-started/sample-datasets/tw-weather",
+          href: "/ko/get-started/sample-datasets/tw-weather",
           imgLight: "/images/sample-datasets-grid/tw-weather-light.jpg",
           imgDark: "/images/sample-datasets-grid/tw-weather-dark.jpg"
         },
-        { title: "WikiStat", href: "/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" }
+        { title: "WikiStat", href: "/ko/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" }
       ]
     },
     {
@@ -149,25 +149,25 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "dbpedia dataset",
-          href: "/get-started/sample-datasets/dbpedia",
+          href: "/ko/get-started/sample-datasets/dbpedia",
           imgLight: "/images/sample-datasets-grid/dbpedia-light.jpg",
           imgDark: "/images/sample-datasets-grid/dbpedia-dark.jpg"
         },
         {
           title: "Hacker News 벡터 검색",
-          href: "/get-started/sample-datasets/hacker-news-vector-search",
+          href: "/ko/get-started/sample-datasets/hacker-news-vector-search",
           imgLight: "/images/sample-datasets-grid/hacker-news-vector-search-light.jpg",
           imgDark: "/images/sample-datasets-grid/hacker-news-vector-search-dark.jpg"
         },
         {
           title: "Laion-400M dataset",
-          href: "/get-started/sample-datasets/laion",
+          href: "/ko/get-started/sample-datasets/laion",
           imgLight: "/images/sample-datasets-grid/laion-400m-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion-400m-dark.jpg"
         },
         {
           title: "LAION 5B dataset",
-          href: "/get-started/sample-datasets/laion5b",
+          href: "/ko/get-started/sample-datasets/laion5b",
           imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
         }
@@ -182,43 +182,43 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "Amazon 고객 리뷰",
-          href: "/get-started/sample-datasets/amazon-reviews",
+          href: "/ko/get-started/sample-datasets/amazon-reviews",
           imgLight: "/images/sample-datasets-grid/amazon-reviews-light.jpg",
           imgDark: "/images/sample-datasets-grid/amazon-reviews-dark.jpg"
         },
         {
           title: "익명화된 웹 분석",
-          href: "/get-started/sample-datasets/anon-web-analytics-metrica",
+          href: "/ko/get-started/sample-datasets/anon-web-analytics-metrica",
           imgLight: "/images/sample-datasets-grid/anon-web-analytics-light.jpg",
           imgDark: "/images/sample-datasets-grid/anon-web-analytics-dark.jpg"
         },
         {
           title: "GitHub 데이터 쿼리",
-          href: "/get-started/sample-datasets/github",
+          href: "/ko/get-started/sample-datasets/github",
           imgLight: "/images/sample-datasets-grid/github-light.jpg",
           imgDark: "/images/sample-datasets-grid/github-dark.jpg"
         },
         {
           title: "GitHub 이벤트 데이터셋",
-          href: "/get-started/sample-datasets/github-events",
+          href: "/ko/get-started/sample-datasets/github-events",
           imgLight: "/images/sample-datasets-grid/github-events-light.jpg",
           imgDark: "/images/sample-datasets-grid/github-events-dark.jpg"
         },
         {
           title: "Hacker News dataset",
-          href: "/get-started/sample-datasets/hacker-news",
+          href: "/ko/get-started/sample-datasets/hacker-news",
           imgLight: "/images/sample-datasets-grid/hacker-news-light.jpg",
           imgDark: "/images/sample-datasets-grid/hacker-news-dark.jpg"
         },
         {
           title: "Stack Overflow 데이터 분석",
-          href: "/get-started/sample-datasets/stackoverflow",
+          href: "/ko/get-started/sample-datasets/stackoverflow",
           imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
           imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
         },
         {
           title: "YouTube 비추천 데이터셋",
-          href: "/get-started/sample-datasets/youtube-dislikes",
+          href: "/ko/get-started/sample-datasets/youtube-dislikes",
           imgLight: "/images/sample-datasets-grid/youtube-dislikes-light.jpg",
           imgDark: "/images/sample-datasets-grid/youtube-dislikes-dark.jpg"
         }

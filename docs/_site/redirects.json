@@ -55122,5 +55122,241 @@
   {
     "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ar/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/ar/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/ar/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/ar/products/managed-postgres/walshadow"
+  },
+  {
+    "destination": "/es/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/es/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/es/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/es/products/managed-postgres/walshadow"
+  },
+  {
+    "destination": "/fr/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/fr/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/fr/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/fr/products/managed-postgres/walshadow"
+  },
+  {
+    "destination": "/ja/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/ja/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/ja/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/ja/products/managed-postgres/walshadow"
+  },
+  {
+    "destination": "/ko/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/ko/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/ko/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/ko/products/managed-postgres/walshadow"
+  },
+  {
+    "destination": "/pt-BR/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/pt-BR/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/pt-BR/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/pt-BR/products/managed-postgres/walshadow"
+  },
+  {
+    "destination": "/ru/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/ru/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/ru/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/ru/products/managed-postgres/walshadow"
+  },
+  {
+    "destination": "/zh/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/zh/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/zh/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/zh/products/managed-postgres/walshadow"
+  },
+  {
+    "destination": "/ar/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/ar/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/es/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/es/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/fr/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/fr/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/ja/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/ja/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/ko/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/ko/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/pt-BR/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/pt-BR/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/ru/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/ru/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/zh/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/zh/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/ar/products/cloud/guides/best-practices/usagelimits",
+    "source": "/ar/cloud/bestpractices/usage-limits"
+  },
+  {
+    "destination": "/ar/concepts/features/interfaces/tcp",
+    "source": "/ar/interfaces/tcp"
+  },
+  {
+    "destination": "/ar/concepts/features/interfaces/web-sql",
+    "source": "/ar/interfaces/web-sql"
+  },
+  {
+    "destination": "/ar/products/cloud/reference/supported-regions",
+    "source": "/ar/cloud/reference/supported-regions"
+  },
+  {
+    "destination": "/ar/products/cloud/features/infrastructure/shared-catalog",
+    "source": "/ar/cloud/reference/shared-catalog"
+  },
+  {
+    "destination": "/ar/products/managed-postgres/overview",
+    "source": "/ar/cloud/managed-postgres"
+  },
+  {
+    "destination": "/ar/get-started/setup/cloud",
+    "source": "/ar/getting-started/quick-start/cloud"
+  },
+  {
+    "destination": "/es/products/cloud/guides/best-practices/usagelimits",
+    "source": "/es/cloud/bestpractices/usage-limits"
+  },
+  {
+    "destination": "/es/concepts/features/interfaces/tcp",
+    "source": "/es/interfaces/tcp"
+  },
+  {
+    "destination": "/es/concepts/features/interfaces/web-sql",
+    "source": "/es/interfaces/web-sql"
+  },
+  {
+    "destination": "/es/products/cloud/reference/supported-regions",
+    "source": "/es/cloud/reference/supported-regions"
+  },
+  {
+    "destination": "/es/products/cloud/features/infrastructure/shared-catalog",
+    "source": "/es/cloud/reference/shared-catalog"
+  },
+  {
+    "destination": "/es/products/managed-postgres/overview",
+    "source": "/es/cloud/managed-postgres"
+  },
+  {
+    "destination": "/es/get-started/setup/cloud",
+    "source": "/es/getting-started/quick-start/cloud"
+  },
+  {
+    "destination": "/fr/products/cloud/guides/best-practices/usagelimits",
+    "source": "/fr/cloud/bestpractices/usage-limits"
+  },
+  {
+    "destination": "/fr/concepts/features/interfaces/tcp",
+    "source": "/fr/interfaces/tcp"
+  },
+  {
+    "destination": "/fr/concepts/features/interfaces/web-sql",
+    "source": "/fr/interfaces/web-sql"
+  },
+  {
+    "destination": "/fr/products/cloud/reference/supported-regions",
+    "source": "/fr/cloud/reference/supported-regions"
+  },
+  {
+    "destination": "/fr/products/cloud/features/infrastructure/shared-catalog",
+    "source": "/fr/cloud/reference/shared-catalog"
+  },
+  {
+    "destination": "/fr/products/managed-postgres/overview",
+    "source": "/fr/cloud/managed-postgres"
+  },
+  {
+    "destination": "/fr/get-started/setup/cloud",
+    "source": "/fr/getting-started/quick-start/cloud"
+  },
+  {
+    "destination": "/ja/products/cloud/guides/best-practices/usagelimits",
+    "source": "/ja/cloud/bestpractices/usage-limits"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/tcp",
+    "source": "/ja/interfaces/tcp"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/web-sql",
+    "source": "/ja/interfaces/web-sql"
+  },
+  {
+    "destination": "/ja/products/cloud/reference/supported-regions",
+    "source": "/ja/cloud/reference/supported-regions"
+  },
+  {
+    "destination": "/ja/products/cloud/features/infrastructure/shared-catalog",
+    "source": "/ja/cloud/reference/shared-catalog"
+  },
+  {
+    "destination": "/ja/products/managed-postgres/overview",
+    "source": "/ja/cloud/managed-postgres"
+  },
+  {
+    "destination": "/ja/get-started/setup/cloud",
+    "source": "/ja/getting-started/quick-start/cloud"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/guides/best-practices/usagelimits",
+    "source": "/pt-BR/cloud/bestpractices/usage-limits"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/interfaces/tcp",
+    "source": "/pt-BR/interfaces/tcp"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/interfaces/web-sql",
+    "source": "/pt-BR/interfaces/web-sql"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/reference/supported-regions",
+    "source": "/pt-BR/cloud/reference/supported-regions"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/infrastructure/shared-catalog",
+    "source": "/pt-BR/cloud/reference/shared-catalog"
+  },
+  {
+    "destination": "/pt-BR/products/managed-postgres/overview",
+    "source": "/pt-BR/cloud/managed-postgres"
+  },
+  {
+    "destination": "/pt-BR/get-started/setup/cloud",
+    "source": "/pt-BR/getting-started/quick-start/cloud"
   }
 ]
