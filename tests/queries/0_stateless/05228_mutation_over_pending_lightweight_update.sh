@@ -59,6 +59,23 @@ do
     sleep 0.2
 done
 
+# A part inserted after the update reserved its block number has a data version above the update, while the
+# first mutation (below the update) is still tracked. A new mutation for that part must be postponed as well.
+$CLICKHOUSE_CLIENT --query "
+    INSERT INTO $TABLE VALUES (3, 3);
+    ALTER TABLE $TABLE DELETE WHERE 0 SETTINGS mutations_sync = 0;
+"
+
+for _ in $(seq 1 300)
+do
+    postponed=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.mutations
+        WHERE database = currentDatabase() AND table = '$TABLE' AND NOT is_done
+            AND arrayExists(x -> x LIKE 'Lightweight update%', mapValues(parts_postpone_reasons))")
+    [[ "$postponed" == "2" ]] && break
+    sleep 0.2
+done
+
 $CLICKHOUSE_CLIENT --query "
     SELECT mutation_id, is_done, arrayDistinct(mapValues(parts_postpone_reasons)) FROM system.mutations
     WHERE database = currentDatabase() AND table = '$TABLE' ORDER BY mutation_id;

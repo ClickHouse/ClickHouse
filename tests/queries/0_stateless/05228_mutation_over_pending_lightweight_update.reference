@@ -1,9 +1,12 @@
 mutation_2.txt	1	[]
 mutation_4.txt	0	['Lightweight update with a lower version is not committed yet']
+mutation_6.txt	0	['Lightweight update with a lower version is not committed yet']
 on the fly
 1	0
+3	3
 5	0
 materialized
 1	0
+3	3
 5	0
 0
