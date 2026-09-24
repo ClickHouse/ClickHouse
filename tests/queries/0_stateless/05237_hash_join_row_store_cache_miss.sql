@@ -37,15 +37,20 @@ SELECT a, b FROM probe p JOIN build_2_nullable r ON p.k = r.k FORMAT Null SETTIN
 SELECT a, b FROM probe p JOIN build_2_fs32 r ON p.k = r.k FORMAT Null SETTINGS log_comment = 'build_2_fs32';
 SELECT a, b, c, d FROM probe p JOIN build_4_fs32 r ON p.k = r.k FORMAT Null SETTINGS log_comment = 'build_4_fs32';
 
+-- A column that is saved but never read back out of the store is left out of it, like the key of a `RIGHT` join.
+SELECT a, b FROM probe p RIGHT JOIN build_2_u64 r ON p.k = r.k FORMAT Null SETTINGS log_comment = 'saved_key_2_u64';
+SELECT a, b, c FROM probe p RIGHT JOIN build_3_u64 r ON p.k = r.k FORMAT Null SETTINGS log_comment = 'saved_key_3_u64';
+
 SYSTEM FLUSH LOGS text_log, query_log;
 
-SELECT comment, countIf(message LIKE 'Initialized Row store%') > 0 AS row_store_built
+SELECT comment, anyIf(extract(message, 'with (\\d+) columns'), message LIKE 'Initialized Row store%') AS row_store_columns
 FROM
 (
     SELECT log_comment AS comment, query_id
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
-      AND log_comment IN ('build_2_u64', 'build_3_u64', 'build_2_nullable', 'build_2_fs32', 'build_4_fs32')
+      AND log_comment IN ('build_2_u64', 'build_3_u64', 'build_2_nullable', 'build_2_fs32', 'build_4_fs32',
+                          'saved_key_2_u64', 'saved_key_3_u64')
 ) AS q
 LEFT JOIN system.text_log AS t ON t.query_id = q.query_id
 GROUP BY comment

@@ -1,5 +1,7 @@
-build_2_fs32	0
-build_2_nullable	1
-build_2_u64	0
-build_3_u64	1
-build_4_fs32	1
+build_2_fs32	
+build_2_nullable	2
+build_2_u64	
+build_3_u64	3
+build_4_fs32	4
+saved_key_2_u64	
+saved_key_3_u64	3
