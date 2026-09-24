@@ -1,0 +1,31 @@
+<test>
+    <!-- Merges and reads of a `JSON` column with many typed paths and shared data.
+         The serialization of typed paths and the split of shared data into buckets run for every granule. -->
+    <substitutions>
+        <substitution>
+            <name>shared_data_version</name>
+            <values>
+                <value>map_with_buckets</value>
+                <value>advanced</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_json_typed_shared_merge_{shared_data_version} (id UInt64, json JSON(max_dynamic_paths = 0, t0 String, t1 String, t2 String, t3 String, t4 String, t5 String, t6 String, t7 String, t8 String, t9 String, t10 String, t11 String, t12 String, t13 String, t14 String, t15 String, t16 String, t17 String, t18 String, t19 String, t20 String, t21 String, t22 String, t23 String, t24 String, t25 String, t26 String, t27 String, t28 String, t29 String, t30 String, t31 String, t32 String, t33 String, t34 String, t35 String, t36 String, t37 String, t38 String, t39 String, t40 String, t41 String, t42 String, t43 String, t44 String, t45 String, t46 String, t47 String, t48 String, t49 String, t50 String, t51 String, t52 String, t53 String, t54 String, t55 String, t56 String, t57 String, t58 String, t59 String, t60 String, t61 String, t62 String, t63 String, t64 String, t65 String, t66 String, t67 String, t68 String, t69 String, t70 String, t71 String, t72 String, t73 String, t74 String, t75 String, t76 String, t77 String, t78 String, t79 String, t80 String, t81 String, t82 String, t83 String, t84 String, t85 String, t86 String, t87 String, t88 String, t89 String, t90 String, t91 String, t92 String, t93 String, t94 String, t95 String, t96 String, t97 String, t98 String, t99 String, t100 String, t101 String, t102 String, t103 String, t104 String, t105 String, t106 String, t107 String, t108 String, t109 String, t110 String, t111 String, t112 String, t113 String, t114 String, t115 String, t116 String, t117 String, t118 String, t119 String, t120 String, t121 String, t122 String, t123 String, t124 String, t125 String, t126 String, t127 String, t128 String, t129 String, t130 String, t131 String, t132 String, t133 String, t134 String, t135 String, t136 String, t137 String, t138 String, t139 String, t140 String, t141 String, t142 String, t143 String, t144 String, t145 String, t146 String, t147 String, t148 String, t149 String, t150 String, t151 String, t152 String, t153 String, t154 String, t155 String, t156 String, t157 String, t158 String, t159 String, t160 String, t161 String, t162 String, t163 String, t164 String, t165 String, t166 String, t167 String, t168 String, t169 String, t170 String, t171 String, t172 String, t173 String, t174 String, t175 String, t176 String, t177 String, t178 String, t179 String, t180 String, t181 String, t182 String, t183 String, t184 String, t185 String, t186 String, t187 String, t188 String, t189 String, t190 String, t191 String, t192 String, t193 String, t194 String, t195 String, t196 String, t197 String, t198 String, t199 String))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+            object_shared_data_serialization_version = '{shared_data_version}',
+            object_shared_data_serialization_version_for_zero_level_parts = '{shared_data_version}'
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES t_json_typed_shared_merge_{shared_data_version}</fill_query>
+    <fill_query>INSERT INTO t_json_typed_shared_merge_{shared_data_version} SELECT number, CAST(arrayConcat(arrayMap(x -> tuple('t' || toString((number + x) % 200), toString(number % 100)), range(5)), arrayMap(x -> tuple('key' || toString(cityHash64(number, x) % 2000), toString(x)), range(40))), 'Map(String, String)') FROM numbers(0, 100000)</fill_query>
+    <fill_query>INSERT INTO t_json_typed_shared_merge_{shared_data_version} SELECT number, CAST(arrayConcat(arrayMap(x -> tuple('t' || toString((number + x) % 200), toString(number % 100)), range(5)), arrayMap(x -> tuple('key' || toString(cityHash64(number, x) % 2000), toString(x)), range(40))), 'Map(String, String)') FROM numbers(100000, 100000)</fill_query>
+    <fill_query>INSERT INTO t_json_typed_shared_merge_{shared_data_version} SELECT number, CAST(arrayConcat(arrayMap(x -> tuple('t' || toString((number + x) % 200), toString(number % 100)), range(5)), arrayMap(x -> tuple('key' || toString(cityHash64(number, x) % 2000), toString(x)), range(40))), 'Map(String, String)') FROM numbers(200000, 100000)</fill_query>
+
+    <query>OPTIMIZE TABLE t_json_typed_shared_merge_{shared_data_version} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0'</query>
+    <query>SELECT json FROM t_json_typed_shared_merge_{shared_data_version} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_json_typed_shared_merge_{shared_data_version}</drop_query>
+</test>

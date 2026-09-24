@@ -176,8 +176,37 @@ SharedDataBucketsSplitter::SharedDataBucketsSplitter(const IColumn & shared_data
     }
 }
 
+void SharedDataBucketsSplitter::groupPathsByBucket() const
+{
+    const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
+
+    /// A stable counting sort of the paths by bucket.
+    bucket_begin.assign(num_buckets + 1, 0);
+    for (size_t bucket = 0; bucket != num_buckets; ++bucket)
+        bucket_begin[bucket + 1] = bucket_begin[bucket] + bucket_num_paths[bucket];
+
+    bucket_path_indexes.resize(path_buckets.size());
+    bucket_path_rows.resize(path_buckets.size());
+    std::vector<size_t> positions(bucket_begin.begin(), bucket_begin.end() - 1);
+    size_t path_index = 0;
+    for (size_t i = start; i != end; ++i)
+    {
+        size_t offset_start = (*shared_data_offsets)[ssize_t(i) - 1];
+        size_t offset_end = (*shared_data_offsets)[ssize_t(i)];
+        for (size_t j = offset_start; j != offset_end; ++j, ++path_index)
+        {
+            size_t position = positions[path_buckets[path_index]]++;
+            bucket_path_indexes[position] = j;
+            bucket_path_rows[position] = static_cast<UInt32>(i - start);
+        }
+    }
+}
+
 ColumnPtr SharedDataBucketsSplitter::extractBucket(size_t bucket) const
 {
+    if (bucket_begin.empty())
+        groupPathsByBucket();
+
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
 
     auto bucket_column = shared_data_column.cloneEmpty();
@@ -190,22 +219,19 @@ ColumnPtr SharedDataBucketsSplitter::extractBucket(size_t bucket) const
     bucket_values->getOffsets().reserve_exact(bucket_num_paths[bucket]);
     bucket_offsets->reserve_exact(end - start);
 
-    size_t path_index = 0;
-    for (size_t i = start; i != end; ++i)
+    size_t row = 0;
+    for (size_t position = bucket_begin[bucket]; position != bucket_begin[bucket + 1]; ++position)
     {
-        size_t offset_start = (*shared_data_offsets)[ssize_t(i) - 1];
-        size_t offset_end = (*shared_data_offsets)[ssize_t(i)];
-        for (size_t j = offset_start; j != offset_end; ++j, ++path_index)
-        {
-            if (path_buckets[path_index] == bucket)
-            {
-                bucket_paths->insertFrom(*shared_data_paths, j);
-                bucket_values->insertFrom(*shared_data_values, j);
-            }
-        }
+        for (; row != bucket_path_rows[position]; ++row)
+            bucket_offsets->push_back(bucket_paths->size());
 
-        bucket_offsets->push_back(bucket_paths->size());
+        size_t j = bucket_path_indexes[position];
+        bucket_paths->insertFrom(*shared_data_paths, j);
+        bucket_values->insertFrom(*shared_data_values, j);
     }
+
+    for (; row != end - start; ++row)
+        bucket_offsets->push_back(bucket_paths->size());
 
     return bucket_column;
 }
@@ -274,12 +300,45 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
         std::tie(shared_data_paths_buckets[i], shared_data_values_buckets[i], shared_data_offsets_buckets[i]) = ColumnObject::getSharedDataPathsValuesAndOffsets(*shared_data_buckets[i]);
 
     size_t num_rows = shared_data_buckets[0]->size();
+    std::vector<std::tuple<std::string_view, size_t, size_t>> all_paths;
+    /// Adjacent rows often have the same paths. Then the sorted order of the previous row, as pairs of
+    /// (bucket, position of the path in the row in this bucket), is valid for the current row.
+    std::vector<std::pair<UInt32, UInt32>> previous_order;
+    bool has_previous_order = false;
     for (size_t i = 0; i != num_rows; ++i)
     {
+        if (!paths_prefix && has_previous_order)
+        {
+            bool same_paths = true;
+            for (size_t bucket = 0; same_paths && bucket != shared_data_buckets.size(); ++bucket)
+            {
+                const auto & offsets = *shared_data_offsets_buckets[bucket];
+                size_t previous_start = offsets[ssize_t(i) - 2];
+                size_t start = offsets[ssize_t(i) - 1];
+                size_t size = offsets[ssize_t(i)] - start;
+                same_paths = size == start - previous_start;
+                for (size_t k = 0; same_paths && k != size; ++k)
+                    same_paths = shared_data_paths_buckets[bucket]->getDataAt(start + k) == shared_data_paths_buckets[bucket]->getDataAt(previous_start + k);
+            }
+
+            if (same_paths)
+            {
+                for (const auto [bucket, position] : previous_order)
+                {
+                    size_t offset = (*shared_data_offsets_buckets[bucket])[ssize_t(i) - 1] + position;
+                    auto path = shared_data_paths_buckets[bucket]->getDataAt(offset);
+                    shared_data_paths->insertData(path.data(), path.size());
+                    shared_data_values->insertFrom(*shared_data_values_buckets[bucket], offset);
+                }
+                shared_data_offsets->push_back(shared_data_paths->size());
+                continue;
+            }
+        }
+
         /// Shared data contains paths in sorted order in each row.
         /// Collect all paths from all buckets in this row and sort them.
         /// Save each path bucket and index to be able find corresponding value later.
-        std::vector<std::tuple<std::string_view, size_t, size_t>> all_paths;
+        all_paths.clear();
         for (size_t bucket = 0; bucket != shared_data_buckets.size(); ++bucket)
         {
             size_t offset_start = (*shared_data_offsets_buckets[bucket])[ssize_t(i) - 1];
@@ -317,6 +376,15 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
         }
 
         shared_data_offsets->push_back(shared_data_paths->size());
+
+        if (!paths_prefix)
+        {
+            previous_order.clear();
+            for (const auto [path, bucket, offset] : all_paths)
+                previous_order.emplace_back(
+                    static_cast<UInt32>(bucket), static_cast<UInt32>(offset - (*shared_data_offsets_buckets[bucket])[ssize_t(i) - 1]));
+            has_previous_order = true;
+        }
     }
 }
 
