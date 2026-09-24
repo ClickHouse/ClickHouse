@@ -287,15 +287,22 @@ def test_remote_write_rejects_a_mismatching_time_series_type():
 def test_remote_write_over_distributed():
     response = write("/dist/write", "dist_metric", HOSTS)
     assert response.status_code == 204, response.text
-    # Every sample lands exactly once across the shards, and the fixed hash split fills both.
+
+    # Every sample lands exactly once across the shards, and the fixed hash split fills both. Only this
+    # metric is counted: other tests write into the same shard tables, in whatever order they run.
+    def samples_on(shard_db):
+        return (
+            f"(SELECT count() FROM timeSeriesData({shard_db}.ts_local) WHERE id IN "
+            f"(SELECT id FROM timeSeriesTags({shard_db}.ts_local) WHERE metric_name = 'dist_metric'))"
+        )
+
     assert_eq_with_retry(
         node,
-        "SELECT (SELECT count() FROM timeSeriesData(shard_0.ts_local))"
-        " + (SELECT count() FROM timeSeriesData(shard_1.ts_local))",
+        f"SELECT {samples_on('shard_0')} + {samples_on('shard_1')}",
         str(len(HOSTS)),
     )
-    assert int(node.query("SELECT count() FROM timeSeriesData(shard_0.ts_local)")) > 0
-    assert int(node.query("SELECT count() FROM timeSeriesData(shard_1.ts_local)")) > 0
+    assert int(node.query(f"SELECT {samples_on('shard_0')}")) > 0
+    assert int(node.query(f"SELECT {samples_on('shard_1')}")) > 0
 
     # Written data reads back through PromQL over the wrapper, in SQL and over HTTP.
     evaluation_time = START_TIME + len(HOSTS)
