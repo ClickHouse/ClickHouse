@@ -1,10 +1,15 @@
 -- The rename side of 05227_drop_marker_column_named_like_subcolumn. A column that a part records as
--- a missing-column marker is absent from `columns_substreams.txt`, so `RENAME COLUMN` of it took the
--- fallback that looks the column's serialization up in the part by name. For a marker named like a
--- subcolumn of another column (`a.size0` next to an `Array` column `a`) that name resolves to the
--- subcolumn's serialization, so the mutation renamed the array's offsets file away from the array
--- and every read of the array failed with a logical error. A rename has to keep the nested prefix
--- (`a.size0` to `a.z`), which is exactly the shape that still collides with the array's streams.
+-- a missing-column marker is absent from `columns_substreams.txt`, so `RENAME COLUMN` of it takes the
+-- fallback that enumerates the column's streams. Before the fix that fallback looked the serialization
+-- up in the part by name, and for a marker named like a subcolumn of another column (`a.size0` next to
+-- an `Array` column `a`) that name resolves to the subcolumn's serialization, whose stream is the
+-- array's offsets file. The rename target is computed by replacing the escaped column name
+-- (`a%2Esize0`) in the stream file name, which the offsets file (`a.size0`, named from the nested
+-- prefix) does not contain, so no rename was emitted even then; the shapes where the escaped name does
+-- match (a marker `t.x` next to `t Tuple(x ...)`) are rejected by the stream file name collision check
+-- on `ADD COLUMN`. So this is not a regression test of a live corruption: it pins the invariant that
+-- renaming a marker, or a physically written column, of such a name leaves the other column intact.
+-- A rename has to keep the nested prefix (`a.size0` to `a.z`), otherwise the `ALTER` is rejected.
 
 DROP TABLE IF EXISTS t_rename_marker_subcolumn;
 CREATE TABLE t_rename_marker_subcolumn (a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple()
