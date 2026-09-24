@@ -1,6 +1,13 @@
 from praktika import Job
 from praktika.utils import Utils
 
+from ci.defs.functional_test_selection import (
+    rollout_targeted_jobs,
+    targeted_variants,
+    targeted_matrix,
+)
+from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
+
 from ci.defs.defs import (
     ASAN_IT_NUM_BATCHES,
     LLVM_ARTIFACTS_LIST,
@@ -181,18 +188,16 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/log_export.py",
             # `find_tests.py` selects which tests this job runs, and
             # `Result.complete_job` in `result.py` builds the summary the job
-            # publishes. Both are runner inputs, so the digest must cover them:
-            # `_filter_unaffected_jobs` skips this job before `find_tests.py`
-            # ever reads `_STATELESS_HARNESS_PATHS`, so an entry there only
-            # takes effect when the digest keeps the job alive.
+            # publishes. Both are runner inputs, so the digest must cover them.
             "./ci/jobs/scripts/find_tests.py",
             "./ci/praktika/result.py",
-            # `find_tests.py` selects the targeted and selected arms from CIDB
-            # (`get_all_relevant_tests_with_info` queries `CIDB` and reads
-            # `Info`), so both modules decide which tests this job runs and
-            # belong here for the same reason. The other CI-level entries of
-            # `_STATELESS_HARNESS_PATHS` stay out: they drive job orchestration
-            # and the job itself never reads them.
+            # The selector modules decide which tests a targeted job runs.
+            "./ci/jobs/scripts/coverage_selection.py",
+            "./ci/jobs/scripts/test_selection_config.py",
+            "./ci/jobs/scripts/test_selection_manifest.py",
+            "./ci/defs/functional_test_selection.py",
+            # `find_tests.py` selects the targeted tests from CIDB and reads
+            # `Info`, so both modules decide which tests this job runs.
             "./ci/praktika/cidb.py",
             "./ci/praktika/info.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
@@ -790,58 +795,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
     )
-    # Most sanitizer flavors of the functional tests for pull requests. They run only
-    # the tests selected for the change (`selected tests`, see
-    # `SELECTED_TESTS_OPTION` in `ci/jobs/functional_tests.py`) and replace the
-    # full-suite sanitizer jobs of `functional_tests_jobs`, which the master
-    # workflow keeps running in every flavor. What is left in a pull request is
-    # the full suite in the debug and plain binary flavors, plus the stress
-    # tests, which run the functional tests under every sanitizer with heavy
-    # concurrency and randomized settings and find more than a plain functional
-    # run does. See ClickHouse/ClickHouse#114725.
-    #
-    # The selection is a few hundred tests, so the batches of the full-suite jobs
-    # are collapsed into a single job per flavor. The runner labels and the
-    # timeout are kept as they are for the corresponding full-suite jobs: the
-    # test runner sizes its worker pool from the CPU count, and a sanitizer
-    # flavor that needs a large-memory runner for the full suite needs it for a
-    # subset as well. If test selection cannot be fetched, the job fails instead
-    # of silently running a weaker unbatched fallback configuration.
-    # The selection is computed from PR-local state (including failed tests
-    # from earlier jobs).
-    selected_ft_job_config = common_ft_job_config.copy()
-    stateless_tests_selected_pr_jobs = selected_ft_job_config.parametrize(
-        Job.ParamSet(
-            parameter="amd_asan_ubsan, distributed plan, parallel, selected tests",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_asan_ubsan, db disk, distributed plan, sequential, selected tests",
-            runs_on=RunnerLabels.AMD_SMALL_MEM,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, parallel, selected tests",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, sequential, selected tests",
-            runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, s3 storage, parallel, selected tests",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-        Job.ParamSet(
-            parameter="amd_tsan, s3 storage, sequential, selected tests",
-            runs_on=RunnerLabels.AMD_SMALL_MEM,
-            requires=[ArtifactNames.CH_AMD_TSAN],
-        ),
-    )
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
     #
     # Per-arch Bugfix Validation Check (functional tests).
@@ -1111,7 +1064,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
             )
-            for total_batches in (8,)
+            for total_batches in (SELECTION_CONFIG.coverage_shards,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -2215,3 +2168,53 @@ class JobConfigs:
             provides=[ArtifactNames.CH_ARM_DARWIN_SIGNED],
         ),
     )
+
+    # Every PR stateless environment is derived from these concrete configurations.
+    # Targeted sanitizer jobs combine shards and execution flavors per configuration.
+    # The ASan configuration exists only as sequential `db disk` shards, whose
+    # small runner cannot hold the parallel distributed-plan workload that the
+    # targeted job also runs. Use the runner of the parallel distributed-plan job.
+    stateless_tests_sanitizer_pr_jobs = [
+        (
+            job.set_runs_on(RunnerLabels.AMD_LARGE)
+            if job.parameter.startswith("amd_asan_ubsan,")
+            else job
+        )
+        for job in targeted_variants(
+            [
+                job
+                for job in functional_tests_jobs
+                if job.parameter.startswith(
+                    (
+                        "amd_asan_ubsan, db disk, distributed plan,",
+                        "amd_tsan, s3 storage,",
+                    )
+                )
+            ],
+            allow_failure=False,
+        )
+    ]
+    functional_tests_pr_jobs = [
+        job
+        for job in functional_tests_jobs
+        if not any(
+            sanitizer in job.parameter for sanitizer in ("asan_ubsan", "tsan", "msan")
+        )
+    ] + stateless_tests_sanitizer_pr_jobs
+    stateless_tests_targeted_matrix, stateless_targeted_exemptions = targeted_matrix(
+        [
+            job
+            for job in functional_tests_pr_jobs
+            if "targeted" not in job.parameter.split(", ")
+        ]
+    )
+    # Preserve the original ARM ASan configuration as an additional environment.
+    stateless_tests_targeted_matrix += stateless_tests_targeted_pr_jobs
+    stateless_tests_targeted_pr_jobs = rollout_targeted_jobs(
+        stateless_tests_targeted_pr_jobs,
+        stateless_tests_targeted_matrix,
+    )
+
+    # Randomized executions must remain independent even when the build is cached.
+    for job in functional_tests_jobs_coverage:
+        job.digest_config = None
