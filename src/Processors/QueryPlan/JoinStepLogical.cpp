@@ -1785,11 +1785,20 @@ std::vector<Names> JoinStepLogical::predictMergeJoinOutputOrder(const QueryPlan:
     /// The always-available merge variants apply as soon as the shape allows (checked above), the
     /// sorted-merge ones need the inputs' order as well. `direct` applies only to joins with key-value
     /// storages, which a merge join could not execute anyway, so it is skipped over like the selection does
-    /// for ordinary tables. Any other algorithm is taken as selected: its output order is not exploitable.
+    /// for ordinary tables. `partial_merge` is skipped over when `MergeJoin` declines the join, exactly as
+    /// `tryAddJoinRuntimeFilter` does, so that a merge algorithm listed after it is still predicted: stopping
+    /// at it would report an ordered input as unordered, and the runtime-filter pass would then erase the
+    /// merge algorithms of the join above. Any other algorithm is taken as selected: its output order is not
+    /// exploitable. This includes `grace_hash` even where it would leave the join to the next algorithm, because
+    /// the runtime-filter pass takes it as selected too and erases the merge algorithms of the nested join.
     for (auto algorithm : join_settings.join_algorithms)
     {
         switch (algorithm)
         {
+            case JoinAlgorithm::PARTIAL_MERGE:
+                if (!isPartialMergeJoinSupported())
+                    continue;
+                return {};
             case JoinAlgorithm::SORTED_MERGE:
             case JoinAlgorithm::PARALLEL_SORTED_MERGE:
                 if (inputsCanBeReadInJoinKeyOrder(node))
