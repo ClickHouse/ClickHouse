@@ -37,6 +37,20 @@ JemallocStats readJemallocStats()
     return {static_cast<Int64>(allocated_mib.getValue()), static_cast<Int64>(resident_mib.getValue())};
 }
 
+/// Adjusts only `total_memory_tracker`. On the gtest main thread `CurrentMemoryTracker` would also charge the
+/// thread's own tracker, which nothing corrects afterwards, so its skew would leak into later tests in the binary.
+/// A thread without `ThreadStatus` accounts to the global tracker directly.
+void adjustTotalMemoryTrackerOnly(Int64 delta)
+{
+    std::thread([delta]
+    {
+        if (delta >= 0)
+            std::ignore = CurrentMemoryTracker::alloc(delta);
+        else
+            std::ignore = CurrentMemoryTracker::free(-delta);
+    }).join();
+}
+
 /// Keeps freed pages dirty (resident) for the whole test: jemalloc's background threads purge them gradually
 /// over `dirty_decay_ms` (5 s by default), which is enough to erode the resident-vs-allocated gap the test relies
 /// on within its runtime on a busy machine. Set per arena, like `MemoryWorker::setDirtyDecayForAllArenas`:
@@ -101,7 +115,7 @@ void testNegativeTrackerIsCorrectedToAllocatedNotResident(DB::MemoryWorker::Memo
 
     /// Drive the tracker negative in the same way as late frees of memory it never saw allocated.
     const Int64 amount_before = total_memory_tracker.get();
-    std::ignore = CurrentMemoryTracker::free(std::max<Int64>(amount_before, 0) + 64 * MEBIBYTE);
+    adjustTotalMemoryTrackerOnly(-(std::max<Int64>(amount_before, 0) + 64 * MEBIBYTE));
     ASSERT_LT(total_memory_tracker.get(), 0);
 
     DB::MemoryWorkerConfig config;
@@ -112,7 +126,7 @@ void testNegativeTrackerIsCorrectedToAllocatedNotResident(DB::MemoryWorker::Memo
         if (worker.getSource() != expected_source)
         {
             /// Restore the tracker so that the skipped test does not leave it negative for the others.
-            std::ignore = CurrentMemoryTracker::alloc(-total_memory_tracker.get());
+            adjustTotalMemoryTrackerOnly(-total_memory_tracker.get());
             GTEST_SKIP() << "The requested memory usage source is not available in this environment";
         }
         worker.start();
