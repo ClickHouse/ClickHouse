@@ -545,12 +545,12 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
     Processors/Transforms/WindowTransform.cpp  # window functions
-    WindowFunctions/Ranking.cpp                # window functions
-    WindowFunctions/LagLead.cpp                # window functions
-    WindowFunctions/NthValue.cpp               # window functions
-    WindowFunctions/Distribution.cpp           # window functions
-    WindowFunctions/ExponentialTimeDecayed.cpp # window functions
-    WindowFunctions/NonNegativeDerivative.cpp  # window functions
+    WindowFunctions/WindowFunctionRanking.cpp                # window functions
+    WindowFunctions/WindowFunctionLagLead.cpp                # window functions
+    WindowFunctions/WindowFunctionNthValue.cpp               # window functions
+    WindowFunctions/WindowFunctionDistribution.cpp           # window functions
+    WindowFunctions/WindowFunctionExponentialTimeDecayed.cpp # window functions
+    WindowFunctions/WindowFunctionNonNegativeDerivative.cpp  # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
