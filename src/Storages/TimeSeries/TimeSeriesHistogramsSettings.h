@@ -13,8 +13,8 @@ namespace DB
 /// they exist from `TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET`, so a table pinned to an earlier version rejects them
 /// (see `checkTimeSeriesSettings`) and doesn't copy them by the clause `AS <other_table>`.
 #define LIST_OF_TIME_SERIES_HISTOGRAMS_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(UInt64, histograms_index_granularity, 8192, "Sets 'index_granularity' of the inner 'histograms' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for a non-MergeTree engine. Requires 'version' to be at least 6", 0) \
-    DECLARE(UInt64, histograms_max_buckets, 0, "The maximum number of buckets (positive and negative together) a single histogram sample may have; an insert with a bigger histogram is rejected. 0 means no limit, like Prometheus without 'native_histogram_bucket_limit'. Requires 'version' to be at least 6", 0) \
+    DECLARE(UInt64, histograms_index_granularity, 8192, "Sets 'index_granularity' of the inner 'histograms' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for a non-MergeTree engine. Requires 'version' to be at least 7", 0) \
+    DECLARE(UInt64, histograms_max_buckets, 0, "The maximum number of buckets (positive and negative together) a single histogram sample may have; an insert with a bigger histogram is rejected. 0 means no limit, like Prometheus without 'native_histogram_bucket_limit'. Requires 'version' to be at least 7", 0) \
 
 /// The registry of the settings of the "histograms" target table.
 class TimeSeriesHistogramsSettings
