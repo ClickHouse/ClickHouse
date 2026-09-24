@@ -1,6 +1,5 @@
 SET enable_analyzer = 1;
 SET optimize_extract_common_expressions = 1;
-SET query_plan_read_in_order_through_join = 0;
 
 DROP TABLE IF EXISTS x;
 CREATE TABLE x (x Int64, A UInt8, B UInt8, C UInt8, D UInt8, E UInt8, F UInt8) ENGINE = MergeTree ORDER BY x;
@@ -85,9 +84,7 @@ SELECT * FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) 
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) OR (B AND A AND F));
 
 
--- _CAST function has to be used to maintain the same result type when the rewrite produces a multi-arg
--- result with a different type; the single-arg case uses `and(arg, 1)` instead so the AND function
--- performs `!= 0` boolean coercion (a `_CAST` to UInt8 may truncate non-boolean values).
+-- _CAST function has to be used to maintain the same result type
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND C) OR (B AND C AND toNullable(F)));
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE (x AND x) OR (x AND x);
 -- Here the result type stays nullable because of `toNullable(C)`, so no cast is needed

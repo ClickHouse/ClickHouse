@@ -19,15 +19,14 @@ CREATE TABLE m_read_in_order_prefix (a UInt64, b UInt64, c UInt64)
 -- preliminary merge path that consumes the key prefix is the one exercised.
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1 SELECT a, b, c FROM m_read_in_order_prefix ORDER BY a, b, c
-    SETTINGS optimize_read_in_order = 1, read_in_order_two_level_merge_threshold = 1,
-             explain_query_plan_default = 'pretty'
-) WHERE explain ILIKE '%Read type: InOrder%';
+    SETTINGS optimize_read_in_order = 1, read_in_order_two_level_merge_threshold = 1
+) WHERE explain ILIKE '%ReadType: InOrder%';
 
 -- Control: the assertion above is not vacuous.
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1 SELECT a, b, c FROM m_read_in_order_prefix ORDER BY a, b, c
-    SETTINGS optimize_read_in_order = 0, explain_query_plan_default = 'pretty'
-) WHERE explain ILIKE '%Read type: InOrder%';
+    SETTINGS optimize_read_in_order = 0
+) WHERE explain ILIKE '%ReadType: InOrder%';
 
 -- Results are unchanged with and without the optimization.
 SELECT a, b, c FROM m_read_in_order_prefix ORDER BY a, b, c LIMIT 3

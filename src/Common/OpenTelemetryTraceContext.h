@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/OpenTelemetryTracingContext.h>
-#include <Common/tryOrFalse.h>
 #include <base/types.h>
 #include <IO/WriteHelpers.h>
+#include <Core/Field.h>
 
 #include <chrono>
 #include <exception>
@@ -70,8 +70,6 @@ public:
     }
 };
 
-using SpanAttributes = std::vector<SpanAttribute>;
-
 /// See https://opentelemetry.io/docs/reference/specification/trace/api/#spankind
 enum class SpanKind : uint8_t
 {
@@ -113,12 +111,11 @@ struct Span
     SpanKind kind = SpanKind::INTERNAL;
     SpanStatus status_code = SpanStatus::UNSET;
     String status_message = {};
-    SpanAttributes attributes = {};
+    std::vector<SpanAttribute> attributes = {};
 
     /// Following methods are declared as noexcept to make sure they're exception safe.
     /// This is because sometimes they will be called in exception handlers/dtor.
     /// Returns true if attribute is successfully added and false otherwise.
-    bool addAttribute(SpanAttribute attribute) noexcept;
     bool addAttribute(std::string_view name, UInt64 value) noexcept;
     bool addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept;
     bool addAttribute(std::string_view name, std::string_view value) noexcept;
@@ -149,8 +146,15 @@ private:
     template <class T>
     bool addAttributeImpl(std::string_view name, T value) noexcept
     {
-        /// Only an allocation can fail here, in which case the attribute is dropped.
-        return tryOrFalse([&] { attributes.emplace_back(name, value); });
+        try
+        {
+            attributes.emplace_back(name, value);
+        }
+        catch (...) // Ok: noexcept, allocation failure
+        {
+            return false;
+        }
+        return true;
     }
 };
 
@@ -245,7 +249,7 @@ struct SpanHolder : public Span
 
     SpanHolder(std::string_view _operation_name,
                SpanKind _kind,
-               SpanAttributes _attributes,
+               std::vector<SpanAttribute> _attributes,
                bool create_trace_if_not_exists = false);
 
     ~SpanHolder();
@@ -257,92 +261,6 @@ struct SpanHolder : public Span
     bool trace_created = false;
     /// All changes made to the current tracing context while the scope is active need to be restored.
     UInt8 old_trace_flags;
-};
-
-/// A span whose lifetime is managed manually tied to the lifetime of an object that is destroyed on an arbitrary thread.
-/// It captures the current tracing context but never installs itself as the ambient parent, so it may be finished on any thread
-/// It is a no-op when tracing is not enabled at construction time and the owner must provide external synchronization.
-class ManualSpan
-{
-public:
-    explicit ManualSpan(std::string_view operation_name, SpanKind kind = SpanKind::INTERNAL);
-
-    /// Forbidden copy to keep at most one emission per span.
-    ManualSpan(const ManualSpan &) = delete;
-    ManualSpan & operator=(const ManualSpan &) = delete;
-
-    /// Emits the span if `finish` has not been called before.
-    ~ManualSpan();
-
-    bool isTraceEnabled() const
-    {
-        return span.isTraceEnabled();
-    }
-
-    bool addAttribute(SpanAttribute attribute) noexcept
-    {
-        return span.addAttribute(std::move(attribute));
-    }
-
-    bool addAttribute(std::string_view name, UInt64 value) noexcept
-    {
-        return span.addAttribute(name, value);
-    }
-
-    bool addAttribute(std::string_view name, std::string_view value) noexcept
-    {
-        return span.addAttribute(name, value);
-    }
-
-    /// Emit the span to the span log. Only the first call emits, later calls are no-ops.
-    void finish() noexcept;
-
-    /// Same, recording the outcome of the operation. The first call wins: a later call with another
-    /// status is a no-op, so a backstop cannot overwrite an outcome recorded on the main path.
-    void finish(SpanStatus status, String status_message = {}) noexcept;
-
-    /// For parenting spans created elsewhere under this one (`ParentSpanGuard`, a seeded `TracingContextOnThread`).
-    UInt64 getSpanId() const
-    {
-        return span.span_id;
-    }
-
-private:
-    Span span;
-
-    /// The span log captured at construction: by the time the span is finished, the ambient
-    /// context of the finishing thread may belong to an unrelated trace or to none at all.
-    std::weak_ptr<OpenTelemetrySpanLog> span_log_table;
-};
-
-/// Makes an existing detached span the parent of spans created on this thread while in scope.
-/// No-op when span_id_ is 0 or tracing is not enabled on this thread.
-struct ParentSpanGuard
-{
-    explicit ParentSpanGuard(UInt64 span_id_);
-    ~ParentSpanGuard();
-
-    ParentSpanGuard(const ParentSpanGuard &) = delete;
-    ParentSpanGuard & operator=(const ParentSpanGuard &) = delete;
-
-private:
-    UInt64 old_span_id = 0;
-    bool active = false;
-};
-
-/// Runs the enclosed scope inside a tracing context owned elsewhere, e.g. inside a span that the
-/// caller opened and will finish itself: installs `context` as the current context for the scope
-/// and restores the previous one on exit. Unlike `TracingContextHolder`, opens and logs no span.
-struct TracingContextGuard
-{
-    explicit TracingContextGuard(const TracingContextOnThread & context);
-    ~TracingContextGuard();
-
-    TracingContextGuard(const TracingContextGuard &) = delete;
-    TracingContextGuard & operator=(const TracingContextGuard &) = delete;
-
-private:
-    TracingContextOnThread previous;
 };
 
 }

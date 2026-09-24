@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 
 /// Find different elements in an array.
-class FunctionArrayDistinct final : public IFunction
+class FunctionArrayDistinct : public IFunction
 {
 public:
     static constexpr auto name = "arrayDistinct";
@@ -48,7 +48,7 @@ public:
     {
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array but it has type {}.",
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array but it  has type {}.",
                 getName(), arguments[0]->getName());
 
         auto nested_type = removeNullable(array_type->getNestedType());
@@ -104,7 +104,7 @@ ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & argu
 
     const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
 
-    const IColumn * inner_col = nullptr;
+    const IColumn * inner_col;
 
     if (nullable_col)
     {

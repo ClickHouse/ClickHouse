@@ -1,16 +1,13 @@
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
-#include <Analyzer/Utils.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/misc.h>
@@ -20,14 +17,9 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
-#include <Parsers/stripQuerySettings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
-#include <Common/config_version.h>
-
-#include <array>
-#include <string_view>
 
 namespace ProfileEvents
 {
@@ -40,13 +32,10 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsBool extremes;
-    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString implicit_table_at_top_level;
 }
 
@@ -107,21 +96,7 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
     subquery_settings[Setting::max_result_rows] = 1;
     subquery_settings[Setting::extremes] = false;
     subquery_settings[Setting::implicit_table_at_top_level] = "";
-    /// `QueryAnalyzer` reads this one from the scope context, which the query context below does not reach.
-    subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
-    /// `Planner`'s constructor inspects the subquery tree for parallel replica candidates.
-    subquery_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     subquery_context->setSettings(subquery_settings);
-
-    /// A standalone expression - a `CHECK` constraint, a `TTL` expression - is analysed with the global
-    /// context: `StorageFactory` hands the storage `args.getContext()`, which never went through
-    /// `makeQueryContext` and so carries a zero client version. This server is the real initiator of the
-    /// subquery, so fill in its own version, exactly as `Context::makeQueryContext` does for the other
-    /// server-initiated queries. Otherwise reading a `Distributed` table here sends a shard query that
-    /// `RemoteQueryExecutor::sendQueryUnlocked` rejects. A context of a real query keeps its client info.
-    const auto & client_info = subquery_context->getClientInfo();
-    if (client_info.client_version_major == 0 && client_info.client_version_minor == 0 && client_info.client_version_patch == 0)
-        subquery_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
     if (subquery_context->hasQueryContext())
     {
@@ -138,29 +113,13 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
         }
     }
 
-    /// `QueryTreeBuilder` re-applies a SELECT's own `SETTINGS` clause over the node context `Planner` reads
-    /// for that decision; the AST belongs to the analysed statement, whose text is persisted, so strip a clone.
-    static constexpr std::array parallel_replica_settings{
-        std::string_view{"allow_experimental_parallel_reading_from_replicas"},
-        std::string_view{"enable_parallel_replicas"},
-    };
-    ASTPtr subquery_select = subquery.children.at(0)->clone();
-    removeSettingsFromQuery(subquery_select, parallel_replica_settings);
+    ASTPtr subquery_select = subquery.children.at(0);
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1, true);
     options.is_create_parameterized_view = data.is_create_parameterized_view;
     options.analyze(data.only_analyze);
-    /// `collectMaterializedCTEs` returns nothing for subquery options unless materialization is forced.
-    options.forceMaterializeCTE();
 
-    return std::make_unique<InterpreterSelectQueryAnalyzer>(
-        subquery_select, subquery_context, options, subquery_context->getViewSource());
-}
-
-static bool subqueryUsesViewSource(const InterpreterSelectQueryAnalyzer & interpreter, const ContextPtr & context)
-{
-    auto view_source = context->getViewSource();
-    return view_source && isStorageUsedInTree(view_source, interpreter.getQueryTree().get());
+    return std::make_unique<InterpreterSelectWithUnionQuery>(subquery_select, subquery_context, options);
 }
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
@@ -173,7 +132,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     auto hash = subquery.getTreeHash(/*ignore_aliases=*/ true);
     const auto scalar_query_hash_str = toString(hash);
 
-    std::unique_ptr<InterpreterSelectQueryAnalyzer> interpreter;
+    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter;
     bool hit = false;
     bool is_local = false;
 
@@ -213,7 +172,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 /// make sure that the query doesn't use the view
                 /// Note in any case the scalar will end up cached in *data* so this won't be repeated inside this context
                 interpreter = getQueryInterpreter(subquery, data);
-                if (!subqueryUsesViewSource(*interpreter, data.getContext()))
+                if (!interpreter->usesViewSource())
                 {
                     scalar = data.getContext()->getQueryContext()->getScalar(scalar_query_hash_str);
                     ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
@@ -229,7 +188,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             interpreter = getQueryInterpreter(subquery, data);
 
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
-        is_local = subqueryUsesViewSource(*interpreter, data.getContext());
+        is_local = interpreter->usesViewSource();
 
         Block block;
 
@@ -254,9 +213,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
             io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef()[Setting::use_concurrency_control]);
-            if (auto cancel_cb = data.getContext()->hasQueryContext() ? data.getContext()->getQueryContext()->getInteractiveCancelCallback() : nullptr)
-                executor.setCancelCallback(std::move(cancel_cb), std::max(UInt64(100), data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
-
             while (block.rows() == 0 && executor.pull(block))
             {
             }
@@ -304,9 +260,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
             logProcessorProfile(data.getContext(), io.pipeline.getProcessors());
-
-            /// Finalize write in query cache to save scalar subquery result (no-op if no cache writers exist in the pipeline)
-            io.pipeline.finalizeWriteInQueryResultCache();
         }
 
         block = materializeBlock(block);

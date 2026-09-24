@@ -28,7 +28,7 @@ namespace
 /**
  * Each cell in s2 library is a quadrilateral bounded by four geodesics.
  */
-class FunctionS2CellsIntersect final : public IFunction
+class FunctionS2CellsIntersect : public IFunction
 {
 public:
     static constexpr auto name = "s2CellsIntersect";
@@ -46,10 +46,6 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid S2 cell id, so executing on the whole dictionary
-    /// would fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

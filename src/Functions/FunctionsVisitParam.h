@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
@@ -56,10 +58,7 @@ struct ExtractNumericType
         if (!in.eof())
         {
             if constexpr (is_floating_point<NumericType>)
-                /// This generic extractor has no access to precise_float_parsing, so it stays on the
-                /// imprecise parser: that matches the pre-26.7 behavior of visitParamExtractFloat /
-                /// simpleJSONExtractFloat and keeps them reproducible without the setting.
-                tryReadFloatImpreciseForCompatibility(x, in);
+                tryReadFloatText(x, in);
             else
                 tryReadIntText(x, in);
         }
@@ -98,7 +97,7 @@ struct ExtractParamImpl
         size_t /*input_rows_count*/)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        chassert(!res_null);
+        assert(!res_null);
 
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
@@ -189,10 +188,6 @@ struct ExtractParamToStringImpl
 
         Volnitsky searcher(needle.data(), needle.size(), end - pos);
 
-        /// Owned here, not inside the per-row `extract`: a buffer local to it would get a
-        /// `-fstack-protector-strong` canary, and reusing one buffer across rows is cheaper anyway.
-        typename ParamExtractor::Scratch scratch;
-
         /// We will search for the next occurrence in all strings at once.
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
@@ -205,7 +200,7 @@ struct ExtractParamToStringImpl
 
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() <= begin + haystack_offsets[i])
-                ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i], res_data, scratch);
+                ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i], res_data);
 
             pos = begin + haystack_offsets[i];
 

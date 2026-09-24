@@ -51,14 +51,9 @@ namespace DB
  *             distinct_count - the number pf distinct values in the column chunk
  *             min - the minimum value of the column chunk
  *             max - the maximum column of the column chunk
- *         have_size_statistics - bool flag that indicates if column chunk metadata contains size statistics
- *         size_statistics - column chunk size statistics with the next structure:
- *             unencoded_byte_array_data_bytes - the total size of the unencoded byte array values as recorded in the footer, NULL when absent
- *             repetition_level_histogram - the number of values at each repetition level as recorded in the footer, empty when absent
- *             definition_level_histogram - the number of values at each definition level as recorded in the footer, empty when absent
  * */
 
-class ParquetMetadataInputFormat final : public IInputFormat
+class ParquetMetadataInputFormat : public IInputFormat
 {
 public:
     ParquetMetadataInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_);
@@ -79,14 +74,13 @@ private:
     void fillRowGroupsMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column);
     void fillColumnChunksMetadata(const std::unique_ptr<parquet::RowGroupMetaData> & row_group_metadata, IColumn & column);
     void fillColumnStatistics(const std::shared_ptr<parquet::Statistics> & statistics, IColumn & column, int32_t type_length);
-    void fillColumnSizeStatistics(const std::shared_ptr<parquet::SizeStatistics> & size_statistics, IColumn & column);
 
     const FormatSettings format_settings;
     bool done = false;
     std::atomic<int> is_stopped{0};
 };
 
-class ParquetMetadataSchemaReader final : public ISchemaReader
+class ParquetMetadataSchemaReader : public ISchemaReader
 {
 public:
     explicit ParquetMetadataSchemaReader(ReadBuffer & in_);
