@@ -256,7 +256,12 @@ private:
                     {
                         const auto [it, inserted] = summing_map.insert({key, first ? value : common::negateIgnoreOverflow(value)});
                         if (!inserted)
-                            it->second = common::subIgnoreOverflow(it->second, value);
+                        {
+                            if (first)
+                                it->second = common::addIgnoreOverflow(it->second, value);
+                            else
+                                it->second = common::subIgnoreOverflow(it->second, value);
+                        }
                     }
                 }
 
