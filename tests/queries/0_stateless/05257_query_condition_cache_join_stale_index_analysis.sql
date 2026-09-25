@@ -21,6 +21,10 @@ SET enable_join_runtime_filters = 0;
 -- Join reordering is what makes the first arm interesting, so it is pinned to its default rather than
 -- left to be switched off, which is what the second arm does deliberately.
 SET query_plan_optimize_join_order_limit = 10;
+-- The test server's profile sets a row limit. With a limit that throws, join reordering keeps no analysis
+-- of the read, which is analyzed again after the condition moves to PREWHERE and so already pruned before
+-- this fix. The default, no limit, is the case this test is about.
+SET max_rows_to_read = 0;
 
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS dim;
