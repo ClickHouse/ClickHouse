@@ -343,37 +343,29 @@ void FunctionBaseAI::embedTexts(
 {
     result.embeddings.resize(inputs.size());
 
-    /// `ceil(inputs.size() / max_batch_size)`. The usual `(n + max_batch_size - 1) / max_batch_size`
-    /// overflows for a huge `ai_function_embedding_max_batch_size`.
-    const size_t batch_count = inputs.empty() ? 0 : 1 + (inputs.size() - 1) / max_batch_size;
-    const size_t concurrency = std::min(max_concurrent_requests, batch_count);
+    /// Equivalent to (n + max_batch_size - 1) / max_batch_size but can't overflow
+    const size_t num_batches = inputs.empty() ? 0 : 1 + (inputs.size() - 1) / max_batch_size;
+    const size_t concurrency = std::min(max_concurrent_requests, num_batches);
 
-    /// Batches go out in waves of `concurrency` and each completed wave is applied before the next
+    /// Batches go out in waves of size `concurrency` and each completed wave is applied before the next
     /// one starts, so at most that many of this call's requests are in flight at a time.
     VectorWithMemoryTracking<std::future<std::optional<AIEmbeddingResponse>>> wave;
     wave.reserve(concurrency);
 
-    /// Any exit from here on - a scheduling failure, a failed batch, an exception while applying a
-    /// response - leaves the rest of the wave running. Wait for it, so the API-call and token usage
-    /// those requests report still reaches this query: they were dispatched and billed either way.
-    /// On the normal path every future has been consumed, so this is a no-op.
+    /// Wait for all waves to complete on error, so that API-call and request counts are recorded
+    /// They were already dispatched and billed either way.
     SCOPE_EXIT_SAFE({
         for (auto & request : wave)
             if (request.valid())
                 request.wait();
     });
 
-    auto batch_bounds = [&](size_t batch)
+    for (size_t wave_begin = 0; wave_begin < num_batches; wave_begin += concurrency)
     {
-        const size_t begin = batch * max_batch_size;
-        return std::make_pair(begin, std::min(begin + max_batch_size, inputs.size()));
-    };
-
-    for (size_t wave_begin = 0; wave_begin < batch_count; wave_begin += concurrency)
-    {
-        const size_t wave_end = std::min(wave_begin + concurrency, batch_count);
+        const size_t wave_end = std::min(wave_begin + concurrency, num_batches);
 
         wave.clear();
+        /// fire off `concurrency` batches at a time
         for (size_t batch = wave_begin; batch < wave_end; ++batch)
         {
             /// Once the quota is exhausted nothing more is issued, so the batch's slot stays an
@@ -384,7 +376,8 @@ void FunctionBaseAI::embedTexts(
                 continue;
             }
 
-            auto [begin, end] = batch_bounds(batch);
+            const size_t begin = batch * max_batch_size;
+            const size_t end = std::min(begin + max_batch_size, inputs.size());
 
             AIEmbeddingRequest ai_embedding_request;
             ai_embedding_request.model = model;
@@ -397,9 +390,11 @@ void FunctionBaseAI::embedTexts(
             wave.push_back(submitAIRequest(provider, std::move(ai_embedding_request), policy, quota));
         }
 
+        /// get the results for our `concurrency` batches
         for (size_t k = 0; k < wave.size(); ++k)
         {
-            auto [begin, end] = batch_bounds(wave_begin + k);
+            const size_t begin = (wave_begin + k) * max_batch_size;
+            const size_t end = std::min(begin + max_batch_size, inputs.size());
 
             /// Nothing when no request was issued for this batch, or when it failed and
             /// `ai_function_throw_on_error` is disabled; either way its inputs stay empty.
@@ -486,10 +481,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     VectorWithMemoryTracking<std::future<std::optional<AIResponse>>> wave;
     wave.reserve(concurrency);
 
-    /// Any exit from here on - a scheduling failure, a failed request, an exception while applying a
-    /// response - leaves the rest of the wave running. Wait for it, so the API-call and token usage
-    /// those requests report still reaches this query's `query_log` row: they were dispatched and
-    /// billed either way. On the normal path every future has been consumed, so this is a no-op.
+    /// Wait for all waves to complete on error, so that API-call and request counts are recorded
+    /// They were already dispatched and billed either way.
     SCOPE_EXIT_SAFE({
         for (auto & request : wave)
             if (request.valid())
