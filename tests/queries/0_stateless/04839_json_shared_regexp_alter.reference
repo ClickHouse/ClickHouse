@@ -1,11 +1,11 @@
 initial	0	8	4	18202081329177426065
 mutations	0
-removed	0	8	4	18202081329177426065
+removed	8	0	4	18202081329177426065
 reattached types	JSON(max_dynamic_paths=2)	['JSON(max_dynamic_paths=2, SHARED REGEXP \'^force$\')','JSON(max_dynamic_paths=2, SHARED REGEXP \'^force$\')']
-reattached	0	8	4	18202081329177426065
+reattached	8	0	4	18202081329177426065
 merged without rule types	JSON(max_dynamic_paths=2)	['JSON(max_dynamic_paths=2)']
 merged without rule	8	0	4	18202081329177426065
 mutations	0
-added	8	0	4	18202081329177426065
+added	0	8	4	18202081329177426065
 merged with rule types	JSON(max_dynamic_paths=2, SHARED REGEXP \'^force$\')	['JSON(max_dynamic_paths=2, SHARED REGEXP \'^force$\')']
 merged with rule	0	8	4	18202081329177426065

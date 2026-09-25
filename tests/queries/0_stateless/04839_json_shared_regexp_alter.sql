@@ -26,7 +26,7 @@ SELECT
     sum(cityHash64(toJSONString(j)))
 FROM alter_04839;
 
--- Removing the rule is metadata-only: old parts keep their type and placement until they are merged.
+-- Removing the rule is metadata-only: old parts keep their type on disk, and reads convert them to the current type.
 ALTER TABLE alter_04839 MODIFY COLUMN j JSON(max_dynamic_paths=2);
 
 SELECT 'mutations', count() FROM system.mutations WHERE database=currentDatabase() AND table='alter_04839';
@@ -77,7 +77,7 @@ SELECT
     sum(cityHash64(toJSONString(j)))
 FROM alter_04839;
 
--- Adding the rule back is metadata-only too, and the next merge moves the path back to shared data.
+-- Adding the rule back is metadata-only too, and reads already move the path back to shared data.
 ALTER TABLE alter_04839 MODIFY COLUMN j JSON(max_dynamic_paths=2, SHARED REGEXP '^force$');
 
 SELECT 'mutations', count() FROM system.mutations WHERE database=currentDatabase() AND table='alter_04839';
