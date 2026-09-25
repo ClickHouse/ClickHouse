@@ -7,3 +7,4 @@ nested objects and arrays	['arr','keep']	['a.b.tag_x']	[['tag_x']]
 7	[]	[]
 1
 1
+generateRandom	0	1

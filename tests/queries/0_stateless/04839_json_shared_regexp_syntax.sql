@@ -65,3 +65,7 @@ FROM format(
     '{"j":{"foo":7}}');
 
 SELECT toTypeName('{}'::JSON(SHARED REGEXP '[')); -- { serverError CANNOT_COMPILE_REGEXP }
+
+-- generateRandom follows the rule too.
+SELECT 'generateRandom', countIf(notEmpty(JSONDynamicPaths(j))), countIf(notEmpty(JSONSharedDataPaths(j))) > 0
+FROM (SELECT j FROM generateRandom('j JSON(max_dynamic_paths=10, SHARED REGEXP \'.*\')', 42, 10, 3) LIMIT 100);
