@@ -75,11 +75,13 @@ function span_counts_query
 }
 
 # Every `DistributedPlanTask::execute` span of the trace must reach the initiator's `query` span
-# through the parent_span_id chain, passing through a span of type $3 on the way (empty = no
-# requirement). The depth of the chain depends on the thread pool and connection paths, so the
-# links are fetched once and walked here (a recursive CTE has no plan serialization, which breaks
-# the distributed-plan test configuration). Spans are flushed by independent background threads,
-# so a missing ancestor is a not-yet-flushed one; the caller retries.
+# through the parent_span_id chain, passing through a span of type $3 on the way. With $3 empty
+# (local execution) the chain must instead contain no distributed-plan span at all: the task span
+# attaches to the initiator's own threads directly, with no span of the local executor in between.
+# The depth of the chain depends on the thread pool and connection paths, so the links are fetched
+# once and walked here (a recursive CTE has no plan serialization, which breaks the distributed-plan
+# test configuration). Spans are flushed by independent background threads, so a missing ancestor
+# is a not-yet-flushed one; the caller retries.
 function check_task_spans_under_initiator
 {
     local _trace_id="$1"
@@ -91,43 +93,52 @@ function check_task_spans_under_initiator
         select span_id, parent_span_id,
             operation_name = 'query' and attribute['clickhouse.query_id'] = '$_query_id',
             operation_name = 'DistributedPlanTask::execute',
-            operation_name = '$_via'
+            operation_name = '$_via',
+            operation_name like 'Distributed%' or operation_name like 'StatelessWorker%'
         from system.opentelemetry_span_log
         where finish_date >= yesterday() and trace_id = t")
     [[ -z "$_edges" ]] && return 1
 
-    local -A _parent=() _is_via=()
+    local -A _parent=() _is_via=() _is_plan_span=()
     local _initiator_span="" _task_spans=()
-    local _s _p _is_initiator _is_task _via_flag
-    while read -r _s _p _is_initiator _is_task _via_flag; do
+    local _s _p _is_initiator _is_task _via_flag _plan_flag
+    while read -r _s _p _is_initiator _is_task _via_flag _plan_flag; do
         _parent[$_s]=$_p
         _is_via[$_s]=$_via_flag
+        _is_plan_span[$_s]=$_plan_flag
         [[ "$_is_initiator" == 1 ]] && _initiator_span=$_s
         [[ "$_is_task" == 1 ]] && _task_spans+=("$_s")
     done <<< "$_edges"
     [[ -z "$_initiator_span" || ${#_task_spans[@]} -eq 0 ]] && return 1
 
-    local _cur _step _via_seen _reached
+    local _cur _step _via_seen _plan_span_seen _reached
     for _cur in "${_task_spans[@]}"; do
         _via_seen=0
+        _plan_span_seen=0
         _reached=0
         for _step in {1..64}; do
             _cur=${_parent[$_cur]:-0}
             [[ "$_cur" == "0" ]] && break
             [[ "${_is_via[$_cur]:-0}" == 1 ]] && _via_seen=1
+            [[ "${_is_plan_span[$_cur]:-0}" == 1 ]] && _plan_span_seen=1
             if [[ "$_cur" == "$_initiator_span" ]]; then
                 _reached=1
                 break
             fi
         done
         [[ $_reached -eq 1 ]] || return 1
-        [[ -z "$_via" || $_via_seen -eq 1 ]] || return 1
+        if [[ -n "$_via" ]]; then
+            [[ $_via_seen -eq 1 ]] || return 1
+        else
+            [[ $_plan_span_seen -eq 0 ]] || return 1
+        fi
     done
     return 0
 }
 
 # $1 - execute_locally, $2 - expected minimum counts (space-separated, see span_counts_query),
-# $3 - span type every task span must descend through, $4 - label for the output.
+# $3 - span type every task span must descend through (empty: through initiator threads only),
+# $4 - label for the output.
 function run_check
 {
     local _execute_locally="$1"
@@ -162,10 +173,12 @@ function run_check
     else
         echo "$_label: dispatch, request and task spans: FAIL, counts: ${_counts[*]}, expected at least: ${_expected[*]}"
     fi
+    local _chain_label="task spans descend from the initiator query span"
+    [[ "$_execute_locally" == 1 ]] && _chain_label="task spans attach to the initiator's threads with no executor span in between"
     if [[ $_chain_ok -eq 1 ]]; then
-        echo "$_label: task spans descend from the initiator query span: OK"
+        echo "$_label: $_chain_label: OK"
     else
-        echo "$_label: task spans descend from the initiator query span: FAIL"
+        echo "$_label: $_chain_label: FAIL"
     fi
 
     if [[ "$_execute_locally" == 1 ]]; then
