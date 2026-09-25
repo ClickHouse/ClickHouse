@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Common/CurrentThread.h>
 
 #include <algorithm>
@@ -86,9 +87,11 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
 
         if (left_it != column_stats.end() && right_it != column_stats.end())
         {
-            UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
-            left_it->second.num_distinct_values = min_ndv;
-            right_it->second.num_distinct_values = min_ndv;
+            QueryPlanOptimizations::updateJoinKeyDistinctCounts(
+                left_it->second,
+                right_it->second,
+                join_operator.kind,
+                join_operator.strictness);
         }
     }
 
