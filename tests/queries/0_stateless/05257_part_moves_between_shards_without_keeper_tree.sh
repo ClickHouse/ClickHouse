@@ -23,4 +23,11 @@ ${CLIENT} -q "SELECT count() FROM system.part_moves_between_shards WHERE databas
 ${CLIENT} -q "KILL PART_MOVE_TO_SHARD WHERE database = currentDatabase()
               AND task_uuid = '00000000-0000-0000-0000-000000000000'"
 
+# The reads above cannot tell a tolerated missing node from a read that never happened, so assert the
+# listing really was attempted on the absent path and really was answered with no such node.
+${CLIENT} -q "SYSTEM FLUSH LOGS zookeeper_log"
+${CLIENT} -q "SELECT count() > 0 FROM system.zookeeper_log
+              WHERE path = '/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/absent/part_moves_shard'
+              AND type = 'Response' AND error = 'ZNONODE'"
+
 ${CLIENT} -q "DROP TABLE no_keeper_tree SYNC"
