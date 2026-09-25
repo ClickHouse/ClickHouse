@@ -220,6 +220,11 @@ public:
         nested_function->insertMergeResultInto(place, to, arena);
     }
 
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        nested_function->rollbackInsertResult(place, to);
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 

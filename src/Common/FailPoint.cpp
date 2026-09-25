@@ -264,7 +264,9 @@ static struct InitFiu
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     REGULAR(replicated_database_status_finished_node_missing) \
-    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap)
+    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
+    REGULAR(aggregate_function_state_transfer_throw) \
+    REGULAR(aggregate_function_state_transfer_throw_after_child)
 
 namespace FailPoints
 {
