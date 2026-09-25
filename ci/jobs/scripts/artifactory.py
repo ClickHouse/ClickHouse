@@ -144,18 +144,20 @@ class DebianArtifactory:
             assert ok, f"reprepro failed: [{args[:100]}]"
 
         # CreateRelease runs are serialized, so a lock here was left by a killed run
-        lockfile = Path(R2MountPoint.MOUNT_POINT) / "configs/deb/db/lockfile"
+        db = Path(R2MountPoint.MOUNT_POINT) / "configs/deb/db"
+        lockfile, exporting = db / "lockfile", db / "exporting_version"
         if lockfile.exists():
+            left_by = exporting.read_text() if exporting.exists() else "unknown"
+            assert left_by == self.version, f"stale reprepro lock left by the export of [{left_by}]: recover that release first"
             print(f"WARNING: removing stale reprepro lock [{lockfile}]")
             lockfile.unlink()
-        # TODO: back under the lock check after the 26.8.11.7 recovery
-        if True:
             # A killed run can leave references no package owns, which stop removefilter from deleting files
             reprepro("rereference")
             # The killed run may have registered this version without its files, so includedeb would skip it
             for codename in {self.codename, RepoCodenames.STABLE}:
                 reprepro(f"removefilter {codename} 'Version (== {self.version})'")
 
+        exporting.write_text(self.version)
         print("Running export commands:")
         reprepro(f"includedeb {self.codename} {' '.join(paths)}")
         Shell.check("sync")
@@ -172,6 +174,7 @@ class DebianArtifactory:
             reprepro(f"copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)}")
             Shell.check("sync")
             codenames_to_check.append(RepoCodenames.STABLE)
+        exporting.unlink()
 
         # Verify that reprepro signed the InRelease files. An unsigned repo would
         # silently break installation for all clients; catch it here rather than
