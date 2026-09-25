@@ -647,8 +647,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
   * hidden there is no other table to expand - a parent scope is not searched for table expressions of an
   * ordinary subquery - so the matcher reports `UNKNOWN_IDENTIFIER`, which is what the hidden name means.
   *
-  * An enclosing scope counts only while it is not resolving its own join tree. A subquery that sits in a
-  * `FROM` or `JOIN` of that query cannot read a column of its siblings - `validateFromClause` rejects such
+  * An enclosing scope counts only while it is not resolving its own join tree, except for its `JOIN ... ON`
+  * expressions, where both sides are already resolved and a correlated subquery can read them. A subquery
+  * that sits in a `FROM` or `JOIN` of that query cannot read a column of its siblings - `validateFromClause` rejects such
   * a correlated column with `Lateral joins are not supported` - so there is no second reading to choose
   * from there, and the qualifier keeps addressing the aliased table expression. This also keeps the
   * decision independent of the order of the enclosing `FROM`: `table_expression_node_to_data` is filled
@@ -693,8 +694,12 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
         /** The join tree of this query is still being resolved, so we are inside one of its table
           * expressions and cannot read a column of the others. Its name set is also only half filled at
           * this point, which is what would make the answer depend on the order of the `FROM`.
+          *
+          * The `ON` expression of a `JOIN` is resolved while the `JOIN` node is still in the resolve
+          * process too, but it is not inside a table expression: both sides are already registered, and a
+          * correlated subquery there does read their columns, so that scope counts.
           */
-        if (!outer_scope->table_expressions_in_resolve_process.empty())
+        if (!outer_scope->table_expressions_in_resolve_process.empty() && !outer_scope->resolving_join_on_expression)
             continue;
 
         for (const auto & [outer_table_expression_node, outer_table_expression_data] : outer_scope->table_expression_node_to_data)

@@ -87,6 +87,28 @@ SELECT x.c FROM t_qualifier_alias, (
         SELECT 1 FROM t_qualifier_alias AS c1 WHERE t_qualifier_alias.grp = c1.grp)) AS x
 SETTINGS analyzer_alias_hides_table_name = 1;
 
+SELECT 'a subquery in a JOIN ON expression sees the enclosing JOIN sides';
+-- The `ON` expression is resolved while the `JOIN` is still marked as being resolved, but it is not inside
+-- a table expression: both sides are registered already, so the hidden name refers to the enclosing table
+-- there too. A correlated subquery in `ON` is not supported yet, so the query reports that - exactly like
+-- the same query written with the outer table aliased - instead of silently comparing the inner row with
+-- itself.
+SELECT count() FROM t_qualifier_alias JOIN t_qualifier_other AS u ON u.grp = t_qualifier_alias.grp AND EXISTS (
+    SELECT 1 FROM t_qualifier_alias AS c WHERE c.grp = t_qualifier_alias.grp AND c.val > t_qualifier_alias.val)
+SETTINGS analyzer_alias_hides_table_name = 1; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM t_qualifier_other AS u JOIN t_qualifier_alias ON u.grp = t_qualifier_alias.grp AND EXISTS (
+    SELECT 1 FROM t_qualifier_alias AS c WHERE c.grp = t_qualifier_alias.grp AND c.val > t_qualifier_alias.val)
+SETTINGS analyzer_alias_hides_table_name = 1; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM t_qualifier_alias AS o JOIN t_qualifier_other AS u ON u.grp = o.grp AND EXISTS (
+    SELECT 1 FROM t_qualifier_alias AS c WHERE c.grp = o.grp AND c.val > o.val); -- { serverError NOT_IMPLEMENTED }
+-- A name that no JOIN side carries still addresses the aliased inner table.
+SELECT count() FROM t_qualifier_other AS u JOIN t_qualifier_other AS v ON u.id = v.id AND EXISTS (
+    SELECT 1 FROM t_qualifier_alias AS c WHERE t_qualifier_alias.val > 15)
+SETTINGS analyzer_alias_hides_table_name = 1;
+-- And the default reading is unchanged.
+SELECT count() FROM t_qualifier_alias JOIN t_qualifier_other AS u ON u.grp = t_qualifier_alias.grp AND EXISTS (
+    SELECT 1 FROM t_qualifier_alias AS c WHERE c.grp = t_qualifier_alias.grp AND c.val > t_qualifier_alias.val);
+
 SELECT 'the qualifier of a matcher follows the same rule';
 -- `t.*` and `t.COLUMNS(...)` resolve their qualifier as a table expression after the expression lookup
 -- misses, so they have to see the hidden name as well: otherwise the setting would change `t.col` and
