@@ -221,6 +221,8 @@ MergeTreeReaderSettings MergeTreeIndexReader::patchSettings(MergeTreeReaderSetti
 {
     using enum MergeTreeIndexSubstream::Type;
     settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream);
+    /// The request map counts the part's data marks, not the index granules.
+    settings.request_map = nullptr;
 
     /// Adjust read buffer sizes for text index dictionaries and postings
     /// because usually we read relatively small amounts of data from random places of

@@ -233,6 +233,9 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
+    auto reader_settings = extras.reader_settings;
+    reader_settings.request_map = read_info->request_map;
+
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
         return createMergeTreeReader(
@@ -245,7 +248,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
-            extras.reader_settings,
+            reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };

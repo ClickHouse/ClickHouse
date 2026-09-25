@@ -65,6 +65,13 @@ private:
     /// Returns offset in file up to which it's needed to read file to read all rows up to @right_mark mark.
     virtual size_t getRightOffset(size_t right_mark) = 0;
 
+    /// Returns offset in file from which the rows of @mark are read, or `nullopt`
+    /// when marks do not describe what the stream reads and it reads the whole file.
+    virtual std::optional<size_t> getLeftOffset(size_t /* mark */) { return std::nullopt; }
+
+    /// Converts `settings.request_map` to byte ranges of the file and passes them to the buffer.
+    void announceRequestMap();
+
     /// Returns estimated max amount of bytes to read among mark ranges (which is used as size for read buffer)
     /// and total amount of bytes to read in all mark ranges.
     virtual std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) = 0;
@@ -110,6 +117,7 @@ public:
     }
 
     size_t getRightOffset(size_t right_mark_non_included) override;
+    std::optional<size_t> getLeftOffset(size_t mark) override;
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, 0); }
 };
@@ -142,6 +150,7 @@ public:
 
 protected:
     size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
+    std::optional<size_t> getLeftOffsetOneColumn(size_t mark, size_t column_position);
     std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position);
     MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
 };
@@ -159,6 +168,7 @@ public:
     }
 
     size_t getRightOffset(size_t right_mark_non_included) override;
+    std::optional<size_t> getLeftOffset(size_t mark) override { return getLeftOffsetOneColumn(mark, column_position); }
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, column_position); }
 
@@ -178,6 +188,8 @@ public:
     }
 
     size_t getRightOffset(size_t right_mark_non_included) override;
+    /// The first column's data of a granule comes first, so the stream reads from its offset.
+    std::optional<size_t> getLeftOffset(size_t mark) override { return getLeftOffsetOneColumn(mark, 0); }
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
     void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, 0); }
 };

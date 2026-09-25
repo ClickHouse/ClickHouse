@@ -217,6 +217,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 
     read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
     read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
+    read_task_info.request_map = std::make_shared<const MarkRanges>(part_with_ranges.ranges);
     read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(data_part, mutations_snapshot, getContext()
 #if CLICKHOUSE_CLOUD
         , getContext()->getAccess()->getEnabledMaskingPolicies()
