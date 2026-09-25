@@ -71,7 +71,7 @@ void formatWatermark(
     IAST::FormatState & state,
     IAST::FormatStateStacked frame)
 {
-    wb << "FOR " << backQuoteIfNeed(node.column) << " AS ";
+    wb << "FOR " << backQuoteIfNeed(node.time_attribute_column) << " AS ";
     node.expression->format(wb, format_settings, state, frame);
 
     if (node.idle_timeout.count() > 0)
@@ -108,8 +108,8 @@ void ASTStreamSettings::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
     hash_state.update(watermark != nullptr);
     if (watermark)
     {
-        hash_state.update(watermark->column.size());
-        hash_state.update(watermark->column);
+        hash_state.update(watermark->time_attribute_column.size());
+        hash_state.update(watermark->time_attribute_column);
         hash_state.update(watermark->idle_timeout.count());
     }
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
@@ -198,7 +198,7 @@ void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 
     if (watermark)
     {
-        w.writeString("watermark_column", watermark->column);
+        w.writeString("watermark_column", watermark->time_attribute_column);
         w.writeChild("watermark_expression", watermark->expression);
         w.writeInt("watermark_idle_timeout_ms", static_cast<Int64>(watermark->idle_timeout.count()));
     }
@@ -275,7 +275,7 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
                 "`StreamSettings` 'watermark_idle_timeout_ms' must be non-negative during AST JSON deserialization");
 
         auto new_watermark = std::make_shared<WatermarkSettings>();
-        new_watermark->column = std::move(column);
+        new_watermark->time_attribute_column = std::move(column);
         new_watermark->expression = std::move(expression);
         new_watermark->idle_timeout = std::chrono::milliseconds(idle_timeout_ms);
         setWatermark(std::move(new_watermark));
