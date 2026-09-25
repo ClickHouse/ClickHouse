@@ -462,6 +462,16 @@ def test_append_to_file_without_payload():
     assert new_header.startswith("454e43")
     assert new_header != old_header
 
+    # A 64 byte file which does not hold a valid encryption header is not taken for a header-only file:
+    # it is not ours to start over, and is refused.
+    node.exec_in_container(
+        ["bash", "-c", f"head -c 64 /dev/zero > {backing_file('encrypted_test')}"],
+        privileged=True,
+        user="root",
+    )
+    with pytest.raises(QueryRuntimeException, match="Wrong signature, this is not an encrypted file"):
+        node.query("INSERT INTO encrypted_test SELECT number FROM numbers(5)")
+
     # A file that ends inside its own header is refused, and says so.
     truncate_to(backing_file("encrypted_test"), 30)
     with pytest.raises(QueryRuntimeException, match="less than the 64 bytes of an encryption header"):

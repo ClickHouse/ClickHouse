@@ -115,6 +115,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
             /// existing header would encrypt the new payload from offset 0 with the initialization vector that the old
             /// payload, if there was one before the truncation, was encrypted with: for the counter mode ciphers this
             /// is keystream reuse, and anyone who has both ciphertexts learns the XOR of both plaintexts.
+            ///
+            /// Only a valid header is started over: a 64-byte file which is not an encrypted file (wrong signature,
+            /// version or algorithm) is not ours to replace, so `readHeader` throws `DATA_ENCRYPTION_ERROR` for it.
+            auto read_buffer = delegate_disk->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
+            readHeader(*read_buffer);
             mode = WriteMode::Rewrite;
         }
         else if (size > 0)
