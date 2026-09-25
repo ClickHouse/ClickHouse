@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/PerCPU.h>
 #include <Common/PerCPUMemoryThreadState.h>
 #include <base/types.h>
 
@@ -55,10 +56,11 @@ public:
     /// per-CPU bound (only the per-thread cap applies).
     static constexpr Int64 UNLIMITED_BUDGET = std::numeric_limits<Int64>::max() / 2;
 
+    /// Slots are indexed by the raw `sched_getcpu` id, so the count must bound the ids, not the
+    /// affinity mask (which is what musl's `sysconf(_SC_NPROCESSORS_CONF)` reports): see `PerCPU::getNumCPUs`.
     static int numberOfCPUs()
     {
-        Int64 n = ::sysconf(_SC_NPROCESSORS_CONF);
-        return n > 0 ? static_cast<int>(n) : 0;
+        return static_cast<int>(PerCPU::getNumCPUs());
     }
 
     PerCPUMemory(int cpu_count_, Int64 capacity_, Int64 buffer_)
