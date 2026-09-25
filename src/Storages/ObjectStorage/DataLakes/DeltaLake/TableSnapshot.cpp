@@ -11,6 +11,8 @@
 #include <Core/Field.h>
 #include <Core/Settings.h>
 
+#include <base/sleep.h>
+
 #include <Columns/IColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -61,6 +63,7 @@ namespace ProfileEvents
 namespace DB::FailPoints
 {
     extern const char delta_kernel_force_stale_token_error[];
+    extern const char delta_lake_iterator_sleep_in_scan_handoff[];
 }
 
 namespace DeltaLake
@@ -158,8 +161,12 @@ public:
 
     ~Iterator() override
     {
-        shutdown.store(true);
+        {
+            std::lock_guard lock(next_mutex);
+            shutdown.store(true);
+        }
         schedule_next_batch_cv.notify_one();
+        data_files_cv.notify_all();
         if (thread.joinable())
             thread.join();
     }
@@ -170,6 +177,10 @@ public:
 
     void setScanException()
     {
+        /// Publish both under `next_mutex`, even though `shutdown` is atomic: it is an input of the
+        /// `data_files_cv` predicate, `scan_exception` is read just after that wait, and a consumer
+        /// between evaluating the predicate and registering on the cv would miss a bare notification.
+        std::lock_guard lock(next_mutex);
         if (!scan_exception)
         {
             scan_exception = std::current_exception();
@@ -377,7 +388,15 @@ public:
                 {
                     LOG_TEST(log, "Waiting for next data file");
                     schedule_next_batch_cv.notify_one();
-                    data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished || shutdown.load(); });
+                    data_files_cv.wait(lock, [&]()
+                    {
+                        const bool ready = !data_files.empty() || iterator_finished || shutdown.load();
+                        /// Widens the window between reading the predicate inputs and registering on
+                        /// the condition variable, so publishing terminal state without `next_mutex`
+                        /// is observable in a test.
+                        fiu_do_on(DB::FailPoints::delta_lake_iterator_sleep_in_scan_handoff, { sleepForMilliseconds(3000); });
+                        return ready;
+                    });
                 }
 
                 if (engine_predicate_exception && throw_on_engine_predicate_error)
@@ -591,6 +610,10 @@ public:
 
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
+        /// Let the consumer reach its `data_files_cv` wait before this callback can publish
+        /// terminal state: `next_mutex` is not held here, so the two are otherwise unordered.
+        fiu_do_on(DB::FailPoints::delta_lake_iterator_sleep_in_scan_handoff, { sleepForMilliseconds(1000); });
+
         std::string full_path = DB::resolvePathInsideTable(
             context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
         auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
@@ -650,7 +673,7 @@ private:
     std::exception_ptr engine_predicate_exception;
 
     /// Whether scanDataFunc should stop scanning.
-    /// Set in destructor.
+    /// Set by the destructor and by setScanException.
     std::atomic<bool> shutdown = false;
     /// A CV to notify that new data_files are available.
     std::condition_variable data_files_cv;
