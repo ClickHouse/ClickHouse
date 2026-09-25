@@ -17,29 +17,29 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 T="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 AGE="2000-01-01 00:00:00"
 
-# --- allow_experimental_nullable_tuple_type -----------------------------------------------
+# --- enable_nullable_tuple_type -----------------------------------------------
 # Decides whether an OPTIONAL group with an all-REQUIRED subtree is inferred as Nullable(Tuple(...))
 # or as a plain Tuple(...), so each pair must report the type its own query asks for, whichever ran
 # first. A stale entry also changes the value read back: the plain Tuple has nowhere to put a
 # struct-level NULL and returns a tuple of NULLs instead.
 $CLICKHOUSE_LOCAL -q "
-    SET allow_experimental_nullable_tuple_type = 1;
+    SET enable_nullable_tuple_type = 1;
     SELECT * FROM values('p Nullable(Tuple(a UInt8, b UInt8))', tuple(1, 2), NULL)
     INTO OUTFILE '${T}_nt_a.parquet' TRUNCATE FORMAT Parquet"
 cp "${T}_nt_a.parquet" "${T}_nt_b.parquet"
 touch -d "$AGE" "${T}"_nt_*.parquet
 echo "-- Parquet nullable_tuple, nt=1 first"
 $CLICKHOUSE_LOCAL -m -q "
-    DESC file('${T}_nt_a.parquet', 'Parquet') SETTINGS allow_experimental_nullable_tuple_type = 1;
-    DESC file('${T}_nt_a.parquet', 'Parquet') SETTINGS allow_experimental_nullable_tuple_type = 0;" | cut -f2
+    DESC file('${T}_nt_a.parquet', 'Parquet') SETTINGS enable_nullable_tuple_type = 1;
+    DESC file('${T}_nt_a.parquet', 'Parquet') SETTINGS enable_nullable_tuple_type = 0;" | cut -f2
 echo "-- Parquet nullable_tuple, nt=0 first"
 $CLICKHOUSE_LOCAL -m -q "
-    DESC file('${T}_nt_b.parquet', 'Parquet') SETTINGS allow_experimental_nullable_tuple_type = 0;
-    DESC file('${T}_nt_b.parquet', 'Parquet') SETTINGS allow_experimental_nullable_tuple_type = 1;" | cut -f2
+    DESC file('${T}_nt_b.parquet', 'Parquet') SETTINGS enable_nullable_tuple_type = 0;
+    DESC file('${T}_nt_b.parquet', 'Parquet') SETTINGS enable_nullable_tuple_type = 1;" | cut -f2
 echo "-- Parquet nullable_tuple value, nt=1 first"
 $CLICKHOUSE_LOCAL -m -q "
-    SELECT isNull(p) FROM file('${T}_nt_a.parquet', 'Parquet') ORDER BY 1 SETTINGS allow_experimental_nullable_tuple_type = 1;
-    SELECT isNull(p) FROM file('${T}_nt_a.parquet', 'Parquet') ORDER BY 1 SETTINGS allow_experimental_nullable_tuple_type = 0;"
+    SELECT isNull(p) FROM file('${T}_nt_a.parquet', 'Parquet') ORDER BY 1 SETTINGS enable_nullable_tuple_type = 1;
+    SELECT isNull(p) FROM file('${T}_nt_a.parquet', 'Parquet') ORDER BY 1 SETTINGS enable_nullable_tuple_type = 0;"
 
 # --- input_format_parquet_allow_geoparquet_parser -----------------------------------------
 # Decides whether a GeoParquet geometry column is inferred as a geo type or as its raw String
