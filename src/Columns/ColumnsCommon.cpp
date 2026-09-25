@@ -1,4 +1,3 @@
-#pragma clang diagnostic ignored "-Wpsabi" // LOCAL BUILD WORKAROUND, NOT FOR COMMIT
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/Exception.h>
