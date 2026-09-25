@@ -9,6 +9,11 @@ SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, 1); -- { serve
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [1]); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, array(1)); -- { serverError BAD_ARGUMENTS }
 
+-- `DESCRIBE TABLE` parses the arguments before the analyzer resolves them, so it reaches the same
+-- code with the argument as written, including a `_CAST` the analyzer would have rejected first.
+DESCRIBE TABLE mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, array(1)); -- { serverError BAD_ARGUMENTS }
+DESCRIBE TABLE mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, _CAST()); -- { serverError BAD_ARGUMENTS }
+
 -- A well-formed parts argument is still accepted in both spellings, so a rejection of every array
 -- would be reported here rather than passing. `data` has no parts, so nothing is returned.
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, ['all_1_1_0']);

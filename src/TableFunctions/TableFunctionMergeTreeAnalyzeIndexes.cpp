@@ -71,7 +71,9 @@ static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
     ASTPtr array = argument;
     if (const auto * func = array->as<ASTFunction>())
     {
-        if (func->name == "_CAST" && func->arguments) /// _CAST([], 'Array(String)')
+        /// `DESCRIBE TABLE` parses the arguments before the analyzer resolves them, so a hand-written
+        /// `_CAST` reaches this with any number of arguments, including none.
+        if (func->name == "_CAST" && func->arguments && !func->arguments->children.empty()) /// _CAST([], 'Array(String)')
             array = func->arguments->children.at(0);
         else if (func->name == "array") /// array(ExpressionList)
             array = func->arguments;
