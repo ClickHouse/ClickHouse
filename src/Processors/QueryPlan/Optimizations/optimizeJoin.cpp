@@ -187,7 +187,11 @@ struct RuntimeHashStatisticsContext
     }
 };
 
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
+bool optimizeJoinLegacy(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & /*nodes*/,
+    const QueryPlanOptimizationSettings &,
+    RelationStatsCache & relation_stats_cache)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2 || join_step->isOptimized())
@@ -214,13 +218,15 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
-        LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
-            lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
-            rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
+        auto lhs_estimation = estimateReadRowsCount(*node.children[0], nullptr, {}, &relation_stats_cache).estimated_rows;
+        auto rhs_estimation = estimateReadRowsCount(*node.children[1], nullptr, {}, &relation_stats_cache).estimated_rows;
+        LOG_TRACE(
+            getLogger("optimizeJoinLegacy"),
+            "Left table estimation: {}, right table estimation: {}",
+            lhs_estimation ? toString(lhs_estimation.value()) : "unknown",
+            rhs_estimation ? toString(rhs_estimation.value()) : "unknown");
 
-        if (lhs_extimation && rhs_extimation && lhs_extimation < rhs_extimation)
+        if (lhs_estimation && rhs_estimation && lhs_estimation < rhs_estimation)
             need_swap = true;
     }
     else if (join_step->swap_join_tables.value())
@@ -255,6 +261,7 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     }
 
     join_step->setJoin(std::move(updated_join), /* swap_streams= */ true);
+    relation_stats_cache.invalidate(node);
 
     return true;
 }
@@ -262,7 +269,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & optimization_settings)
+    const QueryPlanOptimizationSettings & optimization_settings,
+    RelationStatsCache * relation_stats_cache)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
     /// Distributed plan keeps logical joins steps. They are converted to physical steps afterwards, when plan fragment is executed by a worker.
@@ -274,7 +282,7 @@ bool convertLogicalJoinToPhysical(
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
-    JoinStepLogical::buildPhysicalJoin(node, optimization_settings, nodes);
+    JoinStepLogical::buildPhysicalJoin(node, optimization_settings, nodes, relation_stats_cache);
 
     return true;
 }
@@ -304,6 +312,7 @@ struct QueryGraphBuilder
     struct BuilderContext
     {
         const QueryPlanOptimizationSettings & optimization_settings;
+        RelationStatsCache & relation_stats_cache;
         RuntimeHashStatisticsContext statistics_context;
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
@@ -312,10 +321,12 @@ struct QueryGraphBuilder
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
+            RelationStatsCache & relation_stats_cache_,
             const QueryPlan::Node & root_node,
             const JoinSettings & join_settings_,
             const SortingStep::Settings & sorting_settings_)
             : optimization_settings(optimization_settings_)
+            , relation_stats_cache(relation_stats_cache_)
             , statistics_context(optimization_settings_, root_node)
             , join_settings(join_settings_)
             , sorting_settings(sorting_settings_)
@@ -329,9 +340,14 @@ struct QueryGraphBuilder
     explicit QueryGraphBuilder(std::shared_ptr<BuilderContext> context_)
         : context(std::move(context_)) {}
 
-    QueryGraphBuilder(const QueryPlanOptimizationSettings & optimization_settings_, const QueryPlan::Node & root_node,
-                      const JoinSettings & join_settings_, const SortingStep::Settings & sorting_settings_)
-        : context(std::make_shared<BuilderContext>(optimization_settings_, root_node, join_settings_, sorting_settings_))
+    QueryGraphBuilder(
+        const QueryPlanOptimizationSettings & optimization_settings_,
+        RelationStatsCache & relation_stats_cache_,
+        const QueryPlan::Node & root_node,
+        const JoinSettings & join_settings_,
+        const SortingStep::Settings & sorting_settings_)
+        : context(std::make_shared<BuilderContext>(
+            optimization_settings_, relation_stats_cache_, root_node, join_settings_, sorting_settings_))
     {}
 
     bool hasCompatibleSettings(const JoinStepLogical & join_step) const
@@ -397,7 +413,12 @@ static String dumpStatsForLogs(const RelationStats & stats)
 }
 
 
-void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeJoinLogicalImpl(
+    JoinStepLogical * join_step,
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    RelationStatsCache & relation_stats_cache);
 
 constexpr bool isInnerOrCross(JoinKind kind)
 {
@@ -530,13 +551,18 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
                 uniteGraphs(graph, std::move(child_graph));
                 return count;
             }
-            /// Optimize child subplan before continuing to get size estimation
-            optimizeJoinLogicalImpl(child_join_step, *join_node, nodes, graph.context->optimization_settings);
+            /// Optimize the non-flattenable child independently before treating it as one relation.
+            optimizeJoinLogicalImpl(
+                child_join_step,
+                *join_node,
+                nodes,
+                graph.context->optimization_settings,
+                graph.context->relation_stats_cache);
         }
     }
 
-    /// When the leaf is a subquery with Join-s wrapped in Expression/Aggregating steps, we cannot Joins to the graph, but we want to optimize
-    /// those child Join to get proper statistics to use in the parent Join reordering.
+    /// Joins wrapped in Expression/Aggregating steps cannot be added to this graph, but should still
+    /// be optimized independently before the wrapped subtree is treated as one relation.
     {
         auto * child_node = node;
         while (child_node->children.size() == 1)
@@ -547,12 +573,19 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
         if (child_join_step && !child_join_step->isOptimized())
         {
-            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
+            optimizeJoinLogicalImpl(
+                child_join_step,
+                *child_node,
+                nodes,
+                graph.context->optimization_settings,
+                graph.context->relation_stats_cache);
         }
     }
 
     graph.inputs.push_back(node);
-    RelationStats stats = estimateReadRowsCount(*node);
+    /// Keep optimized sub-join estimates hidden here: this feeds parent join ordering, and propagating
+    /// estimates with unknown join-key NDVs (#97114) regressed performance and was reverted in #99957.
+    RelationStats stats = estimateReadRowsCount(*node, nullptr, {}, &graph.context->relation_stats_cache);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
@@ -1458,7 +1491,11 @@ static bool joinGraphHasOverlappingColumnNames(
     return false;
 }
 
-void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeJoinLogical(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    RelationStatsCache & relation_stats_cache)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step || join_step->isOptimized())
@@ -1468,15 +1505,24 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinOptimizeMicroseconds);
-    optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings);
+    optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings, relation_stats_cache);
 }
 
-void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeJoinLogicalImpl(
+    JoinStepLogical * join_step,
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    RelationStatsCache & relation_stats_cache)
 {
+    relation_stats_cache.invalidate(node);
     for (auto * child : node.children)
     {
         if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(child->step.get()))
+        {
+            relation_stats_cache.invalidate(*child);
             lookup_step->optimize(optimization_settings);
+        }
     }
 
     const auto & join_operator = join_step->getJoinOperator();
@@ -1517,7 +1563,8 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         return;
     }
 
-    QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
+    QueryGraphBuilder query_graph_builder(
+        optimization_settings, relation_stats_cache, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);

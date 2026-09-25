@@ -1672,6 +1672,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     const ActionsDAG::NodeRawConstPtrs & actions_after_join,
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan::Nodes & nodes,
+    QueryPlanOptimizations::RelationStatsCache * relation_stats_cache,
     LogicalJoinInfo && logical_join_info)
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
@@ -1734,8 +1735,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
             eligible_conditions += tryGetIEJoinKeyCondition(condition).has_value();
         if (eligible_conditions > 2)
         {
-            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0]).column_stats;
-            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats;
+            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(
+                *children[0], nullptr, {}, relation_stats_cache).column_stats;
+            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(
+                *children[1], nullptr, {}, relation_stats_cache).column_stats;
         }
     }
 
@@ -2195,7 +2198,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
 void JoinStepLogical::buildPhysicalJoin(
     QueryPlanNode & node,
     const QueryPlanOptimizationSettings & optimization_settings,
-    QueryPlan::Nodes & nodes)
+    QueryPlan::Nodes & nodes,
+    QueryPlanOptimizations::RelationStatsCache * relation_stats_cache)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step || node.children.empty())
@@ -2259,6 +2263,7 @@ void JoinStepLogical::buildPhysicalJoin(
         join_step->actions_after_join,
         optimization_settings,
         nodes,
+        relation_stats_cache,
         std::move(logical_join_info)
     );
 
