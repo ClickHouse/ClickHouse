@@ -1,6 +1,6 @@
 -- { echo }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 -- accurateCastOrNull: Array and Map inside Tuple are rejected.
 SELECT accurateCastOrNull(([1,2], 1)::Tuple(Array(UInt8), Int32), 'Tuple(Array(UInt16), UInt8)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

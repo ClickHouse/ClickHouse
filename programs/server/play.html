@@ -1868,6 +1868,46 @@
             position: relative;
         }
 
+        /* The "Format" button sits inside the editor, in its bottom right corner: just inside the
+           1px border and to the left of the vertical scrollbar, whose width is kept in
+           `--query-scrollbar-width` by `updateFormatButtonPosition`. It is subtle while inactive
+           (a gray link), becomes a regular yellow button on hover, and takes the accented yellow
+           while the formatting is in progress. It is above the completion overlay (z-index 2) and
+           the resizer strip, which overlaps the editor's bottom edge. */
+        #format-query
+        {
+            position: absolute;
+            right: calc(1px + var(--query-scrollbar-width, 0px));
+            bottom: 1px;
+            z-index: 3;
+            padding: 0.125rem 0.375rem;
+            font: inherit;
+            font-size: 85%;
+            line-height: normal;
+            cursor: pointer;
+            user-select: none;
+            color: var(--misc-text-color);
+            background-color: var(--element-background-color);
+            text-decoration: underline dashed;
+            text-underline-offset: 0.2em;
+        }
+
+        #format-query:hover, #format-query:focus-visible
+        {
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            text-decoration: none;
+        }
+
+        /* While the formatting is in progress. */
+        #format-query.busy
+        {
+            cursor: progress;
+            color: var(--button-active-text-color);
+            background-color: var(--button-active-color);
+            text-decoration: none;
+        }
+
         #query-params
         {
             display: flex;
@@ -2023,7 +2063,7 @@
             </div>
         </div>
         <form id="controls">
-            <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div></div>
+            <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div><button type="button" id="format-query" title="Format the query">Format</button></div>
             <div id="query-params"></div>
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
@@ -13277,6 +13317,11 @@ function nextDefaultTitle() {
     }
 }
 
+/// Whether `title` has the shape produced by `nextDefaultTitle`, i.e. the tab was never renamed.
+function isDefaultTabTitle(title) {
+    return /^Query [A-Z]+$/.test(title);
+}
+
 /// Tab titles double as the URL `tab=` key and the startup-reconciliation lookup key, so
 /// they must stay unique: two tabs sharing a title would let a shared/reloaded URL match —
 /// and overwrite — the wrong tab. If `desired` collides with another tab (ignoring the tab
@@ -14748,7 +14793,11 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
         /// session legitimately carries no marker yet must keep the policy.
         runnableUrl: !!tab.runnableUrl,
     };
-    const title = "ClickHouse Query: " + (titleForDoc || recorded_query);
+    /// A tab the user has renamed names the window exactly; a tab still carrying its default
+    /// title (see `nextDefaultTitle`) keeps the generic prefix followed by the query text.
+    const title = isDefaultTabTitle(tab.title)
+        ? "ClickHouse Query: " + (titleForDoc || recorded_query)
+        : tab.title;
     /// Once the tab has materialized, its live `colorModes` / `pinnedColumns` / `sortColumns` objects
     /// are the authoritative per-column state: URL reconciliation and the header controls mutate them
     /// in place, and a rerun nulls `tab.result` entirely, so the snapshot's `color_modes` /
@@ -15667,6 +15716,64 @@ document.addEventListener('keydown', event => {
         }
         event.preventDefault();
     }
+});
+
+/// The "Format" button in the bottom right corner of the editor: sends the editor's text to the server
+/// as the `q` parameter of `SELECT formatQuery({q:String})` and replaces the text with the result.
+/// The query text goes in the request body (as a `multipart/form-data` field, next to the `query`
+/// field itself), so a long query does not bloat the URL.
+const format_button = document.getElementById('format-query');
+
+/// Keep the button to the left of the editor's vertical scrollbar, if there is one. The scrollbar
+/// comes and goes with the amount of text, which no event reports directly, so the position is
+/// refreshed on edits, resizes, and right before the user can reach the button with the mouse.
+function updateFormatButtonPosition() {
+    const style = getComputedStyle(query_area);
+    const scrollbar_width = query_area.offsetWidth - query_area.clientWidth
+        - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth);
+    format_button.style.setProperty('--query-scrollbar-width', Math.max(0, scrollbar_width) + 'px');
+}
+
+query_area.addEventListener('input', updateFormatButtonPosition);
+document.getElementById('query_div').addEventListener('mouseenter', updateFormatButtonPosition);
+new ResizeObserver(updateFormatButtonPosition).observe(query_area);
+
+format_button.addEventListener('click', async () => {
+    if (format_button.classList.contains('busy')) return;
+
+    const original = query_area.value;
+    if (!original.trim()) return;
+
+    const tab_id = activeTabId;
+    const body = new FormData();
+    body.append('query', 'SELECT formatQuery({q:String}) AS formatted');
+    /// The server reads the value of a query parameter in the escaped (`TabSeparated`) form, where
+    /// a raw line feed or tab would end the value.
+    body.append('param_q', original.replace(/[\\\n\t\r]/g,
+        (c) => ({ '\\': '\\\\', '\n': '\\n', '\t': '\\t', '\r': '\\r' })[c]));
+
+    /// An error (e.g. a syntax error in the query) is shown in the result pane, as for the other queries.
+    format_button.classList.add('busy');
+    const json = await auxiliaryQuery(url_elem.value, user_elem.value, password_elem.value, body,
+        '', false, connectionGeneration);
+    format_button.classList.remove('busy');
+    if (!json) return;
+
+    /// The user could have edited the query or switched to another tab while the request was in
+    /// flight; the result then belongs to a text that is no longer in the editor.
+    if (activeTabId !== tab_id || query_area.value !== original) return;
+
+    const formatted = json.data[0].formatted;
+    if (formatted === original) return;
+
+    /// Replace the text via a selection + `execCommand`, so that the change can be undone with
+    /// Ctrl/Cmd+Z and fires the `input` event that refreshes the highlighting and the tab state.
+    /// Like `acceptCompletion`, suppress reopening the completion list on the inserted text.
+    completionAccepting = true;
+    query_area.focus();
+    query_area.setSelectionRange(0, original.length);
+    document.execCommand('insertText', false, formatted);
+    completionAccepting = false;
 });
 
 /// Pressing Tab in textarea will increase indentation.
