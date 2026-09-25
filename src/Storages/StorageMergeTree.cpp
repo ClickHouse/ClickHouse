@@ -100,6 +100,7 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char mt_lightweight_update_pause_after_block_allocation[];
 }
 
 namespace Setting
@@ -1413,6 +1414,9 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     size_t timeout_ms = saturatedMilliseconds(context_copy->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()).count();
     waitForCommittingInsertsAndMutations(block_number, timeout_ms);
 
+    /// Here the block number of the update is reserved in `committing_blocks`, but its patch part is not committed yet.
+    FailPointInjection::pauseFailPoint(FailPoints::mt_lightweight_update_pause_after_block_allocation);
+
     for (const auto & partition_id : all_partitions)
     {
         if (!partition_id.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
@@ -2112,6 +2116,13 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     CurrentlyMergingPartsTaggerPtr tagger;
 
     auto mutations_end_it = current_mutations_by_version.end();
+
+    /// The block numbers of the lightweight updates that have not written their patch part yet, read
+    /// once for the whole selection: it only has to be a snapshot no older than the parts below.
+    CommittingBlocksSet committing_blocks_snapshot;
+    if (supportsLightweightUpdate())
+        committing_blocks_snapshot = getCommittingBlocks();
+
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         if (currently_merging_mutating_parts.contains(part))
@@ -2280,6 +2291,37 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         {
             auto new_part_info = part->info;
             new_part_info.mutation = last_mutation_to_apply->first;
+
+            /** A lightweight update allocates its block number before it writes its patch part, and a
+              * mutation whose version is above that number has to see the update. Mutating the part
+              * now would read it without the patch and write a part at a higher data version, which
+              * the patch no longer applies to: the acknowledged update would be silently lost. Leave
+              * the part for a later round, exactly as `havePendingPatchPartsForMutation` postpones the
+              * entry on a replicated table.
+              */
+            std::optional<Int64> pending_update_block;
+            for (const auto & block : committing_blocks_snapshot)
+            {
+                if (block.number > new_part_info.getDataVersion())
+                    break;
+
+                if (block.op == CommittingBlock::Op::Update)
+                {
+                    pending_update_block = block.number;
+                    break;
+                }
+            }
+
+            if (pending_update_block.has_value())
+            {
+                LOG_DEBUG(
+                    log,
+                    "Will not mutate part {} yet because the lightweight update with block number {} is not committed",
+                    part->name,
+                    *pending_update_block);
+                current_parts_postpone_reasons[part->name] = PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE;
+                continue;
+            }
 
             future_part->parts.push_back(part);
             future_part->part_info = new_part_info;
@@ -4251,9 +4293,18 @@ std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartNameAnd
 
 void StorageMergeTree::removeCommittingBlock(CommittingBlock block)
 {
-    std::lock_guard lock(committing_blocks_mutex);
-    committing_blocks.erase(block);
-    committing_blocks_cv.notify_one();
+    {
+        std::lock_guard lock(committing_blocks_mutex);
+        committing_blocks.erase(block);
+        committing_blocks_cv.notify_one();
+    }
+
+    /// `selectPartsToMutate` leaves a part alone while a lightweight update with a lower block number is
+    /// uncommitted, and the scheduler backs off when nothing is selected. The block is released on every
+    /// exit of the update, including the ones that write no patch part, so this is the one place where the
+    /// postponed mutation can be woken up as soon as it is allowed to run.
+    if (block.op == CommittingBlock::Op::Update)
+        background_operations_assignee.trigger();
 }
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::allocateBlockNumber(CommittingBlock::Op op)
