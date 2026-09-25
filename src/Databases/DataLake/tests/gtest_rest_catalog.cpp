@@ -979,7 +979,18 @@ TEST(RestCatalog, ChildListingEndpointNotFoundStillThrows)
     context->makeQueryContext();
     auto catalog = makeRestCatalog(server, context);
 
-    expectThrowsCode([&] { catalog->getTables(); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+    try
+    {
+        catalog->getTables();
+        /// ADD_FAILURE rather than FAIL so the request-count check below is reached on every path.
+        ADD_FAILURE() << "expected an exception for a 404 that names no missing namespace";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+        EXPECT_EQ(e.message().find("`parent` query parameter is not found"), std::string::npos);
+        EXPECT_NE(e.message().find("not served at this route"), std::string::npos);
+    }
     EXPECT_GE(counters.doomed_child_listing.load(), 1u);
 }
 

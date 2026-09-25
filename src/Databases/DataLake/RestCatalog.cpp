@@ -1388,7 +1388,11 @@ RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & bas
             warehouse);
 
         if (!base_namespace.empty() && e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
-            message += "Namespace provided in the `parent` query parameter is not found. ";
+            message += fmt::format(
+                "The catalog returned 404 without a `NoSuchNamespaceException` error body, so either the "
+                "namespace `{}` provided in the `parent` query parameter is gone, or the sub-namespace "
+                "listing endpoint is not served at this route (for example by a proxy). ",
+                base_namespace);
 
         if (!base_namespace.empty()
             && (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST
