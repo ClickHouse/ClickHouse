@@ -3,6 +3,7 @@
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Poco/StreamCopier.h>
 #include <Common/Exception.h>
+#include <Common/maskURIPassword.h>
 
 #include "config.h"
 
@@ -113,11 +114,16 @@ Exception HTTPException::makeExceptionMessage(
     const std::string & reason,
     const std::string & body)
 {
+    std::string masked_uri = uri;
+    maskURICredentials(masked_uri);
+    std::string masked_body = body;
+    maskPresignedURLParameters(masked_body);
+
     return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} '{}', "
         "body length: {} bytes, body: '{}'",
-        uri, static_cast<int>(http_status), reason, body.length(), body);
+        masked_uri, static_cast<int>(http_status), reason, body.length(), masked_body);
 }
 
 }

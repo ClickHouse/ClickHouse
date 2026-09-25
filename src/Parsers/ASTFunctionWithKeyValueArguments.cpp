@@ -1,6 +1,7 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/maskURIPassword.h>
@@ -26,6 +27,14 @@ namespace
         return key == "password"
             || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
             || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem";
+    }
+
+    /// Keys of a dictionary source whose value is a URI that may embed credentials in its userinfo
+    /// (`scheme://user:password@host`) or in presigned-URL query parameters. Both spellings are in
+    /// use: the `HTTP` source takes `url`, other sources take `uri`.
+    bool isURIKey(const String & key)
+    {
+        return key == "uri" || key == "url";
     }
 }
 
@@ -81,16 +90,18 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         ostr << "'[HIDDEN]'";
     }
-    else if (!settings.show_secrets && (first == "uri"))
+    else if (!settings.show_secrets && isURIKey(first) && second->as<ASTLiteral>()
+             && second->as<ASTLiteral>()->value.getType() == Field::Types::String)
     {
-        // Hide password from URI in the defention of a dictionary
-        WriteBufferFromOwnString temp_buf;
-        FormatSettings tmp_settings(settings.one_line);
-        FormatState tmp_state;
-        second->format(temp_buf, tmp_settings, tmp_state, frame);
+        /// Hide the credentials embedded in the URI in the definition of a dictionary. Mask the
+        /// userinfo (`scheme://user:password@host`) and the presigned-URL query parameters, the
+        /// same way an S3 URL is masked in `FunctionSecretArgumentsFinder`. The masking is applied
+        /// to the raw value and the result is re-emitted through a literal so that it is quoted and
+        /// escaped exactly as the original value would have been.
+        String masked = second->as<ASTLiteral>()->value.safeGet<String>();
+        maskURICredentials(masked);
 
-        maskURIPassword(&temp_buf.str());
-        ostr << temp_buf.str();
+        ASTLiteral(masked).format(ostr, settings, state, frame);
     }
     else
     {
@@ -104,7 +115,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return isSecretKey(first) || second->hasSecretParts();
+    return isSecretKey(first) || isURIKey(first) || second->hasSecretParts();
 }
 
 

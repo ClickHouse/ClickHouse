@@ -1,5 +1,6 @@
 #include <Dictionaries/HTTPDictionarySource.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/maskURIPassword.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Formats/formatBlock.h>
@@ -140,7 +141,10 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
-    LOG_TRACE(log, "loadUpdatedAll {}", uri.toString());
+    std::string uri_for_logging = uri.toString();
+    /// Mask userinfo and presigned parameters, like ReadWriteBufferFromHTTP.
+    maskURICredentials(uri_for_logging);
+    LOG_TRACE(log, "loadUpdatedAll {}", uri_for_logging);
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -240,7 +244,10 @@ DictionarySourcePtr HTTPDictionarySource::clone() const
 std::string HTTPDictionarySource::toString() const
 {
     Poco::URI uri(configuration.url);
-    return uri.toString();
+    /// Feeds system.dictionaries.source and the server log; mask userinfo and presigned parameters.
+    std::string name = uri.toString();
+    maskURICredentials(name);
+    return name;
 }
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory);
