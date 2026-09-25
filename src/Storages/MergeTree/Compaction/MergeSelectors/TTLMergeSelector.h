@@ -94,20 +94,25 @@ private:
 
 /// Select parts that have some expired column ttls.
 ///
-/// A column TTL can only be honoured by rewriting the part - dropping the part is not an alternative
-/// way of clearing a column - so this selector runs regardless of `ttl_only_drop_parts`, unlike
-/// `TTLRowDeleteMergeSelector`.
+/// Dropping the part is not an alternative way of clearing a column, so this selector runs regardless
+/// of `ttl_only_drop_parts`, unlike `TTLRowDeleteMergeSelector`. With `only_fully_expired_columns`
+/// (used for `ttl_only_drop_parts`) the column counterpart of dropping a whole part is applied instead:
+/// a part is selected only once every value of one of its TTL columns has expired, and on its own, so
+/// that the merge drops the column and can keep the files of the other columns (see `MergeTask`).
 class TTLColumnDeleteMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLColumnDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    TTLColumnDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, bool only_fully_expired_columns_);
 
 private:
     /// Returns the earliest due time among the unfinished column TTLs of the part, so that a row TTL
     /// that expires earlier does not make the part eligible before a column TTL is actually due.
+    /// With `only_fully_expired_columns`, returns the earliest time at which a column expires as a whole.
     time_t getTTLForPart(const PartProperties & part) const override;
 
     bool canConsiderPart(const PartProperties & part) const override;
+
+    const bool only_fully_expired_columns;
 };
 
 /// Select parts to merge using information about recompression TTL and compression codec of existing parts.

@@ -284,6 +284,68 @@ time_t MergeTreeDataPartTTLInfos::getMinimalNonFinishedColumnTTL() const
     return min_ttl;
 }
 
+time_t MergeTreeDataPartTTLInfos::getMinimalMaxNonFinishedColumnTTL() const
+{
+    time_t min_ttl = 0;
+
+    for (const auto & [name, info] : columns_ttl)
+        if (info.initialized() && !info.finished())
+            if (info.max && (!min_ttl || info.max < min_ttl))
+                min_ttl = info.max;
+
+    return min_ttl;
+}
+
+time_t MergeTreeDataPartTTLInfos::getMinimalNonFinishedRowTTL() const
+{
+    time_t min_ttl = 0;
+
+    auto update = [&](const MergeTreeDataPartTTLInfo & info)
+    {
+        if (!info.finished() && info.min && (!min_ttl || info.min < min_ttl))
+            min_ttl = info.min;
+    };
+
+    update(table_ttl);
+    for (const auto & [name, info] : rows_where_ttl)
+        update(info);
+    for (const auto & [name, info] : group_by_ttl)
+        update(info);
+
+    return min_ttl;
+}
+
+bool MergeTreeDataPartTTLInfos::isColumnTTLFullyExpired(const String & column_name, time_t current_time) const
+{
+    auto it = columns_ttl.find(column_name);
+    if (it == columns_ttl.end())
+        return false;
+
+    /// A finished column TTL was calculated when every value of the column had already expired.
+    const auto & info = it->second;
+    return info.finished() || (info.max && info.max <= current_time);
+}
+
+bool MergeTreeDataPartTTLInfos::removeColumnTTL(const String & column_name)
+{
+    if (!columns_ttl.erase(column_name))
+        return false;
+
+    /// Recalculate from the same TTLs that `read` takes into account.
+    part_min_ttl = 0;
+    part_max_ttl = 0;
+
+    for (const auto & [name, info] : columns_ttl)
+        updatePartMinMaxTTL(info);
+    updatePartMinMaxTTL(table_ttl);
+    for (const auto & [name, info] : group_by_ttl)
+        updatePartMinMaxTTL(info);
+    for (const auto & [name, info] : rows_where_ttl)
+        updatePartMinMaxTTL(info);
+
+    return true;
+}
+
 bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
 {
     if (table_ttl.initialized() && !table_ttl.finished())

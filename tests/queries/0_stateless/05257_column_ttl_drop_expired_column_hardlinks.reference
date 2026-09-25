@@ -1,0 +1,27 @@
+single part, fully expired
+100	4950	100
+0
+0
+1
+Undecided	1	0
+several parts, fully expired
+1	{}
+2	{}
+1	{}
+2	{}
+partially expired
+1	{}
+2	{}
+3	{}
+4	{"a":4}
+1	{}
+2	{}
+3	{"a":3}
+4	{"a":4}
+t_ttl_multi_0	Vertical	0
+t_ttl_multi_0	Horizontal	0
+t_ttl_multi_1	Vertical	0
+t_ttl_multi_1	Vertical	0
+replacing
+1	{}
+Vertical	0
