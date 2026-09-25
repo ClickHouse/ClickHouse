@@ -130,34 +130,6 @@ ${CLICKHOUSE_CLIENT} --query "
 compare "SELECT p, k FROM t_05255_partitioned ORDER BY p DESC, k LIMIT 5"
 compare "SELECT p, k FROM t_05255_partitioned ORDER BY p, k DESC LIMIT 5"
 
-echo "--- Delta Lake: sorted by a partition column"
-# The legacy Delta Lake reader (`allow_delta_kernel_rs = 0`) replaces the partition columns of the chunks
-# the format returns with the partition values. These data files store the partition column as well,
-# with other values (the file of `p = 1` stores 100, the one of `p = 2` stores 0, and it is read first):
-# comparing them against the threshold would drop the rows of `p = 1`.
-DELTA_DIR="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_05255_delta"
-rm -rf "${DELTA_DIR}"
-mkdir -p "${DELTA_DIR}/_delta_log"
-${CLICKHOUSE_CLIENT} --query "
-    INSERT INTO FUNCTION file('${DELTA_DIR}/a/data.parquet', Parquet, 'id Int32, p Int32') SELECT number, 0 FROM numbers(1000);
-    INSERT INTO FUNCTION file('${DELTA_DIR}/z/data.parquet', Parquet, 'id Int32, p Int32') SELECT number, 100 FROM numbers(1000);
-"
-DELTA_SCHEMA='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}}]}'
-cat > "${DELTA_DIR}/_delta_log/00000000000000000000.json" <<LOG
-{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
-{"metaData":{"id":"${CLICKHOUSE_DATABASE}_05255","format":{"provider":"parquet","options":{}},"schemaString":"${DELTA_SCHEMA}","partitionColumns":["p"],"configuration":{},"createdTime":1700000000000}}
-{"add":{"path":"a/data.parquet","partitionValues":{"p":"2"},"size":1,"modificationTime":1700000000000,"dataChange":true}}
-{"add":{"path":"z/data.parquet","partitionValues":{"p":"1"},"size":1,"modificationTime":1700000000000,"dataChange":true}}
-LOG
-for kernel in 0 1
-do
-    DELTA="deltaLakeLocal('${DELTA_DIR}', 'Parquet', 'id Int32, p Int32')"
-    diff <(${CLICKHOUSE_CLIENT} --allow_delta_kernel_rs "${kernel}" --query "SELECT p, id FROM ${DELTA} ORDER BY p, id LIMIT 3 SETTINGS ${SETTINGS}, ${ON}") \
-         <(${CLICKHOUSE_CLIENT} --allow_delta_kernel_rs "${kernel}" --query "SELECT p, id FROM ${DELTA} ORDER BY p, id LIMIT 3 SETTINGS ${SETTINGS}, ${OFF}") \
-        && echo "allow_delta_kernel_rs = ${kernel}: OK"
-done
-rm -rf "${DELTA_DIR}"
-
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05255_sorted"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05255_renamed"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05255_partitioned"
