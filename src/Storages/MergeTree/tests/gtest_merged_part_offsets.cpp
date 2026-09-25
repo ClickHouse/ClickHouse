@@ -422,6 +422,186 @@ TEST(PackedPartOffsetsTest, ConsecutiveExceptLastValue)
         EXPECT_EQ(offsets[i], values[i]) << "offset " << i;
 }
 
+// Inserts the values of one part's offset map and finalizes it
+static void insertAll(PackedPartOffsets & offsets, const std::vector<UInt64> & values)
+{
+    for (const auto & val : values)
+        offsets.insert(val);
+    offsets.flush();
+}
+
+// Maps the given offsets of a part in one call, and requires every result to be the one a single-offset
+// lookup returns. Mapping a whole posting list is an optimization and must not change any value.
+static void expectMapOffsetsMatchesLookup(
+    const PackedPartOffsets & offsets, const std::vector<UInt32> & to_map, const std::string & layout)
+{
+    std::vector<UInt32> expected;
+    expected.reserve(to_map.size());
+    for (UInt32 offset : to_map)
+        expected.push_back(static_cast<UInt32>(offsets[offset]));
+
+    std::vector<UInt32> mapped = to_map;
+    offsets.mapOffsets(mapped);
+
+    for (size_t i = 0; i < mapped.size(); ++i)
+    {
+        if (mapped[i] != expected[i])
+        {
+            ADD_FAILURE() << layout << ": offset " << to_map[i] << " mapped to " << mapped[i] << ", expected "
+                          << expected[i];
+            return;
+        }
+    }
+}
+
+// Every offset from begin, count of them, stride apart, and none beyond size
+static std::vector<UInt32> stridedOffsets(size_t begin, size_t stride, size_t count, size_t size)
+{
+    std::vector<UInt32> result;
+    for (size_t i = 0, offset = begin; i < count && offset < size; ++i, offset += stride)
+        result.push_back(static_cast<UInt32>(offset));
+    return result;
+}
+
+// The offset maps a merge builds for one part: consecutive runs, runs broken at a page boundary,
+// packed pages, and mixtures of them
+static std::vector<std::pair<std::string, std::vector<UInt64>>> offsetMapLayouts()
+{
+    auto consecutive = [](UInt64 first, size_t count)
+    {
+        std::vector<UInt64> values(count);
+        for (size_t i = 0; i < count; ++i)
+            values[i] = first + i;
+        return values;
+    };
+
+    std::vector<std::pair<std::string, std::vector<UInt64>>> layouts;
+
+    layouts.emplace_back("one value", consecutive(5, 1));
+    layouts.emplace_back("one partial page", consecutive(100, 700));
+    layouts.emplace_back("exactly one page", consecutive(0, TEST_PAGE_SIZE));
+    layouts.emplace_back("one page and one value", consecutive(7, TEST_PAGE_SIZE + 1));
+    layouts.emplace_back("three pages and a tail", consecutive(12345, (3 * TEST_PAGE_SIZE) + 7));
+
+    // Every page is consecutive, but the step across the first page boundary is not one
+    {
+        auto values = consecutive(500, 3 * TEST_PAGE_SIZE);
+        for (size_t i = TEST_PAGE_SIZE; i < values.size(); ++i)
+            values[i] += 1;
+        layouts.emplace_back("gap at a page boundary", values);
+    }
+
+    // A gap inside the second page leaves the other pages consecutive
+    {
+        auto values = consecutive(9000, (3 * TEST_PAGE_SIZE) + 500);
+        for (size_t i = TEST_PAGE_SIZE + (TEST_PAGE_SIZE / 2); i < values.size(); ++i)
+            values[i] += 7;
+        layouts.emplace_back("one packed page among consecutive ones", values);
+    }
+
+    // A gap inside the first page, with every later page consecutive
+    {
+        auto values = consecutive(0, 2 * TEST_PAGE_SIZE);
+        for (size_t i = 3; i < values.size(); ++i)
+            values[i] += 100;
+        layouts.emplace_back("packed first page", values);
+    }
+
+    // The part takes every sixth row of the merged data, the shape of a fully interleaved merge
+    {
+        std::vector<UInt64> values((3 * TEST_PAGE_SIZE) + 13);
+        for (size_t i = 0; i < values.size(); ++i)
+            values[i] = 2 + (i * 6);
+        layouts.emplace_back("every page packed", values);
+    }
+
+    return layouts;
+}
+
+// Mapping a posting list of a part in one call gives the same new row ids as mapping them one by one,
+// for every shape of offset map a merge builds and for dense as well as sparse posting lists
+TEST(PackedPartOffsetsTest, MapOffsetsMatchesLookup)
+{
+    for (const auto & [layout, values] : offsetMapLayouts())
+    {
+        PackedPartOffsets offsets;
+        insertAll(offsets, values);
+        const size_t size = values.size();
+
+        for (size_t stride : {static_cast<size_t>(1), static_cast<size_t>(33), static_cast<size_t>(64), TEST_PAGE_SIZE})
+        {
+            expectMapOffsetsMatchesLookup(
+                offsets, stridedOffsets(0, stride, size, size), layout + ", stride " + std::to_string(stride));
+            expectMapOffsetsMatchesLookup(
+                offsets, stridedOffsets(1, stride, size, size), layout + ", stride " + std::to_string(stride) + " from 1");
+        }
+
+        expectMapOffsetsMatchesLookup(offsets, stridedOffsets(size - 1, 1, 1, size), layout + ", last offset only");
+        expectMapOffsetsMatchesLookup(offsets, {}, layout + ", no offsets");
+
+        if (size > TEST_PAGE_SIZE)
+            expectMapOffsetsMatchesLookup(
+                offsets, stridedOffsets(TEST_PAGE_SIZE - 5, 1, 10, size), layout + ", across a page boundary");
+    }
+}
+
+// Whether a posting list is dense enough to be mapped page by page must not change any new row id
+TEST(PackedPartOffsetsTest, MapOffsetsDensityBoundary)
+{
+    // No page of a fully interleaved part is consecutive, so the density of the posting list picks the path
+    std::vector<UInt64> values(4 * TEST_PAGE_SIZE);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = 3 + (i * 6);
+
+    PackedPartOffsets offsets;
+    insertAll(offsets, values);
+
+    constexpr size_t pages_spanned = 3;
+    constexpr size_t last = (pages_spanned * TEST_PAGE_SIZE) - 1;
+
+    for (size_t count : {(pages_spanned * 32) - 1, pages_spanned * 32, (pages_spanned * 32) + 1})
+    {
+        // Spread the offsets over the same pages whatever their number is
+        std::vector<UInt32> to_map;
+        for (size_t i = 0; i < count; ++i)
+            to_map.push_back(static_cast<UInt32>((i * last) / (count - 1)));
+
+        expectMapOffsetsMatchesLookup(offsets, to_map, std::to_string(count) + " offsets over 3 pages");
+    }
+}
+
+// Posting lists are sorted, but nothing in the mapping relies on it
+TEST(PackedPartOffsetsTest, MapOffsetsUnsortedOffsets)
+{
+    std::vector<UInt64> values(3 * TEST_PAGE_SIZE);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = 1 + (i * 3);
+
+    PackedPartOffsets offsets;
+    insertAll(offsets, values);
+
+    std::vector<UInt32> to_map;
+    to_map.reserve(values.size());
+    for (size_t i = 0; i < values.size(); ++i)
+        to_map.push_back(static_cast<UInt32>(i));
+
+    std::mt19937 gen(42);
+    std::shuffle(to_map.begin(), to_map.end(), gen);
+
+    expectMapOffsetsMatchesLookup(offsets, to_map, "shuffled offsets");
+}
+
+// A part with no rows has no pages, and a token of it has no posting list to map
+TEST(PackedPartOffsetsTest, MapOffsetsNoOffsetsNoPages)
+{
+    PackedPartOffsets offsets;
+    std::vector<UInt32> to_map;
+
+    offsets.mapOffsets(to_map);
+
+    EXPECT_TRUE(to_map.empty());
+}
+
 //////////////////////////
 // MergedPartOffsets Tests
 //////////////////////////
@@ -547,5 +727,49 @@ TEST(MergedPartOffsetsTest, ManyValues)
         auto part = part_indices[i];
         EXPECT_EQ((merged_offsets[part, offsets[part]]), i);
         ++offsets[part];
+    }
+}
+
+// All rows of one part of a merge are mapped in one call, for a part that is not interleaved and for
+// parts that are interleaved with each other
+TEST(MergedPartOffsetsTest, MapOffsetsOfOnePart)
+{
+    std::vector<UInt64> part_indices;
+
+    for (size_t i = 0; i < 3000; ++i)
+        part_indices.push_back(0);
+    for (size_t i = 0; i < 3000; ++i)
+    {
+        part_indices.push_back(1);
+        part_indices.push_back(2);
+    }
+
+    MergedPartOffsets merged_offsets(3);
+    merged_offsets.insert(part_indices.data(), part_indices.data() + part_indices.size());
+    merged_offsets.flush();
+
+    for (size_t part = 0; part < 3; ++part)
+    {
+        const size_t rows = merged_offsets.getPartRowsCount(part);
+
+        std::vector<UInt32> expected;
+        std::vector<UInt32> mapped;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            expected.push_back(static_cast<UInt32>((merged_offsets[part, i])));
+            mapped.push_back(static_cast<UInt32>(i));
+        }
+
+        merged_offsets.mapOffsets(part, mapped);
+
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if (mapped[i] != expected[i])
+            {
+                ADD_FAILURE() << "part " << part << ", offset " << i << " mapped to " << mapped[i] << ", expected "
+                              << expected[i];
+                break;
+            }
+        }
     }
 }

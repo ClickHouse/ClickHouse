@@ -522,13 +522,15 @@ void MergeTextIndexesTask::checkRowIdsInPart(std::span<const UInt32> row_ids, si
 
 void MergeTextIndexesTask::adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const
 {
-    if (!merged_part_offsets)
+    if (!merged_part_offsets || row_ids.empty())
         return;
 
     checkRowIdsInPart(row_ids, part_index);
 
-    for (UInt32 & row_id : row_ids)
-        row_id = adjustPartOffset(*merged_part_offsets, part_index, row_id);
+    /// A merge keeps the order of the rows of a part, so the last row id is remapped to the largest row id.
+    /// Checking it once guarantees that all remapped row ids fit, and the whole array is remapped in bulk.
+    adjustPartOffset(*merged_part_offsets, part_index, row_ids.back());
+    merged_part_offsets->mapOffsets(part_index, row_ids);
 }
 
 void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source)
