@@ -3810,6 +3810,14 @@ MutateTaskPtr MergeTask::ExecuteAndFinalizeHorizontalPart::createTaskToClearExpi
     if (isAnyTTLDue(*global_ctx, ttl_infos))
         return nullptr;
 
+    /// The merge would recompress the part with another codec: by a `RECOMPRESS` TTL, or by a codec
+    /// chosen for the size of the part.
+    const auto codec = global_ctx->data->getCompressionCodecForPart(
+        metadata_snapshot, global_ctx->merge_list_element_ptr->total_size_bytes_compressed, ttl_infos, global_ctx->time_of_merge);
+    if (!part->default_codec || part->default_codec_is_approximate
+        || codec.codec->getFullCodecDescription()->formatWithSecretsOneLine() != part->default_codec->getFullCodecDescription()->formatWithSecretsOneLine())
+        return nullptr;
+
     /// Hardlinks are possible only within the same part format. With zero-copy replication, the blobs
     /// shared with the source part would need to be locked, which a merge does not do.
     if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage())

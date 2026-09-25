@@ -119,3 +119,29 @@ SELECT merge_algorithm, ProfileEvents['MutationSomePartColumns']
 FROM system.part_log WHERE database = currentDatabase() AND table = 't_ttl_replacing' AND event_type = 'MergeParts';
 
 DROP TABLE t_ttl_replacing;
+
+-- A `RECOMPRESS` TTL that is due must still recompress the part, so the files cannot be hardlinked.
+DROP TABLE IF EXISTS t_ttl_recompress;
+
+CREATE TABLE t_ttl_recompress
+(
+    d Date,
+    key UInt64,
+    props JSON TTL d + INTERVAL 1 DAY
+)
+ENGINE = MergeTree ORDER BY key
+TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(1))
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0;
+
+INSERT INTO t_ttl_recompress VALUES ('2020-01-01', 1, '{"a" : 1}');
+
+SELECT 'recompress';
+OPTIMIZE TABLE t_ttl_recompress FINAL;
+SELECT key, props FROM t_ttl_recompress;
+SELECT default_compression_codec FROM system.parts WHERE database = currentDatabase() AND table = 't_ttl_recompress' AND active;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT ProfileEvents['MutationSomePartColumns']
+FROM system.part_log WHERE database = currentDatabase() AND table = 't_ttl_recompress' AND event_type = 'MergeParts';
+
+DROP TABLE t_ttl_recompress;

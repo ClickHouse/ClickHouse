@@ -25,3 +25,7 @@ t_ttl_multi_1	Vertical	0
 replacing
 1	{}
 Vertical	0
+recompress
+1	{}
+ZSTD(1)
+0
