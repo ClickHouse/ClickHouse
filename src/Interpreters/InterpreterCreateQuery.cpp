@@ -112,6 +112,8 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
+#include "config.h"
+
 
 namespace CurrentMetrics
 {
@@ -125,6 +127,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -1796,6 +1799,26 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+/// Blocks dictionary creation in case `enable_xgboost` is disabled, or when ClickHouse wasn't built
+/// with XGBoost support
+void checkXGBoostLayoutIsAllowed(const ASTCreateQuery & create, [[maybe_unused]] const ContextPtr & context)
+{
+    if (!(create.is_dictionary && create.dictionary && create.dictionary->layout
+          && Poco::toLower(create.dictionary->layout->layout_type) == "xgboost"))
+        return;
+
+#if USE_XGBOOST
+    if (!context->getSettingsRef()[Setting::enable_xgboost])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The XGBOOST dictionary layout is experimental. Set `enable_xgboost = 1` to enable it");
+#else
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "The XGBOOST dictionary layout is unavailable, because ClickHouse was built without XGBoost support");
+#endif
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -1820,6 +1843,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
+
+    /// A full-definition `ATTACH DICTIONARY` is user input as well, so it is gated like `CREATE DICTIONARY`.
+    /// A short `ATTACH` carries no layout here (the stored definition is read below), and a restore or a
+    /// replay on a secondary replica runs under `SECONDARY_CREATE`, so both stay exempt.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        checkXGBoostLayoutIsAllowed(create, getContext());
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
