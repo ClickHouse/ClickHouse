@@ -8,6 +8,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -16,6 +17,7 @@
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageSnapshot.h>
 
 namespace DB
 {
@@ -40,6 +42,44 @@ struct SubcolumnAccess
     size_t projection_index;                  /// Index of base column in the source query's projection
 };
 
+/// A column source is either a `TableNode` (`FROM t`) or a `TableFunctionNode` (`FROM file(...)`).
+/// Returns nullptr for anything else, and for an unresolved table function, which carries no storage.
+StorageSnapshotPtr getStorageSnapshotForColumnSource(const QueryTreeNodePtr & column_source)
+{
+    if (const auto * table_node = column_source->as<TableNode>())
+        return table_node->getStorageSnapshot();
+    if (const auto * table_function_node = column_source->as<TableFunctionNode>(); table_function_node && table_function_node->isResolved())
+        return table_function_node->getStorageSnapshot();
+    return nullptr;
+}
+
+/// Whether the storage behind `proj_column` can serve its subcolumn directly. This is the same gate
+/// `FunctionToSubcolumnsPass` applies before reading a subcolumn instead of the whole column: some storages
+/// (system tables, `file`, `url`, ...) report `supportsOptimizationToSubcolumns` = false, virtual columns and
+/// columns the storage does not know under that exact type cannot be read as subcolumns either.
+bool storageCanReadSubcolumn(const ColumnNode & proj_column, const QueryTreeNodePtr & proj_source, const ContextPtr & context)
+{
+    auto storage_snapshot = getStorageSnapshotForColumnSource(proj_source);
+    if (!storage_snapshot)
+        return false;
+
+    const auto & storage = storage_snapshot->storage;
+    if (!storage.supportsOptimizationToSubcolumns())
+        return false;
+
+    /// The storage is replaced with the view source only after the passes, see `FunctionToSubcolumnsPass`.
+    auto view_source = context->getViewSource();
+    if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage.getStorageID().getFullNameNotQuoted())
+        return false;
+
+    const auto & column = proj_column.getColumn();
+    if (storage_snapshot->metadata->isVirtualColumn(column.name))
+        return false;
+
+    auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
+    return column_in_table && column_in_table->type->equals(*column.type);
+}
+
 /// Check if a projection column can be optimized and return the new projection node.
 /// Returns nullptr if optimization is not possible.
 QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
@@ -60,11 +100,9 @@ QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
     /// We can create a direct ColumnNode for the subcolumn (e.g., tup.a) if the storage supports it.
     if (proj_source_type == QueryTreeNodeType::TABLE || proj_source_type == QueryTreeNodeType::TABLE_FUNCTION)
     {
-        auto * table_node = proj_source->as<TableNode>();
-
-        /// Some storage engines don't support subcolumn optimization (e.g., system tables).
+        /// Some storage engines don't support subcolumn optimization (e.g., system tables, `file`).
         /// Skip optimization for those to avoid errors.
-        if (table_node && !table_node->getStorage()->supportsOptimizationToSubcolumns())
+        if (proj_column->hasExpression() || !storageCanReadSubcolumn(*proj_column, proj_source, context))
             return nullptr;
 
         /// The name has to be built from the name of the column in the table, which is not necessarily
@@ -73,7 +111,8 @@ QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
         return std::make_shared<ColumnNode>(subcolumn_name_and_type, proj_source);
     }
     /// Case 2: Projection column comes from a nested subquery or union.
-    /// We need to create a getSubcolumn function call to push the access down recursively.
+    /// We need to create a getSubcolumn function call, which is pushed further down when the pass is run
+    /// on the rewritten source query, see `SubcolumnPushdownPass::run`.
     else if (proj_source_type == QueryTreeNodeType::QUERY || proj_source_type == QueryTreeNodeType::UNION)
     {
         auto get_subcolumn_func = std::make_shared<FunctionNode>("getSubcolumn");
@@ -94,6 +133,8 @@ QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
 /// so replacing a column with one of its subcolumns there would silently change the result
 /// (`SELECT DISTINCT tup` and `SELECT DISTINCT tup.a` are not the same query), or leave the
 /// subcolumn outside of the grouping keys, which is not a valid query at all.
+/// `INTERPOLATE` targets are projection columns as well, so dropping one from the projection
+/// would leave a dangling target (`Missing column 'tup' as an INTERPOLATE expression target`).
 bool isSourceQuerySafeToRewrite(const QueryNode & source_query)
 {
     return !source_query.isDistinct()
@@ -106,7 +147,8 @@ bool isSourceQuerySafeToRewrite(const QueryNode & source_query)
         && !source_query.hasLimitBy()
         && !source_query.isLimitByAll()
         && !source_query.hasWindow()
-        && !source_query.hasQualify();
+        && !source_query.hasQualify()
+        && !source_query.hasInterpolate();
 }
 
 using NodeSet = std::unordered_set<const IQueryTreeNode *>;
@@ -173,6 +215,21 @@ NodeSet collectSubcolumnAccessesExposedToAggregation(const QueryNode & query)
         collectSubcolumnAccessesExposedToAggregation(section, group_by_keys, exposed);
 
     return exposed;
+}
+
+/// The same for every query in the tree. Only a source that is the join tree of the query the pass runs on is
+/// rewritten, but a column of that source can also be read from a nested query (a correlated reference), so the
+/// aggregation of every scope has to be taken into account.
+void collectSubcolumnAccessesExposedToAggregationInAllScopes(const QueryTreeNodePtr & node, NodeSet & exposed)
+{
+    if (!node)
+        return;
+
+    if (const auto * query_node = node->as<QueryNode>())
+        exposed.merge(collectSubcolumnAccessesExposedToAggregation(*query_node));
+
+    for (const auto & child : node->getChildren())
+        collectSubcolumnAccessesExposedToAggregationInAllScopes(child, exposed);
 }
 
 /// Collect all getSubcolumn calls that can be optimized, plus all columns referencing each source.
@@ -349,10 +406,10 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
     if (!context->getSettingsRef()[Setting::optimize_push_subcolumns_into_subqueries])
         return;
 
-    /// Collect all subcolumn accesses and all columns grouped by source. Only a source that is the join tree
-    /// of the root query is rewritten (see `tryCloneTopLevelQueryNode`), so the root query is the only one
-    /// whose aggregation can be affected by the rewrite.
-    CollectSubcolumnAccessesVisitor collector(context, collectSubcolumnAccessesExposedToAggregation(*root_query_node));
+    /// Collect all subcolumn accesses and all columns grouped by source, except those evaluated after an aggregation.
+    NodeSet nodes_to_skip;
+    collectSubcolumnAccessesExposedToAggregationInAllScopes(query_tree_node, nodes_to_skip);
+    CollectSubcolumnAccessesVisitor collector(context, std::move(nodes_to_skip));
     collector.visit(query_tree_node);
 
     auto & subcolumn_accesses_by_source = collector.getSubcolumnAccessesBySource();
@@ -506,6 +563,13 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
         /// The names in `projection_columns` are the final ones, so the alias list is no longer needed.
         cloned_query_source->setProjectionAliasesToOverride({});
         cloned_query_source->resolveProjectionColumns(std::move(projection_columns));
+
+        /// If the source reads the column from a subquery itself, the projection got a `getSubcolumn` call
+        /// (see `tryCreateSubcolumnProjectionNode`) that can be pushed one level further down:
+        /// `SELECT tup.a FROM (SELECT tup FROM (SELECT tup FROM t))` has to read only `tup.a` from `t`.
+        /// Each level clones its own source, so this terminates at the depth of the nested subqueries.
+        QueryTreeNodePtr cloned_source_node = cloned_source;
+        run(cloned_source_node, context);
     }
 }
 
