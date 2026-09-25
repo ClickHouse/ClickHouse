@@ -86,127 +86,72 @@ template <typename T>
 concept ArrayIndexNumeric = std::is_integral_v<T> || std::is_floating_point_v<T>;
 
 /// Constant, exactly representable needles in non-nullable numeric arrays.
-/// Keep this specialization separate from the generic/nullable/LowCardinality paths.
 template <typename ConcreteAction, ArrayIndexNumeric T>
     requires (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>)
 struct NumericArrayIndex
 {
 private:
-    static constexpr bool is_index_of = std::is_same_v<ConcreteAction, IndexOfAction>;
     using ResultType = typename ConcreteAction::ResultType;
 
-    /// Only the private search helpers use zero-based positions and this sentinel.
-    static constexpr size_t NO_MATCH = static_cast<size_t>(-1);
-
-    using SearchResult = std::conditional_t<is_index_of, size_t, bool>;
-    using ScalarResult = std::conditional_t<is_index_of, size_t, UInt8>;
-
-    /// Use the column's UInt8 result type for the scalar has() loop.
-    static ALWAYS_INLINE ScalarResult findScalar(const T * data, size_t size, T value)
+    static ALWAYS_INLINE ResultType findScalar(const T * data, size_t size, T value, size_t offset = 0)
     {
-        ScalarResult found = is_index_of ? NO_MATCH : 0;
+        ResultType result = 0;
         for (size_t i = 0; i < size; ++i)
         {
             if (data[i] == value)
             {
-                if constexpr (is_index_of)
-                    found = i;
-                else
-                    found = true;
+                ConcreteAction::apply(result, offset + i);
                 break;
             }
         }
-        return found;
+        return result;
     }
 
-    static ALWAYS_INLINE SearchResult findInBlocks(const T * data, size_t size, T value)
+    static ALWAYS_INLINE ResultType findInBlocks(const T * data, size_t size, T value, size_t offset)
     {
+        constexpr size_t block_size = 64 / sizeof(T);
+        if (size < block_size)
+            return findScalar(data, size, value, offset);
+
         if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
         {
             const auto * found = static_cast<const T *>(std::memchr(data, static_cast<unsigned char>(value), size));
-            if constexpr (is_index_of)
-                return found ? static_cast<size_t>(found - data) : NO_MATCH;
-            else
-                return found != nullptr;
+            ResultType result = 0;
+            if (found)
+                ConcreteAction::apply(result, offset + static_cast<size_t>(found - data));
+            return result;
         }
-        else
-        {
-            constexpr size_t block_size = 64 / sizeof(T);
-            size_t i = 0;
-            /// A branchless presence reduction lets the compiler vectorize each block.
-            for (; size - i >= block_size; i += block_size)
-            {
-                unsigned found = 0;
-                for (size_t j = 0; j < block_size; ++j)
-                    found |= static_cast<unsigned>(data[i + j] == value);
 
-                if (found)
-                {
-                    if constexpr (is_index_of)
-                    {
-                        /// Only indexOf() needs to locate the first match in a positive block.
-                        for (size_t j = 0; j < block_size; ++j)
-                            if (data[i + j] == value)
-                                return i + j;
-                    }
-                    else
-                        return true;
-                }
-            }
-            for (; i < size; ++i)
+        size_t i = 0;
+        for (; size - i >= block_size; i += block_size)
+        {
+            unsigned found = 0;
+            for (size_t j = 0; j < block_size; ++j)
+                found |= static_cast<unsigned>(data[i + j] == value);
+
+            if (found)
             {
-                if (data[i] == value)
-                {
-                    if constexpr (is_index_of)
-                        return i;
-                    else
-                        return true;
-                }
+                if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+                    return 1;
+                else
+                    return findScalar(data + i, block_size, value, offset + i);
             }
-            if constexpr (is_index_of)
-                return NO_MATCH;
-            else
-                return false;
         }
+
+        return findScalar(data + i, size - i, value, offset + i);
     }
 
-    static ALWAYS_INLINE SearchResult findWithPrefix(const T * data, size_t size, T value)
+    static ALWAYS_INLINE ResultType find(const T * data, size_t size, T value)
     {
-        constexpr size_t max_prefix_size = 8;
-        if constexpr (!is_index_of && (sizeof(T) == 2 || sizeof(T) == 4))
-        {
-            constexpr size_t block_size = 64 / sizeof(T);
-            /// Do not consume a prefix if that would leave no complete block to probe.
-            if (size >= block_size && size < max_prefix_size + block_size)
-            {
-                if (data[0] == value)
-                    return true;
-                return findInBlocks(data, size, value);
-            }
-        }
+        /// Keep early matches cheap before the branchless block scan.
+        constexpr size_t scalar_prefix_size = 8;
+        const size_t prefix_size = std::min(size, scalar_prefix_size);
 
-        const size_t prefix_size = std::min(size, max_prefix_size);
-        const auto prefix_result = findScalar(data, prefix_size, value);
-        if (prefix_result != (is_index_of ? NO_MATCH : 0) || prefix_size == size)
-            return prefix_result;
+        const auto result = findScalar(data, prefix_size, value);
+        if (result || prefix_size == size)
+            return result;
 
-        const auto found = findInBlocks(data + prefix_size, size - prefix_size, value);
-        if constexpr (is_index_of)
-            return found == NO_MATCH ? NO_MATCH : prefix_size + found;
-        else
-            return found;
-    }
-
-    /// Cutoffs are element counts, not byte counts. Short rows avoid memchr overhead
-    /// or the positive-block rescan needed by indexOf().
-    static constexpr size_t getOptimizedSearchMinSize()
-    {
-        if constexpr (sizeof(T) == 1)
-            return is_index_of ? 64 : 8;
-        else if constexpr (is_index_of)
-            return (sizeof(T) == 2 || sizeof(T) == 4) ? 80 : 160;
-        else
-            return sizeof(T) == 4 ? 16 : 32;
+        return findInBlocks(data + prefix_size, size - prefix_size, value, prefix_size);
     }
 
 public:
@@ -216,7 +161,6 @@ public:
         T value,
         PaddedPODArray<ResultType> & result)
     {
-        constexpr size_t min_array_size = getOptimizedSearchMinSize();
         const size_t size = offsets.size();
         result.resize(size);
 
@@ -228,17 +172,7 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             const ColumnArray::Offset next_offset = raw_offsets[i];
-            const size_t array_size = next_offset - current_offset;
-            const T * __restrict row_data = raw_data + current_offset;
-
-            const auto found = array_size < min_array_size
-                ? findScalar(row_data, array_size, value)
-                : findWithPrefix(row_data, array_size, value);
-            if constexpr (is_index_of)
-                raw_result[i] = found == NO_MATCH ? 0 : static_cast<ResultType>(found + 1);
-            else
-                raw_result[i] = static_cast<ResultType>(found);
-
+            raw_result[i] = find(raw_data + current_offset, next_offset - current_offset, value);
             current_offset = next_offset;
         }
     }
