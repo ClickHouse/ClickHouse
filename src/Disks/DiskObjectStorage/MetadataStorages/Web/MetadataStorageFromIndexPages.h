@@ -84,6 +84,9 @@ public:
     bool isReadOnly() const override { return true; }
     bool isRemote() const override { return true; }
     bool areBlobPathsRandom() const override { return false; }
+    /// Nothing is ever written, hence nothing is ever removed or replicated.
+    bool hasDeadBlobsQueue() const override { return false; }
+    bool hasMissingBlobsQueue() const override { return false; }
 };
 
 }
