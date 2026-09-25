@@ -133,6 +133,72 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
     return false;
 }
 
+bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    auto left = removeNullable(removeLowCardinality(left_type));
+    auto right = removeNullable(removeLowCardinality(right_type));
+
+    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get());
+    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+    if (left_tuple && right_tuple)
+    {
+        const auto & left_elements = left_tuple->getElements();
+        const auto & right_elements = right_tuple->getElements();
+        if (left_elements.size() != right_elements.size())
+            return false;
+
+        for (size_t i = 0; i < left_elements.size(); ++i)
+            if (stringFamilyPairIsNotEqualityEquivalent(left_elements[i], right_elements[i]))
+                return true;
+
+        return false;
+    }
+
+    const auto * left_array = typeid_cast<const DataTypeArray *>(left.get());
+    const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
+    if (left_array && right_array)
+        return stringFamilyPairIsNotEqualityEquivalent(left_array->getNestedType(), right_array->getNestedType());
+
+    const auto * left_map = typeid_cast<const DataTypeMap *>(left.get());
+    const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
+    if (left_map && right_map)
+        return stringFamilyPairIsNotEqualityEquivalent(left_map->getKeyType(), right_map->getKeyType())
+            || stringFamilyPairIsNotEqualityEquivalent(left_map->getValueType(), right_map->getValueType());
+
+    return isStringOrFixedString(left) && isStringOrFixedString(right) && !left->equals(*right);
+}
+
+bool containsFloat(const DataTypePtr & type)
+{
+    auto unwrapped = removeNullable(removeLowCardinality(type));
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
+    {
+        for (const auto & element : tuple->getElements())
+            if (containsFloat(element))
+                return true;
+
+        return false;
+    }
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(unwrapped.get()))
+        return containsFloat(array->getNestedType());
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(unwrapped.get()))
+        return containsFloat(map->getKeyType()) || containsFloat(map->getValueType());
+
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(unwrapped.get()))
+    {
+        for (const auto & alternative : variant->getVariants())
+            if (containsFloat(alternative))
+                return true;
+
+        return false;
+    }
+
+    return isFloat(unwrapped);
+}
+
 bool isNameOfInFunction(const std::string & function_name)
 {
     bool is_special_function_in = function_name == "in" ||
