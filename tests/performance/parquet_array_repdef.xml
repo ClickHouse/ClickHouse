@@ -1,0 +1,53 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>len</name>
+            <values>
+                <value>1</value>
+                <value>2</value>
+                <value>4</value>
+                <value>32</value>
+                <value>64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE IF NOT EXISTS parquet_array_repdef_{len} (arr Array(UInt8))
+        ENGINE = File(Parquet)
+        SETTINGS
+            output_format_parquet_compression_method = 'none',
+            output_format_parquet_max_dictionary_size = 0,
+            output_format_parquet_data_page_size = 1048576,
+            output_format_parquet_row_group_size = 1000000000,
+            output_format_parquet_parallel_encoding = 0,
+            output_format_parquet_write_checksums = 0,
+            output_format_parquet_write_page_index = 0,
+            output_format_parquet_write_bloom_filter = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO parquet_array_repdef_{len}
+        SELECT arrayWithConstant({len}, toUInt8(number % 251))
+        FROM numbers(intDiv(16777216, {len}))
+        SETTINGS
+            max_threads = 1,
+            max_insert_threads = 1,
+            max_block_size = 65536
+    </fill_query>
+
+    <query>
+        SELECT sum(length(arr))
+        FROM parquet_array_repdef_{len}
+        SETTINGS max_threads = 1
+    </query>
+
+    <drop_query>
+        DROP TABLE IF EXISTS parquet_array_repdef_{len}
+    </drop_query>
+</test>

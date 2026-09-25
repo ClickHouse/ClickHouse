@@ -31,6 +31,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <bit>
 #include <mutex>
 #include <fmt/ranges.h>
 #include <lz4.h>
@@ -3120,6 +3121,40 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
     }
     else
     {
+        constexpr size_t batch_size = 64;
+        constexpr size_t large_batch_size = 4 * batch_size;
+
+        while (new_value_idx + large_batch_size <= page.num_values)
+        {
+            const size_t rows_in_chunk
+                = std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx))
+                + std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx + batch_size))
+                + std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx + 2 * batch_size))
+                + std::popcount(~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx + 3 * batch_size));
+            const size_t rows_to_advance = end_row_idx - page.next_row_idx;
+
+            if (rows_in_chunk > rows_to_advance)
+                break;
+
+            page.next_row_idx += rows_in_chunk;
+            new_value_idx += large_batch_size;
+        }
+
+        while (new_value_idx + batch_size <= page.num_values)
+        {
+            const size_t rows_in_chunk = std::popcount(
+                ~bytes64MaskToBits64Mask(page.rep.data() + new_value_idx));
+            const size_t rows_to_advance = end_row_idx - page.next_row_idx;
+
+            /// Consume a whole batch only if it doesn't cross the target row.
+            /// Otherwise the scalar loop below finds the exact boundary.
+            if (rows_in_chunk > rows_to_advance)
+                break;
+
+            page.next_row_idx += rows_in_chunk;
+            new_value_idx += batch_size;
+        }
+
         while (new_value_idx < page.num_values)
         {
             if (page.rep[new_value_idx] == 0)
@@ -3254,44 +3289,107 @@ static void processDefLevelsForInnermostColumn(
     out_num_encoded_values = num_encoded_values;
 }
 
-/// Produces array offsets at a given level of nested arrays.
-/// TODO [parquet]: Try simdifying.
-///
-/// Instead of calling this for array_rep = 1..max_rep, we could probably process all array levels
-/// in one loop over rep/def levels (doing something like arrays_offsets[rep[i]].push_back(...)).
-/// But I expect it would be slower because (a) simd would be less effective (especially after we
-/// simdify this implementation), (b) usually there's only one level of arrays.
-static void processRepDefLevelsForArray(
-    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
+static size_t processRepDefLevelsForFlatArray(
+    size_t num_values, const UInt8 * def, const UInt8 * rep, size_t num_rows,
+    PaddedPODArray<UInt64> & out_offsets)
 {
-    UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
+    const UInt64 initial_offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
+    UInt64 offset = initial_offset;
+
+    /// The caller already counted row boundaries while advancing through repetition levels.
+    /// Pre-size the offsets once instead of growing the PODArray for every row.
+    const size_t old_size = out_offsets.size();
+    out_offsets.reserve(old_size + num_rows);
+    UInt64 * out = &out_offsets.back();
+    out_offsets.resize_assume_reserved(old_size + num_rows);
+
+    size_t i = 0;
+    bool use_masks = num_rows <= num_values / 4;
+    if (!use_masks && num_rows <= num_values / 2 && memchr(def, 0, num_values) == nullptr)
+        use_masks = true;
+
+    if (use_masks)
+    {
+        constexpr size_t batch_size = 64;
+        for (; i + batch_size <= num_values; i += batch_size)
+        {
+            /// Flat arrays have repetition levels 0/1 and array definition level 1.
+            /// Reuse ClickHouse's generic 64-byte mask helper for row boundaries and
+            /// values that contribute to the array offset.
+            UInt64 boundaries = ~bytes64MaskToBits64Mask(rep + i);
+            const UInt64 contributes = bytes64MaskToBits64Mask(def + i);
+
+            if (contributes == ~UInt64(0))
+            {
+                /// Every value contributes, so an offset at position N is simply
+                /// the block's starting offset plus N.
+                const UInt64 block_offset = offset;
+                while (boundaries)
+                {
+                    const unsigned boundary = std::countr_zero(boundaries);
+                    *out++ = block_offset + boundary;
+                    boundaries &= boundaries - 1;
+                }
+
+                offset += batch_size;
+                continue;
+            }
+
+            /// Each boundary needs the number of contributing values before it.
+            /// Count from the block's starting offset rather than accumulating per boundary.
+            while (boundaries)
+            {
+                const unsigned boundary = std::countr_zero(boundaries);
+                const UInt64 before_boundary = (UInt64(1) << boundary) - 1;
+                *out++ = offset + std::popcount(contributes & before_boundary);
+                boundaries &= boundaries - 1;
+            }
+
+            offset += std::popcount(contributes);
+        }
+    }
+
+    for (; i < num_values; ++i)
+    {
+        if (rep[i] == 0)
+            *out++ = offset;
+        offset += def[i] != 0;
+    }
+
+    *out = offset;
+    chassert(out == &out_offsets.back());
+    return static_cast<size_t>(offset - initial_offset);
+}
+
+/// Produces array offsets at a given level of nested arrays.
+static size_t processRepDefLevelsForArray(
+    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
+    UInt8 parent_array_def, UInt8 max_rep, size_t num_rows, PaddedPODArray<UInt64> & out_offsets)
+{
+    if (max_rep == 1 && array_rep == 1 && array_def == 1 && parent_array_def == 0)
+        return processRepDefLevelsForFlatArray(num_values, def, rep, num_rows, out_offsets);
+
+    const UInt64 initial_offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
+    UInt64 offset = initial_offset;
     for (size_t i = 0; i < num_values; ++i)
     {
         if (def[i] < parent_array_def)
             /// Some ancestor is null or empty array.
-            /// In particular:
-            ///  * `def[i] == array_def - 1` means this array is empty,
-            ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
-            ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
-            ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
             continue;
 
         if (rep[i] < array_rep)
         {
             /// Previous array instance ended and a new array instance started.
-
-            /// May assign -1-st element, but normally only sets it to 0; if we set it to nonzero
-            /// because of invalid rep levels, the caller will notice and throw.
             out_offsets.back() = offset;
             out_offsets.resize(out_offsets.size() + 1);
         }
 
         offset += rep[i] <= array_rep && def[i] >= array_def;
     }
-    /// Note that the array may continue in the next page. In that case the next call to this
-    /// function will read this offset back, add to it, and assign it again.
+
+    /// The array may continue in the next page. The next call reads this offset back.
     out_offsets.back() = offset;
+    return static_cast<size_t>(offset - initial_offset);
 }
 
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
@@ -3316,8 +3414,10 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     advanceValueIdxUntilRow(end_row_idx, page);
 
     /// Produce array offsets.
+    std::optional<size_t> encoded_values_from_offsets;
     if (!page.rep.empty())
     {
+        const size_t num_rows = page.next_row_idx - first_row_idx;
         UInt8 parent_array_def = 0;
         for (size_t level_idx = 1; level_idx < column_info.levels.size(); ++level_idx)
         {
@@ -3326,9 +3426,18 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
                 continue;
 
             auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(level.rep - 1)).getData();
-            processRepDefLevelsForArray(
+            const size_t values_added = processRepDefLevelsForArray(
                 page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
-                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def, offsets);
+                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def,
+                column_info.levels.back().rep, num_rows, offsets);
+
+            /// If the innermost array level is also the maximum definition level, every
+            /// element added to it corresponds to an encoded primitive value. Reuse that
+            /// count instead of scanning definition levels again below.
+            if (!subchunk.null_map
+                && level.rep == column_info.levels.back().rep
+                && level.def == column_info.levels.back().def)
+                encoded_values_from_offsets = values_added;
 
             parent_array_def = level.def;
         }
@@ -3336,7 +3445,11 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
     /// Populate null map and find how many encoded values to read.
     size_t encoded_values_to_read = 0;
-    if (page.def.empty())
+    if (encoded_values_from_offsets)
+    {
+        encoded_values_to_read = *encoded_values_from_offsets;
+    }
+    else if (page.def.empty())
     {
         /// No nulls or arrays in this page.
         encoded_values_to_read = page.value_idx - prev_value_idx;
