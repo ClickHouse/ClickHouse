@@ -96,8 +96,8 @@ namespace ErrorCodes
     DECLARE(UInt64, write_throttling_min_delay_us, 10000, "LSMT: when write throttling kicks in, this is the smallest delay added to a write, in microseconds. The delay grows exponentially (by write_throttling_factor) the further background work falls behind, up to write_throttling_max_delay_ms.", HOT_RELOAD) \
     DECLARE(UInt64, write_throttling_max_delay_us, 1000000, "LSMT: the maximum delay added to a write by write throttling, in microseconds.", HOT_RELOAD) \
     DECLARE(Float, write_throttling_factor, 32.0f, "LSMT: write throttling delay is multiplied by this factor if soft limit is exceeded by 2x. Should be greater than 1. Delay = write_throttling_min_delay_us * pow(write_throttling_factor, value / soft_limit - 1).", HOT_RELOAD) \
-    DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
-    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Deprecated, has no effect. The latest logs cache is bounded by latest_logs_cache_size_threshold alone.", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum memory held by the in-memory cache of latest log entries, counting the per-entry allocation overhead and not just the entries themselves.", 0) \
+    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Deprecated. Used as the value of log_readahead_commit_window_bytes if that setting is not itself set.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Deprecated, has no effect. Use log_readahead_commit_window_bytes instead.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, disk_move_retries_wait_ms, 1000, "How long to wait between retries after a failure which happened while a file was being moved between disks.", 0) \
@@ -126,6 +126,8 @@ namespace ErrorCodes
     DECLARE(UInt64, commit_profiler_real_time_period_ns, 0, "Period for real clock timer of the query profiler on the Keeper commit thread (in nanoseconds). The profiling results appear in system.trace_log with query_id = 'KeeperCommit'. 0 means disabled.", 0) \
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
+    DECLARE(Milliseconds, slow_member_backpressure_no_progress_timeout_ms, 300000, "How long the leader keeps waiting for a replica that makes no progress at all, while the slow member backpressure is switched on with the `bpon` four letter command, before leaving it behind. Progress means an accepted response: log entries taken, or a snapshot object saved, so a replica that is merely slow keeps resetting this and only one that is stuck stops being waited for. The default is five minutes, and it is meant to be that large: a replica applying a large snapshot can be quiet for minutes and is exactly the one worth waiting for, so a timeout in seconds would abandon it just as waiting started to pay off. A replica the leader cannot reach at all is dropped straight away, without waiting for this. 0 means the leader never stops waiting for a replica it can reach.", 0) \
+    DECLARE(UInt64, slow_member_backpressure_max_uncommitted_log_entries, 0, "The value `nuraft_max_uncommitted_log_entries` takes while the slow member backpressure is switched on with the `bpon` four letter command. Holding the commit index back does not stop the leader appending, so without a tighter limit the log runs further ahead and the replica falls further behind instead of catching up. Tightening it makes the leader refuse new requests with a retriable error until the replica closes the gap. 0 leaves the limit unchanged.", 0) \
     DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
     DECLARE(Milliseconds, nuraft_snapshot_sync_ctx_timeout_ms, 0, "Timeout for a single snapshot-install round trip to a follower. 0 means derive it from raft_limits_response_limit * heart_beat_interval_ms (~10 s), which is a request-responsiveness budget and is usually far below the time a large snapshot needs to apply, so a follower that installed the snapshot successfully can have its acknowledgement discarded. Also applies to the add-server snapshot path. Size it against the slowest single-object install round trip - read, queue, transfer, save, apply and response delivery - not against apply time alone. Requires a restart.", 0) \
     DECLARE(Bool, log_readahead_enabled, true, "Enable per-peer decoded read-ahead for changelog catch-up reads.", 0) \
@@ -135,7 +137,7 @@ namespace ErrorCodes
     DECLARE(UInt64, log_readahead_pool_threads, 0, "Number of threads in the dedicated read-ahead thread pool. 0 = derive from max_peer_readers.", 0) \
     DECLARE(UInt64, log_readahead_serve_wait_timeout_ms, 200, "Maximum time in milliseconds to wait for the background fill before falling back to a direct read.", 0) \
     DECLARE(NonZeroUInt64, log_readahead_chunk_size, 16, "Number of log entries decoded per chunk under file_mutex in the read-ahead fill task. Smaller values improve responsiveness to rewinds at the cost of more lock overhead.", 0) \
-    DECLARE(UInt64, log_readahead_commit_window_bytes, 500_MiB, "Maximum total size of decoded log entries buffered ahead of the commit thread. 0 disables commit read-ahead (commit reads entries from disk one by one).", 0) \
+    DECLARE(UInt64, log_readahead_commit_window_bytes, 16_MiB, "Maximum total size of decoded log entries buffered ahead of the commit thread. This is a prefetch window, not a cache: entries are produced in order by one fill task and popped by the commit thread as it consumes them, so the window only has to cover the gap between the two rates, and a value in the tens of MiB is already hundreds of thousands of entries. 0 disables commit read-ahead (commit reads entries from disk one by one).", 0) \
     DECLARE(UInt64, log_startup_read_max_streams, 0, "Maximum number of changelog files read concurrently during Keeper startup. 0 = automatically use the number of CPU cores. 1 = use the serial (pre-parallel) startup read. Effective parallelism is capped by the number of changelog files that need to be read; consider lowering on seek-bound storage (HDD, IOPS-capped volumes).", 0) \
     DECLARE(NonZeroUInt64, log_startup_read_buffer_size, 8 * 1024 * 1024, "Per-stream read buffer size (bytes) used while reading changelogs at Keeper startup. Must be greater than 0. The buffer is additionally clamped to the file size.", 0) \
 
@@ -217,7 +219,7 @@ void CoordinationSettings::dump(WriteBufferFromOwnString & buf) const
         if (val.getType() == Field::Types::Bool)
             writeText(val.safeGet<UInt64>() ? "true" : "false", buf);
         else
-            writeText(field.getValueString(), buf);
+            writeText(field.getValueString(/* show_secrets */ true), buf);
         buf.write('\n');
     }
 }
@@ -231,7 +233,7 @@ const String KeeperConfiguration::DEFAULT_FOUR_LETTER_WORD_CMD =
 #if USE_JEMALLOC
 "jmst,jmfp,jmep,jmdp,"
 #endif
-"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,pfev,lgrq";
+"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,bpon,bpof,pfev,lgrq";
 
 KeeperConfiguration::KeeperConfiguration()
     : server_id(NOT_EXIST)

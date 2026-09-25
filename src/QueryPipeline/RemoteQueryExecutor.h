@@ -3,6 +3,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/UniqueLock.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
@@ -59,6 +60,17 @@ public:
         std::shared_ptr<TaskIterator> task_iterator = nullptr;
         std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
         std::optional<IConnections::ReplicaInfo> replica_info = {};
+    };
+
+    /// Identifies the shard this executor reads for, for introspection (OpenTelemetry span
+    /// attributes). Filled only where the caller acts on behalf of a cluster shard.
+    struct ShardScope
+    {
+        String cluster;
+        UInt32 shard_num = 0;
+        /// With parallel replicas the executor reads for one replica of the shard rather than
+        /// for the shard as a whole. Optional because 0 is a valid replica number.
+        std::optional<size_t> replica_num = {};
     };
 
     /// Takes a connection pool for a node (not cluster)
@@ -216,6 +228,9 @@ public:
 
     void setMainTable(StorageID main_table_) { main_table = std::move(main_table_); }
 
+    /// Must be called before sending the query.
+    void setShardScope(ShardScope shard_scope_) { chassert(!sent_query); shard_scope = std::move(shard_scope_); }
+
     void setLogger(LoggerPtr logger) { log = logger; }
 
     void setUnavailableShardTracker(UnavailableShardTrackerPtr tracker) { unavailable_shard_tracker = std::move(tracker); }
@@ -278,6 +293,17 @@ private:
     QueryProcessingStage::Enum stage;
     QueryProcessingStage::Enum query_plan_fallback_stage = QueryProcessingStage::Complete;
 
+    /// Shard identification for the OpenTelemetry span covering this executor.
+    ShardScope shard_scope;
+
+    /// Span covering the whole fragment execution: establishing the connections, sending the query
+    /// and reading the data until `EndOfStream`, an exception or a cancel. Owned and finished by the
+    /// executor on both the synchronous and the asynchronous path; the read context fiber runs inside it.
+    /// Empty until the query is sent, and for a query that is not traced.
+    std::optional<OpenTelemetry::ManualSpan> fragment_span TSA_GUARDED_BY(was_cancelled_mutex);
+    /// The context the fragment runs in: the query trace with `fragment_span` as the current span. Seeds the read context fiber.
+    OpenTelemetry::TracingContextOnThread fragment_trace_context TSA_GUARDED_BY(was_cancelled_mutex);
+
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
@@ -300,12 +326,6 @@ private:
       */
     bool finished = false;
 
-    /** Test-only. True only while this executor's reading thread is parked at the
-      * `remote_query_executor_receive_packet_pause` failpoint, so that the drain pause in
-      * `finish` cannot be satisfied by a sibling shard. False unless the failpoints are enabled.
-      */
-    std::atomic_bool in_receive_packet_window = false;
-
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
@@ -313,11 +333,6 @@ private:
       */
     mutable std::mutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
-
-    /// True only while `finish` is between its completed `tryCancel` and the end of its packet drain,
-    /// so the Cancel packet is already sent there. Deliberately not guarded by `was_cancelled_mutex`:
-    /// `finish` holds that mutex across a blocking network read, so a reader of it could not proceed.
-    std::atomic_bool drain_in_progress = false;
 
     /// Whether this replica has sent its initial announcement. Until it does, the only packet it can
     /// owe us is that announcement - see `tryCancel`.
@@ -382,8 +397,12 @@ private:
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
+    /// The body of finish(): cancels the query and drains the remaining packets.
+    void finishUnlocked() TSA_REQUIRES(was_cancelled_mutex);
+
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);
+    /// `reason` goes to the log
     void tryCancel(const char * reason) TSA_REQUIRES(was_cancelled_mutex);
 
     /// Returns true if query was sent
@@ -393,7 +412,37 @@ private:
     bool hasThrownException() const;
 
     /// Process packet for read and return data block if possible.
-    ReadResult processPacket(Packet packet);
+    ReadResult processPacket(Packet packet) TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Attributes identifying the query fragment this executor runs, for the OpenTelemetry span
+    /// covering it (the read context fiber span or the synchronous-path fragment span).
+    OpenTelemetry::SpanAttributes getFragmentSpanAttributes() const;
+
+    /// Open the fragment span, if the query is traced and the span is not open yet.
+    void openFragmentSpan() TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Add an attribute to the fragment span. No-op when the fragment is not traced.
+    void addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Finish the fragment span with its outcome and write it to the span log.
+    /// OK only for a fragment that delivered its full result (`EndOfStream`),
+    /// ERROR for a genuine failure.
+    /// UNSET plus an explaining attribute otherwise.
+    void finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message = {}) noexcept TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Finish the span of a fragment cancelled by the initiator: UNSET, tagged `clickhouse.cancelled = 1`
+    /// and `clickhouse.cancel_reason = reason`, reason can be: `limit`, `initiator`, `destroyed`.
+    void finishFragmentSpanCancelled(std::string_view reason) noexcept TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Record a shard failure tolerated by `skip_unavailable_shards`
+    void finishFragmentSpanForSkippedShard(String status_message) noexcept TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Close the fragment span of a parallel replica that became unavailable.
+    void finishFragmentSpanForUnavailableReplica() noexcept TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Record the fragment as failed, from a `SCOPE_FAIL` at the entry points of the executor
+    /// Takes the lock itself: declare the `SCOPE_FAIL` before the `LockAndBlocker` of the entry point.
+    void failFragmentSpan() noexcept;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);
