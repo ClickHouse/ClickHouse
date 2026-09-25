@@ -1012,6 +1012,10 @@ Enables or disables automatic [PREWHERE](/reference/statements/select/prewhere) 
 
 Works only for [*MergeTree](/reference/engines/table-engines/mergetree-family/index) tables.
 
+Conditions over a sorting key column whose type is or contains a floating-point type are never moved, even when this
+setting is enabled: `-0.0` and `0.0` are one key for the `FINAL` merge, as are all `NaN` payloads, so such a condition
+can tell apart two rows that `FINAL` deduplicates into one and discard the row that should have won.
+
 Possible values:
 
 - 0 — Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is disabled.
