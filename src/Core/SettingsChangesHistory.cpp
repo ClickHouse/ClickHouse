@@ -1540,9 +1540,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.9",
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
         {
             {"projection_storage_format", "legacy_nested", "legacy_nested", "New setting to control the on-disk storage format of projection sub-parts."},
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "26.9",
+        {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
