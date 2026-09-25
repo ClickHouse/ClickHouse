@@ -22,7 +22,6 @@ namespace DB
 namespace
 {
 
-/// Returns `type` if it is a DateTime/DateTime64 carrying no explicit timezone. Returns nullptr otherwise.
 DataTypePtr eligibleDateTimeType(const DataTypePtr & type)
 {
     auto unwrapped = removeNullable(removeLowCardinality(type));
@@ -34,8 +33,6 @@ DataTypePtr eligibleDateTimeType(const DataTypePtr & type)
     return nullptr;
 }
 
-/// True if the identifier's first name part is bound by an enclosing lambda: it is then that lambda's
-/// parameter, not the storage column of the same name, so only the plain column reading applies to it.
 bool isBoundByLambda(const ASTIdentifier & identifier, const std::vector<String> & lambda_parameters)
 {
     const auto & parts = identifier.name_parts;
@@ -50,7 +47,6 @@ DataTypePtr getDateTimeColumnType(const String & column_name, const ColumnsDescr
     return desc ? eligibleDateTimeType(desc->type) : nullptr;
 }
 
-/// Same, for an identifier that may carry a table or database qualifier.
 DataTypePtr getDateTimeColumnType(
     const ASTIdentifier & identifier,
     const ColumnsDescription & columns,
@@ -62,10 +58,7 @@ DataTypePtr getDateTimeColumnType(
 
     const auto & parts = identifier.name_parts;
 
-    /// Readings of the name, in analyzer order: the whole name, then this table's own name as a
-    /// qualifier, then its database and table. The first reading that names a column or a
-    /// subcolumn decides, and its own type is the answer - a name that already resolves must not
-    /// have a qualifier dropped, or the literal would take a different column's timezone.
+    /// Analyzer name-resolution order: whole name, then table-qualified, then database-and-table-qualified.
     std::vector<size_t> column_name_offsets{0};
     if (parts.size() > 1 && parts[0] == table_id.table_name)
         column_name_offsets.push_back(1);
@@ -78,9 +71,7 @@ DataTypePtr getDateTimeColumnType(
             ? identifier.name()
             : fmt::format("{}", fmt::join(parts.begin() + offset, parts.end(), "."));
 
-        /// Subcolumns must be visible here: a `Tuple(time DateTime('UTC'))` element is not a real
-        /// column, so an exact-name lookup would miss `x.time` and fall through to a same-named
-        /// top-level column, wrapping the literal in the wrong timezone.
+        /// A `Tuple(time DateTime)` element is not a real column, so only a subcolumn lookup sees `x.time`.
         if (auto resolved = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name))
             return eligibleDateTimeType(resolved->type);
     }
@@ -147,7 +138,6 @@ bool tryWrapComparisonLiteral(
     return wrapped;
 }
 
-/// `datetime_type` is the column's own type, which carries no timezone.
 DataTypePtr withExplicitTimezone(const DataTypePtr & datetime_type, const String & timezone)
 {
     if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(datetime_type.get()))
@@ -155,7 +145,6 @@ DataTypePtr withExplicitTimezone(const DataTypePtr & datetime_type, const String
     return std::make_shared<DataTypeDateTime>(timezone);
 }
 
-/// The timezone is part of the target type, so the cast denotes the same instants wherever it is read.
 ASTPtr castCollectionWithTimezone(Array elements, const DataTypePtr & datetime_type, const String & timezone)
 {
     auto array_type = std::make_shared<DataTypeArray>(withExplicitTimezone(datetime_type, timezone));
@@ -165,10 +154,7 @@ ASTPtr castCollectionWithTimezone(Array elements, const DataTypePtr & datetime_t
         make_intrusive<ASTLiteral>(array_type->getName()));
 }
 
-/// Rewrites a folded literal collection so its string elements carry an explicit timezone.
-/// A collection of only strings is cast as a whole, so the stored command and its query tree stay
-/// O(1) in the element count; a mixed collection has no common element type and must be expanded.
-/// Returns nullptr when there is no string element, leaving the original literal and its type alone.
+/// A mixed collection has no common element type, so only an all-string one can be cast as a whole.
 template <typename Collection>
 ASTPtr rewriteCollectionWithTimezone(
     const Collection & elements,
@@ -243,14 +229,12 @@ bool tryWrapInLiterals(
         wrap_children(tuple_func->arguments->children);
     else if (auto * expr_list = right->as<ASTExpressionList>())
         wrap_children(expr_list->children);
-    /// The folded branch additionally declines such a name: a parameter's own type is not knowable here.
     else if (const auto * lit = right->as<ASTLiteral>(); lit && !bound_by_lambda)
     {
         /// A plain literal list is folded by the parser into one literal: `IN ('a')` is a String,
         /// `IN ('a','b')` a Tuple, `IN ['a']` an Array.
         if (lit->value.getType() == Field::Types::String)
         {
-            /// Same form as a multi-element list, so every folded shape stores one spelling.
             right = castCollectionWithTimezone(Array{lit->value}, dt, timezone);
             wrapped = true;
         }
@@ -287,9 +271,8 @@ public:
         const ColumnsDescription & columns;
         const StorageID & table_id;
         const String & session_timezone;
-        /// The parameters of the lambdas enclosing the node being visited. A lambda keeps its
-        /// parameters as plain identifiers in the AST, and inside its body such a name shadows a
-        /// storage column of the same name, so it must not be mistaken for that column.
+        /// Parameters of the lambdas enclosing the visited node. A lambda keeps its parameters as plain
+        /// identifiers in the AST, and inside its body such a name shadows a storage column of the same name.
         std::vector<String> lambda_parameters;
         bool modified = false;
     };
@@ -329,9 +312,7 @@ public:
     {
         if (function.name == "lambda")
         {
-            /// Walk the body with the parameter names bound, so an occurrence of one inside it is
-            /// left alone while a real column mentioned there is still rewritten. The parameter
-            /// list holds only identifiers, wrapped in a `tuple` or, for a single parameter, bare.
+            /// The parameter list holds only identifiers, wrapped in a `tuple` or, for a single one, bare.
             if (!function.arguments || function.arguments->children.size() != 2)
                 return;
 

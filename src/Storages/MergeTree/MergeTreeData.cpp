@@ -10433,8 +10433,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                     if (!rhs_function || !rhs_function->arguments)
                         return false;
 
-                    /// A cast of literals to a timezone-pinned DateTime array is as stable as the
-                    /// literals themselves, so it does not have to be deferred.
+                    /// A cast of literals to a timezone-pinned DateTime array is as stable as the literals.
                     if (rhs_function->name == "CAST" || rhs_function->name == "_CAST")
                     {
                         const auto & cast_arguments = rhs_function->arguments->children;
