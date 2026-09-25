@@ -133,6 +133,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
+    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_merges_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
@@ -1231,7 +1232,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
 
                 if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                 {
-                    mutation_backoff_policy.addPartMutationFailure(failed_part->name, (*getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms]);
+                    mutation_backoff_policy.addPartFailure(failed_part->name, (*getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms]);
                 }
             }
         }
@@ -1244,6 +1245,21 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
 
     std::unique_lock lock(mutation_wait_mutex);
     mutation_wait_event.notify_all();
+}
+
+void StorageMergeTree::addMergeFailure(const FutureMergedMutatedPartPtr & result_part)
+{
+    /// A failure is not attributable to one source part, so every part of the range carries it.
+    auto max_postpone_time_ms = (*getSettings())[MergeTreeSetting::max_postpone_time_for_failed_merges_ms];
+
+    for (const auto & part : result_part->parts)
+        merge_backoff_policy.addPartFailure(part->name, max_postpone_time_ms);
+}
+
+void StorageMergeTree::removeMergeFailures(const DataPartsVector & parts)
+{
+    for (const auto & part : parts)
+        merge_backoff_policy.removePartFromFailed(part->name);
 }
 
 void StorageMergeTree::waitForMutation(Int64 version, bool wait_for_another_mutation)
@@ -1698,7 +1714,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         }
     }
 
-    mutation_backoff_policy.resetMutationFailures();
+    mutation_backoff_policy.resetFailures();
 
     if (!to_kill)
         return CancellationCode::NotFound;
@@ -1824,7 +1840,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
         });
 
-    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock);
+    /// `aggressive` is set only by `OPTIMIZE`, which must get the merge's own error instead.
+    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, txn, lock, /*respect_failure_backoff_=*/!aggressive);
     auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
 
     const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
@@ -2144,7 +2161,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         TransactionID first_mutation_tid = mutations_begin_it->second.tid;
         MergeTreeTransactionPtr txn;
 
-        if (!mutation_backoff_policy.partCanBeMutated(part->name))
+        if (!mutation_backoff_policy.partCanBeProcessed(part->name))
         {
             LOG_DEBUG(log, "According to exponential backoff policy, do not perform mutations for the part {} yet. Put it aside.", part->name);
             current_parts_postpone_reasons[part->name] = PostponeReasons::HIT_MUTATION_BACKOFF;

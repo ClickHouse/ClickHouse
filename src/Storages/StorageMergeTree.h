@@ -330,6 +330,9 @@ private:
     /// in mutation entries.
     void updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message, const String & error_code_name);
 
+    void addMergeFailure(const FutureMergedMutatedPartPtr & result_part);
+    void removeMergeFailures(const DataPartsVector & parts);
+
     /// Return empty optional if mutation was killed. Otherwise return partially
     /// filled mutation status with information about error (latest_fail*) and
     /// is_done. mutation_ids filled with mutations with the same errors,
@@ -479,20 +482,30 @@ private:
         NameSet getAllUpdatedColumns() const override;
     };
 
-    class PartMutationBackoffPolicy
+    class PartBackoffPolicy
     {
-        struct PartMutationInfo
+        struct PartInfo
         {
+            /// 2^power milliseconds must still fit in UInt64 once converted to microseconds and added to a timestamp.
+            static constexpr size_t max_postpone_power_limit = 53;
+
+            static size_t postponePowerFor(size_t max_postpone_time_ms_)
+            {
+                if (max_postpone_time_ms_ == 0)
+                    return 0ull;
+                return std::min<size_t>(static_cast<size_t>(std::log2(max_postpone_time_ms_)), max_postpone_power_limit);
+            }
+
             size_t retry_count;
             size_t latest_fail_time_us;
             size_t max_postpone_time_ms;
             size_t max_postpone_power;
 
-            explicit PartMutationInfo(size_t max_postpone_time_ms_)
+            explicit PartInfo(size_t max_postpone_time_ms_)
                             : retry_count(0ull)
                             , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
                             , max_postpone_time_ms(max_postpone_time_ms_)
-                            , max_postpone_power(max_postpone_time_ms_ ? static_cast<size_t>(std::log2(max_postpone_time_ms_)) : 0ull)
+                            , max_postpone_power(postponePowerFor(max_postpone_time_ms_))
             {}
 
 
@@ -500,7 +513,7 @@ private:
             {
                 if (max_postpone_time_ms == 0)
                     return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
-                size_t current_backoff_interval_us = (1 << retry_count) * 1000ul;
+                size_t current_backoff_interval_us = (1ull << retry_count) * 1000ull;
                 return latest_fail_time_us + current_backoff_interval_us;
             }
 
@@ -512,7 +525,14 @@ private:
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
-            bool partCanBeMutated() const
+            void setMaxPostponeTime(size_t max_postpone_time_ms_)
+            {
+                max_postpone_time_ms = max_postpone_time_ms_;
+                max_postpone_power = postponePowerFor(max_postpone_time_ms_);
+                retry_count = std::min(max_postpone_power, retry_count);
+            }
+
+            bool partCanBeProcessed() const
             {
                 if (max_postpone_time_ms == 0)
                     return true;
@@ -522,49 +542,55 @@ private:
             }
         };
 
-        using DataPartsWithRetryInfo = std::unordered_map<String, PartMutationInfo>;
-        DataPartsWithRetryInfo failed_mutation_parts;
+        using DataPartsWithRetryInfo = std::unordered_map<String, PartInfo>;
+        DataPartsWithRetryInfo failed_parts;
         mutable std::mutex parts_info_lock;
 
     public:
 
-        void resetMutationFailures()
+        void resetFailures()
         {
             std::unique_lock _lock(parts_info_lock);
-            failed_mutation_parts.clear();
+            failed_parts.clear();
         }
 
         void removePartFromFailed(const String & part_name)
         {
             std::unique_lock _lock(parts_info_lock);
-            failed_mutation_parts.erase(part_name);
+            failed_parts.erase(part_name);
         }
 
-        void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
+        void addPartFailure(const String & part_name, size_t max_postpone_time_ms_)
         {
             std::unique_lock _lock(parts_info_lock);
-            auto part_info_it = failed_mutation_parts.find(part_name);
-            if (part_info_it == failed_mutation_parts.end())
+
+            /// The cap is re-read on every failure, so MODIFY SETTING also reaches an already failed part.
+            if (max_postpone_time_ms_ == 0)
             {
-                auto [it, success] = failed_mutation_parts.emplace(part_name, PartMutationInfo(max_postpone_time_ms_));
-                std::swap(it, part_info_it);
+                failed_parts.erase(part_name);
+                return;
             }
-            auto& part_info = part_info_it->second;
-            part_info.addPartFailure();
+
+            auto [it, inserted] = failed_parts.try_emplace(part_name, max_postpone_time_ms_);
+            if (!inserted)
+                it->second.setMaxPostponeTime(max_postpone_time_ms_);
+            it->second.addPartFailure();
         }
 
-        bool partCanBeMutated(const String& part_name)
+        bool partCanBeProcessed(const String & part_name) const
         {
 
             std::unique_lock _lock(parts_info_lock);
-            auto iter = failed_mutation_parts.find(part_name);
-            if (iter == failed_mutation_parts.end())
+            auto iter = failed_parts.find(part_name);
+            if (iter == failed_parts.end())
                 return true;
-            return iter->second.partCanBeMutated();
+            return iter->second.partCanBeProcessed();
         }
     };
     /// Controls postponing logic for failed mutations.
-    PartMutationBackoffPolicy mutation_backoff_policy;
+    PartBackoffPolicy mutation_backoff_policy;
+    /// Controls postponing logic for failed merges.
+    PartBackoffPolicy merge_backoff_policy;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
 };
