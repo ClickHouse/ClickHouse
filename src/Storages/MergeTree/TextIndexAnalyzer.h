@@ -89,7 +89,7 @@ public:
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
-    /// Number of tokens that matched a hasAnyTokenPrefix/Like, hasAllTokenLike or hasTokenMatch pattern.
+    /// Number of tokens that matched a hasAnyTokenPrefix/Like, hasAllTokenLike or hasAnyTokenRegexp pattern.
     size_t getNumPerTokenPatternTokens() const { return num_per_token_pattern_tokens; }
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
     std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
@@ -132,7 +132,7 @@ private:
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
-    /// Patterns of hasAnyTokenPrefix/Like, hasAllTokenLike and hasTokenMatch. Only these are capped.
+    /// Patterns of hasAnyTokenPrefix/Like, hasAllTokenLike and hasAnyTokenRegexp. Only these are capped.
     absl::flat_hash_set<const OptimizedRegularExpression *> per_token_patterns;
 
     /* Fields updated dynamically during text index analysis. */

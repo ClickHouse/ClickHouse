@@ -74,9 +74,9 @@ struct HasAllTokenLikeTraits
     static constexpr bool match_all = true;
 };
 
-struct HasTokenMatchTraits
+struct HasAnyTokenRegexpTraits
 {
-    static constexpr auto name = "hasTokenMatch";
+    static constexpr auto name = "hasAnyTokenRegexp";
     using Matcher = TokenRegexpMatcher;
     static constexpr bool match_all = false;
 };
@@ -441,7 +441,7 @@ With several patterns, the text index selects the rows where some pattern matche
     factory.registerFunction<FunctionHasTokenPattern<HasAllTokenLikeTraits>>(documentation);
 }
 
-REGISTER_FUNCTION(HasTokenMatch)
+REGISTER_FUNCTION(HasAnyTokenRegexp)
 {
     FunctionDocumentation::Description description = String(R"(
 Returns 1 if at least one token of `input` matches one of the regular expressions `patterns`, and 0 otherwise.
@@ -449,40 +449,40 @@ Returns 1 if at least one token of `input` matches one of the regular expression
 `patterns` is one regular expression (`String`) or several (`Array(String)`).
 The regular expressions use the [re2 syntax](https://github.com/google/re2/wiki/Syntax) and are applied to each token separately, like function [`match`](#match):
 a regular expression may match any part of the token, and the anchors `^` and `$` refer to the start and the end of the token.
-So `hasTokenMatch(input, 'err')` finds a token that contains `err`, while `hasAnyTokenLike(input, 'err')` finds a token equal to `err`.
+So `hasAnyTokenRegexp(input, 'err')` finds a token that contains `err`, while `hasAnyTokenLike(input, 'err')` finds a token equal to `err`.
 An empty regular expression matches every token; an empty array matches nothing.
 
-If `input` has no text index, `hasTokenMatch(input, patterns)` with an array `patterns` is equivalent to `arrayExists(t -> arrayExists(p -> match(t, p), patterns), tokens(input))`, and a single regular expression `p` is the same as `[p]`.
+If `input` has no text index, `hasAnyTokenRegexp(input, patterns)` with an array `patterns` is equivalent to `arrayExists(t -> arrayExists(p -> match(t, p), patterns), tokens(input))`, and a single regular expression `p` is the same as `[p]`.
 
 With a text index, a regular expression of the form `^literal` reads only the matching range of the dictionary, and one that contains a literal checks only the tokens holding it;
 any other one is checked against every token in the dictionary of each part.
 )") + tokenizer_description + text_index_note;
-    FunctionDocumentation::Syntax syntax = "hasTokenMatch(input, patterns[, tokenizer])";
+    FunctionDocumentation::Syntax syntax = "hasAnyTokenRegexp(input, patterns[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token matches one of `patterns`, `0` otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
         "Basic usage",
-        "SELECT hasTokenMatch('order 12345 shipped', '^[0-9]{5}$')",
+        "SELECT hasAnyTokenRegexp('order 12345 shipped', '^[0-9]{5}$')",
         R"(
-┌─hasTokenMatch('order 12345 shipped', '^[0-9]{5}$')─┐
+┌─hasAnyTokenRegexp('order 12345 shipped', '^[0-9]{5}$')─┐
 │                                                      1 │
 └────────────────────────────────────────────────────────┘
         )"
     },
     {
         "Anchors refer to token boundaries",
-        "SELECT hasTokenMatch('order 123456 shipped', '^[0-9]{5}$')",
+        "SELECT hasAnyTokenRegexp('order 123456 shipped', '^[0-9]{5}$')",
         R"(
-┌─hasTokenMatch('order 123456 shipped', '^[0-9]{5}$')─┐
+┌─hasAnyTokenRegexp('order 123456 shipped', '^[0-9]{5}$')─┐
 │                                                       0 │
 └─────────────────────────────────────────────────────────┘
         )"
     },
     {
         "Several regular expressions",
-        "SELECT hasTokenMatch('order 123456 shipped', ['^[0-9]{5}$', '^ship'])",
+        "SELECT hasAnyTokenRegexp('order 123456 shipped', ['^[0-9]{5}$', '^ship'])",
         R"(
-┌─hasTokenMatch('order 123456 shipped', ['^[0-9]{5}$', '^ship'])─┐
+┌─hasAnyTokenRegexp('order 123456 shipped', ['^[0-9]{5}$', '^ship'])─┐
 │                                                                  1 │
 └────────────────────────────────────────────────────────────────────┘
         )"
@@ -492,7 +492,7 @@ any other one is checked against every token in the dictionary of each part.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("patterns", "The regular expression, or an array of regular expressions, each token is matched against."), {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionHasTokenPattern<HasTokenMatchTraits>>(documentation);
+    factory.registerFunction<FunctionHasTokenPattern<HasAnyTokenRegexpTraits>>(documentation);
 }
 
 }

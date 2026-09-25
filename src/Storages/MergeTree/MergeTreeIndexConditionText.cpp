@@ -285,7 +285,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasAnyTokenPrefix"
         || function_name == "hasAnyTokenLike"
         || function_name == "hasAllTokenLike"
-        || function_name == "hasTokenMatch"
+        || function_name == "hasAnyTokenRegexp"
         || function_name == "equals"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsKeyLike"
@@ -305,11 +305,11 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiMatchAny";
 }
 
-/// `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasTokenMatch` apply their patterns to each token separately.
+/// `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp` apply their patterns to each token separately.
 bool MergeTreeIndexConditionText::isPerTokenPatternFunction(const String & function_name)
 {
     return function_name == "hasAnyTokenPrefix" || function_name == "hasAnyTokenLike" || function_name == "hasAllTokenLike"
-        || function_name == "hasTokenMatch";
+        || function_name == "hasAnyTokenRegexp";
 }
 
 bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
@@ -1838,7 +1838,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         {
             if (function_name == "hasAnyTokenPrefix")
                 patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(escapeForLikePattern(needle) + "%"));
-            else if (function_name == "hasTokenMatch")
+            else if (function_name == "hasAnyTokenRegexp")
                 patterns.emplace_back(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
             else
                 patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
