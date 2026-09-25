@@ -99,9 +99,6 @@ private:
         {
             size_t part_idx{};
             MarkRanges ranges;
-            /// All of `ranges` as they were when the queues were filled, while `ranges` shrinks as tasks are cut.
-            /// The reader reused over these tasks reads under this one request map.
-            MarkRangesPtr request_map;
         };
 
         std::vector<PartIndexAndRange> parts_and_ranges;
@@ -115,9 +112,7 @@ private:
     /// another thread's queue when the own one is exhausted). Returns false if there is no more work.
     /// Outputs the queue and the intended task size so that the caller can continue cutting from
     /// the same part with cutMoreRangesToRead when the ranges refiner drops a part of the cut.
-    bool cutRangesToRead(
-        size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks,
-        MarkRanges & ranges_to_get_from_part, MarkRangesPtr & request_map);
+    bool cutRangesToRead(size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks, MarkRanges & ranges_to_get_from_part);
 
     /// Cuts up to need_marks more marks of the same part, or returns false if the part
     /// is not on top of the given thread's queue anymore.

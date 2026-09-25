@@ -35,8 +35,8 @@ struct MergeTreeReaderSettings
 {
     /// Common read settings.
     ReadSettings read_settings;
-    /// The sorted mark ranges this reader will read from the part, over all its tasks; null = the whole part.
-    /// Its streams announce them as byte ranges (`ReadBuffer::setRequestMap`).
+    /// The sorted mark ranges the query reads from the part; null = the whole part.
+    /// The streams announce them as byte ranges (`ReadBuffer::setRequestMap`).
     MarkRangesPtr request_map;
     /// If save_marks_in_cache is false, then, if marks are not in cache,
     ///  we will load them but won't save in the cache, to avoid evicting other data.

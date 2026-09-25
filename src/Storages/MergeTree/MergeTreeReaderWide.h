@@ -41,8 +41,6 @@ public:
 
     void prefetchBeginOfRange(Priority priority) override;
 
-    void updateRequestMap(MarkRangesPtr request_map) override;
-
     /// Return map (column to read) -> (list of all streams required to read this column).
     std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
 
@@ -63,8 +61,6 @@ private:
         MergeTreeReaderStream * getOrCreate(const String & stream_name, const StreamFactory & factory);
         MergeTreeReaderStream * find(const String & stream_name) const;
         void release(const String & stream_name);
-        /// The streams that exist now. Valid only while no task runs, since a running task can `release` them.
-        std::vector<MergeTreeReaderStream *> getAll() const;
 
         bool isPrefetched(const String & stream_name) const;
         void markPrefetched(const String & stream_name);

@@ -108,8 +108,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
         task.patches_ranges = read_prefetch.ranges_in_patch_parts.getRanges(
             task.read_info->data_part_info->getDataPart(), task.read_info->patch_parts, task.ranges);
 
-        readers = MergeTreeReadTask::createReaders(
-            task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges, task.request_map);
+        readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
 
         /// This is already a prefetch thread, so initiate the prefetches inline.
         read_prefetch.createPrefetchedTask(readers.main.get(), task.priority)();
@@ -218,7 +217,7 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
     }
 
     auto extras = getExtras();
-    auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges, task.request_map);
+    auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges);
     task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
 }
 
@@ -415,7 +414,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, 
     if (task.isValidReadersFuture())
         return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges, updater);
     else
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater, task.request_map);
+        return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
 }
 
 void MergeTreePrefetchedReadPool::fillPerPartStatistics()
@@ -658,28 +657,6 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
             ++priority.value;
             ++total_tasks;
-        }
-    }
-
-    for (auto & [_, tasks] : per_thread_tasks)
-    {
-        for (size_t begin = 0; begin < tasks.size();)
-        {
-            auto request_map = std::make_shared<MarkRanges>();
-            size_t end = begin;
-            for (; end < tasks.size() && tasks[end]->read_info == tasks[begin]->read_info; ++end)
-            {
-                for (const auto & range : tasks[end]->ranges)
-                {
-                    if (!request_map->empty() && request_map->back().end == range.begin)
-                        request_map->back().end = range.end;
-                    else
-                        request_map->push_back(range);
-                }
-            }
-            for (size_t i = begin; i < end; ++i)
-                tasks[i]->request_map = request_map;
-            begin = end;
         }
     }
 

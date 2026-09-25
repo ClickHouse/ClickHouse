@@ -61,9 +61,6 @@ public:
 
     size_t getFileSize() const { return file_size; }
 
-    /// Replaces the mark ranges the reader will read and announces them to the buffer, if it exists.
-    void updateRequestMap(MarkRangesPtr request_map_);
-
 private:
     /// Returns offset in file up to which it's needed to read file to read all rows up to @right_mark mark.
     virtual size_t getRightOffset(size_t right_mark) = 0;
@@ -72,7 +69,7 @@ private:
     /// when marks do not describe what the stream reads and it reads the whole file.
     virtual std::optional<size_t> getLeftOffset(size_t /* mark */) { return std::nullopt; }
 
-    /// Converts `request_map` to byte ranges of the file and passes them to the buffer.
+    /// Converts `settings.request_map` to byte ranges of the file and passes them to the buffer.
     void announceRequestMap();
 
     /// Returns estimated max amount of bytes to read among mark ranges (which is used as size for read buffer)
@@ -106,9 +103,6 @@ protected:
 
     const MergeTreeMarksLoaderPtr marks_loader;
     MergeTreeMarksGetterPtr marks_getter;
-
-private:
-    MarkRangesPtr request_map = settings.request_map;
 };
 
 /// Class for reading a single column (or index) from file

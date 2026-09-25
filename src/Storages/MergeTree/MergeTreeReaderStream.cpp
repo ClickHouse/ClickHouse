@@ -148,50 +148,33 @@ void MergeTreeReaderStream::init()
         compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
 
-    if (request_map)
-        announceRequestMap();
+    announceRequestMap();
 
     initialized = true;
-}
-
-void MergeTreeReaderStream::updateRequestMap(MarkRangesPtr request_map_)
-{
-    if (request_map_ == request_map)
-        return;
-
-    request_map = std::move(request_map_);
-    if (initialized)
-        announceRequestMap();
 }
 
 void MergeTreeReaderStream::announceRequestMap()
 {
     /// Only the reader executor uses the map, so the other read paths skip the conversion.
-    if (!settings.read_settings.reader_executor.enabled)
+    if (!settings.request_map || !settings.read_settings.reader_executor.enabled)
         return;
 
     VectorWithMemoryTracking<ByteRange> file_ranges;
-    if (request_map)
+    for (const auto & range : *settings.request_map)
     {
-        for (const auto & range : *request_map)
-        {
-            const auto left = getLeftOffset(range.begin);
-            if (!left)
-            {
-                file_ranges.clear();
-                break;
-            }
+        const auto left = getLeftOffset(range.begin);
+        if (!left)
+            return;
 
-            const size_t right = getRightOffset(range.end);
-            if (right <= *left)
-                continue;
+        const size_t right = getRightOffset(range.end);
+        if (right <= *left)
+            continue;
 
-            /// Adjacent mark ranges can share a compressed block, so their byte ranges can overlap.
-            if (!file_ranges.empty() && *left <= file_ranges.back().end())
-                file_ranges.back().size = std::max(file_ranges.back().end(), right) - file_ranges.back().offset;
-            else
-                file_ranges.push_back({*left, right - *left});
-        }
+        /// Adjacent mark ranges can share a compressed block, so their byte ranges can overlap.
+        if (!file_ranges.empty() && *left <= file_ranges.back().end())
+            file_ranges.back().size = std::max(file_ranges.back().end(), right) - file_ranges.back().offset;
+        else
+            file_ranges.push_back({*left, right - *left});
     }
     data_buffer->setRequestMap(std::move(file_ranges));
 }

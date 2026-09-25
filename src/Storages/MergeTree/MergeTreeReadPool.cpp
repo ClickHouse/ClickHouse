@@ -79,9 +79,8 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
         size_t thread_idx = 0;
         size_t need_marks = 0;
         MarkRanges cut_ranges;
-        MarkRangesPtr request_map;
 
-        if (!cutRangesToRead(task_idx, part_idx, thread_idx, need_marks, cut_ranges, request_map))
+        if (!cutRangesToRead(task_idx, part_idx, thread_idx, need_marks, cut_ranges))
             return nullptr;
 
         MarkRanges task_ranges;
@@ -124,13 +123,11 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
             continue;
 
         /// createTask() is costly and not needed guarded by mutex.
-        return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task, updater, std::move(request_map));
+        return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task, updater);
     }
 }
 
-bool MergeTreeReadPool::cutRangesToRead(
-    size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks,
-    MarkRanges & ranges_to_get_from_part, MarkRangesPtr & request_map)
+bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks, MarkRanges & ranges_to_get_from_part)
 {
     const std::lock_guard lock{mutex};
 
@@ -177,7 +174,6 @@ bool MergeTreeReadPool::cutRangesToRead(
     else /// Get whole part to read if it is small enough.
         need_marks = std::min(marks_in_part, min_marks_per_task);
 
-    request_map = thread_tasks.parts_and_ranges.back().request_map;
     cutFromThreadTask(thread_tasks, thread_idx, need_marks, ranges_to_get_from_part);
     return true;
 }
@@ -379,8 +375,7 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
                 }
             }
 
-            threads_tasks[i].parts_and_ranges.push_back(
-                {part_idx, ranges_to_get_from_part, std::make_shared<const MarkRanges>(ranges_to_get_from_part)});
+            threads_tasks[i].parts_and_ranges.push_back({part_idx, ranges_to_get_from_part});
             threads_tasks[i].sum_marks_in_parts.push_back(marks_in_ranges);
             if (marks_in_ranges != 0)
                 remaining_thread_tasks.insert(i);

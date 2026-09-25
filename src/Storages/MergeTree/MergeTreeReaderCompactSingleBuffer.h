@@ -24,13 +24,6 @@ public:
                     bool continue_reading, size_t max_rows_to_read,
                     MutableColumns & res_columns) override;
 
-    void updateRequestMap(MarkRangesPtr request_map) override
-    {
-        MergeTreeReaderCompact::updateRequestMap(request_map);
-        if (stream)
-            stream->updateRequestMap(std::move(request_map));
-    }
-
 private:
     MergeTreeReaderStream & getStream(const NameAndTypePair &) override { return *stream; }
     void init();

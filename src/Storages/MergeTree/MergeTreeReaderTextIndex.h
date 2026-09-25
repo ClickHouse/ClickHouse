@@ -47,7 +47,6 @@ public:
 
     bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
-    void updateRequestMap(MarkRangesPtr request_map) override;
 
     /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
     /// Looks up its own index name in the map.
