@@ -1,0 +1,30 @@
+<test>
+    <!-- Reading a subcolumn of a JSON column with many typed paths from many parts: the column and its
+         serialization are resolved in the part once per reader, i.e. per read task and per filter step, so the
+         cost of resolving them dominates when every part holds little data. Single-threaded, so that the
+         resolution cost is not hidden behind the thread scheduling. -->
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE test_json_many_typed_paths (json JSON(p0 UInt64, p1 UInt64, p2 UInt64, p3 UInt64, p4 UInt64, p5 UInt64, p6 UInt64, p7 UInt64, p8 UInt64, p9 UInt64, p10 UInt64, p11 UInt64, p12 UInt64, p13 UInt64, p14 UInt64, p15 UInt64, p16 UInt64, p17 UInt64, p18 UInt64, p19 UInt64, p20 UInt64, p21 UInt64, p22 UInt64, p23 UInt64, p24 UInt64, p25 UInt64, p26 UInt64, p27 UInt64, p28 UInt64, p29 UInt64, p30 UInt64, p31 UInt64, p32 UInt64, p33 UInt64, p34 UInt64, p35 UInt64, p36 UInt64, p37 UInt64, p38 UInt64, p39 UInt64, p40 UInt64, p41 UInt64, p42 UInt64, p43 UInt64, p44 UInt64, p45 UInt64, p46 UInt64, p47 UInt64, p48 UInt64, p49 UInt64, p50 UInt64, p51 UInt64, p52 UInt64, p53 UInt64, p54 UInt64, p55 UInt64, p56 UInt64, p57 UInt64, p58 UInt64, p59 UInt64, p60 UInt64, p61 UInt64, p62 UInt64, p63 UInt64, p64 UInt64, p65 UInt64, p66 UInt64, p67 UInt64, p68 UInt64, p69 UInt64, p70 UInt64, p71 UInt64, p72 UInt64, p73 UInt64, p74 UInt64, p75 UInt64, p76 UInt64, p77 UInt64, p78 UInt64, p79 UInt64, p80 UInt64, p81 UInt64, p82 UInt64, p83 UInt64, p84 UInt64, p85 UInt64, p86 UInt64, p87 UInt64, p88 UInt64, p89 UInt64, p90 UInt64, p91 UInt64, p92 UInt64, p93 UInt64, p94 UInt64, p95 UInt64, p96 UInt64, p97 UInt64, p98 UInt64, p99 UInt64, p100 UInt64, p101 UInt64, p102 UInt64, p103 UInt64, p104 UInt64, p105 UInt64, p106 UInt64, p107 UInt64, p108 UInt64, p109 UInt64, p110 UInt64, p111 UInt64, p112 UInt64, p113 UInt64, p114 UInt64, p115 UInt64, p116 UInt64, p117 UInt64, p118 UInt64, p119 UInt64, p120 UInt64, p121 UInt64, p122 UInt64, p123 UInt64, p124 UInt64, p125 UInt64, p126 UInt64, p127 UInt64, p128 UInt64, p129 UInt64, p130 UInt64, p131 UInt64, p132 UInt64, p133 UInt64, p134 UInt64, p135 UInt64, p136 UInt64, p137 UInt64, p138 UInt64, p139 UInt64, p140 UInt64, p141 UInt64, p142 UInt64, p143 UInt64, p144 UInt64, p145 UInt64, p146 UInt64, p147 UInt64, p148 UInt64, p149 UInt64, p150 UInt64, p151 UInt64, p152 UInt64, p153 UInt64, p154 UInt64, p155 UInt64, p156 UInt64, p157 UInt64, p158 UInt64, p159 UInt64, p160 UInt64, p161 UInt64, p162 UInt64, p163 UInt64, p164 UInt64, p165 UInt64, p166 UInt64, p167 UInt64, p168 UInt64, p169 UInt64, p170 UInt64, p171 UInt64, p172 UInt64, p173 UInt64, p174 UInt64, p175 UInt64, p176 UInt64, p177 UInt64, p178 UInt64, p179 UInt64, p180 UInt64, p181 UInt64, p182 UInt64, p183 UInt64, p184 UInt64, p185 UInt64, p186 UInt64, p187 UInt64, p188 UInt64, p189 UInt64, p190 UInt64, p191 UInt64, p192 UInt64, p193 UInt64, p194 UInt64, p195 UInt64, p196 UInt64, p197 UInt64, p198 UInt64, p199 UInt64, p200 UInt64, p201 UInt64, p202 UInt64, p203 UInt64, p204 UInt64, p205 UInt64, p206 UInt64, p207 UInt64, p208 UInt64, p209 UInt64, p210 UInt64, p211 UInt64, p212 UInt64, p213 UInt64, p214 UInt64, p215 UInt64, p216 UInt64, p217 UInt64, p218 UInt64, p219 UInt64, p220 UInt64, p221 UInt64, p222 UInt64, p223 UInt64, p224 UInt64, p225 UInt64, p226 UInt64, p227 UInt64, p228 UInt64, p229 UInt64, p230 UInt64, p231 UInt64, p232 UInt64, p233 UInt64, p234 UInt64, p235 UInt64, p236 UInt64, p237 UInt64, p238 UInt64, p239 UInt64, p240 UInt64, p241 UInt64, p242 UInt64, p243 UInt64, p244 UInt64, p245 UInt64, p246 UInt64, p247 UInt64, p248 UInt64, p249 UInt64, p250 UInt64, p251 UInt64, p252 UInt64, p253 UInt64, p254 UInt64, p255 UInt64))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1
+    </create_query>
+
+    <fill_query>
+        INSERT INTO test_json_many_typed_paths
+        SELECT concat('{', arrayStringConcat(arrayMap(x -> concat('"p', x, '": ', number), range(256)), ','), ', "dyn": ', number, '}')
+        FROM numbers(80000)
+        SETTINGS max_block_size = 200, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <query>SELECT sum(json.p0) FROM test_json_many_typed_paths FORMAT Null</query>
+    <query>SELECT sum(json.p0), sum(json.p1), sum(json.p2), sum(json.p3) FROM test_json_many_typed_paths FORMAT Null</query>
+    <query>SELECT sum(json.dyn.:`Int64`) FROM test_json_many_typed_paths FORMAT Null</query>
+    <query>SELECT count() FROM test_json_many_typed_paths WHERE json.p10 > 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_json_many_typed_paths</drop_query>
+</test>

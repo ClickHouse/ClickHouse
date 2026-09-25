@@ -79,8 +79,9 @@ IMergeTreeReader::IMergeTreeReader(
 
     for (const auto & column : getColumns())
     {
-        const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
-        serializations.emplace_back(getSerializationInPart(column));
+        auto column_and_serialization_in_part = getColumnAndSerializationInPart(column);
+        const auto & column_to_read = columns_to_read.emplace_back(std::move(column_and_serialization_in_part.column));
+        serializations.emplace_back(std::move(column_and_serialization_in_part.serialization));
 
         if (column.isSubcolumn()
             && data_part_info_for_read->isCompactPart()
@@ -411,15 +412,56 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     return {name_in_storage, subcolumn_name};
 }
 
-NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
+std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name) const
+{
+    auto name_in_part = Nested::concatenateName(name_in_storage, subcolumn_name);
+
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns();
+    if (auto column_in_part = part_columns.tryGetColumn(options, name_in_part))
+        return column_in_part;
+
+    /// Resolve a dynamic subcolumn against the serialization the part holds for its column, instead of building one.
+    if (!subcolumn_name.empty())
+    {
+        auto parent_column = part_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name_in_storage);
+        auto parent_serialization = data_part_info_for_read->tryGetSerialization(name_in_storage);
+        if (parent_column && parent_serialization)
+        {
+            if (auto subcolumn_type = parent_column->type->tryGetSubcolumnType(subcolumn_name, parent_serialization))
+                return NameAndTypePair{name_in_storage, subcolumn_name, parent_column->type, subcolumn_type};
+        }
+    }
+
+    /// Other splits of the name into a column and a subcolumn are resolved by the general lookup.
+    return part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+}
+
+SerializationPtr IMergeTreeReader::tryGetSerializationFromPart(const NameAndTypePair & column_in_part) const
+{
+    auto serialization_in_part = data_part_info_for_read->tryGetSerialization(column_in_part.getNameInStorage());
+    if (!serialization_in_part)
+        return nullptr;
+
+    /// A subcolumn is composed from the serialization of its column, never looked up by its own full name, which a
+    /// column of the part can be named after: a column `n.a` next to the subcolumn `a` of a `Nested` column `n`.
+    SerializationPtr serialization = column_in_part.isSubcolumn()
+        ? column_in_part.getTypeInStorage()->getSubcolumnSerialization(column_in_part.getSubcolumnName(), serialization_in_part)
+        : serialization_in_part;
+
+    /// All the readers of the part use one serialization at once, so only one that is safe to use concurrently can be
+    /// taken from it. `supportsPooling` is that property: a poolable serialization is shared by all of its users.
+    return serialization->supportsPooling() ? serialization : nullptr;
+}
+
+IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSerializationInPart(const NameAndTypePair & required_column) const
 {
     auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
-    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    auto column_in_part = tryGetColumnInPart(name_pair.first, name_pair.second);
+
+    const auto & infos = data_part_info_for_read->getSerializationInfos();
 
     if (!column_in_part)
     {
-        const auto & infos = data_part_info_for_read->getSerializationInfos();
         DataTypePtr type_in_part = required_column.getTypeInStorage();
         DataTypePtr requested_type_in_part = required_column.type;
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
@@ -430,59 +472,55 @@ NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & requir
                 : type_in_part->getSubcolumnType(name_pair.second);
         }
 
-        return NameAndTypePair{name_pair.first, name_pair.second, type_in_part, requested_type_in_part};
+        NameAndTypePair missed_column{name_pair.first, name_pair.second, type_in_part, requested_type_in_part};
+        return {missed_column, IDataType::getSerialization(missed_column)};
     }
-
-    return *column_in_part;
-}
-
-SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair & required_column) const
-{
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
-    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
-
-    if (!column_in_part)
-    {
-        const auto & infos = data_part_info_for_read->getSerializationInfos();
-        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
-        {
-            auto type_in_part = DataTypeFactory::instance().get(missing->type_name);
-            NameAndTypePair missed_column{
-                name_pair.first,
-                name_pair.second,
-                type_in_part,
-                name_pair.second.empty() ? type_in_part : type_in_part->getSubcolumnType(name_pair.second)};
-            return IDataType::getSerialization(missed_column);
-        }
-
-        NameAndTypePair missed_column{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
-        return IDataType::getSerialization(missed_column);
-    }
-
-    const auto & infos = data_part_info_for_read->getSerializationInfos();
 
     /// The `Quantize` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
     /// `pq_codebook`) which the part's plain columns list (columns.txt) cannot represent - they round-trip to the bare
     /// type name and are lost. Honor that serialization directly: rebuilding it from the part's `SerializationInfo` via
     /// `IDataType::getSerialization(info)` would re-wrap it with the recorded kind stack and discard the companion
-    /// streams, so the subcolumn read would fall back to recomputing it and fail. This is restricted to that specific
-    /// serialization (a Quantize column is always dense) so it does not interfere with the Default/Sparse kind stack of
-    /// ordinary columns.
+    /// streams, so the subcolumn read would fall back to recomputing it and fail. The same applies to the serialization
+    /// the part stores, which is that re-wrapped one. This is restricted to that specific serialization (a Quantize
+    /// column is always dense) so it does not interfere with the Default/Sparse kind stack of ordinary columns.
     const auto & type_in_storage = required_column.getTypeInStorage();
     if (const auto * custom = type_in_storage->getCustomSerialization();
         custom && typeid(*custom) == typeid(SerializationQuantizedVector))
     {
         auto serialization = type_in_storage->getDefaultSerialization();
         if (required_column.isSubcolumn())
-            return type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
-        return serialization;
+            serialization = type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
+        return {*column_in_part, serialization};
     }
 
-    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
-        return IDataType::getSerialization(*column_in_part, *it->second);
+    /// The part holds the serialization of every column it stores, built with the same call as below, so take it
+    /// instead of building an equal one for every reader.
+    if (auto serialization = tryGetSerializationFromPart(*column_in_part))
+        return {*column_in_part, serialization};
 
-    return IDataType::getSerialization(*column_in_part, infos.getSettings());
+    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
+        return {*column_in_part, IDataType::getSerialization(*column_in_part, *it->second)};
+
+    return {*column_in_part, IDataType::getSerialization(*column_in_part, infos.getSettings())};
+}
+
+NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
+{
+    return getColumnAndSerializationInPart(required_column).column;
+}
+
+SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair & required_column) const
+{
+    return getColumnAndSerializationInPart(required_column).serialization;
+}
+
+bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const
+{
+    /// Resolved against the serialization the part holds for the column, when there is one, instead of building one.
+    if (auto serialization_in_part = data_part_info_for_read->tryGetSerialization(name_in_part))
+        return type_in_part.tryGetSubcolumnType(subcolumn_name, serialization_in_part) != nullptr;
+
+    return type_in_part.hasSubcolumn(subcolumn_name);
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
