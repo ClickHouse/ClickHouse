@@ -794,6 +794,30 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
+/// The identity of the task on its `DistributedPlanTask::execute` span. No-op when tracing is off.
+static void addTaskSpanAttributes(
+    OpenTelemetry::Span & span,
+    const DistributedQueryTaskDescription & task_description,
+    const ContextPtr & context,
+    UInt64 query_plan_hash,
+    bool execute_locally,
+    const Strings & input_exchange_streams,
+    const Strings & output_exchange_streams)
+{
+    if (!span.isTraceEnabled())
+        return;
+
+    span.addAttribute("clickhouse.distributed.task_id", task_description.task.task_id);
+    /// From the task's context rather than the description: a worker copies the description's
+    /// initial query id into its `ClientInfo`, while an in-process task inherits the initiator's.
+    span.addAttribute("clickhouse.initial_query_id", context->getClientInfo().initial_query_id);
+    span.addAttribute("clickhouse.distributed.plan_hash", query_plan_hash);
+    span.addAttribute("clickhouse.distributed.serialization_version", task_description.serialization_version);
+    span.addAttribute("clickhouse.distributed.execute_locally", static_cast<UInt64>(execute_locally));
+    span.addAttribute("clickhouse.exchange.inputs", fmt::format("[{}]", fmt::join(input_exchange_streams, ", ")));
+    span.addAttribute("clickhouse.exchange.outputs", fmt::format("[{}]", fmt::join(output_exchange_streams, ", ")));
+}
+
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
     bool execute_locally, std::function<bool()> is_cancelled, ProgressCallback progress_callback)
@@ -801,10 +825,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     Stopwatch execute_task_watch;
     const auto & task = task_description.task;
 
-    /// The task's span, the analogue of the `query` span of a regular query: `logQueryFinish` /
-    /// `logQueryException` below decorate it with the outcome and finish it. Its parent is the
-    /// initiator's trace, carried to a worker by the `traceparent` header of the start request and
-    /// to a local task thread by `DistributedQueryPlanExecutorLocal`; without one it is a no-op.
+    /// The task's span is analogous to the `query` span of a regular query. Its parent is the initiator's trace.
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span
         = std::make_shared<OpenTelemetry::SpanHolder>("DistributedPlanTask::execute", OpenTelemetry::SpanKind::SERVER);
 
@@ -825,18 +846,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     /// Identifies the plan fragment in the span and in the query log alike.
     const UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
 
-    if (query_span->isTraceEnabled())
-    {
-        query_span->addAttribute("clickhouse.distributed.task_id", task.task_id);
-        /// From the task's context rather than the description: a worker copies the description's
-        /// initial query id into its `ClientInfo`, while an in-process task inherits the initiator's.
-        query_span->addAttribute("clickhouse.initial_query_id", context->getClientInfo().initial_query_id);
-        query_span->addAttribute("clickhouse.distributed.plan_hash", query_plan_hash);
-        query_span->addAttribute("clickhouse.distributed.serialization_version", task_description.serialization_version);
-        query_span->addAttribute("clickhouse.distributed.execute_locally", static_cast<UInt64>(execute_locally));
-        query_span->addAttribute("clickhouse.exchange.inputs", fmt::format("[{}]", fmt::join(input_exchange_streams, ", ")));
-        query_span->addAttribute("clickhouse.exchange.outputs", fmt::format("[{}]", fmt::join(output_exchange_streams, ", ")));
-    }
+    addTaskSpanAttributes(*query_span, task_description, context, query_plan_hash, execute_locally, input_exchange_streams, output_exchange_streams);
 
     LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
         task.task_id, fmt::join(input_exchange_streams, ", "), fmt::join(output_exchange_streams, ", "));
@@ -1035,9 +1045,7 @@ protected:
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        /// A raw thread inherits no tracing context (unlike a `ThreadPool` job), so hand the
-        /// initiator's context over explicitly: the task's `DistributedPlanTask::execute` span then
-        /// attaches to the initiator's trace like a remotely dispatched task does.
+        /// A raw thread inherits no tracing context (unlike a `ThreadPool` job), so hand the initiator's context over explicitly.
         threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation, stage_wakeup = this->stage_wakeup,
             parent_trace_context = OpenTelemetry::CurrentContext()]() mutable
         {

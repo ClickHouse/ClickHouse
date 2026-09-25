@@ -18,9 +18,7 @@ namespace DB
 namespace
 {
 
-/// W3C `traceparent`/`tracestate` headers carrying the current trace context to the worker, so the
-/// task runs inside the initiator's trace. Empty when tracing is off. Headers (not a task field) keep
-/// the task wire format unchanged: workers that do not know them ignore them.
+/// W3C `traceparent`/`tracestate` headers carrying the current trace context to the worker.
 HTTPHeaderEntries getTraceContextHeaders()
 {
     HTTPHeaderEntries headers;
@@ -90,9 +88,7 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
 
 String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const ContextPtr & context)
 {
-    /// The dispatch request is the trace hop to the worker: the `traceparent` header sent inside this
-    /// scope names this span, so the worker's spans hang under it. The span covers only the start
-    /// request; the task itself runs asynchronously on the worker and is polled by the initiator.
+    /// The dispatch request is the trace hop to the worker, so the worker's spans hang under it.
     const Poco::URI uri(endpoint_uri);
     OpenTelemetry::SpanHolder span(
         "StatelessWorkerClient::sendTask",

@@ -88,36 +88,36 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
     return {"", true};
 }
 
+OpenTelemetry::TracingContextHolderPtr InterserverIOHTTPHandler::startTracingContext(const HTTPServerRequest & request) const
+{
+    if (!request.has("traceparent"))
+        return nullptr;
+
+    OpenTelemetry::TracingContext client_trace_context;
+    const String traceparent = request.get("traceparent");
+    String error;
+    if (client_trace_context.parseTraceparentHeader(traceparent, error))
+        client_trace_context.tracestate = request.get("tracestate", "");
+    else
+        LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", traceparent, error);
+
+    auto thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
+        "InterserverIOHTTPHandler", client_trace_context, server.context()->getOpenTelemetrySpanLog());
+    thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+    thread_trace_context->root_span.addAttribute(
+        "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
+    thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
+    return thread_trace_context;
+}
+
 void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr output)
 {
     HTMLForm params(server.context()->getSettingsRef(), request);
 
     LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
 
-    /// Continue the caller's trace when the request carries W3C `traceparent`/`tracestate` headers
-    /// (e.g. a distributed plan task dispatched by `StatelessWorkerClient`), so the endpoint's spans
-    /// hang under the caller's `CLIENT` span. A malformed header is logged and ignored, never fails
-    /// the request. Without the header nothing is traced: interserver requests are always secondary
-    /// to a query on another node, which already made the sampling decision, so this handler does
-    /// not roll `opentelemetry_start_trace_probability` itself (unlike `HTTPHandler`).
-    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
-    if (request.has("traceparent"))
-    {
-        OpenTelemetry::TracingContext client_trace_context;
-        const String traceparent = request.get("traceparent");
-        String error;
-        if (client_trace_context.parseTraceparentHeader(traceparent, error))
-            client_trace_context.tracestate = request.get("tracestate", "");
-        else
-            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", traceparent, error);
-
-        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
-            "InterserverIOHTTPHandler", client_trace_context, server.context()->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-        thread_trace_context->root_span.addAttribute(
-            "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
-        thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
-    }
+    /// Kept alive for the whole request: the trace context is installed on this thread while it exists.
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context = startTracingContext(request);
 
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
