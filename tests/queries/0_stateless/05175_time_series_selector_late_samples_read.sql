@@ -60,7 +60,8 @@ DROP TABLE ts_selector_late_samples_memory;
 DROP TABLE ts_selector_late_samples_memory_data;
 
 -- Distributed accepts PREWHERE syntax itself, but cannot guarantee that its remote target supports
--- PREWHERE. Keep WHERE for that wrapper so a remote Memory samples table remains usable.
+-- PREWHERE. Keep WHERE for that wrapper so a remote Memory samples table remains usable. Use the
+-- non-bucketed version because a Distributed target cannot prove bucketed row-preservation.
 DROP TABLE IF EXISTS ts_selector_late_samples_distributed;
 DROP TABLE IF EXISTS ts_selector_late_samples_distributed_data;
 DROP TABLE IF EXISTS ts_selector_late_samples_distributed_local;
@@ -68,10 +69,8 @@ DROP TABLE IF EXISTS ts_selector_late_samples_distributed_local;
 CREATE TABLE ts_selector_late_samples_distributed_local
 (
     id UUID,
-    samples Array(Tuple(timestamp DateTime64(3), value Float64)),
-    bucket DateTime64(3),
-    min_time DateTime64(3),
-    max_time DateTime64(3)
+    timestamp DateTime64(3),
+    value Float64
 )
 ENGINE = Memory;
 
@@ -79,14 +78,14 @@ CREATE TABLE ts_selector_late_samples_distributed_data AS ts_selector_late_sampl
 ENGINE = Distributed(test_shard_localhost, currentDatabase(), ts_selector_late_samples_distributed_local);
 
 CREATE TABLE ts_selector_late_samples_distributed ENGINE = TimeSeries
-SETTINGS recent_samples_ttl_seconds = 0
+SETTINGS version = 6, recent_samples_ttl_seconds = 0
 SAMPLES ts_selector_late_samples_distributed_data;
 
 INSERT INTO ts_selector_late_samples_distributed (metric_name, tags, samples)
 SETTINGS insert_distributed_sync = 1
 VALUES ('m', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]);
 
-SELECT arrayJoin(time_series) AS sample
+SELECT (timestamp, value) AS sample
 FROM timeSeriesSelector(ts_selector_late_samples_distributed, 'm{env="prod"}', 100, 250);
 
 DROP TABLE ts_selector_late_samples_distributed;

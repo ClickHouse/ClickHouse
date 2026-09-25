@@ -28,9 +28,10 @@ namespace
     {
         std::map<ViewTarget::Kind, ColumnsDescription> columns;
         std::map<ViewTarget::Kind, String> engine_names;
+        std::map<ViewTarget::Kind, ASTPtr> sorting_keys;
     };
 
-    /// Reads the columns and engine names of the external target tables of a definition.
+    /// Reads the columns, engine names, and sorting keys of the external target tables of a definition.
     ExternalTargetInfo readExternalTargets(const ASTCreateQuery & create_query, const ContextPtr & context)
     {
         ExternalTargetInfo result;
@@ -47,6 +48,7 @@ namespace
                 auto metadata = table->getInMemoryMetadataPtr(context, false);
                 result.columns[kind] = metadata->columns;
                 result.engine_names[kind] = table->getName();
+                result.sorting_keys[kind] = metadata->getSortingKey().definition_ast;
             }
         }
         return result;
@@ -80,6 +82,7 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         auto external_targets = readExternalTargets(create_query, context);
         params.external_target_columns = std::move(external_targets.columns);
         params.external_target_engine_names = std::move(external_targets.engine_names);
+        params.external_target_sorting_keys = std::move(external_targets.sorting_keys);
     }
 
     if (params.isNewTable())

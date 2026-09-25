@@ -25,9 +25,11 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
@@ -1847,19 +1849,56 @@ namespace
     }
 
     /// A bucketed samples target must keep every row unless its merge operation combines the samples.
-    /// `Distributed` delegates storage to another table whose engine cannot be checked locally.
+    /// A `Distributed` target cannot prove that its remote storage preserves every bucket.
     bool checkBucketedSamplesTargetEngine(std::string_view engine_name, ViewTarget::Kind kind, const StorageID & table_id)
     {
         bool plain_merge_tree = (engine_name == "MergeTree") || (engine_name == "ReplicatedMergeTree")
             || (engine_name == "SharedMergeTree");
         bool aggregating_merge_tree = (engine_name == "AggregatingMergeTree")
             || (engine_name == "ReplicatedAggregatingMergeTree") || (engine_name == "SharedAggregatingMergeTree");
-        bool non_merging_or_delegating = (engine_name == "Memory") || (engine_name == "Distributed");
-        if (!plain_merge_tree && !aggregating_merge_tree && !non_merging_or_delegating)
+        bool non_merging = (engine_name == "Memory");
+        if (!plain_merge_tree && !aggregating_merge_tree && !non_merging)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                "{}: The {} table cannot use {} with bucketed samples; use `AggregatingMergeTree`, `MergeTree` (including their Replicated and Shared variants), `Memory`, or `Distributed` with a merge-safe remote target",
+                "{}: The {} table cannot use {} with bucketed samples; use `AggregatingMergeTree`, `MergeTree` (including their Replicated and Shared variants), or `Memory`",
                 table_id.getNameForLogs(), kind, engine_name);
         return aggregating_merge_tree;
+    }
+
+    /// Background aggregation groups by the sorting key. It must not combine two distinct `(id, bucket)` pairs.
+    /// Checking referenced columns is insufficient: e.g. `toDate(bucket)` is lossy.
+    void checkBucketedSamplesTargetSortingKey(const ASTPtr & sorting_key, ViewTarget::Kind kind, const StorageID & table_id)
+    {
+        bool has_id = false;
+        bool has_bucket = false;
+        auto check_component = [&](const ASTPtr & component)
+        {
+            const auto * ordered = component ? component->as<ASTStorageOrderByElement>() : nullptr;
+            const auto & expression = ordered && ordered->children.size() == 1 ? ordered->children.front() : component;
+            const auto * identifier = expression ? expression->as<ASTIdentifier>() : nullptr;
+            if (!identifier || !identifier->isShort())
+                return;
+            has_id |= identifier->name() == TimeSeriesColumnNames::ID;
+            has_bucket |= identifier->name() == TimeSeriesColumnNames::Bucket;
+        };
+
+        if (const auto * list = sorting_key ? sorting_key->as<ASTExpressionList>() : nullptr)
+        {
+            for (const auto & component : list->children)
+                check_component(component);
+        }
+        else if (const auto * function = sorting_key ? sorting_key->as<ASTFunction>() : nullptr;
+                 function && function->name == "tuple" && function->arguments)
+        {
+            for (const auto & component : function->arguments->children)
+                check_component(component);
+        }
+        else
+            check_component(sorting_key);
+
+        if (!has_id || !has_bucket)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "{}: The bucketed {} `AggregatingMergeTree` sorting key must include `id` and `bucket` as direct columns",
+                table_id.getNameForLogs(), kind);
     }
 
     /// Checks that a target table or an inner-columns list has all the columns required by the
@@ -2292,6 +2331,7 @@ void checkTimeSeriesBucketedSamplesTarget(
     const ColumnsDescription & outer_columns,
     const ColumnsDescription & target_columns,
     std::string_view engine_name,
+    const ASTPtr & sorting_key,
     ViewTarget::Kind target_kind,
     const TimeSeriesSettings & settings,
     const StorageID & time_series_table_id,
@@ -2301,6 +2341,8 @@ void checkTimeSeriesBucketedSamplesTarget(
     chassert(target_kind == ViewTarget::Samples || target_kind == ViewTarget::RecentSamples);
 
     bool require_aggregating_samples_column = checkBucketedSamplesTargetEngine(engine_name, target_kind, time_series_table_id);
+    if (require_aggregating_samples_column)
+        checkBucketedSamplesTargetSortingKey(sorting_key, target_kind, time_series_table_id);
 
     const auto * outer_samples = outer_columns.tryGet(TimeSeriesColumnNames::getOuterSamples(settings[TimeSeriesSetting::version]));
     auto sample_types = outer_samples ? trySplitSamplesDataType(outer_samples->type) : std::nullopt;
@@ -2428,6 +2470,16 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         return it->second;
     };
 
+    auto get_external_target_sorting_key = [&](ViewTarget::Kind kind) -> const ASTPtr &
+    {
+        auto it = params.external_target_sorting_keys.find(kind);
+        if (it == params.external_target_sorting_keys.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "{}: The sorting key of the external {} table {} is required to normalize a bucketed TimeSeries table",
+                table_id.getNameForLogs(), kind, create_query.getTargetTableID(kind).getNameForLogs());
+        return it->second;
+    };
+
     /// A full user-supplied ATTACH and a restored definition are validated without normalizing their stored inner tables.
     /// Metadata replay must not depend on external tables being loaded already; RESTORE checks physical targets later.
     const bool full_user_attach = params.mode == LoadingStrictnessLevel::ATTACH
@@ -2450,6 +2502,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                         continue;
                     const auto & engine_name = get_external_target_engine_name(kind);
                     bool require_aggregating_samples_column = checkBucketedSamplesTargetEngine(engine_name, kind, table_id);
+                    if (require_aggregating_samples_column)
+                        checkBucketedSamplesTargetSortingKey(get_external_target_sorting_key(kind), kind, table_id);
                     checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, create_query.getTargetTableID(kind),
                         require_aggregating_samples_column);
                 }
@@ -2464,6 +2518,9 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                     const auto * inner_engine = create_query.getTargetInnerEngine(kind);
                     bool require_aggregating_samples_column = !inner_engine || !inner_engine->engine
                         || checkBucketedSamplesTargetEngine(inner_engine->engine->name, kind, table_id);
+                    if (require_aggregating_samples_column && inner_engine && (inner_engine->order_by || inner_engine->primary_key))
+                        checkBucketedSamplesTargetSortingKey(
+                            inner_engine->order_by ? inner_engine->order_by : inner_engine->primary_key, kind, table_id);
                     checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, settings, resolved_types, table_id,
                         require_aggregating_samples_column);
                 }
@@ -2544,6 +2601,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 {
                     const auto & engine_name = get_external_target_engine_name(kind);
                     require_aggregating_samples_column = checkBucketedSamplesTargetEngine(engine_name, kind, table_id);
+                    if (require_aggregating_samples_column)
+                        checkBucketedSamplesTargetSortingKey(get_external_target_sorting_key(kind), kind, table_id);
                 }
                 checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, create_query.getTargetTableID(kind),
                     require_aggregating_samples_column);
@@ -2571,6 +2630,10 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
 
                 if (normalizeInnerEngine(*inner_engine, kind, settings, resolved_types, table_id, *params.query_settings))
                     create_query.setTargetInnerEngine(kind, inner_engine);
+
+                if (require_aggregating_samples_column)
+                    checkBucketedSamplesTargetSortingKey(
+                        inner_engine->order_by ? inner_engine->order_by : inner_engine->primary_key, kind, table_id);
 
                 if (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_TAGS_TEXT_INDEX
                     && normalizeInnerIndices(*inner_columns, *inner_engine, kind))

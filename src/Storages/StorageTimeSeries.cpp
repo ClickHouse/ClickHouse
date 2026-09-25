@@ -295,6 +295,7 @@ void StorageTimeSeries::validateBucketedSamplesTarget(
         outer_metadata->columns,
         target_metadata->columns,
         target_table->getName(),
+        target_metadata->getSortingKey().definition_ast,
         target_kind,
         *getStorageSettings(),
         getStorageID(),
@@ -350,6 +351,7 @@ StorageMetadataPtr StorageTimeSeries::getValidatedBucketedSamplesTargetMetadata(
         outer_metadata->columns,
         current_metadata_ptr->columns,
         expected_table->getName(),
+        current_metadata_ptr->getSortingKey().definition_ast,
         target_kind,
         *getStorageSettings(),
         getStorageID(),
@@ -1141,8 +1143,10 @@ The _samples_ table must have columns:
 An external samples or recent samples table using `AggregatingMergeTree` must use the corresponding `SimpleAggregateFunction`
 types for `samples`, `min_time`, and `max_time`. Plain `MergeTree` can keep separate rows for the same bucket. The supported
 engines are `AggregatingMergeTree` and `MergeTree`, including their `Replicated` and `Shared` variants, and `Memory`.
-`Distributed` is also supported, but its remote target must preserve the same merge-safety property; this cannot be checked
-by the local `TimeSeries` table. Other `MergeTree` variants that replace or discard rows with the same sorting key cannot be used.
+For `AggregatingMergeTree`, the sorting key must contain `id` and `bucket` as direct columns, so background merges never combine
+different buckets. The generated `(id, bucket)` key also enables efficient range reads. A `Distributed` target cannot be used
+because the local `TimeSeries` table cannot verify the merge behavior of its remote target. Other `MergeTree` variants that
+replace or discard rows with the same sorting key cannot be used.
 
 The `samples` column the engine creates itself gets the compression codec `ZSTD(3)` because it dominates the on-disk size of the samples table.
 See also [Adjusting types of columns](#adjusting-column-types).

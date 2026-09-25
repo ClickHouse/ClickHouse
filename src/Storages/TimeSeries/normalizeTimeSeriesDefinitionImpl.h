@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -42,6 +43,9 @@ struct NormalizeTimeSeriesDefinitionParams
     /// or a full user-supplied ATTACH.
     std::map<ViewTarget::Kind, String> external_target_engine_names;
 
+    /// The sorting keys of external target tables. Required to validate bucketed `AggregatingMergeTree` targets.
+    std::map<ViewTarget::Kind, ASTPtr> external_target_sorting_keys;
+
     /// The query-level settings (the `default_table_engine` setting chooses the engines of the inner tables).
     /// Required for a new table.
     const Settings * query_settings = nullptr;
@@ -61,6 +65,7 @@ void checkTimeSeriesBucketedSamplesTarget(
     const ColumnsDescription & outer_columns,
     const ColumnsDescription & target_columns,
     std::string_view engine_name,
+    const ASTPtr & sorting_key,
     ViewTarget::Kind target_kind,
     const TimeSeriesSettings & settings,
     const StorageID & time_series_table_id,
