@@ -262,6 +262,6 @@ bool isTextIndexVirtualColumn(const String & column_name);
 
 /// Whether the function takes a tokenizer as its third argument. `has`/`hasAll`/`hasAny` do not: they
 /// match array elements verbatim. Without one, the tokenizer of the text index applies.
-bool textSearchFunctionAcceptsTokenizer(const String & function_name);
+bool doesTextSearchFunctionAcceptTokenizer(const String & function_name);
 
 }

@@ -691,7 +691,7 @@ private:
             return replacement;
 
         auto function_name = function_node.function_base->getName();
-        bool need_transform_function = textSearchFunctionAcceptsTokenizer(function_name) || needApplyPreprocessor(function_name);
+        bool need_transform_function = doesTextSearchFunctionAcceptTokenizer(function_name) || needApplyPreprocessor(function_name);
 
         /// Early exit if there is nothing to process.
         if (!need_transform_function && !direct_read_from_text_index)
@@ -749,7 +749,7 @@ private:
 
         /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
         const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
-        const bool apply_tokenizer = textSearchFunctionAcceptsTokenizer(function_name) && tokenizer;
+        const bool apply_tokenizer = doesTextSearchFunctionAcceptTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 
         if (!apply_preprocessor && !apply_tokenizer && !apply_postprocessor)
