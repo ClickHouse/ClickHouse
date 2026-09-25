@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: `CREATE ... POPULATE` is not supported
+
 -- The assertions below require one `EXPLAIN` line to carry both the reading step and the text
 -- `RIGHT JOIN`, i.e. the shipped SQL query, so they describe the query-based implementation only.
 -- Plan-based ships a serialized plan fragment and distributes the same joins; see
