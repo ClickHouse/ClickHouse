@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # Tag no-fasttest: Depends on S3
+# Tag no-parallel: the failpoint is server-wide, so a concurrent run's `SYSTEM WAIT FAILPOINT` can return on
+# this run's paused query (or the other way round) and the object is deleted before the first read
 
 # Regression test for `query_cache_use_only_when_data_was_not_changed` over an object-storage (S3)
 # table that one query reads more than once while its object set changes between the reads. See
@@ -27,7 +29,10 @@ table="${CLICKHOUSE_DATABASE}.t_s3_qc_repeated"
 failpoint="object_storage_pause_before_repeated_read"
 
 # Pin every query-cache setting so the flaky check's settings randomizer cannot change the outcome.
-qc="use_query_cache = 1, enable_reads_from_query_cache = 1, enable_writes_to_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1"
+# Parallel replicas and the AST fuzzer are pinned off too: the read has to reach the failpoint in this
+# server, and a fuzzed query replayed after the paused one (e.g. a `SYSTEM WAIT FAILPOINT` without `PAUSE`)
+# would block forever, which the stress test reports as a hung check.
+qc="use_query_cache = 1, enable_reads_from_query_cache = 1, enable_writes_to_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1, allow_experimental_parallel_reading_from_replicas = 0, ast_fuzzer_runs = 0"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION s3(s3_conn, filename = '${prefix}_1', format = 'TSV', structure = 'x UInt64') SELECT 10 SETTINGS s3_truncate_on_insert = 1"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION s3(s3_conn, filename = '${prefix}_2', format = 'TSV', structure = 'x UInt64') SELECT 20 SETTINGS s3_truncate_on_insert = 1"
