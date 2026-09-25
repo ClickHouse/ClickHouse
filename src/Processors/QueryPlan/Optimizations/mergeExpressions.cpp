@@ -6,6 +6,8 @@
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB::QueryPlanOptimizations
 {
 

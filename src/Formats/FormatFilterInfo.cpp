@@ -87,8 +87,9 @@ FormatFilterInfo::FormatFilterInfo(
         const auto & outputs = filter_actions_dag->getOutputs();
         if (prewhere_covered && outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
         {
+            const auto * condition_node = outputs[0];
             condition_hash = queryConditionCacheHash(
-                filter_actions_dag->getHash(), queryConditionCacheSettingsSalt(context_->getSettingsRef()));
+                condition_node->getHash(true /* skip_aliases */), queryConditionCacheSettingsSalt(context_->getSettingsRef()));
         }
     }
 }
