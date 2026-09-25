@@ -1844,7 +1844,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
-    if (mode == LoadingStrictnessLevel::CREATE)
+    /// A full-definition `ATTACH DICTIONARY` is user input as well, so it is gated like `CREATE DICTIONARY`.
+    /// A short `ATTACH` carries no layout here (the stored definition is read below), and a restore or a
+    /// replay on a secondary replica runs under `SECONDARY_CREATE`, so both stay exempt.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
         checkXGBoostLayoutIsAllowed(create, getContext());
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
