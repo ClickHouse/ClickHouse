@@ -68,7 +68,7 @@ void restoreStreamingAuxiliaryColumns(ActionsDAG & actions, const StreamSettings
     /// These columns are needed for watermark calculation.
     if (stream_settings.watermark)
     {
-        actions.tryRestoreColumn(stream_settings.watermark->column);
+        actions.tryRestoreColumn(stream_settings.watermark->time_attribute_column);
 
         const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
         const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
