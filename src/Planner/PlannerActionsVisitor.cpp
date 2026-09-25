@@ -1376,8 +1376,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
         /// In this case, rebuild the function via FunctionFactory with the actual argument types
         /// so that the result type is correct.
-        /// An `IgnoreSet` call needs the same rebuild for a different reason: it is built from its
-        /// left operand alone, so its node has one child where the function has two argument types.
+        /// An `IgnoreSet` node has one child against two expected types, so the loop below cannot see the mismatch.
         bool argument_types_match = !ignore_set;
         if (auto function_base = function_node.getFunction(); function_base && argument_types_match)
         {
