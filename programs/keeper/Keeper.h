@@ -67,6 +67,8 @@ protected:
 
     bool allowTextLog() const override;
 
+    std::string getCommandName() const override { return disambiguateCommandName("clickhouse-keeper"); }
+
 private:
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 

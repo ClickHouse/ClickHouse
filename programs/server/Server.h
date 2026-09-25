@@ -71,6 +71,8 @@ protected:
 
     std::string getDefaultCorePath() const override;
 
+    std::string getCommandName() const override { return disambiguateCommandName("clickhouse-server"); }
+
 private:
     ContextMutablePtr global_context;
     /// Updated/recent config, to compare http_handlers
