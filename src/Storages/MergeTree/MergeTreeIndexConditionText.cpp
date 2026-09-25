@@ -33,7 +33,6 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/inlined_vector.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -1046,27 +1045,6 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     WriteBufferFromOwnString buf;
     type->getDefaultSerialization()->serializeText(*column, 0, buf, {});
     return buf.str();
-}
-
-/// The map value type behind a `mapValues(map_col)` index, taken from the index header column,
-/// which holds an Array of that type.
-static DataTypePtr getMapValueTypeFromIndexHeader(const Block & header, const String & map_column_name)
-{
-    /// An index is also matched by its normalized expression name, which the header does not carry,
-    /// and a text index is defined on a single column, so fall back to that column.
-    auto index_column_name = fmt::format("mapValues({})", map_column_name);
-    const auto * index_column = header.has(index_column_name)
-        ? &header.getByName(index_column_name)
-        : (header.columns() == 1 ? &header.getByPosition(0) : nullptr);
-
-    if (!index_column)
-        return nullptr;
-
-    const auto * array_type = typeid_cast<const DataTypeArray *>(index_column->type.get());
-    if (!array_type)
-        return nullptr;
-
-    return array_type->getNestedType();
 }
 
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
@@ -2088,7 +2066,7 @@ bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
     return true;
 }
 
-std::optional<String> MergeTreeIndexConditionText::tryGetMapNameForElementValueIndex(const RPNBuilderTreeNode & node) const
+bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
 {
     /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
     if (node.isFunction())
@@ -2096,26 +2074,18 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapNameForElementValueI
         const auto function = node.toFunctionNode();
         if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
         {
-            auto column_name = function.getArgumentAt(0).getColumnName();
-            if (hasIndexForColumn(fmt::format("mapValues({})", column_name)))
-                return column_name;
+            const auto column_name = function.getArgumentAt(0).getColumnName();
+            return hasIndexForColumn(fmt::format("mapValues({})", column_name));
         }
-        return {};
+        return false;
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
     auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
     if (!parsed)
-        return {};
+        return false;
     auto & [map_column_name, serialized_key] = *parsed;
-    if (!header.has(fmt::format("mapValues({})", map_column_name)))
-        return {};
-    return map_column_name;
-}
-
-bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
-{
-    return tryGetMapNameForElementValueIndex(node).has_value();
+    return header.has(fmt::format("mapValues({})", map_column_name));
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(
@@ -2130,8 +2100,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
     if (const_value.getType() != Field::Types::String || isMapValueDefault(const_value.safeGet<String>(), header))
         return false;
 
-    auto map_column_name = tryGetMapNameForElementValueIndex(index_column_node);
-    if (!map_column_name)
+    if (!hasIndexForMapElementValue(index_column_node))
         return false;
 
     /// A map element reads the value type's default for a key the map does not hold, while the index
@@ -2144,8 +2113,9 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
         || !WhichDataType(removeNullable(function_dag_node->result_type)).isUInt8())
         return false;
 
-    auto value_type = getMapValueTypeFromIndexHeader(header, *map_column_name);
-    if (!value_type)
+    /// `hasIndexForMapElementValue` matched this index, so its single expression is `mapValues(m)`.
+    const auto * map_values_type = typeid_cast<const DataTypeArray *>(header.getByPosition(0).type.get());
+    if (!map_values_type)
         return false;
 
     ActionsDAG::NodeMapping copy_map;
@@ -2160,7 +2130,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
     const auto * element_node = copied_element->second;
     ColumnWithTypeAndName default_element
     {
-        element_node->result_type->createColumnConst(1, value_type->getDefault()),
+        element_node->result_type->createColumnConst(1, map_values_type->getNestedType()->getDefault()),
         element_node->result_type,
         element_node->result_name,
     };
@@ -2180,25 +2150,8 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
     if (!subdag.getRequiredColumns().empty())
         return false;
 
-    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
-    /// The Set may not be ready yet because it is built later during query execution.
-    for (const auto & node : subdag.getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::COLUMN)
-            continue;
-
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-        if (!column_set)
-            continue;
-
-        auto future_set = column_set->getData();
-        if (!future_set)
-            return false;
-
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
-            return false;
-    }
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
+        return false;
 
     auto output_column_name = subdag.getOutputs().front()->result_name;
 

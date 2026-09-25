@@ -184,10 +184,6 @@ private:
         const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
-    /// Returns the name of the map column if the node represents `arrayElement(map_col, 'key')`
-    /// and there is a text index built on `mapValues(map_col)`.
-    std::optional<String> tryGetMapNameForElementValueIndex(const RPNBuilderTreeNode & node) const;
-
     /// Returns true if the node represents `arrayElement(map_col, 'key')`
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
