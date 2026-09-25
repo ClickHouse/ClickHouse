@@ -50,8 +50,13 @@ void intrusive_ptr_release(const IAST * p) noexcept
 
                 ASTs children;
                 children.swap(ptr->children);
+                /// The address of the complete object must be taken while the object is still alive: after the
+                /// destructor the dynamic type is gone (the vptr may already point to the `IAST` vtable), and a
+                /// class that does not have `IAST` as its first base would give `ptr` itself, i.e. an interior
+                /// pointer that `operator delete` below must never receive.
+                void * storage = dynamic_cast<void *>(ptr);
                 ptr->~IAST();
-                LinkedList * elem = new (dynamic_cast<void *>(ptr)) LinkedList;
+                LinkedList * elem = new (storage) LinkedList;
                 elem->children.swap(children);
                 return elem;
             }
