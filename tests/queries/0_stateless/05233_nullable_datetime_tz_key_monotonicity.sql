@@ -75,6 +75,7 @@ SELECT (SELECT count() FROM t_dt_prune WHERE toDayOfMonth(dt) = 15), (SELECT cou
 SELECT trim(explain)
 FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_dt_prune WHERE toDayOfMonth(dt) = 15
+    SETTINGS enable_parallel_replicas = 0
 )
 WHERE trim(explain) ilike 'granules: %';
 
