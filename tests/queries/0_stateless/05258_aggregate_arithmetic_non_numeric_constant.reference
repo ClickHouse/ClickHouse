@@ -16,7 +16,40 @@ tuple_left_max_on	5
 tuple_left_max_off	5
 ipv4_min_on	2
 ipv4_min_off	2
-ast_null_declined	0
+-- { echoOn }
+-- EXPLAIN AST optimize = 1 applies the same rewrite to the query it prints, and must not fail either:
+-- neither NULL is moved out of its aggregate function, while the numeric constant still is. The query
+-- is not wrapped in FROM (EXPLAIN ...): there each NULL would reach the rewrite as a _CAST call instead.
+EXPLAIN AST optimize = 1 SELECT min(NULL * number), max(number * NULL), min(-2 * number) FROM numbers(3) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 3)
+   ExpressionList (children 3)
+    Function min (children 1)
+     ExpressionList (children 1)
+      Function multiply (children 1)
+       ExpressionList (children 2)
+        Literal NULL
+        Identifier number
+    Function max (children 1)
+     ExpressionList (children 1)
+      Function multiply (children 1)
+       ExpressionList (children 2)
+        Identifier number
+        Literal NULL
+    Function multiply (children 1)
+     ExpressionList (children 2)
+      Literal Int64_-2
+      Function max (children 1)
+       ExpressionList (children 1)
+        Identifier number
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      Function numbers (children 1)
+       ExpressionList (children 1)
+        Literal UInt64_3
+   Set
 ast_hoist_on	1
 ast_hoist_off	0
 qtree_hoist_on	1

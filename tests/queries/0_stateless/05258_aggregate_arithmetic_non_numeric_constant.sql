@@ -21,7 +21,7 @@ SELECT 'null_multiply_avg_off', avg(number * CAST(NULL AS Nullable(UInt64))) FRO
 
 -- A tuple constant: multiplying two tuples is a dot product, so moving the constant out of the
 -- aggregate function does not preserve the order of the rows and would return a different value.
--- Both operand orders are checked: this is the only constant whose value changes if it is moved out.
+-- Both operand orders are checked: here only a tuple changes the result if it is moved out.
 SELECT 'tuple_max_on', max(v * (0.5, 0.5)) FROM (SELECT arrayJoin([(0., 10.), (1., 0.), (3., 3.)]) AS v) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
 SELECT 'tuple_max_off', max(v * (0.5, 0.5)) FROM (SELECT arrayJoin([(0., 10.), (1., 0.), (3., 3.)]) AS v) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'tuple_min_on', min(v * (0.5, 0.5)) FROM (SELECT arrayJoin([(0., 10.), (1., 0.), (3., 3.)]) AS v) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
@@ -33,8 +33,12 @@ SELECT 'tuple_left_max_off', max((0.5, 0.5) * v) FROM (SELECT arrayJoin([(0., 10
 SELECT 'ipv4_min_on', min((number + 1) * toIPv4('0.0.0.2')) FROM numbers(3) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
 SELECT 'ipv4_min_off', min((number + 1) * toIPv4('0.0.0.2')) FROM numbers(3) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 
--- The same rewrite is also applied while printing the parsed query, where it must not fail either.
-SELECT 'ast_null_declined', countIf(explain ILIKE '%Function max%') FROM (EXPLAIN AST optimize = 1 SELECT min(number * NULL) FROM numbers(3) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1);
+-- { echoOn }
+-- EXPLAIN AST optimize = 1 applies the same rewrite to the query it prints, and must not fail either:
+-- neither NULL is moved out of its aggregate function, while the numeric constant still is. The query
+-- is not wrapped in FROM (EXPLAIN ...): there each NULL would reach the rewrite as a _CAST call instead.
+EXPLAIN AST optimize = 1 SELECT min(NULL * number), max(number * NULL), min(-2 * number) FROM numbers(3) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
+-- { echoOff }
 
 -- With a numeric constant the rewrite still happens: a negative factor turns min into max. These
 -- four statements observe the rewrite itself, so the checks above cannot pass by it being skipped.
