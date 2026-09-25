@@ -133,6 +133,8 @@ CREATE QUOTA s3_reads FOR INTERVAL 1 day MAX S3GetObject = 100000, FailedQuery =
 
 Unlike the predefined amounts, profile events are accounted once per query, at the moment the query finishes (successfully or with an error): a query that crosses the limit is still allowed to finish, and subsequent queries are rejected until the interval ends. The consumption is reported in the `profile_events` column of the [system.quotas_usage](/reference/system-tables/quotas_usage) table. Profile events accumulated outside of queries (for example, by background merges) are not charged to quotas.
 
+For a distributed query, the profile events that the remote servers report back to the initiator (enabled by the `send_profile_events` setting, which is on by default) are charged to the quota of the initiating user together with the local ones; to make sure a user cannot turn the reports off, pin that setting with a [settings constraint](/concepts/features/configuration/settings/constraints-on-settings). The deferred flush of [asynchronous inserts](/reference/settings/session-settings/async-insert#async_insert) is charged to the quota of the user who submitted the inserts.
+
 If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
 
 <Note>

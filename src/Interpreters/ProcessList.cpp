@@ -40,6 +40,8 @@ namespace ProfileEvents
     extern const Event UserThrottlerSleepMicroseconds;
     extern const Event AllUsersThrottlerBytes;
     extern const Event AllUsersThrottlerSleepMicroseconds;
+    extern const Event SelectedRows;
+    extern const Event SelectedBytes;
 }
 
 namespace DB
@@ -989,6 +991,11 @@ void QueryStatus::addRemoteProfileEvents(const Block & block)
 
         auto event = ProfileEvents::tryGetByName(names.getDataAt(row));
         if (!event)
+            continue;
+
+        /// These two are already incremented locally from the progress the remote servers report
+        /// (see `ReadProgressCallback`), so taking them from here as well would count them twice.
+        if (*event == ProfileEvents::SelectedRows || *event == ProfileEvents::SelectedBytes)
             continue;
 
         if (!remote_profile_events)
