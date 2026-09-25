@@ -71,6 +71,7 @@ refused "tuple element" "" "CREATE TABLE p (c AggregateFunction(sequenceNextNode
 refused "schema read by the engine" "" "CREATE TABLE f ENGINE = File(Native, '$native')"
 refused "attach with a full definition" "" "ATTACH TABLE t UUID 'c0ffee00-0526-4100-8000-000000000001' (c $state) ENGINE = Memory"
 refused "attach through a table function" "" "ATTACH TABLE g UUID 'c0ffee00-0526-4100-8000-000000000002' (c $state) AS file('$native', Native)"
+refused "attach with a schema read by the engine" "" "ATTACH TABLE h UUID 'c0ffee00-0526-4100-8000-000000000003' ENGINE = File(Native, '$native')"
 
 allowed "temporary table" "" "CREATE TEMPORARY TABLE tt (c $state) ENGINE = Memory; SELECT count() FROM tt"
 allowed "table in a Memory database" "CREATE DATABASE mem ENGINE = Memory" "CREATE TABLE mem.t (c $state) ENGINE = Memory; SELECT count() FROM mem.t"

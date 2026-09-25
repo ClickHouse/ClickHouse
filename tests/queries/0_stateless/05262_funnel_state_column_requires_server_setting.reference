@@ -26,6 +26,8 @@ attach with a full definition: accepted for the server
 attach with a full definition: setting for the server to enable it
 attach through a table function: accepted for the server
 attach through a table function: setting for the server to enable it
+attach with a schema read by the engine: accepted for the server
+attach with a schema read by the engine: setting for the server to enable it
 temporary table: 0
 table in a Memory database: 0
 restore from a backup: 0
