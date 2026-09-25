@@ -966,12 +966,14 @@ def purge_jemalloc_on_all_connections(reason):
 if args.jemalloc_purge != "disabled":
     purge_jemalloc_on_all_connections("after-fill")
 
+# A connection whose settings failed replays them with every query (see
+# `setup_error_on_connection`), so the merge control skips it.
 if stop_merges:
-    for c in all_connections:
+    for c in (all_connections[i] for i in setup_connections):
         c.execute("SYSTEM STOP MERGES")
     # The stop only cancels the running merges, each of them notices it at its
     # next check, so wait until none is left before measuring anything.
-    for c in all_connections:
+    for c in (all_connections[i] for i in setup_connections):
         deadline = time.monotonic() + 300
         while c.execute("SELECT count() FROM system.merges")[0][0]:
             if time.monotonic() >= deadline:
@@ -1370,7 +1372,7 @@ reportStageEnd("run")
 # Start merges before the teardown: a drop query such as `ALTER TABLE ... DROP INDEX`
 # creates a mutation and waits for it, and mutations do not run while merges are stopped.
 if stop_merges:
-    for c in all_connections:
+    for c in (all_connections[i] for i in setup_connections):
         c.execute("SYSTEM START MERGES")
 
 # Run drop queries

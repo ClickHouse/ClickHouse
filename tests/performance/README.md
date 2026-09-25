@@ -106,7 +106,7 @@ Notes:
 
 ### Long tests (nightly only)
 
-Tests tagged `long` are skipped in PR and master runs (`perf.py` skips them unless given `--long`). A nightly workflow runs them and labels its rows in the performance tables `workflow_name = 'NightlyExtendedPerformance'`; its schedule lives in that workflow. Examples: `calibration.xml` (the per-host yardstick), `tpch_sf100.xml`, `tpcds_sf100.xml`.
+Tests tagged `long` are skipped in PR and master runs (`perf.py` skips them unless given `--long`). A nightly workflow runs them and labels its rows in the performance tables `workflow_name = 'NightlyExtendedPerformance'`; its schedule lives in that workflow (`ci/workflows/nightly_extended_performance.py`; rerun with `gh workflow run NightlyExtendedPerformance`). Examples: `calibration.xml` (the per-host yardstick), `tpch_sf100.xml`, `tpcds_sf100.xml`.
 
 How to write one:
 
@@ -150,7 +150,7 @@ To get the text of a reported `query_index` (0-based, after substitutions), chec
 
 Nightly results are comparable only under the same conditions. Append a dated line whenever any of them changes:
 
-* YYYY-MM-DD (first scheduled night): instance type `m8g.8xlarge`, image `clickhouse/performance-comparison`, pool `private-arm-benchmark`.
+* YYYY-MM-DD (first scheduled night): instance type `m8g.8xlarge`, image `clickhouse/performance-comparison`, pool `arm-large-storage`.
 
 Each job log also carries the resolved docker image digest (printed by the praktika runner) and the host identity (kernel, OS, CPU, memory, instance).
 
