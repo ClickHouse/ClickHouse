@@ -142,9 +142,14 @@ class DebianArtifactory:
         if lockfile.exists():
             print(f"WARNING: removing stale reprepro lock [{lockfile}]")
             lockfile.unlink()
-        cmd = f"{REPREPRO_CMD_PREFIX} includedeb {self.codename} {' '.join(paths)} >> /tmp/reprepro.log 2>&1"
+
+        def reprepro(args):
+            ok = Shell.check(f"{REPREPRO_CMD_PREFIX} {args} >> /tmp/reprepro.log 2>&1", verbose=True)
+            Shell.check("tail -n 100 /tmp/reprepro.log", verbose=True)
+            assert ok, f"reprepro failed: [{args[:100]}]"
+
         print("Running export commands:")
-        Shell.check(cmd, strict=True, verbose=True)
+        reprepro(f"includedeb {self.codename} {' '.join(paths)}")
         Shell.check("sync")
 
         codenames_to_check = [self.codename]
@@ -155,10 +160,8 @@ class DebianArtifactory:
             print(
                 f"Copy packages from {RepoCodenames.LTS} to {RepoCodenames.STABLE} repository"
             )
-            cmd = f"{REPREPRO_CMD_PREFIX} copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)} >> /tmp/reprepro.log 2>&1"
             print("Running copy command:")
-            print(f"  {cmd}")
-            Shell.check(cmd, strict=True, verbose=True)
+            reprepro(f"copy {RepoCodenames.STABLE} {RepoCodenames.LTS} {' '.join(packages_with_version)}")
             Shell.check("sync")
             codenames_to_check.append(RepoCodenames.STABLE)
 
