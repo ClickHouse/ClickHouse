@@ -1,0 +1,6 @@
+SELECT NOT `not`
+SELECT NOT `not`
+SELECT `not`, -`not`, `not` + 1 FROM t WHERE `not`
+SELECT NOT (1), NOT 1, NOT 1
+INSERT INTO `function` SELECT 1
+INSERT INTO `function` SELECT 1

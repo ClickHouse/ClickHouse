@@ -15,11 +15,11 @@ SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE like(__table1.c
 0
 0
 -- Test NOT LIKE with perfect prefix on String column - should be rewritten
-SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE not(startsWith(__table1.col_string, \'app\'))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE `not`(startsWith(__table1.col_string, \'app\'))
 4
 4
 -- Test NOT LIKE with perfect suffix on String column - should be rewritten
-SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE not(endsWith(__table1.col_string, \'Test\'))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE `not`(endsWith(__table1.col_string, \'Test\'))
 5
 5
 -- Test ILIKE with perfect prefix on String column - should NOT be rewritten
