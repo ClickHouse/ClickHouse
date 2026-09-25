@@ -158,9 +158,10 @@ void CalibrateWatermarksProcessor::mergeInputStates()
     }
 }
 
-CalibrateWatermarksProcessor::CalibrateWatermarksProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs)
+CalibrateWatermarksProcessor::CalibrateWatermarksProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs, Field initial_watermark)
     : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
     , log(getLogger("CalibrateWatermarks"))
+    , last_emitted_watermark(std::move(initial_watermark))
 {
     if (num_inputs == 0 || num_outputs == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CalibrateWatermarksProcessor requires at least one input and one output");
