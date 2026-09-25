@@ -1940,6 +1940,34 @@ TEST(SchedulerSpaceShared, InitialIncreaseDoesNotJoinProtectedRecoveryEpisode)
     EXPECT_EQ(initial.pressureCount(), 0u);
 }
 
+/// A waiting admission is `Pending`; another query's recovery owner must not turn it into
+/// recoverable growth or hide it behind the recovery state machine.
+TEST(SchedulerSpaceShared, PendingAdmissionDoesNotJoinProtectedRecoveryEpisode)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation protected_heavy(queue, "protected_heavy", 8000, true, protectedFromEvictionPolicy(1));
+    protected_heavy.protectAfterPressureRounds(1);
+    protected_heavy.increaseAsync(5000);
+    ASSERT_TRUE(protected_heavy.waitPressureCountFor(1, std::chrono::seconds(5)));
+
+    ManualAllocation pending(queue, "pending", 3000, /*wait_for_admission=*/ false);
+
+    std::promise<bool> observed;
+    auto observed_future = observed.get_future();
+    t.scheduler.event_queue.enqueue([&]
+    {
+        observed.set_value(pending.isIncreaseSuspended());
+    });
+    EXPECT_FALSE(observed_future.get())
+        << "An unprotected `Pending` admission entered another query's recovery episode";
+    EXPECT_EQ(pending.pressureCount(), 0u);
+}
+
 /// Spill completion moves the eviction-queue head into the single suction slot. The suctioned
 /// request then drives the existing victim policy one victim at a time.
 TEST(SchedulerSpaceShared, SpillCompletionEntersSuction)
