@@ -272,6 +272,7 @@ namespace FailPoints
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
     extern const char check_table_inject_retryable_zk_error[];
+    extern const char check_table_inject_shutdown_abort[];
 }
 
 namespace ErrorCodes
@@ -10627,7 +10628,9 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
 std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
     /// We want to throw and exit as soon as possible to allow part_check_thread to shutdown
-    if (shutdown_called || partial_shutdown_called)
+    bool aborted_by_shutdown = shutdown_called || partial_shutdown_called;
+    fiu_do_on(FailPoints::check_table_inject_shutdown_abort, { aborted_by_shutdown = true; });
+    if (aborted_by_shutdown)
         throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
 
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::checkDataNext");
@@ -10639,7 +10642,8 @@ std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidat
             {
                 throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Injected retryable ZooKeeper error for the check_table_inject_retryable_zk_error failpoint");
             });
-            return part_check_thread.checkPartAndFix(part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true);
+            return part_check_thread.checkPartAndFix(
+                part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true, /* throw_if_cancelled */true);
         }
         catch (const Exception & ex)
         {

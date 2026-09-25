@@ -411,17 +411,19 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
         start_time = time.time()
         # Killing ZooKeeper mid-check makes the query abort quickly instead of scanning all parts.
         # Depending on which condition wins once the session is lost, the abort surfaces either as a
-        # transient ZooKeeper error rethrown from the check (retryable, e.g. connection loss), or as a
-        # "0" (error) result after the replica's partial shutdown makes the check swallow the ABORTED.
-        # Both are acceptable; the point of this test is that CHECK TABLE does not block until every
-        # part is checked.
+        # transient ZooKeeper error rethrown from the check (retryable, e.g. connection loss), or as
+        # ABORTED once the replica's partial shutdown stops the check. Either way the query must fail:
+        # the data is healthy, so a "0" (error) result would falsely report it as broken.
+        # The point of this test is that CHECK TABLE does not block until every part is checked.
         try:
             result = node1.query(
                 f"CHECK TABLE {table_name} SETTINGS max_threads=1, check_query_single_value_result = 1", query_id=query_id
             )
-            assert result.strip() == "0", f"unexpected CHECK TABLE result: {result!r}"  # 0 means error
+            assert False, f"CHECK TABLE was expected to fail, but returned: {result!r}"
         except QueryRuntimeException as e:
-            assert "KEEPER_EXCEPTION" in str(e) or "Coordination" in str(e), str(e)
+            assert (
+                "KEEPER_EXCEPTION" in str(e) or "Coordination" in str(e) or "ABORTED" in str(e)
+            ), str(e)
         end_time = time.time()
         avg_sleep = 0.5
         # The process should have stopped before checking all parts

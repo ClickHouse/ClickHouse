@@ -144,6 +144,8 @@ static struct InitFiu
     REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
     ONCE(check_table_inject_retryable_zk_error) \
+    ONCE(check_table_inject_shutdown_abort) \
+    ONCE(check_table_inject_part_check_cancelled) \
     REGULAR(database_catalog_throw_on_table_shutdown) \
     REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
     REGULAR(database_replicated_throw_on_stop_replication) \
