@@ -322,20 +322,17 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
             {
                 it.expression->execute(agg_block);
 
-                /// Restore LowCardinality wrappers on SET expression results if needed
-                /// Aggregation strips LowCardinality, but result_columns expects it
+                /// An aggregate is resolved on its argument types with `LowCardinality` removed
+                /// recursively, so a column aggregated implicitly by `any` comes back without the
+                /// wrappers `header` declares, at any depth. Restore them before appending it.
                 const auto & result_column_type = header.getByName(it.column_name).type;
-                if (result_column_type->lowCardinality())
+                auto & column_with_type = agg_block.getByName(it.expression_result_column_name);
+                if (!column_with_type.type->equals(*result_column_type)
+                    && recursiveRemoveLowCardinality(result_column_type)->equals(*column_with_type.type))
                 {
-                    auto & column_with_type = agg_block.getByName(it.expression_result_column_name);
-                    // Only convert if the column doesn't already have LowCardinality
-                    if (!column_with_type.type->lowCardinality())
-                    {
-                        auto nested_type = recursiveRemoveLowCardinality(result_column_type);
-                        column_with_type.column = recursiveLowCardinalityTypeConversion(
-                            column_with_type.column, nested_type, result_column_type);
-                        column_with_type.type = result_column_type;
-                    }
+                    column_with_type.column = recursiveLowCardinalityTypeConversion(
+                        column_with_type.column, column_with_type.type, result_column_type);
+                    column_with_type.type = result_column_type;
                 }
             }
 
