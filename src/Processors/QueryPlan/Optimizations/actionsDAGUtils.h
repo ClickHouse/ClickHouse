@@ -2,11 +2,30 @@
 
 #include <Interpreters/ActionsDAG.h>
 
+#include <optional>
+#include <string_view>
+
 namespace DB
 {
 
+class Block;
+
 using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
 using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
+
+/// Index columns by name and resolve a lookup only when the name occurs exactly once
+/// and that column has the requested type. Zero or multiple name matches are ambiguous
+/// and return `nullopt`. The index borrows names and types, so the source must outlive it.
+class UniqueColumnPositionIndex
+{
+public:
+    explicit UniqueColumnPositionIndex(const Block & header);
+
+    std::optional<size_t> find(const String & name, const IDataType & type) const;
+
+private:
+    std::unordered_map<std::string_view, std::vector<std::pair<const IDataType *, size_t>>> positions_by_name;
+};
 
 /// Describes how one `ActionsDAG` output can be traced to one input.
 /// `ValuePreserving` is deliberately restricted to operations explicitly known

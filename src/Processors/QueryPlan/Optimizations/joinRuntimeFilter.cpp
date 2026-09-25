@@ -1,6 +1,5 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
-#include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,12 +16,16 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/RuntimeFilterTypes.h>
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -37,6 +40,12 @@ namespace ErrorCodes
 
 namespace QueryPlanOptimizations
 {
+
+RuntimeFilterPlanningResult tryAddJoinRuntimeFilter(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    RelationStatsCache & relation_stats_cache);
 
 /// For ANTI JOIN exclusion filters, rows with any NULL key can never match in the join (since NULL = NULL is false in SQL)
 /// and must always pass the runtime filter. This wraps the filter condition with OR isNull(key1) OR isNull(key2) OR ...
@@ -268,27 +277,33 @@ static std::optional<UInt64> getBuildSideDistinctKeys(const JoinStepLogical & jo
     return hint->ht_size;
 }
 
-bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+RuntimeFilterPlanningResult tryAddJoinRuntimeFilter(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    RelationStatsCache & relation_stats_cache)
 {
+    RuntimeFilterPlanningResult result;
+
     /// Is this a join step?
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
-        return false;
+        return result;
 
     /// Joining two sources?
     if (node.children.size() != 2)
-        return false;
+        return result;
 
     /// If right table is already filled and will be used for lookups directly (e.g. StorageJoin) then runtime filter cannot be constructed
     if (typeid_cast<JoinStepLogicalLookup *>(node.children[1]->step.get()))
-        return false;
+        return result;
 
     /// There are cases when either or both joined tables are replaced with const data at optimization time, e.g. when they are (SELECT 1 AS col).
     /// In such cases a header can be empty and all the const data is in the ActionsDAG in the Join step. There is no need (and no way) to build
     /// runtime filter in this scenario.
     if (node.children[0]->step->getOutputHeader()->empty() ||
         node.children[1]->step->getOutputHeader()->empty())
-        return false;
+        return result;
 
     /// Check if join can do runtime filtering on left table
     const auto & join_operator = join_step->getJoinOperator();
@@ -304,17 +319,17 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();
 
     if (!can_use_runtime_filter)
-        return false;
+        return result;
 
     /// When IEJoin takes this join (`ie_join` listed first in `join_algorithm` with a suitable
     /// ON expression), it is not executed by a hash-family algorithm: a runtime filter cannot
     /// be attached, and the algorithm list must not be pinned to hash-family ones below.
     if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
-        return false;
+        return result;
 
     /// Sometimes cross join can be represented by inner join without expressions
     if (join_operator.expression.empty())
-        return false;
+        return result;
 
     /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
     /// Planning and pipeline overhead outweighs any saving on a tiny probe.
@@ -328,7 +343,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// whose stream identity the initiator never registered with the coordinator, and the
     /// coordinator then rejects the replica's read request with a logical error.
     if (join_step->isRuntimeFilterDeclinedForSmallProbe())
-        return false;
+        return result;
 
     if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
     {
@@ -336,7 +351,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows)
         {
             join_step->setRuntimeFilterDeclinedForSmallProbe();
-            return false;
+            return result;
         }
     }
 
@@ -347,46 +362,15 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
 
-    /// The runtime filter is built on the build (right) side and is addressed by name
-    /// (BuildRuntimeFilterStep on the key name, findInOutputs, name-keyed permutations). If a join
-    /// KEY column name occurs more than once in the build input header (e.g. a correlated subquery
-    /// decorrelated from `SELECT c, *` where the join key itself is the duplicated column), the
-    /// name-keyed machinery cannot disambiguate the two identically-named key columns; the resulting
-    /// filter then changes a downstream step's stream multiplicity and aborts with
-    /// 'Block structure mismatch in JoinStep'. A duplicated NON-key build column, or a duplicated key
-    /// on the probe side (where the filter is only applied and preserves the header), is harmless, so
-    /// guard the build-side keys specifically. Skipping the filter is always correctness-safe. Mirrors
-    /// JoinStepLogical::canRemoveUnusedColumns(), which disables a sibling optimization on duplicated
-    /// join-condition inputs.
+    /// Wrapping moves the old subtree out of `target` and installs the new step at the same
+    /// address. Rebind any cached estimate to the old subtree's new address so statistics are not
+    /// loaded again, while ensuring the wrapper itself is derived from its step.
+    const auto make_cached_expression_node_on_top = [&](QueryPlan::Node & target, ActionsDAG actions_dag, DescriptionHolderPtr description)
     {
-        NameSet build_key_names;
-        for (const auto & condition : join_operator.expression)
-        {
-            auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
-            if (predicate_op != JoinConditionOperator::Equals)
-                continue;
-            /// Mirror preCalculateKeys(): only a genuine left/right equi-join PAIR contributes a build
-            /// key. A single-side local filter such as `r.c = 1` (build column vs constant) is not a
-            /// runtime-filter key, so it must not enlist `c` into the duplicate-key check — otherwise a
-            /// duplicated NON-key build column guarded by such a filter would needlessly disable the
-            /// filter (which is only ever built on the real key).
-            if (lhs.fromLeft() && rhs.fromRight())
-                build_key_names.insert(rhs.getColumnName());
-            else if (lhs.fromRight() && rhs.fromLeft())
-                build_key_names.insert(lhs.getColumnName());
-        }
-
-        const auto & build_header = *build_filter_node->step->getOutputHeader();
-        for (const auto & key_name : build_key_names)
-        {
-            size_t count = 0;
-            for (const auto & column : build_header)
-            {
-                if (column.name == key_name && ++count > 1)
-                    return false;
-            }
-        }
-    }
+        makeExpressionNodeOnTopOf(target, std::move(actions_dag), nodes, std::move(description));
+        chassert(target.children.size() == 1);
+        relation_stats_cache.rebindNode(target, *target.children.front());
+    };
 
     ColumnsWithTypeAndName join_keys_probe_side;
     ColumnsWithTypeAndName join_keys_build_side;
@@ -406,7 +390,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (predicate_op != JoinConditionOperator::Equals)
         {
             if (check_left_does_not_contain)
-                return false;
+                return result;
             continue;
         }
 
@@ -419,7 +403,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             !(lhs.fromLeft() && rhs.fromRight()) &&
             !(lhs.fromRight() && rhs.fromLeft()))
         {
-            return false;
+            return result;
         }
     }
 
@@ -431,20 +415,27 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         auto key_dags = join_step->preCalculateKeys(apply_filter_node->step->getOutputHeader(), build_filter_node->step->getOutputHeader());
         if (key_dags)
         {
+            /// preCalculateKeys updates the logical join's input headers even if every runtime
+            /// filter is later skipped, so the caller must rerun expression merging without
+            /// forcing unrelated filter rewrites.
+            result.join_inputs_changed = true;
+            relation_stats_cache.invalidate(node);
             auto get_node_column_with_type_and_name = [](const auto * e) { return ColumnWithTypeAndName(e->result_type, e->result_name); };
             join_keys_probe_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->first.keys | std::views::transform(get_node_column_with_type_and_name));
             join_keys_build_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->second.keys | std::views::transform(get_node_column_with_type_and_name));
             if (!isPassthroughActions(key_dags->first.actions_dag))
-                makeExpressionNodeOnTopOf(*apply_filter_node, std::move(key_dags->first.actions_dag), nodes, makeDescription("Calculate left join keys"));
+                make_cached_expression_node_on_top(
+                    *apply_filter_node, std::move(key_dags->first.actions_dag), makeDescription("Calculate left join keys"));
             if (!isPassthroughActions(key_dags->second.actions_dag))
-                makeExpressionNodeOnTopOf(*build_filter_node, std::move(key_dags->second.actions_dag), nodes, makeDescription("Calculate right join keys"));
+                make_cached_expression_node_on_top(
+                    *build_filter_node, std::move(key_dags->second.actions_dag), makeDescription("Calculate right join keys"));
         }
     }
 
     // Skip runtime filters if there are no join keys
     if (join_keys_build_side.empty())
     {
-        return false;
+        return result;
     }
 
     /// When negation will be use for the set of rows in filter, double check that all original predicates were transformed into equality predicates
@@ -495,7 +486,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 /// that is, after every query plan optimization pass, including this one. So the rewrite can
                 /// never hide the mismatch from this check, and a fallback JOIN never keeps a runtime filter
                 /// (`04669_join_key_no_supertype` asserts this for `LEFT ANTI`, where it would change results).
-                return false;
+                return result;
             }
             common_types.push_back(std::move(common_type));
         }
@@ -513,8 +504,36 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Instead, wrap all keys into a single Tuple and build one NOT IN filter on the tuple for exact tuple membership check.
     const bool use_tuple_filter = check_left_does_not_contain && join_keys_build_side.size() > 1;
 
+    const auto & build_header = *build_filter_node->step->getOutputHeader();
+    const auto & probe_header = *apply_filter_node->step->getOutputHeader();
+    const UniqueColumnPositionIndex build_header_positions(build_header);
+    std::vector<std::optional<size_t>> build_key_positions;
+    build_key_positions.reserve(join_keys_build_side.size());
+    for (const auto & build_key : join_keys_build_side)
+        build_key_positions.push_back(build_header_positions.find(build_key.name, *build_key.type));
+
+    /// The build transform still addresses its input by name. A key whose name does not
+    /// identify exactly one position is therefore not executable as a scalar or tuple filter.
+    /// This positional check replaces the pre-key-extraction duplicate-name guard and also
+    /// covers computed keys introduced by `preCalculateKeys`.
+    if (use_tuple_filter)
+    {
+        for (size_t i = 0; i < build_key_positions.size(); ++i)
+        {
+            if (build_key_positions[i])
+                continue;
+
+            LOG_TRACE(
+                getLogger("joinRuntimeFilter"),
+                "Runtime tuple filter was not planned because build key #{} `{}` has no unique name-and-type position",
+                i,
+                join_keys_build_side[i].name);
+            return result;
+        }
+    }
+
     /// Filter that will be applied on the probe side
-    ActionsDAG filter_dag(apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
+    ActionsDAG filter_dag(probe_header.getColumnsWithTypeAndName(), false);
     String filter_column_name;
 
     if (use_tuple_filter)
@@ -535,7 +554,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             const String tuple_column_name = tuple_node.result_name;
             build_tuple_dag.addOrReplaceInOutputs(tuple_node);
 
-            makeExpressionNodeOnTopOf(*build_filter_node, std::move(build_tuple_dag), nodes, makeDescription("Calculate right join key tuple"));
+            make_cached_expression_node_on_top(
+                *build_filter_node, std::move(build_tuple_dag), makeDescription("Calculate right join key tuple"));
 
             LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from tuple of right keys and applied to tuple of left keys", filter_name);
 
@@ -565,7 +585,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             /// Strip the temporary tuple column so the join step sees only the original columns
             ActionsDAG strip_tuple_dag(build_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
             strip_tuple_dag.removeUnusedActions(original_build_header->getNames(), /*allow_remove_inputs=*/false);
-            makeExpressionNodeOnTopOf(*build_filter_node, std::move(strip_tuple_dag), nodes, makeDescription("Remove temporary tuple column"));
+            make_cached_expression_node_on_top(
+                *build_filter_node, std::move(strip_tuple_dag), makeDescription("Remove temporary tuple column"));
         }
 
         /// Apply side: compute tuple(key1, key2, ...) and apply the filter
@@ -596,6 +617,16 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             const auto & join_key_probe_side = join_keys_probe_side[i];
             const auto & common_type = common_types[i];
 
+            if (!build_key_positions[i])
+            {
+                LOG_TRACE(
+                    getLogger("joinRuntimeFilter"),
+                    "Runtime filter '{}' was not planned because build key `{}` has no unique name-and-type position",
+                    id.name,
+                    join_key_build_side.name);
+                continue;
+            }
+
             const auto & filter_condition = addJoinKeyRuntimeFilter(
                 filter_dag,
                 build_filter_node,
@@ -612,6 +643,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             all_filter_conditions.push_back(
                 check_left_does_not_contain ? addNullBypassForAntiJoin(filter_dag, &filter_condition, {join_key_probe_side})
                                             : &filter_condition);
+        }
+
+        if (all_filter_conditions.empty())
+        {
+            return result;
         }
 
         if (all_filter_conditions.size() == 1)
@@ -637,11 +673,13 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     apply_filter_node = new_apply_filter_node;
 
     node.children = {apply_filter_node, build_filter_node};
+    relation_stats_cache.invalidate(node);
 
     /// Remove algorithms that are not compatible with runtime filters
     std::erase_if(join_algorithms, [](auto join_algorithm) { return !supportsRuntimeFilter(join_algorithm); });
 
-    return true;
+    result.filter_added = true;
+    return result;
 }
 
 void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)

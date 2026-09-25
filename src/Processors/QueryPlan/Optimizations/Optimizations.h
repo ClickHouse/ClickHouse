@@ -20,6 +20,8 @@ using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 namespace QueryPlanOptimizations
 {
 
+class RelationStatsCache;
+
 /// Main functions which optimize QueryPlan tree.
 /// First pass (ideally) apply local idempotent operations on top of Plan.
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
@@ -216,9 +218,20 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 /// expression step to convert between the child's new output and the input of the parent node.
 size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
+struct RuntimeFilterPlanningResult
+{
+    bool filter_added = false;
+    /// preCalculateKeys updated the logical join's input headers and may have added Expression steps.
+    bool join_inputs_changed = false;
+};
+
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
-bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+RuntimeFilterPlanningResult tryAddJoinRuntimeFilter(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    RelationStatsCache & relation_stats_cache);
 
 /// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution
 /// so that index pruning (MergeTree primary key) on the other side picks them up
@@ -295,7 +308,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns,
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+bool optimizeJoinLegacy(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes &,
+    const QueryPlanOptimizationSettings &,
+    RelationStatsCache & relation_stats_cache);
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
@@ -317,7 +334,10 @@ bool optimizeVectorSearchWithQuantizedCodes(QueryPlan::Node & root, Stack & stac
 void materializeQueryPlanReferences(
     QueryPlan::Node & node, QueryPlan::Nodes & nodes, std::vector<FutureSetFromSubqueryPtr> & extracted_sets);
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
-void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
+void useMemoryBufferForCommonSubplanResult(
+    QueryPlan::Node & node,
+    const QueryPlanOptimizationSettings & settings,
+    RelationStatsCache & relation_stats_cache);
 void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
@@ -347,7 +367,11 @@ bool convertLogicalJoinToPhysical(
     QueryPlan::Nodes &,
     const QueryPlanOptimizationSettings & optimization_settings);
 
-void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeJoinLogical(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes &,
+    const QueryPlanOptimizationSettings &,
+    RelationStatsCache & relation_stats_cache);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);

@@ -3,6 +3,7 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <Core/Block.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -394,6 +395,49 @@ TEST(ColumnStatsDerivation, LineageUsesOutputPositionsWithDuplicateNames)
     ASSERT_TRUE(lineage[1].input);
     EXPECT_EQ(lineage[0].input->input_position, 0u);
     EXPECT_EQ(lineage[1].input->input_position, 1u);
+}
+
+TEST(ColumnStatsDerivation, RemapDropsStatisticsForDuplicateOutputNames)
+{
+    auto int_type = std::make_shared<DataTypeInt64>();
+    ActionsDAG dag;
+    const auto & first = dag.addInput("first", int_type);
+    const auto & second = dag.addInput("second", int_type);
+    const auto & unique = dag.addInput("unique", int_type);
+    const auto & first_output = dag.addAlias(first, "duplicate");
+    const auto & second_output = dag.addAlias(second, "duplicate");
+    const auto & unique_output = dag.addAlias(unique, "kept");
+    dag.getOutputs().push_back(&first_output);
+    dag.getOutputs().push_back(&second_output);
+    dag.getOutputs().push_back(&unique_output);
+
+    std::unordered_map<String, ColumnStats> stats;
+    stats["first"] = ColumnStats{.num_distinct_values = 10};
+    stats["second"] = ColumnStats{.num_distinct_values = 1000};
+    stats["unique"] = ColumnStats{.num_distinct_values = 42};
+    remapColumnStats(stats, dag);
+
+    EXPECT_FALSE(stats.contains("duplicate"));
+    ASSERT_EQ(stats.size(), 1u);
+    EXPECT_EQ(stats.at("kept").num_distinct_values, 42u);
+}
+
+TEST(ColumnStatsDerivation, UniqueColumnPositionRequiresOneNameAndTypeMatch)
+{
+    auto int64_type = std::make_shared<DataTypeInt64>();
+    auto int32_type = std::make_shared<DataTypeInt32>();
+    Block header({
+        ColumnWithTypeAndName(int64_type->createColumn(), int64_type, "duplicate"),
+        ColumnWithTypeAndName(int32_type->createColumn(), int32_type, "duplicate"),
+        ColumnWithTypeAndName(int64_type->createColumn(), int64_type, "duplicate"),
+        ColumnWithTypeAndName(int64_type->createColumn(), int64_type, "unique"),
+    });
+
+    const UniqueColumnPositionIndex index(header);
+    EXPECT_FALSE(index.find("missing", *int64_type));
+    EXPECT_FALSE(index.find("duplicate", *int64_type));
+    EXPECT_FALSE(index.find("duplicate", *int32_type));
+    EXPECT_EQ(index.find("unique", *int64_type), 3u);
 }
 
 TEST(ColumnStatsDerivation, LineageKeepsDifferentExpressionsWithDuplicateOutputNames)

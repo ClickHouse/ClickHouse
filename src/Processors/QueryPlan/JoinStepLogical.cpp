@@ -49,7 +49,9 @@
 #include <Planner/PlannerJoins.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -58,7 +60,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -1071,24 +1072,6 @@ struct IEJoinOperandRange
     std::optional<Float64> null_fraction;
 };
 
-/// The numeric value of a statistics min/max Field. Basic statistics keep min/max only for
-/// values represented by numbers (`hasNumericMinMax`), so only the numeric Field types occur;
-/// anything else (e.g. a Decimal) yields no estimate rather than a wrong one.
-static std::optional<Float64> statisticsFieldToFloat64(const Field & value)
-{
-    switch (value.getType())
-    {
-        case Field::Types::UInt64:
-            return static_cast<Float64>(value.safeGet<UInt64>());
-        case Field::Types::Int64:
-            return static_cast<Float64>(value.safeGet<Int64>());
-        case Field::Types::Float64:
-            return value.safeGet<Float64>();
-        default:
-            return {};
-    }
-}
-
 /// The fraction of row pairs satisfying the condition, estimated from per-column min/max
 /// statistics under a uniformity assumption, or std::nullopt when the statistics do not cover
 /// the operands.
@@ -1105,11 +1088,13 @@ static std::optional<Float64> estimateIEJoinConditionSelectivity(
     if (!left_type->equals(*right_type) && !(isNumber(left_type) && isNumber(right_type)))
         return {};
 
+    /// Uniform interpolation is valid only while the recorded range remains representative.
     auto get_range = [](const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand)
         -> std::optional<IEJoinOperandRange>
     {
         auto it = column_stats.find(operand.getColumnName());
-        if (it == column_stats.end() || !it->second.min_value || !it->second.max_value)
+        if (it == column_stats.end() || !it->second.min_value || !it->second.max_value
+            || !QueryPlanOptimizations::isRepresentativeValueRange(it->second.range_provenance))
             return {};
         auto min_value = statisticsFieldToFloat64(*it->second.min_value);
         auto max_value = statisticsFieldToFloat64(*it->second.max_value);
@@ -2322,7 +2307,7 @@ static bool canBeEvaluatedOnSide(
     if (constants.empty())
         return false;
 
-    /// Skip evalutation of equiality conditions, since it's used for join key extraction
+    /// Skip evaluation of equality conditions, since they are used for join key extraction
     auto [op, lhs, rhs] = condition.asBinaryPredicate();
     bool is_equality = op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals;
     if (is_equality && areOppositeJoinSides(lhs, rhs))
@@ -2438,7 +2423,15 @@ static ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, Acti
     remapNodes(keys, node_map);
 
     dag.getOutputs() = dag.getInputs();
-    dag.getOutputs().append_range(keys | std::views::filter([&](const auto * node) { return node->type != ActionsDAG::ActionType::INPUT; }));
+    std::unordered_set<const ActionsDAG::Node *> output_nodes(dag.getOutputs().begin(), dag.getOutputs().end());
+    for (const auto * key : keys)
+    {
+        /// The same computed key node can occur in multiple equality predicates. Keep each
+        /// predicate's entry in `keys`, but expose the calculation in the stream header once;
+        /// every predicate can address that one result column by name.
+        if (key->type != ActionsDAG::ActionType::INPUT && output_nodes.insert(key).second)
+            dag.getOutputs().push_back(key);
+    }
 
     return dag;
 }
@@ -2450,6 +2443,16 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
 
     ActionsDAG::NodeRawConstPtrs left_keys;
     ActionsDAG::NodeRawConstPtrs right_keys;
+    std::unordered_map<const ActionsDAG::Node *, JoinActionRef> calculated_inputs;
+    auto get_calculated_input = [&](const ActionsDAG::Node * node, size_t source_relation) -> const JoinActionRef &
+    {
+        if (auto it = calculated_inputs.find(node); it != calculated_inputs.end())
+            return it->second;
+
+        return calculated_inputs
+            .emplace(node, expression_actions.addInput(node->result_name, node->result_type, source_relation))
+            .first->second;
+    };
 
     for (auto & expr : join_expression)
     {
@@ -2481,9 +2484,9 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
             right_node->type != ActionsDAG::ActionType::INPUT)
         {
             if (left_node->type != ActionsDAG::ActionType::INPUT)
-                lhs = expression_actions.addInput(left_node->result_name, left_node->result_type, lhs.fromLeft() ? 0 : 1);
+                lhs = get_calculated_input(left_node, lhs.fromLeft() ? 0 : 1);
             if (right_node->type != ActionsDAG::ActionType::INPUT)
-                rhs = expression_actions.addInput(right_node->result_name, right_node->result_type, rhs.fromRight() ? 1 : 0);
+                rhs = get_calculated_input(right_node, rhs.fromRight() ? 1 : 0);
             expr = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(predicate_op));
         }
     }

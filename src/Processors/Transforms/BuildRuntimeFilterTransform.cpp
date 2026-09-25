@@ -15,6 +15,55 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+UniqueRuntimeFilterPtr createRuntimeFilter(
+    size_t filters_to_merge,
+    const DataTypePtr & target_type,
+    const RuntimeFilterBuildOptions & build_options,
+    const RuntimeFilterConfig & runtime_filter_config)
+{
+    UniqueRuntimeFilterPtr filter;
+    if (build_options.polarity == RuntimeFilterPolarity::Contains)
+    {
+        if (AdaptiveSetRuntimeFilter::isDataTypeSupported(target_type))
+        {
+            filter = std::make_unique<RuntimeFilter>(
+                filters_to_merge,
+                runtime_filter_config,
+                RuntimeFilter::Adaptive(
+                    target_type,
+                    build_options.bloom.bytes,
+                    build_options.exact_values_limit,
+                    build_options.bloom.hash_functions,
+                    build_options.max_ratio_of_set_bits,
+                    build_options.distinct_keys_hint,
+                    build_options.distinct_keys_hint_matches_filter_key));
+        }
+        else
+        {
+            filter = std::make_unique<RuntimeFilter>(
+                filters_to_merge,
+                runtime_filter_config,
+                RuntimeFilter::ExactContains(target_type, build_options.bloom.bytes, build_options.exact_values_limit));
+        }
+    }
+    else
+    {
+        filter = std::make_unique<RuntimeFilter>(
+            filters_to_merge,
+            runtime_filter_config,
+            RuntimeFilter::ExactNotContains(target_type, build_options.bloom.bytes, build_options.exact_values_limit));
+    }
+
+    if (build_options.track_key_range)
+        filter->enableIndexAnalysis();
+    return filter;
+}
+
+}
+
 BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     SharedHeader header_,
     String filter_column_name_,
@@ -38,47 +87,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     if (!filter_column_target_type->equals(*filter_column_original_type))
         cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
 
-    if (build_options_.polarity == RuntimeFilterPolarity::Contains)
-    {
-        if (AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
-        {
-            built_filter = std::make_unique<RuntimeFilter>(
-                filters_to_merge_,
-                runtime_filter_config_,
-                RuntimeFilter::Adaptive(
-                    filter_column_target_type,
-                    build_options_.bloom.bytes,
-                    build_options_.exact_values_limit,
-                    build_options_.bloom.hash_functions,
-                    build_options_.max_ratio_of_set_bits,
-                    build_options_.distinct_keys_hint,
-                    build_options_.distinct_keys_hint_matches_filter_key));
-        }
-        else
-        {
-            built_filter = std::make_unique<RuntimeFilter>(
-                filters_to_merge_,
-                runtime_filter_config_,
-                RuntimeFilter::ExactContains(
-                    filter_column_target_type,
-                    build_options_.bloom.bytes,
-                    build_options_.exact_values_limit));
-        }
-    }
-    else
-    {
-        built_filter = std::make_unique<RuntimeFilter>(
-            filters_to_merge_,
-            runtime_filter_config_,
-            RuntimeFilter::ExactNotContains(
-                filter_column_target_type,
-                build_options_.bloom.bytes,
-                build_options_.exact_values_limit));
-    }
-
-    /// Only pay the extra min/max scan of the build side when the left side will use it for index analysis.
-    if (build_options_.track_key_range)
-        built_filter->enableIndexAnalysis();
+    built_filter = createRuntimeFilter(filters_to_merge_, filter_column_target_type, build_options_, runtime_filter_config_);
 }
 
 
