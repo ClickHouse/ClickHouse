@@ -1667,15 +1667,12 @@ static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const Action
     return node->getHash();
 }
 
-void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
-    RangesInDataParts & parts_with_ranges,
+bool MergeTreeDataSelectExecutor::canFilterPartsByQueryConditionCache(
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
-    const ReadFromMergeTree::Indexes & indexes,
-    const ContextPtr & context,
-    LoggerPtr log)
+    const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
@@ -1686,7 +1683,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
             || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
-        return;
+        return false;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
     /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, skip the
@@ -1696,7 +1693,25 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     /// The write sides are gated symmetrically (see updateQueryConditionCache, setTopKColumn and
     /// selectRangesToRead), so with the gate off a TopK read neither reads nor writes the cache.
     if (top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k])
+        return false;
+
+    return true;
+}
+
+void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
+    RangesInDataParts & parts_with_ranges,
+    const SelectQueryInfo & select_query_info,
+    const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ReadFromMergeTree::Indexes & indexes,
+    const ContextPtr & context,
+    LoggerPtr log)
+{
+    if (!canFilterPartsByQueryConditionCache(select_query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot, context))
         return;
+
+    const auto & settings = context->getSettingsRef();
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
 

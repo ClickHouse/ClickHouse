@@ -286,6 +286,15 @@ public:
         const ContextPtr & context,
         LoggerPtr log);
 
+    /// Whether `filterPartsByQueryConditionCache` can narrow anything for this read. Split out so a
+    /// caller can skip preparing its input instead of discovering the answer after copying it.
+    static bool canFilterPartsByQueryConditionCache(
+        const SelectQueryInfo & select_query_info,
+        const std::optional<VectorSearchParameters> & vector_search_parameters,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context);
+
     /// Salt a WHERE/PREWHERE condition hash with the effective skip-index profile that index
     /// analysis actually ran: the set of useful skip indexes (their names and types, after
     /// use_skip_indexes / ignore_data_skipping_indices / metadata have been applied) and the
