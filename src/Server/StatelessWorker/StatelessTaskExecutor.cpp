@@ -223,16 +223,17 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 namespace
 {
 
-/// Drain everything currently buffered and read the running loss counters. `forwarded_log_count` counts
+/// Drain everything currently buffered and read the running loss counters. `forwarded_logs` counts
 /// every line handed to a reply (whether or not the coordinator receives it); `begin_offset` is its
 /// value before this batch, so a retried poll that re-drains an emptied queue reports a higher offset
 /// than the end of the batch the coordinator last received and lets it detect the loss.
 /// Unset when the task collects no logs: the protocol writer emits an empty payload itself if asked.
-std::optional<TaskLogsPayload> drainLogs(const InternalTextLogsQueuePtr & logs_queue, std::atomic<UInt64> & forwarded_log_count)
+std::optional<TaskLogsPayload> drainLogs(const InternalTextLogsQueuePtr & logs_queue, StatelessTaskExecutor::ForwardedLogsCounter & forwarded_logs)
 {
     if (!logs_queue)
         return std::nullopt;
 
+    std::lock_guard lock(forwarded_logs.mutex);
     const auto logs = logs_queue->drainAll();
     MutableColumns columns = InternalTextLogsQueue::getSampleColumns();
     for (const auto & log_line : logs)
@@ -248,7 +249,8 @@ std::optional<TaskLogsPayload> drainLogs(const InternalTextLogsQueuePtr & logs_q
     result.rows = InternalTextLogsQueue::getSampleBlock();
     result.rows.setColumns(std::move(columns));
 
-    result.begin_offset = forwarded_log_count.fetch_add(result.rows.rows(), std::memory_order_relaxed);
+    result.begin_offset = forwarded_logs.count;
+    forwarded_logs.count += result.rows.rows();
     result.dropped_total = logs_queue->dropped_logs.load(std::memory_order_relaxed);
     return result;
 }
@@ -261,7 +263,7 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
     std::shared_future<std::optional<TaskFailure>> completion_future;
     std::shared_ptr<Progress> progress;
     InternalTextLogsQueuePtr logs_queue;
-    std::shared_ptr<std::atomic<UInt64>> forwarded_log_count;
+    std::shared_ptr<ForwardedLogsCounter> forwarded_logs;
     TaskCollectors collectors;
     {
         std::lock_guard lock(tasks_mutex);
@@ -271,19 +273,19 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
         completion_future = it->second->completion_future;
         progress = it->second->progress;
         logs_queue = it->second->logs_queue;
-        forwarded_log_count = it->second->forwarded_log_count;
+        forwarded_logs = it->second->forwarded_logs;
         collectors = it->second->collectors;
     }
 
     if (completion_future.valid() && completion_future.wait_for(std::chrono::milliseconds(wait_milliseconds)) == std::future_status::timeout)
     {
-        auto logs = drainLogs(logs_queue, *forwarded_log_count);
+        auto logs = drainLogs(logs_queue, *forwarded_logs);
         Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
         return TaskStatus{Result::TaskRunnig, "", std::move(progress_delta), 0, std::move(logs), collectors};
     }
 
     /// Drain only after the future is ready
-    auto logs = drainLogs(logs_queue, *forwarded_log_count);
+    auto logs = drainLogs(logs_queue, *forwarded_logs);
     Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
     const auto & failure = completion_future.get();
 
