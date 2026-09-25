@@ -992,6 +992,15 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         res.memory_usage = thread_group->memory_tracker.get();
         res.peak_memory_usage = thread_group->memory_tracker.getPeak();
 
+        /// Charge the final interval of the memory-usage integral (the time memory was held between the last
+        /// allocation/free and now, e.g. at QueryFinish) into the thread group's counters. This is done
+        /// unconditionally, independently of `get_profile_events` / `log_profile_events`: the per-query
+        /// snapshot below is optional, but the thread group's counters also feed the global
+        /// `system.events['MemoryCredits']`, which must still account the held tail even when profile-event
+        /// logging is disabled for the query. The atomic exchange inside `takeMemoryCreditsDelta` charges
+        /// each elapsed interval exactly once, so this never double-counts with the alloc/free updates.
+        thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
+
         if (get_thread_list)
         {
             res.thread_ids = thread_group->getInvolvedThreadIds();
@@ -1102,12 +1111,26 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
     /// `ProcessListEntry`'s destructor) and `unordered_map` keeps element pointers valid across
     /// inserts, so they outlive the lock; `getInfo` reads only atomics.
     std::vector<std::pair<String, const ProcessListForUser *>> users;
+    std::vector<ThreadGroupPtr> running_thread_groups;
     {
         LockAndBlocker lock(mutex);
         users.reserve(user_to_queries.size());
         for (const auto & [user, user_queries] : user_to_queries)
+        {
             users.emplace_back(user, &user_queries);
+            if (get_profile_events)
+                for (const auto & [query_id, query_status] : user_queries.queries)
+                    if (query_status->thread_group)
+                        running_thread_groups.push_back(query_status->thread_group);
+        }
     }
+
+    /// Charge the interval during which the running queries held memory without any allocation or free,
+    /// so that `MemoryCredits` in the per-user counters is as up to date as in `system.processes`.
+    /// The query-level counters propagate to the user-level ones. The atomic exchange inside
+    /// `takeMemoryCreditsDelta` charges every elapsed interval exactly once, so this never double-counts.
+    for (const auto & thread_group : running_thread_groups)
+        thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
 
     UserInfo per_user_infos;
     per_user_infos.reserve(users.size());
