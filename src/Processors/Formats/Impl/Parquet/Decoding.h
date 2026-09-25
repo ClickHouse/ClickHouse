@@ -294,7 +294,6 @@ struct UUIDConverter : public FixedSizeConverter
     UUIDConverter() { input_size = 16; }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    std::optional<Field> convertField(std::span<const char> data, bool is_max) const override;
 };
 
 struct TrivialStringConverter : public StringConverter
