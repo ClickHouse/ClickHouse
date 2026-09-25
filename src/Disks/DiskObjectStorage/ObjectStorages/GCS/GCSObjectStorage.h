@@ -124,6 +124,8 @@ public:
         return {snapshot, &snapshot->settings};
     }
 
+    ObjectStoragePtr cloneImpl() const override;
+
 private:
     /// The client and the settings it was built from are published as one immutable snapshot: a
     /// consumer that validates something against the settings (e.g. `describesSameClientAs` in

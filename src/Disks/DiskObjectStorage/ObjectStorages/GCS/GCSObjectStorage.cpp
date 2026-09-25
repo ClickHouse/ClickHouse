@@ -510,6 +510,23 @@ void GCSObjectStorage::copyObjectToAnotherObjectStorage( /// NOLINT
         object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
+ObjectStoragePtr GCSObjectStorage::cloneImpl() const
+{
+    /// A `google::cloud::storage::Client` is an immutable handle, and `applyNewSettings` never
+    /// changes the client of a snapshot but replaces the whole snapshot, so the copy can start from
+    /// this storage's current one -- including whether its client restricts server credentials --
+    /// and a later settings update of the copy only replaces the copy's snapshot.
+    auto snapshot = getClientWithSettings();
+    auto copy = std::make_shared<GCSObjectStorage>(
+        std::make_unique<google::cloud::storage::Client>(*snapshot->client),
+        snapshot->settings,
+        description,
+        key_generator,
+        disk_name);
+    copy->client_with_settings.set(std::make_unique<const ClientWithSettings>(*snapshot));
+    return copy;
+}
+
 void GCSObjectStorage::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
