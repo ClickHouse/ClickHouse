@@ -24,15 +24,23 @@ namespace ProfileEvents
 namespace DB
 {
 
+void CreatingSetsTransform::onPartialResult() noexcept
+{
+    std::lock_guard lock(cache_publication_mutex);
+    partial_result = true;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int UNKNOWN_EXCEPTION;
 }
 
 namespace FailPoints
 {
+    extern const char creating_sets_transform_after_first_chunk[];
     extern const char prepared_sets_build_ordered_set_inplace_fail[];
 }
 
@@ -248,12 +256,32 @@ void CreatingSetsTransform::consume(Chunk chunk)
             done_with_table = true;
     }
 
+    FailPointInjection::pauseFailPoint(FailPoints::creating_sets_transform_after_first_chunk);
+
     if (done_with_set && done_with_table)
         finishConsume();
 }
 
 Chunk CreatingSetsTransform::generate()
 {
+    {
+        std::lock_guard lock(cache_publication_mutex);
+        if (partial_result)
+        {
+            /// A set is a prerequisite for the rest of the query, not an output stream where a
+            /// prefix has useful partial-result semantics. Publishing a prefix as created makes
+            /// negative membership and every other completeness-dependent consumer incorrect.
+            /// Do not share this query's cancellation with cache waiters either: let them retry.
+            if (promise_to_build)
+            {
+                promise_to_build->set_value(nullptr);
+                promise_to_build.reset();
+            }
+
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while building a set for subquery");
+        }
+    }
+
     if (set_and_key->set && !set_from_cache)
     {
         /// Simulate a silent in-place build failure: skip `finishInsert`, leaving the set not created
@@ -272,6 +300,7 @@ Chunk CreatingSetsTransform::generate()
         ProfileEvents::increment(ProfileEvents::SetsBuiltFromSubquery);
         if (promise_to_build)
         {
+            std::lock_guard lock(cache_publication_mutex);
             promise_to_build->set_value(set_and_key->set);
             promise_to_build.reset();
         }

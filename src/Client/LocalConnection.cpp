@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int SYNTAX_ERROR;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
@@ -210,7 +211,7 @@ void LocalConnection::sendQuery(
         this->updateProgress(Progress(value));
     });
 
-    if (is_cancelled_callback)
+    if (is_cancelled_callback || process_progress_callback)
     {
         query_context->setInteractiveCancelCallback(
             [this, check_cancelled = is_cancelled_callback, progress_callback = process_progress_callback]() -> bool
@@ -223,7 +224,7 @@ void LocalConnection::sendQuery(
                     progress_callback(progress);
             }
 
-            if (!check_cancelled())
+            if (!check_cancelled || !check_cancelled())
                 return false;
 
             state->is_cancelled = true;
@@ -480,18 +481,11 @@ void LocalConnection::sendQuery(
         else if (state->io.pipeline.completed())
         {
             CompletedPipelineExecutor executor(state->io.pipeline);
-            if (process_progress_callback)
+            if (auto callback = query_context->getInteractiveCancelCallback())
             {
-                auto callback = [this, &process_progress_callback]()
-                {
-                    if (state->is_cancelled)
-                        return true;
-
-                    process_progress_callback(state->progress.fetchAndResetPiecewiseAtomically());
-                    return false;
-                };
-
-                executor.setCancelCallback(callback, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+                executor.setCancelCallback(
+                    ExecutorCancellation::cancelQuery(std::move(callback), query_context),
+                    query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
             }
             executor.execute();
         }
@@ -551,6 +545,14 @@ bool LocalConnection::isSendDataNeeded() const
 void LocalConnection::sendCancel()
 {
     state->is_cancelled = true;
+    if (auto elem = query_context->getProcessListElementSafe())
+    {
+        auto exception = std::make_exception_ptr(Exception(
+            ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT,
+            "Received 'Cancel' packet from the client, canceling the query."));
+        elem->cancelQuery(CancelReason::CANCELLED_BY_USER, std::move(exception));
+    }
+
     if (state->executor)
         state->executor->cancel();
     if (state->pushing_executor)

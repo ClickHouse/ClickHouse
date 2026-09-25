@@ -927,6 +927,130 @@ def test_stream_io_client_cancelled_while_input_left_open():
     assert query("SELECT 4") == "4\n"
 
 
+def test_stream_io_disconnect_cancels_remote_read():
+    failpoint = "read_buffer_from_http_before_request"
+    query_id = f"grpc_disconnect_remote_read_{uuid.uuid4().hex}"
+    keep_open = Event()
+    call = None
+    channel = create_channel()
+
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query=(
+                "SELECT * FROM url("
+                "'http://127.0.0.1:8123/?query=SELECT%201', "
+                "'TabSeparated', 'x UInt8') SETTINGS log_queries=1"
+            ),
+            query_id=query_id,
+        )
+        keep_open.wait()
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
+    try:
+        call = stub.ExecuteQueryWithStreamIO(send_query_info(), timeout=60)
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+        assert call.cancel()
+        keep_open.set()
+        channel.close()
+        is_cancelled = node.query_with_retry(
+            "SELECT is_cancelled FROM system.processes "
+            f"WHERE query_id='{query_id}'",
+            retry_count=100,
+            sleep_time=0.01,
+            check_callback=lambda value: value.strip() == "1",
+        )
+        assert is_cancelled.strip() == "1"
+
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        wait_for_no_grpc_call_threads()
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        http_requests = node.query(
+            "SELECT ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] "
+            "FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type!='QueryStart' "
+            "ORDER BY event_time_microseconds DESC LIMIT 1"
+        ).strip()
+        assert http_requests == "0"
+    finally:
+        if call is not None:
+            call.cancel()
+        keep_open.set()
+        channel.close()
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+
+def execute_and_cancel_while_sleeping(query_text, query_id):
+    failpoint = "infinite_sleep"
+    cancellation_observed = False
+
+    def send_query_info():
+        nonlocal cancellation_observed
+
+        yield clickhouse_grpc_pb2.QueryInfo(query=query_text, query_id=query_id)
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
+
+        try:
+            is_cancelled = node.query_with_retry(
+                "SELECT is_cancelled FROM system.processes "
+                f"WHERE query_id='{query_id}'",
+                retry_count=100,
+                sleep_time=0.01,
+                check_callback=lambda value: value.strip() == "1",
+            )
+            cancellation_observed = is_cancelled.strip() == "1"
+        finally:
+            node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    try:
+        results = list(stub.ExecuteQueryWithStreamIO(send_query_info()))
+    finally:
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    assert cancellation_observed, "gRPC cancellation did not reach QueryStatus"
+    return results
+
+
+def test_cancel_marks_query_status():
+    query_id = f"grpc_cancel_query_status_{uuid.uuid4().hex}"
+    results = execute_and_cancel_while_sleeping(
+        "SELECT number, sleepEachRow(0.1) FROM numbers(100) "
+        "SETTINGS max_block_size=1",
+        query_id,
+    )
+
+    assert results[-1].cancelled
+    assert not results[-1].HasField("exception")
+
+
+def test_cancel_completed_pipeline_uses_exception_cleanup():
+    query("CREATE TABLE t (a UInt64) ENGINE=MergeTree ORDER BY a")
+    query_id = f"grpc_cancel_completed_pipeline_{uuid.uuid4().hex}"
+    results = execute_and_cancel_while_sleeping(
+        "INSERT INTO t SELECT number FROM numbers(100) "
+        "WHERE sleepEachRow(0.1)=0 SETTINGS max_block_size=1",
+        query_id,
+    )
+
+    assert results[-1].cancelled
+    assert not results[-1].HasField("exception")
+
+    node.query("SYSTEM FLUSH LOGS")
+    query_log_type = node.query(
+        "SELECT type FROM system.query_log "
+        f"WHERE query_id='{query_id}' AND type!='QueryStart' "
+        "ORDER BY event_time_microseconds DESC LIMIT 1"
+    ).strip()
+    assert query_log_type in ("ExceptionBeforeStart", "ExceptionWhileProcessing")
+
+
 def test_cancel_while_generating_output():
     def send_query_info():
         yield clickhouse_grpc_pb2.QueryInfo(

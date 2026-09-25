@@ -1,6 +1,7 @@
 #include <memory>
 
 #include <Common/CurrentThread.h>
+#include <Common/QueryCancellationBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/ThreadStatus.h>
@@ -18,6 +19,9 @@ constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thr
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 void CurrentThread::updatePerformanceCounters()
@@ -124,10 +128,33 @@ MemoryPressureMonitor & CurrentThread::getMemoryPressureMonitor()
 
 void CurrentThread::checkIfNotCancelled()
 {
-    if (unlikely(!current_thread))
+    if (unlikely(!current_thread) || QueryCancellationBlockerInThread::isBlocked())
         return;
 
     current_thread->throwIfQueryCanceled();
+}
+
+bool CurrentThread::isQueryCancellationException(const std::exception_ptr & exception)
+{
+    const auto code = getExceptionErrorCode(exception);
+    if (code == ErrorCodes::QUERY_WAS_CANCELLED
+        || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+        || code == ErrorCodes::TIMEOUT_EXCEEDED)
+        return true;
+
+    if (QueryCancellationBlockerInThread::isBlocked())
+        return false;
+
+    if (auto group = getGroup())
+    {
+        if (auto context = group->query_context.lock())
+        {
+            if (auto query_status = context->getProcessListElementSafe())
+                return query_status->isStoredCancellationException(exception);
+        }
+    }
+
+    return false;
 }
 
 std::string_view CurrentThread::getQueryId()

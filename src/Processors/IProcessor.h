@@ -268,6 +268,9 @@ public:
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
+    /// Called for all processors before partial cancellation stops any source.
+    /// Cache writers must reject publication before a stopped source can produce EOF.
+    virtual void onPartialResult() noexcept {}
     virtual void cancel(CancelReason reason) noexcept;
     void cancel() noexcept { cancel(CancelReason::Unknown); }
 

@@ -1,12 +1,15 @@
 import logging
 import os
 import time
+import uuid
 
 import pytest
 from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
+from helpers.partial_read_cancellation import PausedReadCancellation
+from helpers.test_tools import assert_eq_with_retry
 from helpers.utility import generate_values, replace_config
 from test_storage_azure_blob_storage.test import azure_query
 
@@ -130,6 +133,69 @@ def create_table(node, table_name, **additional_settings):
 def test_create_table(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
+
+
+@pytest.mark.parametrize(
+    "read_method,read_failpoint",
+    [
+        ("read", "azure_read_before_read"),
+        ("threadpool", "azure_read_before_download"),
+    ],
+)
+def test_remote_read_stops_after_partial_result_cancel(
+    cluster, read_method, read_failpoint
+):
+    node = cluster.instances[NODE_NAME]
+    table = "azure_partial_cancel"
+    query_id = uuid.uuid4().hex
+
+    create_table(node, table, min_rows_for_wide_part=0)
+    azure_query(
+        node,
+        f"INSERT INTO {table} SELECT toDate('2020-01-01'), number, "
+        "repeat('x', 1024) FROM numbers(4096)",
+    )
+
+    query = (
+        f"SELECT sum(id) FROM {table} SETTINGS max_threads=1, "
+        f"remote_filesystem_read_method='{read_method}', "
+        "remote_filesystem_read_prefetch=0, enable_filesystem_cache=0, "
+        "use_uncompressed_cache=0, partial_result_on_first_cancel=1, "
+        "optimize_trivial_count_query=0"
+    )
+
+    try:
+        with PausedReadCancellation(
+            node, query, query_id, read_failpoint
+        ) as cancellation:
+            cancellation.cancel()
+
+            assert_eq_with_retry(
+                node,
+                f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+                "0",
+            )
+            get_objects_at_cancellation = node.query(
+                "SELECT ProfileEvents['AzureGetObject'] FROM system.processes "
+                f"WHERE query_id='{query_id}'"
+            ).strip()
+
+            cancellation.resume()
+
+            answer, error = cancellation.get_answer_and_error()
+            assert answer.strip() == "0", answer
+            assert error == "", error
+    finally:
+        azure_query(node, f"DROP TABLE IF EXISTS {table} SYNC")
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert (
+        node.query(
+            "SELECT ProfileEvents['AzureGetObject'] FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type='QueryFinish'"
+        ).strip()
+        == get_objects_at_cancellation
+    )
 
 
 def test_read_after_cache_is_wiped(cluster):

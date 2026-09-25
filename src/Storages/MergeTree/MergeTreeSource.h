@@ -26,6 +26,7 @@ public:
 protected:
     std::optional<Chunk> tryGenerate() override;
 
+    void onPartialResult() noexcept override;
     void onCancel() noexcept override;
 
 private:

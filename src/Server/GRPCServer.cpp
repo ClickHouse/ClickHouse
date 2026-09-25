@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/Session.h>
@@ -392,6 +393,39 @@ namespace
 
     using CompletionCallback = std::function<void(bool)>;
 
+    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
+    class BoolState
+    {
+    public:
+        explicit BoolState(bool initial_value) : value(initial_value) {}
+
+        bool get() const
+        {
+            std::lock_guard lock{mutex};
+            return value;
+        }
+
+        void set(bool new_value)
+        {
+            std::lock_guard lock{mutex};
+            if (value == new_value)
+                return;
+            value = new_value;
+            changed.notify_all();
+        }
+
+        void wait(bool wanted_value) const
+        {
+            std::unique_lock lock{mutex};
+            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
+        }
+
+    private:
+        bool value;
+        mutable std::mutex mutex;
+        mutable std::condition_variable changed;
+    };
+
     /// Requests a connection and provides low-level interface for reading and writing.
     class BaseResponder
     {
@@ -450,6 +484,48 @@ namespace
         /// Makes the pending operations of this call complete (with `ok` set to false).
         void cancel() { grpc_context.TryCancel(); }
 
+        void notifyWhenDone()
+        {
+            grpc_context.AsyncNotifyWhenDone(getCallbackPtr([this](bool)
+            {
+                if (grpc_context.IsCancelled())
+                {
+                    auto exception = std::make_exception_ptr(
+                        Exception(ErrorCodes::NETWORK_ERROR, "The gRPC call was cancelled by the client"));
+                    cancelQueryOnTransportFailure(std::move(exception));
+                }
+                done_notification_received.set(true);
+            }));
+        }
+
+        void setTransportQueryStatus(QueryStatusPtr query_status)
+        {
+            std::exception_ptr exception;
+            {
+                std::lock_guard lock{transport_failure_mutex};
+                transport_query_status = query_status;
+                exception = transport_failure;
+            }
+
+            if (query_status && exception)
+                query_status->cancelQuery(CancelReason::CANCELLED_BY_USER, std::move(exception));
+        }
+
+        void cancelQueryOnTransportFailure(std::exception_ptr exception)
+        {
+            QueryStatusPtr process_list_element;
+            {
+                std::lock_guard lock{transport_failure_mutex};
+                transport_failure = exception;
+                process_list_element = transport_query_status;
+            }
+
+            if (process_list_element)
+                process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::move(exception));
+        }
+
+        void waitForDoneNotification() { done_notification_received.wait(true); }
+
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
         {
@@ -479,6 +555,10 @@ namespace
         std::unordered_map<size_t, CompletionCallback> callbacks;
         size_t next_callback_id = 0;
         std::mutex mutex;
+        BoolState done_notification_received{false};
+        std::mutex transport_failure_mutex;
+        QueryStatusPtr transport_query_status;
+        std::exception_ptr transport_failure;
     };
 
     enum CallType
@@ -695,40 +775,6 @@ namespace
     };
 
 
-    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
-    class BoolState
-    {
-    public:
-        explicit BoolState(bool initial_value) : value(initial_value) {}
-
-        bool get() const
-        {
-            std::lock_guard lock{mutex};
-            return value;
-        }
-
-        void set(bool new_value)
-        {
-            std::lock_guard lock{mutex};
-            if (value == new_value)
-                return;
-            value = new_value;
-            changed.notify_all();
-        }
-
-        void wait(bool wanted_value) const
-        {
-            std::unique_lock lock{mutex};
-            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
-        }
-
-    private:
-        bool value;
-        mutable std::mutex mutex;
-        mutable std::condition_variable changed;
-    };
-
-
     /// Handles a connection after a responder is started (i.e. after getting a new call).
     class Call // NOLINT(clang-analyzer-optin.performance.Padding)
     {
@@ -751,6 +797,7 @@ namespace
         void generateOutput();
 
         void finishQuery();
+        void finishCancelledQuery();
         void onException(const Exception & exception);
         void onFatalError();
         void releaseQueryIDAndSessionID();
@@ -759,6 +806,7 @@ namespace
         void readQueryInfo();
         void throwIfFailedToReadQueryInfo();
         bool isQueryCancelled();
+        void cancelQueryOnTransportFailure(std::exception_ptr exception);
 
         void addQueryDetailsToResult();
         void addOutputFormatToResult();
@@ -807,7 +855,8 @@ namespace
         bool initial_query_info_read = false;
         bool finalize = false;
         bool responder_finished = false;
-        bool cancelled = false;
+        std::atomic<bool> cancelled = false;
+        std::once_flag cancellation_once;
 
         std::unique_ptr<ReadBuffer> read_buffer;
         std::unique_ptr<WriteBuffer> write_buffer;
@@ -877,7 +926,10 @@ namespace
         }
         catch (Exception & exception)
         {
-            onException(exception);
+            if (cancelled.load() && CurrentThread::isQueryCancellationException(std::current_exception()))
+                finishCancelledQuery();
+            else
+                onException(exception);
         }
         catch (Poco::Exception & exception)
         {
@@ -958,6 +1010,7 @@ namespace
         }
 
         query_context = session->makeQueryContext(std::move(client_info));
+        query_context->setInteractiveCancelCallback([this] { return isQueryCancelled(); });
 
         auto settings_changes = settingsChangesFromMap(query_info.settings());
         query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
@@ -1112,6 +1165,7 @@ namespace
         }
         String query(begin, query_end);
         io = ::DB::executeQuery(query, query_context).second;
+        responder->setTransportQueryStatus(query_context->getProcessListElementSafe());
     }
 
     void Call::processInput()
@@ -1148,7 +1202,11 @@ namespace
         }
 
         if (isQueryCancelled())
+        {
             executor.cancel();
+            if (auto process_list_element = query_context->getProcessListElementSafe())
+                process_list_element->throwIfKilled();
+        }
         else
             executor.finish();
     }
@@ -1323,6 +1381,9 @@ namespace
                     external_table_pipeline.setConcurrencyControl(false);
                     external_table_pipeline.disableReadProgress();
                     CompletedPipelineExecutor executor(external_table_pipeline);
+                    executor.setCancelCallback(
+                        ExecutorCancellation::cancelQuery([this] { return isQueryCancelled(); }, query_context),
+                        interactive_delay / 1000);
                     executor.execute();
                 }
             }
@@ -1395,28 +1456,17 @@ namespace
         {
             auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
             io.pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
-            auto check_for_cancel = [&]
-            {
-                if (isQueryCancelled())
-                {
-                    executor->cancel();
-                    return false;
-                }
-                return true;
-            };
+            executor->setCancelCallback(
+                ExecutorCancellation::cancelQuery([this] { return isQueryCancelled(); }, query_context),
+                interactive_delay / 1000);
 
             addOutputFormatToResult();
             addOutputColumnsNamesAndTypesToResult(header);
 
             Block block;
-            while (check_for_cancel())
+            while (executor->pull(block, interactive_delay / 1000))
             {
-                if (!executor->pull(block, interactive_delay / 1000))
-                    break;
-
                 throwIfFailedToSendResult();
-                if (!check_for_cancel())
-                    break;
 
                 if (!block.empty() && !io.null_format)
                     output_format_processor->write(materializeBlock(block));
@@ -1433,16 +1483,11 @@ namespace
                     sendResult();
 
                 throwIfFailedToSendResult();
-                if (!check_for_cancel())
-                    break;
             }
 
-            if (!isQueryCancelled())
-            {
-                addTotalsToResult(executor->getTotalsBlock());
-                addExtremesToResult(executor->getExtremesBlock());
-                addProfileInfoToResult(executor->getProfileInfo());
-            }
+            addTotalsToResult(executor->getTotalsBlock());
+            addExtremesToResult(executor->getExtremesBlock());
+            addProfileInfoToResult(executor->getProfileInfo());
         }
         else
         {
@@ -1460,7 +1505,8 @@ namespace
 
                 return isQueryCancelled();
             };
-            executor->setCancelCallback(std::move(callback), interactive_delay / 1000);
+            executor->setCancelCallback(
+                ExecutorCancellation::cancelQuery(std::move(callback), query_context), interactive_delay / 1000);
             executor->execute();
         }
 
@@ -1481,6 +1527,28 @@ namespace
         LOG_INFO(
             log,
             "Finished call {} in {:.3f} secs. (including reading by client: {:.3f}, writing by client: {:.3f})",
+            getCallName(call_type),
+            query_time.elapsedSeconds(),
+            static_cast<double>(waited_for_client_reading) / 1000000000ULL,
+            static_cast<double>(waited_for_client_writing) / 1000000000ULL);
+    }
+
+    void Call::finishCancelledQuery()
+    {
+        finalize = true;
+        io.onException(/*log_as_error=*/false);
+        addProgressToResult();
+        query_scope->logPeakMemoryUsage();
+        addLogsToResult();
+        result.clear_exception();
+        result.set_cancelled(true);
+        releaseQueryIDAndSessionID();
+        sendResult();
+        close();
+
+        LOG_INFO(
+            log,
+            "Cancelled call {} in {:.3f} secs. (including reading by client: {:.3f}, writing by client: {:.3f})",
             getCallName(call_type),
             query_time.elapsedSeconds(),
             static_cast<double>(waited_for_client_reading) / 1000000000ULL,
@@ -1545,6 +1613,7 @@ namespace
         io.process_list_entries.clear();
         if (query_context)
             query_context->setProcessListElement(nullptr);
+        responder->setTransportQueryStatus({});
         if (session)
             session->releaseSessionID();
     }
@@ -1561,6 +1630,12 @@ namespace
                 responder->cancel();
             reading_query_info.wait(false);
         }
+
+        /// The done callback accesses the responder state, so the responder must stay alive
+        /// until the notification has been dispatched on the queue thread.
+        if (!responder_finished)
+            responder->cancel();
+        responder->waitForDoneNotification();
 
         responder.reset();
         pipeline_executor.reset();
@@ -1652,21 +1727,25 @@ namespace
 
     bool Call::isQueryCancelled()
     {
-        if (cancelled)
-        {
-            result.set_cancelled(true);
-            return true;
-        }
+        if (!want_to_cancel.load())
+            return cancelled.load();
 
-        if (want_to_cancel)
+        std::call_once(cancellation_once, [this]
         {
             LOG_INFO(log, "Query cancelled");
-            cancelled = true;
-            result.set_cancelled(true);
-            return true;
-        }
+            if (query_context)
+            {
+                if (auto process_list_element = query_context->getProcessListElementSafe())
+                    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER);
+            }
+            cancelled.store(true);
+        });
+        return true;
+    }
 
-        return false;
+    void Call::cancelQueryOnTransportFailure(std::exception_ptr exception)
+    {
+        responder->cancelQueryOnTransportFailure(std::move(exception));
     }
 
     void Call::addQueryDetailsToResult()
@@ -1867,7 +1946,12 @@ namespace
         {
             /// Called on queue_thread.
             if (!ok)
+            {
+                auto exception = std::make_exception_ptr(
+                    Exception(ErrorCodes::NETWORK_ERROR, "Failed to send result to the client"));
+                cancelQueryOnTransportFailure(exception);
                 failed_to_send_result = true;
+            }
             sending_result.set(false);
         };
 
@@ -1987,6 +2071,9 @@ private:
         /// `mutex` is already locked.
         responders_for_new_calls[call_type] = makeResponder(call_type);
 
+        /// For asynchronous server calls `ServerContext::IsCancelled` is safe to use only
+        /// after this notification. It has to be registered before requesting the RPC.
+        responders_for_new_calls[call_type]->notifyWhenDone();
         responders_for_new_calls[call_type]->start(
             owner.grpc_service, *owner.queue, *owner.queue,
             [this, call_type](bool ok) { onNewCall(call_type, ok); });

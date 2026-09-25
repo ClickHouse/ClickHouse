@@ -18,6 +18,7 @@
 #endif
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/QueryCancellationBlockerInThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/TransactionID.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -534,6 +535,7 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    QueryCancellationBlockerInThread cancellation_blocker;
     /// Exclusive like `beforeCommit`: a background merge holds the gate across both its commit `multi`
     /// and the adoption that registers its parts here, so rollback cannot land between the two.
     bool need_rollback = false;

@@ -194,6 +194,8 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -1964,7 +1966,19 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
     }
 
     if (local_format_error)
+    {
+        /// A local format error is the first failure. `sendCancel` above only drains the query, but
+        /// `LocalConnection` also propagates it to `QueryStatus`, so the drain can report a synthetic
+        /// cancellation exception. Do not let that cleanup exception hide the original formatting error.
+        /// Preserve any other server exception, which may describe an independent query failure.
+        if (connection->getConnectionType() == IServerConnection::Type::LOCAL
+            && server_exception
+            && (server_exception->code() == ErrorCodes::QUERY_WAS_CANCELLED
+                || server_exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT))
+            server_exception.reset();
+
         std::rethrow_exception(local_format_error);
+    }
 
     if (cancelled && is_interactive && !cancelled_printed.exchange(true))
         output_stream << "Query was cancelled." << std::endl;
@@ -2004,6 +2018,11 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             return true;
 
         case Protocol::Server::Exception:
+            if (cancelled_ && packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+            {
+                onEndOfStream();
+                return false;
+            }
             onReceiveExceptionFromServer(std::move(packet.exception));
             return false;
 
@@ -2844,6 +2863,9 @@ bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
 
 void ClientBase::cancelQuery()
 {
+    /// A local connection can observe the cancellation synchronously from `sendCancel`,
+    /// so record that this is our own cancel before publishing it to `QueryStatus`.
+    cancelled = true;
     sendCancel();
 
     stopKeystrokeInterceptorIfExists();
@@ -2861,8 +2883,6 @@ void ClientBase::cancelQuery()
 
     if (is_interactive)
         output_stream << "Cancelling query." << std::endl;
-
-    cancelled = true;
 }
 
 void ClientBase::processParsedSingleQuery(
@@ -3561,6 +3581,30 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         parsed_query,
                         is_async_insert_with_inlined_data,
                         insert_query_without_data_length);
+                }
+                catch (const Exception & e)
+                {
+                    /// With a local connection, `sendCancel` publishes the client-initiated
+                    /// cancellation in the in-process `QueryStatus`. It can therefore surface
+                    /// directly from query cleanup instead of arriving as an `Exception` packet.
+                    /// Treat it like the `EndOfStream` that `TCPHandler` sends for the same cancel.
+                    if (connection->getConnectionType() == IServerConnection::Type::LOCAL
+                        && cancelled
+                        && e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                    {
+                        connection_needs_resynchronization = false;
+                        continue;
+                    }
+
+                    // Surprisingly, this is a client error. A server error would
+                    // have been reported without throwing (see onReceiveExceptionFromServer()).
+                    // `connection_needs_resynchronization` is not set here: it is armed when the
+                    // query exchange starts (see `processOrdinaryQuery`, `processInsertQuery`),
+                    // so a purely local failure before anything has been sent to the server does
+                    // not force a round trip - and a possible reconnection that would lose the
+                    // session state - before the next query.
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+                    have_error = true;
                 }
                 catch (...)
                 {

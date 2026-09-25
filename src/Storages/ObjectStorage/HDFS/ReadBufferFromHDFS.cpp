@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <IO/Progress.h>
 #include <Common/Throttler.h>
@@ -17,6 +18,13 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char hdfs_read_before_open[];
+extern const char hdfs_read_before_pread[];
+extern const char hdfs_read_before_read[];
+}
 
 namespace ErrorCodes
 {
@@ -59,13 +67,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         , read_until_position(read_until_position_)
         , enable_pread(read_settings_.remote_fs_settings.enable_hdfs_pread)
     {
+        FailPointInjection::pauseFailPoint(FailPoints::hdfs_read_before_open);
+        read_settings.read_cancellation.checkIfNotCancelled();
         fs = createHDFSFS(builder.get());
-        fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, static_cast<int16_t>(0), 0);
-
-        if (fin == nullptr)
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
-                "Unable to open HDFS file: {}. Error: {}",
-                hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
 
         if (file_size_.has_value())
         {
@@ -73,15 +77,21 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
         else
         {
+            read_settings.read_cancellation.checkIfNotCancelled();
             auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, fs.get(), hdfs_file_path.c_str());
             if (!file_info)
-            {
-                hdfsCloseFile(fs.get(), fin);
                 throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
-            }
             file_size = static_cast<size_t>(file_info->mSize);
             hdfsFreeFileInfo(file_info, 1);
         }
+
+        read_settings.read_cancellation.checkIfNotCancelled();
+        fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, static_cast<int16_t>(0), 0);
+
+        if (fin == nullptr)
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
+                "Unable to open HDFS file: {}. Error: {}",
+                hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
     }
 
     ~ReadBufferFromHDFSImpl() override
@@ -117,6 +127,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         {
             return false;
         }
+
+        FailPointInjection::pauseFailPoint(FailPoints::hdfs_read_before_read);
+        read_settings.read_cancellation.checkIfNotCancelled();
 
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, num_bytes_to_read);
         int bytes_read = wrapErr<tSize>(hdfsRead, fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
@@ -173,6 +186,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         {
             const int64_t remaining = size - total_read;
             const int64_t current_read_size = std::min(remaining, max_single_pread);
+
+            FailPointInjection::pauseFailPoint(FailPoints::hdfs_read_before_pread);
+            read_settings.read_cancellation.checkIfNotCancelled();
 
             ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, current_read_size);
             const int32_t bytes_read = wrapErr<tSize>(

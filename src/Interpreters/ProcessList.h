@@ -145,6 +145,7 @@ protected:
     mutable std::mutex cancel_mutex;
     CancelReason cancel_reason { CancelReason::UNDEFINED };
     std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancel_mutex);
+    mutable std::vector<std::exception_ptr> cancellation_exception_instances TSA_GUARDED_BY(cancel_mutex);
 
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
@@ -277,6 +278,10 @@ public:
 
     /// Throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
     void throwIfKilled();
+
+    /// Returns true for the original exception passed to `cancelQuery` or a private copy propagated
+    /// to a query thread. A `TIMEOUT` produces a new `TIMEOUT_EXCEEDED` exception instead.
+    bool isStoredCancellationException(const std::exception_ptr & exception) const;
 
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;

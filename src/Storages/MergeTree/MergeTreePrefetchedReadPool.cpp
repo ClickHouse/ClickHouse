@@ -98,6 +98,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     /// readers_future and waits for the job in its destructor.
     prefetch_runner.enqueueAndKeepTrack([this, &task, &read_prefetch]
     {
+        read_prefetch.checkIfNotCancelled();
         task.ranges = read_prefetch.refineReadRanges(*task.read_info, std::move(task.ranges));
         if (task.ranges.empty())
         {
@@ -190,8 +191,10 @@ std::function<void()> MergeTreePrefetchedReadPool::createPrefetchedTask(IMergeTr
     /// only inside this MergeTreePrefetchedReadPool, where read tasks are created and distributed,
     /// and we cannot block either, therefore make prefetch inside the pool and put the future
     /// into the thread task. When a thread calls getTask(), it will wait for it is not ready yet.
-    return [=, context = getContext()]() mutable
+    const auto read_cancellation = reader_settings.read_settings.read_cancellation;
+    return [read_cancellation, reader, priority, context = getContext()]() mutable
     {
+        read_cancellation.checkIfNotCancelled();
         /// For async read metrics in system.query_log.
         PrefetchIncrement watch(context->getAsyncReadCounters());
         reader->prefetchBeginOfRange(priority);

@@ -152,6 +152,11 @@ std::string MergeTreeSource::getName() const
     return processor->getName();
 }
 
+void MergeTreeSource::onPartialResult() noexcept
+{
+    processor->cancelReading();
+}
+
 void MergeTreeSource::onCancel() noexcept
 {
     processor->cancel();

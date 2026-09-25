@@ -360,6 +360,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         [this]() -> MarkCache::MappedPtr
         {
             auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarksAsync");
+            read_settings.read_cancellation.checkIfNotCancelled();
 
             /// Test-only: hold the task until the loader is destroyed, so a test can make the destructor win
             /// the race against the thread pool deterministically. The wait is bounded so that a query which
