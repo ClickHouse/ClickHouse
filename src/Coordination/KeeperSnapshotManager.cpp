@@ -523,10 +523,34 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                     }
 
                     const auto marker = readKeeperMoveMarker(it->info->disk, *it->marker_path);
-                    const bool matches_marker = marker
-                        && it->info->disk->getFileSize(it->info->path) == marker->size
-                        && computeKeeperFileDigest(it->info->disk, it->info->path) == *marker;
-                    if (matches_marker)
+                    if (!marker)
+                    {
+                        switch (marker.error())
+                        {
+                            case KeeperMoveMarkerParseError::LegacyEmpty:
+                                /// An empty marker means that the snapshot creation (or a legacy move) was interrupted,
+                                /// so the snapshot is incomplete.
+                                LOG_TRACE(
+                                    log,
+                                    "Removing incomplete snapshot {} and legacy marker {} from disk {}",
+                                    it->info->path,
+                                    *it->marker_path,
+                                    it->info->disk->getName());
+                                removeKeeperFileIfExists(it->info->disk, it->info->path);
+                                removeKeeperFileIfExists(it->info->disk, *it->marker_path);
+                                it = candidates.erase(it);
+                                continue;
+                            case KeeperMoveMarkerParseError::UnknownVersion:
+                                /// Only a newer server writes other marker versions, so this can only happen after a downgrade.
+                                it->has_unknown_marker_version = true;
+                                ++it;
+                                continue;
+                            case KeeperMoveMarkerParseError::Malformed:
+                                break; /// handled as a mismatch below
+                        }
+                    }
+                    else if (it->info->disk->getFileSize(it->info->path) == marker->size
+                        && computeKeeperFileDigest(it->info->disk, it->info->path) == *marker)
                     {
                         LOG_TRACE(
                             log,
@@ -536,27 +560,6 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                             *it->marker_path);
                         removeKeeperFileIfExists(it->info->disk, *it->marker_path);
                         it->marker_path.reset();
-                        ++it;
-                        continue;
-                    }
-
-                    if (!marker && marker.error() == KeeperMoveMarkerParseError::LegacyEmpty)
-                    {
-                        LOG_TRACE(
-                            log,
-                            "Removing incomplete snapshot {} and legacy marker {} from disk {}",
-                            it->info->path,
-                            *it->marker_path,
-                            it->info->disk->getName());
-                        removeKeeperFileIfExists(it->info->disk, it->info->path);
-                        removeKeeperFileIfExists(it->info->disk, *it->marker_path);
-                        it = candidates.erase(it);
-                        continue;
-                    }
-
-                    if (!marker && marker.error() == KeeperMoveMarkerParseError::UnknownVersion)
-                    {
-                        it->has_unknown_marker_version = true;
                         ++it;
                         continue;
                     }
@@ -589,6 +592,8 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                 if (candidates.empty())
                     return;
 
+                /// This can only happen after a downgrade (a newer server wrote the markers).
+                /// Keep the highest-precedence copy instead of dropping the last one.
                 if (std::ranges::all_of(candidates, &SnapshotRecoveryCandidate::has_unknown_marker_version))
                 {
                     const auto fallback = std::ranges::max_element(candidates, {}, [](const auto & candidate)

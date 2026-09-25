@@ -3771,10 +3771,25 @@ Changelog::Changelog(
                             }
 
                             const auto marker = readKeeperMoveMarker(it->marker->disk, it->marker->path);
-                            const bool matches_marker = marker
-                                && it->description->disk->getFileSize(it->description->path) == marker->size
-                                && computeKeeperFileDigest(it->description->disk, it->description->path) == *marker;
-                            if (matches_marker)
+                            if (!marker)
+                            {
+                                switch (marker.error())
+                                {
+                                    case KeeperMoveMarkerParseError::UnknownVersion:
+                                        /// Only a newer server writes other marker versions, so this can only happen after a downgrade.
+                                        it->has_unknown_marker_version = true;
+                                        ++it;
+                                        continue;
+                                    case KeeperMoveMarkerParseError::LegacyEmpty:
+                                        /// Unlike snapshots, changelogs have no writer that creates an empty marker,
+                                        /// so treat it as malformed, i.e. as a mismatch below.
+                                        [[fallthrough]];
+                                    case KeeperMoveMarkerParseError::Malformed:
+                                        break; /// handled as a mismatch below
+                                }
+                            }
+                            else if (it->description->disk->getFileSize(it->description->path) == marker->size
+                                && computeKeeperFileDigest(it->description->disk, it->description->path) == *marker)
                             {
                                 LOG_TRACE(
                                     log,
@@ -3784,13 +3799,6 @@ Changelog::Changelog(
                                     it->marker->path);
                                 removeKeeperFileIfExists(it->marker->disk, it->marker->path);
                                 it->marker.reset();
-                                ++it;
-                                continue;
-                            }
-
-                            if (!marker && marker.error() == KeeperMoveMarkerParseError::UnknownVersion)
-                            {
-                                it->has_unknown_marker_version = true;
                                 ++it;
                                 continue;
                             }
@@ -3823,6 +3831,8 @@ Changelog::Changelog(
                         if (candidates.empty())
                             return;
 
+                        /// This can only happen after a downgrade (a newer server wrote the markers).
+                        /// Keep the highest-precedence copy instead of dropping the last one.
                         if (std::ranges::all_of(candidates, &ChangelogRecoveryCandidate::has_unknown_marker_version))
                         {
                             const auto fallback = std::ranges::max_element(candidates, {}, &ChangelogRecoveryCandidate::precedence);
