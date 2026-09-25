@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsVisitParam.h>
 #include <Functions/FunctionsStringSearchToString.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -9,24 +10,44 @@ namespace DB
 struct ExtractRaw
 {
     using ExpectChars = PODArrayWithStackMemory<char, 64>;
+    using Scratch = ExpectChars;
 
-    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data)
+    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data, Scratch & expects_end)
     {
-        ExpectChars expects_end;
+        expects_end.clear();
         UInt8 current_expect_end = 0;
+        const auto * const extract_begin = pos;
 
-        for (const auto * extract_begin = pos; pos != end; ++pos)
+        while (pos != end)
         {
+            /// Most bytes of a typical value sit inside a string, where only `"` and `\` matter, so jump
+            /// to the next one instead of walking the state machine over every character.
+            if (current_expect_end == '"')
+            {
+                pos = reinterpret_cast<const UInt8 *>(find_first_symbols<'"', '\\'>(
+                    reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(end)));
+                if (pos == end)
+                    return;
+
+                if (*pos == '"')
+                {
+                    expects_end.pop_back();
+                    current_expect_end = expects_end.empty() ? 0 : expects_end.back();
+                }
+                else if (pos + 1 < end && pos[1] == '"')
+                {
+                    /// A backslash only escapes a `"`, as in the character by character scan.
+                    ++pos;
+                }
+
+                ++pos;
+                continue;
+            }
+
             if (current_expect_end && *pos == current_expect_end)
             {
                 expects_end.pop_back();
                 current_expect_end = expects_end.empty() ? 0 : expects_end.back();
-            }
-            else if (current_expect_end == '"')
-            {
-                /// skip backslash
-                if (*pos == '\\' && pos + 1 < end && pos[1] == '"')
-                    ++pos;
             }
             else
             {
@@ -52,6 +73,8 @@ struct ExtractRaw
                         }
                 }
             }
+
+            ++pos;
         }
     }
 };
