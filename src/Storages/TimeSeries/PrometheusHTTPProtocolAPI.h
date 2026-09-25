@@ -9,6 +9,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <IO/WriteBuffer.h>
 
+#include <functional>
+
 namespace DB
 {
 class StorageTimeSeries;
@@ -30,6 +32,13 @@ public:
         Range,
     };
 
+    enum class QueryStatsMode
+    {
+        None,
+        Basic,
+        All,
+    };
+
     struct Params
     {
         Type type;
@@ -41,6 +50,9 @@ public:
         String end_param;
         String step_param;
         String lookback_delta_param;
+        /// Preserve the requested `stats` mode for the ClickHouse response.
+        /// Both modes currently expose the same ClickHouse-specific aggregate stats.
+        QueryStatsMode stats_mode = QueryStatsMode::None;
     };
 
     /// Execute an instant query (/api/v1/query) or range query (/api/v1/query_range)
@@ -112,7 +124,13 @@ private:
         QueryFinishCallback query_finish_callback);
 
     /// Writes the result of a prometheus query as a JSON.
-    void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
+    using QueryStatsCallback = std::function<void(WriteBuffer &)>;
+
+    void writeQueryResponse(
+        WriteBuffer & response,
+        PullingAsyncPipelineExecutor & pulling_executor,
+        PrometheusQueryResultType result_type,
+        QueryStatsCallback query_stats_callback = {});
 
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);

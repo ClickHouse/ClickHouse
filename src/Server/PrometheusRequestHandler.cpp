@@ -469,7 +469,7 @@ public:
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "stats", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -487,6 +487,21 @@ public:
                             "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
                             limit_param);
         return static_cast<UInt64>(parsed_limit);
+    }
+
+    static PrometheusHTTPProtocolAPI::QueryStatsMode parseStatsParam(const String & stats_param)
+    {
+        if (stats_param.empty())
+            return PrometheusHTTPProtocolAPI::QueryStatsMode::None;
+        if (stats_param == "true")
+            return PrometheusHTTPProtocolAPI::QueryStatsMode::Basic;
+        if (stats_param == "all")
+            return PrometheusHTTPProtocolAPI::QueryStatsMode::All;
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid value of the 'stats' parameter: '{}', expected 'true' or 'all'",
+            stats_param);
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -529,6 +544,7 @@ public:
                 String end = params->get("end", "");
                 String step = params->get("step", "");
                 String lookback_delta = params->get("lookback_delta", "");
+                String stats = params->get("stats", "");
 
                 /// TODO: Support the following **optional** query parameters:
                 /// - timeout=<duration>: Evaluation timeout
@@ -543,6 +559,7 @@ public:
                     .end_param = end,
                     .step_param = step,
                     .lookback_delta_param = lookback_delta,
+                    .stats_mode = parseStatsParam(stats),
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -552,6 +569,7 @@ public:
                 String query = params->get("query", "");
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
+                String stats = params->get("stats", "");
 
                 /// TODO: Support optional parameters same as for the range query.
 
@@ -564,6 +582,7 @@ public:
                     .end_param = "",
                     .step_param = "",
                     .lookback_delta_param = lookback_delta,
+                    .stats_mode = parseStatsParam(stats),
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
