@@ -37,8 +37,8 @@ FROM
 -- The row filter restricts the read to the rows the vector index returned, and the index still holds
 -- the deleted ones, so applying it while a lightweight delete is unmaterialized would drop candidates
 -- with nothing to take their place - the query would return fewer rows than its LIMIT and miss the
--- neighbours a deleted candidate shadowed. The filter is skipped in that case, so the granule mate is
--- rescored and the answer is the same as the bruteforce one.
+-- neighbours a deleted candidate shadowed. The index is not used for such a part, so the part is read in
+-- full and the answer is the same as the bruteforce one.
 SELECT 'the same answer with the index';
 WITH [1.0, 0.0] AS reference_vec
 SELECT groupArray(id)

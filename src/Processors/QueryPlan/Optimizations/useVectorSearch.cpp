@@ -1,4 +1,3 @@
-#include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -8,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -17,8 +15,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
@@ -393,46 +389,6 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
     ActionsDAG & expression = expression_step->getExpression();
 
-    /// A `DELETE` that the parts do not carry yet is invisible to the vector index: it keeps returning
-    /// the row ids of deleted rows. Both optimizations below then restrict the read to exactly the rows
-    /// the index returned, so `_row_exists` (or the on-the-fly delete filter) drops the deleted ones with
-    /// nothing to take their place: the query returns fewer rows than its `LIMIT` and misses the true
-    /// neighbours that a deleted candidate shadowed. Fall back to reading the candidates' granules, where
-    /// the surviving rows are rescored, until a merge or a mutation rebuilds the index.
-    auto has_deletes_unknown_to_vector_index = [&](const auto & analyzed_result)
-    {
-        auto mutations_snapshot = read_from_mergetree_step->getMutationsSnapshot();
-
-        for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
-        {
-            if (part_with_ranges.ranges.empty())
-                continue;
-
-            /// A materialized lightweight delete: the part carries a `_row_exists` column.
-            if (part_with_ranges.data_part->hasLightweightDelete())
-                return true;
-
-            /// A delete that is still a pending mutation, applied on the fly at read time, or a patch part
-            /// attached to this part that updates `_row_exists` (a lightweight update may delete rows).
-            /// Both are per part: a patch part in another partition does not concern this read.
-            if (mutations_snapshot)
-            {
-                const auto context = read_from_mergetree_step->getContext();
-                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
-                    part_with_ranges.data_part, mutations_snapshot, context
-#if CLICKHOUSE_CLOUD
-                    , context->getAccess()->getEnabledMaskingPolicies()
-#endif
-                    );
-
-                if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
-                    return true;
-            }
-        }
-
-        return false;
-    };
-
     bool optimize_plan = !settings.vector_search_with_rescoring;
     /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
     /// vector row hints only describe the original candidates and must not filter
@@ -473,9 +429,6 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
                     }
                 }
             }
-
-            if (optimize_plan && has_deletes_unknown_to_vector_index(analyzed_result))
-                optimize_plan = false;
         }
 
         if (optimize_plan)
@@ -553,7 +506,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
         auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
         analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
 
-        bool can_apply_row_filter = analyzed_result != nullptr && !has_deletes_unknown_to_vector_index(analyzed_result);
+        bool can_apply_row_filter = analyzed_result != nullptr;
         if (can_apply_row_filter)
         {
             for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
