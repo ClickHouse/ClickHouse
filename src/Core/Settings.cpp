@@ -9219,7 +9219,7 @@ Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dict
 
 The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
 
-Functions `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` use the text index only by this dictionary scan, so they do not use the text index if the setting is disabled.
+Functions `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` read the text index only by this dictionary scan, so with the setting disabled they skip no granules but still use the tokenizer of the index.
 )", 0) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
 Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern, or of a `startsWith`/`endsWith` needle,

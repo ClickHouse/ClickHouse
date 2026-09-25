@@ -218,7 +218,7 @@ Returns 1 if at least one token of `input` starts with `prefix`, and 0 otherwise
 
 The comparison is case-sensitive. An empty `prefix` matches every token, so the function returns 1 if `input` has at least one token.
 
-`hasTokenPrefix(input, prefix)` is equivalent to `arrayExists(t -> startsWith(t, prefix), tokens(input))`.
+If `input` has no text index, `hasTokenPrefix(input, prefix)` is equivalent to `arrayExists(t -> startsWith(t, prefix), tokens(input))`.
 )") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenPrefix(input, prefix[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token starts with `prefix`, `0` otherwise.", {"UInt8"}};
@@ -265,7 +265,7 @@ Returns 1 if at least one token of `input` matches the [`LIKE`](#like) pattern `
 
 The pattern is applied to each token separately and must match the whole token: `%` matches any sequence of bytes, `_` matches one character, and `\` escapes them.
 
-`hasTokenLike(input, pattern)` is equivalent to `arrayExists(t -> like(t, pattern), tokens(input))`.
+If `input` has no text index, `hasTokenLike(input, pattern)` is equivalent to `arrayExists(t -> like(t, pattern), tokens(input))`.
 )") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenLike(input, pattern[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token matches `pattern`, `0` otherwise.", {"UInt8"}};
@@ -304,7 +304,7 @@ Returns 1 if at least one token of `input` matches the regular expression `regex
 The regular expression uses the [re2 syntax](https://github.com/google/re2/wiki/Syntax) and is applied to each token separately, like function [`match`](#match):
 it may match any part of the token, and the anchors `^` and `$` refer to the start and the end of the token.
 
-`hasTokenMatch(input, regexp)` is equivalent to `arrayExists(t -> match(t, regexp), tokens(input))`.
+If `input` has no text index, `hasTokenMatch(input, regexp)` is equivalent to `arrayExists(t -> match(t, regexp), tokens(input))`.
 )") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenMatch(input, regexp[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token matches `regexp`, `0` otherwise.", {"UInt8"}};
