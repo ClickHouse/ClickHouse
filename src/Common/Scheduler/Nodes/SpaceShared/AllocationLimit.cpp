@@ -461,11 +461,8 @@ ResourceAllocation * AllocationLimit::getSuctionAllocation() const
 
 void AllocationLimit::clearMemoryGrowthSuspension()
 {
-    if (recovery_growth)
-    {
-        recovery_growth->allocation.onGrowthPressureResolved();
-        recovery_growth->allocation.memory_growth_suction_priority = false;
-    }
+    /// Limits own only their reference to the recovery request. The leaf queue owns the allocation
+    /// lifecycle and clears the shared phase flag after the approval/removal reaches it.
     recovery_growth = nullptr;
     recovery_growth_retry_pending = false;
     if (child)
@@ -476,8 +473,8 @@ void AllocationLimit::clearSuction()
 {
     if (!recovery_growth)
         return;
-    recovery_growth->allocation.memory_growth_suction_priority = false;
-    recovery_growth->allocation.onGrowthPressureResolved();
+    /// Do not mutate the allocation's phase here; the same request is still being approved or
+    /// removed through child scopes. The leaf queue resolves the recovery episode exactly once.
     recovery_growth = nullptr;
     recovery_growth_retry_pending = false;
     retrySuctionWaiters();
