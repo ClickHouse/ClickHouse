@@ -109,18 +109,18 @@ enum ComputeWidthMode
 template <size_t block_size>
 ALWAYS_INLINE UInt32 nonPrintableASCIIMask(const UInt8 * data)
 {
-    using Bytes = Int8 __attribute__((ext_vector_type(block_size)));
+    using Bytes = UInt8 __attribute__((ext_vector_type(block_size)));
     using Mask = bool __attribute__((ext_vector_type(block_size)));
     using Bits = std::conditional_t<block_size == 32, UInt32, UInt16>;
     static_assert(std::endian::native == std::endian::little);
 
     Bytes bytes;
     memcpy(&bytes, data, block_size);
-    /// `(bytes - 32) >> 7` and `(126 - bytes) >> 7` are nonzero exactly where `bytes < 32` and `bytes > 126`
-    /// are true, respectively: a comparison would depend on `-faltivec-src-compat` on PowerPC.
-    const Bytes below = (bytes - static_cast<Int8>(32)) >> 7;
-    const Bytes above = (static_cast<Int8>(126) - bytes) >> 7;
-    return __builtin_bit_cast(Bits, __builtin_convertvector(below | above, Mask));
+    /// A byte is printable iff `bytes - 32` is in [0, 94] (unsigned lanes, so the wraparound is well defined).
+    /// `x >> 7` is set for x >= 128 and `(x + 33) >> 7` for x in [95, 127], so the union is set exactly for x > 94.
+    /// A comparison is not used because its result type would depend on `-faltivec-src-compat` on PowerPC.
+    const Bytes x = bytes - static_cast<UInt8>(32);
+    return __builtin_bit_cast(Bits, __builtin_convertvector((x | (x + static_cast<UInt8>(33))) >> 7, Mask));
 }
 
 template <ComputeWidthMode mode>
