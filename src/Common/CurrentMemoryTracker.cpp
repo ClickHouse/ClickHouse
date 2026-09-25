@@ -152,12 +152,12 @@ MemoryTracker * CurrentMemoryTracker::allocGlobal(Int64 size)
             process_tracker = tracker;
     }
 
-    /// The reservations counter must be raised before the charge: if an external correction
-    /// of the total tracker (`MemoryTracker::updateAllocated`) interleaves, the reservation
-    /// is counted twice until the next correction, which errs on the safe side (the tracked
+    /// The reservation must be added to the global counters before the charge: if an
+    /// external correction of the total tracker (`MemoryTracker::updateAllocated`)
+    /// interleaves, the reservation is counted twice until the next correction, which errs on the safe side (the tracked
     /// amount stays an upper bound), while the opposite order could leave the corrected
     /// amount below the actual usage after `freeGlobal`.
-    MemoryTracker::global_speculative_reservations.fetch_add(size, std::memory_order_seq_cst);
+    MemoryTracker::addSpeculativeReservationGlobal(size);
 
     /// Credit the reservation to the query before the overcommit decision inside `allocImpl`:
     /// a real allocation enters the query tracker's `amount` before the total tracker ranks
@@ -181,7 +181,7 @@ MemoryTracker * CurrentMemoryTracker::allocGlobal(Int64 size)
     {
         if (process_tracker)
             process_tracker->subSpeculativeReservation(size);
-        MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_seq_cst);
+        MemoryTracker::releaseSpeculativeReservationGlobal(size);
         throw;
     }
 
@@ -198,9 +198,9 @@ void CurrentMemoryTracker::freeGlobal(Int64 size, MemoryTracker * credited_query
     if (credited_query_tracker)
         credited_query_tracker->subSpeculativeReservation(size);
 
-    /// Lower the reservations counter last, so an interleaved external correction can only
-    /// overcount.
-    MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_seq_cst);
+    /// Release the reservation from the global counters last, so an interleaved external
+    /// correction can only overcount.
+    MemoryTracker::releaseSpeculativeReservationGlobal(size);
 }
 
 void CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(UInt64 value)

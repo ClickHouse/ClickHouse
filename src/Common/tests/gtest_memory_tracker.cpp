@@ -264,6 +264,10 @@ TEST(MemoryTracker, ConcurrentCorrectionNeverErasesLiveReservation)
         MemoryTracker::updateRSS(rss_before);
     });
 
+    /// Install the measured value before any observer runs: otherwise a reserver scheduled
+    /// ahead of the first correction observes the unrelated pre-test amount of the process.
+    MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+
     std::atomic_bool stop = false;
     std::atomic<Int64> lowest_observed_amount = std::numeric_limits<Int64>::max();
 
@@ -314,7 +318,7 @@ TEST(MemoryTracker, ConcurrentCorrectionNeverErasesLiveReservation)
     /// No reservation is live any more, so a correction installs the measured value.
     MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
     EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
-    EXPECT_EQ(MemoryTracker::global_speculative_reservations.load(), 0);
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
 }
 
 TEST(MemoryTracker, FailedSpeculativeReservationLeavesCorrectionUntouched)

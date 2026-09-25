@@ -381,7 +381,16 @@ public:
     /// corrected counters below the actual memory usage, breaking the upper-bound invariant
     /// the reservations provide. The correction is applied as a relative delta, so that a
     /// reservation charged concurrently with it cannot be erased.
-    static std::atomic<Int64> global_speculative_reservations;
+    ///
+    /// The sum is kept as two monotonic counters, so that a correction can bound the
+    /// reservations live at the moment it reads the corrected counter, see
+    /// `speculativeReservationsAround` in `MemoryTracker.cpp`.
+    static std::atomic<UInt64> global_speculative_reservations_added;
+    static std::atomic<UInt64> global_speculative_reservations_released;
+
+    static void addSpeculativeReservationGlobal(Int64 size);
+    static void releaseSpeculativeReservationGlobal(Int64 size);
+    static Int64 getSpeculativeReservationsGlobal();
 
     /// Report a stack trace for any single charge of at least `value` bytes to the global tracker.
     /// A charge is one tracker call and may batch a thread's deferred allocations, so it is not

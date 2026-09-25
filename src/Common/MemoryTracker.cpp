@@ -833,29 +833,47 @@ void MemoryTracker::reset()
 }
 
 
-std::atomic<Int64> MemoryTracker::global_speculative_reservations = 0;
+std::atomic<UInt64> MemoryTracker::global_speculative_reservations_added = 0;
+std::atomic<UInt64> MemoryTracker::global_speculative_reservations_released = 0;
 
-/// The amount of speculative reservations to add back to an externally measured value.
+void MemoryTracker::addSpeculativeReservationGlobal(Int64 size)
+{
+    global_speculative_reservations_added.fetch_add(static_cast<UInt64>(size), std::memory_order_seq_cst);
+}
+
+void MemoryTracker::releaseSpeculativeReservationGlobal(Int64 size)
+{
+    global_speculative_reservations_released.fetch_add(static_cast<UInt64>(size), std::memory_order_seq_cst);
+}
+
+Int64 MemoryTracker::getSpeculativeReservationsGlobal()
+{
+    UInt64 released = global_speculative_reservations_released.load(std::memory_order_seq_cst);
+    UInt64 added = global_speculative_reservations_added.load(std::memory_order_seq_cst);
+    return static_cast<Int64>(added - released);
+}
+
+/// An upper bound of the speculative reservations charged in the corrected counter at the
+/// moment `load_current` reads it, to add back to an externally measured value.
 ///
-/// The counter is raised before the charge and lowered after the release
-/// (`CurrentMemoryTracker::allocGlobal` / `freeGlobal`), so it leads the charges on the way
-/// up and lags them on the way down. Reading it once around the load of the corrected
-/// counter is therefore not enough: a release that lands between the two loads is already
-/// gone from the counter while its subtraction is already in the measured-away value,
-/// and a correction computed from that pair would erase it a second time.
+/// A reservation is added before it is charged and released after it is freed
+/// (`CurrentMemoryTracker::allocGlobal` / `freeGlobal`), so every reservation charged at
+/// the moment of the load is added before it and released after it. Both counters only
+/// grow, so reading the released one before the load and the added one after it gives at
+/// least the reservations live at the moment of the load. A single live sum cannot be
+/// used here: a reservation that is added, charged, freed and released entirely between
+/// two reads of the sum is invisible to both of them while it can still be charged in the
+/// loaded value, and the correction would then erase it.
 ///
-/// Reading the counter on both sides of the load and taking the maximum covers every
-/// reservation that was live at any point of the window, which is a superset of the
-/// reservations that are charged in the counter being corrected and will still be released
-/// afterwards. The residual imprecision is a reservation counted twice until the next
-/// correction - the safe direction for an upper bound.
+/// The residual imprecision is a reservation that starts or ends inside the window and is
+/// counted twice until the next correction - the safe direction for an upper bound.
 template <typename LoadCurrent>
 static Int64 speculativeReservationsAround(LoadCurrent && load_current, Int64 & current)
 {
-    Int64 reservations_before = MemoryTracker::global_speculative_reservations.load(std::memory_order_seq_cst);
+    UInt64 released_before = MemoryTracker::global_speculative_reservations_released.load(std::memory_order_seq_cst);
     current = load_current();
-    Int64 reservations_after = MemoryTracker::global_speculative_reservations.load(std::memory_order_seq_cst);
-    return std::max(reservations_before, reservations_after);
+    UInt64 added_after = MemoryTracker::global_speculative_reservations_added.load(std::memory_order_seq_cst);
+    return static_cast<Int64>(added_after - released_before);
 }
 
 void MemoryTracker::updateRSS(Int64 rss_)
