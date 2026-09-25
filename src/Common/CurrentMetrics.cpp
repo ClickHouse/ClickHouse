@@ -586,6 +586,8 @@
     M(MergeTreeSnapshotCommitThreads, "Number of threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \
+    \
+    M(LDAPSyncRunning, "Number of synchronization runs of `ldap` user directories currently in progress.") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS

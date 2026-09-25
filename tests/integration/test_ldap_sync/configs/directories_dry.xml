@@ -1,0 +1,36 @@
+<clickhouse>
+    <users_config remove="remove"/>
+    <user_directories replace="replace">
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <local_directory>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+        <ldap>
+            <server>openldap_strict</server>
+            <role_mapping>
+                <base_dn>{user_dn}</base_dn>
+                <scope>base</scope>
+                <search_filter>(objectClass=*)</search_filter>
+                <attribute>memberOf</attribute>
+                <rdn_attribute>cn</rdn_attribute>
+                <groups>
+                    <group>cn=clickhouse-role_a,ou=groups,dc=example,dc=org</group>
+                    <group>clickhouse-role_b</group>
+                </groups>
+                <prefix>clickhouse-</prefix>
+            </role_mapping>
+            <!-- `roles_storage` unset: the first writable storage is `local_directory`, which is not ephemeral. -->
+            <sync>
+                <interval>2</interval>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=inetOrgPerson)(|(memberOf=cn=clickhouse-role_a,ou=groups,dc=example,dc=org)(memberOf=cn=clickhouse-role_b,ou=groups,dc=example,dc=org)))</search_filter>
+                <attribute>uid</attribute>
+                <create_roles>true</create_roles>
+                <dry_run>true</dry_run>
+            </sync>
+        </ldap>
+    </user_directories>
+</clickhouse>

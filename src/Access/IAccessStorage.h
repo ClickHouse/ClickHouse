@@ -95,6 +95,12 @@ public:
     /// Makes this storage to reload and update access entities right now.
     virtual void reload(ReloadMode /* reload_mode */) {}
 
+    /// Whether `MultipleAccessStorage::reload` reloads this storage after every storage that returns false:
+    /// for a storage whose reload consults or writes the other storages (the synchronisation of an `ldap`
+    /// directory creates roles and asks the others whether they define a name), so that it sees them as
+    /// reloaded rather than as they were before the command.
+    virtual bool reloadsAfterOtherStorages() const { return false; }
+
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
 
@@ -107,6 +113,19 @@ public:
 
     template <typename EntityClassT>
     std::optional<UUID> find(const String & name) const { return find(EntityClassT::TYPE, name); }
+
+    /// Same as `find`, but when `force_external_lookup` is true, storages backed by an
+    /// external directory (currently only `LDAPAccessStorage`) are asked to resolve the
+    /// name against the upstream directory if it is not already in their in-memory cache.
+    /// Used by `EXECUTE AS` so that an LDAP-backed user can be impersonated even before
+    /// they have authenticated against this server since the last restart.
+    std::optional<UUID> find(AccessEntityType type, const String & name, bool force_external_lookup) const;
+
+    template <typename EntityClassT>
+    std::optional<UUID> find(const String & name, bool force_external_lookup) const
+    {
+        return find(EntityClassT::TYPE, name, force_external_lookup);
+    }
 
     std::vector<UUID> find(AccessEntityType type, const Strings & names) const;
 
@@ -241,6 +260,11 @@ public:
 
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
+    /// Overload used by the `force_external_lookup` find path. The default implementation
+    /// ignores the flag and delegates to the in-memory `findImpl` above. Storages that can
+    /// query an external directory (LDAP) override this to perform the lookup when the
+    /// flag is set and the in-memory cache misses.
+    virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name, bool force_external_lookup) const;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual std::vector<UUID> findAllImpl() const;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
