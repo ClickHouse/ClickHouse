@@ -5,6 +5,7 @@
 
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -26,6 +27,7 @@ public:
         UUID uuid,
         bool allow_server_credentials_in_user_queries_,
         bool is_loading_from_existing_metadata_,
+        LoadingStrictnessLevel table_definition_mode_,
         bool lazy_init);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
@@ -109,6 +111,15 @@ private:
     /// left unavailable (rather than aborting startup), so the server still starts and only this database is
     /// inaccessible -- mirroring the behavior of persistent S3/S3Queue tables.
     const bool is_loading_from_existing_metadata;
+    /// The mode the per-table engine definition derived from `table_engine_definition` is initialized with.
+    /// The table engine arguments (credentials, `format`, `compression_method`, ...) are the positional
+    /// arguments of the `CREATE DATABASE` query passed through verbatim, so they are a fresh user-supplied
+    /// definition exactly once: on `CREATE DATABASE`. Every other way of getting here - server startup,
+    /// `ATTACH DATABASE`, `RESTORE DATABASE` - replays a definition that was already accepted, and the
+    /// fresh-definition-only validations of `StorageObjectStorageConfiguration::initialize` (for example
+    /// the data lake `compression_method` / `format` rejection) must not stop an existing database from
+    /// working after an upgrade. Hence `CREATE` for a fresh definition and `ATTACH` for a replayed one.
+    const LoadingStrictnessLevel table_definition_mode;
 
     mutable std::mutex catalog_mutex;
     mutable std::shared_ptr<DataLake::ICatalog> catalog_impl TSA_GUARDED_BY(catalog_mutex);

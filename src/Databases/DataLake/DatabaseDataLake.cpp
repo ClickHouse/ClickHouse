@@ -179,6 +179,7 @@ DatabaseDataLake::DatabaseDataLake(
     UUID uuid,
     bool allow_server_credentials_in_user_queries_,
     bool is_loading_from_existing_metadata_,
+    LoadingStrictnessLevel table_definition_mode_,
     bool lazy_init)
     : IDatabase(database_name_)
     , url(url_)
@@ -188,6 +189,7 @@ DatabaseDataLake::DatabaseDataLake(
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
     , is_loading_from_existing_metadata(is_loading_from_existing_metadata_)
+    , table_definition_mode(table_definition_mode_)
     , db_uuid(uuid)
 {
     validateSettings();
@@ -391,6 +393,7 @@ void DatabaseDataLake::initialize() const
                 Context::getGlobalContextInstance(),
                 catalog_parameters,
                 table_engine_definition,
+                table_definition_mode,
                 allow_server_credentials_in_user_queries);
             break;
 #else
@@ -934,7 +937,16 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
+    /// `table_definition_mode`: the engine arguments come verbatim from the `CREATE DATABASE` query, so they
+    /// are validated as a fresh definition only while the database that supplied them is the one created
+    /// in this server run; a database replayed from persisted metadata is a compatibility path.
+    StorageObjectStorageConfiguration::initialize(
+        *configuration,
+        args,
+        context_copy,
+        /* with_table_structure */ false,
+        /* table_id */ nullptr,
+        table_definition_mode);
 
     const auto & query_settings = context_->getSettingsRef();
 
@@ -1728,10 +1740,12 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             = args.context->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
 
         /// A database is replayed from its stored `ATTACH DATABASE` statement with plain `ATTACH` on startup
-        /// (unlike tables, which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` is too narrow. Treat an
-        /// internal attach (server startup / restore) as a metadata load so a now-restricted catalog is left
+        /// (unlike tables, which use `FORCE_ATTACH`), so `isLoadingFromExistingMetadata` is too narrow. Treat the
+        /// server's own replay of its stored definition as a metadata load so a now-restricted catalog is left
         /// unavailable instead of aborting startup; a user `ATTACH DATABASE` stays fail-closed and is rejected.
-        const bool is_loading_from_existing_metadata = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` and
+        /// `EXECUTE AS` run user statements as internal ones.
+        const bool is_loading_from_existing_metadata = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
 
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
@@ -1742,9 +1756,13 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             args.uuid,
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
-            /// Internal creates (`RESTORE DATABASE`) shouldn't do network I/O.
+            /// Only a user `CREATE DATABASE` supplies a fresh table engine definition; `ATTACH DATABASE`
+            /// (server startup or by hand) and `RESTORE DATABASE` replay an accepted one. `args.internal` is not
+            /// used here: it is also set for user statements run by `PARALLEL WITH` or `EXECUTE AS`.
+            /*table_definition_mode=*/(args.create_query.attach || args.is_restore_from_backup) ? LoadingStrictnessLevel::ATTACH : LoadingStrictnessLevel::CREATE,
+            /// `ATTACH DATABASE` (including server startup) and `RESTORE DATABASE` shouldn't do network I/O.
             /// We don't want an unreachable or unauthorized catalog to block replica startup.
-            /*lazy_init=*/args.create_query.attach || args.internal);
+            /*lazy_init=*/args.create_query.attach || args.is_restore_from_backup);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism

@@ -111,6 +111,7 @@ GlueCatalog::GlueCatalog(
     DB::ContextPtr context_,
     const CatalogSettings & settings_,
     DB::ASTPtr table_engine_definition_,
+    DB::LoadingStrictnessLevel table_definition_mode_,
     bool allow_server_credentials_in_user_queries_)
     : ICatalog("")
     , DB::WithContext(context_)
@@ -118,6 +119,7 @@ GlueCatalog::GlueCatalog(
     , region(settings_.region)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
+    , table_definition_mode(table_definition_mode_)
     , metadata_objects(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
 {
     DB::S3::CredentialsConfiguration creds_config;
@@ -579,7 +581,11 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
     auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
-    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
+    /// The engine arguments are the `CREATE DATABASE` arguments passed through verbatim, so the
+    /// fresh-definition validations apply only while the database that supplied them is the one
+    /// created in this server run (see `DatabaseDataLake::table_definition_mode`).
+    DB::StorageObjectStorageConfiguration::initialize(
+        *configuration, args, getContext(), /* with_table_structure */ false, /* table_id */ nullptr, table_definition_mode);
 
     auto object_storage = configuration->createObjectStorage(getContext(), true, {});
 
