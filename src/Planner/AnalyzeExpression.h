@@ -7,6 +7,7 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <optional>
+#include <vector>
 
 
 namespace DB
@@ -15,6 +16,8 @@ namespace DB
 class ActionsDAG;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+class FutureSetFromSubquery;
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
 /// Analyze a standalone expression AST into ActionsDAG using the Analyzer framework.
 /// This is the Analyzer equivalent of:
@@ -32,13 +35,17 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 /// executing a subquery here would run a nested pipeline that reports progress on the
 /// outer query's context, which breaks the INSERT protocol handshake (a stray
 /// `Progress` packet arrives before the sample block).
+///
+/// When `build_subquery_sets` is false and `unbuilt_subquery_sets` is not null, it receives the
+/// unbuilt sets, for a caller that plans a step to build them (see `addDelayedCreatingSetsStep`).
 ActionsDAG analyzeExpressionToActionsDAG(
     const ASTPtr & expression_ast,
     const NamesAndTypesList & available_columns,
     const ContextPtr & context,
     bool add_aliases = false,
     bool project_result = true,
-    bool build_subquery_sets = true);
+    bool build_subquery_sets = true,
+    std::vector<FutureSetFromSubqueryPtr> * unbuilt_subquery_sets = nullptr);
 
 /// Same but returns ExpressionActionsPtr (wraps ActionsDAG in ExpressionActions).
 ExpressionActionsPtr analyzeExpressionToActions(

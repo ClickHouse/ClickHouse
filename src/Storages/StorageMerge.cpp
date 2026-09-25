@@ -1938,11 +1938,11 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
     ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
-    /// `analyzeExpressionToActionsDAG` builds the predicate's `IN (subquery)` sets in place while
-    /// it builds the DAG, so there is no set registry left for a later set-building step to own -
-    /// unlike the `ExpressionAnalyzer` path this replaced, which handed its `PreparedSets` to
-    /// `addDelayedCreatingSetsStep` in `addFilterTransform`.
-    actions_dag = analyzeExpressionToActionsDAG(expr, needed_columns, local_context);
+    /// Leave the predicate's `IN (subquery)` sets unbuilt and keep them: `addFilterTransform` plants
+    /// the step that builds them, and until then an unbuilt set is what lets the index analysis of
+    /// `addStorageFilter` build it as an ordered set and prune granules.
+    actions_dag = analyzeExpressionToActionsDAG(
+        expr, needed_columns, local_context, /* add_aliases */ false, /* project_result */ true, /* build_subquery_sets */ false, &subquery_sets);
 
     /// The filter column is dropped from the stream after filtering, so it must be a dedicated
     /// column that does not coincide with a data column. Wrap the policy predicate in a
@@ -2023,10 +2023,14 @@ void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step)
     step->addFilter(actions_dag.clone(), filter_column_name);
 }
 
-void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan) const
+void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan, ContextPtr local_context) const
 {
     auto filter_step = std::make_unique<FilterStep>(plan.getCurrentHeader(), actions_dag.clone(), filter_column_name, true /* remove filter column */);
     plan.addStep(std::move(filter_step));
+
+    /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an
+    /// additional pushdown. No subquery adds no step.
+    addDelayedCreatingSetsStep(plan, subquery_sets, local_context);
 }
 
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
@@ -2265,7 +2269,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
     if (row_policy_data_opt)
-        row_policy_data_opt->addFilterTransform(child.plan);
+        row_policy_data_opt->addFilterTransform(child.plan, local_context);
 
     /** Output headers may differ from what StorageMerge expects in some cases.
       * When the child table engine produces a query plan for the stage after FetchColumns,
@@ -2490,10 +2494,11 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
 
         const auto * node = child.plan.getRootNode();
 
-        /// A child plan rooted at a set-creating step has its sets built by the initiator, and a
-        /// fragment referencing them cannot be shipped to the replicas yet - `planHasSubquerySet` in
-        /// `applyParallelReplicas.cpp` keeps such plans local for the same reason - so such a child keeps
-        /// the whole `Merge` on a single replica, deliberately and not through the shape check below.
+        /// A row policy with an `IN (subquery)` predicate roots the child plan at a set-creating step
+        /// (`RowPolicyData::addFilterTransform`). Its sets are built by the initiator and a fragment
+        /// referencing them cannot be shipped to the replicas yet - `planHasSubquerySet` in
+        /// `applyParallelReplicas.cpp` keeps such plans local for the same reason - so this child keeps the
+        /// whole `Merge` on a single replica, deliberately and not through the shape check below.
         if (node
             && (typeid_cast<const CreatingSetsStep *>(node->step.get()) || typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())))
             return expandable_reads.emplace();

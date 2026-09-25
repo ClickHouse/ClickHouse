@@ -58,6 +58,8 @@ struct CoreAnalysisResult
     /// AST column names using `getAliasOrColumnName()`.  Length matches the
     /// original AST children before wildcard expansion.
     std::vector<String> ast_column_names_with_aliases;
+    /// The `IN (subquery)` sets of the expression, left unbuilt when `build_subquery_sets` is false.
+    PreparedSets::Subqueries unbuilt_subquery_sets;
 };
 
 static CoreAnalysisResult buildExpressionCoreDAG(
@@ -83,7 +85,7 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     /// Return an empty DAG with no inputs — callers like getRequiredColumns()
     /// must see an empty list, not all table columns.
     if (ast_children.empty())
-        return {ActionsDAG(), {}, {}};
+        return {ActionsDAG(), {}, {}, {}};
 
     /// Collect AST column names in both conventions so that any post-processing
     /// branch (alias-projecting or AST-name override) can pick the right one
@@ -252,7 +254,12 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     /// `VirtualColumnUtils::buildSetsForDAG`).  Executing the subquery here would run
     /// a nested pipeline that reports progress on the outer query's context, breaking
     /// the INSERT protocol handshake (a stray `Progress` packet before the sample block).
-    if (build_subquery_sets)
+    PreparedSets::Subqueries unbuilt_subquery_sets;
+    if (!build_subquery_sets)
+    {
+        unbuilt_subquery_sets = planner_context->getPreparedSets().getSubqueries();
+    }
+    else
     {
         for (auto & subquery_set : planner_context->getPreparedSets().getSubqueries())
             subquery_set->buildSetInplace(execution_context);
@@ -324,7 +331,7 @@ static CoreAnalysisResult buildExpressionCoreDAG(
             "Unknown column '{}': the expression is analyzed over an empty set of columns and must be constant",
             actions.getInputs().front()->result_name);
 
-    return {std::move(actions), std::move(ast_column_names_no_aliases), std::move(ast_column_names_with_aliases)};
+    return {std::move(actions), std::move(ast_column_names_no_aliases), std::move(ast_column_names_with_aliases), std::move(unbuilt_subquery_sets)};
 }
 
 /// Sort DAG nodes by their position in `available_columns` (table/header order).
@@ -441,9 +448,12 @@ ActionsDAG analyzeExpressionToActionsDAG(
     const ContextPtr & context,
     bool add_aliases,
     bool project_result,
-    bool build_subquery_sets)
+    bool build_subquery_sets,
+    std::vector<FutureSetFromSubqueryPtr> * unbuilt_subquery_sets)
 {
     auto core = buildExpressionCoreDAG(expression_ast, available_columns, context, build_subquery_sets);
+    if (unbuilt_subquery_sets)
+        *unbuilt_subquery_sets = std::move(core.unbuilt_subquery_sets);
     auto & actions = core.actions;
     auto & ast_column_names = add_aliases ? core.ast_column_names_with_aliases : core.ast_column_names_no_aliases;
 

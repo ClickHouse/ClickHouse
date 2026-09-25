@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class FutureSetFromSubquery;
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+
 struct QueryPlanResourceHolder;
 
 class ReadFromMergeTree;
@@ -276,13 +279,15 @@ private:
 
         /// Create explicit filter transform to exclude
         /// rows that are not conform to row level policy
-        void addFilterTransform(QueryPlan &) const;
+        void addFilterTransform(QueryPlan &, ContextPtr) const;
 
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
         ActionsDAG actions_dag;
         ExpressionActionsPtr filter_actions;
         StorageMetadataPtr storage_metadata_snapshot;
+        /// The policy predicate's IN-subqueries, which stay unbuilt until a set-building step is planted.
+        std::vector<FutureSetFromSubqueryPtr> subquery_sets;
     };
 
     using RowPolicyDataOpt = std::optional<RowPolicyData>;
