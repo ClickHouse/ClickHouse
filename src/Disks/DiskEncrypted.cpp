@@ -591,7 +591,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         bool attach,
         bool custom_disk) -> DiskPtr
     {
-        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false) || global_skip_access_check;
 
         if (custom_disk && !attach)
         {

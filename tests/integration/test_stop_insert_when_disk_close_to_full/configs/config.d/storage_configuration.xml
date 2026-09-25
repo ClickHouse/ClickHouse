@@ -8,12 +8,10 @@
             <jbod_disk1>
                 <type>local</type>
                 <path>/jbod_disk1/</path>
-                <priority>1</priority>
             </jbod_disk1>
             <jbod_disk2>
                 <type>local</type>
                 <path>/jbod_disk2/</path>
-                <priority>2</priority>
             </jbod_disk2>
         </disks>
         <policies>

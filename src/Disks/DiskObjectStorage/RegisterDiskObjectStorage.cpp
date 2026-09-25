@@ -30,7 +30,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         bool attach,
         bool custom_disk) -> DiskPtr
     {
-        const bool run_access_check = !global_skip_access_check && !config.getBool(config_prefix + ".skip_access_check", false);
+        const bool run_access_check = !config.getBool(config_prefix + ".skip_access_check", false) && !global_skip_access_check;
         const bool run_local_paths_check = custom_disk && !attach;
 
         std::unordered_map<Location, ObjectStoragePtr> object_storage_registry;
