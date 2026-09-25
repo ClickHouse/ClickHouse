@@ -230,11 +230,20 @@ DECLARE_SETTING_ENUM(DefaultTableEngine)
 
 enum class TextIndexPostingListApplyMode : uint8_t
 {
-    MATERIALIZE,
-    LAZY,
+    Materialize,
+    Lazy,
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
+
+enum class TextIndexPostingsIntersectionAlgorithm : uint8_t
+{
+    BruteForce,
+    Leapfrog,
+    Auto,
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm)
 
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 
@@ -553,7 +562,8 @@ DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 enum class TextIndexPostingListCodec : uint8_t
 {
     None,
-    Bitpacking
+    Bitpacking,
+    PFor
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)

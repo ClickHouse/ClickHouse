@@ -630,6 +630,10 @@ public:
     MergeTreeDataPartBuilder
     getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
 
+    /// An in-memory projection part that only carries an index and a granularity (`PartDirIntent::Synthetic`):
+    /// nothing is read from or written to its directory.
+    MergeTreeDataPartBuilder getSyntheticProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection);
+
     /// Write path: requires the descriptor produced by createProjection, so building a projection part
     /// before creating its directory cannot compile away the residue sweep (see getProjectionStorageForWrite).
     MergeTreeDataPartBuilder
