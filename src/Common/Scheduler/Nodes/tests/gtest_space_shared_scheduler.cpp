@@ -1911,6 +1911,35 @@ TEST(SchedulerSpaceShared, UnprotectedGrowthDoesNotJoinProtectedRecoveryEpisode)
 
 
 
+/// A zero-reserve query's first increase is `Initial`, not regular growth. Even while another
+/// query owns protected recovery, that request must never join the recovery state machine.
+TEST(SchedulerSpaceShared, InitialIncreaseDoesNotJoinProtectedRecoveryEpisode)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation protected_heavy(queue, "protected_heavy", 8000, true, protectedFromEvictionPolicy(1));
+    protected_heavy.protectAfterPressureRounds(1);
+    protected_heavy.increaseAsync(5000);
+    ASSERT_TRUE(protected_heavy.waitPressureCountFor(1, std::chrono::seconds(5)));
+
+    ManualAllocation initial(queue, "initial", 0);
+    initial.increaseAsync(3000);
+
+    std::promise<bool> observed;
+    auto observed_future = observed.get_future();
+    t.scheduler.event_queue.enqueue([&]
+    {
+        observed.set_value(initial.isIncreaseSuspended());
+    });
+    EXPECT_FALSE(observed_future.get())
+        << "An unprotected `Initial` increase entered another query's recovery episode";
+    EXPECT_EQ(initial.pressureCount(), 0u);
+}
+
 /// Spill completion moves the eviction-queue head into the single suction slot. The suctioned
 /// request then drives the existing victim policy one victim at a time.
 TEST(SchedulerSpaceShared, SpillCompletionEntersSuction)
@@ -2348,8 +2377,8 @@ TEST(SchedulerSpaceShared, RejectedSpillCompletesAfterProcessorWork)
         MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
 }
 
-/// Force-spill alone must reach the query controller without granting eviction protection.
-TEST(SchedulerSpaceShared, ForceSpillWithoutEvictionProtection)
+/// Forced spilling is an action inside protected recovery, not an independent opt-in path.
+TEST(SchedulerSpaceShared, ForceSpillWithoutEvictionProtectionUsesExistingPath)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -2366,23 +2395,20 @@ TEST(SchedulerSpaceShared, ForceSpillWithoutEvictionProtection)
 
     MemoryReservation::Settings settings;
     settings.force_spill_before_eviction = true;
-    settings.pressure_policy.max_allocation_before_suction_bytes = 1;
     MemoryReservation reservation(link, "force_only", 0, settings);
     reservation.setMemorySpillScheduler(scheduler);
+
     tracker.adjustWithUntrackedMemory(8000);
     reservation.syncWithMemoryTracker(&tracker);
-    ManualAllocation competitor(queue, "competitor", 1000);
-    processor.runOnDedicatedSpill([&] { tracker.adjustWithUntrackedMemory(-4000); });
-
     tracker.adjustWithUntrackedMemory(3000);
-    auto growth = std::async(std::launch::async, [&] { reservation.syncWithMemoryTracker(&tracker); });
-    EXPECT_EQ(growth.wait_for(std::chrono::seconds(5)), std::future_status::ready);
-    EXPECT_NO_THROW(growth.get());
 
-    EXPECT_EQ(processor.spillCallCount(), 1u);
+    auto growth = std::async(std::launch::async, [&] { reservation.syncWithMemoryTracker(&tracker); });
+    ASSERT_EQ(growth.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    EXPECT_THROW(growth.get(), DB::Exception);
+
+    EXPECT_EQ(processor.spillCallCount(), 0u);
     EXPECT_FALSE(reservation.isProtectedFromEviction());
     EXPECT_EQ(processor.workCallCount(), 0u);
-    EXPECT_EQ(tracker.get(), 7000);
     tracker.adjustWithUntrackedMemory(-tracker.get());
 }
 
