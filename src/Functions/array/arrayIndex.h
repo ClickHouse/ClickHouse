@@ -841,6 +841,9 @@ private:
         const auto & arg_column = arguments[1].column;
         const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(&*arg_column);
 
+        if (col_array)
+            nullable = checkAndGetColumn<ColumnNullable>(&col_array->getData());
+
         if (!nullable && !arg_nullable)
         {
             return executeOnNonNullable(arguments, result_type);
@@ -1426,7 +1429,7 @@ private:
         return result;
     }
 
-    static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
     {
         const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get());
 
