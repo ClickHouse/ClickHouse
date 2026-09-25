@@ -751,7 +751,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
     /// We need to insert single value, try to add only corresponding variant.
     if (src_global_discr == ColumnVariant::NULL_DISCRIMINATOR)
     {
-        insertDefault();
+        insertManyDefaults(length);
         return;
     }
 
