@@ -1,0 +1,9 @@
+stateless workers: execution and dispatch spans: OK
+stateless workers: execution spans descend from the initiator query span: OK
+stateless workers: dispatch spans outside the execution span: 0
+local execution: execution and dispatch spans: OK
+local execution: execution spans descend from the initiator query span: OK
+local execution: dispatch spans outside the execution span: 0
+failing task: execution and dispatch spans: OK
+failing task: execution spans descend from the initiator query span: OK
+failing task: dispatch spans outside the execution span: 0
