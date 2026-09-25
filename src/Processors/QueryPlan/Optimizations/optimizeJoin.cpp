@@ -551,7 +551,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
                 uniteGraphs(graph, std::move(child_graph));
                 return count;
             }
-            /// Optimize child subplan before continuing to get size estimation
+            /// Optimize the non-flattenable child independently before treating it as one relation.
             optimizeJoinLogicalImpl(
                 child_join_step,
                 *join_node,
@@ -561,8 +561,8 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         }
     }
 
-    /// When the leaf is a subquery with Join-s wrapped in Expression/Aggregating steps, we cannot Joins to the graph, but we want to optimize
-    /// those child Join to get proper statistics to use in the parent Join reordering.
+    /// Joins wrapped in Expression/Aggregating steps cannot be added to this graph, but should still
+    /// be optimized independently before the wrapped subtree is treated as one relation.
     {
         auto * child_node = node;
         while (child_node->children.size() == 1)
@@ -583,6 +583,8 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     }
 
     graph.inputs.push_back(node);
+    /// Keep optimized sub-join estimates hidden here: this feeds parent join ordering, and propagating
+    /// estimates with unknown join-key NDVs (#97114) regressed performance and was reverted in #99957.
     RelationStats stats = estimateReadRowsCount(*node, nullptr, {}, &graph.context->relation_stats_cache);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);

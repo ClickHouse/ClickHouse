@@ -14,8 +14,10 @@ namespace DB::QueryPlanOptimizations
 struct RelationStatsOptions
 {
     /// Propagate the row estimate and column statistics of an already optimized `JoinStepLogical`
-    /// to its parents. Off by default because consumers of `estimated_rows` do not all distinguish
-    /// estimates derived from join-key statistics of different reliability.
+    /// to its parents. Off by default: join reordering and physical-join decisions consume
+    /// `estimated_rows` without validating how it was derived, and propagation regressed performance
+    /// when join-key NDVs were unknown (#97114, reverted in #99957; a reliability-aware fix is pending
+    /// in #101398). Only callers that independently validate estimate reliability may opt in.
     bool propagate_join_estimates = false;
 };
 
