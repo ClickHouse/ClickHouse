@@ -5,6 +5,7 @@
 #include <Formats/SchemaInferenceUtils.h>
 
 #include <Core/AccurateComparison.h>
+#include <Common/checkStackSize.h>
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
 #endif
@@ -72,6 +73,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 template <typename JSONParser>
@@ -107,6 +109,9 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
     }
     if (element.isArray())
     {
+        /// The parsers build the document iteratively, so its nesting depth is bounded only by the
+        /// input. Checked in the nested branches only, to keep the scalar path free.
+        checkStackSize();
         writeChar('[', buf);
         bool need_comma = false;
         for (auto value : element.getArray())
@@ -120,6 +125,7 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
     }
     if (element.isObject())
     {
+        checkStackSize();
         writeChar('{', buf);
         bool need_comma = false;
         for (auto [key, value] : element.getObject())
@@ -1887,7 +1893,7 @@ public:
     DataTypePtr elementToDataType(const typename JSONParser::Element & element, const FormatSettings & format_settings) const
     {
         JSONInferenceInfo json_inference_info;
-        auto type = elementToDataTypeImpl(element, format_settings, json_inference_info);
+        auto type = elementToDataTypeImpl(element, format_settings, json_inference_info, 1);
         transformFinalInferredJSONTypeIfNeeded(type, format_settings, &json_inference_info);
         if (format_settings.schema_inference_make_columns_nullable && type->haveSubtypes())
             type = makeNullableRecursively(type, format_settings);
@@ -1895,8 +1901,17 @@ public:
     }
 
 private:
-    DataTypePtr elementToDataTypeImpl(const typename JSONParser::Element & element, const FormatSettings & format_settings, JSONInferenceInfo & json_inference_info) const
+    DataTypePtr elementToDataTypeImpl(const typename JSONParser::Element & element, const FormatSettings & format_settings, JSONInferenceInfo & json_inference_info, size_t depth) const
     {
+        /// Array nesting depth is bounded only by the input and becomes the depth of the inferred
+        /// type, so the limit also protects the later unguarded recursions over that type (building
+        /// its name, its extract tree, its column, destroying it).
+        /// max_parser_depth == 0 means unlimited, matching the SQL parser; checkStackSize is the backstop.
+        checkStackSize();
+        if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+                "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", format_settings.max_parser_depth);
+
         switch (element.type())
         {
             case ElementType::NULL_VALUE:
@@ -1938,7 +1953,7 @@ private:
                 DataTypes types;
                 types.reserve(array.size());
                 for (auto value : array)
-                    types.push_back(elementToDataTypeImpl(value, format_settings, json_inference_info));
+                    types.push_back(elementToDataTypeImpl(value, format_settings, json_inference_info, depth + 1));
 
                 if (types.empty())
                     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
@@ -2049,7 +2064,7 @@ public:
         /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
         std::vector<std::pair<String, typename JSONParser::Element>> paths_and_values_for_shared_data;
         /// Temporary Dynamic column that will be used to create and serialize values in shared data.
-        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true))
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true, 1))
         {
             /// If there was an error, restore previous state.
             SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -2138,8 +2153,17 @@ private:
         size_t current_size,
         String & error,
         bool is_root,
+        size_t depth,
         bool skip_typed_path_check = false) const
     {
+        /// Object nesting depth is bounded only by the input; the limit also keeps the memory spent
+        /// on paths, which every level appends to, from growing quadratically with the depth.
+        /// max_parser_depth == 0 means unlimited, matching the SQL parser; checkStackSize is the backstop.
+        checkStackSize();
+        if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+                "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", format_settings.max_parser_depth);
+
         if (shouldSkipPath(current_path, insert_settings))
             return true;
 
@@ -2237,7 +2261,7 @@ private:
                     && typed_path_nodes.contains(path)
                     && !canParseObjectValue(typed_paths_types.at(path));
 
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, skip_typed))
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1, skip_typed))
                     return false;
             }
 
