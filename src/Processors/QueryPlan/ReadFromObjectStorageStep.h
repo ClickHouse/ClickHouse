@@ -67,10 +67,16 @@ public:
     /// step append a `__global_row_index` column to the output, and returns a step that lazily
     /// reads the removed columns. Returns nullptr if there is nothing to defer.
     std::unique_ptr<LazilyReadFromObjectStorage> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names);
+    /// The columns `keepOnlyRequiredColumnsAndCreateLazyReadStep` would move to the lazy read, without moving
+    /// them.
+    NameSet getLazilyReadColumns(const NameSet & required_names) const;
 
     LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
 private:
+    /// What the main read keeps besides `required_names` when columns are split off.
+    NameSet getNamesToKeepInMainRead(const NameSet & required_names) const;
+
     StorageID storage_id;
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
