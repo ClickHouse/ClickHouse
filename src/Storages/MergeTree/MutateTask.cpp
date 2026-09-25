@@ -19,6 +19,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -742,28 +743,6 @@ static void addRenamedColumnToColumnsSubstreams(
         new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
 }
 
-static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet & storage_columns_set)
-{
-    if (storage_columns_set.contains(RowExistsColumn::name))
-        return false;
-
-    if (command.type == MutationCommand::READ_COLUMN)
-        return command.read_for_patch && command.column_name == RowExistsColumn::name;
-
-    if (command.type == MutationCommand::UPDATE)
-    {
-        auto alter = command.ast();
-        if (!alter || !alter->update_assignments)
-            return false;
-        return std::ranges::any_of(alter->update_assignments->children, [](const ASTPtr & child)
-        {
-            return child->as<ASTAssignment &>().column_name == RowExistsColumn::name;
-        });
-    }
-
-    return false;
-}
-
 /// Not static: also called from MergeTreeDataWriter.cpp for projection provenance.
 DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
     DataTypePtr type, const String & column_name, const PatchPartsForReader & patch_parts, bool & inputs_saturated);
@@ -924,9 +903,7 @@ getColumnsForNewDataPart(
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
-    bool deleted_mask_updated = false;
     bool affects_all_columns = false;
-    bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -935,9 +912,6 @@ getColumnsForNewDataPart(
     for (const auto & command : all_commands)
     {
         affects_all_columns |= command.affectsAllColumns();
-
-        if (supports_lightweight_deletes)
-            deleted_mask_updated |= isDeletedMaskUpdated(command, storage_columns_set);
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
@@ -995,7 +969,7 @@ getColumnsForNewDataPart(
 
         bool need_column = false;
         if (name == RowExistsColumn::name)
-            need_column = deleted_mask_updated || (part_columns.has(name) && !affects_all_columns);
+            need_column = updated_header.has(name) || (part_columns.has(name) && !affects_all_columns);
         else if (name == BlockNumberColumn::name || name == BlockOffsetColumn::name)
             need_column = part_columns.has(name) || updated_header.has(name);
         else
@@ -1760,6 +1734,7 @@ static void processStatisticsChanges(
     const ColumnsStatistics & stats_to_recalc,
     const MutationCommands & commands_for_renames,
     const IMergeTreeDataPart & source_part,
+    const NamesAndTypesList & new_part_columns,
     StorageMetadataPtr metadata_snapshot)
 {
     auto storage_settings = source_part.storage.getSettings();
@@ -1810,6 +1785,10 @@ static void processStatisticsChanges(
         for (const auto & [stat_name, stat] : stats_to_recalc)
             all_statistics[stat_name] = stat->cloneEmpty();
     }
+
+    /// A statistic is keyed by a column name, and both statistics loaders resolve a persisted entry
+    /// against the part's own column list, so one for a column this part does not store is unreadable.
+    std::erase_if(all_statistics, [&](const auto & entry) { return !new_part_columns.contains(entry.first); });
 
     /// Remove old statistics files.
     if (isFullPartStorage(source_part.getDataPartStorage()))
@@ -2970,19 +2949,6 @@ private:
 
         auto builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->mutating_pipeline_builder));
 
-        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
-        {
-            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
-            if (!extracting_subcolumns_dag.getNodes().empty())
-                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
-
-            builder->addTransform(std::make_shared<ExpressionTransform>(
-                builder->getSharedHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
-
-            builder->addTransform(std::make_shared<MaterializingTransform>(builder->getSharedHeader()));
-        }
-
         PreparedSets::Subqueries subqueries;
 
         if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
@@ -3009,6 +2975,23 @@ private:
 
         if (!subqueries.empty())
             builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
+
+        /// The primary key and the skip indices are calculated after the TTL transforms, because TTL rewrites the data:
+        /// `TTL ... GROUP BY ... SET` assigns new values to the columns of the aggregated rows, and a column TTL resets
+        /// the expired values to the defaults. Calculating the index expressions before that would write indices
+        /// describing the data of the source part instead of the data of the new part.
+        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
+        {
+            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            if (!extracting_subcolumns_dag.getNodes().empty())
+                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
+
+            builder->addTransform(std::make_shared<ExpressionTransform>(
+                builder->getSharedHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
+
+            builder->addTransform(std::make_shared<MaterializingTransform>(builder->getSharedHeader()));
+        }
 
         bool affects_all_columns = false;
 
@@ -3050,6 +3033,7 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
+            new_part_columns,
             ctx->mutation_metadata_snapshot);
 
         /// This task rewrites every column, so all statistics objects were created empty from the
@@ -3176,6 +3160,7 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
+            ctx->new_data_part->getColumns(),
             ctx->mutation_metadata_snapshot);
 
         /// This task rewrites only some of the columns and carries the rest over from the source
@@ -3536,6 +3521,15 @@ private:
                 const auto projection_file = projection.getDirectoryName();
                 if (ctx->files_to_skip.contains(projection_file)
                     && !ctx->new_data_part->getProjectionParts().contains(projection.name))
+                    ctx->new_data_part->checksums.files.erase(projection_file);
+            }
+
+            /// The same for a declaration that could not be analyzed: `prepare` left its directory out of this
+            /// part and nothing can rebuild it, so its inherited entry is always an orphan.
+            for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
+            {
+                const auto projection_file = projection_name + ".proj";
+                if (ctx->files_to_skip.contains(projection_file))
                     ctx->new_data_part->checksums.files.erase(projection_file);
             }
 
@@ -4506,6 +4500,15 @@ bool MutateTask::prepare()
         /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
+
+        /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
+        /// whether its data still matches the rows this mutation rewrites. Leave it out of the new part when a
+        /// writer runs; without one no row changes. `MutateSomePartColumnsTask::finalize` drops its stale entry.
+        if (ctx->mutating_pipeline_builder.initialized())
+        {
+            for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
+                ctx->files_to_skip.insert(projection_name + ".proj");
+        }
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,

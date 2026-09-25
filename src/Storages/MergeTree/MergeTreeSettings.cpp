@@ -731,7 +731,7 @@ Maximum number of processed tokens accumulated by a text index builder before fl
 Maximum estimated memory retained by a text index builder before flushing a temporary segment.
 )", 0) \
     DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
-Default posting list codec for text indexes.
+Default posting list codec for text indexes. One of `none`, `bitpacking`, `pfor`.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0) \
     DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
@@ -1848,9 +1848,10 @@ column during merge
 If true, lightweight delete is optimized on vertical merge.
 )", 0) \
     DECLARE(Bool, vertical_merge_optimize_ttl_delete, true, R"(
-If true, rows TTL delete is optimized on vertical merge only for `MergeTree` tables. Instead of
-forcing horizontal merge, the TTL filter is evaluated and passed to the merging algorithm which
-sets skip flags in row sources.
+If true, a rows-TTL merge can use the vertical merge algorithm instead of falling back to a
+horizontal merge. Applies only in `MergeTree`, `Replacing`, `Collapsing` or `VersionedCollapsing`
+merging mode, to a table with a rows TTL and no column or `GROUP BY` TTL, and only while no part
+in the merge has a lightweight delete. Any other TTL merge stays horizontal.
 )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 The maximum postpone time for failed mutations.
@@ -2504,17 +2505,28 @@ Minimal index sizes (data skipping and primary key) on disk (but uncompressed) t
 Batch size for ZooKeeper multi-create get-part requests when cloning replica.
 )", 0) \
     DECLARE(Bool, table_readonly, false, R"(
-If set to true, the table is in read-only mode and performs no modifications on disk.
+If set to true, the table is in read-only mode.
 
 All foreground operations that would modify the table are rejected: inserts, mutations, `OPTIMIZE`, and the data-mutating partition commands
 (`ATTACH`/`MOVE`/`DROP`/`DROP DETACHED`/`FETCH`/`REPLACE PARTITION`, as well as `MOVE PARTITION ... TO TABLE` targeting this table). Operations
 that do not modify the table's data, such as `FREEZE`/`UNFREEZE` and `FORGET PARTITION`, remain allowed.
 
-No background work is scheduled either: regular merges, TTL merges (`DELETE`/`MOVE`/recompression), recompression merges, background mutations,
+Background work that modifies table data is not scheduled: regular merges, TTL merges (`DELETE`/`MOVE`/recompression), recompression merges, background mutations,
 and background part moves are all suppressed. As a consequence, a table with a TTL no longer reclaims or moves its expired data while this setting
-is enabled.
+is enabled. Cleanup is stopped, waiting for an active cleanup iteration to finish. The asynchronous loading of outdated (inactive) parts that a
+writable table performs after start is suspended if it is still pending: no further part is loaded, including the loads that were already queued
+but had not started, and the parts that remain unloaded are loaded once the setting is turned off again. The background workers are disabled
+before the `ALTER` that enables the setting commits it, so no cleanup or part load starts on a table that is already durably read-only. Other
+operations already in progress, including the loading of the parts that had already started, may finish.
 
-The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). It is not supported for `ReplicatedMergeTree`.
+The in-memory statistics cache still refreshes periodically. Set `refresh_statistics_interval = 0` to disable this background task too.
+Streaming reads (`SELECT ... STREAM`) keep working: the background job that serves their subscriptions only reads parts and runs on read-only tables as well.
+
+The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). The background workers
+that a read-only table never started are started at that point, so merges, mutations, moves, TTL, and cleanup resume without a server restart.
+Outdated (inactive) parts are loaded before cleanup can remove empty parts that cover them. The table stays read-only for concurrent queries for
+the whole duration of that `ALTER`: it accepts writes again only once the statement returned, not already when its metadata was committed.
+This setting is not supported for `ReplicatedMergeTree`.
 )", 0) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.
