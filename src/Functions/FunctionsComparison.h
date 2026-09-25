@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 /// For the array/tuple element-comparison path, when there is a scalar position pair a `String`/`FixedString` on one side
@@ -1225,6 +1226,16 @@ private:
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())
         {
+            if constexpr (IsOperation<Op>::less || IsOperation<Op>::less_or_equals
+                       || IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals)
+            {
+                /// A composite constant is rejected as a whole, so the side of it every value lies on is unknown.
+                const WhichDataType which_to_compare(type_to_compare);
+                if (which_to_compare.isArray() || which_to_compare.isTuple() || which_to_compare.isMap())
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Cannot compare with '{}': it cannot be represented as {}",
+                        string_value.safeGet<String>(), type_to_compare->getName());
+            }
+
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 

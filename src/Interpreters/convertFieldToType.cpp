@@ -1097,10 +1097,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             type_to_parse = holder.get();
         }
 
-        /// A composite type cannot be promoted, so its elements are parsed at their own width.
-        const bool parse_composite = which_type.isArray() || which_type.isTuple() || which_type.isMap();
-        FormatSettings parse_settings = format_settings;
-        parse_settings.check_integer_text_overflow = parse_composite;
+        /// A composite or `Variant` type cannot be promoted, so its integer leaves are parsed at their own width.
+        const bool parse_composite = which_type.isArray() || which_type.isTuple() || which_type.isMap() || which_type.isVariant();
+        std::optional<FormatSettings> composite_settings;
+        if (parse_composite)
+        {
+            composite_settings.emplace(format_settings);
+            composite_settings->check_integer_text_overflow = true;
+        }
+        const FormatSettings & parse_settings = composite_settings ? *composite_settings : format_settings;
 
         const auto col = type_to_parse->createColumn();
         ReadBufferFromString in_buffer(src.safeGet<String>());
