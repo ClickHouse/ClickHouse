@@ -1251,15 +1251,15 @@ void ClientBase::adjustSettings(ContextMutablePtr context)
     if (!context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
     {
         const UInt64 default_value = defaults[Setting::output_format_pretty_max_rows];
-        settings[Setting::output_format_pretty_max_rows] = raise ? std::numeric_limits<UInt64>::max() : default_value;
-        settings[Setting::output_format_pretty_max_rows].changed = false;
+        settings.set(Setting::output_format_pretty_max_rows, raise ? std::numeric_limits<UInt64>::max() : default_value);
+        settings.setChanged(Setting::output_format_pretty_max_rows, false);
     }
 
     if (!context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
     {
         const UInt64 default_value = defaults[Setting::output_format_pretty_max_value_width];
-        settings[Setting::output_format_pretty_max_value_width] = raise ? std::numeric_limits<UInt64>::max() : default_value;
-        settings[Setting::output_format_pretty_max_value_width].changed = false;
+        settings.set(Setting::output_format_pretty_max_value_width, raise ? std::numeric_limits<UInt64>::max() : default_value);
+        settings.setChanged(Setting::output_format_pretty_max_value_width, false);
     }
 
     context->setSettings(settings);

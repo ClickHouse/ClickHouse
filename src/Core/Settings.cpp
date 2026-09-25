@@ -15,6 +15,7 @@
 #include <Core/SettingsFields.h>
 #include <Core/SettingsObsoleteMacros.h>
 #include <Core/SettingsSecrets.h>
+#include <Core/SettingsSnapshot.h>
 #include <Core/SettingsTierType.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -26,6 +27,7 @@
 #include <Common/NamePrompter.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <base/sanitizer_defs.h>
 
 #include <boost/program_options.hpp>
@@ -9740,6 +9742,85 @@ Enable experimental table function `eval`.
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS, COMMON_SETTINGS_SUPPORTED_TYPES)
 
+struct SettingsSnapshotDescription
+{
+    using Data = SettingsTraits::Data;
+
+#define SETTINGS_SNAPSHOT_FIELD(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    settingsSnapshotField<SettingField##TYPE>( \
+        offsetof(Data, TYPE##_) \
+        + SettingsTraits::settings_layout_.local_index[static_cast<size_t>(SettingsTraits::SettingID_::NAME)] \
+            * sizeof(SettingField##TYPE)),
+    static constexpr std::array<SettingsSnapshotField, static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS)> fields
+        = {LIST_OF_SETTINGS(SETTINGS_SNAPSHOT_FIELD, SETTINGS_SNAPSHOT_FIELD)};
+#undef SETTINGS_SNAPSHOT_FIELD
+};
+
+template <>
+struct SettingsDataStorage<SettingsTraits>
+{
+    using Type = SettingsSnapshot<SettingsSnapshotDescription>;
+};
+
+namespace
+{
+/// Cache identity must preserve representation, including nested decimal scales, NaN payloads,
+/// and the distinct `Null` sentinels. Opaque custom values are shared only by immutable identity.
+bool sameSettingsCacheField(const Field & lhs, const Field & rhs)
+{
+    if (lhs.getType() != rhs.getType())
+        return false;
+    return Field::dispatch(
+        [&](const auto & left)
+        {
+            using T = std::decay_t<decltype(left)>;
+            if constexpr (std::is_same_v<T, Null>)
+                return lhs.isNegativeInfinity() == rhs.isNegativeInfinity() && lhs.isPositiveInfinity() == rhs.isPositiveInfinity();
+            else if constexpr (std::is_same_v<T, bool>)
+                return lhs.safeGet<UInt64>() == rhs.safeGet<UInt64>();
+            else
+            {
+                const auto & right = rhs.safeGet<T>();
+                if constexpr (std::is_same_v<T, Float64>)
+                    return std::bit_cast<UInt64>(left) == std::bit_cast<UInt64>(right);
+                else if constexpr (is_decimal_field<T>)
+                    return left.getValue() == right.getValue() && left.getScale() == right.getScale();
+                else if constexpr (std::is_same_v<T, CustomType>)
+                    return left.impl == right.impl;
+                else if constexpr (std::is_same_v<T, AggregateFunctionStateData>)
+                    return left.name == right.name && left.data == right.data;
+                else if constexpr (std::is_same_v<T, Array> || std::is_same_v<T, Tuple> || std::is_same_v<T, Map>)
+                {
+                    checkStackSize();
+                    if (left.size() != right.size())
+                        return false;
+                    for (size_t index = 0; index < left.size(); ++index)
+                        if (!sameSettingsCacheField(left[index], right[index]))
+                            return false;
+                    return true;
+                }
+                else if constexpr (std::is_same_v<T, Object>)
+                {
+                    checkStackSize();
+                    if (left.size() != right.size())
+                        return false;
+                    auto iterator = right.begin();
+                    for (const auto & [name, value] : left)
+                    {
+                        if (name != iterator->first || !sameSettingsCacheField(value, iterator->second))
+                            return false;
+                        ++iterator;
+                    }
+                    return true;
+                }
+                else
+                    return left == right;
+            }
+        },
+        lhs);
+}
+}
+
 /// A `merge_tree_`-prefixed name is a `MergeTreeSettings` setting kept here as a custom setting, and it can
 /// have two names. Store it under the canonical one, so that a value written under either name is the value
 /// read under either name, instead of the two names holding two values of one setting.
@@ -9755,6 +9836,44 @@ std::string_view resolveCustomSettingName<SettingsTraits>(std::string_view name)
 struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 {
     SettingsImpl() = default;
+
+    static void * operator new(size_t bytes)
+    {
+        auto * result = ::operator new(bytes);
+        accountSettingsAllocation(SettingsAllocationKind::Implementation, bytes, 1);
+        return result;
+    }
+
+    static void operator delete(void * pointer)
+    {
+        ::operator delete(pointer);
+        accountSettingsAllocation(SettingsAllocationKind::Implementation, -static_cast<Int64>(sizeof(SettingsImpl)), -1);
+    }
+
+    bool sharesSnapshotWith(const SettingsImpl & other) const
+    {
+        if (!sharesStorageWith(other) || settings_changed_by_compatibility_setting != other.settings_changed_by_compatibility_setting
+            || num_settings_changed_by_compatibility_setting != other.num_settings_changed_by_compatibility_setting
+            || custom_settings_map.size() != other.custom_settings_map.size())
+            return false;
+
+        for (const auto & [name, value] : custom_settings_map)
+        {
+            const auto iterator = other.custom_settings_map.find(name);
+            if (iterator == other.custom_settings_map.end() || value.changed != iterator->second.changed)
+                return false;
+
+            if (!sameSettingsCacheField(value.value, iterator->second.value))
+                return false;
+        }
+        return true;
+    }
+
+    bool hasServerOwnedStorage() const
+    {
+        /// Custom values have no ownership metadata, so they cannot establish cache eligibility.
+        return custom_settings_map.empty() && BaseSettings<SettingsTraits>::hasServerOwnedStorage();
+    }
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
         * The profile can also be set using the `set` functions, like the profile setting.
@@ -10000,6 +10119,8 @@ void SettingsImpl::set(std::string_view name, const Field & value)
 
     if (name == "compatibility")
     {
+        /// Applying compatibility can replace storage from which the caller borrowed the name.
+        name = "compatibility";
         if (value.getType() != Field::Types::Which::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'compatibility'. Expected String, got {}", value.getTypeName());
         applyCompatibilitySetting(value.safeGet<String>());
@@ -10170,15 +10291,26 @@ IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(SettingsTraits, LIST_OF_SETTINGS, Settings
 
 Settings::Settings()
     : impl(std::make_unique<SettingsImpl>())
-{}
+{
+    accountSettingsObject(sizeof(Settings), 1);
+}
 
 Settings::Settings(const Settings & settings)
     : impl(std::make_unique<SettingsImpl>(*settings.impl))
-{}
+{
+    accountSettingsObject(sizeof(Settings), 1);
+}
 
-Settings::Settings(Settings && settings) noexcept = default;
+Settings::Settings(Settings && settings) noexcept
+    : impl(std::move(settings.impl))
+{
+    accountSettingsObject(sizeof(Settings), 1);
+}
 
-Settings::~Settings() = default;
+Settings::~Settings()
+{
+    accountSettingsObject(-static_cast<Int64>(sizeof(Settings)), -1);
+}
 
 Settings & Settings::operator=(const Settings & other)
 {
@@ -10188,12 +10320,37 @@ Settings & Settings::operator=(const Settings & other)
     return *this;
 }
 
+void Settings::swap(Settings & other) noexcept
+{
+    impl.swap(other.impl);
+}
+
 bool Settings::operator==(const Settings & other) const
 {
     return *impl == *other.impl;
 }
 
-COMMON_SETTINGS_SUPPORTED_TYPES(Settings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
+bool Settings::sharesSnapshotWith(const Settings & other) const
+{
+    return impl->sharesSnapshotWith(*other.impl);
+}
+
+bool Settings::hasServerOwnedStorage() const
+{
+    return impl->hasServerOwnedStorage();
+}
+
+#define IMPLEMENT_SETTINGS_ACCESS(CLASS_NAME, TYPE) \
+    const SettingField##TYPE & CLASS_NAME::operator[](CLASS_NAME##TYPE index) const \
+    { \
+        return std::as_const(*impl)[index]; \
+    } \
+    SettingField##TYPE & CLASS_NAME::getMutable(CLASS_NAME##TYPE index) \
+    { \
+        return (*impl)[index]; \
+    }
+COMMON_SETTINGS_SUPPORTED_TYPES(Settings, IMPLEMENT_SETTINGS_ACCESS)
+#undef IMPLEMENT_SETTINGS_ACCESS
 
 bool Settings::has(std::string_view name) const
 {
@@ -10237,7 +10394,9 @@ Field Settings::get(std::string_view name) const
 
 void Settings::set(std::string_view name, const Field & value)
 {
-    impl->set(name, value);
+    /// The input can be a `Field` borrowed from a container in the chunk being detached.
+    const Field stable_value(value); // NOLINT(performance-unnecessary-copy-initialization): the input must survive chunk detachment.
+    impl->set(name, stable_value);
 }
 
 void Settings::setCustom(std::string_view name, const Field & value)

@@ -1205,10 +1205,10 @@ void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
       *  which are checked separately (in the Set, Join objects).
       */
     Settings subquery_settings = mutable_context->getSettingsCopy();
-    subquery_settings[Setting::max_result_rows] = 0;
-    subquery_settings[Setting::max_result_bytes] = 0;
+    subquery_settings.set(Setting::max_result_rows, 0);
+    subquery_settings.set(Setting::max_result_bytes, 0);
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-    subquery_settings[Setting::extremes] = false;
+    subquery_settings.set(Setting::extremes, false);
     mutable_context->setSettings(subquery_settings);
 }
 

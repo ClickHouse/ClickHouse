@@ -67,7 +67,7 @@ void RemoteInserter::initialize()
     /// and will not consume Log packets.
     ///
     /// So that is why send_logs_level had been disabled here.
-    settings[Setting::send_logs_level] = "none";
+    settings.set(Setting::send_logs_level, "none");
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */

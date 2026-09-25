@@ -13,7 +13,7 @@ ContextHolder::ContextHolder()
 {
     context->makeGlobalContext();
     context->setPath("./");
-    const_cast<DB::Settings &>(context->getSettingsRef())[DB::Setting::local_filesystem_read_method] = "pread";
+    const_cast<DB::Settings &>(context->getSettingsRef()).set(DB::Setting::local_filesystem_read_method, "pread");
 }
 
 const ContextHolder & getContext()

@@ -338,12 +338,12 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
         && !view_settings[Setting::parallel_replicas_plan_based])
     {
         if (auto storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context))
-            view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};
+            view_settings.set(Setting::allow_experimental_parallel_reading_from_replicas, Field{0});
     }
 
-    view_settings[Setting::max_result_rows] = 0;
-    view_settings[Setting::max_result_bytes] = 0;
-    view_settings[Setting::extremes] = false;
+    view_settings.set(Setting::max_result_rows, 0);
+    view_settings.set(Setting::max_result_bytes, 0);
+    view_settings.set(Setting::extremes, false);
     view_context->setSettings(view_settings);
     view_context->setIsViewInnerQuery(true);
     return view_context;
@@ -753,9 +753,9 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
-    view_settings[Setting::max_result_rows] = 0;
-    view_settings[Setting::max_result_bytes] = 0;
-    view_settings[Setting::extremes] = false;
+    view_settings.set(Setting::max_result_rows, 0);
+    view_settings.set(Setting::max_result_bytes, 0);
+    view_settings.set(Setting::extremes, false);
     view_context->setSettings(view_settings);
     return view_context;
 }
