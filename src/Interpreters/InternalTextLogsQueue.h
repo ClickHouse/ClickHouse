@@ -36,8 +36,7 @@ public:
     static Block getSampleBlock();
     static MutableColumns getSampleColumns();
 
-    /// Is used to pass block from remote server to the client. The block is projected onto
-    /// `getSampleBlock` by column name; extra columns are ignored, a missing or retyped one drops the block.
+    /// Is used to pass block from remote server to the client
     void pushBlock(Block && log_block);
 
     /// Build and enqueue a single synthetic log line (current wall-clock time, this host's name), to

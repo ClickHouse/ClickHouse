@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <Core/Block.h>
 
-#include <functional>
 #include <optional>
 #include <string_view>
 
@@ -70,7 +69,7 @@ struct DistributedQueryTaskStatus
     void write(WriteBuffer & out, const TaskCollectors & collectors) const;
     /// Reads the fixed part, then payloads until the end tag if the body continues. A worker that
     /// appended nothing (older, or not asked) leaves `logs` unset.
-    void read(ReadBuffer & in);
+    void read(ReadBuffer & in, UInt64 version);
 
     /// Reads one payload of the list into the matching field; a tag this build does not know is left
     /// for `forEachTaskStatusPayload` to skip. One branch per collector.
@@ -89,11 +88,11 @@ struct DistributedQueryTaskStatus
     void forEachTaskStatusPayload(ReadBuffer & in);
 };
 
-/// Frames one payload: tag, byte length, bytes. The payload is materialized first to learn its length.
-void writeTaskStatusPayloadFrame(WriteBuffer & out, UInt64 tag, const std::function<void(WriteBuffer &)> & write_payload);
+/// Frames one already serialized payload: tag, byte length, bytes.
+void writeTaskStatusPayloadFrame(WriteBuffer & out, UInt64 tag, std::string_view payload);
 
-/// The logs payload framed under `TASK_STATUS_PAYLOAD_LOGS`.
-void writeTaskStatusPayload(WriteBuffer & out, const TaskLogsPayload & logs);
+/// Serializes the logs payload and frames it under `TASK_STATUS_PAYLOAD_LOGS`.
+void writeTaskLogsPayloadFrame(WriteBuffer & out, const TaskLogsPayload & logs);
 
 /// The logs payload body: a one-row Native block with the counters as `UInt64` columns, then the
 /// rows block. Both at `STATELESS_WORKER_PAYLOAD_NATIVE_REVISION`.

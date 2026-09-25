@@ -52,11 +52,14 @@ DISTRIBUTED_SETTINGS = (
     "distributed_plan_max_rows_to_broadcast = 0"
 )
 
-# A dispatched worker task runs under current_query_id = '<initiator_uuid>::<stage_name>'
+# A dispatched worker task runs under current_query_id = '<initiator_uuid>::<stage_name>'.
 TASK_LOG_LINE = re.compile(r"\{[0-9a-f-]+::stage_[0-9_]+\}")
-TASK_ERROR_LINE = re.compile(r"\{[0-9a-f-]+::stage_[0-9_]+\} <Error>")
+# node2 is the only worker and the client talks to node1, so a task line prefixed with node2's host
+# name was forwarded from the remote worker through the coordinator.
+WORKER_TASK_LOG_LINE = re.compile(r"\[node2\] [^\n]*\{[0-9a-f-]+::stage_[0-9_]+\}")
+WORKER_TASK_ERROR_LINE = re.compile(r"\[node2\] [^\n]*\{[0-9a-f-]+::stage_[0-9_]+\} <Error>")
 # Reported to the client when a worker's forwarding buffer overflows and drops log lines.
-DROPPED_LOGS_LINE = re.compile(r"worker log line\(s\) were dropped on .* forwarding buffer was full")
+DROPPED_LOGS_LINE = re.compile(r"(\d+) worker log line\(s\) were dropped on .* forwarding buffer was full")
 
 
 def run_query_capturing_logs(query, send_logs_level="trace"):
@@ -82,8 +85,8 @@ def test_worker_logs_reach_client(started_cluster):
         "query did not return the expected result; test setup problem, "
         "not a log-forwarding failure: " + out[-2000:]
     )
-    assert TASK_LOG_LINE.search(out), (
-        "no log line from a dispatched worker task reached the client: " + out[-2000:]
+    assert WORKER_TASK_LOG_LINE.search(out), (
+        "no log line from a task on the worker node2 reached the client: " + out[-2000:]
     )
 
 
@@ -93,7 +96,7 @@ def test_worker_exception_context_reaches_client(started_cluster):
         f"SETTINGS {DISTRIBUTED_SETTINGS}"
     )
     assert "boom on worker" in out
-    assert TASK_ERROR_LINE.search(out), (
+    assert WORKER_TASK_ERROR_LINE.search(out), (
         "worker exception context was not forwarded to the client: " + out[-2000:]
     )
 
@@ -108,7 +111,8 @@ def test_worker_log_drops_reported_to_client(started_cluster):
     assert "499999500000" in out, (
         "query did not return the expected result; test setup problem: " + out[-2000:]
     )
-    assert DROPPED_LOGS_LINE.search(out), (
+    dropped = sum(int(count) for count in DROPPED_LOGS_LINE.findall(out))
+    assert dropped > 0, (
         "worker log drops were not reported to the client: " + out[-2000:]
     )
 

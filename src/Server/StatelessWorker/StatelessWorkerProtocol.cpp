@@ -100,18 +100,17 @@ void DistributedQueryTaskStatus::write(WriteBuffer & out, const TaskCollectors &
     if (collectors.logs)
     {
         /// Present on every reply while logs are collected, also when the task has nothing to send.
-        const TaskLogsPayload payload = logs.value_or(TaskLogsPayload{});
-        writeTaskStatusPayload(out, payload);
+        writeTaskLogsPayloadFrame(out, logs.value_or(TaskLogsPayload{}));
     }
 
     writeVarUInt(TASK_STATUS_PAYLOAD_END, out);
 }
 
-void DistributedQueryTaskStatus::read(ReadBuffer & in)
+void DistributedQueryTaskStatus::read(ReadBuffer & in, UInt64 version)
 {
     readStringBinary(status, in);
     readStringBinary(error_message, in);
-    progress.read(in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
+    progress.read(in, version);
     readIntBinary(error_code, in);
 
     /// A worker that appended nothing: older than payloads, or not asked to collect anything.
@@ -148,23 +147,19 @@ void DistributedQueryTaskStatus::forEachTaskStatusPayload(ReadBuffer & in)
     }
 }
 
-void writeTaskStatusPayloadFrame(WriteBuffer & out, UInt64 tag, const std::function<void(WriteBuffer &)> & write_payload)
+void writeTaskStatusPayloadFrame(WriteBuffer & out, UInt64 tag, std::string_view payload)
 {
-    WriteBufferFromOwnString payload;
-    write_payload(payload);
-    payload.finalize();
-
     writeVarUInt(tag, out);
-    writeVarUInt(payload.str().size(), out);
-    out.write(payload.str().data(), payload.str().size());
+    /// Length-prefixed bytes: the same layout `forEachTaskStatusPayload` reads.
+    writeStringBinary(payload, out);
 }
 
-void writeTaskStatusPayload(WriteBuffer & out, const TaskLogsPayload & logs)
+void writeTaskLogsPayloadFrame(WriteBuffer & out, const TaskLogsPayload & logs)
 {
-    writeTaskStatusPayloadFrame(out, TASK_STATUS_PAYLOAD_LOGS, [&logs](WriteBuffer & payload)
-    {
-        writeTaskLogsPayload(logs, payload);
-    });
+    WriteBufferFromOwnString payload;
+    writeTaskLogsPayload(logs, payload);
+    payload.finalize();
+    writeTaskStatusPayloadFrame(out, TASK_STATUS_PAYLOAD_LOGS, payload.stringView());
 }
 
 void writeTaskLogsPayload(const TaskLogsPayload & logs, WriteBuffer & out)
