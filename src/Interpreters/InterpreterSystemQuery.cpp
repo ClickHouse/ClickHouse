@@ -354,7 +354,7 @@ static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()});
+        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
         return;
     }
 
@@ -365,7 +365,7 @@ static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.unloadDictionary({query.getDatabase(), query.getTable()});
+        loader.unloadDictionary({query.getDatabase(), query.getTable()}, context);
         return;
     }
 

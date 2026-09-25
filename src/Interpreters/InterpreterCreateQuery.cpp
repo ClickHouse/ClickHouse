@@ -3241,7 +3241,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /// own check on the temporary name. A `CREATE TABLE ... CLONE AS` that populates the final table
             /// directly requires exactly these grants, so the contract is the same either way.
             getContext()->checkAccess(InterpreterAlterQuery::getRequiredAccessForCommand(
-                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular));
+                *command, create.getDatabase(), published_table_name, /*row_exists_is_lightweight_marker=*/false));
             interpreter_alter.setSkipAccessCheck(true);
         }
         return interpreter_alter.execute();

@@ -72,6 +72,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/StorageProxy.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -477,6 +478,19 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
     }
 }
 
+
+SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
+{
+    const auto * table = subquery_or_table_name->as<ASTTableIdentifier>();
+    if (!table)
+        return nullptr;
+    auto table_id = getContext()->resolveStorageID(subquery_or_table_name);
+    const auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
+    if (storage->getName() != "Set")
+        return nullptr;
+    const auto storage_set = castStorage<StorageSet>(storage, DeferredTable::Load);
+    return storage_set->getSet();
+}
 
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions, bool only_consts)
 {

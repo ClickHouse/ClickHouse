@@ -498,17 +498,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database)
-        {
-            const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
-            const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
-            for (const auto & child : captured_alter.command_list->children)
-            {
-                const auto & command = child->as<const ASTAlterCommand &>();
-                if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
-                    checkNoRowPolicyForSetOperands(child, default_database, context, /* throw_if_unresolved = */ true);
-            }
-        };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -519,13 +508,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    for (const auto & child : alter.command_list->children)
-    {
-        const auto & command = child->as<const ASTAlterCommand &>();
-        if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
-            checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
-    }
-
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
@@ -664,8 +646,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     return res;
 }
 
-InterpreterAlterQuery::RowExistsColumnKind InterpreterAlterQuery::getRowExistsColumnKind(
-    const StoragePtr & storage, const ContextPtr & context_)
+bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr & storage, const ContextPtr & context_)
 {
     /// `_row_exists` is the hidden lightweight-delete marker only on storages that register it as a
     /// virtual column (the MergeTree family). Testing merely for the absence of a physical `_row_exists`
@@ -673,31 +654,27 @@ InterpreterAlterQuery::RowExistsColumnKind InterpreterAlterQuery::getRowExistsCo
     /// physical column either, so a user could `ADD COLUMN _row_exists, UPDATE _row_exists = 0` and edit
     /// a real physical column with only `ALTER DELETE`. `isVirtualColumn` is true only when `_row_exists`
     /// is a registered virtual and not shadowed by a real column, which precisely identifies the marker.
+    /// A null storage (non-local ON CLUSTER target) fails closed -> treated as a regular column.
     if (!storage)
-        return RowExistsColumnKind::Unknown;
+        return false;
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
-    return metadata_snapshot->isVirtualColumn(RowExistsColumn::name)
-        ? RowExistsColumnKind::LightweightDeleteMarker
-        : RowExistsColumnKind::Regular;
+    return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
 }
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    const auto row_exists_column_kind = getRowExistsColumnKind(storage, getContext());
+    const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
     for (const auto & child : alter.command_list->children)
         required_access.append_range(
-            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_column_kind));
+            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_is_marker));
 
     return required_access;
 }
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
-    const ASTAlterCommand & command,
-    const String & database,
-    const String & table,
-    RowExistsColumnKind row_exists_column_kind)
+    const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker)
 {
     AccessRightsElements required_access;
 
@@ -719,11 +696,10 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
             for (const ASTPtr & assignment_ast : command.update_assignments->children)
             {
                 const auto & assignment = assignment_ast->as<const ASTAssignment &>();
-                const bool is_lightweight_delete_assignment = isLightweightDeleteAssignment(assignment);
-                if (!is_lightweight_delete_assignment || row_exists_column_kind != RowExistsColumnKind::LightweightDeleteMarker)
-                    updated_columns.emplace_back(assignment.column_name);
-                if (is_lightweight_delete_assignment && row_exists_column_kind != RowExistsColumnKind::Regular)
+                if (row_exists_is_lightweight_marker && isLightweightDeleteAssignment(assignment))
                     deletes_via_row_exists = true;
+                else
+                    updated_columns.emplace_back(assignment.column_name);
             }
             if (!updated_columns.empty())
                 required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, updated_columns);

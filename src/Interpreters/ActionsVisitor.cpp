@@ -1842,18 +1842,13 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             {
                 if (auto set = data.prepared_sets->findStorage(set_key))
                     return set;
-
-                if (auto * storage_set = castStorage<StorageSet>(table, DeferredTable::Load).get())
-                {
-                    storage_set->checkNoRowPolicy(data.getContext());
 #if CLICKHOUSE_CLOUD
-                    /// NOLINT(storage-cast): `storage_set` is resolved above.
-                    if (auto * storage_shared_set = dynamic_cast<StorageSharedSet *>(storage_set))
-                        return data.prepared_sets->addFromStorage(
-                            set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
+                if (StorageSharedSet * storage_shared_set = castStorage<StorageSharedSet>(table, DeferredTable::Load).get())
+                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
 #endif
+
+                if (StorageSet * storage_set = castStorage<StorageSet>(table, DeferredTable::Load).get())
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
-                }
             }
 
             if (!data.getContext()->isGlobalContext())
