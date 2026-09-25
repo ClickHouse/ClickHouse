@@ -116,8 +116,8 @@ void expectPrefixRejected(uint32_t path_prefix_size, size_t block_capacity)
 /// 3 == base_path_len("/ab") decodes fine, 1024 runs past the end of the 64-byte block.
 TEST(KeeperStorageNode, ReadRejectsOversizedPathPrefix)
 {
-    expectPrefixAccepted(3, /*block_capacity=*/ 64);
-    expectPrefixRejected(1024, /*block_capacity=*/ 64);
+    expectPrefixAccepted(3, /*block_capacity=*/ 128);
+    expectPrefixRejected(1024, /*block_capacity=*/ 128);
 }
 
 /// Same, but the oversized prefix stays inside the block capacity: without the check it
