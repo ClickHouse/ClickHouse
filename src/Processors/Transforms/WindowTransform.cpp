@@ -2233,6 +2233,15 @@ struct WindowFunctionRowNumber final : public StatelessWindowFunction
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    std::optional<WindowFrame> getDefaultFrame() const override
+    {
+        /// `row_number` does not depend on the window frame. A `ROWS` frame ending at the current
+        /// row lets `WindowTransform` produce results without buffering the entire partition.
+        WindowFrame frame;
+        frame.type = WindowFrame::FrameType::ROWS;
+        return frame;
+    }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
