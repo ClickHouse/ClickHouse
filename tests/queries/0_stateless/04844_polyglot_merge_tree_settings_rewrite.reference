@@ -1,0 +1,4 @@
+index_granularity = 1024
+sent as SQL	1
+x	Int32
+y	String
