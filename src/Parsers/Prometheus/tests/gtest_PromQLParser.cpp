@@ -1923,3 +1923,36 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
     EXPECT_EQ(parseStringLiteral(R"("\U00010000")"), "\xF0\x90\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U0010FFFF")"), "\xF4\x8F\xBF\xBF");
 }
+
+TEST(PromQLParser, StandaloneStartEndFunctions)
+{
+    for (const auto * query : {"start()", "end()", "end() - start()"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::SCALAR) << query;
+        expectRoundTrip(query, tree.toString());
+    }
+
+    for (const auto * query : {"start", "end", R"(up{start="x",end="y"})"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::INSTANT_VECTOR) << query;
+        expectRoundTrip(query, tree.toString());
+    }
+
+    expectRoundTrip("up @ start()", "up @ start()");
+    expectRoundTrip("up @ end()", "up @ end()");
+}
+
+
+TEST(PromQLParser, InvalidStandaloneStartEndFunctions)
+{
+    for (const auto * query : {"start(1)", "end(1)", "start(1, 2)", "START()", "END()"})
+    {
+        PrometheusQueryTree tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(error_message.empty()) << query;
+    }
+}

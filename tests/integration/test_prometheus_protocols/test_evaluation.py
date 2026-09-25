@@ -5771,3 +5771,65 @@ def test_label_manipulation_functions():
         'expected at least 3 argument(s) in call to "label_join", got 2',
         "Function 'label_join' expects 3 or more arguments, but was called with 2 arguments",
     )
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "start()",
+        "end()",
+        "end() - start()",
+        "vector(start())",
+        "vector(end())",
+        "last_over_time(vector(start())[20s:5s] offset 7s)",
+        "last_over_time(vector(end())[20s:5s] @ 1005)",
+    ],
+)
+@pytest.mark.parametrize("timestamp", [1000.125, 1750000000.125])
+def test_standalone_start_end_instant(query, timestamp):
+    expected_query = query.replace("start()", str(timestamp)).replace("end()", str(timestamp))
+    assert execute_query_in_clickhouse_sql(query, timestamp) == execute_query_in_clickhouse_sql(
+        expected_query, timestamp
+    )
+    assert http_api_response_close_to(
+        execute_query_in_clickhouse_http_api(query, timestamp),
+        execute_query_in_clickhouse_http_api(expected_query, timestamp),
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "start()",
+        "end()",
+        "end() - start()",
+        "vector(start())",
+        "vector(end())",
+        "last_over_time(vector(start())[20s:5s] offset 7s)",
+        "last_over_time(vector(end())[20s:5s] @ 1005)",
+    ],
+)
+@pytest.mark.parametrize(
+    "start,end,step,span",
+    [
+        (1000.125, 1002.375, 0.5, 2.25),
+        (1000.125, 1000.125, 7.5, 0),
+        ("1750000000.001", "1750000000.003", "0.001", "0.002"),
+    ],
+)
+def test_standalone_start_end_range(query, start, end, step, span):
+    # The first end is off-grid. The second query has one point but a nonzero step.
+    # The final case checks that subtracting modern timestamps does not lose milliseconds.
+    expected_query = query.replace("start()", str(start)).replace("end()", str(end))
+    assert execute_range_query_in_clickhouse_sql(
+        query, start, end, step
+    ) == execute_range_query_in_clickhouse_sql(expected_query, start, end, step)
+    assert http_api_response_close_to(
+        execute_range_query_in_clickhouse_http_api(query, start, end, step),
+        execute_range_query_in_clickhouse_http_api(expected_query, start, end, step),
+    )
+
+
+def test_standalone_start_end_current_time():
+    assert node.query(
+        "SELECT * FROM prometheusQuery(prometheus, 'start() - time() + end() - time()', 1000.125)"
+    ) == "0\n"
