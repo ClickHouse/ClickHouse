@@ -90,6 +90,9 @@ struct ExplainPlanOptions
     /// Off by default because the work lands in the probe loop and creates biases in time and parallelism
     /// durin colleciton
     bool matches = false;
+    /// Collect per-processor work intervals during execution to report per-step and per-branch wall time.
+    /// Gives access to more elaborative time metrics, affects the performance of a query
+    bool time = false;
     /// When set, each step is annotated with the hash of the plan node it belongs to. Nothing in a
     /// plan carries these - they come from `calculateHashTableCacheKeys` - so a caller holding them
     /// can hand them over and have the tree `EXPLAIN` already prints do the laying out. Keyed by
