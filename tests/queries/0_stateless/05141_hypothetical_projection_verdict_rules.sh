@@ -119,9 +119,9 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT a, s FROM t_uw WHERE b >= 1500 SETTINGS ${PIN};
 " | grep -E '^\s+verdict:' | awk '{$1=$1; print}'
 
-# the chooser replays the filters and expressions above the read on the projection and refuses a slice
-# it cannot replay, so an array join inside that slice takes the projection out of the running, while the
-# same array join above the slice leaves it in
+# the chooser replays the filters and expressions above the read on the projection; an array join is
+# planned as its own step above the read in both forms, so the slice stays replayable and the projection
+# stays in the running
 echo "--- an array join decides by where it sits relative to the read ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_aj; DROP TABLE IF EXISTS t_real_aj;
@@ -135,10 +135,9 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_aj ON t_aj (SELECT a, b, arr ORDER BY b);
     SELECT 'in the filter above the read:';
-    -- lowered to a step the array join leaves the slice, so keep it a function here
-    EXPLAIN WHATIF SELECT a FROM t_aj WHERE b = 42 AND arrayJoin(arr) > 0 SETTINGS ${PIN}, query_plan_lower_array_join_function = 0;
+    EXPLAIN WHATIF SELECT a FROM t_aj WHERE b = 42 AND arrayJoin(arr) > 0 SETTINGS ${PIN};
     EXPLAIN indexes = 1 SELECT a FROM t_real_aj WHERE b = 42 AND arrayJoin(arr) > 0
-        SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_aj', query_plan_lower_array_join_function = 0;
+        SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_aj';
     SELECT 'above the slice the chooser replays:';
     EXPLAIN WHATIF SELECT a, x FROM t_aj ARRAY JOIN arr AS x WHERE b = 42 SETTINGS ${PIN};
     EXPLAIN indexes = 1 SELECT a, x FROM t_real_aj ARRAY JOIN arr AS x WHERE b = 42
