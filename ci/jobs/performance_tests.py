@@ -11,7 +11,7 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Thread
 
@@ -61,7 +61,7 @@ GET_HISTORICAL_TRESHOLDS_QUERY = """\
 SELECT test, query_index,
     quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
     quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    any(query_display_name) AS query_display_name
+    query_display_name
 FROM query_metrics_v2
 -- We use results at least one week in the past, so that the current
 -- changes do not immediately influence the statistics, and we have
@@ -69,7 +69,8 @@ FROM query_metrics_v2
 WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
-GROUP BY test, query_index
+-- The display name is part of the key: compare.sh joins this file on all three.
+GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
 
 INSERT_HISTORICAL_DATA = """\
@@ -798,8 +799,21 @@ def build_flamegraph_upload_tsv():
     return True
 
 
+# The CIDB `DateTime` and `Date` columns are UTC, while the job runs with the
+# local time zone of the test image (`TZ=Europe/Amsterdam` in `test-base`).
+# Local time would put rows of a run after 22:00 UTC on the next day, and the
+# performance dashboard lists runs only up to the current UTC date, so every
+# timestamp written to CIDB goes through these helpers.
+def utc_now():
+    return datetime.now(timezone.utc)
+
+
+def format_utc_date_time(value):
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def get_check_start_time():
-    """Return the perf check start time (ISO, no microseconds).
+    """Return the perf check start time in UTC (`YYYY-MM-DD hh:mm:ss`).
 
     Uses the CHPC_CHECK_START_TIMESTAMP env var when available so that every
     batch of the same job lines up on the same timestamp (same "data point"
@@ -807,12 +821,10 @@ def get_check_start_time():
     """
     check_start_timestamp = os.environ.get("CHPC_CHECK_START_TIMESTAMP", "")
     if check_start_timestamp:
-        return (
-            datetime.fromtimestamp(int(check_start_timestamp))
-            .isoformat(sep=" ")
-            .split(".")[0]
+        return format_utc_date_time(
+            datetime.fromtimestamp(int(check_start_timestamp), timezone.utc)
         )
-    return datetime.now().isoformat(sep=" ").split(".")[0]
+    return format_utc_date_time(utc_now())
 
 
 # --- Export of the system logs to the CI Logs cluster ----------------------
@@ -1038,7 +1050,7 @@ def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release):
     )
     insert_metadata = get_insert_metadata(info, compare_against_release)
     query = query_template.format(
-        EVENT_DATE=datetime.now().date().isoformat(),
+        EVENT_DATE=utc_now().date().isoformat(),
         CHECK_START_TIME=get_check_start_time(),
         PR_NUMBER=info.pr_number,
         REF_SHA=escape_sql_string(reference_sha),
@@ -1074,7 +1086,7 @@ def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release)
     insert_metadata = get_insert_metadata(info, compare_against_release)
     query = INSERT_FLAMEGRAPH_STACKS.format(
         FLAMEGRAPH_STACKS_TABLE=FLAMEGRAPH_STACKS_TABLE,
-        EVENT_DATE=datetime.now().date().isoformat(),
+        EVENT_DATE=utc_now().date().isoformat(),
         CHECK_START_TIME=get_check_start_time(),
         PR_NUMBER=info.pr_number,
         REF_SHA=escape_sql_string(reference_sha),
@@ -1271,6 +1283,7 @@ class CHServer:
                 {runs_arg} --max-queries {max_queries} --soft-max-queries \
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
+                --stop-merges \
                 {test_file}",
             verbose=True,
             strip=False,
@@ -1989,8 +2002,13 @@ def rebuild_table(port, source, destination):
     # Drop any leftover target from an interrupted previous run before rebuilding.
     Shell.check(f'{client} --query "DROP TABLE IF EXISTS {target} SYNC"', strict=True, verbose=True)
     Shell.check(f'{client} --query "CREATE TABLE {target} AS {source}"', strict=True, verbose=True)
+    # OPTIMIZE FINAL's wait for in-flight merges is bounded by this table setting, not by the
+    # client timeouts above, and its 120s default is shorter than one full merge of these datasets.
+    Shell.check(f'{client} --query "ALTER TABLE {target} MODIFY SETTING lock_acquire_timeout_for_background_operations = 600"', strict=True, verbose=True)
     Shell.check(f'{client} --query "INSERT INTO {target} SELECT * FROM {source} SETTINGS {insert_settings}"', strict=True, verbose=True)
-    Shell.check(f'{client} --query "OPTIMIZE TABLE {target} FINAL"', strict=True, verbose=True)
+    # A timed-out OPTIMIZE FINAL is a no-op that still exits 0, so without optimize_throw_if_noop
+    # the swap below can run on a table whose parts are still being merged.
+    Shell.check(f'{client} --query "OPTIMIZE TABLE {target} FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1"', strict=True, verbose=True)
     if target != destination:
         old = f"{destination}_old"
         Shell.check(f'{client} --query "DROP TABLE IF EXISTS {old} SYNC"', strict=True, verbose=True)
@@ -2253,16 +2271,28 @@ def main():
                 print(
                     "WARNING: CIDB is not ready, will proceed without historical thresholds"
                 )
+                info.add_workflow_warning(
+                    "Performance comparison: CIDB is not reachable, the queries are "
+                    "judged without their learned thresholds"
+                )
                 Shell.check(
                     f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
                 )
                 return True
+            # The query takes 8 to 10 s, so a 10 s timeout lost the thresholds
+            # of about half of the runs.
             result = cidb.do_select_query(
-                query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
+                query=GET_HISTORICAL_TRESHOLDS_QUERY,
+                timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+                retries=3,
             )
-            if result is None:
+            if not result:
                 print(
                     "WARNING: Failed to fetch historical thresholds, will proceed without them"
+                )
+                info.add_workflow_warning(
+                    "Performance comparison: failed to fetch the learned per-query "
+                    "thresholds, the queries are judged without them"
                 )
                 Shell.check(
                     f"touch {perf_wd}/historical-thresholds.tsv", verbose=True
@@ -2558,16 +2588,9 @@ def main():
                 print("WARNING: Failed to prepare raw query metrics TSV")
                 return True
 
-            check_start_timestamp = os.environ.get("CHPC_CHECK_START_TIMESTAMP", "")
-            if check_start_timestamp:
-                check_start_time = datetime.fromtimestamp(
-                    int(check_start_timestamp)
-                ).isoformat(sep=" ").split(".")[0]
-            else:
-                check_start_time = datetime.now().isoformat(sep=" ").split(".")[0]
+            check_start_time = get_check_start_time()
 
-            now = datetime.now()
-            date = now.date().isoformat()
+            date = utc_now().date().isoformat()
 
             with open(raw_query_metrics_path, "r", encoding="utf-8") as f:
                 data = f.read()
@@ -2621,9 +2644,9 @@ def main():
                 print("WARNING: CIDB not ready - skipping historical data insert")
                 return True
 
-            now = datetime.now()
+            now = utc_now()
             date = now.date().isoformat()
-            date_time = now.isoformat(sep=" ").split(".")[0]
+            date_time = format_utc_date_time(now)
 
             report_path = f"{perf_wd}/report/all-query-metrics.tsv"
             with open(report_path, "r", encoding="utf-8") as f:
