@@ -316,8 +316,8 @@ bool parseDecimalIntegerLiteral(std::string_view literal, bool & negative, UInt2
     if (literal.empty() || literal.find_first_not_of("0123456789") != std::string_view::npos)
         return false;
 
-    /// `common::mulOverflow` and `common::addOverflow` do not report overflow for the widest integers, so
-    /// room for the next digit is checked instead; the test holds exactly when the digit would not fit.
+    /// `common::mulOverflow` does not report overflow for the widest integers, so room for the next digit
+    /// is checked instead; the test holds exactly when the digit would not fit.
     const UInt256 max_magnitude = std::numeric_limits<UInt256>::max();
     for (char c : literal)
     {
@@ -1192,6 +1192,10 @@ IntegerLiteralRange classifyIntegerLiteralRange(std::string_view literal, const 
 {
     /// A custom serialization reads its own text syntax: `Bool` reads `true` and `false`, not digits.
     if (to_type.getCustomSerialization())
+        return IntegerLiteralRange::NotApplicable;
+
+    const WhichDataType which_to_type(to_type);
+    if (!which_to_type.isInt() && !which_to_type.isUInt())
         return IntegerLiteralRange::NotApplicable;
 
     bool negative = false;
