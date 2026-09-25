@@ -372,6 +372,35 @@ struct JoinActionRefPairHash
     }
 };
 
+/// A pushed-down filter computes the key it stands in for while the JOIN computes it again, so a substitutable key
+/// must return the same value both times, must not change the number of rows, and must not be observable beyond
+/// that value. `arrayJoin` in a key is a FUNCTION node, refused by the determinism test rather than the node-type one.
+static bool isKeyStableAcrossEvaluations(const JoinActionRef & key)
+{
+    static constexpr auto changes_between_evaluations = [](const IFunctionBase & function)
+    {
+        return function.isStateful() || !function.isDeterministicInScopeOfQuery() || function.hasObservableSideEffects();
+    };
+
+    const auto key_dag = JoinExpressionActions::getSubDAG(key);
+    for (const auto & node : key_dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (changes_between_evaluations(*node.function_base))
+                return false;
+        }
+        else if (node.type != ActionsDAG::ActionType::INPUT
+            && node.type != ActionsDAG::ActionType::COLUMN
+            && node.type != ActionsDAG::ActionType::ALIAS)
+            return false;
+
+        if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, changes_between_evaluations))
+            return false;
+    }
+    return true;
+}
+
 /// Invokes `callback(lhs, rhs)` per Equals / NullSafeEquals predicate, `lhs` normalised to the left side.
 template <typename Callback>
 static void forEachEquiJoinKey(const JoinOperator & join_operator, Callback && callback)
@@ -636,6 +665,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         const auto & lhs_original_name = lhs.getColumnName();
         const auto & rhs_original_name = rhs.getColumnName();
+
+        /// Each direction substitutes the opposite side's key into the pushed filter, so it is that side's key
+        /// which has to survive being evaluated a second time.
+        const bool can_substitute_rhs = isKeyStableAcrossEvaluations(rhs);
+        const bool can_substitute_lhs = isKeyStableAcrossEvaluations(lhs);
+
         /* If we originally had an OUTER join with join_use_nulls, which altered the types of the inner joined side,
          * and then converted it to INNER because of WHERE conditions that filter out NULLs, we still should preserve nullability.
          *
@@ -684,9 +719,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             equivalent_expressions_alias[rhs] = alias;
         }
 
-        if (!changes_left_type)
+        if (!changes_left_type && can_substitute_rhs)
             equivalent_left_stream_column_to_right_stream_column[lhs_original_name] = rhs_column;
-        if (!changes_right_type)
+        if (!changes_right_type && can_substitute_lhs)
             equivalent_right_stream_column_to_left_stream_column[rhs_original_name] = lhs_column;
     }
 
@@ -760,27 +795,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             if (supertype_is_unsafe)
                 return;
 
-            /// The pushed-down filter computes this key and the JOIN computes it again, so the key must return
-            /// the same value twice within one query and must not change the number of rows. This pass already
-            /// requires both properties of the filters it pushes.
-            static constexpr auto changes_between_evaluations = [](const IFunctionBase & function)
-            { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
-            const auto source_dag = JoinExpressionActions::getSubDAG(source);
-            for (const auto & node : source_dag.getNodes())
-            {
-                if (node.type == ActionsDAG::ActionType::FUNCTION)
-                {
-                    if (changes_between_evaluations(*node.function_base))
-                        return;
-                }
-                else if (node.type != ActionsDAG::ActionType::INPUT
-                    && node.type != ActionsDAG::ActionType::COLUMN
-                    && node.type != ActionsDAG::ActionType::ALIAS)
-                    return;
-
-                if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, changes_between_evaluations))
-                    return;
-            }
+            if (!isKeyStableAcrossEvaluations(source))
+                return;
 
             cross_type_equivalent_columns.insert(replaced_name);
 
