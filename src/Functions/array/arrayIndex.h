@@ -51,129 +51,6 @@ namespace ErrorCodes
 
 using NullMap = PaddedPODArray<UInt8>;
 
-namespace ArrayIndexImpl
-{
-template <typename T>
-concept SupportedNumeric = std::is_integral_v<T> || std::is_floating_point_v<T>;
-
-inline constexpr size_t NO_MATCH = static_cast<size_t>(-1);
-
-/// has() returns presence; indexOf() returns a zero-based position or NO_MATCH.
-template <bool IsIndexOf>
-using SearchResult = std::conditional_t<IsIndexOf, size_t, bool>;
-
-/// Use the column's UInt8 result type for the scalar has() loop.
-template <SupportedNumeric T, bool IsIndexOf>
-ALWAYS_INLINE std::conditional_t<IsIndexOf, size_t, UInt8> findNumericScalar(const T * data, size_t size, T value)
-{
-    std::conditional_t<IsIndexOf, size_t, UInt8> found = IsIndexOf ? NO_MATCH : 0;
-    for (size_t i = 0; i < size; ++i)
-    {
-        if (data[i] == value)
-        {
-            if constexpr (IsIndexOf)
-                found = i;
-            else
-                found = true;
-            break;
-        }
-    }
-    return found;
-}
-
-template <SupportedNumeric T, bool IsIndexOf>
-ALWAYS_INLINE SearchResult<IsIndexOf> findNumericInternal(const T * data, size_t size, T value)
-{
-    if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
-    {
-        const auto * found = static_cast<const T *>(std::memchr(data, static_cast<unsigned char>(value), size));
-        if constexpr (IsIndexOf)
-            return found ? static_cast<size_t>(found - data) : NO_MATCH;
-        else
-            return found != nullptr;
-    }
-    else
-    {
-        constexpr size_t block_size = 64 / sizeof(T);
-        size_t i = 0;
-        /// The branchless presence reduction lets the compiler vectorize each block.
-        for (; size - i >= block_size; i += block_size)
-        {
-            unsigned found = 0;
-            for (size_t j = 0; j < block_size; ++j)
-                found |= static_cast<unsigned>(data[i + j] == value);
-
-            if (found)
-            {
-                if constexpr (IsIndexOf)
-                {
-                    /// Only indexOf() needs to locate the first match in a positive block.
-                    for (size_t j = 0; j < block_size; ++j)
-                        if (data[i + j] == value)
-                            return i + j;
-                }
-                else
-                    return true;
-            }
-        }
-        for (; i < size; ++i)
-        {
-            if (data[i] == value)
-            {
-                if constexpr (IsIndexOf)
-                    return i;
-                else
-                    return true;
-            }
-        }
-        if constexpr (IsIndexOf)
-            return NO_MATCH;
-        else
-            return false;
-    }
-}
-
-template <SupportedNumeric T, bool IsIndexOf>
-ALWAYS_INLINE SearchResult<IsIndexOf> findNumeric(const T * data, size_t size, T value)
-{
-    constexpr size_t max_prefix_size = 8;
-    if constexpr (!IsIndexOf && (sizeof(T) == 2 || sizeof(T) == 4))
-    {
-        constexpr size_t block_size = 64 / sizeof(T);
-        /// Do not consume a prefix if that would leave no complete block to probe.
-        if (size >= block_size && size < max_prefix_size + block_size)
-        {
-            if (data[0] == value)
-                return true;
-            return findNumericInternal<T, false>(data, size, value);
-        }
-    }
-
-    const size_t prefix_size = std::min(size, max_prefix_size);
-    const auto prefix_result = findNumericScalar<T, IsIndexOf>(data, prefix_size, value);
-    if (prefix_result != (IsIndexOf ? NO_MATCH : 0) || prefix_size == size)
-        return prefix_result;
-
-    const auto found = findNumericInternal<T, IsIndexOf>(data + prefix_size, size - prefix_size, value);
-    if constexpr (IsIndexOf)
-        return found == NO_MATCH ? NO_MATCH : prefix_size + found;
-    else
-        return found;
-}
-
-/// Short rows avoid memchr overhead or the block rescan needed by indexOf().
-template <SupportedNumeric T, bool IsIndexOf>
-constexpr size_t getOptimizedSearchMinSize()
-{
-    if constexpr (sizeof(T) == 1)
-        return IsIndexOf ? 64 : 8;
-    else if constexpr (IsIndexOf)
-        return (sizeof(T) == 2 || sizeof(T) == 4) ? 80 : 160;
-    else
-        return sizeof(T) == 4 ? 16 : 32;
-}
-}
-
 /// ConcreteActions -- what to do when the index was found.
 
 struct HasAction
@@ -205,6 +82,168 @@ struct CountEqualAction
 /// How to perform the search depending on the arguments data types.
 namespace Impl
 {
+template <typename T>
+concept ArrayIndexNumeric = std::is_integral_v<T> || std::is_floating_point_v<T>;
+
+/// Constant, exactly representable needles in non-nullable numeric arrays.
+/// Keep this specialization separate from the generic/nullable/LowCardinality paths.
+template <typename ConcreteAction, ArrayIndexNumeric T>
+    requires (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>)
+struct NumericArrayIndex
+{
+private:
+    static constexpr bool is_index_of = std::is_same_v<ConcreteAction, IndexOfAction>;
+    using ResultType = typename ConcreteAction::ResultType;
+
+    /// Only the private search helpers use zero-based positions and this sentinel.
+    static constexpr size_t NO_MATCH = static_cast<size_t>(-1);
+
+    using SearchResult = std::conditional_t<is_index_of, size_t, bool>;
+    using ScalarResult = std::conditional_t<is_index_of, size_t, UInt8>;
+
+    /// Use the column's UInt8 result type for the scalar has() loop.
+    static ALWAYS_INLINE ScalarResult findScalar(const T * data, size_t size, T value)
+    {
+        ScalarResult found = is_index_of ? NO_MATCH : 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (data[i] == value)
+            {
+                if constexpr (is_index_of)
+                    found = i;
+                else
+                    found = true;
+                break;
+            }
+        }
+        return found;
+    }
+
+    static ALWAYS_INLINE SearchResult findInBlocks(const T * data, size_t size, T value)
+    {
+        if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
+        {
+            const auto * found = static_cast<const T *>(std::memchr(data, static_cast<unsigned char>(value), size));
+            if constexpr (is_index_of)
+                return found ? static_cast<size_t>(found - data) : NO_MATCH;
+            else
+                return found != nullptr;
+        }
+        else
+        {
+            constexpr size_t block_size = 64 / sizeof(T);
+            size_t i = 0;
+            /// A branchless presence reduction lets the compiler vectorize each block.
+            for (; size - i >= block_size; i += block_size)
+            {
+                unsigned found = 0;
+                for (size_t j = 0; j < block_size; ++j)
+                    found |= static_cast<unsigned>(data[i + j] == value);
+
+                if (found)
+                {
+                    if constexpr (is_index_of)
+                    {
+                        /// Only indexOf() needs to locate the first match in a positive block.
+                        for (size_t j = 0; j < block_size; ++j)
+                            if (data[i + j] == value)
+                                return i + j;
+                    }
+                    else
+                        return true;
+                }
+            }
+            for (; i < size; ++i)
+            {
+                if (data[i] == value)
+                {
+                    if constexpr (is_index_of)
+                        return i;
+                    else
+                        return true;
+                }
+            }
+            if constexpr (is_index_of)
+                return NO_MATCH;
+            else
+                return false;
+        }
+    }
+
+    static ALWAYS_INLINE SearchResult findWithPrefix(const T * data, size_t size, T value)
+    {
+        constexpr size_t max_prefix_size = 8;
+        if constexpr (!is_index_of && (sizeof(T) == 2 || sizeof(T) == 4))
+        {
+            constexpr size_t block_size = 64 / sizeof(T);
+            /// Do not consume a prefix if that would leave no complete block to probe.
+            if (size >= block_size && size < max_prefix_size + block_size)
+            {
+                if (data[0] == value)
+                    return true;
+                return findInBlocks(data, size, value);
+            }
+        }
+
+        const size_t prefix_size = std::min(size, max_prefix_size);
+        const auto prefix_result = findScalar(data, prefix_size, value);
+        if (prefix_result != (is_index_of ? NO_MATCH : 0) || prefix_size == size)
+            return prefix_result;
+
+        const auto found = findInBlocks(data + prefix_size, size - prefix_size, value);
+        if constexpr (is_index_of)
+            return found == NO_MATCH ? NO_MATCH : prefix_size + found;
+        else
+            return found;
+    }
+
+    /// Cutoffs are element counts, not byte counts. Short rows avoid memchr overhead
+    /// or the positive-block rescan needed by indexOf().
+    static constexpr size_t getOptimizedSearchMinSize()
+    {
+        if constexpr (sizeof(T) == 1)
+            return is_index_of ? 64 : 8;
+        else if constexpr (is_index_of)
+            return (sizeof(T) == 2 || sizeof(T) == 4) ? 80 : 160;
+        else
+            return sizeof(T) == 4 ? 16 : 32;
+    }
+
+public:
+    static void vector(
+        const PaddedPODArray<T> & data,
+        const ColumnArray::Offsets & offsets,
+        T value,
+        PaddedPODArray<ResultType> & result)
+    {
+        constexpr size_t min_array_size = getOptimizedSearchMinSize();
+        const size_t size = offsets.size();
+        result.resize(size);
+
+        const T * __restrict raw_data = data.data();
+        const ColumnArray::Offset * __restrict raw_offsets = offsets.data();
+        ResultType * __restrict raw_result = result.data();
+
+        ColumnArray::Offset current_offset = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            const ColumnArray::Offset next_offset = raw_offsets[i];
+            const size_t array_size = next_offset - current_offset;
+            const T * __restrict row_data = raw_data + current_offset;
+
+            const auto found = array_size < min_array_size
+                ? findScalar(row_data, array_size, value)
+                : findWithPrefix(row_data, array_size, value);
+            if constexpr (is_index_of)
+                raw_result[i] = found == NO_MATCH ? 0 : static_cast<ResultType>(found + 1);
+            else
+                raw_result[i] = static_cast<ResultType>(found);
+
+            current_offset = next_offset;
+        }
+    }
+};
+
 template <
     typename ConcreteAction,
     bool RightArgIsConstant = false,
@@ -395,43 +434,6 @@ private:
 
         const size_t size = offsets.size();
         result.resize(size);
-
-        if constexpr (
-            Case == 1
-            && RightArgIsConstant
-            && ArrayIndexImpl::SupportedNumeric<Initial>
-            && std::is_same_v<Initial, Result>
-            && std::is_same_v<Data, PaddedPODArray<Initial>>
-            && std::is_same_v<Target, Result>
-            && (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>))
-        {
-            constexpr bool is_index_of = std::is_same_v<ConcreteAction, IndexOfAction>;
-            constexpr size_t min_array_size = ArrayIndexImpl::getOptimizedSearchMinSize<Initial, is_index_of>();
-
-            const Initial value = target;
-            const Initial * __restrict raw_data = data.data();
-            const ArrOffset * __restrict raw_offsets = offsets.data();
-            ResultType * __restrict raw_result = result.data();
-
-            ArrOffset current_offset = 0;
-            for (size_t i = 0; i < size; ++i)
-            {
-                const ArrOffset next_offset = raw_offsets[i];
-                const size_t array_size = next_offset - current_offset;
-                const Initial * __restrict row_data = raw_data + current_offset;
-
-                const auto found = array_size < min_array_size
-                    ? ArrayIndexImpl::findNumericScalar<Initial, is_index_of>(row_data, array_size, value)
-                    : ArrayIndexImpl::findNumeric<Initial, is_index_of>(row_data, array_size, value);
-                if constexpr (is_index_of)
-                    raw_result[i] = found == ArrayIndexImpl::NO_MATCH ? 0 : static_cast<ResultType>(found + 1);
-                else
-                    raw_result[i] = static_cast<ResultType>(found);
-
-                current_offset = next_offset;
-            }
-            return;
-        }
 
         ArrOffset current_offset = 0;
 
@@ -999,7 +1001,7 @@ private:
         if (const auto * item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(&data.right))
         {
             if constexpr (
-                ArrayIndexImpl::SupportedNumeric<Initial>
+                Impl::ArrayIndexNumeric<Initial>
                 && (std::is_same_v<ConcreteAction, HasAction> || std::is_same_v<ConcreteAction, IndexOfAction>))
             {
                 if (!data.null_maps.first && !data.null_maps.second)
@@ -1021,13 +1023,11 @@ private:
                         return true;
                     }
 
-                    Impl::Main<ConcreteAction, true, Initial, Initial>::vector(
+                    Impl::NumericArrayIndex<ConcreteAction, Initial>::vector(
                         left_typed->getData(),
                         data.offsets,
                         converted_needle,
-                        result.getData(),
-                        nullptr,
-                        nullptr);
+                        result.getData());
                     return true;
                 }
             }
@@ -1426,7 +1426,7 @@ private:
         return result;
     }
 
-    static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+    static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get());
 
