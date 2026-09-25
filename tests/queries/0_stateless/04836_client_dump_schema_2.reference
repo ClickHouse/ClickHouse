@@ -18,10 +18,9 @@ OK: qualified dictionary() dependency ordered before its reader
 OK: non-zero exit code
 resolves against the session database
 rebound dump emitted: 0
---- a database-less joinGet() reference in a materialized view is refused, not rebound ---
-OK: non-zero exit code
-resolves against the session database
-rebound dump emitted: 0
+--- a joinGet() reference in a materialized view keeps the database it was created under ---
+OK: dump succeeded
+OK: joinGet() reference keeps its create-time database dependency
 --- an IN <table> reference keeps the database it was created under ---
 OK: dump succeeded
 OK: IN table reference keeps its create-time database dependency

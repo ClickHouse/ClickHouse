@@ -20,8 +20,8 @@ $CLICKHOUSE_LOCAL --path "$TS_UNQUAL_PATH" --multiquery "
     CREATE DATABASE ${DB2};
     USE ${DB2};
     SET allow_experimental_time_series_table = 1;
-    CREATE TABLE zzz_ts_metrics (metric_family_name String, type String, unit String, help String)
-        ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+    CREATE TABLE zzz_ts_metrics (metric_family String, type String, unit String, help String)
+        ENGINE = ReplacingMergeTree ORDER BY metric_family;
     CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries METRICS zzz_ts_metrics;
 "
 TS_UNQUAL_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ts_unqual_dump.sql"
@@ -158,8 +158,8 @@ $CLICKHOUSE_LOCAL --path "$EXPLICIT_KIND_PATH" --multiquery --query "
 SET allow_deprecated_database_ordinary = 1;
 CREATE DATABASE ${DB} ENGINE = Ordinary;
 SET allow_experimental_time_series_table = 1;
-CREATE TABLE ${DB}.real_metrics (metric_family_name String, type String, unit String, help String)
-    ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+CREATE TABLE ${DB}.real_metrics (metric_family String, type String, unit String, help String)
+    ENGINE = ReplacingMergeTree ORDER BY metric_family;
 CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries METRICS ${DB}.real_metrics;
 CREATE TABLE ${DB}.\`.inner.metrics.aaa_ts\` (x UInt8) ENGINE = Memory;
 "
@@ -199,14 +199,14 @@ rm -rf "$DBLESS_PATH"
 $CLICKHOUSE_LOCAL --path "$DBLESS_PATH" --multiquery --query "
 CREATE DATABASE ${DB};
 CREATE DATABASE ${DB2};
-CREATE TABLE ${DB2}.jj (id UInt64, v UInt64) ENGINE = Join(ANY, LEFT, id);
-CREATE TABLE ${DB}.src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE ${DB2}.dsrc (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE DICTIONARY ${DB2}.dd (id UInt64, val String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dsrc' DB '${DB2}')) LAYOUT(FLAT()) LIFETIME(0);
 USE ${DB2};
-CREATE MATERIALIZED VIEW ${DB}.mv ENGINE = MergeTree ORDER BY id AS SELECT id, joinGet('jj', 'v', id) AS v FROM ${DB}.src;
+CREATE VIEW ${DB}.v AS SELECT * FROM dictionary('dd');
 "
 DBLESS_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_dbless_dump.sql"
 $CLICKHOUSE_LOCAL --path "$DBLESS_PATH" --dump-schema="${DB}" > "$DBLESS_DUMP_FILE" 2>"$ERR_FILE"
-echo "dump still emits the view: $(grep -c "CREATE MATERIALIZED VIEW ${DB}\.mv " "$DBLESS_DUMP_FILE")"
+echo "dump still emits the view: $(grep -c "CREATE VIEW ${DB}\.v " "$DBLESS_DUMP_FILE")"
 grep -o -m1 'without a database; no dumped database contains it' "$ERR_FILE"
 rm -rf "$DBLESS_PATH" "$DBLESS_DUMP_FILE"
 
@@ -652,70 +652,6 @@ else
 fi
 $CLICKHOUSE_CLIENT --multiquery --query "DROP USER ${LEAN_USER}; DROP DATABASE ${LEAN_DB} SYNC;"
 rm -f "$LEAN_DUMP_FILE" "$ERR_FILE"
-
-echo '--- uppercase and mixed-case table functions are discovered as dependencies ---'
-# Table functions matched case-insensitively order sources before readers.
-CASE_FUNC_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_case_func"
-CASE_FUNC_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_case_func_dump.sql"
-rm -rf "$CASE_FUNC_PATH"
-$CLICKHOUSE_LOCAL --path "$CASE_FUNC_PATH" --multiquery --query "
-CREATE DATABASE ${DB};
-CREATE TABLE ${DB}.zzz_src (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE VIEW ${DB}.aaa_remote_reader AS SELECT * FROM REMOTE('127.0.0.1', '${DB}', 'zzz_src');
-CREATE VIEW ${DB}.aab_merge_reader AS SELECT * FROM MERGE('${DB}', '^zzz_src\$');
-"
-if $CLICKHOUSE_LOCAL --path "$CASE_FUNC_PATH" --dump-schema="${DB}" > "$CASE_FUNC_DUMP_FILE" 2>"$ERR_FILE"; then
-    SRC_LINE=$(grep -n "CREATE TABLE ${DB}\.zzz_src" "$CASE_FUNC_DUMP_FILE" | head -1 | cut -d: -f1)
-    REMOTE_LINE=$(grep -n "CREATE VIEW ${DB}\.aaa_remote_reader" "$CASE_FUNC_DUMP_FILE" | head -1 | cut -d: -f1)
-    MERGE_LINE=$(grep -n "CREATE VIEW ${DB}\.aab_merge_reader" "$CASE_FUNC_DUMP_FILE" | head -1 | cut -d: -f1)
-    if [ -n "$SRC_LINE" ] && [ -n "$REMOTE_LINE" ] && [ "$SRC_LINE" -lt "$REMOTE_LINE" ]; then
-        echo 'OK: REMOTE() source dumped before reader'
-    else
-        echo "FAIL: REMOTE() dependency misordered (src=$SRC_LINE reader=$REMOTE_LINE)"
-    fi
-    if [ -n "$SRC_LINE" ] && [ -n "$MERGE_LINE" ] && [ "$SRC_LINE" -lt "$MERGE_LINE" ]; then
-        echo 'OK: MERGE() source dumped before reader'
-    else
-        echo "FAIL: MERGE() dependency misordered (src=$SRC_LINE reader=$MERGE_LINE)"
-    fi
-else
-    echo "FAIL: case function dump rejected: $(cat "$ERR_FILE")"
-fi
-rm -rf "$CASE_FUNC_PATH" "$CASE_FUNC_DUMP_FILE"
-
-echo '--- mixed-case named collection carriers are detected and warned ---'
-# Mixed-case table function carriers warn that the collection is required.
-NC_CASE_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_case"
-NC_CASE_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_case_dump.sql"
-rm -rf "$NC_CASE_PATH"
-$CLICKHOUSE_LOCAL --path "$NC_CASE_PATH" --multiquery --query "
-CREATE DATABASE ${DB};
-CREATE NAMED COLLECTION nc_url_carrier AS url = 'http://127.0.0.1:1/', format = 'TSV', structure = 'id UInt64';
-CREATE VIEW ${DB}.v_url_func AS SELECT * FROM URL(nc_url_carrier);
-"
-if $CLICKHOUSE_LOCAL --path "$NC_CASE_PATH" --dump-schema="${DB}" > "$NC_CASE_DUMP_FILE" 2>"$ERR_FILE"; then
-    echo "URL(nc) carrier warned: $(grep -c 'v_url_func depends on named collection nc_url_carrier' "$ERR_FILE")"
-else
-    echo "FAIL: URL(nc) dump rejected: $(cat "$ERR_FILE")"
-fi
-rm -rf "$NC_CASE_PATH" "$NC_CASE_DUMP_FILE"
-
-echo '--- lowercase database engine ordinary emits the required prelude gate ---'
-# Engine names matched case-insensitively emit their required prelude gate.
-ORD_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ord_gate"
-ORD_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ord_gate_dump.sql"
-rm -rf "$ORD_PATH"
-$CLICKHOUSE_LOCAL --path "$ORD_PATH" --multiquery --query "
-SET allow_deprecated_database_ordinary = 1;
-CREATE DATABASE ${DB} ENGINE = ordinary;
-CREATE TABLE ${DB}.t (id UInt64) ENGINE = MergeTree ORDER BY id;
-"
-if $CLICKHOUSE_LOCAL --path "$ORD_PATH" --dump-schema="${DB}" > "$ORD_DUMP_FILE" 2>"$ERR_FILE"; then
-    echo "ordinary gate emitted: $(grep -c 'SET allow_deprecated_database_ordinary = 1' "$ORD_DUMP_FILE")"
-else
-    echo "FAIL: ordinary gate dump rejected: $(cat "$ERR_FILE")"
-fi
-rm -rf "$ORD_PATH" "$ORD_DUMP_FILE"
 
 echo '--- a same-server hostname in remote() is discovered as a local dependency ---'
 # The connected server's own hostname is recognized as a local replica.

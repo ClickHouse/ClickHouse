@@ -290,16 +290,17 @@ grep -o -m1 'UNKNOWN_DATABASE' "$ERR_FILE"
 
 echo '--- a database-less reference that two dumped databases can satisfy is refused ---'
 # The CREATE-time session picked one of them, and that choice is not stored with the object, so
-# replaying under USE <own db> could silently rebind it.
+# replaying under USE <own db> could silently rebind it. CREATE keeps a dictionary() name as written.
 AMB_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_amb"
 rm -rf "$AMB_PATH"
 $CLICKHOUSE_LOCAL --path "$AMB_PATH" --multiquery --query "
 CREATE DATABASE amb_a;
 CREATE DATABASE amb_b;
-CREATE TABLE amb_a.jt (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
-CREATE TABLE amb_b.jt (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
+CREATE TABLE amb_a.dsrc (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE DICTIONARY amb_a.dd (id UInt64, val String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dsrc' DB 'amb_a')) LAYOUT(FLAT()) LIFETIME(0);
+CREATE DICTIONARY amb_b.dd (id UInt64, val String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dsrc' DB 'amb_a')) LAYOUT(FLAT()) LIFETIME(0);
 USE amb_b;
-CREATE VIEW amb_a.uses_join AS SELECT joinGet('jt', 'v', toUInt64(1)) AS x;
+CREATE VIEW amb_a.uses_dict AS SELECT * FROM dictionary('dd');
 "
 if $CLICKHOUSE_LOCAL --path "$AMB_PATH" --dump-schema='amb_a,amb_b' > /dev/null 2>"$ERR_FILE"; then
     echo 'FAIL: dump succeeded despite an ambiguous database-less reference'
@@ -388,17 +389,18 @@ fi
 rm -rf "$SUB_PATH"
 
 echo '--- a database-less reference satisfiable by an omitted database is refused, not rebound ---'
-# joinGet() stores its table argument verbatim, so the create-time session database is unknown:
-# both the owning and an omitted database have `jt`, and USE <owning> on replay could rebind it.
+# dictionary() stores its argument verbatim, so the create-time session database is unknown:
+# both the owning and an omitted database have `dd`, and USE <owning> on replay could rebind it.
 UNDUMPED_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_undumped"
 rm -rf "$UNDUMPED_PATH"
 $CLICKHOUSE_LOCAL --path "$UNDUMPED_PATH" --multiquery --query "
 CREATE DATABASE undump_a;
 CREATE DATABASE undump_b;
-CREATE TABLE undump_a.jt (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
-CREATE TABLE undump_b.jt (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
+CREATE TABLE undump_a.dsrc (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE DICTIONARY undump_a.dd (id UInt64, val String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dsrc' DB 'undump_a')) LAYOUT(FLAT()) LIFETIME(0);
+CREATE DICTIONARY undump_b.dd (id UInt64, val String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dsrc' DB 'undump_a')) LAYOUT(FLAT()) LIFETIME(0);
 USE undump_b;
-CREATE VIEW undump_a.uses_join AS SELECT joinGet('jt', 'v', toUInt64(1)) AS x;
+CREATE VIEW undump_a.uses_dict AS SELECT * FROM dictionary('dd');
 "
 if $CLICKHOUSE_LOCAL --path "$UNDUMPED_PATH" --dump-schema='undump_a' > /dev/null 2>"$ERR_FILE"; then
     echo 'FAIL: dump succeeded despite an ambiguous database-less reference to an omitted database'

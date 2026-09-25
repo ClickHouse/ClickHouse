@@ -122,7 +122,8 @@ grep -o -m1 'resolves against the session database' "$ERR_FILE"
 echo "rebound dump emitted: $(grep -c 'CREATE VIEW' "$DUMP_FILE")"
 rm -rf "$UNQUAL_DICTFN_PATH"
 
-echo '--- a database-less joinGet() reference in a materialized view is refused, not rebound ---'
+echo '--- a joinGet() reference in a materialized view keeps the database it was created under ---'
+# CREATE qualifies the joinGet() table name with the session database; keep and order that ${DB2} edge.
 UNQUAL_JOINGET_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_unqual_joinget"
 rm -rf "$UNQUAL_JOINGET_PATH"
 $CLICKHOUSE_LOCAL --path "$UNQUAL_JOINGET_PATH" --multiquery --query "
@@ -134,9 +135,14 @@ CREATE MATERIALIZED VIEW ${DB}.aaa_mv (id UInt64, v String) ENGINE = MergeTree O
 "
 $CLICKHOUSE_LOCAL --path "$UNQUAL_JOINGET_PATH" --dump-schema="${DB},${DB2}" > "$DUMP_FILE" 2>"$ERR_FILE"
 rc=$?
-[[ $rc -ne 0 ]] && echo 'OK: non-zero exit code' || echo 'FAIL: expected non-zero exit code'
-grep -o -m1 'resolves against the session database' "$ERR_FILE"
-echo "rebound dump emitted: $(grep -c 'CREATE MATERIALIZED VIEW' "$DUMP_FILE")"
+[[ $rc -eq 0 ]] && echo 'OK: dump succeeded' || echo 'FAIL: dump failed'
+jg_join_line=$(grep -n "CREATE TABLE ${DB2}\.zzz_join " "$DUMP_FILE" | cut -d: -f1)
+jg_mv_line=$(grep -n "CREATE MATERIALIZED VIEW ${DB}\.aaa_mv " "$DUMP_FILE" | cut -d: -f1)
+if [[ -n "$jg_join_line" && -n "$jg_mv_line" && "$jg_join_line" -lt "$jg_mv_line" ]]; then
+    echo 'OK: joinGet() reference keeps its create-time database dependency'
+else
+    echo 'FAIL: joinGet() reference dependency missing or misordered'
+fi
 rm -rf "$UNQUAL_JOINGET_PATH"
 
 echo '--- an IN <table> reference keeps the database it was created under ---'
@@ -663,8 +669,8 @@ rm -rf "$TS_PATH"
 $CLICKHOUSE_LOCAL --path "$TS_PATH" --multiquery "
     CREATE DATABASE ${DB};
     SET allow_experimental_time_series_table = 1;
-    CREATE TABLE ${DB}.zzz_ts_metrics (metric_family_name String, type String, unit String, help String)
-        ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+    CREATE TABLE ${DB}.zzz_ts_metrics (metric_family String, type String, unit String, help String)
+        ENGINE = ReplacingMergeTree ORDER BY metric_family;
     CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries METRICS ${DB}.zzz_ts_metrics;
 "
 TS_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ts_dump.sql"

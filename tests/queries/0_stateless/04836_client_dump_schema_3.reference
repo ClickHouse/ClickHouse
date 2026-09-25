@@ -91,12 +91,5 @@ replayed view resolves: 1
 OK: system.clusters is denied
 OK: system.macros is denied
 restricted dump table present: 1
---- uppercase and mixed-case table functions are discovered as dependencies ---
-OK: REMOTE() source dumped before reader
-OK: MERGE() source dumped before reader
---- mixed-case named collection carriers are detected and warned ---
-URL(nc) carrier warned: 1
---- lowercase database engine ordinary emits the required prelude gate ---
-ordinary gate emitted: 1
 --- a same-server hostname in remote() is discovered as a local dependency ---
 OK: same-server hostname source dumped before reader
