@@ -498,7 +498,16 @@ void runOracle(const std::string & sql, const std::string & json)
     if (!oracle_enabled || !isDeterministicForOracle(sql))
         return;
 
-    static const std::string baseline_settings = "max_threads = 1, max_execution_time = 2, max_rows_to_read = 1000000";
+    /// `optimize_arithmetic_operations_in_aggregate_functions` (on by default) rewrites `min/max(x +/- c)` to
+    /// `min/max(x) +/- c`, which is wrong over an empty global aggregation (returns `c` instead of the default 0);
+    /// a real ClickHouse bug reported separately (finding 31). Disable it in the baseline so both oracle variants
+    /// agree on it and the differential oracle keeps hunting unknown divergences instead of re-flagging this one.
+    static const std::string baseline_settings = "max_threads = 1, max_execution_time = 2, max_rows_to_read = 1000000"
+        ", optimize_arithmetic_operations_in_aggregate_functions = 0"
+        /// `optimize_group_by_function_keys` (default on) drops a GROUP BY key that is a function of other keys, so a
+        /// throwing redundant key (e.g. `(number%2) % (number%3)` divides by zero) is not evaluated in the default
+        /// plan but is with the setting off; a valid optimization eliminating a throwing subexpression, not a bug.
+        ", optimize_group_by_function_keys = 0";
     static const std::string flipped_settings = baseline_settings
         + ", max_block_size = 1, query_plan_enable_optimizations = 0, optimize_move_to_prewhere = 0, optimize_read_in_order = 0"
           ", optimize_aggregation_in_order = 0, optimize_distinct_in_order = 0, compile_expressions = 0, compile_aggregate_expressions = 0"
@@ -522,7 +531,11 @@ void runOracle(const std::string & sql, const std::string & json)
         ", join_algorithm = 'grace_hash,partial_merge,hash', parallel_hash_join_threshold = 0, min_joined_block_size_bytes = 1"
         ", cross_join_min_rows_to_compress = 1, cross_join_min_bytes_to_compress = 1, max_streams_to_max_threads_ratio = 4"
         ", optimize_aggregators_of_group_by_keys = 0, optimize_group_by_constant_keys = 0, optimize_rewrite_array_exists_to_has = 0"
-        ", optimize_rewrite_regexp_functions = 0, query_plan_use_new_logical_join_step = 0, optimize_min_equality_disjunction_chain_length = 1";
+        ", optimize_rewrite_regexp_functions = 0, query_plan_use_new_logical_join_step = 0, optimize_min_equality_disjunction_chain_length = 1"
+        /// See the baseline: keep the buggy `min/max(x +/- c)` rewrite (finding 31) off in every variant so the oracle agrees.
+        ", optimize_arithmetic_operations_in_aggregate_functions = 0"
+        /// See the baseline: keep `optimize_group_by_function_keys` off (throwing redundant GROUP BY key elimination).
+        ", optimize_group_by_function_keys = 0";
 
     /// Fourth variant: force the JIT compilation of expressions, aggregates and sort descriptions
     /// (the default only compiles after a few repetitions, so a single fuzzed query never does), with
