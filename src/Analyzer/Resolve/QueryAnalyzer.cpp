@@ -7245,7 +7245,54 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.hasInterpolate())
+    {
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
+
+        /// A column of `ORDER BY ... WITH FILL` must not also be an `INTERPOLATE` output: the fill
+        /// rows would overwrite the very column they are ordered by. The filling transform checks
+        /// this too, but its sort description carries the written name of the column only on some
+        /// read paths - over a `Distributed` table the query used to run and answer with the fill
+        /// column replaced by the interpolated expression.
+        if (query_node_typed.hasOrderBy())
+        {
+            const auto & interpolate_nodes = query_node_typed.getInterpolate()->as<const ListNode &>().getNodes();
+
+            for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
+            {
+                const auto & sort_node_typed = sort_node->as<const SortNode &>();
+                if (!sort_node_typed.withFill())
+                    continue;
+
+                /// The name of the fill column as it is written in the query. `SortNode::column_name` holds it when
+                /// the fill key is written as an identifier, as in `ORDER BY x WITH FILL ... INTERPOLATE (x AS ...)`.
+                /// For a positional fill key, as in `ORDER BY 1 WITH FILL ... INTERPOLATE (x AS ...)`, that name is
+                /// empty: `replaceNodesWithPositionalArguments` put a clone of the projection expression into the sort
+                /// key, along with the projection name of that expression - which is the output name of the column
+                /// at that position, its alias if it has one. Node equality is not usable here: an alias to another
+                /// column, as `a AS b`, resolves to the same expression as `a` and is still a distinct output column.
+                String fill_column_name = sort_node_typed.getColumnName();
+                if (fill_column_name.empty())
+                {
+                    auto sort_expression_it = resolved_expressions.find(sort_node_typed.getExpression());
+                    if (sort_expression_it != resolved_expressions.end() && sort_expression_it->second.size() == 1)
+                        fill_column_name = sort_expression_it->second.front();
+                }
+
+                if (fill_column_name.empty())
+                    continue;
+
+                for (const auto & interpolate_node : interpolate_nodes)
+                {
+                    const auto & interpolate_node_typed = interpolate_node->as<const InterpolateNode &>();
+                    if (fill_column_name == interpolate_node_typed.getExpressionName())
+                        throw Exception(
+                            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output",
+                            interpolate_node_typed.getExpressionName());
+                }
+            }
+        }
+    }
 
     expandLimitByAll(query_node_typed);
 
