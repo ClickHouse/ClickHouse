@@ -1,7 +1,9 @@
 -- `histogram` merges bins while values arrive: once a single aggregation state has
 -- received more than `2 * number_of_bins` values it compresses mid-stream, so the
--- result depends on the order in which the values are processed. Therefore
+-- result can depend on the order in which the values are processed. Therefore
 -- `query_plan_remove_redundant_sorting` must keep an `ORDER BY` that feeds `histogram`.
+-- The 10 distinct values below are a case where the order does change the result;
+-- duplicates collapse at distance 0, so they stay order-invariant past the threshold.
 
 -- The optimizer must not change the result. The left side needs the subquery's
 -- `ORDER BY x DESC` to survive; the right side delivers the same values in descending
