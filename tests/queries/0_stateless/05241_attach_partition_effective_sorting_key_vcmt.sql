@@ -49,8 +49,9 @@ SELECT 'count FINAL after vcmt staging attach', count() FROM vcmt FINAL;
 -- The invariant is one-way: adopted parts only need to be sorted by the destination's
 -- effective key. A staging whose effective key is STRONGER (here VCMT appends the
 -- version column, giving (date, key, version)) stays valid for a plain MergeTree dest
--- whose key (date, key) is a prefix of it.
-CREATE TABLE dst_mt (date Date, key Int32, value Int32)
+-- whose key (date, key) is a prefix of it. The dest carries the same physical columns;
+-- a plain MergeTree just does not use sign/version.
+CREATE TABLE dst_mt (date Date, key Int32, value Int32, sign Int8, version UInt64)
 ENGINE = MergeTree PARTITION BY date ORDER BY (date, key);
 
 ALTER TABLE dst_mt ATTACH PARTITION '1970-10-10' FROM staging_vcmt;
