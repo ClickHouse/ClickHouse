@@ -337,6 +337,78 @@ char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, c
     return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory, settings);
 }
 
+namespace
+{
+
+template <typename IndexType>
+void batchSerializeLowCardinalityString(
+    const ColumnString & strings,
+    const ColumnVector<IndexType> & indexes,
+    const IColumn::SerializationSettings * settings,
+    VectorWithMemoryTracking<char *> & memories)
+{
+    const auto & offsets = strings.getOffsets();
+    const auto & chars = strings.getChars();
+    const auto & data = indexes.getData();
+    const bool zero_byte = settings && settings->serialize_string_with_zero_byte;
+
+    for (size_t row = 0; row < memories.size(); ++row)
+    {
+        const size_t index = data[row];
+        const size_t begin = index == 0 ? 0 : offsets[index - 1];
+        const size_t value_size = offsets[index] - begin;
+        const size_t stored_size = value_size + zero_byte;
+        char * memory = memories[row];
+        memcpy(memory, &stored_size, sizeof(stored_size));
+        memory += sizeof(stored_size);
+        memcpy(memory, &chars[begin], value_size);
+        if (zero_byte)
+            memory[value_size] = 0;
+        memories[row] = memory + stored_size;
+    }
+}
+
+}
+
+void ColumnLowCardinality::batchSerializeValueIntoMemory(
+    VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+{
+    chassert(memories.size() == size());
+    if (memories.empty())
+        return;
+
+    /// `LowCardinality(String)` is the common case; serialize its dictionary values directly
+    /// instead of resolving every row through `IColumnUnique` and the nested column.
+    if (!getDictionary().nestedColumnIsNullable())
+    {
+        if (const auto * strings = typeid_cast<const ColumnString *>(getDictionary().getNestedNotNullableColumn().get()))
+        {
+            const IColumn & indexes = getIndexes();
+            switch (getSizeOfIndexType())
+            {
+                case sizeof(UInt8):
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt8 &>(indexes), settings, memories);
+                    return;
+                case sizeof(UInt16):
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt16 &>(indexes), settings, memories);
+                    return;
+                case sizeof(UInt32):
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt32 &>(indexes), settings, memories);
+                    return;
+                case sizeof(UInt64):
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt64 &>(indexes), settings, memories);
+                    return;
+                default:
+                    break;
+            }
+        }
+    }
+
+    const IColumn & indexes = getIndexes();
+    for (size_t i = 0; i < memories.size(); ++i)
+        memories[i] = getDictionary().serializeValueIntoMemory(indexes.getUInt(i), memories[i], settings);
+}
+
 std::optional<size_t> ColumnLowCardinality::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     return getDictionary().getSerializedValueSize(getIndexes().getUInt(n), settings);
