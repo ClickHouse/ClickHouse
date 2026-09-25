@@ -108,6 +108,14 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     if (!format_column || !format_column->type->equals(*sort_column.type))
         return false;
 
+#if USE_PARQUET
+    /// The legacy Delta Lake reader (`allow_delta_kernel_rs = 0`) keeps the partition columns in the
+    /// format header and replaces them in the chunks the format returns with the partition values, so
+    /// the reader would compare whatever a data file stores under that name against the threshold.
+    if (std::dynamic_pointer_cast<const DeltaLakeMetadata>(configuration->getExternalMetadata()))
+        return false;
+#endif
+
     /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
     /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
     /// would come from other values than the ones the reader compares against it.

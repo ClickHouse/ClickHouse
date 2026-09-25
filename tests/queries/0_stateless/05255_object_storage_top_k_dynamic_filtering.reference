@@ -30,3 +30,6 @@ OK
 --- Iceberg: sorted by an identity partition column
 OK
 OK
+--- Delta Lake: sorted by a partition column
+allow_delta_kernel_rs = 0: OK
+allow_delta_kernel_rs = 1: OK
