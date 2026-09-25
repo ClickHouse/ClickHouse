@@ -180,11 +180,28 @@ public:
         return true;
     }
 
+    [[nodiscard]] Container drainAll()
+    {
+        Container swap_container;
+        {
+            std::lock_guard queue_lock(queue_mutex);
+            std::swap(swap_container, queue);
+        }
+        push_condition.notify_all();
+        return swap_container;
+    }
+
     /// Returns size of queue
     size_t size() const
     {
         std::lock_guard lock(queue_mutex);
         return queue.size();
+    }
+
+    /// Returns the capacity the queue was constructed with. Fixed for the queue's lifetime, so no lock.
+    size_t maxFill() const
+    {
+        return max_fill;
     }
 
     /// Returns if queue is empty

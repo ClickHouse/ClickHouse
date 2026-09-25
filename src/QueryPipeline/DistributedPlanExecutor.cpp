@@ -49,6 +49,7 @@
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
@@ -64,6 +65,7 @@
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
+#include <Poco/Message.h>
 
 
 namespace CurrentMetrics
@@ -1383,6 +1385,9 @@ protected:
             }
         }
 
+        /// Whether forwarded worker logs have somewhere to go: the initiator's `send_logs_level` queue.
+        bool receivesWorkerLogs() const { return initiator_logs_queue != nullptr; }
+
         /// Add started task to be tracked
         void addTask(const String & stage_name, RunningTaskInfo task_info)
         {
@@ -1551,6 +1556,64 @@ protected:
             cancellation->throwIfCancelled();
         }
 
+        /// Push a synthetic warning line into the client's log stream. The status-check threads are not
+        /// attached to the initiator log queue, so a plain LOG_ would not reach the client; forward it the
+        /// same way worker log blocks are forwarded. Honors the client's `send_logs_level` and
+        /// `send_logs_source_regexp` like any other line.
+        void pushInitiatorLogLine(const String & query_id, const String & text)
+        {
+            static const String source = "DistributedQueryPlanExecutor";
+            if (initiator_logs_queue && initiator_logs_queue->isNeeded(Poco::Message::PRIO_WARNING, source))
+                initiator_logs_queue->pushMessage(Poco::Message::PRIO_WARNING, source, query_id, text);
+        }
+
+        /// Forward one batch of worker log lines from a status reply to the initiator's `send_logs_level`
+        /// stream, checking it against the per-task cursor. The batch starts at `begin_offset`; a gap
+        /// before it is lines lost in transit (a retried status poll re-drained an already-emptied
+        /// queue). Polls for one task are sequential, so a batch starting before the cursor is not
+        /// expected; if it happens the rows are still forwarded and the cursor is left alone.
+        /// Worker-side drops (`dropped_total`, buffer full) are reported as they grow.
+        void handleWorkerLogs(const RunningTaskInfo & task, DistributedQueryTaskStatus & task_status)
+        {
+            if (!initiator_logs_queue || !task_status.logs)
+                return;
+
+            auto & logs = *task_status.logs;
+            const UInt64 num_rows = logs.rows.rows();
+
+            UInt64 lost_in_transit = 0;
+            UInt64 newly_dropped = 0;
+            {
+                std::lock_guard g(lock);
+                auto & cursor = worker_log_cursors[task.task_id];
+
+                if (logs.begin_offset >= cursor.expected_offset)
+                {
+                    lost_in_transit = logs.begin_offset - cursor.expected_offset;
+                    cursor.expected_offset = logs.begin_offset + num_rows;
+                }
+
+                if (logs.dropped_total > cursor.dropped_reported)
+                {
+                    newly_dropped = logs.dropped_total - cursor.dropped_reported;
+                    cursor.dropped_reported = logs.dropped_total;
+                }
+            }
+
+            if (lost_in_transit != 0)
+                pushInitiatorLogLine(task.task_id, fmt::format(
+                    "{} worker log line(s) from {} were lost in transit (status poll retry)",
+                    lost_in_transit, task.endpoint_uri));
+
+            if (num_rows != 0)
+                initiator_logs_queue->pushBlock(std::move(logs.rows));
+
+            if (newly_dropped != 0)
+                pushInitiatorLogLine(task.task_id, fmt::format(
+                    "{} worker log line(s) were dropped on {} because the forwarding buffer was full",
+                    newly_dropped, task.endpoint_uri));
+        }
+
         /// Thead function to check one task. If the task is not finished, adds the task back to the queue for checking.
         void checkStatusFunc(const String & stage_name, const RunningTaskInfo & task)
         {
@@ -1559,6 +1622,8 @@ protected:
             UInt32 wait_milliseconds = 300;
 
             auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, wait_milliseconds, context);
+
+            handleWorkerLogs(task, task_status);
 
             auto progress_callback = context->getProgressCallback();
             if (progress_callback)
@@ -1609,6 +1674,11 @@ protected:
                 try
                 {
                     auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, poll_wait_ms, context, /*for_cleanup*/ true);
+
+                    /// A task cancelled early (e.g. LIMIT satisfied) still delivers its logs
+                    /// through the cleanup polls.
+                    handleWorkerLogs(task, task_status);
+
                     if (task_status.status != "Running")
                         return task_status;
                 }
@@ -1756,6 +1826,16 @@ protected:
         std::mutex lock;
         UnorderedMapWithMemoryTracking<String, StageInfoPtr> all_stages TSA_GUARDED_BY(lock);
         UnorderedMapWithMemoryTracking<String, MapWithMemoryTracking<String, RunningTaskInfo>> stage_tasks TSA_GUARDED_BY(lock);
+        /// Where the next batch of a task's forwarded log lines should start, and how many worker-side
+        /// drops were already reported to the client. Checked per status reply. Kept until the tracker
+        /// dies with the query: a task can still be polled after it went terminal (e.g. the teardown poll
+        /// when `forget` failed), and only a surviving cursor lets that reply read as "nothing new".
+        struct WorkerLogCursor
+        {
+            UInt64 expected_offset = 0;
+            UInt64 dropped_reported = 0;
+        };
+        UnorderedMapWithMemoryTracking<String, WorkerLogCursor> worker_log_cursors TSA_GUARDED_BY(lock);
         std::atomic<Int64> in_flight_request_count = 0;
         /// Queue of stages that have unfinished tasks to be checked
         DequeWithMemoryTracking<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);
@@ -1764,6 +1844,9 @@ protected:
         StageWakeupPtr stage_wakeup;
         ThreadPool thread_pool;
         LoggerPtr logger;
+
+        /// Initiator logs queue captured at construction so it is tied to the main query's thread
+        InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
     };
 
     RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const
@@ -1793,6 +1876,11 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
+
+        /// Ask for worker logs only when the initiator has a queue to receive them (e.g. not over
+        /// HTTP without a framing format); the worker attaches its log collector accordingly.
+        TaskCollectors collectors;
+        collectors.logs = running_tasks.receivesWorkerLogs();
 
         const String unique_temp_file_path = toString(unique_query_id);
 
@@ -1833,7 +1921,7 @@ protected:
             LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
             try
             {
-                sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, context);
+                sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, collectors, context);
             }
             catch (...)
             {

@@ -3,17 +3,33 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/DNSResolver.h>
 #include <Common/logger_useful.h>
 
 #include <Poco/Message.h>
+
+#include <chrono>
 
 
 namespace DB
 {
 
-InternalTextLogsQueue::InternalTextLogsQueue()
-        : ConcurrentBoundedQueue<MutableColumns>(std::numeric_limits<int>::max()),
+InternalTextLogsQueue::InternalTextLogsQueue(size_t max_entries_)
+        : ConcurrentBoundedQueue<MutableColumns>(max_entries_),
           max_priority(Poco::Message::Priority::PRIO_INFORMATION) {}
+
+void InternalTextLogsQueue::pushOrDrop(MutableColumns && columns)
+{
+    /// The unbounded queue never fills, so take the plain push with a zero-timeout
+    if (maxFill() == UNBOUNDED) [[likely]]
+    {
+        [[maybe_unused]] bool pushed = emplace(std::move(columns));
+        return;
+    }
+
+    if (!tryEmplace(/*milliseconds=*/ 0, std::move(columns)))
+        dropped_logs.fetch_add(1, std::memory_order_relaxed);
+}
 
 
 Block InternalTextLogsQueue::getSampleBlock()
@@ -44,6 +60,24 @@ void InternalTextLogsQueue::pushBlock(Block && log_block)
         (void)(emplace(log_block.mutateColumns()));
     else
         LOG_WARNING(getLogger("InternalTextLogsQueue"), "Log block have different structure");
+}
+
+void InternalTextLogsQueue::pushMessage(int priority, std::string_view source, const String & query_id, const String & text)
+{
+    MutableColumns columns = getSampleColumns();
+    const auto now = std::chrono::system_clock::now().time_since_epoch();
+
+    size_t i = 0;
+    columns[i++]->insert(static_cast<UInt64>(std::chrono::duration_cast<std::chrono::seconds>(now).count()));
+    columns[i++]->insert(static_cast<UInt64>(std::chrono::duration_cast<std::chrono::microseconds>(now).count() % 1000000));
+    columns[i++]->insert(DNSResolver::instance().getHostName());
+    columns[i++]->insert(query_id);
+    columns[i++]->insert(static_cast<UInt64>(0)); /// thread_id
+    columns[i++]->insert(static_cast<Int64>(priority));
+    columns[i++]->insert(String(source));
+    columns[i++]->insert(text);
+
+    pushOrDrop(std::move(columns));
 }
 
 std::string_view InternalTextLogsQueue::getPriorityName(int priority)
