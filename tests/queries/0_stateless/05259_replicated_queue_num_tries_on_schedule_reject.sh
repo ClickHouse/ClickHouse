@@ -29,7 +29,8 @@ queue_state() {
     $CLICKHOUSE_CLIENT --query "
         SELECT max(num_tries), toUnixTimestamp(max(last_attempt_time)), count()
         FROM system.replication_queue
-        WHERE database = currentDatabase() AND table = 'rq_reject'"
+        WHERE database = currentDatabase() AND table = 'rq_reject'
+          AND type = 'ALTER_METADATA'"
 }
 
 # 75 s, against ~13 s actually needed: the refusals are paced by the background assignee's own
@@ -50,20 +51,17 @@ wait_for_rejections() {
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS rq_reject SYNC;
 
-    SET insert_keeper_fault_injection_probability = 0;
-
     CREATE TABLE rq_reject (x UInt64)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/rq_reject', 'r1')
     ORDER BY x
     SETTINGS
         allow_remote_fs_zero_copy_replication = 0,
         max_postpone_time_for_failed_replicated_tasks_ms = 100;
-
-    INSERT INTO rq_reject SELECT number FROM numbers(10);
 "
 
 # A permanently failing ALTER_METADATA entry: it is dispatched through the common pool and it does
 # reach executeLogEntry, where the fault injection marks it once and then keeps throwing.
+# The table is deliberately left empty: a GET_PART entry would consume the one-shot fault injection.
 # alter_sync = 0 is mandatory: the default 1 would make the ALTER wait for the entry it just poisoned.
 $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT replicated_queue_fail_next_entry;
@@ -77,6 +75,7 @@ for _ in {1..200}; do
     if [[ "$($CLICKHOUSE_CLIENT --query "
             SELECT count() FROM system.replication_queue
             WHERE database = currentDatabase() AND table = 'rq_reject'
+              AND type = 'ALTER_METADATA'
               AND num_tries >= 1 AND last_exception != ''")" == "1" ]]; then
         counted=1
         break
