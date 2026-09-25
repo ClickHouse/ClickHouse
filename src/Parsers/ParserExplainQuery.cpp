@@ -985,7 +985,7 @@ Let's examine the output. First let's look at the header.
 ```
 
 - `Time` — total time split into planning (i.e. creation of plan + optimization of plan + pipeline construction) and execution (running the pipeline) phases.
-- `Execution` — not printed with `time = 0`. The execution time split by what the threads were doing: `in steps` is the time when at least one thread ran a processor of a step of the plan, `outside steps` is the time when threads ran only processors that belong to no step of the plan, and `idle` is the time when no thread ran any processor. The three parts add up to `execution`. `in steps` equals the `branch` time of the root step, see [Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency).
+- `Execution` — not printed with `time = 0`. Splits the execution time into `in steps`, `outside steps` and `idle`. The parts add up to `execution`. See [Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency).
 - `Read` — rows and uncompressed bytes read from tables, with throughput - the same numbers the normal query footer reports as "Processed".
 - `Peak memory` — peak memory the query used.
 
@@ -1216,26 +1216,21 @@ Concurrency: step <n>/<m> · branch <n>/<m>
 Here `step` refers to the step itself. `branch` refers to the subtree rooted at the step: the step together with all steps below it in the plan.
 
 - `Time` — the wall-clock time during which at least one thread did work for the step (`step`), or for any step of the subtree (`branch`). `<share>` is that time as a percentage of the query execution time.
-- `Concurrency` — the average number of threads that were busy with *any* step of the query — not only this one — while the step (`step`) or its subtree (`branch`) was active. `<m>` is the maximum number of threads the query could use. This is the global counterpart of the per-stage `parallelism` metric: `parallelism` measures how parallel the stage itself was; `Concurrency` measures how parallel the whole query was during the step's lifetime. Steps that own no processors, for example `Union` when its inputs already have the same header, print `Unknown` for `step`: there is no work to measure. `branch` is still reported.
+- `Concurrency` — the average number of threads that were busy with *any* step of the query — not only this one — while the step (`step`) or its subtree (`branch`) was active. `<m>` is the maximum number of threads the query could use. Steps that own no processors, for example `Union` when its inputs already have the same header, print `Unknown` for `step`: there is no work to measure. `branch` is still reported.
 
 Both metrics are derived from work intervals. Each time a thread finishes a piece of work, the executor records an interval: the start time, the end time, and the step the work belongs to.
 
 `Time` of a step is the length of the union of that step's intervals. Gaps, where no thread worked on the step, do not count. `Time` of a branch unites the intervals of all steps of the subtree first.
 
-The `branch` of the root step is the whole plan, but its share is normally below 100%. The `Execution` line of the query summary shows where the rest of the execution time went:
-
-```txt
-Time:        3.92 ms (planning 1.02 ms · execution 2.90 ms)
-Execution:   in steps 1.56 ms (53.80%) · outside steps 0.01 ms (0.30%) · idle 1.33 ms (45.90%)
-```
+The `branch` of the root step is the whole plan, but its share is normally below 100%. The `Execution` line of the query summary shows where the rest of the execution time went (see the query summary in the example above):
 
 - `in steps` — the union of the intervals of every step of the plan. This is the `branch` time of the root step, and the share is the same number.
 - `outside steps` — the time when at least one thread ran a processor, but none of them belonged to a step of this plan: the output sink, `Resize`, converting transforms, and the steps of plans that are not reachable from this one.
 - `idle` — the time when no thread ran any processor: the start-up and shutdown of the executor, and the moments when every thread waited.
 
-The three parts add up to the execution time. The `Time` shares, the per-stage `time` shares, and the `Execution` shares use the same denominator, so they can be compared with each other.
+The `Time` shares, the per-stage `time` shares, and the `Execution` shares use the same denominator, so they can be compared with each other.
 
-`Concurrency` is the total busy time of all query threads inside that union, divided by the length of the union. The numerator counts threads busy with *any* step of the query, not only with the step in question. This is the difference from the per-stage `parallelism` metric, which counts only the threads of the stage itself. In other words, `Concurrency` answers: "while this step (branch) was active, how busy was the query as a whole?" A value near `<m>` means the query stayed fully parallel during that step's lifetime. A value near `1` means the query serialized during that time: for `step`, the single busy thread was working on this step itself, which makes the step a serialization point; for `branch`, the thread was working somewhere in the subtree, not necessarily on this step. A serialized step is a real bottleneck only when its `Time` share is also significant.
+`Concurrency` is the total busy time of all query threads inside that union, divided by the length of the union. It counts threads busy with *any* step of the query, unlike the per-stage `parallelism` metric, which counts only the threads of the stage itself. It answers: "while this step (branch) was active, how busy was the query as a whole?" A value near `<m>` means the query stayed fully parallel during that step's lifetime. A value near `1` means the query serialized during that time: for `step`, the single busy thread was working on this step itself, which makes the step a serialization point; for `branch`, the thread was working somewhere in the subtree, not necessarily on this step. A serialized step is a real bottleneck only when its `Time` share is also significant.
 
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
