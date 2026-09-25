@@ -222,6 +222,7 @@ def test_insert_into_a_multi_shard_database(started_cluster):
 
     node3.query("INSERT INTO ins_proxy.t SELECT number FROM numbers(100)")
     assert node3.query("SELECT count(), sum(x) FROM ins_proxy.t") == "100\t4950\n"
+    assert "THERE_IS_NO_QUERY" in node3.query_and_get_error("SHOW CREATE TABLE ins_proxy.t")
     # Every row landed on exactly one of the shards.
     assert (
         int(node1.query("SELECT count() FROM ins_src.t"))

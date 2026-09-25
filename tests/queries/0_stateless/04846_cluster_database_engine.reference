@@ -1,0 +1,58 @@
+-- database engine
+Cluster
+-- SHOW CREATE DATABASE prints the engine with the cluster name
+1
+-- SHOW TABLES lists the tables of the database on the cluster
+t
+-- each table is exposed as a Distributed storage
+Distributed
+-- DESCRIBE reflects the remote structure
+id	UInt64
+s	String
+-- SELECT is forwarded to the cluster
+1	a
+2	b
+3	c
+-- INSERT is forwarded to the cluster
+1	a
+2	b
+3	c
+4	d
+-- EXISTS TABLE for an existing and a missing table
+1
+0
+-- a SELECT from a missing table reports UNKNOWN_TABLE and must not recurse into the name hints
+1
+-- the cluster name may come from a macro, like in the Distributed table engine
+4
+-- SHOW CREATE TABLE cannot serialize a cluster name that is expanded on every access
+1
+-- a multi-shard database reads from every shard and accepts INSERT queries by default
+8
+5
+-- SHOW CREATE TABLE cannot serialize a multi-shard proxy with an insert-only sharding key
+1
+-- SHOW CREATE TABLE cannot serialize a reloadable single-shard proxy either
+1
+-- an unknown cluster is rejected at CREATE (prints 1 if the expected error is raised)
+1
+-- a wrong number of arguments is rejected (prints 1 if the expected error is raised)
+1
+-- a database that refers to itself is rejected at CREATE instead of recursing (prints 1 if the expected error is raised)
+1
+-- a CREATE that would complete a cycle through a Remote database is rejected (prints 1 if the expected error is raised)
+1
+1
+0
+-- an explicit ATTACH DATABASE is a user query and is validated exactly like CREATE
+1
+1
+0
+-- a shard that is unavailable fails the SELECT with the real error, while the metadata is served by the available shard
+t
+1
+-- DDL against a Cluster database is not supported (prints 1 if the expected error is raised)
+1
+1
+1
+5
