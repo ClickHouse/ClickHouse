@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import sys
 import time
 import shutil
@@ -221,8 +222,8 @@ class Runner:
             config.keep_workspace = True
 
         if config.init_environment == Environment.MACOS:
-            # Drop swap files and other state accumulated across test runs.
-            config.max_life = 3600 * 24 * 3
+            # Drop swap files and other accumulated state; the random offset staggers reboots across the fleet.
+            config.max_life = 3600 * 24 * 3 + 900 * random.randint(0, 24)
 
         log(f"max jobs: {config.max_jobs}")
         log(f"max chill: {config.max_chill}")
