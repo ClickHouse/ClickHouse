@@ -76,11 +76,13 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// Drop parts - 1 priority
     if (!ctx.merge_constraints.empty())
     {
-        /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space.
-        std::vector<MergeConstraint> ttl_constraints(ctx.merge_constraints.size(), {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()});
+        /// With an unconditional rows TTL a completely expired part leaves no rows, so its size does not matter.
+        /// Otherwise (GROUP BY, WHERE or column TTL) its rows are rewritten, as in any other merge.
+        const std::vector<MergeConstraint> unlimited_constraints(ctx.merge_constraints.size(), {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()});
+        const MergeConstraints drop_constraints = ctx.metadata_snapshot.hasRowsTTL() ? MergeConstraints(unlimited_constraints) : ctx.merge_constraints;
         TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time, ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once]);
 
-        if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, ttl_constraints, ctx.range_filter); !merge_ranges.empty())
+        if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, drop_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
     }
 
