@@ -1,0 +1,17 @@
+1
+0
+-- a JOIN must not stop the cache from pruning the second run
+1
+1
+0	2	0
+1	1	1	2
+-- control: the same JOIN without join reordering already pruned
+1
+1
+0	0
+1	1
+-- control: the same condition without a JOIN still prunes
+1
+1
+0	0
+1	1

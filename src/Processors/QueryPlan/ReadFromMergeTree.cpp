@@ -4083,6 +4083,47 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         prewhere_info_value));
 
     updateSortDescription();
+
+    /// `analyzed_result_ptr` already carries the cache verdict of the conditions it was analyzed with: probe only the new PREWHERE.
+    SelectQueryInfo probe_query_info = query_info;
+    probe_query_info.filter_actions_dag = nullptr;
+
+    /// The cache key (table, part, condition) cannot express the rows a unique key hides, nor the value of
+    /// a non-deterministic virtual column, which can change while the key stays the same.
+    if (analyzed_result_ptr && indexes.has_value() && allow_query_condition_cache
+        && !is_parallel_reading_from_replicas
+        && !storage_snapshot->metadata->hasUniqueKey()
+        && !filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info)
+        && MergeTreeDataSelectExecutor::canFilterPartsByQueryConditionCache(
+            probe_query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot, context))
+    {
+        RangesInDataParts narrowed = analyzed_result_ptr->parts_with_ranges;
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
+            narrowed, probe_query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot,
+            *indexes, context, log);
+
+        UInt64 marks = 0;
+        UInt64 ranges = 0;
+        UInt64 rows = 0;
+        for (const auto & part : narrowed)
+        {
+            ranges += part.ranges.size();
+            marks += part.getMarksCount();
+            rows += part.getRowsCount();
+        }
+
+        if (marks < analyzed_result_ptr->selected_marks)
+        {
+            auto updated = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
+            updated->parts_with_ranges = std::move(narrowed);
+            updated->selected_parts = updated->parts_with_ranges.size();
+            updated->selected_ranges = ranges;
+            updated->selected_marks = marks;
+            updated->selected_rows = rows;
+            updated->has_exact_ranges = updated->selected_parts == 0 || analyzed_result_ptr->has_exact_ranges;
+            analyzed_result_ptr = std::move(updated);
+        }
+    }
 }
 
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
