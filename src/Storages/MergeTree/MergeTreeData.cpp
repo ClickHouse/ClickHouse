@@ -12322,10 +12322,18 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     /// appends the version column), and merges/FINAL of such tables rely on every part being
     /// sorted by that effective key. ATTACH PARTITION ... FROM copies parts without
     /// re-sorting, so comparing only the declared AST would accept a source sorted by a
-    /// weaker key and silently produce wrong merge results.
+    /// weaker key and silently produce wrong merge results. The adopted parts only need to
+    /// be sorted by our effective key, so a source whose effective key is at least as strong
+    /// (our key being a prefix of the source's, with equal directions per column) is fine.
+    const auto & my_columns = my_snapshot->getSortingKeyColumns();
+    const auto & src_columns = src_snapshot->getSortingKeyColumns();
+    const auto & my_flags = my_snapshot->getSortingKeyReverseFlags();
+    const auto & src_flags = src_snapshot->getSortingKeyReverseFlags();
+
     if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST())
-        || my_snapshot->getSortingKeyColumns() != src_snapshot->getSortingKeyColumns()
-        || my_snapshot->getSortingKeyReverseFlags() != src_snapshot->getSortingKeyReverseFlags())
+        || my_columns.size() > src_columns.size()
+        || !std::equal(my_columns.begin(), my_columns.end(), src_columns.begin())
+        || !std::equal(my_flags.begin(), my_flags.end(), src_flags.begin()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");
 
     if (query_to_string(my_snapshot->getPartitionKeyAST()) != query_to_string(src_snapshot->getPartitionKeyAST()))
