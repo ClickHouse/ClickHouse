@@ -15,12 +15,14 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
+#include <IO/ReadHelpers.h>
 #include <Formats/NativeWriter.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -49,13 +51,22 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_join;
 }
 
+namespace FailPoints
+{
+    extern const char storage_join_mutate_fail_after_moving_backup_aside[];
+    extern const char storage_join_mutate_fail_removing_superseded_backups[];
+    extern const char storage_join_publish_fail_during_rollback[];
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DEADLOCK_AVOIDED;
+    extern const int FAULT_INJECTED;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int NOT_INITIALIZED;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNSUPPORTED_JOIN_KEYS;
@@ -90,13 +101,81 @@ StorageJoin::StorageJoin(
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
     join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    recoverInterruptedMutation();
     restore();
     optimizeUnlocked();
 }
 
+void StorageJoin::recoverInterruptedMutation()
+{
+    const String aside_path = fs::path(path) / mutation_backups_dir;
+    if (!disk->existsDirectory(aside_path))
+        return;
+
+    /// See `mutate`: the backups of the pre-mutation generation are moved here one by one, and
+    /// the mutation commits by installing its consolidated backup under the smallest of their
+    /// numbers. So the mutation has committed exactly when the table directory holds a backup
+    /// with the smallest number found here: before the commit every moved backup is absent from
+    /// the table directory, and backup numbers are never reused by inserts. This also holds while
+    /// a failed mutation is putting the moved backups back.
+    static const auto file_suffix_size = strlen(".bin");
+    std::optional<UInt64> smallest_num;
+    std::vector<std::string> moved_backups;
+    std::vector<std::string> files;
+    disk->listFiles(aside_path, files);
+    for (const auto & file_name : files)
+    {
+        if (file_name.ends_with(".bin"))
+        {
+            UInt64 file_num = parse<UInt64>(file_name.substr(0, file_name.size() - file_suffix_size));
+            if (!smallest_num || file_num < *smallest_num)
+                smallest_num = file_num;
+            moved_backups.push_back(file_name);
+        }
+    }
+
+    const bool committed = smallest_num && disk->existsFile(fs::path(path) / (toString(*smallest_num) + ".bin"));
+    if (!committed)
+        for (const auto & file_name : moved_backups)
+            disk->replaceFile(fs::path(aside_path) / file_name, fs::path(path) / file_name);
+
+    disk->removeRecursive(aside_path);
+
+    LOG_INFO(getLogger("StorageJoin"), "Found an interrupted mutation of table {}, {} it", getStorageID().getNameForLogs(),
+        committed ? "finished" : "rolled back");
+}
+
+void StorageJoin::checkLiveStateIsAvailable() const
+{
+    if (live_state_lost)
+        throw Exception(ErrorCodes::NOT_INITIALIZED,
+            "The in-memory state of table {} is unavailable: a failed INSERT could not be rolled back. "
+            "It is rebuilt from the backup files by the next INSERT, ALTER DELETE, OPTIMIZE or on restart",
+            getStorageID().getNameForLogs());
+}
+
+void StorageJoin::rebuildLiveStateIfLost(const String & exclude_file_name)
+{
+    if (!live_state_lost)
+        return;
+
+    join = buildFromBackups(exclude_file_name);
+    live_state_lost = false;
+    LOG_INFO(getLogger("StorageJoin"), "Rebuilt the in-memory state of table {} from the backup files", getStorageID().getNameForLogs());
+}
+
+String StorageJoin::getLockQueryId(const Context & context)
+{
+    String query_id = context.getInitialQueryId();
+    if (query_id.empty())
+        query_id = context.getCurrentQueryId();
+    return query_id;
+}
+
 RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
 {
-    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const String query_id = context ? getLockQueryId(*context) : RWLockImpl::NO_QUERY;
+
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     return tryLockTimed(lock, type, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
@@ -104,7 +183,8 @@ RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock,
 
 RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context)
 {
-    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const String query_id = context ? getLockQueryId(*context) : RWLockImpl::NO_QUERY;
+
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
     return lock->getLock(type, query_id, acquire_timeout, false);
@@ -142,6 +222,7 @@ bool StorageJoin::optimize(
     std::lock_guard mutate_lock(mutate_mutex);
     TableLockHolder lock_holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
+    rebuildLiveStateIfLost();
     optimizeUnlocked();
     return true;
 }
@@ -172,6 +253,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
 
     increment = 0;
     join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    live_state_lost = false;
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -187,6 +269,12 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// We cannot acquire rwlock here, because read lock is needed
     /// for execution of mutation interpreter.
     std::lock_guard mutate_lock(mutate_mutex);
+
+    /// The mutation reads the live state, so bring it back first if a failed INSERT lost it.
+    {
+        TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
+        rebuildLiveStateIfLost();
+    }
 
     constexpr auto tmp_backup_file_name = "tmp/mut.bin";
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
@@ -214,33 +302,136 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         }
     }
 
-    /// Now acquire exclusive lock and modify storage.
-    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
-
-    join = std::move(new_data);
-    increment = 1;
-
+    /// Make the new backup durable before anything is published: a failure while writing it must
+    /// leave both the live state and the table directory exactly as they were.
     if (persistent)
     {
         backup_stream.flush();
         compressed_backup_buf.finalize();
         backup_buf->finalize();
-
-        std::vector<std::string> files;
-        disk->listFiles(path, files);
-        for (const auto & file_name: files)
-        {
-            if (file_name.ends_with(".bin"))
-                disk->removeFileIfExists(path + file_name);
-        }
-
-        disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
     }
     else
     {
         compressed_backup_buf.cancel();
         backup_buf->cancel();
     }
+
+    /// Now acquire exclusive lock and modify storage.
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
+
+    if (persistent)
+    {
+        /// Rewrite the table directory before publishing the mutated data in memory, so that a
+        /// failure cannot leave queries seeing a state that a restart would not reproduce.
+        ///
+        /// The pre-mutation backups are moved aside into `tmp/mut_backups/` first, and the
+        /// consolidated backup is installed with a single atomic replace only after all of them
+        /// are out of the way. That replace is the commit point: before it, the directory holds no
+        /// file of the new generation and every moved backup can be put back; after it, the
+        /// directory holds only the new generation. A failure can never leave a mix of both
+        /// generations behind, which would duplicate rows of `Join(ALL, ...)` or surface rows that
+        /// a later backup of `Join(ANY, ...)` shadows. An interrupted rewrite (for example a server
+        /// crash) is finished or rolled back on the next start by `recoverInterruptedMutation`.
+        ///
+        /// Backup names must stay unique for the lifetime of the table: an insert that reserved its
+        /// backup number before this mutation started may still be streaming its staged file, and
+        /// will promote it under that name after the mutation finishes. Reuse the smallest
+        /// committed number for the consolidated backup -- `increment` is never rewound, so that
+        /// number can no longer be handed out to a new insert -- and leave `increment` itself
+        /// untouched. `recoverInterruptedMutation` relies on this choice to find the commit point.
+        const String aside_path = fs::path(path) / mutation_backups_dir;
+        recoverInterruptedMutation();
+
+        static const auto file_suffix_size = strlen(".bin");
+        std::optional<UInt64> consolidated_num;
+        std::vector<std::string> committed_backups;
+        std::vector<std::string> files;
+        disk->listFiles(path, files);
+        for (const auto & file_name: files)
+        {
+            if (file_name.ends_with(".bin"))
+            {
+                UInt64 file_num = parse<UInt64>(file_name.substr(0, file_name.size() - file_suffix_size));
+                if (!consolidated_num || file_num < *consolidated_num)
+                    consolidated_num = file_num;
+                committed_backups.push_back(file_name);
+            }
+        }
+
+        if (!consolidated_num)
+        {
+            disk->removeFileIfExists(path + tmp_backup_file_name);
+        }
+        else
+        {
+            std::vector<std::string> moved_backups;
+            try
+            {
+                disk->createDirectories(aside_path);
+                for (const auto & file_name : committed_backups)
+                {
+                    disk->replaceFile(path + file_name, fs::path(aside_path) / file_name);
+                    moved_backups.push_back(file_name);
+
+                    fiu_do_on(FailPoints::storage_join_mutate_fail_after_moving_backup_aside,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after moving a backup of a Join mutation aside");
+                    });
+                }
+
+                disk->replaceFile(path + tmp_backup_file_name, path + toString(*consolidated_num) + ".bin");
+            }
+            catch (...)
+            {
+                /// Nothing of the new generation is in the table directory, and the live state was
+                /// never touched: putting the moved backups back restores the pre-mutation state.
+                /// If that fails too, the directory is repaired by `recoverInterruptedMutation`
+                /// before the next mutation and on the next start, and until then the live state
+                /// still matches what the repair will restore.
+                try
+                {
+                    for (const auto & file_name : moved_backups)
+                        disk->replaceFile(fs::path(aside_path) / file_name, path + file_name);
+                    disk->removeRecursive(aside_path);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        getLogger("StorageJoin"),
+                        fmt::format("Cannot roll back the backup files of table {} after a failed mutation", getStorageID().getNameForLogs()));
+                }
+                throw;
+            }
+
+            /// The mutation is committed. Publish it before removing the old generation, so that a
+            /// failure of the cleanup cannot leave the live state behind the directory.
+            join = std::move(new_data);
+            live_state_lost = false;
+
+            /// The superseded backups are outside of the set of restored files already, so a
+            /// failure here does not affect the result of the committed mutation: it only leaves
+            /// them behind until `recoverInterruptedMutation` removes them.
+            try
+            {
+                fiu_do_on(FailPoints::storage_join_mutate_fail_removing_superseded_backups,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while removing the superseded backups of a Join mutation");
+                });
+                disk->removeRecursive(aside_path);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    getLogger("StorageJoin"),
+                    fmt::format("Cannot remove the superseded backup files of table {}, they will be removed by the next mutation or on restart",
+                        getStorageID().getNameForLogs()));
+            }
+            return;
+        }
+    }
+
+    join = std::move(new_data);
+    live_state_lost = false;
 }
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
@@ -316,6 +507,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, std::make_shared<const Block>(std::move(right_sample_block)));
 
     RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
+    checkLiveStateIsAvailable();
     join_clone->setLock(holder);
     join_clone->reuseJoinedData(*join);
 
@@ -324,7 +516,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
 {
-    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const String query_id = context ? getLockQueryId(*context) : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
 
@@ -344,9 +536,87 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     join->addBlockToJoin(block_to_insert, true);
 }
 
+void StorageJoin::checkInsertIsPossible(ContextPtr context) const
+{
+    /// Protection from `INSERT INTO test_table_join SELECT * FROM test_table_join`: the write lock
+    /// cannot be taken while the same query holds a read lock on this table.
+    if (!tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context))
+        throw Exception(
+            ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
+}
+
+HashJoinPtr StorageJoin::buildFromBackups(const String & exclude_file_name) const
+{
+    auto rebuilt_join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
+    forEachBackupBlock([&](const Block & block)
+    {
+        Block block_to_insert = block;
+        convertRightBlock(block_to_insert);
+        rebuilt_join->addBlockToJoin(block_to_insert, true);
+    }, exclude_file_name);
+    return rebuilt_join;
+}
+
+void StorageJoin::publishBackup(const String & backup_file_path, ContextPtr context)
+{
+    /// Hold the write lock across the whole replay: a reader must never observe a partially
+    /// replayed backup, and the rollback of a failed replay must not have to reacquire the lock
+    /// after the partial state was already exposed -- a long-running reader could block that
+    /// reacquisition until `lock_acquire_timeout`, leaving the rows of the failed insert visible
+    /// until restart.
+    TableLockHolder holder = tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context);
+    if (!holder)
+        throw Exception(
+            ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
+
+    rebuildLiveStateIfLost(/*exclude_file_name=*/ fs::path(backup_file_path).filename());
+
+    try
+    {
+        forEachBlockInBackupFile(backup_file_path, [this](const Block & block)
+        {
+            Block block_to_insert = block;
+            convertRightBlock(block_to_insert);
+            join->addBlockToJoin(block_to_insert, true);
+        });
+    }
+    catch (...)
+    {
+        /// The write lock is still held, so the partially updated state is replaced before any
+        /// reader can see it. The backup of the failed insert is excluded from the rebuild and
+        /// removed within the same publish critical section, so no concurrent rollback can
+        /// replay it either.
+        ///
+        /// The rollback builds a second copy of the table, so it can fail as well (for example,
+        /// on memory limits). The partially updated state must not stay visible then: mark it as
+        /// lost, so that readers get an exception instead of the rows of the failed insert, until
+        /// the next operation under the write lock rebuilds it from the backup files (the backup of
+        /// the failed insert is removed by `SetOrJoinSink::onException` in that case).
+        live_state_lost = true;
+        try
+        {
+            fiu_do_on(FailPoints::storage_join_publish_fail_during_rollback,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault during the rollback of a failed INSERT into a Join");
+            });
+            join = buildFromBackups(/*exclude_file_name=*/ fs::path(backup_file_path).filename());
+            live_state_lost = false;
+            disk->removeFileIfExists(backup_file_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("StorageJoin"),
+                fmt::format("Cannot restore the in-memory state of table {} after a failed INSERT", getStorageID().getNameForLogs()));
+        }
+        throw;
+    }
+}
+
 size_t StorageJoin::getSize(ContextPtr context) const
 {
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+    checkLiveStateIsAvailable();
     return join->getTotalRowCount();
 }
 
@@ -354,6 +624,8 @@ std::optional<UInt64> StorageJoin::totalRows(ContextPtr query_context) const
 {
     const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
+    if (live_state_lost)
+        return {};
     return join->getTotalRowCount();
 }
 
@@ -361,6 +633,8 @@ std::optional<UInt64> StorageJoin::totalBytes(ContextPtr query_context) const
 {
     const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
+    if (live_state_lost)
+        return {};
     return join->getTotalByteCount();
 }
 
@@ -372,6 +646,7 @@ DataTypePtr StorageJoin::joinGetCheckAndGetReturnType(const DataTypes & data_typ
 ColumnWithTypeAndName StorageJoin::joinGet(const Block & block, const Block & block_with_columns_to_add, ContextPtr context) const
 {
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+    checkLiveStateIsAvailable();
     return join->joinGet(block, block_with_columns_to_add);
 }
 
@@ -1129,6 +1404,7 @@ Pipe StorageJoin::read(
 
     auto source_sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+    checkLiveStateIsAvailable();
     return Pipe(std::make_shared<JoinSource>(join, std::move(holder), max_block_size, source_sample_block));
 }
 
