@@ -420,6 +420,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     bool need_lock_uuid = internal || need_write_metadata;
     auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
+    checkDatabaseSettingNames(create, getContext(), mode, is_metadata_replay, is_restore_from_backup);
+
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
     TemporaryLockForUUIDDirectory uuid_lock;
