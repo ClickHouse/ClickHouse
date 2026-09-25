@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/StorageSnapshot.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -28,12 +29,14 @@ LoggerPtr getMergeTreeReadersChainLogger()
 }
 
 static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers);
+static NameSet collectColumnsComputedByMutationSteps(const RangeReaders & range_readers);
 
 MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_)
     : range_readers(std::move(range_readers_))
     , patch_readers(std::move(patch_readers_))
     , patches_results(patch_readers.size())
     , columns_consumed_by_chain_actions(collectColumnsConsumedByChainActions(range_readers))
+    , columns_computed_by_mutation_steps(collectColumnsComputedByMutationSteps(range_readers))
     , is_initialized(true)
 {
 }
@@ -264,6 +267,35 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
     return must_convert;
 }
 
+/// Storage names of columns an on-fly mutation step recomputes rather than forwards from disk.
+///
+/// `mutation_version` identifies those steps exactly, and is the only field that does:
+/// `perform_alter_conversions` is true for a mutation step too unless a pending `ALTER MODIFY
+/// COLUMN` precedes it, and `columns_overwritten_by_chain` is empty in that same common case.
+///
+/// An `UPDATE`'s assignment targets are top-level columns, so `result_name` is already the storage
+/// name the skip test keys on; an output naming no column of the table simply never matches.
+static NameSet collectColumnsComputedByMutationSteps(const RangeReaders & range_readers)
+{
+    NameSet computed;
+    for (const auto & reader : range_readers)
+    {
+        const auto * prewhere_info = reader.getPrewhereInfo();
+        if (!prewhere_info || !prewhere_info->actions || !prewhere_info->mutation_version.has_value())
+            continue;
+
+        for (const auto * output : prewhere_info->actions->getActionsDAG().getOutputs())
+        {
+            /// An INPUT output is the on-disk column forwarded unchanged; only a computed output
+            /// can hold a value the part does not.
+            if (output->type == ActionsDAG::ActionType::INPUT)
+                continue;
+            computed.insert(output->result_name);
+        }
+    }
+    return computed;
+}
+
 /// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
 /// This is important when columns have not yet been converted, i.e. their types with differ those contained in `getReadSampleBlock`.
 static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, const NamesAndTypes & on_disk_columns)
@@ -397,6 +429,33 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     NameSet previous_step_columns;
     for (const auto & col : previous_header)
         previous_step_columns.insert(col.name);
+
+    /// A subcolumn of a column an on-fly mutation step recomputed keeps its own pre-mutation stream
+    /// in the part; dropping the slot lets `evaluateMissingDefaults` derive it from the parent.
+    ///
+    /// A mutation step is excluded: a materialized mutation feeds a chained command the pre-update
+    /// subcolumn too, so moving it only on the on-fly side would make the two disagree.
+    const bool is_on_fly_mutation_step = prewhere_info && prewhere_info->mutation_version.has_value();
+    if (!is_on_fly_mutation_step && !columns_computed_by_mutation_steps.empty() && !previous_header.empty())
+    {
+        const auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+        const auto & storage_snapshot = merge_tree_reader->getStorageSnapshot();
+        size_t pos = 0;
+        for (const auto & name_and_type : merge_tree_reader->getColumns())
+        {
+            /// The metadata decides, not the dot: a physical column whose name contains one
+            /// (`n.a` of a `Nested`) has its own data in the part and must keep reading it.
+            auto column_in_storage = storage_snapshot->tryGetColumn(options, name_and_type.name);
+            if (column_in_storage && column_in_storage->isSubcolumn())
+            {
+                const auto & name_in_storage = column_in_storage->getNameInStorage();
+                if (columns_computed_by_mutation_steps.contains(name_in_storage) && previous_header.has(name_in_storage))
+                    read_columns[pos] = nullptr;
+            }
+            ++pos;
+        }
+    }
+
     bool should_evaluate_missing_defaults = false;
     merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows, previous_step_columns);
 

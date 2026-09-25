@@ -119,6 +119,12 @@ private:
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
 
+    /// Storage names of columns an on-fly MUTATION step recomputes rather than forwards from
+    /// disk. A subcolumn of such a column keeps its own pre-mutation stream in the part, so its
+    /// value has to come from the step's result instead of from that stream.
+    /// See `collectColumnsComputedByMutationSteps` and `executeActionsBeforePrewhere`.
+    NameSet columns_computed_by_mutation_steps;
+
     bool is_initialized = false;
     LoggerPtr log = getMergeTreeReadersChainLogger();
 };
