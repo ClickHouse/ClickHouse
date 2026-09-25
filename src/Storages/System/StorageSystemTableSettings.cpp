@@ -3,6 +3,8 @@
 #include <Storages/System/SettingsTableColumns.h>
 
 #include <Access/ContextAccess.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -186,8 +188,23 @@ private:
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                if (const auto table = resolveTable(tables_it.table(), table_name))
-                    rows_count += writeTableSettings(writer, database_name, table_name, table);
+                /// One table must not fail the scan. An engine reads its settings from wherever it keeps them,
+                /// and some of those are remote - `StorageObjectStorageQueue` rebuilds them from Keeper - so a
+                /// single table whose store is unreachable would otherwise make this table unreadable for the
+                /// whole server. `system.tables` degrades per row for the same reason. The table is skipped
+                /// rather than reported with empty settings, because no row is honest about settings that could
+                /// not be read; the exception is logged, which is where the error surfaces.
+                try
+                {
+                    if (const auto table = resolveTable(tables_it.table(), table_name))
+                        rows_count += writeTableSettings(writer, database_name, table_name, table);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        "StorageSystemTableSettings",
+                        fmt::format("Cannot read the settings of table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name)));
+                }
             }
         }
         return rows_count;
@@ -355,9 +372,15 @@ private:
     /// iterator is asked only for the survivors - which is what makes `WHERE table = ...`, the query
     /// `SHOW TABLE SETTINGS` generates, read one table rather than all of them.
     ///
-    /// The names come from `getLightweightTablesIterator`, not `getTablesIterator`: for an external database the
-    /// latter already resolves storages (`DatabaseRemote::fetchTable`, `DatabaseDataLake::tryGetTableImpl`), so
-    /// listing names through it would open every table and let one unresolvable table fail the lookup.
+    /// The names come from `getAllTableNames`, which lists them without resolving a storage: for an external
+    /// database resolving fetches the table (`DatabaseRemote::fetchTable`, `DatabaseDataLake::tryGetTableImpl`),
+    /// so listing through anything that resolves would open every table here and again through the iterator
+    /// below. It also decides the rows: a listing that drops a name it cannot resolve - which
+    /// `getLightweightTablesIterator` does, since its default implementation skips a null `table()` - would make
+    /// a filtered query return fewer rows than an unfiltered one, and a table dropped between the listing and
+    /// the scan disappear from `WHERE table LIKE ...` while `WHERE table = ...`, which never lists, still reads
+    /// it. A datalake catalog keeps the hinted iterator: its own override lists namespaces without resolving,
+    /// and the hint is what stops it from enumerating the whole catalog.
     IDatabase::FilterByNameFunction makeTableNameFilterFor(const String & database_name) const
     {
         if (!table_filter)
@@ -369,10 +392,19 @@ private:
         if (table_name_hint.kind == TablesFilter::Kind::Equals && !databases_cursor.getDatabase()->isDatalakeCatalog())
             return [name = table_name_hint.pattern](const String & table_name) { return table_name == name; };
 
+        const auto & database = *databases_cursor.getDatabase();
         Strings names;
-        for (const auto & table_details : databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(
-                 context, /* filter_by_table_name */ {}, /* skip_not_loaded */ false, table_name_hint))
-            names.push_back(table_details.name);
+        if (database.isDatalakeCatalog())
+        {
+            for (const auto & table_details : database.getLightweightTablesIteratorWithHint(
+                     context, /* filter_by_table_name */ {}, /* skip_not_loaded */ false, table_name_hint))
+                names.push_back(table_details.name);
+        }
+        else
+        {
+            for (auto & name : database.getAllTableNames(context))
+                names.push_back(std::move(name));
+        }
 
         auto allowed = std::make_shared<NameSet>(tableNamesAllowedByFilter(database_name, names));
         return [allowed](const String & name) { return allowed->contains(name); };
