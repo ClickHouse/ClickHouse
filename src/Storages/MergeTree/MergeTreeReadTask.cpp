@@ -114,6 +114,14 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
+void MergeTreeReadTask::Readers::updateRequestMap(const MarkRangesPtr & request_map)
+{
+    main->updateRequestMap(request_map);
+
+    for (auto & reader : prewhere)
+        reader->updateRequestMap(request_map);
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -229,9 +237,13 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
     const MarkRanges & ranges,
-    const std::vector<MarkRanges> & patches_ranges)
+    const std::vector<MarkRanges> & patches_ranges,
+    MarkRangesPtr request_map)
 {
     Readers new_readers;
+
+    auto reader_settings = extras.reader_settings;
+    reader_settings.request_map = request_map ? std::move(request_map) : read_info->request_map;
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
@@ -245,7 +257,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
-            extras.reader_settings,
+            reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };

@@ -100,6 +100,9 @@ private:
 
         InfoPtr read_info;
         MarkRanges ranges;
+        /// The ranges of this task and of the thread's other consecutive tasks over the same part,
+        /// which reuse one reader. Set by `fillPerThreadTasks`.
+        MarkRangesPtr request_map;
         std::vector<MarkRanges> patches_ranges;
         Priority priority;
         std::unique_ptr<PrefetchedReaders> readers_future;

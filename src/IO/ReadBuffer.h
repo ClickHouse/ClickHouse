@@ -4,7 +4,9 @@
 #include <memory>
 
 #include <Common/Priority.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/BufferBase.h>
+#include <IO/ByteRange.h>
 #include <Common/Exception.h>
 
 
@@ -234,6 +236,11 @@ public:
     virtual void setReadUntilPosition(size_t /* position */) {}
 
     virtual void setReadUntilEnd() {}
+
+    /// The byte ranges the caller will read, sorted and disjoint; it reads nothing outside them.
+    /// Each call replaces the previous map. An empty map, the default, is the whole file.
+    /// Advisory: an implementation may use it to decide how far to read ahead, never to refuse a read.
+    virtual void setRequestMap(VectorWithMemoryTracking<ByteRange> /* ranges */) {}
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

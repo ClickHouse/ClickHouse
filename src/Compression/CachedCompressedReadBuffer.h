@@ -71,6 +71,12 @@ public:
         initInput();
         file_in->setReadUntilEnd();
     }
+
+    void setRequestMap(VectorWithMemoryTracking<ByteRange> ranges) override
+    {
+        initInput();
+        file_in->setRequestMap(std::move(ranges));
+    }
 };
 
 }

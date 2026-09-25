@@ -102,18 +102,21 @@ protected:
         std::vector<MarkRanges> patches_ranges,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
+    /// `request_map` is the reader's share of the part over all its tasks; null takes `read_info->request_map`.
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         std::vector<MarkRanges> patches_ranges,
         MergeTreeReadTask * previous_task,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr,
+        MarkRangesPtr request_map = nullptr) const;
 
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         MergeTreeReadTask * previous_task,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr,
+        MarkRangesPtr request_map = nullptr) const;
 
     MergeTreeReadTask::Extras getExtras() const;
 

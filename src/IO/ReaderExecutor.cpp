@@ -790,4 +790,19 @@ void ReaderExecutor::seek(size_t new_position)
     /// frees or resets it (a discontinuity `reset`s the plan, a forward move `dropBefore`s it).
 }
 
+void ReaderExecutor::setRequestMap(VectorWithMemoryTracking<ByteRange> ranges)
+{
+    request_map = std::move(ranges);
+    if (request_map.empty())
+    {
+        LOG_TEST(log, "Request map of {}: the whole file", log_file_path);
+        return;
+    }
+    size_t bytes = 0;
+    for (const auto & range : request_map)
+        bytes += range.size;
+    LOG_TEST(log, "Request map of {}: {} bytes in [{}, {}), range count {}",
+        log_file_path, bytes, request_map.front().offset, request_map.back().end(), request_map.size());
+}
+
 }

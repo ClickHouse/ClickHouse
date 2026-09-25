@@ -31,6 +31,7 @@ public:
     /// size snapshotted under the read lock so concurrent appends aren't read).
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
+    void setRequestMap(VectorWithMemoryTracking<ByteRange> ranges) override;
 
     /// Random-read / size probes must be denied for unknown-size sources: a
     /// `true` answer leads formats (Parquet/ORC/Arrow) to call

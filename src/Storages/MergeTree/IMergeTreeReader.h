@@ -100,6 +100,10 @@ public:
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
+    /// Replaces `settings.request_map` for a reader reused by the next task. Readers that own streams
+    /// also announce it on the streams they have already created.
+    virtual void updateRequestMap(MarkRangesPtr request_map);
+
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
     /// Read hints (currently vector-search results) are per-reader state: they are set once after the
