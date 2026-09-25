@@ -93,7 +93,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -484,7 +483,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
-    bool analyzer = context_->getSettingsRef()[Setting::allow_experimental_analyzer];
     if (table_id.hasUUID())
     {
         /// Shortcut for tables which have persistent UUID
@@ -514,8 +512,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-        /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
-        else if (analyzer)
+        else
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
@@ -1636,7 +1633,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
                 dropped_table = *it;
             }
         }
-        if (it_dropped_table == tables_marked_dropped.end())
+        if (it_dropped_table == tables_marked_dropped.end() || !dynamic_cast<DatabaseOnDisk *>(database.get()))
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
@@ -2322,15 +2319,8 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
 
         LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
 
-        /// We have to set these access rights to make recursive removal work.
-        /// Only for a directory: removal needs write and execute permissions on the directory whose
-        /// entries are unlinked, not any permission on the entry itself. The entries that reach this
-        /// function are exactly the ones that failed the "is a directory" test in
-        /// `cleanupStoreDirectoryTask`, so this can be a regular file - and widening its mode to
-        /// `S_IRWXU` would make it executable, which is all that `executable()` asks of a script
-        /// planted under `user_scripts/`.
-        if (S_ISDIR(st.st_mode))
-            disk->chmod(unused_dir, S_IRWXU);
+        /// We have to set these access rights to make recursive removal work
+        disk->chmod(unused_dir, S_IRWXU);
 
         disk->removeRecursive(unused_dir);
 

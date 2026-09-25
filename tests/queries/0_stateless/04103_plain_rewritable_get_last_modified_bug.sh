@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
+# Tags: no-object-storage, no-replicated-database, no-shared-merge-tree
 
-CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
-. "$CUR_DIR"/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
-# A shell test rather than a `.sql` one only because the disk names a directory, and a disk defined
-# in SQL may only name one inside `custom_local_disks_base_directory`, whose location the test can
-# learn only from the environment.
-
-${CLICKHOUSE_CLIENT} --query "
+$CLICKHOUSE_CLIENT -q "
 CREATE TABLE test_plain_rewr_ts_04103 (a Int32, b String)
 ENGINE = MergeTree() ORDER BY a
-SETTINGS disk = disk(type = 'object_storage', object_storage_type = 'local', path = '${CLICKHOUSE_DISKS_FILES}/plain_rewritable_04103_${CLICKHOUSE_DATABASE}/', metadata_type = 'plain_rewritable');
+SETTINGS disk = disk(type = 'object_storage', object_storage_type = 'local', path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}/', metadata_type = 'plain_rewritable');
 
 INSERT INTO test_plain_rewr_ts_04103 VALUES (1, 'hello'), (2, 'world');
 

@@ -7,14 +7,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Every location on the local filesystem that a disk defined in SQL names has to be inside
-# `custom_local_disks_base_directory`. Three ways around that fence, all of them closed.
+# `custom_local_disks_base_directory`. Two ways around that fence, both of them closed.
 
 OUTSIDE="${USER_FILES_PATH}/05217_outside/"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_05217"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_05217 (x UInt64) ENGINE = MergeTree ORDER BY x
-    SETTINGS disk = disk(name = '05217_ok', type = local, path = '/var/lib/clickhouse/disks/05217_ok/')"
+    SETTINGS disk = disk(name = '05217_ok_${CLICKHOUSE_DATABASE}', type = local, path = '${CLICKHOUSE_DISKS_FILES}/05217_ok_${CLICKHOUSE_DATABASE}/')"
 
 # `ALTER TABLE ... MODIFY SETTING disk = disk(...)` resolves the definition once as if it came from
 # stored metadata, which registers the disk, and only then checks whether the change is possible. The

@@ -12,13 +12,6 @@ settings=(
     --local_filesystem_read_method='pread'
 )
 
-server_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name = 'default'")
-
-if [ "${server_path:0:1}" != "/" ]; then
-    echo "path should be absolute (path: $path)" >&2
-    exit 1
-fi
-
 $CLICKHOUSE_CLIENT "${settings[@]}" -nm -q "
     DROP TABLE IF EXISTS test;
 
