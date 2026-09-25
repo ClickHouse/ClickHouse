@@ -5,6 +5,11 @@ OK
 OK
 OK
 OK
+--- query condition cache
+0
+2
+4
+100000
 --- Iceberg
 [[0], [1], [2]] read fewer rows: True
 OK

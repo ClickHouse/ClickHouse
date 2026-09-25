@@ -204,6 +204,7 @@ namespace
 namespace Setting
 {
     extern const SettingsUInt64 max_download_buffer_size;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
@@ -1003,7 +1004,11 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
-        else if (format_filter_info->condition_hash)
+        /// With TopN dynamic filtering the matched buckets depend on the running threshold, which comes
+        /// from the rows of all files the query reads: a row group can end up without a returned row
+        /// only because the threshold had excluded it. The key covers just the predicate, so such an
+        /// entry would make a later plain read, or one with another `LIMIT` or direction, skip rows.
+        else if (format_filter_info->condition_hash && !format_filter_info->top_k_filter)
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
@@ -1136,8 +1141,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
+    /// Entries are only written by reads without TopN dynamic filtering (see `generate`), so they apply
+    /// to a TopN read as well. It consults them only while `use_query_condition_cache_for_top_k` is on:
+    /// that setting makes TopK reads neither consult nor populate the cache.
     QueryConditionCachePtr query_condition_cache;
-    if (format_filter_info && format_filter_info->condition_hash)
+    if (format_filter_info && format_filter_info->condition_hash
+        && (!format_filter_info->top_k_filter || context_->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 
     while (true)
