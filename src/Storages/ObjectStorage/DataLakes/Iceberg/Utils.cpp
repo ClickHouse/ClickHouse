@@ -37,7 +37,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/sortBlock.h>
+#include <Poco/String.h>
 
 #if USE_AVRO
 
@@ -1341,6 +1343,56 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
             result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i], -1));
     }
     sortBlock(block, result_sort_description);
+}
+
+void forEachAvroEntry(
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const String & logger_name,
+    std::function<void(const avro::GenericDatum &)> callback)
+{
+    RelativePathWithMetadata relative_path_with_metadata(filename);
+    auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger(logger_name));
+
+    auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
+    auto reader_base = std::make_unique<avro::DataFileReaderBase>(std::move(input_stream), MAX_AVRO_SCHEMA_DEPTH);
+    avro::DataFileReader<avro::GenericDatum> reader(std::move(reader_base));
+
+    avro::GenericDatum datum(reader.readerSchema());
+    while (reader.read(datum))
+        callback(datum);
+}
+
+PartitionColumnValues getIdentityPartitionColumnValues(
+    const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor)
+{
+    const auto & partition_key_value = manifest_file_entry.parsed_entry->partition_key_value;
+    if (partition_key_value.empty())
+        return {};
+
+    PartitionColumnValues result;
+    for (const auto & partition_field : *manifest_file_entry.common_partition_specification)
+    {
+        if (Poco::toLower(partition_field.transform_name) != "identity")
+            continue;
+
+        if (partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= partition_key_value.size())
+            continue;
+
+        const auto name_and_type
+            = schema_processor.tryGetFieldCharacteristics(manifest_file_entry.resolved_schema_id, partition_field.source_id);
+        if (!name_and_type.has_value())
+            continue;
+
+        Field value = convertFieldToTypeOrThrow(partition_key_value[partition_field.tuple_index], *name_and_type->type);
+        if (value.isNull())
+            continue;
+
+        result.emplace_back(name_and_type->name, std::move(value));
+    }
+
+    return result;
 }
 
 }
