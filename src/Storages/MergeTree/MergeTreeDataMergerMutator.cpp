@@ -468,6 +468,11 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
           * patches written before and after it in different partitions, so all the sources are on the same side of
           * every such rename, and so is any version between theirs. The lowest one is what the mutations snapshot
           * of this merge takes for `min_part_metadata_version`, so the result carries exactly what its sources did.
+          *
+          * The exception is a name reused by `RENAME COLUMN a TO b, ADD COLUMN a`: patches of the old and of the new
+          * `a` of the same type share a partition. That case is already wrong for ordinary parts, because a pending
+          * rename does not fence its source name the way `DROP COLUMN` does in `AlterConversions`, and it is no worse
+          * here than with the version 0 the merged patch had before.
           */
         int32_t metadata_version = std::numeric_limits<int32_t>::max();
         for (const auto & part : future_part->parts)
