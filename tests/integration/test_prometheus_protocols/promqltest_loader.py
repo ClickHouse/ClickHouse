@@ -757,7 +757,7 @@ def parse_sql_result(tsv: str) -> list[dict[str, Any]]:
                     )
             else:
                 value = re.fullmatch(_NUMBER_RE, parts[1].strip(), re.IGNORECASE)
-                if value:
+                if value and _sql_ts_to_seconds(parts[0]) is not None:
                     rows.append(
                         {
                             "metric": {},

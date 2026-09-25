@@ -335,6 +335,8 @@ def test_compare_scalar_requires_unlabeled_row():
     assert status == "failed"
     status, _ = loader.compare_eval(case, "1970-01-01 00:00:00.000\tnot-a-number\n", None)
     assert status == "failed"
+    status, _ = loader.compare_eval(case, "garbage\t1\n", None)
+    assert status == "failed"
 
 
 def test_compare_expect_fail(tmp_path: Path):
