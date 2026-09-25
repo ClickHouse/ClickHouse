@@ -508,12 +508,18 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         return true;
     }
 
-    return getChecker(
-               current_settings,
-               setting_name,
-               http_method_implies_readonly,
-               isReadonlyTightening(access_control, current_settings, setting_name, new_value))
-        .check(change, new_value, reaction, source);
+    const bool allow_readonly_tightening = isReadonlyTightening(access_control, current_settings, setting_name, new_value);
+
+    if (!getChecker(current_settings, setting_name, http_method_implies_readonly, allow_readonly_tightening)
+             .check(change, new_value, reaction, source))
+        return false;
+
+    /// `Checker::check` clamps `change.value` to a `MIN`/`MAX` bound, and only the strictest value is admissible here.
+    if (allow_readonly_tightening)
+        return isReadonlyTightening(
+            access_control, current_settings, setting_name, castValueOfSetting<Settings>(change.name, change.value));
+
+    return true;
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const

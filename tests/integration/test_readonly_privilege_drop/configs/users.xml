@@ -30,6 +30,27 @@
         <ro1>
             <readonly>1</readonly>
         </ro1>
+        <!-- A bound on `readonly` that a clamp caller can move a value to. `max` is below every value
+             `readonly` can be tightened to, so it is the shape that turns a request to tighten into a
+             loosening; the clamp callers reach it, the throwing ones report the bound. -->
+        <ro2_max0>
+            <readonly>2</readonly>
+            <constraints>
+                <readonly><max>0</max></readonly>
+            </constraints>
+        </ro2_max0>
+        <!-- `CONST` refuses any change of `readonly`, including a tightening. -->
+        <ro2_const>
+            <readonly>2</readonly>
+            <constraints>
+                <readonly><const/></readonly>
+            </constraints>
+        </ro2_const>
+        <!-- Carries the VALUE `readonly = 0` rather than a constraint, so switching into it is itself a
+             loosening of `readonly`. Assigned to nobody. -->
+        <kw_zero>
+            <readonly>0</readonly>
+        </kw_zero>
     </profiles>
     <users>
         <ro1_kw>
@@ -56,5 +77,17 @@
             <profile>ro1</profile>
             <quota>default</quota>
         </ro1>
+        <ro2_max0>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>ro2_max0</profile>
+            <quota>default</quota>
+        </ro2_max0>
+        <ro2_const>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>ro2_const</profile>
+            <quota>default</quota>
+        </ro2_const>
     </users>
 </clickhouse>

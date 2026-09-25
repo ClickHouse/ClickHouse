@@ -223,6 +223,48 @@ def test_tightening_does_not_reopen_the_keyword_escape(started_cluster):
     assert error is None, error
 
 
+def test_a_clamped_tightening_does_not_loosen_readonly(started_cluster):
+    # A clamp caller applies the value a bound allows instead of refusing the change, so a bound below
+    # `1` turns a request to tighten into the loosening this key exists to prevent. The value has to
+    # stay at 2 on every transport, and on `node_off`, where the tightening is refused outright.
+    nested = "SELECT r FROM (SELECT getSetting('readonly') AS r SETTINGS readonly = 1)"
+    assert node_on.query(nested, user="ro2_max0").strip() == "2"
+
+    for method in ("POST", "GET"):
+        output, error = http(node_on, nested, "ro2_max0", method=method)
+        assert error is None, error
+        assert output.strip() == "2", method
+
+    assert node_off.query(nested, user="ro2_max0").strip() == "2"
+
+    # On a throwing caller the bound is reported as a bound, which is what it does today for any
+    # other setting, rather than as a readonly refusal.
+    assert "shouldn't be greater than 0" in node_on.query_and_get_error(
+        "SET readonly = 1", user="ro2_max0"
+    )
+
+
+def test_a_const_constraint_still_refuses_the_tightening(started_cluster):
+    # `CONST` is tested after the tightening is admitted, so it is the constraint that has to keep
+    # refusing on its own. With the key off the request never reaches it.
+    assert "should not be changed" in node_on.query_and_get_error(
+        "SET readonly = 1", user="ro2_const"
+    )
+    assert REFUSAL in node_off.query_and_get_error("SET readonly = 1", user="ro2_const")
+
+
+def test_a_url_parameter_profile_cannot_leave_readonly_mode(started_cluster):
+    # `?profile=` is applied to the request's own context, so a profile carrying `readonly = 0` is
+    # refused there. `SET profile` mutates the session instead, and that route is NOT covered; the
+    # asymmetry is pinned here rather than left to be rediscovered.
+    output, error = http(node_on, "SELECT 1", "ro1_kw", {"profile": "kw_zero"})
+    assert error is not None and REFUSAL in error
+
+    output, error = http(node_off, "SELECT getSetting('readonly')", "ro1_kw", {"profile": "kw_zero"})
+    assert error is None, error
+    assert output.strip() == "0"
+
+
 def test_tightening_does_not_reopen_the_keyword_escape_via_a_switched_profile(started_cluster):
     # The residual is not confined to a user whose own profile declares the keyword: a profile's name
     # is selectable by any session, so `ro2` (which declares nothing) can switch into `kw_only` and
