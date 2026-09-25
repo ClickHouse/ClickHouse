@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <set>
@@ -3528,6 +3529,41 @@ Settings Context::getSettingsCopy() const
     return *settings;
 }
 
+namespace
+{
+bool isProfileChange(const SettingChange & change)
+{
+    return change.name == "profile";
+}
+
+/// Enforces the constraints on `changes` the way `applySettingsChanges` applies them: a `profile` change
+/// installs a new constraint set for the changes after it. Each run of changes up to the next `profile`
+/// change is enforced against the constraints in force before it, then applied together with that `profile`
+/// change to a scratch copy of `context`, so a rejected list leaves `context` untouched. Returns the enforced list.
+template <typename Enforce>
+SettingsChanges enforceConstraintsAlongProfileChanges(const ContextPtr & context, const SettingsChanges & changes, Enforce && enforce)
+{
+    auto scratch_context = Context::createCopy(context);
+    SettingsChanges enforced;
+    for (auto begin = changes.begin(); begin != changes.end();)
+    {
+        auto profile = std::find_if(begin, changes.end(), isProfileChange);
+        SettingsChanges segment(begin, profile);
+        enforce(*scratch_context, segment);
+        begin = profile;
+        if (profile != changes.end())
+        {
+            segment.push_back(*profile);
+            ++begin;
+        }
+        /// `setCurrentProfile` checks the profile's own settings against the constraints in force before it.
+        scratch_context->applySettingsChanges(segment);
+        enforced.insert(enforced.end(), segment.begin(), segment.end());
+    }
+    return enforced;
+}
+}
+
 void Context::setSettings(const Settings & settings_)
 {
     std::lock_guard lock(mutex);
@@ -3688,6 +3724,15 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(std::as_const(segment), source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
@@ -3700,14 +3745,46 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
 }
 
+void Context::checkSettingsConstraintsForSettingsReset(
+    const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source)
+{
+    if (std::ranges::none_of(changes_applied_first, isProfileChange))
+    {
+        checkSettingsConstraintsForSettingsReset(names, source);
+        return;
+    }
+    /// The resets take effect after the rest of the statement, so a `profile` change in it decides the constraints.
+    auto scratch_context = Context::createCopy(shared_from_this());
+    scratch_context->applySettingsChanges(changes_applied_first);
+    scratch_context->checkSettingsConstraintsForSettingsReset(names, source);
+}
+
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(segment, source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(changes, source);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.clampToSettingsConstraints(segment, source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
 }
