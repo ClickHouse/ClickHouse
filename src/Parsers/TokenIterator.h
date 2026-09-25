@@ -21,6 +21,8 @@ namespace DB
 class Tokens
 {
 private:
+    friend class TokenIterator;
+
     std::vector<Token> data;
     size_t max_pos = 0;
     Lexer lexer;
@@ -103,6 +105,10 @@ public:
 
     /// Rightmost token we had looked.
     ALWAYS_INLINE const Token & max() { return tokens->max(); }
+
+    /// Save and restore the rightmost token visited by speculative lookahead.
+    ALWAYS_INLINE size_t maxPosition() const { return tokens->max_pos; }
+    ALWAYS_INLINE void restoreMaxPosition(size_t position) { tokens->max_pos = position; }
 };
 
 

@@ -410,6 +410,16 @@ The `FROM` clause specifies the source to read data from:
 
 [JOIN](/reference/statements/select/join) and [ARRAY JOIN](/reference/statements/select/array-join) clauses may also be used to extend the functionality of the `FROM` clause.
 
+A table expression can be followed by a static `PIVOT` clause:
+
+```sql
+SELECT *
+FROM sales
+PIVOT (sum(amount) FOR quarter IN ('Q1' AS q1, 'Q2' AS q2));
+```
+
+`PIVOT` matches explicit literal values from the `IN` list, turns them into result columns, and uses source columns not consumed by the pivot expression as grouping keys.
+
 Subquery is another `SELECT` query that may be specified in parenthesis inside `FROM` clause.
 
 A SQL standard `VALUES` clause can also be used as a table expression:
@@ -512,7 +522,7 @@ To execute a query, all the columns listed in the query are extracted from the a
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 )DOCS_MD",
         .syntax = R"(
-SELECT ... FROM [db.]table | (subquery) | table_function | VALUES (...) [FINAL] [SAMPLE ...] ...
+SELECT ... FROM ([db.]table | (subquery) | table_function | VALUES (...)) [FINAL] [SAMPLE ...] [PIVOT (...)] ...
 FROM [db.]table SELECT ...
 )",
         .parent = "SELECT",

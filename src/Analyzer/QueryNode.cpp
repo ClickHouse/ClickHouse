@@ -379,6 +379,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
+        is_pivot_rewrite == rhs_typed.is_pivot_rewrite &&
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         is_limit_after_all == rhs_typed.is_limit_after_all &&
@@ -427,6 +428,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
+    state.update(is_pivot_rewrite);
     state.update(is_order_by_all);
     state.update(is_limit_by_all);
     state.update(is_limit_after_all);
@@ -460,6 +462,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_with_cube = is_group_by_with_cube;
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     result_query_node->is_group_by_all = is_group_by_all;
+    result_query_node->is_pivot_rewrite = is_pivot_rewrite;
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->is_limit_after_all = is_limit_after_all;
@@ -483,6 +486,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_with_cube = is_group_by_with_cube;
     select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     select_query->group_by_all = is_group_by_all;
+    select_query->is_pivot_rewrite = is_pivot_rewrite;
     select_query->order_by_all = is_order_by_all;
     select_query->limit_by_all = is_limit_by_all;
     select_query->limit_after_all = is_limit_after_all;
