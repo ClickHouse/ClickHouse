@@ -44,6 +44,32 @@ Default tokenizer (splitByNonAlpha)
 -- Nullable(FixedString) input
 1
 \N
+-- Array input: elements are tokens
+1
+0
+1
+0
+1
+0
+0
+0
+-- empty or NULL element is not a token
+1
+1
+-- Array(FixedString) input
+1
+-- Array phrase: elements are tokens
+1
+0
+1
+-- tokenizer applies to a String phrase only
+1
+0
+-- Array(String) column values
+1
+1	1
+2	0
+3	0
 -- Nullable(String) column values
 1
 \N

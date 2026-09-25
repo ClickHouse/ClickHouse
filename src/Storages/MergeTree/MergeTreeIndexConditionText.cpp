@@ -1535,6 +1535,48 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Function 'hasPhrase' is not supported on a text index that uses the 'splitByRegexp' tokenizer and a postprocessor");
 
+        /// An Array phrase carries the tokens verbatim: neither the tokenizer nor the preprocessor applies.
+        if (value_field.getType() == Field::Types::Array)
+        {
+            VectorWithMemoryTracking<String> phrase_tokens;
+            for (const Field & element : value_field.safeGet<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
+
+                const auto & element_value = element.safeGet<String>();
+                if (!element_value.empty())
+                    phrase_tokens.push_back(element_value);
+            }
+
+            if (has_postprocessor)
+                phrase_tokens = postprocessor->processTokens(std::move(phrase_tokens));
+
+            std::set<String> dedup(phrase_tokens.begin(), phrase_tokens.end());
+            VectorWithMemoryTracking<String> unique_tokens(dedup.begin(), dedup.end());
+
+            if (has_positions)
+            {
+                auto query = std::make_shared<TextSearchQuery>(
+                    function_name,
+                    TextSearchMode::Phrase,
+                    direct_read_mode,
+                    std::move(unique_tokens),
+                    std::vector<OptimizedRegularExpression>{},
+                    std::move(phrase_tokens));
+
+                out.function = RPNElement::FUNCTION_HAS_PHRASE;
+                out.text_search_queries.emplace_back(std::move(query));
+                return true;
+            }
+
+            out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
+            out.text_search_queries.emplace_back(
+                std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(unique_tokens)));
+
+            return true;
+        }
+
         const String value = preprocessor->processConstant(value_field.safeGet<String>());
 
         /// When positions are available, use phrase search with positional intersection.

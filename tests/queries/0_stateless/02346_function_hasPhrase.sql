@@ -3,10 +3,12 @@ SELECT 'Negative tests';
 SELECT hasPhrase(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT hasPhrase('a'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT hasPhrase('a', 'b', 'c', 'd'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
--- 1st arg must be String or FixedString
+-- 1st arg must be String, FixedString or an array of those
 SELECT hasPhrase(1, 'hello'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
--- 2nd arg must be const String
+SELECT hasPhrase([1, 2], 'hello'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- 2nd arg must be a const String or const Array(String)
 SELECT hasPhrase('a', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT hasPhrase(['a', 'b'], [1, 2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasPhrase('a', materialize('b')); -- { serverError ILLEGAL_COLUMN }
 -- 3rd arg (if given) must be const String (tokenizer name)
 SELECT hasPhrase('a', 'b', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -68,6 +70,39 @@ SELECT hasPhrase(CAST(NULL AS Nullable(String)), 'quick brown');
 SELECT '-- Nullable(FixedString) input';
 SELECT hasPhrase(toNullable(toFixedString('the quick brown fox', 19)), 'quick brown');
 SELECT hasPhrase(CAST(NULL AS Nullable(FixedString(19))), 'quick brown');
+
+SELECT '-- Array input: elements are tokens';
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'quick brown');
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'quick fox');
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'the quick brown fox');
+SELECT hasPhrase(['a b', 'c'], 'a b c');
+SELECT hasPhrase(['a', 'a', 'b'], 'a b');
+SELECT hasPhrase(['a', 'b'], 'b a');
+SELECT hasPhrase(['a', 'b'], '');
+SELECT hasPhrase(CAST([], 'Array(String)'), 'a');
+SELECT '-- empty or NULL element is not a token';
+SELECT hasPhrase(['a', '', 'b'], 'a b');
+SELECT hasPhrase(['a', NULL, 'b'], 'a b');
+SELECT '-- Array(FixedString) input';
+SELECT hasPhrase([toFixedString('aa', 2), toFixedString('bb', 2)], ['aa', 'bb']);
+SELECT '-- Array phrase: elements are tokens';
+SELECT hasPhrase(['a b', 'c'], ['a b', 'c']);
+SELECT hasPhrase(['a b', 'c'], ['b', 'c']);
+SELECT hasPhrase('the quick brown fox jumps', ['quick', 'brown']);
+SELECT '-- tokenizer applies to a String phrase only';
+SELECT hasPhrase(['a', 'b'], 'a()b', 'splitByString([\'()\'])');
+SELECT hasPhrase(['a()b', 'c'], 'a()b', 'splitByString([\'()\'])');
+
+SELECT '-- Array(String) column values';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt64, tokens Array(String)) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO tab VALUES (1, ['the', 'quick', 'brown']), (2, ['quick', 'the', 'brown']), (3, []);
+
+SELECT id FROM tab WHERE hasPhrase(tokens, 'the quick') ORDER BY id;
+SELECT id, hasPhrase(tokens, 'quick brown') FROM tab ORDER BY id;
+
+DROP TABLE tab;
 
 SELECT '-- Nullable(String) column values';
 

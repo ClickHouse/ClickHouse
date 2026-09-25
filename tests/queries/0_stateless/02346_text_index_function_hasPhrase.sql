@@ -134,6 +134,72 @@ SELECT groupArray(id) FROM tab WHERE hasPhrase(text, 'quick fox');
 
 DROP TABLE tab;
 
+SELECT '-- Array(String) input columns';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(String),
+    INDEX idx_tags(tags) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree()
+ORDER BY (id);
+
+SELECT '-- index tokens are [quick, brown, fox]';
+INSERT INTO tab VALUES
+    (1, ['quick brown', 'fox']),
+    (2, ['brown quick', 'fox']),
+    (3, ['quick', 'fox']);
+
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick brown');
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick brown') SETTINGS use_skip_indexes = 0;
+SELECT '-- adjacent across elements';
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox');
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick fox');
+
+DROP TABLE tab;
+
+SELECT '-- Array(Nullable(String)) input columns';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tags Array(Nullable(String)),
+    INDEX idx_tags(tags) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree()
+ORDER BY (id);
+
+-- A NULL element yields no token, so it leaves no position.
+INSERT INTO tab VALUES (1, ['quick brown', NULL, 'fox']), (2, ['brown quick', NULL, 'fox']);
+
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'quick brown') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'quick brown') ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'brown fox') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'brown fox') ORDER BY id) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '-- Array phrase';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx_message(message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree()
+ORDER BY (id);
+
+INSERT INTO tab VALUES (1, 'the quick brown fox'), (2, 'the brown quick fox');
+
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(message, ['quick', 'brown']) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(message, ['quick', 'brown']) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(message, ['quick', 'fox']) ORDER BY id);
+
+DROP TABLE tab;
+
 SELECT '-- asciiCJK tokenizer';
 
 CREATE TABLE tab

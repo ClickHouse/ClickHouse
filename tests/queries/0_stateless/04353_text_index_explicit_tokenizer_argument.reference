@@ -40,7 +40,23 @@
 -- expression index
 1
 -- postprocessor with an explicit separator list
+-- 3-arg vs 2-arg, index on and off
+[1]
+[1]
+[1]
+[1]
+-- the index answers the phrase
 1
 1
 1
+-- postprocessed token is a separator
+[]
+[]
+[]
+[]
+-- phrase grams are adjacent
 1
+-- index on and off
+[1]
+[1]
+-- gram spanning a separator

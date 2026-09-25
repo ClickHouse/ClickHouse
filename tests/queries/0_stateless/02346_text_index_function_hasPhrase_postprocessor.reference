@@ -42,4 +42,76 @@
 [1,3]
 []
 []
-7. Separator-emitting postprocessor: rejected consistently on both read paths.
+7. Separator-emitting postprocessor: answered consistently on both read paths.
+-- token becomes foo x
+1
+1
+8. Tokenizer whose separators do not include a space.
+-- index tokens are [a, bc, d]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[]
+[]
+-- value outside a filter
+1	1
+2	0
+9. A token that is a separator of splitByNonAlpha but not of the index tokenizer.
+[1]
+[1]
+[1]
+[1]
+10. A postprocessed token that is itself a separator.
+-- index tokens are [a, x, b]
+[]
+[]
+-- single-token phrase still matches
+[1]
+[1]
+11. asciiCJK tokens may contain non-alphanumeric characters.
+[1]
+[1]
+[1]
+[1]
+12. A gram that spans a space.
+[1]
+[1]
+[1]
+[1]
+13. With positions, the index and the row-level fallback agree.
+-- index positions vs row-level fallback
+[1]
+[1]
+[]
+[]
+14. An Array(String) indexed column: the tokens of all elements form one sequence.
+-- index tokens are [hello, world, foo]
+[1]
+[1]
+-- adjacent across elements
+[1]
+[1]
+[]
+[]
+15. A NULL array element leaves no position.
+[1]
+[1]
+16. An expression index.
+[1]
+[1]
+[]
+[]
+17. An Array phrase is a sequence.
+[1]
+[1]
+[2]
+[2]
+18. An Array phrase with positions.
+[1]
+[1]
+[2]
+[2]
