@@ -825,6 +825,7 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     auto result = std::make_unique<AnalyzedInnerQuery>();
 
     result->query_plan_options = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings()).query_plan_options;
+    result->query_plan_options.show_secrets = canDisplaySecrets(getContext());
 
     /// This is the only place that turns join statistics on, and it must happen before any interpreter
     /// is built. Every join of the query reads the mode from the context, so joins in nested plans get it as well.
@@ -980,6 +981,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 }
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast_settings, pretty_version);
+            settings.query_plan_options.show_secrets = canDisplaySecrets(query_context);
 
             QueryPlan plan;
 
@@ -1202,7 +1204,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
             /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.
             /// EXPLAIN ANALYZE rejects distributed plans above, so this covers the whole plan tree.
-            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan);
+            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan, analyzed.query_plan_options.show_secrets);
 
             plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
