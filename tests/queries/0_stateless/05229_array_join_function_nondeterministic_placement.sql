@@ -36,3 +36,7 @@ SELECT groupArray((a, b)), uniqExact(r), count() FROM (SELECT arrayJoin([1, 2]) 
 SELECT uniqExact(r), count() FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b, rand64(a) AS r) SETTINGS arrayjoin_nondeterministic_functions_before_expansion = 1;
 SELECT uniqExact(r), count() FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b, rand64() AS r) SETTINGS arrayjoin_nondeterministic_functions_before_expansion = 1;
 
+-- compatibility with a release before the change restores the old placement
+SELECT getSetting('arrayjoin_nondeterministic_functions_before_expansion') SETTINGS compatibility = '26.9';
+SELECT uniqExact(r), count() FROM (SELECT arrayJoin([1, 2, 3]) AS e, rand64() AS r FROM numbers(2)) SETTINGS compatibility = '26.9';
+
