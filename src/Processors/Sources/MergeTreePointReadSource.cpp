@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Common/assert_cast.h>
 
+#include <algorithm>
 #include <bit>
 
 namespace DB
@@ -219,11 +220,11 @@ void MergeTreePointReadSource::readOtherColumns(size_t base, size_t batch, Colum
         if (rows_to_skip)
         {
             MutableColumns skipped_columns(other_columns.size());
-            other_reader->readRows(from_mark, continue_reading, rows_to_skip, skipped_columns);
+            read_rows += other_reader->readRows(from_mark, continue_reading, rows_to_skip, skipped_columns);
             continue_reading = true;
         }
 
-        other_reader->readRows(from_mark, continue_reading, /*max_rows_to_read=*/ 1, read_columns);
+        read_rows += other_reader->readRows(from_mark, continue_reading, /*max_rows_to_read=*/ 1, read_columns);
 
         last_read_mark = from_mark;
         next_unread_row = row + 1;
@@ -264,6 +265,7 @@ Chunk MergeTreePointReadSource::generate()
     readVectorColumn(next_offset_index, batch, *vector_col);
 
     Columns other_result;
+    read_rows = 0;
     if (!other_columns.empty())
         readOtherColumns(next_offset_index, batch, other_result);
 
@@ -283,7 +285,7 @@ Chunk MergeTreePointReadSource::generate()
     next_offset_index += batch;
 
     /// Report what the readers actually fetched since the last chunk, not what the chunk holds.
-    progress(batch, read_bytes.exchange(0, std::memory_order_relaxed));
+    progress(std::max(read_rows, batch), read_bytes.exchange(0, std::memory_order_relaxed));
     return Chunk(std::move(result), batch);
 }
 

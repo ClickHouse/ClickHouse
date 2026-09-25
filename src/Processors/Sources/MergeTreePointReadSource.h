@@ -69,6 +69,7 @@ private:
     /// substitute: rows skipped inside a granule are read and dropped, and a remote reader fetches whole ranges.
     /// Atomic because a prefetching read method runs the callback on a pool thread.
     std::atomic<size_t> read_bytes = 0;
+    size_t read_rows = 0;
 
     bool initialized = false;
     size_t next_offset_index = 0;
