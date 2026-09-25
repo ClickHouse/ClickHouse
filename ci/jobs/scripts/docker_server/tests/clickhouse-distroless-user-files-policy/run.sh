@@ -10,20 +10,31 @@ source "$dir/../lib.sh"
 
 image="$1"
 
+# Without credentials `docker-init` disables network access for `default`, and the client runs in a
+# separate container here.
+export CLICKHOUSE_USER='user_files_policy_user'
+export CLICKHOUSE_PASSWORD='user_files_policy_password'
+
 cid="$(
   docker run -d \
+    -e CLICKHOUSE_USER \
+    -e CLICKHOUSE_PASSWORD \
     -v "$dir/../clickhouse-user-files-policy/user_files_policy.xml":/etc/clickhouse-server/config.d/user_files_policy.xml:ro \
     --name "$(cname)" \
     "$image"
 )"
-trap 'docker rm -vf $cid > /dev/null' EXIT
+trap '[ $? -eq 0 ] || dumpServerLogs "$cid"; docker rm -vf "$cid" > /dev/null' EXIT
 
 chCli() {
   docker run --rm -i \
     --link "$cid":clickhouse \
+    -e CLICKHOUSE_USER \
+    -e CLICKHOUSE_PASSWORD \
     "$image" \
     clickhouse-client \
     --host clickhouse \
+    --user "$CLICKHOUSE_USER" \
+    --password "$CLICKHOUSE_PASSWORD" \
     --query "$*"
 }
 
