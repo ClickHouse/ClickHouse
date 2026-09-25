@@ -4,7 +4,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <bit>
 #include <limits>
 #include <numeric>
 
@@ -145,103 +144,66 @@ void emitRanks(
 }
 
 
-void TextIndexBlockedPositionsCodec::encode(std::span<const RoaringishEntry> entries, WriteBuffer & out)
+void TextIndexBlockedPositionsCodec::Encoder::addDocument(std::span<const UInt32> positions)
 {
-    /// Flatten the sorted roaringish buckets into per-document freqs + within-document delta positions.
-    PaddedPODArray<UInt32> freqs;
-    PaddedPODArray<UInt32> values;
-    UInt32 current_doc = 0;
-    UInt32 prev_position = 0;
-    bool has_doc = false;
-    for (const auto & entry : entries)
-    {
-        if (entry.bitmap == 0)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Text index positions: empty bitmap in roaringish entry");
-
-        if (!has_doc || entry.doc_id != current_doc)
-        {
-            current_doc = entry.doc_id;
-            has_doc = true;
-            freqs.push_back(0);
-        }
-        const UInt32 base = entry.group * RoaringishEntry::BITMAP_BITS;
-        UInt32 bitmap = entry.bitmap;
-        while (bitmap)
-        {
-            const UInt32 position = base + static_cast<UInt32>(std::countr_zero(bitmap));
-            values.push_back(freqs.back() == 0 ? position : position - prev_position);
-            prev_position = position;
-            ++freqs.back();
-            bitmap &= bitmap - 1;
-        }
-    }
+    chassert(!positions.empty());
+    chassert(std::ranges::adjacent_find(positions, std::greater_equal<UInt32>{}) == positions.end());
 
     /// Decoders address the whole-token stream with UInt32 offsets; refuse to write an unreadable part.
-    if (values.size() > std::numeric_limits<UInt32>::max())
+    num_positions += positions.size();
+    if (num_positions > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Text index positions: more than {} positions for a single token", std::numeric_limits<UInt32>::max());
 
-    const UInt64 num_docs = freqs.size();
-    const UInt64 num_blocks = (num_docs + BLOCK_DOCS - 1) / BLOCK_DOCS;
+    block_freqs.push_back(static_cast<UInt32>(positions.size()));
+    const size_t values_begin = block_values.size();
+    block_values.resize(values_begin + positions.size());
+    std::adjacent_difference(positions.begin(), positions.end(), block_values.begin() + values_begin);
+
+    ++num_docs;
+    if (block_freqs.size() == BLOCK_DOCS)
+        sealBlock();
+}
+
+void TextIndexBlockedPositionsCodec::Encoder::sealBlock()
+{
+    const size_t docs_in_block = block_freqs.size();
+    const size_t total = block_values.size();
+
+    const size_t begin = staged.size();
+    staged.resize(begin + 10 + docs_in_block * 10 + PFor::maxCompressedBytes<UInt32>(total));
+    uint8_t * block_begin = staged.data() + begin;
+    size_t offset = 0;
+
+    const size_t num_exceptions = std::ranges::count_if(block_freqs, [](UInt32 freq) { return freq > 1; });
+    offset += writeVarUIntTo(block_begin + offset, num_exceptions);
+    for (size_t i = 0; i < docs_in_block; ++i)
+    {
+        if (block_freqs[i] > 1)
+        {
+            offset += writeVarUIntTo(block_begin + offset, i);
+            offset += writeVarUIntTo(block_begin + offset, block_freqs[i]);
+        }
+    }
+
+    offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(block_values.data(), total), PFor::Delta::none, block_begin + offset);
+
+    staged.resize(begin + offset);
+    block_bytes.push_back(offset);
+    block_freqs.clear();
+    block_values.clear();
+}
+
+void TextIndexBlockedPositionsCodec::Encoder::finalize(WriteBuffer & out)
+{
+    if (!block_freqs.empty())
+        sealBlock();
+
     writeVarUInt(num_docs, out);
-    writeVarUInt(num_blocks, out);
-    if (num_docs == 0)
-        return;
-
-    /// Stage the block payloads to learn their sizes; the directory precedes them.
-    std::vector<size_t> block_totals(num_blocks);
-    std::vector<size_t> block_bytes(num_blocks);
-    std::vector<uint8_t> staged;
-    {
-        size_t reserve_bytes = 0;
-        size_t doc_index = 0;
-        for (UInt64 b = 0; b < num_blocks; ++b)
-        {
-            const size_t docs_in_block = std::min<size_t>(BLOCK_DOCS, num_docs - b * BLOCK_DOCS);
-            size_t total = 0;
-            for (size_t i = 0; i < docs_in_block; ++i)
-                total += freqs[doc_index++];
-            block_totals[b] = total;
-            reserve_bytes += 10 + docs_in_block * 10 + PFor::maxCompressedBytes<UInt32>(total);
-        }
-        staged.resize(reserve_bytes);
-    }
-
-    size_t staged_offset = 0;
-    size_t value_offset = 0;
-    for (UInt64 b = 0; b < num_blocks; ++b)
-    {
-        const size_t doc_begin = b * BLOCK_DOCS;
-        const size_t docs_in_block = std::min<size_t>(BLOCK_DOCS, num_docs - doc_begin);
-        uint8_t * block_begin = staged.data() + staged_offset;
-        size_t offset = 0;
-
-        const size_t total = block_totals[b];
-        size_t num_exceptions = 0;
-        for (size_t i = 0; i < docs_in_block; ++i)
-            if (freqs[doc_begin + i] > 1)
-                ++num_exceptions;
-        offset += writeVarUIntTo(block_begin + offset, num_exceptions);
-        for (size_t i = 0; i < docs_in_block; ++i)
-        {
-            if (freqs[doc_begin + i] > 1)
-            {
-                offset += writeVarUIntTo(block_begin + offset, i);
-                offset += writeVarUIntTo(block_begin + offset, freqs[doc_begin + i]);
-            }
-        }
-
-        offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(values.data() + value_offset, total), PFor::Delta::none, block_begin + offset);
-        value_offset += total;
-
-        block_bytes[b] = offset;
-        staged_offset += offset;
-    }
-    chassert(value_offset == values.size());
-
-    for (UInt64 b = 0; b < num_blocks; ++b)
-        writeVarUInt(block_bytes[b], out);
-    out.write(reinterpret_cast<const char *>(staged.data()), staged_offset);
+    writeVarUInt(block_bytes.size(), out);
+    for (size_t bytes : block_bytes)
+        writeVarUInt(bytes, out);
+    out.write(reinterpret_cast<const char *>(staged.data()), staged.size());
 }
 
 TextIndexBlockedPositionsCodec::Directory TextIndexBlockedPositionsCodec::readDirectory(
