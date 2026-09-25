@@ -20,7 +20,6 @@ class FieldMatcher
 public:
     explicit FieldMatcher(const FormatSettings::EscapingRule & rule_, const FormatSettings & settings_) : rule(rule_), settings(settings_)
     {
-        settings.try_infer_integers = true;
         /// A freeform row has no fixed shape, so a JSON object is represented as a `Map` rather than
         /// as a named `Tuple` or as a `String`: consecutive rows are free to carry a different set of keys.
         settings.json.try_infer_objects_as_tuples = false;
@@ -142,6 +141,9 @@ public:
     {
         NamesAndTypes columns;
         std::vector<uint8_t> matchers_order;
+        /// For every element of `matchers_order`, the position in `columns` of the first column it produces:
+        /// a matcher produces the columns up to the first column of the next one.
+        std::vector<unsigned> first_columns;
         size_t score = 0;
         unsigned size = 0;
     };
@@ -150,6 +152,8 @@ public:
     /// the same `PeekableReadBuffer` is the one the format itself reads from, and so that the
     /// buffer can be rebound when the format is reused for another stream.
     FreeformFieldMatcher(PeekableReadBuffer & in_, const FormatSettings & settings);
+    /// Limits the sample the candidate solutions are checked against (see `IIRowSchemaReader::setMaxRowsAndBytesToRead`).
+    void setLimits(size_t max_rows, size_t max_bytes);
     // iterates over max_rows_to_read and pick the solution with the highest score. Returns false if no solution is found.
     bool buildSolutionsAndPickBest();
     // parse the row based on solution, buildSolutionsAndPickBest() must be called prior or it will throw an exception
@@ -173,11 +177,11 @@ private:
 
     std::vector<String> matched_fields;
     std::unordered_map<String, unsigned> field_name_to_index;
-    bool first_row = true;
 
     // for now it's min(100, settings_.max_rows_to_read_for_schema_inference) to keep it fast
     // we could reconsider using settings_.max_rows_to_read_for_schema_inference once we are able to store solutions
-    size_t max_rows_to_check;
+    size_t max_rows_to_check = 0;
+    size_t max_bytes_to_check = 0;
     size_t rows_checked = 0;
     PeekableReadBuffer & in;
 
@@ -187,6 +191,12 @@ private:
     // validateSolution iterates over the current row and try to parse and infer the types of the parsed fields. A solution is valid when the parsed types are valid.
     /// validateSolution also widens the types of `solution` to the union of the types seen in the checked rows.
     bool validateSolution(Solution & solution);
+    /// Reads one row with the fields of `solution` and calls `on_field(column, matcher_index, type, field)` for every
+    /// column. Throws if the row does not fill every column of the solution exactly once or does not end after them.
+    template <typename OnField>
+    void readRowBySolution(const Solution & solution, const std::unordered_map<String, unsigned> & column_index, OnField && on_field);
+    /// Prepares the chosen `final_solution` for `parseRow`.
+    void setFinalSolution(const Solution & solution);
     // readNextFields iterates over the list of matchers and try to parse all the possible fields.
     std::vector<Fields> readNextFields(bool one_string, unsigned index, size_t offset) const;
 };
@@ -227,6 +237,8 @@ public:
     FreeformSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
     // readSchema initiates the solutions building process, run them against 100 rows and pick the best solution according to the scoring criteria.
     NamesAndTypesList readSchema() override;
+    /// Columns named by the data (the keys of a root JSON object) are read by name, so they may be reordered.
+    bool hasStrictOrderOfColumns() const override { return false; }
 
 private:
     std::unique_ptr<PeekableReadBuffer> buf;
