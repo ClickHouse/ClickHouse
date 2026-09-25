@@ -7,10 +7,8 @@ namespace DB
 
 using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>;
 using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
-using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
-
-/// Instantiated in greater.cpp and equals.cpp.
 extern template class FunctionComparison<GreaterOp, NameGreater>;
+using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
 extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(GreaterOrEquals)

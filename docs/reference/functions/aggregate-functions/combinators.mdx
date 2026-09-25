@@ -341,7 +341,7 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 **Arguments**
 
 - `start` — Starting value of the whole required interval for `resampling_key` values.
-- `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`. It must be greater than `start`: a range that spans no subinterval throws an exception.
+- `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
 - `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
 - `resampling_key` — Column whose values are used for separating data into intervals.
 - `aggFunction_params` — `aggFunction` parameters.

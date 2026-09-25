@@ -55,7 +55,6 @@ auto_release_job = Job.Config(
 
 workflow = Workflow.Config(
     name="AutoReleases",
-    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[auto_release_job],

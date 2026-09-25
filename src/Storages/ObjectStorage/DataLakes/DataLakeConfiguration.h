@@ -95,17 +95,6 @@ public:
 #endif
     }
 
-    /// Only DeltaLake can onboard an existing table from a columnless CREATE (schema read from the
-    /// `_delta_log`); Iceberg's create path still requires an explicit schema, so it keeps the default.
-    bool supportsCreateFromExistingTableInCatalog() const override
-    {
-#if USE_PARQUET
-        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>;
-#else
-        return false;
-#endif
-    }
-
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
@@ -417,7 +406,7 @@ public:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
     {
         if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines. The list of allowed disks is defined by `allowed_disks_for_table_engines", disk_name);
 
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         auto disk = context->getDisk(disk_name);
