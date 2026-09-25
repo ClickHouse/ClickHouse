@@ -135,14 +135,28 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
                     auto other_column = other.column_statistics.find(input_headers.at(input_index)->getByPosition(position).name);
                     if (other_column == other.column_statistics.end())
                         continue;
-                    output_column->second.num_distinct_values
-                        = std::min(output_column->second.num_distinct_values, other_column->second.num_distinct_values);
+                    /// The minimum of two upper bounds remains an upper bound on the intersection.
+                    /// An unsafe estimate must not reduce a valid one while leaving its provenance intact.
+                    if (QueryPlanOptimizations::isDistinctCountUpperBound(output_column->second.ndv_provenance)
+                        && QueryPlanOptimizations::isDistinctCountUpperBound(other_column->second.ndv_provenance))
+                    {
+                        output_column->second.num_distinct_values
+                            = std::min(output_column->second.num_distinct_values, other_column->second.num_distinct_values);
+                    }
                 }
             }
-            /// Without the clamp a row-count reduction could leave a column NDV above the row count.
+            /// The estimated row count is not a proven bound. Retain the numerical clamp for costing,
+            /// but record that consumers must no longer treat a reduced NDV as an upper bound.
             for (auto & [column_name, column_stats] : result.column_statistics)
-                column_stats.num_distinct_values = std::min(column_stats.num_distinct_values,
+            {
+                const auto clamped = std::min(column_stats.num_distinct_values,
                     static_cast<UInt64>(std::max(result.estimated_row_count, 1.0)));
+                if (clamped < column_stats.num_distinct_values)
+                {
+                    column_stats.num_distinct_values = clamped;
+                    column_stats.ndv_provenance.add(EstimatedRowCountClamp);
+                }
+            }
         }
         result.min_row_count = 0;
         group->statistics = std::move(result);
@@ -254,8 +268,9 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
     /// Equality key pairs, for the output column equivalences.
     std::vector<std::pair<String, String>> equi_pairs;
+    const auto & join_operator = join_step.getJoinOperator();
 
-    for (const auto & predicate_expression : join_step.getJoinOperator().expression)
+    for (const auto & predicate_expression : join_operator.expression)
     {
         const auto & predicate = predicate_expression.asBinaryPredicate();
         auto left_column_actions = get<1>(predicate);
@@ -281,19 +296,15 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         auto left_column_statistics = left_statistics.column_statistics.find(left_column);
         auto right_column_statistics = right_statistics.column_statistics.find(right_column);
 
-        UInt64 left_number_of_distinct_values = 1;
-        UInt64 right_number_of_distinct_values = 1;
-        UInt64 min_number_of_distinct_values = UInt64(std::min(left_statistics.estimated_row_count, right_statistics.estimated_row_count));
-        if (left_column_statistics != left_statistics.column_statistics.end())
-        {
-            left_number_of_distinct_values = left_column_statistics->second.num_distinct_values;
-            min_number_of_distinct_values = std::min(min_number_of_distinct_values, left_number_of_distinct_values);
-        }
-        if (right_column_statistics != right_statistics.column_statistics.end())
-        {
-            right_number_of_distinct_values = right_column_statistics->second.num_distinct_values;
-            min_number_of_distinct_values = std::min(min_number_of_distinct_values, right_number_of_distinct_values);
-        }
+        const bool left_has_upper_bound = left_column_statistics != left_statistics.column_statistics.end()
+            && QueryPlanOptimizations::isDistinctCountUpperBound(left_column_statistics->second.ndv_provenance);
+        const bool right_has_upper_bound = right_column_statistics != right_statistics.column_statistics.end()
+            && QueryPlanOptimizations::isDistinctCountUpperBound(right_column_statistics->second.ndv_provenance);
+
+        const UInt64 left_number_of_distinct_values
+            = left_has_upper_bound ? left_column_statistics->second.num_distinct_values : 1;
+        const UInt64 right_number_of_distinct_values
+            = right_has_upper_bound ? right_column_statistics->second.num_distinct_values : 1;
 
         /// Estimate `JOIN` equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities.
         /// An empty relation or a supplied hint can carry NDV = 0; clamp to 1, otherwise the division
@@ -301,9 +312,32 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         UInt64 max_number_of_distinct_values = std::max<UInt64>({left_number_of_distinct_values, right_number_of_distinct_values, 1});
         Float64 predicate_selectivity = 1.0 / Float64(max_number_of_distinct_values);
 
-        /// NDV for join predicate columns can decrease if the other column has smaller NDV
-        statistics.column_statistics[left_column].num_distinct_values = min_number_of_distinct_values;
-        statistics.column_statistics[right_column].num_distinct_values = min_number_of_distinct_values;
+        /// The matched key domain is bounded by the minimum only when both inputs provide upper
+        /// bounds. Preserve outer-join sides and semi/anti semantics as the join-order estimator does.
+        if (left_has_upper_bound && right_has_upper_bound)
+        {
+            bool update_left = false;
+            bool update_right = false;
+            if (join_operator.strictness == JoinStrictness::Semi)
+            {
+                update_left = join_operator.kind == JoinKind::Left;
+                update_right = join_operator.kind == JoinKind::Right;
+            }
+            else if (join_operator.strictness != JoinStrictness::Anti)
+            {
+                update_left = join_operator.kind == JoinKind::Inner || join_operator.kind == JoinKind::Right
+                    || join_operator.kind == JoinKind::Cross || join_operator.kind == JoinKind::Comma;
+                update_right = join_operator.kind == JoinKind::Inner || join_operator.kind == JoinKind::Left
+                    || join_operator.kind == JoinKind::Cross || join_operator.kind == JoinKind::Comma;
+            }
+
+            const UInt64 min_number_of_distinct_values
+                = std::min(left_number_of_distinct_values, right_number_of_distinct_values);
+            if (update_left)
+                statistics.column_statistics[left_column].num_distinct_values = min_number_of_distinct_values;
+            if (update_right)
+                statistics.column_statistics[right_column].num_distinct_values = min_number_of_distinct_values;
+        }
 
         /// Predicate reuses a column already seen on one side - redundant for selectivity.
         if (left_already_bound || right_already_bound)
@@ -337,7 +371,6 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     /// Constrain the inner-product estimate to the join semantics (outer joins keep the preserved side,
     /// semi/anti/any bound it). Applied after the join-order hint so a hint cannot exceed a semantic
     /// upper bound (e.g. a semi join above its preserved-side row count).
-    const auto & join_operator = join_step.getJoinOperator();
     statistics.estimated_row_count = clampJoinRowCount(join_operator.kind, join_operator.strictness,
         statistics.estimated_row_count, left_statistics.estimated_row_count, right_statistics.estimated_row_count);
     statistics.max_row_count = clampJoinMaxRowCount(join_operator.kind, join_operator.strictness,
@@ -358,9 +391,16 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     /// could look costlier than shuffling the whole pre-join input.
     statistics.estimated_bytes_per_row = estimateRowWidth(*join_step.getOutputHeader(), statistics.column_statistics);
 
-    for (auto & column_statistics : statistics.column_statistics)
-        if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
-            column_statistics.second.num_distinct_values = UInt64(statistics.estimated_row_count);
+    /// The estimated join cardinality is not a proven row bound. Keep the clamp for the cost model,
+    /// but prevent downstream consumers from treating the result as an NDV upper bound.
+    for (auto & [column_name, column_stats] : statistics.column_statistics)
+    {
+        if (Float64(column_stats.num_distinct_values) > statistics.estimated_row_count)
+        {
+            column_stats.num_distinct_values = UInt64(statistics.estimated_row_count);
+            column_stats.ndv_provenance.add(EstimatedRowCountClamp);
+        }
+    }
 
     if (statistics.estimated_row_count < 0.01)
     {
@@ -394,13 +434,13 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     if (read_step.getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
     {
         /// TODO: Move this to IOptimizerStatistics implementation
-        if (auto estimator = read_step.getConditionSelectivityEstimator(read_step.getAllColumnNames()))
+        if (auto estimator = read_step.getConditionSelectivityEstimator(read_step.getAllColumnNames(), analyzed_result))
         {
             auto prewhere_info = read_step.getPrewhereInfo();
             const ActionsDAG::Node * prewhere_node = prewhere_info
                 ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                 : nullptr;
-            auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
+            auto relation_profile = estimator->estimateRelationProfile(read_step.getStorageMetadata(), nullptr, prewhere_node);
 
             /// Index analysis already bounds the read: it cannot emit more than `selected_rows`.
             /// Without a `PREWHERE` the profile carries no filter, its row count is only the
@@ -410,7 +450,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
                     ? std::min(Float64(relation_profile.rows), Float64(analyzed_result->selected_rows))
                     : Float64(relation_profile.rows);
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
-                statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
+                statistics.column_statistics[column_name] = column_stats;
             /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
             /// tables look nearly free to move over the network.
             fillReadColumnWidths(statistics, read_step, table_name);
@@ -426,7 +466,12 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     {
         auto column_ndv = statistics_lookup.getNumberOfDistinctValues(table_name, column_name);
         if (column_ndv)
-            statistics.column_statistics[column_name].num_distinct_values = column_ndv.value();
+        {
+            auto & column_stats = statistics.column_statistics[column_name];
+            column_stats.num_distinct_values = column_ndv.value();
+            /// The Cascades lookup contains only explicit test hints or no statistics.
+            column_stats.ndv_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
+        }
     }
 
     auto cardinality_hint = statistics_lookup.getCardinality(table_name);
@@ -572,7 +617,10 @@ Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const Expres
         auto column_ndv = [&](const ActionsDAG::Node * side) -> UInt64
         {
             auto it = input_statistics.column_statistics.find(side->result_name);
-            return it != input_statistics.column_statistics.end() ? it->second.num_distinct_values : 0;
+            return it != input_statistics.column_statistics.end()
+                    && QueryPlanOptimizations::isDistinctCountUpperBound(it->second.ndv_provenance)
+                ? it->second.num_distinct_values
+                : 0;
         };
 
         Float64 equal_selectivity = CascadesDefaults::DEFAULT_EQUALITY_SELECTIVITY;
@@ -605,6 +653,7 @@ ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterSt
     ExpressionStatistics result_statistics = input_statistics;
     QueryPlanOptimizations::remapColumnStats(result_statistics.column_statistics, filter_step.getExpression());
     result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, filter_step.getExpression());
+    QueryPlanOptimizations::addTransformation(result_statistics.column_statistics, RowSubset);
 
     const ActionsDAG::Node * filter_node = nullptr;
     for (const auto & dag_node : filter_step.getExpression().getNodes())
@@ -621,10 +670,16 @@ ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterSt
         const Float64 selectivity = estimatePredicateSelectivity(filter_node, input_statistics);
         result_statistics.estimated_row_count *= selectivity;
         result_statistics.min_row_count = 0;
-        /// A column cannot have more distinct values than there are rows.
+        /// The estimated filter cardinality is not a proven row bound. Keep the clamp for the cost
+        /// model, but record that the result is not safe for an upper-bound decision.
         for (auto & [column_name, column_stats] : result_statistics.column_statistics)
+        {
             if (Float64(column_stats.num_distinct_values) > result_statistics.estimated_row_count)
+            {
                 column_stats.num_distinct_values = UInt64(result_statistics.estimated_row_count);
+                column_stats.ndv_provenance.add(EstimatedRowCountClamp);
+            }
+        }
         LOG_TEST(getLogger("StatisticsDerivation"), "Filter '{}' selectivity: {}", filter_step.getFilterColumnName(), selectivity);
     }
 
@@ -650,8 +705,11 @@ static constexpr Float64 DEFAULT_DISTINCT_VALUES_RATIO = 0.1;
 static Float64 keyDistinctValues(const String & column, const ExpressionStatistics & input_statistics)
 {
     auto column_stats = input_statistics.column_statistics.find(column);
-    if (column_stats != input_statistics.column_statistics.end())
+    if (column_stats != input_statistics.column_statistics.end()
+        && QueryPlanOptimizations::isDistinctCountUpperBound(column_stats->second.ndv_provenance))
+    {
         return std::min(Float64(column_stats->second.num_distinct_values), input_statistics.max_row_count);
+    }
     return DEFAULT_DISTINCT_VALUES_RATIO * input_statistics.estimated_row_count;
 }
 
@@ -677,19 +735,27 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     ExpressionStatistics aggregation_statistics;
     for (const auto & key : aggregator_params.keys)
-        aggregation_statistics.column_statistics[key].num_distinct_values
-            = UInt64(keyDistinctValues(key, input_statistics));
+    {
+        auto input_column_statistics = input_statistics.column_statistics.find(key);
+        if (input_column_statistics != input_statistics.column_statistics.end())
+        {
+            /// Grouping retains the set of key values. Preserve its NDV and range provenance;
+            /// null fraction is not meaningful after one output row is produced per group.
+            auto column_stats = input_column_statistics->second;
+            column_stats.null_fraction.reset();
+            aggregation_statistics.column_statistics.emplace(key, std::move(column_stats));
+        }
+        else
+        {
+            /// Keep the heuristic useful for costing while leaving its provenance unknown.
+            aggregation_statistics.column_statistics[key].num_distinct_values
+                = UInt64(keyDistinctValues(key, input_statistics));
+        }
+    }
 
     aggregation_statistics.min_row_count = 0;
     std::tie(aggregation_statistics.estimated_row_count, aggregation_statistics.max_row_count)
         = estimateGroupCount(aggregator_params.keys, input_statistics);
-    /// Group-by keys pass through with their input value sizes.
-    for (auto & [column_name, column_stats] : aggregation_statistics.column_statistics)
-    {
-        auto input_column_statistics = input_statistics.column_statistics.find(column_name);
-        if (input_column_statistics != input_statistics.column_statistics.end())
-            column_stats.avg_bytes = input_column_statistics->second.avg_bytes;
-    }
     /// Aggregation changes the schema (group-by keys + aggregate states), recompute from output
     /// header with the keys' known value sizes.
     aggregation_statistics.estimated_bytes_per_row = estimateRowWidth(*aggregating_step.getOutputHeader(), aggregation_statistics.column_statistics);
@@ -716,9 +782,12 @@ static void trimStatisticsByLimit(ExpressionStatistics & statistics, UInt64 limi
 {
     statistics.estimated_row_count = std::min(statistics.estimated_row_count, Float64(limit));
     statistics.max_row_count = std::min(statistics.max_row_count, Float64(limit));
-    for (auto & column_statistics : statistics.column_statistics)
-        if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
-            column_statistics.second.num_distinct_values = UInt64(statistics.estimated_row_count);
+    QueryPlanOptimizations::addTransformation(statistics.column_statistics, NonUniformRowSubset);
+    for (auto & [column_name, column_stats] : statistics.column_statistics)
+    {
+        /// LIMIT itself is a proven NDV upper bound even when the input row estimate is not.
+        column_stats.num_distinct_values = std::min(column_stats.num_distinct_values, limit);
+    }
 }
 
 ExpressionStatistics StatisticsDerivation::deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics)
@@ -753,10 +822,19 @@ ExpressionStatistics StatisticsDerivation::deriveDistinctStatistics(const Distin
     result.min_row_count = input_statistics.min_row_count > 0 ? 1 : 0;
     /// Every output row is distinct.
     result.estimated_distinct_bound = result.estimated_row_count;
-    /// Without the clamp the row-count reduction could leave a column NDV above the row count.
+    /// The estimated output row count is not a proven bound. Keep the clamp for costing, but mark
+    /// reduced NDVs as estimates so they cannot masquerade as upper bounds downstream.
     for (auto & [column_name, column_stats] : result.column_statistics)
-        column_stats.num_distinct_values = std::min(column_stats.num_distinct_values,
+    {
+        const auto clamped = std::min(column_stats.num_distinct_values,
             static_cast<UInt64>(std::max(result.estimated_row_count, 1.0)));
+        if (clamped < column_stats.num_distinct_values)
+        {
+            column_stats.num_distinct_values = clamped;
+            column_stats.ndv_provenance.add(EstimatedRowCountClamp);
+        }
+        column_stats.range_provenance.add(NonUniformRowSubset);
+    }
     return result;
 }
 

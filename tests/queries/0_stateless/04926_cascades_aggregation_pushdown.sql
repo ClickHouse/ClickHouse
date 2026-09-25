@@ -178,12 +178,12 @@ EXPLAIN SELECT count() FROM t_push_facts AS t1 ASOF JOIN t_push_dims_multi AS t2
 SELECT '-- 26. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit';
 -- asserts that the cascades planner produces a distributed plan without a budget exception; the
 -- shape is deterministic (the preamble pins the join-order, join-swap and runtime-filter
--- settings session-wide). The classic shape wins here: `t_push_dims_multi` has no stat-hint
--- entry at this point, so the pushed join subtree lacks the estimates the cardinality gate
--- needs and no pushdown alternative is built. `use_hash_table_stats_for_join_reordering` is
--- pinned to its default because this is the only canary with three joins, so the join-order
--- search has freedom: the msan flaky check (2026-09-02) flipped the `t_push_dims` /
--- `t_push_dims_multi` sibling order under the randomized value 0.
+-- settings session-wide). The facts-side key keeps its hinted NDV upper bound through the pushed
+-- join subtree; the unrelated `t_push_dims_multi` table needs no key hint for that bound to remain
+-- usable. `use_hash_table_stats_for_join_reordering` is pinned to its default because this is the
+-- only canary with three joins, so the join-order search has freedom: the msan flaky check
+-- (2026-09-02) flipped the `t_push_dims` / `t_push_dims_multi` sibling order under the randomized
+-- value 0.
 EXPLAIN SELECT count() FROM t_push_facts AS t1
   LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key
   LEFT JOIN t_push_dims_multi AS t3 ON t1.key = t3.key
