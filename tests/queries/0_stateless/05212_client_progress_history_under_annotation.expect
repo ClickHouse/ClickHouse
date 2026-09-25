@@ -1,0 +1,67 @@
+#!/usr/bin/expect -f
+
+# Regression test for the resource usage annotation rendered on top of the progress bar
+# (once the query is at least halfway done): the cells it covers must keep the colors of
+# the bar history, instead of being repainted with the current state only. The query reads
+# a single part through a throttler: the first cells are green (the read starts at full speed
+# while the throttler's burst budget lasts, and the meters skip the first points), the rest
+# of the bar is yellow, so the history under the annotation is mixed, and the annotation
+# must be rendered with both background colors.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set local_path $CLICKHOUSE_TMP/$basename.path
+# The path comes from the environment: it is not sent to the shell as text, but inherited by the
+# spawned `bash` as a variable and expanded there inside double quotes, so no quoting is needed.
+set env(CLICKHOUSE_LOCAL_PATH) $local_path
+file delete -force -- $local_path
+
+log_user 0
+set timeout 60
+match_max 100000
+# The annotation is shown only when the progress bar is wider than twice the annotation, and it
+# covers the first cells of the bar: the terminal is just wide enough for it to be shown, so that
+# the annotation spans more than a third of the bar and covers the green-to-yellow transition.
+set stty_init "rows 25 cols 180"
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash --noprofile --norc -c "PS1='bash) ' bash --noprofile --norc"
+send "source $basedir/../shell_config.sh\r"
+expect "bash) "
+
+# A single part (merged after the insert), so the total number of rows is known from the start and
+# the bar is shown while the query is less than halfway done. One byte per row, stored as is: the
+# values vary, so the column is not stored sparse, and it is 3 MB on disk for 3 million rows, which
+# makes the progress (reported per block of 65536 rows) much finer than the throttler's burst.
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --query 'CREATE TABLE t (n UInt8 CODEC(NONE)) ENGINE = MergeTree ORDER BY (); INSERT INTO t SELECT number FROM numbers(3000000); OPTIMIZE TABLE t FINAL' && echo created\r"
+expect "created"
+expect "bash) "
+
+# The throttler lets the first 300 KB through at once and the rest at 300 KB/s: the first tenth
+# of the bar is read at full speed (green), the remaining seconds are spent sleeping in the
+# throttler (yellow). The reads are 64 KB each, so that the throttler is applied to every block
+# and the progress is smooth, instead of being read 1 MB at a time between long sleeps.
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 1 --max_read_buffer_size 65536 --max_local_read_bandwidth 300000 --query 'SELECT count() FROM t WHERE NOT ignore(n)' >/dev/null 2>&1\r"
+
+# Past 50% the annotation is rendered at the left, on top of the bar, with a black-on-green
+# (`30;42`) or black-on-yellow (`30;43`) background. A single background for the whole
+# annotation would be the current state only; the history under it has both.
+expect -re {\x1b\[30;42m[^\x1b]*\x1b\[0m\x1b\[30;43m|\x1b\[30;43m[^\x1b]*\x1b\[0m\x1b\[30;42m}
+
+send "\3"
+expect "bash) "
+
+send "exit\r"
+expect eof
+
+file delete -force -- $local_path
