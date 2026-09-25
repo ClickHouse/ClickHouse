@@ -622,9 +622,23 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , key(other.key)
     , max_entry_size_in_bytes(other.max_entry_size_in_bytes)
     , max_entry_size_in_rows(other.max_entry_size_in_rows)
+    /// The copy keeps the original's notion of when the query started, so `min_query_runtime` is still
+    /// measured from the construction of the first writer. A copy is made when the plan holding the writer
+    /// is cloned - e.g. by `FutureSetFromSubquery::buildOrderedSetInplace`, where the copy is the only
+    /// writer that is ever finalized - and restarting the timer there would make cache eligibility depend
+    /// on the plan shape: a subquery would silently stop populating the cache just because its plan became
+    /// clonable.
+    , query_start_time(other.query_start_time)
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
+    /// The copy also inherits the original's early-skip decision. `skip_insert` is set in the
+    /// constructor when the cache already holds a non-stale entry for the key, which happens whenever
+    /// the read probe is not performed (`enable_reads_from_query_cache = 0`) or another query filled the
+    /// key in the meantime. Resetting it to `false` in the copy would make the cloned plan - the only one
+    /// that is ever finalized on the successful in-place build path - buffer the whole result just to
+    /// discard it in `finalizeWrite`.
+    , skip_insert(other.skip_insert.load())
 {
 }
 

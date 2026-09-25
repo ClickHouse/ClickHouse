@@ -122,6 +122,11 @@ void NegativeLimitByStep::applyOrder(const SortDescription & sort_description)
     sorted_columns_descr = sort_description;
 }
 
+QueryPlanStepPtr NegativeLimitByStep::clone() const
+{
+    return std::make_unique<NegativeLimitByStep>(*this);
+}
+
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry)
 {
