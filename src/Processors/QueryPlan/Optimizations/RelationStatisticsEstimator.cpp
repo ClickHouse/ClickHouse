@@ -10,6 +10,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -139,6 +140,8 @@ UnaryStepStatsKind classifyUnaryStepStats(const IQueryPlanStep & step)
         return expression_step->getExpression().hasArrayJoin() ? UnaryStepStatsKind::Unsupported : UnaryStepStatsKind::Expression;
     }
 
+    if (typeid_cast<const ArrayJoinStep *>(&step))
+        return UnaryStepStatsKind::Unsupported;
     if (typeid_cast<const FilterStep *>(&step))
         return UnaryStepStatsKind::Filter;
     if (typeid_cast<const AggregatingStep *>(&step))

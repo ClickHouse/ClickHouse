@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
@@ -127,6 +128,22 @@ TEST(RelationStatisticsEstimator, ArrayJoinExpressionIsUnsupported)
     EXPECT_FALSE(result.estimated_rows.has_value());
     EXPECT_TRUE(result.column_stats.empty());
     EXPECT_EQ(child_visits, 0);
+}
+
+TEST(RelationStatisticsEstimator, ArrayJoinStepIsUnsupported)
+{
+    const auto element_type = std::make_shared<DataTypeUInt64>();
+    const auto array_type = std::make_shared<DataTypeArray>(element_type);
+    const auto header = std::make_shared<const Block>(Block({ColumnWithTypeAndName(array_type->createColumn(), array_type, "k")}));
+    auto step = std::make_unique<ArrayJoinStep>(
+        header,
+        ArrayJoin{Names{"k"}, /*is_left=*/false},
+        /*is_unaligned_=*/false,
+        /*max_block_size_=*/65536,
+        /*enable_lazy_columns_replication_=*/false);
+
+    EXPECT_FALSE(estimateUnaryStepStats(*step, RelationStats{}).has_value());
+    expectUnsupportedUnaryStepStopsBeforeChild(std::move(step), header);
 }
 
 TEST(RelationStatisticsEstimator, DistinctFillingAndUnionAreUnsupportedBoundaries)
