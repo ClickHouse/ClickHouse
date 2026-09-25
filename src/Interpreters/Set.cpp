@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/typeid_cast.h>
@@ -277,16 +278,57 @@ void Set::appendSetElements(SetKeyColumns & holder)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of key columns for set. Expected {} got {} and {}",
                         keys_size, holder.key_columns.size(), set_elements.size());
 
+    /// The collected elements outlive a failed append: a JOIN runtime filter keeps its `Set` and reads
+    /// the elements back when the build-side filters are merged.
+    ColumnCheckpoints checkpoints;
+    checkpoints.reserve(keys_size);
+    for (const auto & column : set_elements)
+        checkpoints.push_back(column->getCheckpoint());
+
+    /// A checkpoint restores only the column it was taken from, so a replaced element needs the original kept.
+    MutableColumns replaced_columns(keys_size);
+
     size_t rows = holder.key_columns.at(0)->size();
-    for (size_t i = 0; i < keys_size; ++i)
+    try
     {
-        auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
-        if (set_elements[i]->empty())
-            set_elements[i] = IColumn::mutate(std::move(filtered_column));
-        else
-            set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
-        if (transform_null_in && holder.null_map_holder)
-            set_elements[i]->insert(Null{});
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
+            if (set_elements[i]->empty())
+            {
+                auto replacement = IColumn::mutate(std::move(filtered_column));
+                replaced_columns[i] = std::move(set_elements[i]);
+                set_elements[i] = std::move(replacement);
+            }
+            else
+                set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+            if (transform_null_in && holder.null_map_holder)
+                set_elements[i]->insert(Null{});
+        }
+    }
+    catch (...)
+    {
+        /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
+        LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+        tryLogCurrentException(log, "Caught exception while collecting set elements, rolling back...");
+
+        try
+        {
+            for (size_t i = 0; i < keys_size; ++i)
+            {
+                if (replaced_columns[i])
+                    set_elements[i] = std::move(replaced_columns[i]);
+                else
+                    set_elements[i]->rollback(*checkpoints[i]);
+            }
+        }
+        catch (...)
+        {
+            /// A failed rollback would leave incorrect state in memory.
+            std::terminate();
+        }
+
+        throw;
     }
 }
 
