@@ -72,15 +72,18 @@ bool hasNonConstantKey(const QueryTreeNodes & keys)
 }
 
 /// A keyless aggregation and the WITH TOTALS grand total emit a row even over empty input; a key set with a
-/// non-constant key cannot. The empty-result settings suppress the keyless and all-constant-key rows, but never
-/// the grand total, nor a keyless grouping set while another set has a key.
+/// non-constant key cannot. `empty_result_for_aggregation_by_empty_set` suppresses all of these rows but the grand
+/// total, and the constant-keys setting suppresses them only when the whole query has no non-constant key.
 bool aggregationMayBeEmpty(const QueryNode & query_node, bool empty_result_for_empty_set, bool empty_result_for_constant_keys)
 {
     if (query_node.isGroupByWithTotals())
         return true;
 
+    if (empty_result_for_empty_set)
+        return false;
+
     if (!query_node.hasGroupBy())
-        return !empty_result_for_empty_set;
+        return true;
 
     if (query_node.isGroupByWithGroupingSets())
     {
@@ -101,7 +104,7 @@ bool aggregationMayBeEmpty(const QueryNode & query_node, bool empty_result_for_e
     if (hasNonConstantKey(query_node.getGroupBy().getNodes()))
         return false;
 
-    return !(empty_result_for_empty_set || empty_result_for_constant_keys);
+    return !empty_result_for_constant_keys;
 }
 
 bool hasNonConstantGroupingKey(const QueryNode & query_node)

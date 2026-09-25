@@ -131,6 +131,12 @@ totals at empty result for empty set	0
 totals date at empty result for empty set	1970-01-01
 
 totals date at empty result for empty set	1970-01-01
+grouping sets nonempty at empty result for empty set	1
+grouping sets nonempty at empty result for empty set	1
+grouping sets nonempty at empty result for empty set	2
+grouping sets nonempty at empty result for empty set	1
+grouping sets nonempty at empty result for empty set	1
+grouping sets nonempty at empty result for empty set	2
 keyless rows at empty result for empty set	0
 keyless rows at empty result for empty set	0
 keyless nonempty at empty result for empty set	1
@@ -286,6 +292,7 @@ kept: constant key at default	1
 kept: constant key literal at default	1
 kept: keyless at empty result for empty set	1
 kept: constant key at empty result for empty set	1
+kept: grouping sets at empty result for empty set	1
 kept: negative constant integer multiply	1
 kept: negative constant integer multiply on the left	1
 kept: negative constant sum multiply	1
@@ -305,7 +312,6 @@ guarded once: chain	1
 declined: keyed with totals	1
 declined: grouping sets with a keyless member	1
 declined: keyed totals at empty result for empty set	1
-declined: grouping sets at empty result for empty set	1
 declined: datetime minus time when overflow throws	1
 declined: negative constant	1
 declined: negative constant float result	1
