@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <unordered_map>
 #include <Core/Block_fwd.h>
 #include <IO/Progress.h>
 #include <Processors/Chunk.h>
@@ -91,6 +92,8 @@ public:
     /// `QueryPipeline::complete`); preview chunks reaching a format anyway are dropped.
     /// By default previews can be written only under a framing format, as `preview` packets.
     virtual bool canWriteQueryResultPreviews() const { return framing != nullptr; }
+
+    virtual std::unordered_map<String, size_t> getColumnSizesOnDisk() const { return {}; }
 
     /// A framing format (see IFramingFormat.h) multiplexes the formatted data along with auxiliary
     /// packets (progress, logs, profile events, exceptions) in the output stream. The format must

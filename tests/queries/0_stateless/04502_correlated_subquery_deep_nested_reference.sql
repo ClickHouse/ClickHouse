@@ -7,7 +7,7 @@
 -- must fail with a clear NOT_IMPLEMENTED error, not an internal NOT_FOUND_COLUMN_IN_BLOCK.
 -- See https://github.com/ClickHouse/ClickHouse/issues/95683
 
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 DROP TABLE IF EXISTS t04502_2;
 DROP TABLE IF EXISTS t04502_3;

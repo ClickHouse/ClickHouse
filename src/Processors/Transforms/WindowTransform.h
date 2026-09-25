@@ -7,6 +7,7 @@
 #include <Processors/Port.h>
 
 #include <deque>
+#include <optional>
 
 /// See https://stackoverflow.com/questions/72533435/error-zero-as-null-pointer-constant-while-comparing-template-class-using-spaces
 #pragma clang diagnostic push
@@ -40,6 +41,12 @@ struct RowNumber
     auto operator <=>(const RowNumber &) const = default;
 };
 
+struct MovedRow
+{
+    RowNumber row;
+    Int64 offset_left = 0;
+};
+
 
 /* Computes several window functions that share the same window. The input must
  * be sorted by PARTITION BY (in any order), then by ORDER BY.
@@ -68,6 +75,10 @@ public:
 
     ~WindowTransform() override;
 
+    void resolveColumnIndices(const std::vector<WindowFunctionDescription> & functions);
+    void initWorkspaces(const std::vector<WindowFunctionDescription> & functions);
+    void setupRangeOffsetComparison();
+
     String getName() const override
     {
         return "WindowTransform";
@@ -80,14 +91,14 @@ public:
 
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
-    /* (former) Implementation of ISimpleTransform.
-     */
-    void appendChunk(Chunk & chunk) /*override*/;
-
     /* Implementation of IProcessor;
      */
     Status prepare() override;
     void work() override;
+    void addInputBlock(Chunk chunk);
+    void computeReadyRows();
+    void startNextPartition();
+    void releaseUnusedBlocks();
 
     /* Implementation details.
      */
@@ -204,8 +215,8 @@ public:
         return result;
     }
 
-    auto moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
+    MovedRow moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
+    MovedRow moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
 
     void assertValid(const RowNumber & x) const
     {
@@ -224,17 +235,11 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
-    /* Data (formerly) inherited from ISimpleTransform, needed for the
-     * implementation of the IProcessor interface.
-     */
+    /// Runtime data.
     InputPort & input;
     OutputPort & output;
-
-    bool has_input = false;
+    std::optional<Chunk> pending_input;
     bool input_is_finished = false;
-    Port::Data input_data;
-    bool has_output = false;
-    Port::Data output_data;
 
     /* Data for window transform itself.
      */
@@ -263,8 +268,11 @@ public:
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
 
-    // FIXME Reset it when the partition changes. We only save the temporary
-    // states in it (probably?).
+    // One arena shared by the aggregate function states of the current partition.
+    // Results never live in it: plain functions write values into the output
+    // column, and -State results are merged into the ColumnAggregateFunction's
+    // own arena. It is replaced when the partition changes, right after the
+    // states are destroyed, so it does not grow across partitions.
     std::unique_ptr<Arena> arena;
 
     // A sliding window of blocks we currently need. We add the input blocks as
@@ -275,9 +283,6 @@ public:
     UInt64 first_block_number = 0;
     // The next block we are going to pass to the consumer.
     UInt64 next_output_block_number = 0;
-    // The first row for which we still haven't calculated the window functions.
-    // Used to determine which resulting blocks we can pass to the consumer.
-    RowNumber first_not_ready_row;
 
     // Boundaries of the current partition.
     // partition_start doesn't point to a valid block, because we want to drop
