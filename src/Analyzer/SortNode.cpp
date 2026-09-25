@@ -4,6 +4,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
+#include <Analyzer/IdentifierNode.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -45,6 +46,9 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
 void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "SORT id: " << format_state.getNodeId(this);
+
+    if (!column_name.empty())
+        buffer << ", column: " << column_name;
 
     buffer << ", sort_direction: " << toString(sort_direction);
     if (nulls_sort_direction)
