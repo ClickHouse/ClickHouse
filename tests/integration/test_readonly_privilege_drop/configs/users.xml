@@ -17,6 +17,19 @@
                 <readonly><changeable_in_readonly/></readonly>
             </constraints>
         </ro2_kw>
+        <!-- Declares the keyword on `readonly` and sets no values. Assigned to nobody: a profile's name
+             is selectable by any session, so this is the shape that would widen the residual beyond a
+             user whose own profile declares the keyword. -->
+        <kw_only>
+            <constraints>
+                <readonly><changeable_in_readonly/></readonly>
+            </constraints>
+        </kw_only>
+        <!-- `readonly = 1` and no constraint of its own: separates the part of the profile-switch
+             route that predates this change from the part the key opens. -->
+        <ro1>
+            <readonly>1</readonly>
+        </ro1>
     </profiles>
     <users>
         <ro1_kw>
@@ -37,5 +50,11 @@
             <profile>ro2_kw</profile>
             <quota>default</quota>
         </ro2_kw>
+        <ro1>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>ro1</profile>
+            <quota>default</quota>
+        </ro1>
     </users>
 </clickhouse>

@@ -208,7 +208,7 @@ public:
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
     void setReadonlyCanOnlyBeTightened(bool enable) { readonly_can_only_be_tightened = enable; }
-    bool doesReadonlyOnlyAllowTightening() const { return readonly_can_only_be_tightened; }
+    bool canReadonlyOnlyBeTightened() const { return readonly_can_only_be_tightened; }
 
     void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
     bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }

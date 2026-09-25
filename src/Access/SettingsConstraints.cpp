@@ -83,7 +83,7 @@ bool isReadonlyTightening(
     std::string_view resolved_name,
     const Field & new_value)
 {
-    return access_control && access_control->doesReadonlyOnlyAllowTightening() && resolved_name == "readonly"
+    return access_control && access_control->canReadonlyOnlyBeTightened() && resolved_name == "readonly"
         && current_settings[Setting::readonly] > 1 && new_value.getType() == Field::Types::UInt64
         && new_value.safeGet<UInt64>() == 1;
 }
@@ -703,7 +703,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(
         /// `readonly` carries the restriction the method imposed, so the keyword on it is self-defeating.
         const bool keyword_applies = !(
             http_method_implies_readonly && resolved_name == "readonly" && access_control
-            && access_control->doesReadonlyOnlyAllowTightening());
+            && access_control->canReadonlyOnlyBeTightened());
         const bool changeable_in_readonly = keyword_applies
             && ((it != constraints.end() && it->second.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY)
                 || isAlwaysChangeableInReadonly(resolved_name));

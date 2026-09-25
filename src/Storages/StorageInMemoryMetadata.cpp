@@ -189,6 +189,9 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// The analyze mode must reach every join the report walker can reach, including the joins of
     /// this view's inner query.
     new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
+    /// The request's HTTP method is a property of the request, not of the principal the body runs as.
+    if (context->getHTTPMethodImpliesReadOnly())
+        new_context->setHTTPMethodImpliesReadOnly();
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());

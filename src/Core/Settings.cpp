@@ -3790,7 +3790,7 @@ Enables the `fuzzQuery` function that applies random AST mutations to a query st
     DECLARE(UInt64, readonly, 0, R"(
 0 - no read-only restrictions. 1 - only read requests, as well as changing explicitly allowed settings. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.
 
-Do not make `readonly` itself changeable under `readonly = 1`: a session can then clear it with `SET readonly = 0`, unless the same constraint also forbids `0`. See [constraints on settings](/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
+Do not make `readonly` itself changeable under `readonly = 1`: a session can then clear it with `SET readonly = 0`, unless the same constraint also forbids `0`. The server setting `access_control_improvements.readonly_can_only_be_tightened` mitigates this, but only on HTTP requests whose method implies a read-only query; over `POST` and the native protocol the constraint still applies. See [constraints on settings](/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 )", 0) \
     \
     DECLARE(UInt64, max_rows_in_set, 0, R"(

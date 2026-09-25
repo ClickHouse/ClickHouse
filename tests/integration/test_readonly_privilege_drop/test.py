@@ -102,6 +102,45 @@ def test_get_cannot_leave_readonly_mode_in_a_nested_settings_clause(started_clus
     assert output.strip() == "0"
 
 
+def test_get_cannot_leave_readonly_mode_in_a_definer_view_body(started_cluster):
+    # A `SQL SECURITY DEFINER` body runs in a context built from the global context rather than
+    # copied from the request's, so it is the one sub-context of a read-only request that does not
+    # inherit the classification by construction. The definer holds `changeable_in_readonly` on
+    # `readonly`, so without the classification the body's own `SETTINGS readonly = 0` survives.
+    for node in (node_on, node_off):
+        node.query("DROP VIEW IF EXISTS default.definer_body_readonly")
+        node.query(
+            "CREATE VIEW default.definer_body_readonly DEFINER = ro1_kw SQL SECURITY DEFINER "
+            "AS SELECT getSetting('readonly') AS r SETTINGS readonly = 0"
+        )
+        # Same body under the default `INVOKER` security, which reaches the request's context through
+        # an ordinary copy. It pins that this arm is about the DEFINER branch and not about the copy.
+        node.query("DROP VIEW IF EXISTS default.invoker_body_readonly")
+        node.query(
+            "CREATE VIEW default.invoker_body_readonly "
+            "AS SELECT getSetting('readonly') AS r SETTINGS readonly = 0"
+        )
+
+    definer = "SELECT r FROM default.definer_body_readonly"
+    invoker = "SELECT r FROM default.invoker_body_readonly"
+
+    output, error = http(node_on, definer, "ro1_kw")
+    assert error is None, error
+    assert output.strip() == "1"
+
+    output, error = http(node_on, definer, "ro1_kw", method="POST")
+    assert error is None, error
+    assert output.strip() == "0"
+
+    output, error = http(node_off, definer, "ro1_kw")
+    assert error is None, error
+    assert output.strip() == "0"
+
+    output, error = http(node_on, invoker, "ro1_kw")
+    assert error is None, error
+    assert output.strip() == "1"
+
+
 def test_post_and_native_keep_the_keyword(started_cluster):
     output, error = http(node_on, "SET readonly = 0", "ro1_kw", {"session_id": "post_on"}, "POST")
     assert error is None, error
@@ -182,3 +221,44 @@ def test_tightening_does_not_reopen_the_keyword_escape(started_cluster):
     assert error is None, error
     output, error = http(node_on, "SET readonly = 0", "ro2_kw", {"session_id": "step_post"}, "POST")
     assert error is None, error
+
+
+def test_tightening_does_not_reopen_the_keyword_escape_via_a_switched_profile(started_cluster):
+    # The residual is not confined to a user whose own profile declares the keyword: a profile's name
+    # is selectable by any session, so `ro2` (which declares nothing) can switch into `kw_only` and
+    # pick the constraint up. The switch itself is never constraint-checked, and only the values of
+    # the switched-to profile are, so what bounds this route is the refusal of the final step.
+    output, error = http(node_on, "SET readonly = 1", "ro2", {"session_id": "prof_get"})
+    assert error is None, error
+    output, error = http(node_on, "SET profile = 'kw_only'", "ro2", {"session_id": "prof_get"})
+    assert error is None, error
+    output, error = http(node_on, "SET readonly = 0", "ro2", {"session_id": "prof_get"})
+    assert error is not None and REFUSAL in error
+    output, error = http(
+        node_on, "SELECT getSetting('readonly')", "ro2", {"session_id": "prof_get"}, "POST"
+    )
+    assert error is None, error
+    assert output.strip() == "1"
+
+    # Over POST the whole route completes, which is the residual's real width.
+    for sql in ("SET readonly = 1", "SET profile = 'kw_only'", "SET readonly = 0"):
+        output, error = http(node_on, sql, "ro2", {"session_id": "prof_post"}, "POST")
+        assert error is None, (sql, error)
+    output, error = http(
+        node_on, "SELECT getSetting('readonly')", "ro2", {"session_id": "prof_post"}, "POST"
+    )
+    assert error is None, error
+    assert output.strip() == "0"
+
+    # The first step is what the key permits, so with the key off `ro2` cannot start the route at
+    # all. The route at `readonly = 1` itself is older than this change: `ro1`, which also declares
+    # nothing, walks it on both nodes.
+    assert REFUSAL in node_off.query_and_get_error("SET readonly = 1", user="ro2")
+    for node in (node_on, node_off):
+        assert (
+            node.query(
+                "SET profile = 'kw_only'; SET readonly = 0; SELECT getSetting('readonly')",
+                user="ro1",
+            ).strip()
+            == "0"
+        ), node.name

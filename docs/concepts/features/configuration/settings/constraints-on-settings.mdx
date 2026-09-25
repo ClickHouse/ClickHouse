@@ -105,6 +105,8 @@ This matters for every profile you define, not only the ones you assign:
 - `SET profile` is not access-checked, so any session can select any profile by name. A profile is reachable even when you assign it to nobody, although what it then changes is still checked against the constraints already active in that session.
 - Over HTTP, `GET` requests are forced to `readonly = 2` only when the effective value would otherwise be `0`. So a profile that sets `readonly = 1` but also lets `readonly` be changed in read-only mode defeats that protection, because a `GET` request can flip it to `0` and write.
 
+The server setting [`access_control_improvements.readonly_can_only_be_tightened`](/reference/settings/server-settings/settings/access-control#access_control_improvements) closes the `GET` route above, by stopping that constraint from applying to `readonly` on HTTP requests whose method implies a read-only query. Over `POST` and the native protocol the constraint still applies, so it is a mitigation and not a substitute for keeping `readonly` off the list.
+
 ## Multiple constraint profiles {#multiple-constraint-profiles}
 
 If there are multiple profiles active for a user, then constraints are merged. 

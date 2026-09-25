@@ -899,13 +899,21 @@
              not even towards more restriction, and a profile declaring 'changeable_in_readonly' on
              'readonly' lets a session leave readonly mode. You can change this behaviour by setting this
              to true.
-             If it's set to true then 'readonly' may only be changed towards more restriction: the order of
-             restriction is 0 (no restriction) < 2 (no writes, any setting but 'readonly') < 1 (no writes,
-             no setting changes), so a client may drop from 0 or 2 to 1 and nothing else. Additionally, on
-             an HTTP request whose method implies readonly (anything but POST, and PUT/DELETE outside
-             SQL-defined handlers that accept them), 'changeable_in_readonly' stops applying to 'readonly'
-             itself. Every other setting keeps that constraint type, and so does 'readonly' over POST and
-             the native protocol. By default this setting is false. -->
+             If it's set to true then, while readonly mode is in force, a session may drop 'readonly' to 1,
+             its strictest value: the order of restriction is not the numeric one, it is 0 (no restriction)
+             < 2 (no writes, any setting but 'readonly') < 1 (no writes, no setting changes). Every other
+             change of 'readonly' from 1 or 2 is refused. At 'readonly' 0 nothing is in force, so
+             'SET readonly = 2' still goes through the setting's ordinary constraints there.
+             Additionally, on an HTTP request whose method implies readonly (anything but POST, and
+             PUT/DELETE outside SQL-defined handlers that accept them), 'changeable_in_readonly' stops
+             applying to 'readonly' itself. Every other setting keeps that constraint type, and so does
+             'readonly' over POST and the native protocol, where a profile declaring it on 'readonly' can
+             still take a session out of readonly mode. Enabling this setting therefore lets a session at
+             'readonly' 2 reach 0 in two steps over POST or the native protocol, which it cannot do today;
+             and because a profile's name is selectable by any session, it is enough that some profile on
+             this server declares the constraint on 'readonly'. The narrowing covers the request's own
+             context and its in-process copies, not a query this server forwards to another server, which
+             re-clamps it against its own constraints. By default this setting is false. -->
         <readonly_can_only_be_tightened>false</readonly_can_only_be_tightened>
 
         <!-- Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). -->

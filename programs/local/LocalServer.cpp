@@ -1158,8 +1158,7 @@ void LocalServer::setupUsers()
     access_control.setEnableReadWriteGrants(config.getBool("access_control_improvements.enable_read_write_grants", true));
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
-    /// Off by default here too, unlike the improvements above: it withdraws a change a profile may
-    /// deliberately declare as permitted, so enabling it is the administrator's decision.
+    /// `false`, unlike the neighbours: it withdraws a change a profile may deliberately permit.
     access_control.setReadonlyCanOnlyBeTightened(config.getBool("access_control_improvements.readonly_can_only_be_tightened", false));
 
     /// Keep in sync with `AccessControl::setupFromMainConfig` and `attachSystemTables`: `system.user_query_log`
