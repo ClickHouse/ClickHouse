@@ -14,6 +14,7 @@ namespace DB
 {
 
 class MemorySpillScheduler;
+struct MemoryRecoveryEpisode;
 
 /// `MemoryReservation` bridges a running query and the memory scheduler: the scheduler caps each
 /// workload's memory while the query's `MemoryTracker` stays the source of truth. It backs:
@@ -128,9 +129,9 @@ private:
     ResourceCost enqueued_decrease = 0; // size of the in-flight decrease request
 
     std::weak_ptr<MemorySpillScheduler> memory_spill_scheduler;
+    std::shared_ptr<MemoryRecoveryEpisode> recovery_episode;
     bool growth_recovery_active = false;
-    UInt64 recovery_epoch = 0;
-    UInt64 reported_recovery_epoch = 0;
+    bool recovery_progress_reported = false;
     std::chrono::steady_clock::time_point recovery_started_at;
 
     /// Helper struct. Holds postponed ProfileEvents increments to be executed from a query thread.
