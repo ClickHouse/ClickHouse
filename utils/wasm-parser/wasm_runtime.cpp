@@ -154,6 +154,7 @@ namespace ProfileEvents
 
 #include <Common/CurrentThread.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/ProfileEvents.h>
 #include <Common/StackTrace.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/ReadHelpers.h>
