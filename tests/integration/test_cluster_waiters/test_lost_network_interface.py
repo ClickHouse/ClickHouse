@@ -280,7 +280,7 @@ def _registry():
         if (isinstance(node, ast.Assign) and node.targets[0].id == "_ip_address")
         or (isinstance(node, ast.FunctionDef) and node.name == "ip_address")
     ]
-    assert len(members) == 3, f"expected `_ip_address` and both halves of the property"
+    assert len(members) == 3, "expected `_ip_address` and both halves of the property"
 
     stub = ast.parse(
         f"class Instance:\n"
