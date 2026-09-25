@@ -133,6 +133,24 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
+/// Floats are excluded: -0.0 and 0.0 merge as one key, but a condition can tell them apart
+NameSet sortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
+{
+    NameSet names;
+    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+    {
+        bool has_float = isFloat(removeLowCardinalityAndNullable(sorting_key.data_types[i]));
+        sorting_key.data_types[i]->forEachChild([&](const IDataType & child)
+        {
+            if (!has_float && WhichDataType(child).isFloat())
+                has_float = true;
+        });
+        if (!has_float)
+            names.insert(sorting_key.column_names[i]);
+    }
+    return names;
+}
+
 /// check if a DAG node only depends on sorting key columns
 /// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
@@ -280,7 +298,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
@@ -2958,6 +2975,12 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
         filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
 }
 
+void ReadFromMergeTree::copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step)
+{
+    for (const auto & descr : replaced_step.join_runtime_filters_for_index_analysis)
+        addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+}
+
 void ReadFromMergeTree::buildPartitionPruningIndexes(
     Indexes & indexes,
     const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
@@ -2978,11 +3001,14 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
         {
             auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            return KeyCondition{
+            KeyCondition condition{
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
                 /* single_point_ = */ false,
                 /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes],
                 require_ready_sets};
+            /// The part minmax bound comes from `getExtremes`, which skips NaN.
+            condition.relaxAtomsOverNaNHidingColumns(minmax_columns.getTypes());
+            return condition;
         };
         indexes.minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
     }
@@ -3200,8 +3226,7 @@ bool ReadFromMergeTree::isRowPolicyDeferredAfterFinal() const
     if (!context->getSettingsRef()[Setting::apply_row_policy_after_final])
         return false;
 
-    const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-    NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+    NameSet sorting_key_set = sortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey());
 
     const auto * filter_output = &query_info.row_level_filter->actions.findInOutputs(
         query_info.row_level_filter->column_name);
@@ -3320,8 +3345,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             if (deferred_prewhere_info)
                 deferred_column_names.insert(deferred_prewhere_info->prewhere_column_name);
 
-            const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-            NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+            NameSet sorting_key_set = sortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey());
 
             std::vector<const ActionsDAG::Node *> index_nodes;
 
@@ -3639,7 +3663,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .result = result,
     };
 
-    if (context_->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
+    /// Only a read the coordinator actually drives may skip its own analysis, because the coordinator is
+    /// what assigns its ranges, off the analysis done on the initiator. `canUseParallelReplicasOnFollower`
+    /// alone does not say that: with plan-based parallel replicas the whole fragment is rebuilt on the
+    /// follower from one shared context, so an uncoordinated read shipped in it - the broadcast side of a
+    /// JOIN - answers `true` here as well, and skipping would leave it reading every mark with nobody to
+    /// narrow it. Such a read has to analyze itself in any case: an analysis made on the initiator names
+    /// the initiator's parts, which are not the parts this replica reads.
+    if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
+        && settings[Setting::parallel_replicas_local_plan]
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
         && !support_projection_optimization)
@@ -5316,16 +5348,38 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
 
+    /// A projection read built by `optimizeUseNormalProjections` arrives with its analysis result already
+    /// computed, so `selectRangesToRead` never ran for this step and no indexes were built. The join
+    /// runtime filter pruning below needs the key condition templates, so build them here on demand.
+    if (!join_runtime_filters_for_index_analysis.empty() && !indexes.has_value())
+        buildIndexes(
+            indexes,
+            query_info.filter_actions_dag.get(),
+            data,
+            getParts(),
+            vector_search_parameters,
+            top_k_filter_info,
+            context,
+            query_info,
+            storage_snapshot->metadata,
+            skip_partition_pruning);
+
     /// Now check if we have to use primary-key or skip indexes for join pruning
     bool runtime_prune_primary_key = false;
     const bool pending_mutations = mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts();
     MergeTreeIndices runtime_skip_indexes;
     if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
+        /// Not implemented for `FINAL` reads (which merge row versions across parts in their own
+        /// pipeline), and `optimizeLazyFinal` rebuilds such a read without the descriptors anyway. The
+        /// setting's description documents this no-op, and
+        /// `05243_join_runtime_filters_index_analysis_final_noop` pins it.
         && !query_info.isFinal()
         && !join_runtime_filters_for_index_analysis.empty()
         && !pending_mutations
         /// Not supported under parallel replicas: the descriptor is not carried to remote replica
         /// reads, so pruning would only cover the local replica's share. Skip it entirely there.
+        /// The setting's description documents this no-op, and
+        /// `05153_join_runtime_filters_index_analysis_distributed_noop` pins it.
         && !isParallelReadingFromReplicas()
         && indexes.has_value())
     {
@@ -6922,7 +6976,8 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     /// rebuilds a fresh `ReadFromMergeTree` in `deserialize` without these descriptors, so the pruning is
     /// simply skipped on distributed reads. Results stay correct (the read just does no runtime pruning);
     /// only the optimization is lost. This mirrors the parallel-replicas guard in `initializePipeline`.
-    /// Propagating the descriptors to worker plans is a follow-up.
+    /// Propagating the descriptors to worker plans is a follow-up. The setting's description documents
+    /// this no-op, and `05153_join_runtime_filters_index_analysis_distributed_noop` pins it.
 
     /// Bucketed reads exist only since query-plan serialization version 2. If the peer only understands
     /// version 1, throw a clear error rather than write bytes it would misread (the deserialize side checks
