@@ -1,3 +1,4 @@
+import math
 import textwrap
 from pathlib import Path
 
@@ -287,6 +288,29 @@ def test_compare_range_timestamps():
     assert status == "failed"
 
 
+def test_parse_sql_result_scalar_two_columns():
+    rows = loader.parse_sql_result(
+        "1970-01-01 00:00:00.000\t1\n"
+        "1970-01-01 00:00:01.000\t1.234e-05\n"
+        "1970-01-01 00:00:02.000\tNaN\n"
+        "1970-01-01 00:00:03.000\t+Inf\n"
+        "1970-01-01 00:00:04.000\t-Inf\n"
+    )
+    assert [row["metric"] for row in rows] == [{}, {}, {}, {}, {}]
+    assert [row["timestamp"] for row in rows] == [
+        "1970-01-01 00:00:00.000",
+        "1970-01-01 00:00:01.000",
+        "1970-01-01 00:00:02.000",
+        "1970-01-01 00:00:03.000",
+        "1970-01-01 00:00:04.000",
+    ]
+    assert rows[0]["value"] == 1
+    assert rows[1]["value"] == 1.234e-05
+    assert math.isnan(rows[2]["value"])
+    assert rows[3]["value"] == math.inf
+    assert rows[4]["value"] == -math.inf
+
+
 def test_compare_scalar_requires_unlabeled_row():
     case = loader.EvalCase(
         eval_id="t:5",
@@ -298,6 +322,8 @@ def test_compare_scalar_requires_unlabeled_row():
         expected_scalar=1.0,
         has_scalar=True,
     )
+    status, _ = loader.compare_eval(case, "1970-01-01 00:00:00.000\t1\n", None)
+    assert status == "passed"
     status, _ = loader.compare_eval(case, "[]\t1970-01-01 00:00:00.000\t1\n", None)
     assert status == "passed"
     status, reason = loader.compare_eval(
@@ -305,6 +331,10 @@ def test_compare_scalar_requires_unlabeled_row():
     )
     assert status == "failed"
     assert "labels" in reason
+    status, _ = loader.compare_eval(case, "[('__name__','m')]\t1\n", None)
+    assert status == "failed"
+    status, _ = loader.compare_eval(case, "1970-01-01 00:00:00.000\tnot-a-number\n", None)
+    assert status == "failed"
 
 
 def test_compare_expect_fail(tmp_path: Path):

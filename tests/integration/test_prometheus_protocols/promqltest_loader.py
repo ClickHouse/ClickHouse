@@ -747,13 +747,24 @@ def parse_sql_result(tsv: str) -> list[dict[str, Any]]:
             continue
         parts = line.split("\t")
         if len(parts) == 2:
-            labels = parse_sql_labels(parts[0])
-            for ts, val in re.findall(
-                rf"\('([^']+)',({_NUMBER_RE})\)", parts[1], re.IGNORECASE
-            ):
-                rows.append(
-                    {"metric": labels, "timestamp": ts, "value": _parse_number(val)}
-                )
+            if parts[0].lstrip().startswith("["):
+                labels = parse_sql_labels(parts[0])
+                for ts, val in re.findall(
+                    rf"\('([^']+)',({_NUMBER_RE})\)", parts[1], re.IGNORECASE
+                ):
+                    rows.append(
+                        {"metric": labels, "timestamp": ts, "value": _parse_number(val)}
+                    )
+            else:
+                value = re.fullmatch(_NUMBER_RE, parts[1].strip(), re.IGNORECASE)
+                if value:
+                    rows.append(
+                        {
+                            "metric": {},
+                            "timestamp": parts[0],
+                            "value": _parse_number(value.group()),
+                        }
+                    )
             continue
         if len(parts) < 3:
             continue
