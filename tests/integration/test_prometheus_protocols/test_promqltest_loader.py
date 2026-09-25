@@ -339,6 +339,20 @@ def test_compare_scalar_requires_unlabeled_row():
     assert status == "failed"
 
 
+def test_compare_vector_rejects_scalar_shaped_sql():
+    cases = {
+        case.eval_id: case
+        for scenario in loader.parse_test_file(loader.TESTDATA_DIR / "functions.test")
+        for case in scenario.evals
+    }
+    for eval_id in ("functions.test:597", "functions.test:2147"):
+        assert cases[eval_id].has_scalar is False
+        status, _ = loader.compare_eval(
+            cases[eval_id], "1970-01-01 00:00:00.000\t1\n", None
+        )
+        assert status == "failed"
+
+
 def test_compare_expect_fail(tmp_path: Path):
     path = tmp_path / "expect_fail.test"
     path.write_text(

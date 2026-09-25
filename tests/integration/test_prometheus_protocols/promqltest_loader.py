@@ -763,6 +763,7 @@ def parse_sql_result(tsv: str) -> list[dict[str, Any]]:
                             "metric": {},
                             "timestamp": parts[0],
                             "value": _parse_number(value.group()),
+                            "scalar": True,
                         }
                     )
             continue
@@ -829,6 +830,8 @@ def compare_eval(case: EvalCase, tsv: str, error: Optional[str]) -> tuple[str, s
         if not values_approx_equal(float(rows[0]["value"]), float(case.expected_scalar)):
             return "failed", f"scalar mismatch: {rows[0]['value']} vs {case.expected_scalar}"
         return "passed", ""
+    if any(row.get("scalar") for row in rows):
+        return "failed", "vector expected, got scalar row"
 
     actual_series: dict[tuple, list] = {}
     actual_order = []
