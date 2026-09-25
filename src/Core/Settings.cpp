@@ -9251,8 +9251,6 @@ Maximum total number of rows the posting lists read for a LIKE/ILIKE pattern may
 
 Each matched token whose posting list is stored outside the dictionary counts its number of rows, so one very common token can exhaust the limit; a token whose rows an earlier filter (for example, the primary key) has already ruled out is not counted. If either this limit or `text_index_like_max_postings_to_read` is exceeded, the dictionary scan stops, the pattern is not answered from the index, and the rows are read and filtered by the pattern as usual.
 
-This limit applies when the index is used to skip granules. A direct read from the text index applies only `text_index_like_max_postings_to_read`.
-
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(Bool, use_text_index_like_pattern_bypass, true, R"(
@@ -9260,7 +9258,7 @@ Whether a LIKE/ILIKE pattern whose matched tokens are known to occur in every ro
 
 The decision uses only what the index already stores, never an estimate: a matched token's row count equals the row count of the part, or the small posting lists kept inside the dictionary (and read during the dictionary scan) together cover every row. A pattern whose posting lists are all read already is left alone.
 
-The bypass applies only when the index is used to skip granules; a direct read from the text index never bypasses. "Every row" means every row of the part, not only the rows left after an earlier filter, so a combined predicate does not make the bypass more eager.
+"Every row" means every row of the part, not only the rows left after an earlier filter, so a combined predicate does not make the bypass more eager.
 
 Disabling this setting turns off only the bypass; `text_index_like_max_postings_to_read` and `text_index_like_max_postings_rows_to_read` can still stop the dictionary scan. A test that must reach the posting-list reader on a broad pattern also needs both limits set high enough for its data.
 
