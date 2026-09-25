@@ -156,7 +156,7 @@ CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = Ice
 {settings_suffix}
     """,
         settings={
-            "allow_experimental_database_iceberg": 1,
+            "allow_database_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
@@ -718,7 +718,7 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
         f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
         query_id=qid_table,
         settings={
-            "allow_experimental_database_iceberg": 1,
+            "allow_database_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
