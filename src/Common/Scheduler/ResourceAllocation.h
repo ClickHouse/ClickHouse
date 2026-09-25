@@ -66,19 +66,17 @@ public:
     /// just triggering procedure, not doing the kill itself.
     virtual void killAllocation(const std::exception_ptr & reason) = 0;
 
-    /// External query-level pressure controller. The allocation scheduler only consumes the
-    /// decision; reclaim/spill policy and accumulated suction priority live outside its hierarchy.
-    /// Without an external recovery controller there is no reclaim episode to wait for, so the
-    /// deterministic choice is to inject suction immediately. AllocationLimit still performs one
-    /// complete fitting-work search before consuming this decision.
+    /// External query-level pressure controller. Only an explicitly protected regular growth
+    /// request may enter recovery; unprotected requests and initial/pending admission retain the
+    /// pre-existing scheduler path. Reclaim/spill policy lives outside the allocation hierarchy.
     virtual GrowthPressureAction onGrowthPressure() { return GrowthPressureAction::Protect; }
     virtual void onGrowthPressureResolved() {}
     /// Suction eligibility does not necessarily end an active spill pass.
     virtual void onSuctionStarted() { onGrowthPressureResolved(); }
     virtual bool isGrowthRecoveryActive() { return false; }
 
-    /// Recovery eligibility is independent of victim protection. A query may request a spill
-    /// before eviction while remaining an ordinary candidate in the victim policy.
+    /// Recovery is opt-in through eviction protection. Spilling is an action inside that recovery
+    /// episode; enabling spill alone must not change admission or eviction behavior.
     virtual bool canRecoverFromGrowthPressure() const { return isProtectedFromEviction(); }
 
     /// At an explicit recovery checkpoint, reconcile a parked request with the allocation's
