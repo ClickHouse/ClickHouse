@@ -1,0 +1,40 @@
+above max	1	1	0	0
+below min	0	0	1	1
+above max, constant on the left	0	0	1	1
+below min, constant on the left	1	1	0	0
+equality	0	1	0	1
+equality against a constant that wrapped onto the column	0	0
+UInt8	1	0
+UInt16	1	0
+UInt32	1	0
+UInt64	1	0
+UInt128	1	0
+UInt256	1	0
+Int8	1	0	0	1
+Int16	1	0	0	1
+Int32	1	0	0	1
+Int64	1	0	0	1
+Int128	1	0	0	1
+Int256	1	0	0	1
+beyond every width	1	1
+in range at the boundary	1	1	1	1	1
+wrappers	1	1	1	1	1
+other target families	1	1	1
+enum constant that is not a member	0
+in sets	0	0	0	0	0	1
+every row is below the constant	5
+and none is above it	0
+granules	Granules: 5/5
+a key range from a constant of the widest width keeps every row	3
+granules	Granules: 3/3
+inside an AND chain	1
+inside an AND chain, redundant comparisons off	1
+join, per row	400	0
+join, in WHERE	400
+join, in a negated WHERE	0
+join, in a negated WHERE, no filter push down	0
+join over Memory, per row and in a negated WHERE	0	0
+no partition was dropped	2
+values	2
+with fill	5
+window frame	3

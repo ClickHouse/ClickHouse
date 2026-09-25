@@ -1222,9 +1222,29 @@ private:
 
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
-        /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
+        /// If not possible to convert, != yields true and = false; ordering yields false unless the constant is outside the type's range.
         if (converted.isNull())
         {
+            if constexpr (IsOperation<Op>::less || IsOperation<Op>::less_or_equals
+                       || IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals)
+            {
+                /// Every value of the type is on one known side of an out-of-range integer constant.
+                /// `x <= C` and `x > C` must stay complementary: an inverting rewrite relies on it.
+                const auto range = string_value.getType() == Field::Types::String
+                    ? classifyIntegerLiteralRange(string_value.safeGet<String>(), *type_to_compare)
+                    : IntegerLiteralRange::NotApplicable;
+
+                if (range == IntegerLiteralRange::AboveMax || range == IntegerLiteralRange::BelowMin)
+                {
+                    const bool left_is_less
+                        = left_const ? range == IntegerLiteralRange::BelowMin : range == IntegerLiteralRange::AboveMax;
+                    const bool result = left_is_less
+                        ? IsOperation<Op>::less || IsOperation<Op>::less_or_equals
+                        : IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals;
+                    return DataTypeUInt8().createColumnConst(input_rows_count, static_cast<UInt8>(result));
+                }
+            }
+
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
