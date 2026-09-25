@@ -520,6 +520,16 @@ struct UTF8StringSource : public StringSource
 
     static const ColumnString::Char * skipCodePointsForward(const ColumnString::Char * pos, size_t size, const ColumnString::Char * end)
     {
+        if constexpr (UTF8::ascii_chunk_size != 0)
+        {
+            while (size >= UTF8::ascii_chunk_size && pos < end && static_cast<size_t>(end - pos) >= UTF8::ascii_chunk_size
+                   && UTF8::isAllASCIIChunk(pos))
+            {
+                pos += UTF8::ascii_chunk_size;
+                size -= UTF8::ascii_chunk_size;
+            }
+        }
+
         for (size_t i = 0; i < size && pos < end; ++i)
             pos += UTF8::seqLength(*pos);   /// NOTE pos may become greater than end. It is Ok due to padding in PaddedPODArray.
         return pos;
@@ -528,6 +538,18 @@ struct UTF8StringSource : public StringSource
     static const ColumnString::Char * skipCodePointsBackward(
         const ColumnString::Char * pos, size_t size, const ColumnString::Char * begin, size_t * skipped = nullptr)
     {
+        size_t skipped_count = 0;
+        if constexpr (UTF8::ascii_chunk_size != 0)
+        {
+            while (size >= UTF8::ascii_chunk_size && pos > begin && static_cast<size_t>(pos - begin) >= UTF8::ascii_chunk_size
+                   && UTF8::isAllASCIIChunk(pos - UTF8::ascii_chunk_size))
+            {
+                pos -= UTF8::ascii_chunk_size;
+                size -= UTF8::ascii_chunk_size;
+                skipped_count += UTF8::ascii_chunk_size;
+            }
+        }
+
         size_t i = 0;
         for (; i < size && pos > begin; ++i)
         {
@@ -536,7 +558,7 @@ struct UTF8StringSource : public StringSource
                 UTF8::syncBackward(pos, begin);
         }
         if (skipped)
-            *skipped = i;
+            *skipped = skipped_count + i;
         return pos;
     }
 
