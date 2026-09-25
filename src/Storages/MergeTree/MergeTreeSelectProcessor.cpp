@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
+#include <Common/Stopwatch.h>
 #include <city.h>
 #include <Core/Settings.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -413,15 +414,22 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
 
 ChunkAndProgress MergeTreeSelectProcessor::read()
 {
-    if (pending_virtual_row)
-    {
-        auto result = std::move(*pending_virtual_row);
-        pending_virtual_row.reset();
-        return result;
-    }
+    /// Progress of the empty results skipped in this call, carried over to the returned result.
+    size_t num_read_rows = 0;
+    size_t num_read_bytes = 0;
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
     while (!is_cancelled)
     {
+        if (pending_virtual_row)
+        {
+            auto result = std::move(*pending_virtual_row);
+            result.num_read_rows += num_read_rows;
+            result.num_read_bytes += num_read_bytes;
+            pending_virtual_row.reset();
+            return result;
+        }
+
         try
         {
             if (!task || algorithm->needNewTask(*task))
@@ -502,10 +510,24 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 pending_virtual_row.emplace(std::move(vrow));
         }
 
-        return result;
+        if (result.chunk)
+        {
+            result.num_read_rows += num_read_rows;
+            result.num_read_bytes += num_read_bytes;
+            return result;
+        }
+
+        /// An empty result (all rows filtered out or all marks skipped) is not worth a round trip
+        /// through the pipeline executor, so keep reading. Yield anyway after a while: the executor
+        /// reports progress and checks cancellation and limits only between calls.
+        num_read_rows += result.num_read_rows;
+        num_read_bytes += result.num_read_bytes;
+
+        if (watch.elapsedMicroseconds() >= reader_settings.max_read_time_without_output_us)
+            return {Chunk(), num_read_rows, num_read_bytes, false, {}};
     }
 
-    return {Chunk(), 0, 0, true, {}};
+    return {Chunk(), num_read_rows, num_read_bytes, true, {}};
 }
 
 /// Cancels all internal operations for this select processor, including cancelling any ongoing index reads.
