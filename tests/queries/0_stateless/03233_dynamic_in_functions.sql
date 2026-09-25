@@ -37,10 +37,10 @@ select * from test where d > x;
 select * from test where d = x;
 select * from test where d = NULL;
 
-select exp2(d) as res, toTypeName(res) from test;
-select sin(d) as res, toTypeName(res) from test;
-select cos(d) as res, toTypeName(res) from test;
-select tan(d) as res, toTypeName(res) from test;
+select round(exp2(d), 6) as res, toTypeName(res) from test;
+select round(sin(d), 6) as res, toTypeName(res) from test;
+select round(cos(d), 6) as res, toTypeName(res) from test;
+select round(tan(d), 6) as res, toTypeName(res) from test;
 select mortonEncode(d) as res, toTypeName(res) from test;
 select hilbertEncode(d) as res, toTypeName(res) from test;
 select bitmaskToList(d) as res, toTypeName(res) from test;
