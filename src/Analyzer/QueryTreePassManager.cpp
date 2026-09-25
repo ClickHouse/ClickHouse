@@ -25,6 +25,7 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
+#include <Analyzer/Passes/CorrelatedScalarAggregateToWindowPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
@@ -273,6 +274,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     /// This pass should be run for the secondary queries
     /// to ensure that the only required columns are read from VIEWs on the shards.
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
+    manager.addPass(std::make_unique<CorrelatedScalarAggregateToWindowPass>());
     manager.addPass(std::make_unique<PruneArrayJoinColumnsPass>());
 
     manager.addPass(std::make_unique<DictGetTupleElementPass>());
