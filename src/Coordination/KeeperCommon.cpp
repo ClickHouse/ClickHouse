@@ -180,8 +180,8 @@ KeeperFileDigest computeKeeperFileDigest(const DiskPtr & disk, const std::string
 
 void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path)
 {
-    SyncGuardPtr directory_sync_guard = disk->getDirectorySyncGuard(fs::path(path).parent_path().generic_string());
     disk->removeFileIfExists(path);
+    syncLocalParentDirectory(disk, path);
 }
 
 KeeperMoveResult moveFileBetweenDisks(
