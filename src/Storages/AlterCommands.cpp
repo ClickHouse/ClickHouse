@@ -2135,10 +2135,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
-    /// A materialized view's columns are its query's output, so a `MODIFY QUERY` here replaces the whole
-    /// set and this snapshot stops describing what the commands after it run against. Deriving the new
-    /// set means analysing the query, which is not this check's job; `AlterCommand::apply` screens those
-    /// names against the columns the new query really produces.
+    /// A materialized view's columns are its query's output, so a `MODIFY QUERY` replaces the whole set.
+    /// `AlterCommand::apply` screens later column names against the columns the new query really produces.
     bool columns_replaced_by_modify_query = false;
     /// The constraint names the table has, followed through the adds and drops of this same `ALTER`
     /// - `apply()` runs the commands one after another - so that a command is screened below only when
