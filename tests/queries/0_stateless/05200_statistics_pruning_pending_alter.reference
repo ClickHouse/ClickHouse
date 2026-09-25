@@ -1,0 +1,25 @@
+the mutation is pending	1
+the values a read sees	[10,11,100]
+the first part	1
+the first part, without pruning	1
+the second part	1
+the second part, without pruning	1
+a range	2
+a value that is really absent	0
+after the mutation materialized	1
+the statistics prune again	0
+the drop is pending	1
+the values a read sees	[7]
+the re-added column	100
+the re-added column, without pruning	100
+the dropped values are gone	0
+after the mutation materialized	100
+the statistics prune again	0
+the drop is pending	2
+the top row	199	206
+the top row, without the index	199	206
+a filter on the re-added column	11
+a filter on the re-added column, without the index	11
+before the drop	0
+the re-added column	100
+the re-added column, without the cache	100

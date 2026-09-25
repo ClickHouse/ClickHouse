@@ -153,7 +153,7 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
     auto & remaining_marks = part_remaining_marks.at(part_index).value;
 
     auto storage_snapshot = task.getMainReader().getStorageSnapshot();
-    const auto & all_updated_columns = task.getInfo().alter_conversions->getAllUpdatedColumns();
+    const auto all_updated_columns = task.getInfo().alter_conversions->getColumnsInvalidatingIndexes();
     auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(
         part_index, task.getInfo().data_part_info, skip_input, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
 
