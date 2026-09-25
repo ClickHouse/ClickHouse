@@ -1,0 +1,15 @@
+parts	1
+Ground truth (no index)
+all bgap codd	50000	5000000000
+all aall bgap	100000	9999950000
+all aall bgap codd	50000	5000000000
+all aall codd	100000	10000000000
+Lazy, brute-force intersection
+all bgap codd	50000	5000000000
+all aall bgap	100000	9999950000
+all aall bgap codd	50000	5000000000
+all aall codd	100000	10000000000
+05233_bf_aall_bgap	1	1
+05233_bf_aall_bgap_codd	1	1
+05233_bf_aall_codd	1	0
+05233_bf_bgap_codd	1	1
