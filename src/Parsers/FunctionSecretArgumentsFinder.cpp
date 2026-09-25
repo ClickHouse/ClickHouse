@@ -391,41 +391,16 @@ void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
     else
     {
         /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
-        const auto positional = classifyPositionalArguments();
-        if (positional.size() > 4)
-            markSecretArgument(positional[4]);
-        findSecretNamedArgument("password", 0);
-        findTLSCredentialsSecretArguments(0);
+        markSecretArgument(4);
+        findTLSCredentialsSecretArguments(5);
     }
 }
 
-std::vector<size_t> FunctionSecretArgumentsFinder::classifyPositionalArguments(size_t start)
+void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
 {
-    std::vector<size_t> positional;
-    bool seen_named = false;
-    for (size_t i = start; i < function->arguments->size(); ++i)
-    {
-        const auto equals_func = function->arguments->at(i)->getFunction();
-        if (equals_func && equals_func->name() == "equals" && equals_func->hasArguments()
-            && equals_func->arguments->size() == 2)
-        {
-            seen_named = true;
-            continue;
-        }
+    for (const auto & key : tls_credentials_secret_keys)
+        findSecretNamedArgument(key, start);
 
-        if (seen_named)
-        {
-            markSecretArgument(i);
-            continue;
-        }
-
-        positional.push_back(i);
-    }
-    return positional;
-}
-
-void FunctionSecretArgumentsFinder::markNamedArgumentsWithUnreadableKeys(size_t start)
-{
     /// The named-collection parser does not require the key of a `key = value` argument to be a plain
     /// literal or identifier: `getKeyValueFromASTImpl` evaluates it as a constant expression, so
     /// `mysql(creds, concat('ssl_ca', '_pem') = 'SECRET', table = 't')` passes a TLS credential too.
@@ -446,14 +421,6 @@ void FunctionSecretArgumentsFinder::markNamedArgumentsWithUnreadableKeys(size_t 
 
         markSecretArgument(i, /* argument_is_named= */ true);
     }
-}
-
-void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
-{
-    for (const auto & key : tls_credentials_secret_keys)
-        findSecretNamedArgument(key, start);
-
-    markNamedArgumentsWithUnreadableKeys(start);
 }
 
 void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
@@ -526,16 +493,12 @@ void FunctionSecretArgumentsFinder::findArrowFlightSecretArguments()
 
 void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
 {
-    /// The connection string goes verbatim to the bridge, so its grammar is the JDBC/ODBC driver's: the
-    /// password can sit in a query parameter (`?password=`) or as `Pwd=` in a `KEY=value;` list.
-    /// An invalid call is formatted for logging before validation rejects it, so both branches below
-    /// fail closed: after a collection name a positional argument can be the connection string, and a
-    /// named argument means the call is not the positional form at all.
     if (isNamedCollectionName(0))
     {
         /// jdbc(named_collection, ..., datasource = 'DSN', ...)
         /// odbc(named_collection, ..., connection_settings = 'DSN', ...)
         /// `datasource` and `connection_settings` are mutually exclusive aliases.
+        /// If the value is a URI, mask only the password; otherwise hide the whole value.
         /// If somehow both are present (invalid query), hide all named arguments.
         ssize_t ds_idx = findNamedArgument(nullptr, "datasource", 1);
         ssize_t cs_idx = findNamedArgument(nullptr, "connection_settings", 1);
@@ -546,31 +509,53 @@ void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
             result.start = 1;
             result.count = function->arguments->size() - 1;
             result.are_named = true;
-            return;
         }
-
-        findSecretNamedArgument("datasource", 1);
-        findSecretNamedArgument("connection_settings", 1);
-        markNamedArgumentsWithUnreadableKeys(1);
-
-        for (size_t i = 1; i < function->arguments->size(); ++i)
-        {
-            const auto equals_func = function->arguments->at(i)->getFunction();
-            if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
-                || equals_func->arguments->size() != 2)
-                markSecretArgument(i, /* argument_is_named= */ false);
-        }
+        else if (ds_idx >= 0)
+            maskXDBCSecretNamedArgument("datasource", 1);
+        else if (cs_idx >= 0)
+            maskXDBCSecretNamedArgument("connection_settings", 1);
     }
     else
     {
         /// jdbc('DSN', schema, table) / jdbc('DSN', table)
         /// odbc('DSN', schema, table) / odbc('DSN', table)
         /// JDBC('DSN', database, table) / ODBC('DSN', database, table)
+        /// The connection string may be a URI with credentials embedded,
+        /// e.g. scheme://username:password@host:port/dbname
+        /// If so, mask only the password part; otherwise hide the whole argument.
+        String uri;
+        if (tryGetStringFromArgument(0, &uri))
+        {
+            if (maskURIPassword(&uri))
+            {
+                chassert(result.count == 0);
+                result.start = 0;
+                result.count = 1;
+                result.replacement = std::move(uri);
+                return;
+            }
+        }
         markSecretArgument(0, false);
+    }
+}
 
-        findSecretNamedArgument("datasource", 1);
-        findSecretNamedArgument("connection_settings", 1);
-        markNamedArgumentsWithUnreadableKeys(1);
+void FunctionSecretArgumentsFinder::maskXDBCSecretNamedArgument(std::string_view key, size_t start)
+{
+    String value;
+    ssize_t arg_idx = findNamedArgument(&value, key, start);
+    if (arg_idx < 0)
+        return;
+
+    if (!value.empty() && maskURIPassword(&value))
+    {
+        result.are_named = true;
+        result.start = arg_idx;
+        result.count = 1;
+        result.replacement = std::move(value);
+    }
+    else
+    {
+        markSecretArgument(arg_idx, /* argument_is_named= */ true);
     }
 }
 
@@ -1011,18 +996,6 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
         /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
         findNATSTableEngineSecretArguments();
     }
-    else if (engine_name == "RabbitMQ")
-    {
-        /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
-        findRabbitMQTableEngineSecretArguments();
-    }
-    else if (engine_name == "Kafka")
-    {
-        /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
-        /// secret and makes the collection name optional, so a named argument can be the first one.
-        findSecretNamedArgument("kafka_sasl_password", 0);
-        markNamedArgumentsWithUnreadableKeys(0);
-    }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
     {
         /// JDBC('DSN', database, table)
@@ -1032,18 +1005,17 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     }
 }
 
-void FunctionSecretArgumentsFinder::findBrokerTableEngineSecretArguments(
-    std::span<const std::string_view> secret_keys, std::string_view address_key)
+void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
 {
     /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
     ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
     ///      [, nats_url = 'nats://user:password@host:4222']
     ///      [, nats_server_list = 'nats://user:password@host:4222,...'], ...)
-    /// RabbitMQ(named_collection [, rabbitmq_password = '...'] [, rabbitmq_address = 'amqp://user:pass@host'], ...)
-    /// The only positional argument these engines accept is the name of a named collection, so the
+    /// The only positional argument the engine accepts is the name of a named collection, so the
     /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
-    /// separately by the engine's own `SETTINGS_TO_HIDE`, which this function must stay in sync with.
-    /// A destination key (`nats_server_list`) is hidden whole: each list entry can carry userinfo.
+    /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
+    /// the secrets are hidden whole, while `nats_url` keeps everything but its userinfo password.
+    /// `nats_server_list` is hidden whole because each list entry can carry userinfo credentials.
     /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {
@@ -1065,14 +1037,13 @@ void FunctionSecretArgumentsFinder::findBrokerTableEngineSecretArguments(
         {
             markSecretArgument(i, /* argument_is_named= */ true);
         }
-        else if (key == address_key)
+        else if (key == "nats_url")
         {
             String url;
             if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
             {
-                /// An '@' is the only reliable sign of a credential here; see the engine's `_fwd.h`.
-                if (url.contains('@'))
-                    markSecretArgument(i, /* argument_is_named= */ true);
+                if (maskURIPassword(&url))
+                    result.replaced_arguments[i] = "nats_url = " + quoteString(url);
             }
             else
             {
@@ -1081,21 +1052,11 @@ void FunctionSecretArgumentsFinder::findBrokerTableEngineSecretArguments(
                 markSecretArgument(i, /* argument_is_named= */ true);
             }
         }
-        else if (std::find(secret_keys.begin(), secret_keys.end(), key) != secret_keys.end())
+        else if (std::find(std::begin(nats_secret_keys), std::end(nats_secret_keys), key) != std::end(nats_secret_keys))
         {
             markSecretArgument(i, /* argument_is_named= */ true);
         }
     }
-}
-
-void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
-{
-    findBrokerTableEngineSecretArguments(nats_secret_keys, "nats_url");
-}
-
-void FunctionSecretArgumentsFinder::findRabbitMQTableEngineSecretArguments()
-{
-    findBrokerTableEngineSecretArguments(rabbitmq_secret_keys, "rabbitmq_address");
 }
 
 void FunctionSecretArgumentsFinder::findExternalDistributedTableEngineSecretArguments()
@@ -1333,11 +1294,8 @@ void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
     else
     {
         /// MySQL('host:port', 'database', 'user', 'password')
-        const auto positional = classifyPositionalArguments();
-        if (positional.size() > 3)
-            markSecretArgument(positional[3]);
-        findSecretNamedArgument("password", 0);
-        findTLSCredentialsSecretArguments(0);
+        markSecretArgument(3);
+        findTLSCredentialsSecretArguments(4);
     }
 }
 

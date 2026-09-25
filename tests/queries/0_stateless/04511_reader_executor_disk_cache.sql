@@ -1,9 +1,5 @@
--- Tags: no-fasttest, no-parallel, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel
 -- Tag no-fasttest: requires S3/minio-backed storage with a filesystem cache.
--- Tag no-parallel-replicas: the checks below read the `ProfileEvents` of the two `SELECT`s out of
--- `system.query_log`. With parallel replicas the reading moves off the initiator, and the executor's
--- counters no longer land in the rows those checks sum, so all three come back 0 - not just the warm
--- one. Seen in `Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, sequential)`.
 -- Tag no-parallel: the cold->warm assertion needs the cold read's populate to reserve cache space
 -- and survive to the warm read. The dedicated `s3_cache_04511` policy isolates it from other tests'
 -- background-merge cache traffic (which saturates the shared `s3_cache` with non-releasable segments

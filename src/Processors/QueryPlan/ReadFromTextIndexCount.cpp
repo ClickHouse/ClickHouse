@@ -127,7 +127,7 @@ UInt64 computeCountForPart(
     auto make_stream = [&](const MergeTreeIndexSubstream & substream)
     {
         return makeTextIndexInputStream(
-            part_info,
+            data_part->getDataPartStoragePtr(),
             index.index->getFileName() + substream.suffix,
             substream.extension,
             MergeTreeIndexReader::patchSettings(reader_settings, substream.type));
