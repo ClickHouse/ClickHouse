@@ -152,8 +152,13 @@ IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_ENUM(TextIndexPostingListApplyMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"materialize", TextIndexPostingListApplyMode::MATERIALIZE},
-     {"lazy", TextIndexPostingListApplyMode::LAZY}})
+    {{"materialize", TextIndexPostingListApplyMode::Materialize},
+     {"lazy", TextIndexPostingListApplyMode::Lazy}})
+
+IMPLEMENT_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm, ErrorCodes::BAD_ARGUMENTS,
+    {{"bruteforce", TextIndexPostingsIntersectionAlgorithm::BruteForce},
+     {"leapfrog", TextIndexPostingsIntersectionAlgorithm::Leapfrog},
+     {"auto", TextIndexPostingsIntersectionAlgorithm::Auto}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
@@ -504,7 +509,8 @@ IMPLEMENT_SETTING_ENUM(
     TextIndexPostingListCodec,
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", TextIndexPostingListCodec::None},
-     {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
+     {"bitpacking", TextIndexPostingListCodec::Bitpacking},
+     {"pfor", TextIndexPostingListCodec::PFor}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeTextIndexSerializationVersion,
