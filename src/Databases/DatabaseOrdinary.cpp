@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <thread>
 #include <memory>
 
 #include <Core/Defines.h>
@@ -71,8 +72,9 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_ALREADY_EXISTS;
+    extern const int UNFINISHED;
     extern const int UNKNOWN_DATABASE_ENGINE;
-    extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
     extern const int QUERY_IS_TOO_LARGE;
@@ -126,32 +128,26 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLev
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
-static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr local_context)
+/// The template may address an auxiliary Keeper ("<auxiliary_zookeeper_name>:/path"), so the probe goes to the
+/// cluster the resolved path names and asks about the raw path, the same way the table itself will later.
+static void checkReplicaPathExists(const TableZnodeInfo & znode_info, const StorageID & table_id, ContextPtr local_context)
 {
-    Macros::MacroExpansionInfo info;
-    StorageID table_id = StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid);
-    info.table_id = table_id;
-    info.expand_special_macros_only = false;
-
     auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::checkReplicaPathExists");
-    const auto & server_settings = local_context->getServerSettings();
-    String replica_path = server_settings[ServerSetting::default_replica_path];
-    String zookeeper_path = local_context->getMacros()->expand(replica_path, info);
-    if (local_context->getZooKeeper()->exists(zookeeper_path))
+    if (local_context->getDefaultOrAuxiliaryZooKeeper(znode_info.zookeeper_name)->exists(znode_info.path))
         throw Exception(
             ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER,
             "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
-            zookeeper_path, backQuote(table_id.getFullTableName())
+            znode_info.full_path, backQuote(table_id.getFullTableName())
         );
 }
 
-void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
+TableZnodeInfo DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context, bool stores_path_literally)
 {
     /// A conversion mints a path the table never had, so the substituted name is validated as strictly
     /// as a CREATE validates it -- but one level below CREATE, because the requirement that a path start
     /// with '/' applies to a genuinely new table, not to a template this server has long been expanding.
     const auto & server_settings = local_context->getServerSettings();
-    TableZnodeInfo::resolve(
+    auto znode_info = TableZnodeInfo::resolve(
         server_settings[ServerSetting::default_replica_path],
         server_settings[ServerSetting::default_replica_name],
         StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid),
@@ -159,9 +155,17 @@ void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_quer
         LoadingStrictnessLevel::SECONDARY_CREATE,
         local_context,
         /*validate_substitutions=*/true);
+
+    /// The replica name is resolved with a Nil UUID above, so a {uuid} in `default_replica_name` has already
+    /// been rejected here: the literal path is the only thing that outlives the temporary UUID of the conversion.
+    if (stores_path_literally)
+        znode_info.checkPrefixForDropRecoverableFromPath(
+            StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid), local_context);
+
+    return znode_info;
 }
 
-void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
+void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated, bool ordinary_database)
 {
     auto * storage = create_query.storage;
     auto args = make_intrusive<ASTExpressionList>();
@@ -172,6 +176,14 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     {
         const auto & server_settings = local_context->getServerSettings();
         String replica_path = server_settings[ServerSetting::default_replica_path];
+        if (ordinary_database)
+        {
+            Macros::MacroExpansionInfo info;
+            info.table_id = StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid);
+            info.expand_special_macros_only = false;
+            replica_path = local_context->getMacros()->expand(replica_path, info);
+        }
+
         String replica_name = server_settings[ServerSetting::default_replica_name];
 
         args->children.push_back(make_intrusive<ASTLiteral>(replica_path));
@@ -242,15 +254,28 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
-    if (getUUID() == UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Table engine conversion to replicated is supported only for Atomic databases. Convert your database engine to Atomic first.");
-
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
-    checkReplicaPathIsSafe(create_query, getContext());
-    checkReplicaPathExists(create_query, getContext());
-    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
+    const bool ordinary_database = getUUID() == UUIDHelpers::Nil;
+    if (ordinary_database)
+    {
+        create_query.uuid = UUIDHelpers::generateV4();
+        create_query.has_uuid = true;
+    }
+    const auto znode_info = checkReplicaPathIsSafe(create_query, getContext(), /*stores_path_literally=*/ordinary_database);
+    checkReplicaPathExists(znode_info, StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid), getContext());
+    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true, ordinary_database);
+    if (ordinary_database)
+    {
+        create_query.uuid = UUIDHelpers::Nil;
+        create_query.has_uuid = false;
+    }
+
+    /// The same normalization `ATTACH TABLE ... AS REPLICATED` does: a part that still carries `txn_version.txt`
+    /// makes the loaded `ReplicatedMergeTree` set `transactions_enabled`, and every replicated merge, which runs
+    /// without a transaction, is then cancelled in `renameMergedTemporaryPart`. Nothing holds the table at this
+    /// point -- it has not been loaded yet -- so the files can go away right here.
+    InterpreterCreateQuery::clearTransactionMetadata(getTableDataPath(create_query), getContext());
 
     /// Write changes to metadata
     String table_metadata_path = full_path;
@@ -777,6 +802,104 @@ StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
     auto table = DatabaseWithOwnTablesBase::detachTableUnlocked(table_name);
     eraseAsyncLoadState(table_name);
     return table;
+}
+
+StoragePtr DatabaseOrdinary::detachTable(ContextPtr /* context_ */, const String & table_name)
+{
+    ensurePopulated();
+    /// Outlives the lock below: the strong references taken by the sweep must die after `mutex` is released.
+    std::vector<StoragePtr> keep_alive;
+    StoragePtr table;
+    {
+        std::lock_guard lock(mutex);
+        table = detachTableUnlocked(table_name);
+        /// Never overwrite: a previous detached instance of this name may still be alive (see the member comment).
+        /// Expired entries are dropped here as well, so the container does not grow with tables nobody re-attaches.
+        forgetExpiredDetachedTablesByName(keep_alive);
+        detached_tables_by_name.emplace(table_name, table);
+    }
+    return table;
+}
+
+void DatabaseOrdinary::forgetExpiredDetachedTablesByName(std::vector<StoragePtr> & keep_alive)
+{
+    for (auto it = detached_tables_by_name.begin(); it != detached_tables_by_name.end();)
+    {
+        auto storage = it->second.lock();
+        /// A storage that was renamed after being detached (`RENAME TABLE` detaches, renames in memory and
+        /// attaches under the new name) is not this table anymore, so it must not block a re-attach by the old name.
+        if (!storage || storage->getStorageID().database_name != database_name || storage->getStorageID().table_name != it->first)
+            it = detached_tables_by_name.erase(it);
+        else
+            ++it;
+
+        /// Another thread may drop the last external reference at any moment, which would make this `storage`
+        /// the final owner; the caller destroys it after unlocking `mutex`.
+        if (storage)
+            keep_alive.push_back(std::move(storage));
+    }
+}
+
+bool DatabaseOrdinary::isDetachedTableByNameInUse(const String & table_name, std::vector<StoragePtr> & keep_alive)
+{
+    forgetExpiredDetachedTablesByName(keep_alive);
+    return detached_tables_by_name.contains(table_name);
+}
+
+void DatabaseOrdinary::checkDetachedTableByNameNotInUse(const String & table_name)
+{
+    /// Declared before the lock, so it is destroyed after the lock is released.
+    std::vector<StoragePtr> keep_alive;
+    std::lock_guard lock(mutex);
+    if (isDetachedTableByNameInUse(table_name, keep_alive))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table {}.{}, "
+                        "because it was detached but still used by some query. Retry later.",
+                        backQuote(database_name), backQuote(table_name));
+}
+
+void DatabaseOrdinary::waitDetachedTableByNameNotInUse(const String & table_name, std::function<void()> throw_if_cancelled)
+{
+    /// The table is in use while some other owner holds its shared_ptr. There is no way to be notified about the
+    /// last owner going away, so the wait polls, the same way `DatabaseAtomic::waitDetachedTableNotInUse` does.
+    LOG_DEBUG(log, "Waiting for detached table {} to be no longer in use", backQuote(table_name));
+
+    /// The references taken while polling are released outside the lock, once per iteration.
+    auto is_in_use = [&]()
+    {
+        std::vector<StoragePtr> keep_alive;
+        std::lock_guard lock(mutex);
+        return isDetachedTableByNameInUse(table_name, keep_alive);
+    };
+
+    unsigned iterations = 0;
+    while (!DatabaseCatalog::instance().isShuttingDown())
+    {
+        if (!is_in_use())
+        {
+            LOG_DEBUG(log, "Detached table {} is no longer in use", backQuote(table_name));
+            return;
+        }
+
+        /// Checked after the liveness test, so that a wait that has already succeeded does not throw.
+        if (throw_if_cancelled)
+            throw_if_cancelled();
+
+        if (iterations > 0 && iterations % 100 == 0)
+            LOG_INFO(log, "Still waiting for detached table {} to be no longer in use (elapsed ~{}s)", backQuote(table_name), iterations / 10);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        ++iterations;
+    }
+
+    if (!is_in_use())
+    {
+        LOG_DEBUG(log, "Detached table {} is no longer in use (resolved during shutdown)", backQuote(table_name));
+        return;
+    }
+
+    throw Exception(ErrorCodes::UNFINISHED,
+        "Did not finish waiting for detached table {}.{} to be no longer in use because the server is shutting down",
+        backQuote(getDatabaseName()), backQuote(table_name));
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)

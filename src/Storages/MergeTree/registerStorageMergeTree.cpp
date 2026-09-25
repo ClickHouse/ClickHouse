@@ -4682,7 +4682,7 @@ If you had a `MergeTree` table that was manually replicated, you can convert it 
 
 [ATTACH TABLE ... AS REPLICATED](/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) statement allows to attach detached `MergeTree` table as `ReplicatedMergeTree`.
 
-`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
+`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for an `Atomic` database or `/data/database_name/table_name/` for an `Ordinary` database).
 Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
 
 This query can be used to get the table's data path. If table has many data paths, you have to use the first one.
@@ -4692,6 +4692,7 @@ SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = '
 ```
 
 Note that ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings.
+For an `Ordinary` database, the conversion generates a UUID and expands `default_replica_path` once with it. The stored path keeps no `{uuid}` macro, so the znode such a table owns is found by matching the path against `default_replica_path` again on every load; the conversion is refused when that template cannot be matched back (for example, when it expands `{uuid}` more than once).
 To create a converted table on other replicas, you will need to explicitly specify its path in the first argument of the `ReplicatedMergeTree` engine. The following query can be used to get its path.
 
 ```sql

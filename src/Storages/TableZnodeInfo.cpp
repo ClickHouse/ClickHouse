@@ -9,13 +9,20 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Core/ServerSettings.h>
 #include <Core/UUID.h>
+#include <IO/ReadHelpers.h>
 #include <base/hex.h>
 
 #include <optional>
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_path;
+}
 
 namespace ErrorCodes
 {
@@ -119,6 +126,66 @@ void checkPathComponents(ZnodeString what, const String & str)
 
         remaining.remove_prefix(slash_pos + 1);
     }
+}
+
+/// The UUID minted by a conversion of a table of an `Ordinary` database survives only inside the literal
+/// path that conversion stores, so the znode the table owns has to be located in that path again on every
+/// load. A path is treated this way only when it is exactly what `default_replica_path` expands to with one
+/// canonical UUID (36 characters) in place of its `{uuid}` macro: a path a user wrote by hand keeps the
+/// meaning it always had, where the table owns nothing above its own znode, even when some component of it
+/// happens to look like a UUID. Returns the owned prefix -- it ends with the path component holding the
+/// UUID, which may carry other text around it, as in "/foo/pika{uuid}chu/bar" -- or nullopt when the path is
+/// not an instance of the template.
+std::optional<String> recoverPrefixMintedFromDefaultReplicaPath(
+    const String & full_path, const StorageID & table_id, const ContextPtr & context)
+{
+    static constexpr std::string_view uuid_macro = "{uuid}";
+    static constexpr std::string_view uuid_placeholder = "00000000-0000-0000-0000-000000000000";
+    static_assert(uuid_placeholder.size() == 36);
+
+    const String path_template = context->getServerSettings()[ServerSetting::default_replica_path];
+    const size_t macro_pos = path_template.find(uuid_macro);
+    if (macro_pos == String::npos)
+        return std::nullopt;
+    /// A second {uuid} would end up in one of the halves below, where it cannot be expanded to the minted
+    /// UUID (the table does not know it), so such a template is not recognized at all.
+    if (path_template.find(uuid_macro, macro_pos + uuid_macro.size()) != String::npos)
+        return std::nullopt;
+
+    auto expand_half = [&](const String & half)
+    {
+        Macros::MacroExpansionInfo info;
+        info.table_id = table_id;
+        /// The halves carry no {uuid}, and the table's own UUID is not the minted one in any case.
+        info.table_id.uuid = UUIDHelpers::Nil;
+        /// An unknown macro is left as is, which simply makes the comparison below fail.
+        info.ignore_unknown = true;
+        return context->getMacros()->expand(half, info);
+    };
+
+    /// Compared before `extractZooKeeperPath` normalizes anything, so the positions of both strings match.
+    const String expected_prefix = expand_half(path_template.substr(0, macro_pos));
+    const String expected = expected_prefix + String(uuid_placeholder) + expand_half(path_template.substr(macro_pos + uuid_macro.size()));
+    if (expected.size() != full_path.size())
+        return std::nullopt;
+
+    const size_t uuid_pos = expected_prefix.size();
+    const size_t uuid_end = uuid_pos + uuid_placeholder.size();
+    if (std::string_view(expected).substr(0, uuid_pos) != std::string_view(full_path).substr(0, uuid_pos)
+        || std::string_view(expected).substr(uuid_end) != std::string_view(full_path).substr(uuid_end))
+        return std::nullopt;
+
+    UUID uuid;
+    if (!tryParseUUID({reinterpret_cast<const UInt8 *>(full_path.data() + uuid_pos), uuid_placeholder.size()}, uuid))
+        return std::nullopt;
+
+    size_t end = uuid_end;
+    while (end < full_path.size() && full_path[end] != '/')
+        ++end;
+
+    /// The cut never lands on a '/', so normalizing the truncated path strips the auxiliary Keeper name and
+    /// prepends exactly what normalizing the whole one does: the result is a prefix of `TableZnodeInfo::path`.
+    return zkutil::extractZooKeeperPath(full_path.substr(0, end), /*check_starts_with_slash=*/false, nullptr);
 }
 
 }
@@ -253,8 +320,63 @@ TableZnodeInfo TableZnodeInfo::resolve(
             i += 1;
         res.path_prefix_for_drop = res.path.substr(0, i);
     }
+    else if (auto recovered = recoverPrefixMintedFromDefaultReplicaPath(res.full_path, table_id, context))
+    {
+        /// A table may live under a UUID-named znode without the {uuid} macro in its metadata: converting
+        /// a table of an `Ordinary` database to a replicated engine mints a UUID for the {uuid} macro and
+        /// stores the fully expanded path as a literal, because the metadata of such a table has no place
+        /// for the UUID itself. That literal is the only record of the UUID, so the owned prefix is
+        /// recovered by matching the path against `default_replica_path` again. The recovery cannot be
+        /// limited to tables with a Nil UUID: after `RENAME TABLE` from `Ordinary` into `Atomic` the table
+        /// gets a fresh UUID of its own while the literal path keeps the minted one.
+        res.path_prefix_for_drop = std::move(*recovered);
+    }
 
     return res;
+}
+
+void TableZnodeInfo::checkPrefixForDropRecoverableFromPath(const StorageID & table_id, const ContextPtr & context) const
+{
+    /// Nothing above the table's own znode is owned, so there is nothing a later load has to recover.
+    if (path_prefix_for_drop == path)
+        return;
+
+    auto recovered = recoverPrefixMintedFromDefaultReplicaPath(full_path, table_id, context);
+    if (recovered == path_prefix_for_drop)
+    {
+        /// The recovery above asks the template where the minted UUID sits, and the template may answer that
+        /// through the current name of the table ("/clickhouse/tables/{database}/{table}/{uuid}/{shard}").
+        /// The path is stored literally, so a later `RENAME TABLE` keeps the old name in it and the same
+        /// question then gets no answer at all, which would leave the owned znode behind on `DROP TABLE`.
+        /// Ask it once under a name the table does not have: an answer that depends on the name is refused.
+        StorageID renamed_table_id = table_id;
+        renamed_table_id.database_name += "_after_rename";
+        renamed_table_id.table_name += "_after_rename";
+        if (recoverPrefixMintedFromDefaultReplicaPath(full_path, renamed_table_id, context) == path_prefix_for_drop)
+            return;
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The ZooKeeper path {} of the converted table is located inside the default_replica_path template {} "
+            "through the name of the table. A table of an Ordinary database stores this path literally, so after "
+            "RENAME TABLE it could not tell anymore that it owns {} and would keep that znode in ZooKeeper after "
+            "DROP TABLE. Remove the {{database}} and {{table}} macros from the default_replica_path template, or "
+            "move the table to an Atomic database before converting it",
+            quoteString(full_path),
+            quoteString(String(context->getServerSettings()[ServerSetting::default_replica_path])),
+            quoteString(path_prefix_for_drop));
+    }
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "The ZooKeeper path {} of the converted table cannot be matched back against the default_replica_path "
+        "template {}. A table of an Ordinary database stores this path literally, without the {{uuid}} macro, "
+        "so on a later load it could not tell that it owns {} and would keep that znode in ZooKeeper after "
+        "DROP TABLE. Change the default_replica_path template, or move the table to an Atomic database "
+        "before converting it",
+        quoteString(full_path),
+        quoteString(String(context->getServerSettings()[ServerSetting::default_replica_path])),
+        quoteString(path_prefix_for_drop));
 }
 
 void TableZnodeInfo::dropAncestorZnodesIfNeeded(const zkutil::ZooKeeperPtr & zookeeper) const

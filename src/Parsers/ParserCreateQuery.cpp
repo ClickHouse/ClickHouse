@@ -3838,6 +3838,8 @@ ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 
 Allows to attach non-replicated MergeTree table as ReplicatedMergeTree. ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings. It is also possible to attach a replicated table as a regular MergeTree.
 
+The conversion is supported for tables in `Atomic` and `Ordinary` databases. A table in an `Ordinary` database has no UUID, so the conversion generates a UUID, expands `default_replica_path` with it once, and stores the resulting path explicitly in the engine arguments of the converted table. To add further replicas of such a table, specify this path explicitly in the first argument of the `ReplicatedMergeTree` engine; it can be found in the `zookeeper_path` column of `system.replicas`. Because the stored path no longer contains the `{uuid}` macro, the znode such a table owns is found by matching the path against `default_replica_path` again on every load; the conversion is refused when that template cannot be matched back (for example, when it expands `{uuid}` more than once). `{uuid}` in `default_replica_name` is not supported for any conversion.
+
 Note that table's data in ZooKeeper is not affected in this query. This means you have to add metadata in ZooKeeper using `SYSTEM RESTORE REPLICA` or clear it with `SYSTEM DROP REPLICA ... FROM ZKPATH ...` after attach.
 
 If you are trying to add a replica to an existing ReplicatedMergeTree table, keep in mind that all the local data in converted MergeTree table will be detached.
