@@ -1112,7 +1112,10 @@ static bool tokenizerSplitsAtZeroByte(ITokenizer::Type type)
 
 static std::string_view withoutTrailingZeros(std::string_view value)
 {
-    return value.substr(0, value.find_last_not_of('\0') + 1);
+    const size_t last_non_zero = value.find_last_not_of('\0');
+    /// An all-zero value has no such byte, and `npos + 1` wrapped to 0 here; return that empty
+    /// prefix explicitly instead.
+    return last_non_zero == std::string_view::npos ? value.substr(0, 0) : value.substr(0, last_non_zero + 1);
 }
 
 /// Strips or re-pads the needle's trailing zero bytes in place to the form the index stores; false when no single form covers every match.
