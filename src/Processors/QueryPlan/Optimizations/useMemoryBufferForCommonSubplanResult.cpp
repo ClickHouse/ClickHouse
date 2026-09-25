@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromCommonBufferStep.h>
 #include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
@@ -21,7 +22,10 @@ extern const int LOGICAL_ERROR;
 namespace QueryPlanOptimizations
 {
 
-void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings)
+void useMemoryBufferForCommonSubplanResult(
+    QueryPlan::Node & node,
+    const QueryPlanOptimizationSettings & settings,
+    RelationStatsCache & relation_stats_cache)
 {
     auto * subplan_reference = typeid_cast<CommonSubplanReferenceStep *>(node.step.get());
     if (!subplan_reference)
@@ -36,6 +40,9 @@ void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPl
             subplan_reference_root->step->getName());
 
     auto columns_to_use = subplan_reference->extractColumnsToUse();
+
+    relation_stats_cache.invalidate(node);
+    relation_stats_cache.invalidate(*subplan_reference_root);
 
     auto common_buffer = std::make_shared<ChunkBuffer>();
     node.step = std::make_unique<ReadFromCommonBufferStep>(
