@@ -409,7 +409,7 @@ private:
     /// The peak of the memory used by everything but the cache over the last two history
     /// windows, so that `autoResize` does not grow the cache back at a brief dip of the
     /// memory usage only to evict it again a moment later. Guarded by `resize_mutex`, which
-    /// also serializes the resizes themselves.
+    /// also serializes the resizes themselves and the changes of the configured size.
     std::mutex resize_mutex;
     Int64 history_window_ms = 0;
     Int64 current_history_bucket = 0;

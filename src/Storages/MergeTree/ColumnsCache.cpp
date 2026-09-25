@@ -550,6 +550,11 @@ void ColumnsCache::setEffectiveMaxSize(size_t max_size_in_bytes)
 
 void ColumnsCache::setConfiguredMaxSizeInBytes(size_t max_size_in_bytes)
 {
+    /// Under `resize_mutex`, so a resize in progress, which computed its target from the old
+    /// configured size, cannot put that target in effect after the new size. The allocations
+    /// here must not reach `autoResize` from `MemoryTracker`: this thread already holds the mutex.
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+    std::lock_guard lock(resize_mutex);
     configured_max_size_in_bytes.store(max_size_in_bytes, std::memory_order_relaxed);
     setEffectiveMaxSize(max_size_in_bytes);
 }
