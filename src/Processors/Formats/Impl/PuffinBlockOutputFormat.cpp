@@ -46,7 +46,7 @@ Int64 getPosition(const IColumn & positions, size_t index, bool unsigned_positio
     const Int64 value = positions.getInt(index);
     if (value < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deleted row position {} is negative", value);
-    if (value >  )
+    if (value > DELETION_VECTOR_MAX_POSITION)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Deleted row position {} exceeds the maximum deletion vector position {}",
