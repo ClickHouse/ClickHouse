@@ -92,11 +92,13 @@ public:
     /// Contacts nothing and mutates nothing, so a caller can run it before its own side effects.
     static void checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr context);
 
-    /// Whether the stored definition says `table_readonly = 1`. A converted table keeps the settings
-    /// of the table it was converted from, and `table_readonly` is not supported for
-    /// `ReplicatedMergeTree`, so both conversion entrypoints (the `convert_to_replicated` flag and
-    /// `ATTACH TABLE ... AS REPLICATED`) have to refuse such a table before their side effects.
-    static bool isTableReadonlyInDefinition(const ASTCreateQuery & create_query);
+    /// Whether the table would have `table_readonly = 1` as a `ReplicatedMergeTree`: from its stored
+    /// definition, or, if that does not set it, from the server's `merge_tree` / `replicated_merge_tree`
+    /// defaults. A converted table keeps the settings of the table it was converted from, and
+    /// `table_readonly` is not supported for `ReplicatedMergeTree`, so both conversion entrypoints
+    /// (the `convert_to_replicated` flag and `ATTACH TABLE ... AS REPLICATED`) have to refuse such a
+    /// table before their side effects.
+    static bool isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr context);
 
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.

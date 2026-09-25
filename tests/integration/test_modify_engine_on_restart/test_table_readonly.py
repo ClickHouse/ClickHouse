@@ -14,6 +14,19 @@ ch1 = cluster.add_instance(
     macros={"replica": "node1"},
     stay_alive=True,
 )
+# The `replicated_merge_tree` config section turns `table_readonly` on for every `ReplicatedMergeTree`
+# whose definition does not say otherwise; plain `MergeTree` tables are not affected.
+ch2 = cluster.add_instance(
+    "ch2",
+    main_configs=[
+        "configs/config.d/clusters.xml",
+        "configs/config.d/distributed_ddl.xml",
+        "configs/config.d/replicated_merge_tree_readonly.xml",
+    ],
+    with_zookeeper=True,
+    macros={"replica": "node2"},
+    stay_alive=True,
+)
 
 database_name = "modify_engine_ro_setting"
 
@@ -127,3 +140,58 @@ def test_replicated_table_carrying_the_setting_loads(started_cluster):
     assert q("SELECT count() FROM legacy").strip() == "10"
 
     ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+def test_readonly_default_from_config(started_cluster):
+    # A `ReplicatedMergeTree` resolves its settings over the `merge_tree` / `replicated_merge_tree`
+    # config defaults, so a `MergeTree` whose definition does not mention `table_readonly` would still
+    # become a readonly replicated table on this server. Both conversion entrypoints refuse it, and a
+    # reset of the setting on a replicated table is refused too, because it resets to that default.
+    def q2(query):
+        return ch2.query(database=database_name, sql=query)
+
+    def engine_of2(table):
+        return q2(
+            f"SELECT engine FROM system.tables WHERE database = '{database_name}' AND name = '{table}'"
+        ).strip()
+
+    ch2.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch2.query(f"CREATE DATABASE {database_name}")
+
+    assert "NOT_IMPLEMENTED" in ch2.query_and_get_error(
+        "CREATE TABLE fresh ( A Int64 ) ENGINE = "
+        "ReplicatedMergeTree('/clickhouse/tables/{database}/fresh', '{replica}') ORDER BY A",
+        database=database_name,
+    )
+
+    q2("CREATE TABLE to_convert ( A Int64 ) ENGINE = MergeTree ORDER BY A")
+    q2("INSERT INTO to_convert SELECT number FROM numbers(10)")
+
+    q2("DETACH TABLE to_convert")
+    assert "NOT_IMPLEMENTED" in ch2.query_and_get_error(
+        "ATTACH TABLE to_convert AS REPLICATED", database=database_name
+    )
+    q2("ATTACH TABLE to_convert")
+    assert engine_of2("to_convert") == "MergeTree"
+
+    set_convert_flags(ch2, database_name, ["to_convert"])
+    ch2.restart_clickhouse()
+    assert engine_of2("to_convert") == "MergeTree"
+    assert q2("SELECT count() FROM to_convert").strip() == "10"
+
+    # An explicit `0` in the definition overrides the config default, and the kept flag converts the
+    # table on the next start.
+    q2("ALTER TABLE to_convert MODIFY SETTING table_readonly = 0")
+    ch2.restart_clickhouse()
+    assert engine_of2("to_convert") == "ReplicatedMergeTree"
+    assert q2("SELECT count() FROM to_convert").strip() == "10"
+
+    for query in [
+        "ALTER TABLE to_convert RESET SETTING table_readonly",
+        "ALTER TABLE to_convert MODIFY SETTING table_readonly = DEFAULT",
+    ]:
+        assert "NOT_IMPLEMENTED" in ch2.query_and_get_error(query, database=database_name)
+    q2("INSERT INTO to_convert SELECT number FROM numbers(10)")
+    assert q2("SELECT count() FROM to_convert").strip() == "20"
+
+    ch2.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")

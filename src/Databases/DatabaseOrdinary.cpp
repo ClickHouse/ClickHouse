@@ -61,6 +61,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsString storage_policy;
+    extern const MergeTreeSettingsBool table_readonly;
 }
 
 namespace ServerSetting
@@ -146,13 +147,17 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
         );
 }
 
-bool DatabaseOrdinary::isTableReadonlyInDefinition(const ASTCreateQuery & create_query)
+bool DatabaseOrdinary::isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr context)
 {
-    if (!create_query.storage || !create_query.storage->settings)
-        return false;
+    /// Resolved the way `registerStorageMergeTree` resolves the settings of a `ReplicatedMergeTree`:
+    /// the definition's own `SETTINGS` over the `merge_tree` and `replicated_merge_tree` config defaults.
+    if (create_query.storage && create_query.storage->settings)
+    {
+        if (const Field * readonly_setting = create_query.storage->settings->changes.tryGet("table_readonly"))
+            return SettingFieldBool{*readonly_setting}.value;
+    }
 
-    const Field * readonly_setting = create_query.storage->settings->changes.tryGet("table_readonly");
-    return readonly_setting && SettingFieldBool{*readonly_setting}.value;
+    return context->getReplicatedMergeTreeSettings()[MergeTreeSetting::table_readonly];
 }
 
 void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
@@ -261,17 +266,19 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     /** `table_readonly` is not supported for `ReplicatedMergeTree`, and a converted table keeps the
       * settings of the table it was converted from, so converting would produce a replicated table
       * in the state the checks around it exist to make unrepresentable. Leave the table alone and
-      * say so: it keeps loading and serving as it is, `RESET SETTING table_readonly` is allowed on
-      * it, and the flag stays in place, so the conversion happens on the next start once the
-      * setting is gone. Throwing here would take the table down with the whole database load, and
-      * the setting could then not be reset at all.
+      * say so: it keeps loading and serving as it is, `MODIFY SETTING table_readonly = 0` is allowed
+      * on it, and the flag stays in place, so the conversion happens on the next start once the
+      * setting is off. Throwing here would take the table down with the whole database load, and
+      * the setting could then not be changed at all. The setting can also come from the server's
+      * config defaults rather than the definition; an explicit `0` in the definition overrides them.
       */
-    if (isTableReadonlyInDefinition(create_query))
+    if (isTableReadonlyAsReplicated(create_query, getContext()))
     {
         LOG_ERROR(
             log,
-            "Not converting table {} to replicated: it has `table_readonly = 1`, which is not supported for "
-            "ReplicatedMergeTree. Reset the setting with `ALTER TABLE ... RESET SETTING table_readonly`; the {} flag is kept, "
+            "Not converting table {} to replicated: it would have `table_readonly = 1` (from its definition or the server's "
+            "`merge_tree` / `replicated_merge_tree` defaults), which is not supported for "
+            "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0`; the {} flag is kept, "
             "so the conversion runs on the next start.",
             backQuote(qualified_name.getFullName()),
             CONVERT_TO_REPLICATED_FLAG_NAME);
