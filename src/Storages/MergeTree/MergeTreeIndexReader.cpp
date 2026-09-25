@@ -137,7 +137,8 @@ void MergeTreeIndexReader::initStreamIfNeeded()
 
     for (const auto & substream : index_format.substreams)
     {
-        if (!MergeTreeIndexSubstream::isOpenedByIndexReader(substream.type))
+        /// The text index opens its dictionary, postings and positions streams itself during the analysis.
+        if (substream.type != MergeTreeIndexSubstream::Type::Regular)
             continue;
 
         auto full_stream_name = index_name + substream.suffix;

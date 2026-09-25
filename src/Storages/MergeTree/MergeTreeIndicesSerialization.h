@@ -55,14 +55,6 @@ struct MergeTreeIndexSubstream
         /// because the compression is implicitly applied during building them.
         return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
     }
-
-    /// Whether `MergeTreeIndexReader` opens the stream of this type for `deserializeBinaryWithMultipleStreams`.
-    /// The text index reads its postings and positions through streams it opens itself once it knows which
-    /// posting lists it needs, with buffers sized to them (see `makePostingsInputStream`).
-    static bool isOpenedByIndexReader(Type type)
-    {
-        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
-    }
 };
 
 using MergeTreeIndexSubstreams = std::vector<MergeTreeIndexSubstream>;
@@ -90,8 +82,8 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeIndex & index;
     const MarkRanges * readable_ranges;
     bool skip_postings_deserialization;
-    /// Settings the index streams were opened with. The text index opens the postings stream itself during
-    /// the analysis, once the tokens are known, so that its buffer fits the posting lists it is about to read.
+    /// Settings the index streams were opened with. The text index opens its dictionary and postings streams
+    /// itself during the analysis, so that the postings buffer fits the posting lists it is about to read.
     const MergeTreeReaderSettings & reader_settings;
 };
 

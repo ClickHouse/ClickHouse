@@ -252,15 +252,14 @@ void MergeTreeReaderTextIndex::readGranule()
     LOG_TRACE(getLogger("MergeTreeReaderTextIndex"), "Reading text index granule for data part '{}'", data_part->getDataPartStorage().getFullPath());
 
     auto sparse_index_stream = makeTextIndexStream(substreams[0]);
-    auto dictionary_stream = makeTextIndexStream(substreams[1]);
 
     sparse_index_stream->seekToStart();
     resetCursors();
 
-    /// The postings streams are opened per token once the analysis has resolved the tokens, see `getPostingsStream`.
+    /// The analysis opens the dictionary stream itself. The postings streams are opened per token once
+    /// the analysis has resolved the tokens, see `getPostingsStream`.
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
-    streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
 
     auto granule_ptr = index.index->createIndexGranule();
     granule_ptr->deserializeBinaryWithMultipleStreams(streams, *deserialization_state);

@@ -125,24 +125,18 @@ UInt64 computeCountForPart(
     };
 
     const auto substreams = index.index->getSubstreams();
-    auto make_stream = [&](const MergeTreeIndexSubstream & substream)
-    {
-        return makeTextIndexInputStream(
-            part_info,
-            index.index->getFileName() + substream.suffix,
-            substream.extension,
-            MergeTreeIndexReader::patchSettings(reader_settings, substream.type));
-    };
-
-    auto sparse_index_stream = make_stream(substreams[0]);
-    auto dictionary_stream = make_stream(substreams[1]);
+    auto sparse_index_stream = makeTextIndexInputStream(
+        part_info,
+        index.index->getFileName() + substreams[0].suffix,
+        substreams[0].extension,
+        MergeTreeIndexReader::patchSettings(reader_settings, substreams[0].type));
 
     sparse_index_stream->seekToStart();
 
-    /// The analysis opens the postings stream itself; the lists it leaves are read below through a stream sized to them.
+    /// The analysis opens the dictionary and postings streams itself; the lists it leaves are read below
+    /// through a stream sized to them.
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
-    streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
 
     auto granule_ptr = index.index->createIndexGranule();
     granule_ptr->deserializeBinaryWithMultipleStreams(streams, state);
