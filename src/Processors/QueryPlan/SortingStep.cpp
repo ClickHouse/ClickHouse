@@ -301,7 +301,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
     if (limit_by_columns.empty() || pipeline.getNumStreams() <= 1)
         return;
 
-    auto sort_prefix = getCollationAwareSortPrefixInColumns(stream_sort_desc, limit_by_columns);
+    auto sort_prefix = getCollationAwareSortPrefixInColumns(stream_sort_desc, limit_by_columns, *input_headers.front());
     if (sort_prefix.size() != limit_by_columns.size())
         return;
 
@@ -479,7 +479,8 @@ void SortingStep::mergeSorting(
             .current_metric = CurrentMetrics::TemporaryFilesForSort,
             .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
-            .num_files = ProfileEvents::ExternalSortWritePart},
+            .num_files = ProfileEvents::ExternalSortWritePart,
+            .spilled_to_disk_operator = "sort"},
             sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec);
 
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)
