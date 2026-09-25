@@ -17,6 +17,21 @@ INNER JOIN (SELECT number AS k, number AS j, number AS m FROM numbers(8)) AS b O
 WHERE a.j = b.j AND (a.k + b.m) % 4 = 0 AND toUInt64(a.s) + b.m > 3
 SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 1;
 
+-- The same shape with the guard written twice. Repeating a conjunct must not change which of the two
+-- conjuncts that stay behind is evaluated first.
+SELECT count(), min(a.k)
+FROM (SELECT number AS k, number AS j, if(number % 2 = 0, toString(number), 'oops') AS s FROM numbers(8)) AS a
+INNER JOIN (SELECT number AS k, number AS j, number AS m FROM numbers(8)) AS b ON a.k = b.k
+WHERE (a.j = b.j AND (a.k + b.m) % 4 = 0 AND toUInt64(a.s) + b.m > 3) AND (a.k + b.m) % 4 = 0
+SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 1;
+
+-- The same shape again, with the guarded conjunct written twice instead of the guard.
+SELECT count(), min(a.k)
+FROM (SELECT number AS k, number AS j, if(number % 2 = 0, toString(number), 'oops') AS s FROM numbers(8)) AS a
+INNER JOIN (SELECT number AS k, number AS j, number AS m FROM numbers(8)) AS b ON a.k = b.k
+WHERE (a.j = b.j AND (a.k + b.m) % 4 = 0 AND toUInt64(a.s) + b.m > 3) AND (toUInt64(a.s) + b.m > 3)
+SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 1;
+
 -- The same invariant where an aggregate projection's own WHERE covers one query conjunct: the two that
 -- are left over stay behind, and must keep their order too. `force_optimize_projection` makes the cell
 -- fail rather than pass vacuously if the projection is not chosen.
