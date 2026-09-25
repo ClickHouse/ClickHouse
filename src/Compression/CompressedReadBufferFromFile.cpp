@@ -113,14 +113,19 @@ off_t CompressedReadBufferFromFile::getPosition() const
 size_t CompressedReadBufferFromFile::getCompressedBlockEnd(size_t block_start_offset)
 {
     char checksum_and_header[CHECKSUM_AND_HEADER_SIZE];
+    /// Clear the bound before seeking: a stale bound would clamp the seek, and the header bound must be set from
+    /// the block start so it is ahead of the read position (setting it behind already-read data is rejected).
+    file_in.setReadUntilEnd();
+    file_in.seek(block_start_offset, SEEK_SET);
     /// Bound the underlying read to the header so peeking it does not fetch the whole block.
     file_in.setReadUntilPosition(block_start_offset + CHECKSUM_AND_HEADER_SIZE);
-    file_in.seek(block_start_offset, SEEK_SET);
     file_in.readStrict(checksum_and_header, CHECKSUM_AND_HEADER_SIZE);
+    /// Rewind and unbound so the next data read, which bounds to an earlier position, is not left behind
+    /// already-read data.
     file_in.setReadUntilEnd();
-    /// Reset our position so the following data read seeks and re-bounds the underlying buffer from scratch.
+    file_in.seek(0, SEEK_SET);
+    resetWorkingBuffer();
     size_compressed = 0;
-    seek(block_start_offset, 0);
     return computeCompressedBlockEnd(block_start_offset, checksum_and_header);
 }
 

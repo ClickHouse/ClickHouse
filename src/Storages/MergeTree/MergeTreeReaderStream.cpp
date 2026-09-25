@@ -300,7 +300,11 @@ size_t MergeTreeReaderStream::getCompressedBlockEnd(const MarkInCompressedFile &
 {
     init();
     chassert(compressed_data_buffer);
-    return compressed_data_buffer->getCompressedBlockEnd(mark.offset_in_compressed_file);
+    size_t block_end = compressed_data_buffer->getCompressedBlockEnd(mark.offset_in_compressed_file);
+    /// The peek cleared the buffer's read-until behind the grow-only guard, so drop the guard's cached value
+    /// to make the next setReadUntilMark re-apply the bound instead of assuming it is still in effect.
+    last_right_offset.reset();
+    return block_end;
 }
 
 ReadBuffer * MergeTreeReaderStream::getDataBuffer()
