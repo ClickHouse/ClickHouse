@@ -74,13 +74,13 @@ public:
         return alias_name_to_expressions.contains(alias);
     }
 
-    /** Returns true if the stack contains an aggregate, window, or `grouping` function.
+    /** Returns true if the stack contains an aggregate or `grouping` function.
       *
       * It is used to decide whether an expression equal to a GROUP BY key must be converted
-      * to Nullable when `group_by_use_nulls` is enabled. Arguments of aggregate and window
-      * functions are computed before the nullability is applied to the keys, and arguments
-      * of the `grouping` function only identify GROUP BY keys and are compared with them
-      * in their original form by `GroupingFunctionsResolvePass`.
+      * to Nullable when `group_by_use_nulls` is enabled. Arguments of aggregate functions are
+      * computed before the nullability is applied to the keys, and arguments of the `grouping`
+      * function only identify GROUP BY keys and are compared with them in their original form
+      * by `GroupingFunctionsResolvePass`.
       */
     bool hasAggregateOrGroupingFunction() const
     {
@@ -139,9 +139,12 @@ public:
 private:
     static bool isAggregateOrGroupingFunction(const FunctionNode & function)
     {
+        /// A window function is evaluated after aggregation: its arguments and window specification see GROUP BY keys
+        /// already converted to Nullable. `isWindowFunction` tests only the window child, so it holds before resolution.
         /// The parser always lowercases the `grouping` function name (see `getFunctionLayer`
         /// in `ExpressionListParsers.cpp`), so the exact comparison is enough.
-        return AggregateFunctionFactory::instance().isAggregateFunctionName(function.getFunctionName())
+        return (AggregateFunctionFactory::instance().isAggregateFunctionName(function.getFunctionName())
+                && !function.isWindowFunction())
             || function.getFunctionName() == "grouping";
     }
 

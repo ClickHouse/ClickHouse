@@ -20,6 +20,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/DistributedPlanLocalObject.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
@@ -30,6 +31,7 @@
 
 #include "config.h"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -204,6 +206,8 @@ class AsyncLoader;
 class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
+struct QueryExecutionCounters;
+using QueryExecutionCountersPtr = std::shared_ptr<QueryExecutionCounters>;
 struct ICgroupsReader;
 class WasmModuleManager;
 
@@ -315,6 +319,14 @@ class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
 
 class QueryMetadataCache;
+class CursorTreeNode;
+using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
+
+struct StreamingCursor
+{
+    std::mutex mutex;
+    CursorTreeNodePtr tree;
+};
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
@@ -584,9 +596,13 @@ public:
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    /// Created by `makeQueryContext` and shared by every context copied from the query context.
+    DistributedPlanLocalObjectPtr distributed_plan_local_object;
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
+    /// Query metrics about the execution of a query.
+    mutable QueryExecutionCountersPtr query_execution_counters;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -746,6 +762,10 @@ protected:
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
     std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
+
+    /// Final `STREAM [BOUNDED]` cursor holder (tree + its mutex), shared across `Context::createCopy` so
+    /// parallel reading streams serialize their merges into the one tree.
+    std::shared_ptr<StreamingCursor> streaming_cursor;
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -1159,6 +1179,11 @@ public:
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
+    /// Records that the query resolved an object of this server by name (see `DistributedPlanLocalObject`). Written by
+    /// the resolvers, read by the `make_distributed_plan` fallback decision. No-op outside a query.
+    void addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const;
+    std::shared_ptr<const DistributedPlanLocalObject> getDistributedPlanLocalObject() const;
+
     /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
     /// Use it in introspection paths (e.g. reading system.functions) where instantiating
     /// every function — and the helper functions they construct internally — must not
@@ -1317,10 +1342,25 @@ public:
 #endif
 
     BackupsWorker & getBackupsWorker() const;
+
+    /// Makes further BACKUP and RESTORE queries fail instead of starting a new operation.
+    void stopAcceptingNewBackupsAndRestores() const;
+
     void waitAllBackupsAndRestores() const;
-    void cancelAllBackupsAndRestores() const;
+
+    /// Returns false if `deadline` was reached while some operation was still running.
+    bool cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
+
+    /// Returns true if some backup or restore has not reached a final status yet. Never waits.
+    bool hasUnfinishedBackupsAndRestores() const;
+
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
+
+    /// The outer query sets an empty holder before a `STREAM [BOUNDED]` read; the reading sources merge into
+    /// it (under its mutex), and the outer query reads it back.
+    void setStreamingCursor(std::shared_ptr<StreamingCursor> cursor);
+    std::shared_ptr<StreamingCursor> getStreamingCursor() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(
@@ -1757,6 +1797,7 @@ public:
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
+    bool hasSystemLogs() const;
 
     /// Call after initialization before using trace collector.
     void createTraceCollector();
@@ -1834,12 +1875,6 @@ public:
     /// Only for system.server_settings, actual value is stored in ConfigReloader
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
-
-    /// Server-wide override for the analyzer in mutations.
-    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
-    /// Set from the main config reload callback.
-    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
-    std::optional<bool> getMutationsUseAnalyzerOverride() const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
@@ -2032,6 +2067,8 @@ public:
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
 
+    QueryExecutionCountersPtr getQueryExecutionCounters() const;
+
     ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
@@ -2179,6 +2216,7 @@ public:
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;
+    void reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;
