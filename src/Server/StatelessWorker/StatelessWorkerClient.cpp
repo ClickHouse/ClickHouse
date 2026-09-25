@@ -18,7 +18,9 @@ namespace DB
 namespace
 {
 
-/// W3C `traceparent`/`tracestate` headers carrying the current trace context to the worker.
+/// W3C `traceparent`/`tracestate` headers carrying the current trace context to the worker. Sent with
+/// the start request only: the cancel and forget requests are housekeeping after the task's outcome is
+/// known, and a traced request needs a client span to hang under, which only the dispatch has.
 HTTPHeaderEntries getTraceContextHeaders()
 {
     HTTPHeaderEntries headers;
@@ -193,7 +195,6 @@ void cancelTask(const String & endpoint_uri, const String & task_id, const Conte
         .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
         .withTimeouts(timeouts)
         .withSettings(read_settings)
-        .withHeaders(getTraceContextHeaders())
         .withDelayInit(false)
         .create(creds);
 
@@ -231,7 +232,6 @@ void forgetTask(const String & endpoint_uri, const String & task_id, const Conte
         .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
         .withTimeouts(timeouts)
         .withSettings(read_settings)
-        .withHeaders(getTraceContextHeaders())
         .withDelayInit(false)
         .create(creds);
 

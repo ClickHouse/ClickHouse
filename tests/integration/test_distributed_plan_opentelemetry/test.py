@@ -119,18 +119,17 @@ def test_worker_task_spans_join_initiator_trace(started_cluster):
 
     _wait_until(dispatch_span_ids)
 
-    # The worker side of the same trace on node2: the start requests' spans must be parented by the
-    # initiator's dispatch spans, which proves the context crossed the HTTP hop. Cancel and forget
-    # requests carry the context too, but run on the initiator's tracker pool, so only start
-    # requests are compared. Both logs are flushed by background threads, so poll until the whole
-    # start-request set is covered.
+    # The worker side of the same trace on node2: every request span must be parented by one of the
+    # initiator's dispatch spans, which proves the context crossed the HTTP hop. Only the start
+    # request carries the context (cancel and forget do not), so no request span may have another
+    # parent. Both logs are flushed by background threads, so poll until the whole request set is
+    # covered.
     def start_requests_under_dispatch_spans():
         rows = _span_rows(
             node2,
             trace_id,
             "parent_span_id",
-            """operation_name = 'InterserverIOHTTPHandler' AND kind = 'SERVER'
-               AND attribute['clickhouse.uri'] LIKE '%operation=start%'""",
+            "operation_name = 'InterserverIOHTTPHandler' AND kind = 'SERVER'",
         )
         request_parent_ids = {parent_span_id for (parent_span_id,) in rows}
         if not request_parent_ids:

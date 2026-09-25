@@ -1050,7 +1050,10 @@ protected:
             parent_trace_context = OpenTelemetry::CurrentContext()]() mutable
         {
             ThreadStatus thread_status;
-            OpenTelemetry::TracingContextHolder thread_trace_context("DistributedQueryPlanExecutorLocal::executeTask", parent_trace_context);
+            /// A guard, not a `TracingContextHolder`: the holder would log a span of its own for this
+            /// thread, while the task's `DistributedPlanTask::execute` span is meant to attach to the
+            /// initiator's context directly, the same as a task dispatched to a worker does.
+            OpenTelemetry::TracingContextGuard thread_trace_context(parent_trace_context);
             /// The task attaches its own query context and thread group inside executeTask (matching
             /// the worker path), so this thread is intentionally not attached to the initiator group.
 
