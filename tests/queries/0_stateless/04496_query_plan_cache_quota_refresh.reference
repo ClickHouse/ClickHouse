@@ -1,0 +1,17 @@
+-- warm (miss), fills the user quota
+1	10
+2	20
+-- hits: 0
+-- second run hits the cached plan
+1	10
+2	20
+-- hits: 1
+-- ALTER invalidates the cached plan (schema hash changes); the stale entry stays resident
+-- run after ALTER: validation miss, replan, identical-key plan must be re-admitted
+1	10
+2	20
+-- hits: 0
+-- next run must HIT the refreshed plan (0 here means the quota check wrongly rejected the refresh)
+1	10
+2	20
+-- hits: 1
