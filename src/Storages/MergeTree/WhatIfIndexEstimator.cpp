@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -18,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/MergeTree/WhatIfProjectionEstimator.h>
@@ -242,16 +242,11 @@ WhatIfCandidateResult evaluateIndex(
         storage_id,
         storage_metadata->getColumns().getColumnNamesInStorageForAccessCheck(index_helper->getColumnsRequiredForIndexCalc()));
 
-    /// The estimate (skip ratio) is derived from every row, including rows a row policy is supposed to
-    /// hide, so a user could infer the distribution of hidden rows from it. Column-level `SELECT` grants
-    /// do not cover this, so reject the estimate whenever the source table has an effective (present and
-    /// not always-true) row policy.
-    auto row_policy_filter = context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    /// The estimate (skip ratio) is derived from every row, including the rows a row policy hides
+    if (getEffectiveRowPolicyFilter(data, context))
         throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Cannot use `EXPLAIN WHATIF` because a row policy is defined on table {}: it would expose an "
-            "index estimate derived from rows that the row policy hides",
+            "Cannot use `EXPLAIN WHATIF` because a row policy is applied on table {}. "
+            "The index estimate is derived from all rows, so it could violate the row policy",
             storage_id.getNameForLogs());
 
     const auto & filter_dag = read_step->getFilterActionsDAG();
