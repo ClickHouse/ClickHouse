@@ -28,6 +28,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -788,6 +789,100 @@ static uint8_t suffixToCopy(UInt64 mask)
     return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
 }
 
+/// The compress kernel wins over the loop over set bits from about 1.5 selected rows per table lookup (Zen 2, Haswell, Alder Lake).
+template <typename T>
+static constexpr size_t filter_compress_lookups = 64 / (sizeof(T) == 8 ? 4 : 8);
+
+template <typename T>
+static constexpr size_t filter_compress_min_rows = filter_compress_lookups<T> * 3 / 2;
+
+#if defined(__AVX2__)
+template <typename T, size_t N>
+using FilterVector = T __attribute__((vector_size(sizeof(T) * N)));
+
+/// Clang lowers this loop to a single `pshufb` (bytes) or `vpermd` (dwords). It scalarizes it instead if the indices are masked
+/// per lane, if a dword `control` is loaded from memory rather than widened from bytes, or if only a part of the result is used.
+template <typename T, size_t N>
+static inline FilterVector<T, N> filterPermute(FilterVector<T, N> src, FilterVector<T, N> control)
+{
+    FilterVector<T, N> res{};
+    for (size_t i = 0; i < N; ++i)
+        res[i] = src[control[i]];
+    return res;
+}
+
+/// For each mask, a control for `filterPermute` that packs the selected elements, of `units` units each, to the front.
+template <size_t mask_bits, size_t units, size_t offset = 0>
+alignas(64) static constexpr auto filter_compress_table = []
+{
+    std::array<std::array<UInt8, mask_bits * units>, (1 << mask_bits)> table{};
+    for (size_t mask = 0; mask < table.size(); ++mask)
+    {
+        size_t pos = 0;
+        for (size_t i = 0; i < mask_bits; ++i)
+            if ((mask >> i) & 1)
+                for (size_t unit = 0; unit < units; ++unit)
+                    table[mask][pos++] = static_cast<UInt8>(offset + units * i + unit);
+    }
+    return table;
+}();
+
+/// Stores write whole vectors past the selected elements, so `out` relies on the padding of `PaddedPODArray`.
+/// It may run in place with `out <= data`: a store never goes past the source elements that are already loaded.
+template <typename T>
+static inline void filterCompressBlock(const T * data, T * out, UInt64 mask)
+{
+    using Bytes = FilterVector<UInt8, 16>;
+    using Dwords = FilterVector<UInt32, 8>;
+
+    if constexpr (sizeof(T) == 1)
+    {
+        /// Each half of the control packs its own half of the source. 16-byte table entries and stores are 10% slower.
+        using Qwords = FilterVector<UInt64, 2>;
+        #pragma clang loop unroll(full)
+        for (size_t i = 0; i < 64; i += 16, mask >>= 16)
+        {
+            const size_t low = mask & 0xFF;
+            const size_t high = (mask >> 8) & 0xFF;
+            Bytes control_low{};
+            Bytes control_high{};
+            memcpy(&control_low, filter_compress_table<8, 1>[low].data(), 8);
+            memcpy(reinterpret_cast<char *>(&control_high) + 8, filter_compress_table<8, 1, 8>[high].data(), 8);
+            const auto res = static_cast<Qwords>(filterPermute<UInt8, 16>(unalignedLoad<Bytes>(data + i), control_low | control_high));
+            unalignedStore<UInt64>(out, res[0]);
+            out += std::popcount(low);
+            unalignedStore<UInt64>(out, res[1]);
+            out += std::popcount(high);
+        }
+    }
+    else if constexpr (sizeof(T) == 2)
+    {
+        #pragma clang loop unroll(full)
+        for (size_t i = 0; i < 64; i += 8, mask >>= 8)
+        {
+            const size_t bits = mask & 0xFF;
+            const Bytes control = unalignedLoad<Bytes>(filter_compress_table<8, 2>[bits].data());
+            unalignedStore<Bytes>(out, filterPermute<UInt8, 16>(unalignedLoad<Bytes>(data + i), control));
+            out += std::popcount(bits);
+        }
+    }
+    else
+    {
+        /// 8-byte elements are permuted as two dwords each.
+        constexpr size_t step = 32 / sizeof(T);
+        #pragma clang loop unroll(full)
+        for (size_t i = 0; i < 64; i += step, mask >>= step)
+        {
+            const size_t bits = mask & ((1 << step) - 1);
+            const auto control = unalignedLoad<FilterVector<UInt8, 8>>(filter_compress_table<step, sizeof(T) / 4>[bits].data());
+            unalignedStore<Dwords>(
+                out, filterPermute<UInt32, 8>(unalignedLoad<Dwords>(data + i), __builtin_convertvector(control, Dwords)));
+            out += std::popcount(bits);
+        }
+    }
+}
+#endif
+
 template <typename T>
 class ResultInserter
 {
@@ -806,6 +901,15 @@ public:
     {
         container.insert(begin, end);
     }
+
+#if defined(__AVX2__)
+    void insertCompressed(const T * block, UInt64 mask, size_t count)
+    {
+        container.reserve(container.size() + count);
+        filterCompressBlock(block, container.end(), mask);
+        container.resize_assume_reserved(container.size() + count);
+    }
+#endif
 };
 
 template <typename T>
@@ -832,7 +936,38 @@ public:
         result_ptr += count;
         container_size += count;
     }
+
+#if defined(__AVX2__)
+    void insertCompressed(const T * block, UInt64 mask, size_t count)
+    {
+        filterCompressBlock(block, result_ptr, mask);
+        result_ptr += count;
+        container_size += count;
+    }
+#endif
 };
+
+template <typename T, typename Inserter>
+static inline void insertSelected(Inserter & inserter, const T * block, UInt64 mask)
+{
+#if defined(__AVX2__)
+    if constexpr (sizeof(T) <= 8)
+    {
+        const size_t count = std::popcount(mask);
+        if (count >= filter_compress_min_rows<T>)
+        {
+            inserter.insertCompressed(block, mask, count);
+            return;
+        }
+    }
+#endif
+    while (mask)
+    {
+        size_t index = std::countr_zero(mask);
+        inserter.insertSingle(block[index]);
+        mask = blsr(mask);
+    }
+}
 
 DECLARE_DEFAULT_CODE(
 template <typename T, typename Inserter, size_t SIMD_ELEMENTS>
@@ -856,12 +991,7 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
             }
             else
             {
-                while (mask)
-                {
-                    size_t index = std::countr_zero(mask);
-                    inserter.insertSingle(data_pos[index]);
-                    mask = blsr(mask);
-                }
+                insertSelected(inserter, data_pos, mask);
             }
         }
 

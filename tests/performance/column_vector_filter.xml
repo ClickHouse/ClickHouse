@@ -1,0 +1,35 @@
+<test>
+    <!-- `ColumnVector::filter` with filters that select scattered rows, so blocks of 64 rows are neither fully passed nor fully dropped.
+         The table is in memory, so that reading and decompression do not hide the cost of filtering. -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>column</name>
+            <values>
+                <value>u8</value>
+                <value>u16</value>
+                <value>u32</value>
+                <value>u64</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>selectivity</name>
+            <values>
+                <value>10</value>
+                <value>50</value>
+                <value>90</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE column_vector_filter (u8 UInt8, u16 UInt16, u32 UInt32, u64 UInt64, r UInt8) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO column_vector_filter SELECT number, number, number, number, intHash32(number) % 100 FROM numbers_mt(100000000)</fill_query>
+
+    <query>SELECT sum({column}) FROM column_vector_filter WHERE r &lt; {selectivity}</query>
+
+    <drop_query>DROP TABLE IF EXISTS column_vector_filter</drop_query>
+</test>
