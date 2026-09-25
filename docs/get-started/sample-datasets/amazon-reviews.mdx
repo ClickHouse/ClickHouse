@@ -9,12 +9,15 @@ keywords: ['Amazon reviews', 'customer reviews dataset', 'e-commerce data', 'exa
 
 import { RunnableCode } from "/snippets/components/RunnableCode/RunnableCode.jsx";
 
-This dataset contains over 150M customer reviews of Amazon products. The data is in snappy-compressed Parquet files in AWS S3 that total 49GB in size (compressed). Let's walk through the steps to insert it into ClickHouse.
+This dataset contains over 150M customer reviews of Amazon products. The data is in snappy-compressed Parquet files in AWS S3 that total 49GB in size (compressed).
+
+The commands below run as-is on any ClickHouse Cloud service. On a self-managed server, one of them needs a small change, noted at that step.
 
 <Note>
-The queries below were executed on a **Production** instance of ClickHouse Cloud. For more information see
-["Playground specifications"](/get-started/sample-datasets/playground#specifications).
+You can try this on self-hosted ClickHouse or on ClickHouse Cloud. If you don't already have an account, you can start a free [ClickHouse Cloud trial](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-amazon-reviews).
 </Note>
+
+Let's walk through the steps to insert the data into ClickHouse.
 
 ## Loading the dataset {#loading-the-dataset}
 
@@ -116,7 +119,7 @@ ENGINE = MergeTree
 ORDER BY (review_date, product_category)
 ```
 
-3. The following `INSERT` command uses the `s3Cluster` table function, which allows the processing of multiple S3 files in parallel using all the nodes of your cluster. We also use a wildcard to insert any file that starts with the name `https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet`:
+3. The following `INSERT` command uses the [`s3Cluster`](/reference/functions/table-functions/s3Cluster) table function, which allows the processing of multiple S3 files in parallel using all the nodes of your cluster. We also use a wildcard to insert any file that starts with the name `https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet`:
 
 ```sql
 INSERT INTO amazon.amazon_reviews SELECT *
@@ -125,7 +128,7 @@ FROM s3Cluster('default',
 ```
 
 <Tip>
-In ClickHouse Cloud, the name of the cluster is `default`. Change `default` to the name of your cluster...or use the `s3` table function (instead of `s3Cluster`) if you don't have a cluster.
+Every ClickHouse Cloud service has a cluster named `default`. On a self-managed server, run `SELECT cluster FROM system.clusters` to see which clusters are available and use one of those names. If the result is empty, use the [`s3`](/reference/functions/table-functions/s3) table function instead.
 </Tip>
 
 5. That query doesn't take long - averaging about 300,000 rows per second. Within 5 minutes or so you should see all the rows inserted:

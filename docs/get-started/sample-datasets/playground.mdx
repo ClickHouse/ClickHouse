@@ -24,12 +24,14 @@ You can make queries to Playground using any HTTP client, for example [curl](htt
 
 ## Limitations {#limitations}
 
-The queries are executed as a read-only user. It implies some limitations:
+The queries are executed as a read-only user, so the following limitations apply:
 
 - DDL queries aren't allowed
 - INSERT queries aren't allowed
 
-The service also have quotas on its usage.
+The service also has quotas on its usage.
+
+To avoid the read-only limitations and experiment with loading your own data, you can sign up for a free [ClickHouse Cloud trial](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-playground) or [install ClickHouse](/get-started/setup/install) locally.
 
 ## Examples {#examples}
 
@@ -47,7 +49,7 @@ clickhouse client --secure --host play.clickhouse.com --user explorer
 
 ## Playground specifications {#specifications}
 
-our ClickHouse Playground is running with the following specifications:
+Our ClickHouse Playground is running with the following specifications:
 
 - Hosted on Google Cloud (GCE) in the US Central region (US-Central-1)
 - 3-replica setup
