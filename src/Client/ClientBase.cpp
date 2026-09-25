@@ -2322,9 +2322,20 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 onTimezoneUpdate(packet.server_timezone);
                 break;
 
+            /// A subquery executed while the server is still analysing the query reports progress and
+            /// profile events, so these can arrive before the header block. They are informational here.
+            case Protocol::Server::Progress:
+                onProgress(packet.progress);
+                break;
+
+            case Protocol::Server::ProfileEvents:
+                onProfileEvents(packet.block);
+                break;
+
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Data, Exception, Log or TimezoneUpdate, got {})",
+                    "Unexpected packet from server (expected Data, Exception, Log, TableColumns, TimezoneUpdate, "
+                    "Progress or ProfileEvents, got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
