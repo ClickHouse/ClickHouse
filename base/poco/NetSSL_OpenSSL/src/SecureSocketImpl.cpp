@@ -219,6 +219,7 @@ void SecureSocketImpl::acceptSSL()
 	ScopedLock lock(*_mutex);
 	poco_assert (!_pSSL);
 	_fatalError = false;
+	_pendingWrite = false;
 
 	BIO* pBIO = BIO_new(getBioMethod());
 	if (!pBIO) throw SSLException("Cannot create BIO object");
@@ -289,6 +290,7 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	poco_assert (!_pSSL);
 	poco_assert (_pSocket->initialized());
 	_fatalError = false;
+	_pendingWrite = false;
 
 	BIO* pBIO = BIO_new(getBioMethod());
 	if (!pBIO) throw SSLException("Cannot create SSL BIO object");
@@ -386,9 +388,6 @@ void SecureSocketImpl::shutdown()
 			/// A zero result is not an error for `SSL_shutdown` and must not be passed to
 			/// `SSL_get_error`; it means that `close_notify` was sent but not received yet.
 			SSLOperationResult result;
-			/// OpenSSL does not dispatch the `close_notify` alert while a record write from an
-			/// earlier `SSL_write` is still pending, so retrying here cannot make progress.
-			const bool has_pending_write = SSL_want_write(_pSSL);
 			Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
 			do
 			{
@@ -398,7 +397,9 @@ void SecureSocketImpl::shutdown()
 					return SSL_shutdown(_pSSL);
 				}, false);
 			}
-			while (!has_pending_write && result.rc < 0
+			/// OpenSSL does not dispatch the `close_notify` alert while a record write from an
+			/// earlier `SSL_write` is still pending, so retrying cannot make progress then.
+			while (!_pendingWrite && result.rc < 0
 				&& mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
 			if (result.rc < 0)
 				handleError(result.rc, result.sslError, result.socketError, result.errorCode);
@@ -452,6 +453,7 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 		{
 			return SSL_write(_pSSL, buffer, length);
 		});
+		_pendingWrite = result.sslError == SSL_ERROR_WANT_WRITE;
 	}
 	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
 	rc = result.rc;

@@ -107,9 +107,12 @@ TEST(SSLSocketTimeout, SendBytesThrowsTimeoutOnBlockingSocket)
 }
 
 
-/// Test that shutting a blocking SSL socket down after its write timed out returns
+namespace
+{
+
+/// Checks that shutting a blocking SSL socket down after its write timed out returns
 /// promptly, instead of waiting for the peer for another full I/O timeout and throwing.
-TEST(SSLSocketTimeout, ShutdownAfterSendTimeoutDoesNotWaitForPeer)
+void checkShutdownAfterSendTimeout(bool receive_timeout_before_shutdown)
 {
     EphemeralCert cert;
     auto server_ctx = cert.makeContext(Poco::Net::Context::SERVER_USE);
@@ -184,6 +187,16 @@ TEST(SSLSocketTimeout, ShutdownAfterSendTimeoutDoesNotWaitForPeer)
     SSL * ssl = client_impl->ssl();
     ASSERT_NE(ssl, nullptr);
 
+    if (receive_timeout_before_shutdown)
+    {
+        /// The peer never writes either, so the read times out too.
+        client->setReceiveTimeout(Poco::Timespan(0, 200'000)); /// 200ms
+        char buf[1];
+        EXPECT_THROW(client->receiveBytes(buf, 1), Poco::TimeoutException);
+        /// The read replaces the state that `SSL_want_write` reports, while the write stays pending.
+        ASSERT_FALSE(SSL_want_write(ssl));
+    }
+
     /// The shutdown budget is max(send timeout, receive timeout), so raising the receive
     /// timeout now separates a shutdown that waits for the peer from one that does not.
     client->setReceiveTimeout(Poco::Timespan(10, 0)); /// 10s
@@ -198,6 +211,18 @@ TEST(SSLSocketTimeout, ShutdownAfterSendTimeoutDoesNotWaitForPeer)
 
     /// The orderly TLS shutdown must still be attempted once, so skipping it entirely does not pass.
     EXPECT_TRUE(SSL_get_shutdown(ssl) & SSL_SENT_SHUTDOWN);
+}
+
+}
+
+TEST(SSLSocketTimeout, ShutdownAfterSendTimeoutDoesNotWaitForPeer)
+{
+    checkShutdownAfterSendTimeout(/* receive_timeout_before_shutdown= */ false);
+}
+
+TEST(SSLSocketTimeout, ShutdownAfterSendAndReceiveTimeoutsDoesNotWaitForPeer)
+{
+    checkShutdownAfterSendTimeout(/* receive_timeout_before_shutdown= */ true);
 }
 
 
