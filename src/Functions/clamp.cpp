@@ -4,6 +4,9 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
+#include <Columns/ColumnConst.h>
+
+#include <array>
 
 namespace DB
 {
@@ -37,24 +40,70 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        size_t arg_size = arguments.size();
-        Columns converted_columns(arg_size);
-        for (size_t arg = 0; arg < arg_size; ++arg)
-            converted_columns[arg] = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+        struct ConvertedColumn
+        {
+            ColumnPtr column = nullptr;
+            bool is_const = false;
+        };
+
+        std::array<ConvertedColumn, 3> converted_columns;
+        bool has_const_column = false;
+        for (size_t arg = 0; arg < arguments.size(); ++arg)
+        {
+            auto converted_col = castColumn(arguments[arg], result_type);
+            if (const auto * const_column = checkAndGetColumn<ColumnConst>(converted_col.get()))
+            {
+                converted_columns[arg] = {const_column->getDataColumnPtr(), true};
+                has_const_column = true;
+            }
+            else
+            {
+                converted_columns[arg] = {converted_col->convertToFullColumnIfConst(), false};
+            }
+        }
 
         auto result_column = result_type->createColumn();
+
+        if (!has_const_column)
+        {
+            for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+            {
+                if (converted_columns[1].column->compareAt(row_num, row_num, *converted_columns[2].column, 1) > 0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The minimum value cannot be greater than the maximum value for function {}", getName());
+
+                size_t best_arg = 0;
+                if (converted_columns[1].column->compareAt(row_num, row_num, *converted_columns[best_arg].column, 1) > 0)
+                    best_arg = 1;
+                else if (converted_columns[2].column->compareAt(row_num, row_num, *converted_columns[best_arg].column, 1) < 0)
+                    best_arg = 2;
+
+                result_column->insertFrom(*converted_columns[best_arg].column, row_num);
+            }
+
+            return result_column;
+        }
+
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
-            if (converted_columns[1]->compareAt(row_num, row_num, *converted_columns[2], 1) > 0)
+            const size_t min_row = converted_columns[1].is_const ? 0 : row_num;
+            const size_t max_row = converted_columns[2].is_const ? 0 : row_num;
+            if (converted_columns[1].column->compareAt(min_row, max_row, *converted_columns[2].column, 1) > 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The minimum value cannot be greater than the maximum value for function {}", getName());
 
             size_t best_arg = 0;
-            if (converted_columns[1]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) > 0)
+            size_t best_row = converted_columns[0].is_const ? 0 : row_num;
+            if (converted_columns[1].column->compareAt(min_row, best_row, *converted_columns[best_arg].column, 1) > 0)
+            {
                 best_arg = 1;
-            else if (converted_columns[2]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) < 0)
+                best_row = min_row;
+            }
+            else if (converted_columns[2].column->compareAt(max_row, best_row, *converted_columns[best_arg].column, 1) < 0)
+            {
                 best_arg = 2;
+                best_row = max_row;
+            }
 
-            result_column->insertFrom(*converted_columns[best_arg], row_num);
+            result_column->insertFrom(*converted_columns[best_arg].column, best_row);
         }
 
         return result_column;
