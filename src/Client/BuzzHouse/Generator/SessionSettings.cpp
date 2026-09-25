@@ -1803,13 +1803,21 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 1, 100)); }, {}, false)},
     {"text_index_hint_max_selectivity", probRangeSetting},
-    {"text_index_lazy_intersection_density_threshold", probRangeSetting},
     {"text_index_like_max_postings_to_read",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 500)); }, {}, false)},
     {"text_index_like_min_pattern_length",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 20)); }, {}, false)},
+    {"text_index_postings_intersection_algorithm",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'auto'", "'bruteforce'", "'leapfrog'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'auto'", "'bruteforce'", "'leapfrog'"},
+         false)},
     {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", trueOrFalseSettingNoOracle},
     {"throw_if_no_data_to_insert", trueOrFalseSettingNoOracle},
     {"throw_on_error_from_cache_on_write_operations", trueOrFalseSettingNoOracle},

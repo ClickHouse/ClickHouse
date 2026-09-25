@@ -4,19 +4,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
-#include <Interpreters/misc.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
-#include <Storages/StorageSet.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -46,11 +42,9 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Identifier.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -112,44 +106,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
-    extern const int UNKNOWN_TABLE;
-}
-
-void checkNoRowPolicyForSetOperands(
-    const ASTPtr & mutation_ast,
-    const String & default_database,
-    const ContextPtr & context,
-    bool throw_if_unresolved)
-{
-    ASTPtr ast = mutation_ast->clone();
-    AddDefaultDatabaseVisitor visitor(context, default_database);
-    visitor.visit(ast);
-
-    const auto check = [&](const ASTPtr & node, const auto & self) -> void
-    {
-        if (const auto * function = node->as<ASTFunction>();
-            function && functionIsInOrGlobalInOperator(function->name) && function->arguments
-            && function->arguments->children.size() == 2)
-        {
-            const auto & right_operand = function->arguments->children[1];
-            if (const auto * table_identifier = right_operand->as<ASTTableIdentifier>())
-            {
-                auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-                    Identifier(table_identifier->name_parts), context);
-                if (!resolved.resolved_identifier && throw_if_unresolved)
-                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_identifier->formatForErrorMessage());
-
-                auto * table_node = resolved.resolved_identifier ? resolved.resolved_identifier->as<TableNode>() : nullptr;
-                if (auto * storage_set = table_node ? dynamic_cast<StorageSet *>(table_node->getStorage().get()) : nullptr)
-                    storage_set->checkNoRowPolicy(context);
-            }
-        }
-
-        for (const auto & child : node->children)
-            self(child, self);
-    };
-
-    check(ast, check);
 }
 
 /// Stored SQL text always carries explicit modes, so the `*_default_mode` fallbacks are not reached in
