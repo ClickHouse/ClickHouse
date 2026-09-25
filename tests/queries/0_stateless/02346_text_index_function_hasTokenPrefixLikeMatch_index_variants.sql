@@ -191,7 +191,7 @@ SELECT 'ngrams', count() FROM tab WHERE hasTokenMatch(s_ngrams, '^[0-9]{3}$');
 SELECT 'ngrams', count() FROM tab WHERE hasTokenMatch(s_ngrams, '^[0-9]{3}$') SETTINGS use_skip_indexes = 0;
 SELECT 'ngrams', count() FROM tab WHERE hasTokenMatch(s_ngrams, '^[0-9]{3}$') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'ngrams', countIf(arrayExists(t -> startsWith(t, 'har'), tokens(s_ngrams, 'ngrams(3)'))), countIf(arrayExists(t -> startsWith(t, 'charg'), tokens(s_ngrams, 'ngrams(3)'))),
-    countIf(arrayExists(t -> like(t, '_ar'), tokens(s_ngrams, 'ngrams(3)'))), countIf(arrayExists(t -> match(t, '^[0-9]{3}$'), tokens(s_ngrams, 'ngrams(3)'))) FROM tab;
+    countIf(arrayExists(t -> like(t, '_ar'), tokens(s_ngrams, 'ngrams(3)'))), countIf(arrayExists(t -> match(t, '^[0-9]{3}$'), tokens(s_ngrams, 'ngrams(3)'))) FROM tab SETTINGS optimize_rewrite_array_exists_over_tokens = 0;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(s_ngrams, 'har')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenLike(s_ngrams, '_ar')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenMatch(s_ngrams, '^[0-9]{3}$')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
@@ -206,7 +206,7 @@ SELECT 'sparseGrams', count() FROM tab WHERE hasTokenMatch(s_sparse, '^t c');
 SELECT 'sparseGrams', count() FROM tab WHERE hasTokenMatch(s_sparse, '^t c') SETTINGS use_skip_indexes = 0;
 SELECT 'sparseGrams', count() FROM tab WHERE hasTokenMatch(s_sparse, '^t c') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'sparseGrams', countIf(arrayExists(t -> startsWith(t, 'ged'), tokens(s_sparse, 'sparseGrams(3, 100)'))),
-    countIf(arrayExists(t -> like(t, '%harg%'), tokens(s_sparse, 'sparseGrams(3, 100)'))), countIf(arrayExists(t -> match(t, '^t c'), tokens(s_sparse, 'sparseGrams(3, 100)'))) FROM tab;
+    countIf(arrayExists(t -> like(t, '%harg%'), tokens(s_sparse, 'sparseGrams(3, 100)'))), countIf(arrayExists(t -> match(t, '^t c'), tokens(s_sparse, 'sparseGrams(3, 100)'))) FROM tab SETTINGS optimize_rewrite_array_exists_over_tokens = 0;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(s_sparse, 'ged')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenLike(s_sparse, '%harg%')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenMatch(s_sparse, '^t c')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
@@ -221,7 +221,7 @@ SELECT 'splitByString', count() FROM tab WHERE hasTokenMatch(s_split, '^[a-z]+;$
 SELECT 'splitByString', count() FROM tab WHERE hasTokenMatch(s_split, '^[a-z]+;$') SETTINGS use_skip_indexes = 0;
 SELECT 'splitByString', count() FROM tab WHERE hasTokenMatch(s_split, '^[a-z]+;$') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'splitByString', countIf(arrayExists(t -> startsWith(t, 'x:'), tokens(s_split, 'splitByString([\', \', \' \'])'))),
-    countIf(arrayExists(t -> like(t, '%;'), tokens(s_split, 'splitByString([\', \', \' \'])'))), countIf(arrayExists(t -> match(t, '^[a-z]+;$'), tokens(s_split, 'splitByString([\', \', \' \'])'))) FROM tab;
+    countIf(arrayExists(t -> like(t, '%;'), tokens(s_split, 'splitByString([\', \', \' \'])'))), countIf(arrayExists(t -> match(t, '^[a-z]+;$'), tokens(s_split, 'splitByString([\', \', \' \'])'))) FROM tab SETTINGS optimize_rewrite_array_exists_over_tokens = 0;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(s_split, 'x:')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenLike(s_split, '%;')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenMatch(s_split, '^[a-z]+;$')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
@@ -236,7 +236,7 @@ SELECT 'asciiCJK', count() FROM tab WHERE hasTokenMatch(s_cjk, '^.:.$');
 SELECT 'asciiCJK', count() FROM tab WHERE hasTokenMatch(s_cjk, '^.:.$') SETTINGS use_skip_indexes = 0;
 SELECT 'asciiCJK', count() FROM tab WHERE hasTokenMatch(s_cjk, '^.:.$') SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'asciiCJK', countIf(arrayExists(t -> startsWith(t, 'x:'), tokens(s_cjk, 'asciiCJK'))),
-    countIf(arrayExists(t -> like(t, '支'), tokens(s_cjk, 'asciiCJK'))), countIf(arrayExists(t -> match(t, '^.:.$'), tokens(s_cjk, 'asciiCJK'))) FROM tab;
+    countIf(arrayExists(t -> like(t, '支'), tokens(s_cjk, 'asciiCJK'))), countIf(arrayExists(t -> match(t, '^.:.$'), tokens(s_cjk, 'asciiCJK'))) FROM tab SETTINGS optimize_rewrite_array_exists_over_tokens = 0;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(s_cjk, 'x:')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenLike(s_cjk, '支')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenMatch(s_cjk, '^.:.$')) WHERE explain LIKE '%Granules:%' OR explain LIKE '%Name:%';
