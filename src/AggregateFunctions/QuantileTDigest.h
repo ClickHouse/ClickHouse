@@ -295,6 +295,12 @@ public:
             addCentroid(c);
     }
 
+    /// Bytes allocated for centroids, for cache-weight accounting of statistics objects.
+    size_t allocatedBytes() const
+    {
+        return centroids.allocated_bytes();
+    }
+
     void serialize(WriteBuffer & buf) const
     {
         /// serialize() must not mutate the state: IAggregateFunction::serialize takes a
