@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
 # A column whose type stores a sequenceNextNode state may only be declared when
 # enable_funnel_functions is enabled for the server, and such a column is readable on a later run.
 
@@ -72,5 +71,27 @@ refused "attach with a full definition" "" "ATTACH TABLE t UUID 'c0ffee00-0526-4
 
 allowed "temporary table" "" "CREATE TEMPORARY TABLE tt (c $state) ENGINE = Memory; SELECT count() FROM tt"
 allowed "table in a Memory database" "CREATE DATABASE mem ENGINE = Memory" "CREATE TABLE mem.t (c $state) ENGINE = Memory; SELECT count() FROM mem.t"
+
+# Restoring a backup brings back a definition that was already accepted, so the value set only for
+# the session is enough.
+mkdir -p "$root/backups"
+config="$root/config.xml"
+cat > "$config" <<EOF
+<clickhouse>
+    <backups>
+        <allowed_path>$root/backups</allowed_path>
+    </backups>
+</clickhouse>
+EOF
+new_path
+$CLICKHOUSE_LOCAL --config-file "$config" --path "$path" --enable_funnel_functions=1 --query "
+    CREATE TABLE t (c $state) ENGINE = MergeTree ORDER BY tuple();
+    BACKUP TABLE t TO File('$root/backups/b1') FORMAT Null"
+new_path
+$CLICKHOUSE_LOCAL --config-file "$config" --path "$path" --query "
+    SET enable_funnel_functions = 1;
+    RESTORE TABLE default.t FROM File('$root/backups/b1') FORMAT Null"
+echo -n "restore from a backup: "
+$CLICKHOUSE_LOCAL --config-file "$config" --path "$path" --enable_funnel_functions=1 --query "SELECT count() FROM t"
 
 rm -rf "${root:?}"
