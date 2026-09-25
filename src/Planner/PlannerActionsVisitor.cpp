@@ -402,7 +402,14 @@ public:
             {
                 auto & query_node = node->as<QueryNode &>();
                 if (query_node.isCorrelated())
+                {
                     result = query_node.getAlias();
+                    if (result.empty())
+                    {
+                        auto hash = node->getTreeHash();
+                        result = fmt::format("__subquery_{}_{}", hash.low64, hash.high64);
+                    }
+                }
                 else
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,

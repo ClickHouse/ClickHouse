@@ -1397,7 +1397,8 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
     return update_lock;
 }
 
-QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
+QueryPipeline StorageMergeTree::updateLightweight(
+    const MutationCommands & commands, ContextPtr query_context, LightweightUpdateSettings settings)
 {
     assertNotReadonly();
     auto context_copy = Context::createCopy(query_context);
@@ -1423,7 +1424,7 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
-    auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
+    auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy, settings);
 
     auto sink = std::make_shared<MergeTreeSinkPatch>(
         *this,

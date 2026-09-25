@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 
 
 namespace DB
@@ -73,6 +74,8 @@ public:
         bool return_all_columns = false;
         /// Whether we should return mutated or all existing rows
         bool return_mutated_rows = false;
+        /// Whether correlated scalar subqueries are allowed in lightweight UPDATE expressions.
+        bool allow_correlated_subqueries = false;
         /// Whether we should filter deleted rows by lightweight DELETE.
         bool apply_deleted_mask = true;
         /// Whether we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
@@ -270,7 +273,9 @@ private:
         /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         std::unique_ptr<ActionsChain> new_actions_chain;
+        PlannerContextPtr new_planner_context;
         PreparedSetsPtr new_prepared_sets;
+        std::vector<CorrelatedSubtrees> new_correlated_subtrees;
 
         Names filter_column_names;
 
