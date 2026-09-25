@@ -1484,6 +1484,15 @@ struct ConvertThroughParsing
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
             size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
+            /// A `FixedString` shorter than `N` is zero-padded, and the non-throwing decimal reader treats a byte
+            /// it cannot parse as a failure rather than an end of value. `next_offset` stays the physical stride.
+            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && IsDataTypeDecimal<ToDataType>
+                && !to_datetime64 && !to_time64 && exception_mode != ConvertFromStringExceptionMode::Throw)
+            {
+                while (string_size > 0 && chars->data()[current_offset + string_size - 1] == 0)
+                    --string_size;
+            }
+
             ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)

@@ -433,7 +433,11 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
         && which.isTimeOrTime64() && (to.isTime() || to.isDateOrDate32() || to.isDateTimeOrDateTime64());
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
-    if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
+    /// `CastType::accurate` rejects a text value it cannot represent instead of returning NULL.
+    const bool parse_text_returning_null_on_error = requested_result_is_nullable
+        && (which.isString() || (which.isFixedString() && cast_type != CastType::accurate));
+
+    if (parse_text_returning_null_on_error)
     {
         /// In case when converting to Nullable type, we apply different parsing rule,
         /// that will not throw an exception but return NULL in case of malformed input.
@@ -679,7 +683,10 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                 from_type->getName(), to_type->getName());
     }
 
-    return [this, type_index, scale, to_type, requested_result_is_nullable]
+    const bool parse_text_returning_null_on_error = requested_result_is_nullable
+        && (which.isString() || (which.isFixedString() && cast_type != CastType::accurate));
+
+    return [this, type_index, scale, to_type, parse_text_returning_null_on_error]
         (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
     {
         ColumnPtr result_column;
@@ -756,9 +763,9 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
 
                 return true;
             }
-            else if constexpr (std::is_same_v<LeftDataType, DataTypeString>)
+            else if constexpr (std::is_same_v<LeftDataType, DataTypeString> || std::is_same_v<LeftDataType, DataTypeFixedString>)
             {
-                if (requested_result_is_nullable)
+                if (parse_text_returning_null_on_error)
                 {
                     /// Consistent with CAST(Nullable(String) AS Nullable(Numbers))
                     /// In case when converting to Nullable type, we apply different parsing rule,
