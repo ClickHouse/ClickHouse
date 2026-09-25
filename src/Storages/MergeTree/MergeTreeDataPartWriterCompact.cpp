@@ -272,7 +272,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     }
     else
     {
-        columns_buffer.add(result_block.mutateColumns());
+        columns_buffer.add(result_block.mutateColumns(), [this] { checkWriteCancellation(); });
         size_t rows_in_buffer = columns_buffer.size();
         if (rows_in_buffer >= current_mark_rows)
             flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
@@ -309,6 +309,8 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
     for (const auto & granule : granules)
     {
+        checkWriteCancellation();
+
         /// Tricky part, because we share compressed streams between different columns substreams.
         /// Compressed streams write data to the single file, but with different compression codecs.
         /// So we flush each stream (using next()) before using new one, because otherwise we will override
@@ -564,7 +566,7 @@ void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums &
     checksums.files[marks_file_name].file_hash = marks_file_hashing->getHash();
 }
 
-void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && columns)
+void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && columns, const std::function<void()> & check_cancellation)
 {
     if (accumulated_columns.empty())
         accumulated_columns = std::move(columns);
@@ -574,7 +576,17 @@ void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && column
         {
             /// Fix dynamic structure so it won't changed after insertion of new rows.
             accumulated_columns[i]->fixDynamicStructure();
-            accumulated_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+
+            /// The structure of the accumulated column is fixed above, so appending the range
+            /// in chunks yields exactly the same column as appending it at once. The chunking
+            /// only exists to poll for query cancellation while a huge block is buffered.
+            const size_t rows_to_append = columns[i]->size();
+            for (size_t offset = 0; offset < rows_to_append; offset += IColumn::CANCELLATION_CHECK_PERIOD_ROWS)
+            {
+                check_cancellation();
+                accumulated_columns[i]->insertRangeFrom(
+                    *columns[i], offset, std::min(IColumn::CANCELLATION_CHECK_PERIOD_ROWS, rows_to_append - offset));
+            }
         }
     }
 }

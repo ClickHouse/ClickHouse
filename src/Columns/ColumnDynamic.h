@@ -421,9 +421,9 @@ public:
     void fixDynamicStructure() override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
-    StatisticsPtr getOrCalculateStatistics() const;
+    StatisticsPtr getOrCalculateStatistics(const CheckCancellationCallback & check_cancellation = {}) const;
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation) override;
     bool hasStatistics() const override { return true; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
