@@ -67,6 +67,10 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         static_cast<FifoQueue &>(*node).purgeQueue();
     }
 
+    static void onQueueDetached(const NodePtr &)
+    {
+    }
+
     static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority priority)
     {
         NodePtr result = std::make_shared<FairPolicy>(event_queue_, SchedulerNodeInfo{});
@@ -174,6 +178,11 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         static_cast<AllocationQueue &>(*node).purgeQueue();
     }
 
+    static void onQueueDetached(const NodePtr & node)
+    {
+        static_cast<AllocationQueue &>(*node).processActivation();
+    }
+
     static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority precedence)
     {
         NodePtr result = std::make_shared<FairAllocation>(event_queue_, SchedulerNodeInfo{});
@@ -206,7 +215,8 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         NodePtr result = std::make_shared<AllocationLimit>(
             event_queue_,
             SchedulerNodeInfo{},
-            settings_.getAllocationLimit(unit));
+            settings_.getAllocationLimit(unit),
+            settings_.getSoftAllocationLimit(unit));
         result->basename = "limit";
         result->workload = workload;
         return result;
@@ -215,6 +225,7 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
     static void updateSemaphore(const NodePtr & node, const WorkloadSettings & settings_, CostUnit unit)
     {
         static_cast<AllocationLimit &>(*node).updateLimit(settings_.getAllocationLimit(unit));
+        static_cast<AllocationLimit &>(*node).updateSoftLimit(settings_.getSoftAllocationLimit(unit));
     }
 
     static bool hasThrottler(const WorkloadSettings &, CostUnit)
@@ -495,6 +506,16 @@ protected:
                 Traits::updateQueue(queue, settings, unit);
         }
 
+        /// The queue outlives this node while older versions reference it, and from now on it serves
+        /// its allocations on its own.
+        void detachQueue()
+        {
+            if (!queue)
+                return;
+            detach(queue);
+            Traits::onQueueDetached(queue);
+        }
+
     private:
         void removeQueue()
         {
@@ -638,6 +659,13 @@ public:
     WorkloadNodeCommon(EventQueue & event_queue_, const WorkloadSettings & settings)
         : BaseNode(event_queue_, SchedulerNodeInfo(settings))
     {}
+
+    ~WorkloadNodeCommon() override
+    {
+        /// Queues and constraints outlive this node while older versions are still referenced by classifiers.
+        impl.branch.detachQueue();
+        forEachSchedulerNode([](ISchedulerNode * node) { node->workload = nullptr; });
+    }
 
     void attachWorkloadChild(const WorkloadNodePtr & child) final
     {
@@ -928,6 +956,13 @@ private:
     {
         chassert(child);
         return child->selectAllocationToKill(killer, limit, details);
+    }
+
+    ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) override
+    {
+        chassert(child);
+        // Single-child passthrough: the child returns nullptr if nothing in its subtree is reclaimable.
+        return child->selectAllocationToSpill(at_least, details);
     }
 
     void propagateUpdateSchedulingSettings() override

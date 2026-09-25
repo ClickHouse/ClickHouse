@@ -36,14 +36,39 @@ DistinctTransform::DistinctTransform(
     const Names & columns_,
     bool allow_abandoning_,
     bool skip_null_keys_,
-    const UInt64 max_bytes_before_pass_through_)
+    const UInt64 max_bytes_before_pass_through_,
+    bool allow_spilling_)
     : ISimpleTransform(header_, header_, true)
     , distinct_set(std::in_place, *header_, columns_, set_size_limits_, skip_null_keys_)
     , limit_hint(limit_hint_)
     , max_bytes_before_pass_through(max_bytes_before_pass_through_)
+    , allow_spilling(allow_spilling_)
 {
     if (allow_abandoning_)
         abandon_controller.emplace();
+}
+
+ProcessorMemoryStats DistinctTransform::getMemoryStats() const
+{
+    ProcessorMemoryStats res;
+    if (allow_spilling && distinct_set)
+    {
+        res.spillable_memory_bytes = distinct_set->getTotalByteCount();
+        res.need_reserved_memory_bytes = res.spillable_memory_bytes;
+    }
+    return res;
+}
+
+size_t DistinctTransform::spill(size_t /*at_least_bytes*/)
+{
+    const size_t bytes = getMemoryStats().spillable_memory_bytes;
+    if (!bytes)
+        return 0;
+
+    /// The downstream consumer still deduplicates exactly, including keys already emitted here.
+    distinct_set.reset();
+    ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
+    return bytes;
 }
 
 void DistinctTransform::transform(Chunk & chunk)

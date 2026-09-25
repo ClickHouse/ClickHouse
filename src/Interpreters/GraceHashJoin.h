@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/ISpillable.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
@@ -10,6 +11,7 @@
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
+#include <base/defines.h>
 
 #include <mutex>
 
@@ -42,7 +44,7 @@ class HashJoin;
  * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
  * Note that non-joined rows are processed in multiple threads, unlike HashJoin/ConcurrentHashJoin/MergeJoin.
  */
-class GraceHashJoin final : public IJoin
+class GraceHashJoin final : public IJoin, public ISpillable
 {
     class FileBucket;
     class DelayedBlocks;
@@ -117,9 +119,9 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    bool canSpillToDisk() const override { return true; }
-    size_t getSpillableBytes() const override;
-    void requestSpill() override { force_spill = true; }
+    ISpillable * getSpillable() override { return this; }
+    ProcessorMemoryStats getMemoryStats() const override;
+    size_t spill(size_t at_least_bytes) override;
 
 private:
     void initBuckets();
@@ -128,11 +130,9 @@ private:
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block);
-
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
     void repartitionCurrentBucket(size_t prev_keys_num, Block leftover);
     bool canForceRepartition() const;
-    bool forcedSpillPending() const;
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
@@ -191,7 +191,6 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
-    std::atomic<bool> force_spill = false;
 
     /// What the buckets built and already released held, for the `max_rows_in_join` /
     /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.

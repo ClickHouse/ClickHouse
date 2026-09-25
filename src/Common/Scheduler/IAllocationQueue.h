@@ -36,6 +36,22 @@ public:
     /// `decrease_size` must be positive.
     virtual void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) = 0;
 
+    /// Reports the amount of this allocation's size that can be spilled or discarded on request.
+    /// `reclaimable_total` is an absolute total (not a delta) and is clamped to the current size.
+    /// Advisory: never blocks and never fails. The per-subtree `reclaimable` aggregate is updated on the
+    /// scheduler thread and propagated to the root; the scheduler uses it to choose spill victims.
+    virtual void setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) = 0;
+
+    /// Scheduler-thread-only: reserve up to `max_bytes` of the allocation's uncommitted capacity,
+    /// propagate the credit to every ancestor, and deliver `ResourceAllocation::spillAllocation`.
+    /// Returns the issued amount, or zero if the candidate no longer has available capacity.
+    virtual ResourceCost requestSpill(ResourceAllocation & allocation, ResourceCost max_bytes) = 0;
+
+    /// The reply to `ResourceAllocation::spillAllocation`: the query finished handling the spill request.
+    /// `settled_bytes` retires the claim, independently of the amount actually freed.
+    /// Publish reservation decreases before this reply; increase approval need not precede the reply.
+    virtual void finishSpill(ResourceAllocation & allocation, ResourceCost settled_bytes, ResourceCost reclaimable_total) = 0;
+
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.
     /// For pending allocations, `ResourceAllocation::allocationFailed` will be called.

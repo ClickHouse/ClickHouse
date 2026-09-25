@@ -6,7 +6,7 @@ ConstantJoin: CROSS
 ConstantJoin: constant ON
 1	1	not collected	not collected
 Join engine ALL INNER
-1	1	1	2	439	521
+1	1	2	2	439	521
 Join engine ALL INNER, no matches
 439	not collected
 Join engine ANY LEFT

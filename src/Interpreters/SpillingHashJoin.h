@@ -9,6 +9,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/ISpillable.h>
 #include <Common/SharedMutex.h>
 
 
@@ -43,7 +44,7 @@ class ConcurrentHashJoin;
 /// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
 /// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
 /// GraceHashJoin), since spilling may reorder rows.
-class SpillingHashJoin final : public IJoin
+class SpillingHashJoin final : public IJoin, public ISpillable
 {
 public:
     /// Single-thread mode: wraps a HashJoin.
@@ -90,6 +91,12 @@ public:
 
     StepAnalysisReport getAnalysisReport() const override;
 
+    ISpillable * getSpillable() override { return this; }
+    /// While collecting: the whole right side, spilled by switching to the grace join.
+    /// After the switch: whatever the grace join reports. Nothing once the build ended in memory.
+    ProcessorMemoryStats getMemoryStats() const override;
+    size_t spill(size_t at_least_bytes) override;
+
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
     bool supportParallelNonJoinedBlocksProcessing() const override;
     bool isParallelNonJoinedProcessingEnabled() const override;
@@ -109,10 +116,6 @@ public:
 
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
-
-    bool canSpillToDisk() const override { return true; }
-    size_t getSpillableBytes() const override;
-    void requestSpill() override;
 
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
     /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
@@ -135,9 +138,7 @@ private:
         IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin directly without switching.
     };
 
-    /// `spill_immediately` is for the memory-pressure path: the new GraceHashJoin repartitions as it
-    /// takes the data over, instead of holding all of it in bucket 0 until the next spill request.
-    void switchToGraceHashJoin(bool spill_immediately = false);
+    void switchToGraceHashJoin();
     void tryConvertSlots();
 
     LoggerPtr log;

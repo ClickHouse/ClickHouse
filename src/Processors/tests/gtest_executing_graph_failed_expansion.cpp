@@ -75,7 +75,7 @@ TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
     processors->push_back(first);
     processors->push_back(second);
 
-    ExecutingGraph graph(processors, /* profile_processors_ = */ false);
+    ExecutingGraph graph(processors, /*profile_processors_=*/ false, /*memory_reservation_=*/ nullptr);
     ExecutingGraph::Queue queue;
     ExecutingGraph::Queue async_queue;
 

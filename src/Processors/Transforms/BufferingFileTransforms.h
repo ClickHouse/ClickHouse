@@ -32,12 +32,13 @@ private:
 
 /// Reads a completed temporary stream after its extra input finishes. This input carries no data;
 /// the pipeline connects it to the sink's completion signal or to a coordinating processor.
-/// The source borrows the holder owned by `BufferingToFileSink`. The pipeline retains both processors
-/// throughout execution, keeping the holder alive while this source reads.
+/// The source either borrows the holder owned by `BufferingToFileSink`, retained by the pipeline,
+/// or owns an already finalized stream, in which case it needs no completion input.
 class BufferingFromFileSource : public ISource
 {
 public:
     BufferingFromFileSource(SharedHeader header, TemporaryBlockStreamHolder & tmp_stream_, LoggerPtr log_);
+    BufferingFromFileSource(SharedHeader header, TemporaryBlockStreamHolder && tmp_stream_, LoggerPtr log_);
 
     String getName() const override { return "BufferingFromFileSource"; }
 
@@ -52,6 +53,7 @@ public:
     InputPort & getCompletionPort() { return inputs.front(); }
 
 private:
+    std::optional<TemporaryBlockStreamHolder> owned_stream;
     TemporaryBlockStreamHolder & tmp_stream;
     std::optional<TemporaryBlockStreamReaderHolder> tmp_read_stream;
     LoggerPtr log;

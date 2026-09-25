@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"reader_executor_plan_look_ahead", 16777216, 16777216, "New experimental ReaderExecutor setting: how far ahead cache residency is resolved into the held read plan."},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
+            {"min_bytes_to_spill", 64_MiB, 64_MiB, "New experimental setting."},
             {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"ai_function_max_output_tokens_per_query", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"ai_function_max_api_calls_per_query", 1000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},

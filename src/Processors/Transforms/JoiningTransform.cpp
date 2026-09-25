@@ -283,7 +283,6 @@ Block JoiningTransform::readExecute(Chunk & chunk)
 FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
     : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
 {
-    spillable = join->canSpillToDisk();
 }
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
@@ -394,29 +393,6 @@ void FillingRightJoinSideTransform::work()
     }
 
     set_totals = for_totals;
-}
-
-ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
-{
-    if (!spillable)
-        return {};
-
-    ProcessorMemoryStats res;
-    res.spillable_memory_bytes = static_cast<Int64>(join->getSpillableBytes());
-    // in case the hash table will resize which requires more than 2x additional memory.
-    // we must reserve enough memory.
-    res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
-    return res;
-}
-
-bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
-{
-    if (spillable && join->getSpillableBytes() >= bytes)
-    {
-        join->requestSpill();
-        return true;
-    }
-    return false;
 }
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(

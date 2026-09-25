@@ -44,6 +44,10 @@ public:
     /// just triggering procedure, not doing the kill itself.
     virtual void killAllocation(const std::exception_ptr & reason) = 0;
 
+    /// Scheduler asks this allocation to reclaim at least `additional_bytes` of its size soon
+    /// IMPORTANT: it is called from the scheduler thread and must be fast - just record the request
+    virtual void spillAllocation(ResourceCost additional_bytes) = 0;
+
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
 
@@ -52,6 +56,8 @@ private:
 
     ResourceCost allocated = 0; /// Currently allocated.
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
+    ResourceCost reclaimable = 0; /// Portion of `allocated` that can be spilled/discarded on request (advisory). Updated via `IAllocationQueue::setReclaimable`.
+    ResourceCost spill_outstanding = 0;
 
     IncreaseRequest increase;
     DecreaseRequest decrease;
@@ -62,21 +68,25 @@ private:
     boost::intrusive::set_member_hook<> increasing_hook;
     boost::intrusive::list_member_hook<> decreasing_hook;
     boost::intrusive::list_member_hook<> removing_hook;
+    boost::intrusive::set_member_hook<> reclaimable_hook; /// Membership in the queue's reclaimable set (linked iff `spill_key > 0`).
     using PendingHook    = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::pending_hook>;
     using RunningHook    = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::set_member_hook<>, &ResourceAllocation::running_hook>;
     using IncreasingHook = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::set_member_hook<>, &ResourceAllocation::increasing_hook>;
     using DecreasingHook = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::decreasing_hook>;
     using RemovingHook   = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::removing_hook>;
+    using ReclaimableHook = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::set_member_hook<>, &ResourceAllocation::reclaimable_hook>;
 
     /// Keys for intrusive sets
     /// NOTE: Can only be accessed under queue.mutex as it is used in ordering, allocation.mutex is not needed.
     size_t unique_id = 0; /// Unique id for tie breaking in ordering.
     ResourceCost fair_key = 0; /// Currently allocated plus pending increase (key for max-min fair ordering).
+    ResourceCost spill_key = 0; /// Uncommitted reclaimable bytes, clamped at zero.
 
     /// Ordering by size and unique id for tie breaking
     /// Used for both running and increasing allocations for consistent ordering
     /// NOTE: called outside of the scheduler thread and thus requires queue.mutex
     struct ByFairKey { bool operator()(const auto & lhs, const auto & rhs) const noexcept { return std::tie(lhs.fair_key, lhs.unique_id) < std::tie(rhs.fair_key, rhs.unique_id); } };
+    struct BySpillKey { bool operator()(const auto & lhs, const auto & rhs) const noexcept { return std::tie(lhs.spill_key, lhs.unique_id) < std::tie(rhs.spill_key, rhs.unique_id); } };
 
     /// Intrusive data structures for managing allocations
     /// We use intrusive structures to avoid allocations during scheduling (we might be under memory pressure)
@@ -85,6 +95,8 @@ private:
     using IncreasingSet  = boost::intrusive::set<ResourceAllocation, IncreasingHook, boost::intrusive::compare<ByFairKey>>;
     using DecreasingList = boost::intrusive::list<ResourceAllocation, DecreasingHook>;
     using RemovingList   = boost::intrusive::list<ResourceAllocation, RemovingHook>;
+    /// Available allocations ordered by uncommitted reclaimable bytes.
+    using ReclaimableSet = boost::intrusive::set<ResourceAllocation, ReclaimableHook, boost::intrusive::compare<BySpillKey>>;
 };
 
 }

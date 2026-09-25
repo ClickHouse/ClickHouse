@@ -154,6 +154,8 @@ void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update
         else
             update.resetDecrease();
     }
+    // Precedence keys are constant; availability updates only change membership.
+    syncReclaimableMembership(from_child, update.detached == &from_child);
     if (parent && update)
         propagate(std::move(update));
 }
@@ -192,6 +194,24 @@ bool PrecedenceAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRe
     decrease_child = decreasing_children.empty() ? nullptr : &*decreasing_children.begin();
     decrease = decrease_child ? decrease_child->decrease : nullptr;
     return old_decrease != decrease;
+}
+
+void PrecedenceAllocation::syncReclaimableMembership(ISpaceSharedNode & from_child, bool detach_child)
+{
+    bool should_be_member = !detach_child && from_child.available_reclaimable > 0;
+    bool is_member = from_child.isReclaimable();
+    if (should_be_member && !is_member)
+        reclaimable_children.insert(from_child); // Precedence key is constant, so position is stable
+    else if (!should_be_member && is_member)
+        reclaimable_children.erase(reclaimable_children.iterator_to(from_child));
+}
+
+ResourceAllocation * PrecedenceAllocation::selectAllocationToSpill(ResourceCost at_least, String & details)
+{
+    if (reclaimable_children.empty())
+        return nullptr; // No reclaimable child in this subtree — fail-close.
+    // Descend into the least-precedence reclaimable child (the tail), matching the kill order.
+    return reclaimable_children.rbegin()->selectAllocationToSpill(at_least, details);
 }
 
 void PrecedenceAllocation::updateMinMaxAllocated(ResourceCost new_value)

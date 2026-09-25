@@ -1,11 +1,14 @@
 #pragma once
 
+#include <Processors/ISpillable.h>
 #include <Processors/Transforms/SortingTransform.h>
 #include <Common/Logger.h>
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/TopKThresholdTracker.h>
+
+#include <list>
 
 
 namespace DB
@@ -16,7 +19,7 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 /// Takes sorted separate chunks of data. Sorts them.
 /// Returns stream with globally sorted data.
-class MergeSortingTransform final : public SortingTransform
+class MergeSortingTransform final : public SortingTransform, public ISpillable
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
@@ -37,9 +40,12 @@ public:
 
     String getName() const override { return "MergeSortingTransform"; }
 
+    ISpillable * getSpillable() override { return this; }
+    ProcessorMemoryStats getMemoryStats() const override;
+    size_t spill(size_t at_least_bytes) override;
+
 protected:
     void consume(Chunk chunk) override;
-    void serialize() override;
     void generate() override;
 
     PipelineUpdate updatePipeline() override;
@@ -50,7 +56,8 @@ private:
     size_t max_bytes_in_block_before_external_sort;
     size_t max_bytes_in_query_before_external_sort;
     TemporaryDataOnDiskScopePtr tmp_data;
-    size_t temporary_files_num = 0;
+    /// Sorted parts written to disk, merged with the rest of the chunks at the end.
+    std::list<TemporaryBlockStreamHolder> temporary_streams;
     size_t min_free_disk_space;
     size_t max_block_bytes;
 
@@ -64,6 +71,9 @@ private:
 
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();
+
+    /// Merge all accumulated blocks into a sorted part on disk and release them.
+    void dumpToTemporaryFile();
 
     ProcessorPtr external_merging_sorted;
 

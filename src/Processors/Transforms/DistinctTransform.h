@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
+#include <Processors/ISpillable.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <QueryPipeline/SizeLimits.h>
 
@@ -47,7 +48,7 @@ private:
 /// The streaming hash-based `DISTINCT`: emits the first occurrence of each key as soon as it is seen. The
 /// deduplication logic itself lives in `DistinctSetFilter` (shared with `ExternalDistinctTransform`, which
 /// additionally spills to disk under memory pressure).
-class DistinctTransform final : public ISimpleTransform
+class DistinctTransform final : public ISimpleTransform, public ISpillable
 {
 public:
     /// `allow_abandoning_` permits giving up on mostly-unique input (see `DeduplicationAbandonController`):
@@ -58,6 +59,7 @@ public:
     /// followed by an exact deduplicating consumer. The transform frees its set when this threshold is
     /// exceeded or projected growth and filtering exceed its remaining budget. Subsequent rows pass
     /// through, giving up any remaining local limit hint. Zero disables this memory policy.
+    /// `allow_spilling_` permits the scheduler to request the same release for preliminary deduplication.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
@@ -65,9 +67,14 @@ public:
         const Names & columns_,
         bool allow_abandoning_ = false,
         bool skip_null_keys_ = false,
-        UInt64 max_bytes_before_pass_through_ = 0);
+        UInt64 max_bytes_before_pass_through_ = 0,
+        bool allow_spilling_ = false);
 
     String getName() const override { return "DistinctTransform"; }
+
+    ISpillable * getSpillable() override { return allow_spilling ? this : nullptr; }
+    ProcessorMemoryStats getMemoryStats() const override;
+    size_t spill(size_t at_least_bytes) override;
 
 protected:
     void transform(Chunk & chunk) override;
@@ -80,6 +87,7 @@ private:
     std::optional<DeduplicationAbandonController> abandon_controller;
 
     const UInt64 max_bytes_before_pass_through;
+    const bool allow_spilling;
 };
 
 }

@@ -3490,7 +3490,8 @@ Query memory threshold, in bytes, for spilling `DISTINCT` data to disk. Actual m
 this threshold.
 
 `0` disables this threshold. If `max_bytes_ratio_before_external_distinct` also provides a threshold,
-the smaller is used. Set both settings to `0` to disable spilling.
+the smaller is used. Set both settings to `0` to disable threshold-triggered spilling.
+Workload memory limits and `enable_adaptive_memory_spill_scheduler` can still request spilling.
 
 See [DISTINCT in external memory](/sql-reference/statements/select/distinct#distinct-in-external-memory).
 )", 0) \
@@ -4212,6 +4213,11 @@ Read more about [memory overcommit](/concepts/features/configuration/settings/me
 Used in workload scheduling. The minimum amount of RAM reserved to be used for running a query on a single server. Reservation is made through the WORKLOAD hierarchy using the value of a `workload` query setting.
 If not enough memory is available to the workload, a query is prevented from starting and waits in pending state until the reservation can be fulfilled.
 A value of `0` means no reservation.
+This setting takes effect only if MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, min_bytes_to_spill, 64_MiB, R"(
+Used in workload scheduling.
+The minimum amount of bytes to spill.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
@@ -9341,8 +9347,8 @@ on, `use_variant_as_common_type` is turned off, and the query analyzer is turned
 An explicit `SETTINGS` clause in the query still takes precedence.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
-Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
-`grace_hash` and the adaptive `hash` / `parallel_hash` path.
+Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join processors to external storage under query memory pressure.
+Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
 )", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(
 Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.

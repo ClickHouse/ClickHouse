@@ -1,24 +1,23 @@
 #include <mutex>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/MemorySpillScheduler.h>
-#include <Processors/IProcessor.h>
+#include <Processors/ISpillable.h>
 
 
 namespace DB
 {
-void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
+size_t MemorySpillScheduler::checkAndSpill(ISpillable * processor)
 {
-    chassert(processor->isSpillable());
     if (!enable || !getHardLimit())
-        return;
+        return 0;
 
     auto stats = processor->getMemoryStats();
     auto * selected_processor = selectSpilledProcessor(processor, stats);
 
     if (processor == selected_processor)
-    {
-        processor->spillOnSize(stats.spillable_memory_bytes);
-    }
+        return processor->spill(/*at_least_bytes=*/ 1);
+
+    return 0;
 }
 
 Int64 MemorySpillScheduler::getHardLimit()
@@ -34,10 +33,9 @@ Int64 MemorySpillScheduler::getHardLimit()
     return hard_limit;
 }
 
-void MemorySpillScheduler::remove(IProcessor * processor)
+void MemorySpillScheduler::remove(ISpillable * processor)
 {
-    // Only the spillable processors are tracked.
-    if (!enable || !processor->isSpillable())
+    if (!enable)
         return;
     std::lock_guard lock(mutex);
     processor_stats.erase(processor);
@@ -59,7 +57,7 @@ void MemorySpillScheduler::updateTopProcessor()
     }
 }
 
-IProcessor * MemorySpillScheduler::selectSpilledProcessor(IProcessor * current_processor, const ProcessorMemoryStats & mem_stats)
+ISpillable * MemorySpillScheduler::selectSpilledProcessor(ISpillable * current_processor, const ProcessorMemoryStats & mem_stats)
 {
     auto current_mem_used = getCurrentQueryMemoryUsage();
     auto limit = getHardLimit();
