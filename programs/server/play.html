@@ -4474,7 +4474,7 @@ class QueryResultElement extends HTMLElement
         if (td._jsonText === undefined) { return; }
         const pretty = document.createElement('div');
         pretty.className = 'json-pretty';
-        pretty.appendChild(prettyPrintJSON(JSON.parse(td._jsonText)));
+        pretty.appendChild(prettyPrintJSON(td._jsonText));
         td.querySelector('.cell-content').replaceChildren(pretty);
     }
 
@@ -4675,7 +4675,7 @@ class QueryResultElement extends HTMLElement
             this._column_is_bool[elem.name] = !!unwrapped_type.match(/^Bool/);
             /// Never for a name the header carries more than once: the cells are keyed by name too
             /// (`appendRow`, `_renderCell`), so a `JSON` namesake would tag a non-`JSON` column's cells,
-            /// whose text is then no JSON for `_expandJSON` to parse. Withheld like sort and filter
+            /// whose text is then no JSON for `_expandJSON` to pretty-print. Withheld like sort and filter
             /// (`duplicateColumnNames`): fail closed, and the compact form stays.
             this._column_is_json[elem.name] = !this._duplicate_columns.has(elem.name) && !!unwrapped_type.match(/^JSON\b/);
             this._column_is_nullable[elem.name] = !!elem.type.match(/^(?:LowCardinality\()?Nullable\(/);
@@ -16620,13 +16620,19 @@ function escapeHTML(s) {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/// Pretty-print a JSON value, as parsed from the response, into a DocumentFragment: two-space
-/// indentation, one member or element per line, an empty object or array kept on its own line as
-/// `{}` / `[]`. Keys, strings, numbers and the literals `true`, `false`, `null` are wrapped in spans
-/// (`.json-key`, `.json-string`, `.json-number`, `.json-literal`) for the highlighting in the result
-/// element's stylesheet; the punctuation and the indentation stay plain text between them. Everything
-/// is added as text nodes, never as HTML, so a value cannot inject markup.
-function prettyPrintJSON(value)
+/// Pretty-print the text of a JSON value into a DocumentFragment: two-space indentation, one member
+/// or element per line, an empty object or array kept on its own line as `{}` / `[]`. Keys, strings,
+/// numbers and the literals `true`, `false`, `null` are wrapped in spans (`.json-key`, `.json-string`,
+/// `.json-number`, `.json-literal`) for the highlighting in the result element's stylesheet; the
+/// punctuation and the indentation stay plain text between them. Everything is added as text nodes,
+/// never as HTML, so a value cannot inject markup.
+///
+/// Only the layout changes, never the value: the text is walked by a small recursive-descent parser
+/// that copies every scalar lexeme verbatim instead of going through `JSON.parse`, which would turn a
+/// number into an IEEE-754 double (`9007199254740993` shown as `9007199254740992`, `1e309` as the
+/// non-JSON `Infinity`), re-escape strings, drop a repeated key and move integer-like keys first.
+/// Text that is not JSON throws a `SyntaxError`, like `JSON.parse` does.
+function prettyPrintJSON(json)
 {
     const fragment = document.createDocumentFragment();
     /// Plain text is accumulated and flushed as one node before each highlighted span, so the
@@ -16646,41 +16652,69 @@ function prettyPrintJSON(value)
         fragment.appendChild(span);
     };
 
-    const render = (v, indent) =>
+    let pos = 0;
+    const fail = () => { throw new SyntaxError(`Invalid JSON at position ${pos}`); };
+    const skipSpace = () =>
     {
-        if (v === null || typeof v === 'boolean') { token('json-literal', String(v)); }
-        else if (typeof v === 'number') { token('json-number', String(v)); }
-        else if (typeof v === 'string') { token('json-string', JSON.stringify(v)); }
-        else if (Array.isArray(v))
-        {
-            if (v.length === 0) { text('[]'); return; }
-            const inner = indent + '  ';
-            text('[\n' + inner);
-            v.forEach((item, i) =>
-            {
-                if (i > 0) { text(',\n' + inner); }
-                render(item, inner);
-            });
-            text('\n' + indent + ']');
-        }
-        else
-        {
-            const keys = Object.keys(v);
-            if (keys.length === 0) { text('{}'); return; }
-            const inner = indent + '  ';
-            text('{\n' + inner);
-            keys.forEach((key, i) =>
-            {
-                if (i > 0) { text(',\n' + inner); }
-                token('json-key', JSON.stringify(key));
-                text(': ');
-                render(v[key], inner);
-            });
-            text('\n' + indent + '}');
-        }
+        while (pos < json.length && ' \t\n\r'.includes(json[pos])) { ++pos; }
+    };
+    const expect = (c) =>
+    {
+        skipSpace();
+        if (json[pos] !== c) { fail(); }
+        ++pos;
+    };
+    /// The grammar of the JSON scalars (RFC 8259), matched sticky at the current position.
+    const STRING = /"(?:[^"\\\u0000-\u001F]|\\(?:["\\\/bfnrt]|u[0-9A-Fa-f]{4}))*"/y;
+    const NUMBER = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
+    const LITERAL = /true|false|null/y;
+    const lexeme = (re) =>
+    {
+        skipSpace();
+        re.lastIndex = pos;
+        const match = re.exec(json);
+        if (!match) { fail(); }
+        pos = re.lastIndex;
+        return match[0];
     };
 
-    render(value, '');
+    const render = (indent) =>
+    {
+        skipSpace();
+        const c = json[pos];
+        if (c === '{' || c === '[')
+        {
+            const close = c === '{' ? '}' : ']';
+            ++pos;
+            skipSpace();
+            if (json[pos] === close) { ++pos; text(c + close); return; }
+            const inner = indent + '  ';
+            text(c + '\n' + inner);
+            for (;;)
+            {
+                if (c === '{')
+                {
+                    token('json-key', lexeme(STRING));
+                    expect(':');
+                    text(': ');
+                }
+                render(inner);
+                skipSpace();
+                if (json[pos] !== ',') { break; }
+                ++pos;
+                text(',\n' + inner);
+            }
+            expect(close);
+            text('\n' + indent + close);
+        }
+        else if (c === '"') { token('json-string', lexeme(STRING)); }
+        else if (c === '-' || (c >= '0' && c <= '9')) { token('json-number', lexeme(NUMBER)); }
+        else { token('json-literal', lexeme(LITERAL)); }
+    };
+
+    render('');
+    skipSpace();
+    if (pos !== json.length) { fail(); }
     flush();
     return fragment;
 }

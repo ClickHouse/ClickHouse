@@ -9,7 +9,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The rendering and its styling are written in different places of the page and nothing fails
 # when they drift apart: a token class the script emits but the stylesheet does not style is
 # silently unhighlighted, and a palette variable defined for one theme only is silently missing
-# in the other. This test pins those contracts on the served page.
+# in the other. This test pins those contracts on the served page. The rendering itself (the layout,
+# and the value kept verbatim) is executed by the integration test `test_play_json_pretty_print`.
 
 PLAY_PAGE=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play")
 
@@ -19,11 +20,8 @@ UNINDENTED_PAGE=$(echo "$PLAY_PAGE" | sed -e 's/^[[:space:]]*//')
 # its name more than once: the cells are keyed by name, so a `JSON` namesake would send the text of a
 # non-`JSON` cell through `JSON.parse`. Such a column is not tagged at all, like sort and filter are
 # withheld from it.
-echo "$UNINDENTED_PAGE" | grep -c -x -F 'function prettyPrintJSON(value)'
+echo "$UNINDENTED_PAGE" | grep -c -x -F 'function prettyPrintJSON(json)'
 echo "$UNINDENTED_PAGE" | grep -c -x -F "this._column_is_json[elem.name] = !this._duplicate_columns.has(elem.name) && !!unwrapped_type.match(/^JSON\\b/);"
-
-# Two spaces per nesting level: the only place the indentation step is defined.
-echo "$UNINDENTED_PAGE" | grep -c -x -F "const inner = indent + '  ';"
 
 # Every token class the pretty-printer emits is styled inside the pretty-printed block.
 for cls in $(echo "$UNINDENTED_PAGE" | sed -n -e "s/^.*token('\(json-[a-z]*\)',.*$/\1/p" | sort -u)
