@@ -161,7 +161,7 @@ struct_utf8	Variant(String, Tuple(\n    a Nullable(Int32)))
 binary_fsb	Variant(FixedString(16), String)					
 utf8_int32	Variant(Int32, String)					
 sparse	Variant(Bool, Int8)					
-nested	Tuple(\n    v Variant(Bool, Int8))					
+nested	Nullable(Tuple(v Variant(Bool, Int8)))					
 listed	Array(Variant(Bool, Int8))					
 --- and a request that merely extends the decoded Variant leaves every branch as decoded ---
 true	Variant(Bool, Int8, String)
