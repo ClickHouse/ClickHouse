@@ -4,6 +4,11 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
 #include <Common/logger_useful.h>
 
+namespace Poco::Util
+{
+class AbstractConfiguration;
+}
+
 namespace DB
 {
 
@@ -23,9 +28,6 @@ private:
     IcebergRESTCatalogWarehousesPtr warehouses;
 };
 
-/// The catalog state lives in Keeper under `<zookeeper_path>/<warehouse>`.
-/// `base_location` is the storage prefix for tables created without an explicit location.
-/// The config defines a single warehouse for now. Warehouses will be stored in Keeper and managed with SQL later.
-HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & server, String warehouse, String base_location, const String & zookeeper_path);
+HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config);
 
 }

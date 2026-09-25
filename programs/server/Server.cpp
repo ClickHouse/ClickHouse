@@ -4594,22 +4594,18 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG) && !config.getString("iceberg_rest_catalog.port", "").empty())
         {
             port_name = "iceberg_rest_catalog.port";
-            auto warehouse = config.getString("iceberg_rest_catalog.warehouse", "");
-            auto base_location = config.getString("iceberg_rest_catalog.base_location", "");
-            auto zookeeper_path = config.getString("iceberg_rest_catalog.zookeeper_path", "/clickhouse/iceberg_rest_catalog");
-            if (warehouse.empty())
+
+            HTTPRequestHandlerFactoryPtr handler_factory;
+            try
             {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: 'iceberg_rest_catalog.warehouse' is not set");
+                handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
             }
-            else if (base_location.empty())
+            catch (...)
             {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: 'iceberg_rest_catalog.base_location' is not set");
+                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
             }
-            else if (!global_context->hasZooKeeper())
-            {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: the catalog state is stored in Keeper, but no <zookeeper> section is configured");
-            }
-            else
+
+            if (handler_factory)
             {
                 createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -4622,7 +4618,7 @@ void Server::createServers(
                         port_name,
                         "Iceberg REST catalog: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
-                            httpContext(), createIcebergRESTCatalogHandlerFactory(*this, warehouse, base_location, zookeeper_path), server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                            httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
                 });
             }
         }

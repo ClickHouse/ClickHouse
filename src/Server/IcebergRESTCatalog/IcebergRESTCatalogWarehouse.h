@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
 
 #include <map>
@@ -13,14 +14,23 @@ namespace DB
 /// Everything that belongs to a warehouse rather than to the server goes here.
 struct IcebergRESTCatalogWarehouse
 {
+    IcebergRESTCatalogWarehouse(
+        String name_, String base_location_, KeeperIcebergRESTCatalogStorePtr store_, ObjectStoragePtr object_storage_);
+
     /// Also the REST `prefix`.
-    String name;
+    const String name;
     /// Storage prefix for tables created without an explicit location.
-    String base_location;
-    KeeperIcebergRESTCatalogStorePtr store;
+    const String base_location;
+    const KeeperIcebergRESTCatalogStorePtr store;
+    const ObjectStoragePtr object_storage;
+
+    bool ownsLocation(const String & location) const;
+    String objectKey(const String & location) const;
 };
 
 using IcebergRESTCatalogWarehousePtr = std::shared_ptr<const IcebergRESTCatalogWarehouse>;
+
+String stripTrailingSlashes(String location);
 
 /// Resolves a warehouse name to a warehouse. Shared by all request handlers.
 ///
