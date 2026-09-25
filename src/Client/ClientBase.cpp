@@ -2018,7 +2018,7 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             return true;
 
         case Protocol::Server::Exception:
-            if (cancelled_ && packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+            if (packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
             {
                 onEndOfStream();
                 return false;
