@@ -10,7 +10,6 @@
 #include <cstddef>
 #include <string>
 #include <memory>
-#include <vector>
 
 namespace DB
 {
@@ -155,9 +154,12 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
 /// The leading run of `description` whose column names all belong to `columns` (compared as a set) and
 /// are ordered by value. A collated column is ordered by its collation key, not by value, so equal
 /// values are not adjacent; it stops the prefix (in-order DISTINCT / LIMIT BY rely on value-adjacency).
+/// A column whose values comparison cannot tell apart, such as a float column holding both `-0.0` and
+/// `0.0`, stops it as well: the groups of the in-order variants come from comparison, while every other
+/// variant groups by hash, and both must give the same answer. `header` provides the column types.
 /// If the result has `columns.size()` entries, then `columns` -- in any order -- form such a prefix, so
 /// grouping by them yields contiguous groups.
-SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns);
+SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header);
 
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.
@@ -174,10 +176,20 @@ std::string dumpSortDescription(const SortDescription & description);
 
 JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description);
 
+/// The `WITH FILL` rules that `FillingRow` and `FillingTransform` rely on: a step that does not advance
+/// the row (zero, or pointing away from the sort direction) makes them generate rows without end, and a
+/// non-numeric step reaches `safeGet` in `getStepFunction`. Returns the violated rule, or an empty string
+/// when `fill` is usable for a column sorted in `direction`. Both planners and the plan deserializer
+/// check the same rules through this function, each throwing its own error code.
+String checkFillDescription(const FillColumnDescription & fill, int direction);
+
 class WriteBuffer;
 class ReadBuffer;
 
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out);
-void deserializeSortDescription(SortDescription & sort_description, ReadBuffer & in);
+/// `version` is the query-plan serialization version of the stream: a `WITH FILL` column carries its
+/// bounds only since DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP.
+void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version);
+void deserializeSortDescription(
+    SortDescription & sort_description, ReadBuffer & in, UInt64 version, size_t max_type_complexity = 0);
 
 }

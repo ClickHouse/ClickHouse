@@ -14,7 +14,7 @@
 namespace DB
 {
 
-std::map<String, PartitionCursor> buildMergeTreeCursor(const CursorTreeNodePtr & cursor)
+std::map<String, PartitionCursor> cursorTreeToMergeTreeCursor(const CursorTreeNodePtr & cursor)
 {
     std::map<String, PartitionCursor> merge_tree_cursor;
 
@@ -31,6 +31,18 @@ std::map<String, PartitionCursor> buildMergeTreeCursor(const CursorTreeNodePtr &
     }
 
     return merge_tree_cursor;
+}
+
+CursorTreeNodePtr mergeTreeCursorToCursorTree(const std::map<String, PartitionCursor> & merge_tree_cursor)
+{
+    auto cursor = std::make_shared<CursorTreeNode>();
+    for (const auto & [partition_id, position] : merge_tree_cursor)
+    {
+        auto & subtree = cursor->getSubtreeOrCreate(partition_id);
+        subtree->setValue("block_number", position.block_number);
+        subtree->setValue("block_offset", position.block_offset);
+    }
+    return cursor;
 }
 
 FilterDAGInfo buildPartitionFilter(

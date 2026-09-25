@@ -27,6 +27,11 @@ struct IQueryPlanStep::Serialization
 
     /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
+
+    /// This step's own serialization version, chosen by the registry for the stable global `version`
+    /// and written next to the step. A step bumps it on any change to its bytes and branches its
+    /// `serialize` on it. Zero for a step that has never changed its format.
+    UInt64 step_version = 0;
 };
 
 struct SerializedSetsRegistry;
@@ -51,6 +56,10 @@ struct IQueryPlanStep::Deserialization
 
     /// Query-plan serialization version the stream was written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
+
+    /// This step's own serialization version, read from the stream and already checked against the
+    /// versions this binary can read for the step. The step branches its `deserialize` on it.
+    UInt64 step_version = 0;
     /// The plan is being drained (e.g. TCPHandler::skipData) and will be discarded, not executed.
     /// Steps that are expensive or need execution-only context (index analysis, parallel-replicas
     /// callbacks) may read their bytes but build a lightweight placeholder instead of a real step.

@@ -13,3 +13,18 @@ RENAME DATABASE a TO b
 SYSTEM DROP REPLICA \'r\'
 SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'/clickhouse/tables/01/\'
 BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')
+SELECT lambda(tuple(), 1)
+SELECT arrayMap(() -> 1, [1])
+SELECT * APPLY lambda(1)(tuple(x), x + 1)
+SELECT * FROM view(SELECT 1)
+SELECT count() OVER (ORDER BY x ASC) FROM t
+SELECT any(x) IGNORE NULLS FROM t
+SELECT quantile(0.9)(x) FROM t
+SELECT * FROM view(SELECT 1 SETTINGS max_threads = 1)
+SELECT a FROM t GROUP BY GROUPING SETS ((a, b), (c))
+SELECT * APPLY quantiles(0.5, 0.9)
+SELECT * REPLACE (a + 1 AS a) FROM t
+SELECT 1 UNION ALL (SELECT 2 UNION DISTINCT SELECT 3)
+SELECT * FROM view(SELECT 1 UNION ALL SELECT 2)
+SELECT 1 UNION ALL SELECT 2 FORMAT `Null`
+1

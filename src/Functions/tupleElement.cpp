@@ -332,7 +332,7 @@ private:
     /// we return the nested object as JSON column, so nested `tupleElement` calls can be applied to it.
     static String getObjectCombinedSubcolumnName(const String & element_name)
     {
-        return String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + element_name + "`";
+        return DataTypeObject::getCombinedSubcolumnName(element_name);
     }
 
     ColumnPtr getObjectElement(const DataTypeObject & object_type, const ColumnPtr & object_column, const String & element_name) const
