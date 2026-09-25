@@ -293,6 +293,22 @@ private:
     {
         QueryPlan plan;
         QueryProcessingStage::Enum stage;
+        /// The copy of the outer query context the child was built on. Every optimization-settings snapshot
+        /// for this child is taken from it, so the snapshots agree with the child's own distributed-plan
+        /// decision instead of the outer plan's, which `ReadFromMerge` always loses.
+        ///
+        /// It differs from the outer context only by the settings written into `modified_context` before
+        /// the child plan is built, all in this file:
+        /// - `createChildrenPlans`: `enable_parallel_replicas` and `make_distributed_plan` are cleared under
+        ///   the conditions described there, `parallelize_output_from_storages` is cleared when the storage
+        ///   reports a tighter stream bound;
+        /// - `createPlanForTable`: `max_threads` and `max_streams_to_max_threads_ratio` are set for a child
+        ///   built by a nested interpreter.
+        /// The later snapshots in `addFilter` and `buildPipeline` may reuse this context because every one
+        /// of these values is what the child plan was built with. A setting written into `modified_context`
+        /// only for the child's creation, or only for a nested interpreter, would silently move the
+        /// re-optimization and the pipeline build too, so extend this list with any new `setSetting` there.
+        ContextMutablePtr context;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first

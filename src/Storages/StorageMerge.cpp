@@ -815,19 +815,15 @@ static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
 /// `planContainsLogicalExchange`). The outer plan itself always falls back: `ReadFromMerge` cannot
 /// execute remotely.
 ///
-/// This function is called several times for the same child, and the context it gets differs between
-/// the calls, which is why the recorded verdict is re-applied by hand below instead of calling
-/// `QueryPlan::applyDistributedPlanFallbackToLocal` unconditionally:
-///  1. `createChildrenPlans` passes the child's own copy of the context. The children are created
-///     lazily from `getChildPlans` inside the outer plan's distributability walk, before the outer
-///     verdict is recorded, so the copy still carries `make_distributed_plan = 1` and the child decides
-///     for itself. `applyDistributedPlanFallbackToLocal` records the verdict on the child plan.
-///  2. `addFilter` and `buildPipeline` pass the outer query context. By then the outer plan has fallen
-///     back and written `make_distributed_plan = 0` into it. `applyDistributedPlanFallbackToLocal` only
-///     ever lowers the flag and returns at once when the incoming settings already say 0, so calling it
-///     here would build an accepted child with the flag off, and the logical exchanges inserted in
-///     call 1 would be built as pass-throughs. The verdict has to be applied in both directions, and
-///     that is what the branches below do.
+/// This function is called several times for the same child: from `createChildrenPlans`, `addFilter`
+/// and `buildPipeline`. Every call must pass the child's own context (`ChildPlan::context`), never the
+/// outer query context. The children are created lazily from `getChildPlans` inside the outer plan's
+/// distributability walk, before the outer verdict is recorded, so the child's copy still carries
+/// `make_distributed_plan = 1` and the child decides for itself on the first call; the verdict is
+/// recorded on the child plan and written into the child's context. The outer context, on the other
+/// hand, receives the outer plan's fallback, `make_distributed_plan = 0`. A snapshot taken from it
+/// would make `applyDistributedPlanFallbackToLocal` return at once with the flag off, and the logical
+/// exchanges inserted into an accepted child on the first call would be built as pass-throughs.
 static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
     const ContextPtr & context, const SelectQueryInfo & query_info, QueryPlan & child_plan)
 {
@@ -846,15 +842,9 @@ static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
     if (!child_plan.isInitialized())
         return optimization_settings;
 
-    /// The child's verdict lives on the plan, not in the context these settings come from. An accepted
-    /// child is built distributed even from the flipped outer context (call 2), a rejected one stays
-    /// local, and an undecided child decides now on the setting of its own context (call 1).
-    if (child_plan.staysDistributed())
-        optimization_settings.make_distributed_plan = true;
-    else if (child_plan.didFallBackToLocal())
-        optimization_settings.make_distributed_plan = false;
-    else
-        child_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
+    /// The settings come from the child's own context, so `applyDistributedPlanFallbackToLocal` either
+    /// decides now or re-applies the verdict it recorded on the child plan at creation.
+    child_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     return optimization_settings;
 }
 
@@ -883,7 +873,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
-            child.plan.optimize(getChildPlanOptimizationSettings(context, query_info, child.plan));
+            child.plan.optimize(getChildPlanOptimizationSettings(child.context, query_info, child.plan));
         }
     }
 
@@ -1180,6 +1170,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
         try
         {
+            /// This copy becomes `ChildPlan::context`, and the later optimization-settings snapshots are taken
+            /// from it. Every setting written here is listed in the comment of `ChildPlan::context`; keep it so.
             auto modified_context = Context::createCopy(context);
             /// See `getChildPlanOptimizationSettings`: a child plan must never use parallel
             /// replicas. The setting is cleared in the context as well, because the
@@ -1413,7 +1405,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 modified_context,
                 current_streams);
 
+            child.context = modified_context;
             child.plan.addInterpreterContext(modified_context);
+            /// A directly read child has no planner to register its context, and its reading step keeps this copy.
+            child.plan.addDistributedPlanDecisionContext(modified_context);
 
             if (child.plan.isInitialized())
             {
@@ -1804,7 +1799,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     /// this is the run that materializes the logical exchanges inserted into the child plan when
     /// it was optimized at creation. See `getChildPlanOptimizationSettings` for why a child plan
     /// referencing a subquery set must not be distributed.
-    auto optimization_settings = getChildPlanOptimizationSettings(context, query_info, child.plan);
+    auto optimization_settings = getChildPlanOptimizationSettings(child.context, query_info, child.plan);
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
@@ -1892,7 +1887,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     }
     else
     {
-        /// Maximum permissible parallelism is streams_num
+        /// Maximum permissible parallelism is streams_num. Both settings are listed in the comment of
+        /// `ChildPlan::context`, which this context becomes.
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
@@ -1913,7 +1909,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         plan = std::move(planner).extractQueryPlan();
     }
 
-    return ChildPlan{std::move(plan), storage_stage};
+    return ChildPlan{std::move(plan), storage_stage, {}};
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
