@@ -294,23 +294,6 @@ class SelectionSmoke(unittest.TestCase):
             initial,
         )
 
-    def test_region_relative_bonus_is_bounded(self):
-        region = fixture_region(tests=[("low", 1), ("high", 254), ("unknown", 255)])
-        changed = [(region["file"], 10)]
-        base = {
-            c["test"]: c["score"]
-            for c in rank_candidates([region], changed, {}, fixture_snapshots())
-        }
-        for mode in ("relative-low", "relative-high"):
-            for candidate in rank_candidates(
-                [region], changed, {}, fixture_snapshots(), entry_mode=mode
-            ):
-                ratio = candidate["score"] / base[candidate["test"]]
-                self.assertGreaterEqual(ratio, 0.9)
-                self.assertLessEqual(ratio, 1.1)
-                if candidate["test"] == "unknown":
-                    self.assertEqual(ratio, 1)
-
     def test_out_of_snapshot_row_rejected(self):
         region = fixture_region()
         region["observations"][0][1] = "2026-09-06 00:00:00"

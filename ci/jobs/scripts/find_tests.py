@@ -473,8 +473,6 @@ class Targeting:
             for ext in self._TEST_FILE_EXTENSIONS
         )
 
-    _stored_path = staticmethod(canonical_coverage_path)
-
     # Shared-registry files: purely declarative files whose changes are virtually always
     # additive (`extern const Event …`, new setting entries, new error codes).  Every
     # test emits profile events / reads settings, so coverage for any changed line in
@@ -668,144 +666,6 @@ class Targeting:
             self.config,
         )
 
-    @staticmethod
-    def _extract_domain_keywords(filename: str) -> list:
-        """
-        Extract domain-specific CamelCase words from a source filename.
-        These words are diagnostic features for semantic scoring experiments.
-        They never admit candidates or replace precise coverage results.
-
-        Returns a list of significant words (length > 4, not architectural).
-        An empty list indicates a generic source filename.
-        """
-        import re as _re
-        import os as _os
-
-        base = _os.path.splitext(_os.path.basename(filename))[0]
-        # Split CamelCase and all-caps acronyms:
-        #   "CHColumnToArrowColumn" → ['CH', 'Column', 'To', 'Arrow', 'Column']
-        #   "LDAPClient"            → ['LDAP', 'Client']
-        #   "PostgreSQLDictionary"  → ['Postgre', 'SQL', 'Dictionary']
-        # Pattern: acronym-run-before-TitleCase | TitleCase-word | lowercase-word
-        # The trailing [A-Z] alternative captures single uppercase chars that
-        # the other patterns miss (e.g. the "K" in "TopK" or "N" in "MergeN").
-        words = _re.findall(
-            r"[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z0-9]+|[A-Z]{2,}|[a-z][a-z0-9]+|[A-Z]", base
-        )
-        # Merge a lone trailing uppercase letter into the previous word so that
-        # compound names like "TopK" or "MergeN" are kept whole instead of losing
-        # the suffix.
-        merged: list = []
-        for w in words:
-            if len(w) == 1 and w.isupper() and merged:
-                merged[-1] = merged[-1] + w
-            else:
-                merged.append(w)
-        words = merged
-        # Architectural / ubiquitous words that appear in most files in a directory.
-        # Keeping this list generous avoids keywords that are too common to be useful.
-        COMMON = {
-            # Generic C++ / ClickHouse infrastructure words
-            "block",
-            "input",
-            "output",
-            "format",
-            "column",
-            "stream",
-            "storage",
-            "table",
-            "query",
-            "parser",
-            "writer",
-            "reader",
-            "buffer",
-            "default",
-            "base",
-            "impl",
-            "merge",
-            "tree",
-            "row",
-            "file",
-            "data",
-            "info",
-            "type",
-            "list",
-            "map",
-            "with",
-            "from",
-            "into",
-            # MergeTree-specific architectural words (appear in almost every MergeTree file)
-            "condition",
-            "granularity",
-            "selector",
-            "partition",
-            "replica",
-            "transaction",
-            "virtual",
-            "local",
-            "remote",
-            "range",
-            "level",
-            # ClickHouse architectural nouns that appear in many places but are not
-            # specific enough to pin to a test domain.
-            "handler",
-            "manager",
-            "source",
-            "access",
-            "control",
-            "service",
-            "server",
-            "client",
-            "external",
-            "internal",
-            "settings",
-            "setting",
-            "config",
-            "context",
-            "result",
-            "state",
-            "status",
-            "entry",
-            "record",
-            "update",
-            "create",
-        }
-        # Allow 3-char all-uppercase acronyms (CSV, ORC, URL, JWT, KQL, etc.) in addition
-        # to words ≥ 4 chars.  Generic acronyms like "API", "SQL", "DDL", "DML" are added
-        # to COMMON below so they don't generate false matches.
-        COMMON_ACRONYMS = {
-            "api",
-            "sql",
-            "ddl",
-            "dml",
-            "ids",
-            "uid",
-            "abi",
-            "cpu",
-            "gpu",
-            "ram",
-            "tcp",
-            "udp",
-            "tls",
-            "ssl",
-            "rpc",
-            "ttl",
-            "log",
-            "tag",
-            "row",
-            "set",
-        }
-        specific = [
-            w
-            for w in words
-            if w.lower() not in COMMON
-            and (
-                (len(w) >= 4)
-                or (len(w) == 3 and w.isupper() and w.lower() not in COMMON_ACRONYMS)
-            )
-        ]
-        return specific
-
     def get_changed_or_new_tests_with_info(self, strict=False):
         tests = sorted(self.get_changed_tests(strict=strict))
         info = f"Found {len(tests)} changed or new tests:\n"
@@ -980,15 +840,7 @@ class Targeting:
         candidates = self.get_tests_by_changed_lines(changed_lines, hunk_ranges)
         self._coverage_candidates = []
         missing = []
-        keywords = {
-            word.lower()
-            for path in {path for path, _ in changed_lines}
-            for word in self._extract_domain_keywords(path)
-        }
         for candidate in candidates:
-            candidate["semantic_keyword_matches"] = sorted(
-                word for word in keywords if word in candidate["test"].lower()
-            )
             if self.functional_test_source_file(
                 self.selection_test_name(candidate["test"])
             ):
@@ -998,20 +850,6 @@ class Targeting:
                     {**candidate, "admission_reason": "test_missing_in_checkout"}
                 )
         self.selection_diagnostics["missing_tests"] = missing
-        # All experiments consume the same response; entry count has no effect
-        # on the executed list until pre-PR replay validates its direction.
-        if changed_lines and getattr(self, "_coverage_regions", []):
-            self.selection_diagnostics["shadow"] = {
-                mode: rank_candidates(
-                    self._coverage_regions,
-                    changed_lines,
-                    hunk_ranges,
-                    self.coverage_snapshots(),
-                    self.config,
-                    entry_mode=mode,
-                )
-                for mode in ("legacy-tier", "relative-low", "relative-high")
-            }
         tests = [c["test"] for c in self._coverage_candidates]
         return tests, Result(
             name="tests found by coverage",

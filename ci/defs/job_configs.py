@@ -1,11 +1,7 @@
 from praktika import Job
 from praktika.utils import Utils
 
-from ci.defs.functional_test_selection import (
-    rollout_targeted_jobs,
-    targeted_variants,
-    targeted_matrix,
-)
+from ci.defs.functional_test_selection import targeted_variants
 from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
 
 from ci.defs.defs import (
@@ -2201,19 +2197,6 @@ class JobConfigs:
             sanitizer in job.parameter for sanitizer in ("asan_ubsan", "tsan", "msan")
         )
     ] + stateless_tests_sanitizer_pr_jobs
-    stateless_tests_targeted_matrix, stateless_targeted_exemptions = targeted_matrix(
-        [
-            job
-            for job in functional_tests_pr_jobs
-            if "targeted" not in job.parameter.split(", ")
-        ]
-    )
-    # Preserve the original ARM ASan configuration as an additional environment.
-    stateless_tests_targeted_matrix += stateless_tests_targeted_pr_jobs
-    stateless_tests_targeted_pr_jobs = rollout_targeted_jobs(
-        stateless_tests_targeted_pr_jobs,
-        stateless_tests_targeted_matrix,
-    )
 
     # Randomized executions must remain independent even when the build is cached.
     for job in functional_tests_jobs_coverage:

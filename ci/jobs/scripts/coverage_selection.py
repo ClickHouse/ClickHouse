@@ -1,10 +1,8 @@
-"""Coverage contract, query construction and scoring shared by CI and replay."""
+"""Coverage contract, query construction and scoring of the targeted test selection."""
 
 import json
-import math
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from statistics import median
 
 from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
 
@@ -236,10 +234,7 @@ def rank_candidates(
     hunk_ranges,
     snapshots,
     config=SELECTION_CONFIG,
-    entry_mode="disabled",
 ):
-    if entry_mode not in ("disabled", "relative-low", "relative-high", "legacy-tier"):
-        raise ValueError(f"Unknown entry-count experiment: {entry_mode}")
     snapshot_keys = {(s["check_start_time"], s["check_name"]) for s in snapshots}
     changed = defaultdict(set)
     for path, line in changed_lines:
@@ -280,25 +275,7 @@ def rank_candidates(
         if not exact and not hunks:
             continue
         weight = len(exact) if exact else config.hunk_context_weight
-        counts = {
-            test: median(math.log1p(value) for value in runs.values() if value != 255)
-            for test, runs in observations.items()
-            if any(value != 255 for value in runs.values())
-        }
         for test, runs in sorted(observations.items()):
-            relative = 0.5
-            if test in counts and len(counts) > 1:
-                # Tied censored values (254 means >=254) receive the same midrank.
-                relative = (
-                    sum(value < counts[test] for value in counts.values())
-                    + (sum(value == counts[test] for value in counts.values()) - 1) / 2
-                ) / (len(counts) - 1)
-            multiplier = 1.0
-            if entry_mode.startswith("relative-"):
-                direction = 1 if entry_mode == "relative-high" else -1
-                multiplier += (
-                    direction * config.entry_count_bonus_bound * (2 * relative - 1)
-                )
             feature = {
                 "region": region_id,
                 "file": path,
@@ -306,15 +283,6 @@ def rank_candidates(
                 "region_owners": owners,
                 "exact_lines": exact,
                 "hunks": hunks,
-                "entry_count_observations": [
-                    {
-                        "snapshot": list(key),
-                        "entry_count": value,
-                        "censored": value == 254,
-                    }
-                    for key, value in sorted(runs.items())
-                ],
-                "entry_count_percentile": relative,
                 "coverage_run_frequency": len(runs),
             }
             candidate = candidates.setdefault(
@@ -327,20 +295,12 @@ def rank_candidates(
                     "features": [],
                 },
             )
-            candidate["score"] += multiplier * weight / (width * owners)
+            candidate["score"] += weight / (width * owners)
             candidate["features"].append(feature)
 
-    def order(candidate):
-        legacy_tier = 0
-        if entry_mode == "legacy-tier":
-            legacy_tier = not any(
-                observation["entry_count"] <= 10
-                for feature in candidate["features"]
-                for observation in feature["entry_count_observations"]
-            )
-        return legacy_tier, -candidate["score"], candidate["test"]
-
-    ranked = sorted(candidates.values(), key=order)
+    ranked = sorted(
+        candidates.values(), key=lambda candidate: (-candidate["score"], candidate["test"])
+    )
     for rank, candidate in enumerate(ranked, 1):
         candidate["rank"] = rank
     return ranked

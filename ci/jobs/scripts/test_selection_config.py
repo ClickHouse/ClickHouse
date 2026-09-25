@@ -24,9 +24,6 @@ class SelectionConfig:
     # change and can be shared by all jobs and pull requests.
     snapshot_query_cache_ttl_sec: int = 3600
     hunk_context_weight: float = 0.5
-    entry_count_bonus_bound: float = 0.1
-    # Enable only after pre-PR replay and shadow reports establish recall near 100.
-    expanded_targeted_matrix: bool = False
 
 
 SELECTION_CONFIG = SelectionConfig()
