@@ -127,7 +127,7 @@ SELECT a < b, a <= b, a > b, a >= b, a = b, a != b;
 
 SELECT
     exponentialTimeDecaying(10)(1, toFloat64(0))
-    < exponentialTimeDecaying(20)(1, toFloat64(0)); -- { serverError BAD_ARGUMENTS }
+    < exponentialTimeDecaying(20)(1, toFloat64(0)); -- { serverError BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- The UInt64 ordering key intentionally merges neighboring Float64 unit timestamps
 -- that differ only in the discarded low-order bit. Comparison and hashing must

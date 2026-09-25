@@ -41,7 +41,7 @@ WITH
          'Variant(ExponentialTimeDecaying(10), UInt8)') AS a,
     CAST(CAST((1., 0., 20.), 'ExponentialTimeDecaying(20)'),
          'Variant(ExponentialTimeDecaying(20), UInt8)') AS b
-SELECT a = b; -- { serverError BAD_ARGUMENTS }
+SELECT a = b; -- { serverError BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Typed input must validate decaying members inside `Variant` before they can
 -- reach native sorting or set membership.

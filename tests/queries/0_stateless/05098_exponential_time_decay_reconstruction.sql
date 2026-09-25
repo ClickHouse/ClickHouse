@@ -23,13 +23,13 @@ FROM time_decay_reconstruction;
 DROP TABLE time_decay_reconstruction;
 
 -- Ordinary query execution still honors the explicitly requested cutoff.
+-- Keep both rows in one source block so this specifically exercises the
+-- finalized-value add path. Aggregate-state merges remain exact by design.
 SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(value), 100.), 6)
-FROM
-(
-    SELECT CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS value
-    UNION ALL
-    SELECT CAST((1., 100., 10.), 'ExponentialTimeDecaying(10)') AS value
-);
+FROM VALUES(
+    'value ExponentialTimeDecaying(10)',
+    ((1., 0., 10.)),
+    ((1., 100., 10.)));
 
 -- Reconstructing stored type names must not consult an unrelated query cutoff,
 -- even when that cutoff value would be rejected for a new aggregate invocation.

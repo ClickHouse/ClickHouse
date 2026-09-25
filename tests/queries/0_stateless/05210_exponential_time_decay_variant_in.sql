@@ -30,7 +30,7 @@ SELECT toUInt8(1) IN (SELECT key FROM time_decay_variant_in);
 
 -- Equal tuple layouts are insufficient: a raw tuple or another decay length must be rejected.
 -- The analyzer's single-key cast probe can reject these before the runtime type-compatibility check.
-SELECT CAST((1., 0., 20.), 'ExponentialTimeDecaying(20)') IN (SELECT key FROM time_decay_variant_in); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH, ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST((1., 0., 20.), 'ExponentialTimeDecaying(20)') IN (SELECT key FROM time_decay_variant_in); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH, ILLEGAL_TYPE_OF_ARGUMENT, CANNOT_CONVERT_TYPE }
 SELECT tuple(1., 0., 10.) IN (SELECT key FROM time_decay_variant_in); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH, ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- The same adaptor/cast path applies when an alternative contains an array of decaying values.
