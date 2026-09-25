@@ -38,10 +38,15 @@ This setting applies to [SELECT ... JOIN](/reference/statements/select/join)
 operations and the [Join](/reference/engines/table-engines/special/join) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every
-intermediate result. When the limit is reached, the action depends on the
-chosen [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) — see
-that setting for the per-algorithm behavior (spill, re-partition, switch, or
-throw/break per [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode)).
+intermediate result. It is a hard cap for every hash-based `join_algorithm`: when the limit
+is reached the query throws or breaks according to
+[`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
+It never makes a join spill to disk — that decision belongs to
+[`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
+and
+[`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
+The exception is `legacy_join_size_limits_trigger_spilling`: with it on, the part of a
+join that already runs on disk treats this limit as a further spill trigger instead of a cap.
 
 Possible values:
 
