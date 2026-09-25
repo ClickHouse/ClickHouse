@@ -189,9 +189,8 @@ StoragePtr StorageFactory::get(
     bool has_engine_args = false;
 
     /// A temporary CREATE carries no database name at all, so it cannot be classified by database.
-    /// Only a definition this server is given now is judged; `isFreshTableDefinition` is the same
-    /// test the engine-settings check below applies.
-    if (!query.isTemporary() && isFreshTableDefinition(mode, query.attach_short_syntax))
+    /// A definition given to this server now or restored onto it is judged, because this server rebuilds it.
+    if (!query.isTemporary() && (isFreshTableDefinition(mode, query.attach_short_syntax) || is_restore_from_backup))
         checkAggregateFunctionStatesCanBeStored(columns.getAll(), query.getDatabase(), local_context);
 
     if (query.is_ordinary_view)

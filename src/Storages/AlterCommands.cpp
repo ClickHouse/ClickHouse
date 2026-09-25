@@ -33,6 +33,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageAlias.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -2138,6 +2139,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     for (const auto & constraint : metadata->constraints.getConstraints())
         constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
+    /// An `Alias` forwards the ALTER to its target, so it is the target's definition that changes.
+    auto altered_database = [&table]
+    {
+        if (const auto * alias = table->as<StorageAlias>())
+            return alias->getTargetTable()->getStorageID().database_name;
+        return table->getStorageID().database_name;
+    };
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -2202,7 +2210,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
             checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
             checkAggregateFunctionStatesCanBeStored(
-                NamesAndTypesList{{command.column_name, command.data_type}}, table->getStorageID().database_name, context);
+                NamesAndTypesList{{command.column_name, command.data_type}}, altered_database(), context);
 
             if (virtuals.tryGet(column_name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -2300,7 +2308,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
                 checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
                 checkAggregateFunctionStatesCanBeStored(
-                    NamesAndTypesList{{command.column_name, command.data_type}}, table->getStorageID().database_name, context);
+                    NamesAndTypesList{{command.column_name, command.data_type}}, altered_database(), context);
 
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;

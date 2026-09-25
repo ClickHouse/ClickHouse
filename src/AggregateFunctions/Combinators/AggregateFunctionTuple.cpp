@@ -603,7 +603,7 @@ bool AggregateFunctionTuple::shouldPrintParametersWithTypes() const
 void AggregateFunctionTuple::checkCanBeStoredInTable() const
 {
     /// Storing this state stores every element's state, and the base implementation delegates through
-    /// the singular `getNestedFunction()`, which this combinator has no single answer for.
+    /// the singular `getNestedFunction`, which this combinator has no single answer for.
     for (const auto & nested : nested_functions)
         nested->checkCanBeStoredInTable();
 }

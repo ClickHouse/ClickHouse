@@ -2595,6 +2595,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// checked here.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
+        if (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup)
+            checkAggregateFunctionStatesCanBeStored(properties.columns.getAll(), create.getDatabase(), getContext());
+
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.
