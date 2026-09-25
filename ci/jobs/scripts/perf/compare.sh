@@ -8,6 +8,8 @@ trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+# The server resolves a relative user_files_path against the resolved --path, not against the cwd.
+perf_wd="$(pwd -P)"
 
 # upstream/master
 LEFT_SERVER_PORT=9001
@@ -106,7 +108,7 @@ function configure
         --
         # server *config* directives overrides
         --path db0
-        --user_files_path db0/user_files
+        --user_files_path "$perf_wd/db0/user_files"
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --keeper_server.storage_path coordination0
         --tcp_port $LEFT_SERVER_PORT
@@ -327,7 +329,7 @@ function restart
         --
         # server *config* directives overrides
         --path left/db
-        --user_files_path left/db/user_files
+        --user_files_path "$perf_wd/left/db/user_files"
         --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
         # The perf-comparison config removes <http_port>; re-enable it on the
@@ -352,7 +354,7 @@ function restart
         --
         # server *config* directives overrides
         --path right/db
-        --user_files_path right/db/user_files
+        --user_files_path "$perf_wd/right/db/user_files"
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
         --http_port $RIGHT_SERVER_HTTP_PORT
@@ -545,6 +547,7 @@ function run_tests
                 ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"}
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
+                --stop-merges
 
                 "$test"
             )
@@ -1032,7 +1035,7 @@ do
         --binary left/clickhouse right/clickhouse \
         --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
         ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
-        --max-queries 0 --profile-seconds 0 \
+        --max-queries 0 --profile-seconds 0 --stop-merges \
         --queries-to-run $confirm_indexes \
         > "analyze-confirm/$confirm_test-raw.tsv.tmp" \
         2> "analyze-confirm/$confirm_test-err.log"
@@ -1767,8 +1770,8 @@ do
     {
         # The second grep is a heuristic for error messages like
         # "socket.timeout: timed out".
-        rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
-            || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
+        rg --no-filename --max-count=2 -i '(Exception|Error):[^:]' "$log" \
+            || rg --no-filename --max-count=2 -i '^[^ ]+: ' "$log" \
             || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done

@@ -15,7 +15,7 @@ std::vector<JoinActionRef *> getApplicableExpressions(
     const BitSet & left,
     const BitSet & right);
 
-SelectivityEstimate computeSelectivity(
+double computeSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
