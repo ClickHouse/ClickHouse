@@ -1540,10 +1540,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"min_unreserved_disk_space_for_merge", 0, 0, "New setting to keep some unreserved disk space out of reach of background merges, so that they cannot starve inserts."},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},
-            {"min_unreserved_disk_space_for_merge", 0, 0, "New setting to keep some unreserved disk space out of reach of background merges, so that they cannot starve inserts."},
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
             {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
