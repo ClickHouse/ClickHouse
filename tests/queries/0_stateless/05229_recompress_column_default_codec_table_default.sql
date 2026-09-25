@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: needs sz3 library
+
 -- A column without an explicit `CODEC`, or with a `CODEC` that references `Default`, takes its
 -- effective codec from the table's default codec. `MergeTreeData::checkLossyRecompressionIsPossible`
 -- returns early for such a column, which is only correct because the table default can never be
