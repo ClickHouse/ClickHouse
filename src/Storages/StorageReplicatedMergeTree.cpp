@@ -8408,6 +8408,98 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
     }
 }
 
+
+/** The patch parts a replica holds that a set of base parts does not carry yet: they hold the
+  * acknowledged lightweight updates of those parts. A fetch copies base parts only - a patch part
+  * lives in a partition of its own (`patch-<hash>-<partition_id>`), which no filter by the requested
+  * partition can match - so the copy would silently serve pre-update values. Every other
+  * part-relocation command refuses that situation through `assertNoPatchesForParts`; this is the same
+  * refusal for the one boundary where only the source's part names are known.
+  *
+  * A patch is compared by its data version, as it is there: the mutation component of a patch part's
+  * name is the highest data version it patches, so a patch that the base parts have already been
+  * mutated past - what `APPLY PATCHES` does - is no reason to refuse anything. The bound has to be the
+  * *lowest* data version among the base parts, exactly as in `assertNoPatchesForParts`: a part inserted
+  * after an update carries a higher version than the update's patch, so a bound taken from it would
+  * let that patch - still pending for the older parts - pass unnoticed.
+  */
+static Strings findPatchPartsAboveDataVersion(
+    const Strings & part_names, MergeTreeDataFormatVersion format_version, const String & partition_id, Int64 data_version)
+{
+    Strings patch_parts;
+    for (const auto & part_name : part_names)
+    {
+        auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+        if (!part_info)
+            continue;
+
+        if (isPatchForPartition(*part_info, partition_id) && part_info->getDataVersion() > data_version)
+            patch_parts.push_back(part_name);
+    }
+    return patch_parts;
+}
+
+static Int64 getMinDataVersion(const Strings & part_names, MergeTreeDataFormatVersion format_version, const String & partition_id)
+{
+    Int64 min_data_version = std::numeric_limits<Int64>::max();
+    for (const auto & part_name : part_names)
+    {
+        auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+        if (part_info && part_info->getPartitionId() == partition_id)
+            min_data_version = std::min(min_data_version, part_info->getDataVersion());
+    }
+    return min_data_version;
+}
+
+/** The patch parts of every replica of the source table, not only of the one a fetch copies from.
+  * A lightweight update commits its patch part on one replica, and the others learn about it through
+  * a `GET_PART` log entry: until a replica executes that entry, its `parts` lists the patched base part
+  * but not the patch. Neither the random replica `FETCH PART` picks nor the log-pointer heuristic of
+  * `FETCH PARTITION` proves that the chosen one has executed it, while the union over all replicas
+  * holds every patch committed anywhere. The patch is still compared against the base parts of the
+  * chosen replica, so a patch that replica has already applied is no reason to refuse.
+  */
+static Strings getPatchPartsOfAllReplicas(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_path)
+{
+    Strings patch_parts;
+    for (const auto & replica : zookeeper->getChildren(fs::path(zookeeper_path) / "replicas"))
+    {
+        Strings replica_parts;
+        if (zookeeper->tryGetChildren(fs::path(zookeeper_path) / "replicas" / replica / "parts", replica_parts) != Coordination::Error::ZOK)
+            continue;
+
+        for (auto & part_name : replica_parts)
+            if (part_name.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+                patch_parts.push_back(std::move(part_name));
+    }
+
+    std::sort(patch_parts.begin(), patch_parts.end());
+    patch_parts.erase(std::unique(patch_parts.begin(), patch_parts.end()), patch_parts.end());
+    return patch_parts;
+}
+
+static void assertSourceHasNoPatchesForPartition(
+    const Strings & source_patch_parts,
+    MergeTreeDataFormatVersion format_version,
+    const String & partition_id,
+    Int64 min_data_version,
+    const String & source_path,
+    std::string_view command)
+{
+    auto patch_parts = findPatchPartsAboveDataVersion(source_patch_parts, format_version, partition_id, min_data_version);
+    if (patch_parts.empty())
+        return;
+
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "Cannot execute command \"{}\" because the source {} has {} unapplied patch part(s) for partition {}, "
+        "which hold updates that its base parts do not.\n"
+        "To execute it you need to:\n"
+        "1. Stop UPDATE queries that affect partition {} of the source table.\n"
+        "2. Run query \"ALTER TABLE <source table> APPLY PATCHES IN PARTITION ID '{}'\" on it.\n"
+        "3. Retry command \"{}\"",
+        command, source_path, patch_parts.size(), partition_id, partition_id, partition_id, command);
+}
+
 void StorageReplicatedMergeTree::fetchPartition(
     const ASTPtr & partition,
     const StorageMetadataPtr & metadata_snapshot,
@@ -8453,6 +8545,15 @@ void StorageReplicatedMergeTree::fetchPartition(
 
         if (part_path.empty())
             throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Part {} does not exist on any replica", part_name);
+
+        auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+        assertSourceHasNoPatchesForPartition(
+            getPatchPartsOfAllReplicas(zookeeper, from),
+            format_version,
+            part_info.getPartitionId(),
+            part_info.getDataVersion(),
+            from,
+            "FETCH PART " + part_name + " FROM " + from_);
         /** Let's check that there is no such part in the `detached` directory (where we will write the downloaded parts).
           * Unreliable (there is a race condition) - such a part may appear a little later.
           */
@@ -8564,6 +8665,14 @@ void StorageReplicatedMergeTree::fetchPartition(
         Strings parts = zookeeper->getChildren(fs::path(best_replica_path) / "parts");
         ActiveDataPartSet active_parts_set(format_version, parts);
         Strings parts_to_fetch;
+
+        assertSourceHasNoPatchesForPartition(
+            getPatchPartsOfAllReplicas(zookeeper, from),
+            format_version,
+            partition_id,
+            getMinDataVersion(active_parts_set.getParts(), format_version, partition_id),
+            from,
+            "FETCH PARTITION " + partition_id + " FROM " + from_);
 
         if (missing_parts.empty())
         {
