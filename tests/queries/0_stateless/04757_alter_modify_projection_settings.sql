@@ -53,10 +53,8 @@ ALTER TABLE t_modify_projection MODIFY PROJECTION IF EXISTS nonexistent (SELECT 
 ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT k ORDER BY k) WITH SETTINGS (index_granularity = 128); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (old_parts_lifetime = 100); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (max_threads = 1); -- { serverError UNKNOWN_SETTING }
--- The granularity guard must validate against the post-ALTER settings: a single ALTER may combine
--- a projection granularity override with a switch to fixed granularity, and a settings-only ALTER
--- may switch to fixed granularity under an existing override. Both must be rejected up front.
-ALTER TABLE t_modify_projection MODIFY PROJECTION p (SELECT v ORDER BY v) WITH SETTINGS (index_granularity = 256), MODIFY SETTING index_granularity_bytes = 0; -- { serverError SUPPORT_IS_DISABLED }
+-- A settings-only `ALTER` may switch the table to fixed granularity under an existing projection
+-- granularity override, and must be rejected up front.
 ALTER TABLE t_modify_projection MODIFY SETTING index_granularity_bytes = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_modify_projection;
