@@ -99,5 +99,32 @@ SYSTEM START MERGES t_stale_subcolumn_nested;
 ALTER TABLE t_stale_subcolumn_nested UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
 SELECT 'materialized', id, length(n.a), n.a, v FROM t_stale_subcolumn_nested ORDER BY id;
 
-DROP TABLE t_stale_subcolumn, t_stale_subcolumn_wide, t_stale_subcolumn_map,
-    t_stale_subcolumn_chain, t_stale_subcolumn_delete, t_stale_subcolumn_nested;
+SELECT 'a parent omitted from the part by skip_empty_columns_on_insert';
+
+-- An empty `a` is omitted from the part as a missing-column marker, whose frozen default must not win over the UPDATE.
+DROP TABLE IF EXISTS t_stale_subcolumn_missing;
+CREATE TABLE t_stale_subcolumn_missing (id UInt8, a Array(UInt32), y UInt8) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = '10G', skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+INSERT INTO t_stale_subcolumn_missing VALUES (1, [], 0);
+SYSTEM STOP MERGES t_stale_subcolumn_missing;
+ALTER TABLE t_stale_subcolumn_missing UPDATE a = [7, 8, 9] WHERE 1;
+SELECT 'pending', id, a, a.size0, length(a) FROM t_stale_subcolumn_missing ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_missing;
+ALTER TABLE t_stale_subcolumn_missing UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, a, a.size0, length(a) FROM t_stale_subcolumn_missing ORDER BY id;
+
+SELECT 'prewhere on a parent updated in only some rows';
+
+DROP TABLE IF EXISTS t_stale_subcolumn_partial;
+CREATE TABLE t_stale_subcolumn_partial (id UInt8, a Array(UInt32), y UInt8)
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '10G';
+INSERT INTO t_stale_subcolumn_partial VALUES (1, [1, 2], 0), (2, [1], 0);
+SYSTEM STOP MERGES t_stale_subcolumn_partial;
+ALTER TABLE t_stale_subcolumn_partial UPDATE a = [7, 8, 9] WHERE id = 1;
+SELECT 'pending', id, a.size0 FROM t_stale_subcolumn_partial PREWHERE a = [7, 8, 9] ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_partial;
+ALTER TABLE t_stale_subcolumn_partial UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, a.size0 FROM t_stale_subcolumn_partial PREWHERE a = [7, 8, 9] ORDER BY id;
+
+DROP TABLE t_stale_subcolumn, t_stale_subcolumn_wide, t_stale_subcolumn_map, t_stale_subcolumn_chain,
+    t_stale_subcolumn_delete, t_stale_subcolumn_nested, t_stale_subcolumn_missing, t_stale_subcolumn_partial;

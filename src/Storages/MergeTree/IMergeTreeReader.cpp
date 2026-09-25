@@ -217,7 +217,14 @@ void IMergeTreeReader::fillMissingColumns(
                     if (const auto * missing_info = data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_part))
                     {
                         missing_column_names.insert(column.getNameInStorage());
-                        if (!res_columns[column_index] && !missing_info->type_name.empty())
+
+                        /// A subcolumn whose parent an earlier chain step produced is derived from
+                        /// that parent by `evaluateMissingDefaults`; the frozen default recorded for
+                        /// the absent column would silently win over the derived value.
+                        const bool parent_from_previous_step
+                            = column.isSubcolumn() && previous_step_columns.contains(column.getNameInStorage());
+
+                        if (!res_columns[column_index] && !missing_info->type_name.empty() && !parent_from_previous_step)
                         {
                             auto frozen_type = DataTypeFactory::instance().get(missing_info->type_name);
                             auto frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
