@@ -47,9 +47,13 @@ String unescapeDots(const String & key)
 ConfigurationWithUsageTracking::ConfigurationWithUsageTracking(const Poco::Util::AbstractConfiguration & config_)
     : config(config_)
 {
+    config.duplicate();
 }
 
-ConfigurationWithUsageTracking::~ConfigurationWithUsageTracking() = default;
+ConfigurationWithUsageTracking::~ConfigurationWithUsageTracking()
+{
+    config.release();
+}
 
 bool ConfigurationWithUsageTracking::getRaw(const std::string & key, std::string & value) const
 {
@@ -91,15 +95,15 @@ bool ConfigurationWithUsageTracking::isUsed(const String & key) const
     return used_keys.contains(normalizeKey(key));
 }
 
-Strings ConfigurationWithUsageTracking::getUnusedKeys(const String & prefix) const
+Strings ConfigurationWithUsageTracking::getUnusedKeys(const String & prefix, bool skip_used_sections) const
 {
     Strings result;
-    collectUnusedKeys(prefix, "", result);
+    collectUnusedKeys(prefix, "", skip_used_sections, result);
     return result;
 }
 
 void ConfigurationWithUsageTracking::collectUnusedKeys(
-    const String & prefix, const String & relative_key, Strings & result) const
+    const String & prefix, const String & relative_key, bool skip_used_sections, Strings & result) const
 {
     String key;
     if (relative_key.empty())
@@ -121,8 +125,11 @@ void ConfigurationWithUsageTracking::collectUnusedKeys(
         return;
     }
 
+    if (skip_used_sections && !relative_key.empty() && isUsed(key))
+        return;
+
     for (const auto & child : children)
-        collectUnusedKeys(prefix, relative_key.empty() ? child : relative_key + "." + child, result);
+        collectUnusedKeys(prefix, relative_key.empty() ? child : relative_key + "." + child, skip_used_sections, result);
 }
 
 }

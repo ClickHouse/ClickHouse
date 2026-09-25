@@ -20,6 +20,11 @@ namespace DB
   *
   * Enumerating the keys of a section (`keys`) is not a read of these keys:
   * the code that enumerates a section still has to read the values it is interested in.
+  *
+  * The proxy shares the ownership of the configuration behind it: a disk keeps the proxy it was
+  * created from and reads it later (see `HDFSObjectStorage`), while the configuration it was created
+  * from can be gone by then - a disk defined in a query has its own temporary configuration,
+  * and the configuration of the server is replaced on reload.
   */
 class ConfigurationWithUsageTracking : public Poco::Util::AbstractConfiguration
 {
@@ -41,7 +46,9 @@ public:
     /// Reading a section itself does not make the keys inside it used: `has` of a section is only
     /// a check that the code is going to descend into it, and it still has to read every key it
     /// supports, so a typo inside a section has to be reported as well.
-    Strings getUnusedKeys(const String & prefix) const;
+    /// With `skip_used_sections`, the keys inside a section that has been read are not reported:
+    /// this gives the keys that are unknown for sure, without knowing what reads a section.
+    Strings getUnusedKeys(const String & prefix, bool skip_used_sections = false) const;
 
 protected:
     bool getRaw(const std::string & key, std::string & value) const override;
@@ -49,13 +56,14 @@ protected:
     void enumerate(const std::string & key, Keys & range) const override;
 
 private:
+    /// A reference is held on it (`duplicate` in the constructor, `release` in the destructor).
     const Poco::Util::AbstractConfiguration & config;
 
     mutable std::mutex mutex;
     mutable std::unordered_set<String> used_keys;
 
     bool isUsed(const String & key) const;
-    void collectUnusedKeys(const String & prefix, const String & relative_key, Strings & result) const;
+    void collectUnusedKeys(const String & prefix, const String & relative_key, bool skip_used_sections, Strings & result) const;
 };
 
 }

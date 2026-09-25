@@ -1,4 +1,5 @@
 #include <Disks/DiskFactory.h>
+#include <Disks/loadLocalDiskConfig.h>
 
 #include <Common/Config/ConfigurationWithUsageTracking.h>
 #include <Interpreters/Context.h>
@@ -60,8 +61,11 @@ DiskPtr DiskFactory::create(
     /// A disk defined in a query (`disk(type = ..., name = ...)`) has its own configuration,
     /// in which these elements are read by the caller and not by the disk itself:
     /// `name` in `getOrCreateCustomDisk` and `_server_credentials_allowed` in `getDiskConfigurationFromAST`.
-    tracked_config->markAsUsed("name");
-    tracked_config->markAsUsed("_server_credentials_allowed");
+    if (custom_disk)
+    {
+        tracked_config->markAsUsed(config_prefix + ".name");
+        tracked_config->markAsUsed(config_prefix + "._server_credentials_allowed");
+    }
 
     const auto disk_type = tracked_config->getString(config_prefix + ".type", "local");
 
@@ -87,7 +91,7 @@ DiskPtr DiskFactory::create(
     /// A disk of a table that is being attached has been accepted by an older version of the server
     /// already, and its data has to be read even if the definition contains something we do not know.
     if (!attach)
-        checkForUnknownKeys(*tracked_config, name, disk_type, config_prefix, context);
+        checkForUnknownKeys(*tracked_config, name, disk_type, config_prefix, context, /* skip_used_sections = */ false);
 
     return disk;
 }
@@ -103,7 +107,7 @@ void DiskFactory::applyNewSettings(
     /// The keys that were read while this disk was created. A key is remembered even when it is
     /// absent from the configuration, so this is the set of the elements this disk type supports,
     /// not only the set of the elements that were present. A disk of an unknown origin - one that
-    /// was not created by this factory, such as the implicit `default` disk - cannot be checked.
+    /// was not created by this factory nor by `trackImplicitLocalDisk` - cannot be checked.
     const auto creation_config = disk->getCreationConfiguration();
 
     /// Only the names of the keys are taken from it: the configuration it was created from is
@@ -118,6 +122,14 @@ void DiskFactory::applyNewSettings(
     /// `type` is read by the factory, not by the disk itself.
     const auto disk_type = tracked_config->getString(config_prefix + ".type", "local");
 
+    /// `applyNewSettings` changes the live disk, so a definition with an unknown element has to be
+    /// rejected before it, otherwise a failed reload leaves a part of the rejected definition applied.
+    /// Only the inside of a section that the creation of the disk has looked at (such as `proxy`)
+    /// cannot be judged yet: a section that was not there before may be read by `applyNewSettings`
+    /// only, and it is checked after it.
+    if (creation_config)
+        checkForUnknownKeys(*tracked_config, name, disk_type, config_prefix, context, /* skip_used_sections = */ true);
+
     /// Unlike the creation of a disk, `applyNewSettings` does not keep a reference to the
     /// configuration anywhere: it reads the settings it supports and returns, so this proxy is not
     /// kept alive after the call. The proxy of the creation must not be replaced by it either -
@@ -127,10 +139,31 @@ void DiskFactory::applyNewSettings(
     if (!creation_config)
         return;
 
-    /// An element added by the reload that neither the creation of this disk nor `applyNewSettings`
+    /// An element inside a section that neither the creation of this disk nor `applyNewSettings`
     /// reads does nothing, exactly as it does nothing at the start of the server, where it is
-    /// reported as well. The elements that were already there have passed the same check already.
-    checkForUnknownKeys(*tracked_config, name, disk_type, config_prefix, context);
+    /// reported as well.
+    checkForUnknownKeys(*tracked_config, name, disk_type, config_prefix, context, /* skip_used_sections = */ false);
+}
+
+std::shared_ptr<const ConfigurationWithUsageTracking> DiskFactory::trackImplicitLocalDisk(
+    const String & name,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    ContextPtr context)
+{
+    auto tracked_config = std::make_shared<ConfigurationWithUsageTracking>(config);
+
+    /// The same elements as the creation of a `local` disk reads, see `registerDiskLocal`.
+    /// The section does not exist (otherwise the disk would not be implicit), so nothing is taken
+    /// from it: this only records which elements a `local` disk supports.
+    String path;
+    UInt64 keep_free_space_bytes = 0;
+    loadDiskLocalConfig(name, *tracked_config, config_prefix, context, path, keep_free_space_bytes);
+    tracked_config->markAsUsed(config_prefix + ".type");
+    tracked_config->markAsUsed(config_prefix + ".skip_access_check");
+    tracked_config->markAsUsed(config_prefix + ".thread_pool_size");
+
+    return tracked_config;
 }
 
 void DiskFactory::checkForUnknownKeys(
@@ -138,9 +171,10 @@ void DiskFactory::checkForUnknownKeys(
     const String & name,
     const String & disk_type,
     const String & config_prefix,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool skip_used_sections)
 {
-    const Strings unknown_keys = tracked_config.getUnusedKeys(config_prefix);
+    const Strings unknown_keys = tracked_config.getUnusedKeys(config_prefix, skip_used_sections);
     if (unknown_keys.empty())
         return;
 
