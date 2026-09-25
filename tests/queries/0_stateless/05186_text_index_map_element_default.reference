@@ -50,11 +50,14 @@
 0
 0
 1
--- a mapKeys index over a non-String key cannot serve the probe
+-- a mapKeys index over a non-String key serves the subcolumn probe only
 1
 1
 1
--- so it is declined for either spelling and for an absent key
+-- the subcolumn probe keeps the present key and answers 0 for an absent one
+1
+0
+0
 -- a FixedString key is that representation, so it stays indexed
 1
 1

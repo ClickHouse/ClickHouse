@@ -127,20 +127,22 @@ CREATE TABLE tab_ip_key (m Map(IPv6, Nullable(String)), INDEX idx mapKeys(m) TYP
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
 INSERT INTO tab_ip_key VALUES (map(toIPv6('2001:db8:1:2:3:4:5:6'), ''));
 
--- The map subcolumn spelling probes for the key serialized as text, while the index holds the raw
--- bytes of the key column, so a key that is not a string cannot be looked up in the index at all.
-SELECT '-- a mapKeys index over a non-String key cannot serve the probe';
+-- The subcolumn spelling probes for the key serialized as text and that text is converted back into
+-- the index domain, so it can use the index. The `arrayElement` spelling needs a String, FixedString
+-- or Array key constant and declines an IPv6 one.
+SELECT '-- a mapKeys index over a non-String key serves the subcolumn probe only';
 SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS ignore_data_skipping_indices = 'idx';
 
--- Assert the disposition: both counts above are the same whether the index is declined or merely
--- fails to prune, and an absent key answers 0 either way.
-SELECT '-- so it is declined for either spelling and for an absent key';
+-- An absent key reads as NULL for a `Nullable(String)` map value, and `= ''` does not hold for NULL,
+-- so the row does not match and pruning its granule keeps the unindexed answer.
+SELECT '-- the subcolumn probe keeps the present key and answers 0 for an absent one';
 SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0; -- { serverError INDEX_NOT_USED }
-SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1;
 SELECT count() FROM tab_ip_key WHERE m[toIPv6('dead:beef::1')] = '' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0; -- { serverError INDEX_NOT_USED }
-SELECT count() FROM tab_ip_key WHERE m[toIPv6('dead:beef::1')] = '' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab_ip_key WHERE m[toIPv6('dead:beef::1')] = '' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1;
+SELECT count() FROM tab_ip_key WHERE m[toIPv6('dead:beef::1')] = '' SETTINGS use_skip_indexes = 0, optimize_functions_to_subcolumns = 1;
 
 DROP TABLE tab_ip_key;
 
