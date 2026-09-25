@@ -166,10 +166,25 @@ std::optional<Field> deserializeDecimalBound(const String & str, UInt32 scale, b
         /// extreme value is `0.99` carries `1.0` (`10^38` unscaled) at scale 38. Saturating such a
         /// bound keeps it outside every value in the file, where rejecting it loses the column's
         /// pruning. Saturation is monotonic, so it cannot invert a pair that was not inverted.
-        if (widened_value > limit)
-            widened_value = limit;
-        else if (widened_value < -limit)
-            widened_value = -limit;
+        ///
+        /// Only the outer side saturates: a lower bound above the largest value the type holds (or an
+        /// upper bound below the smallest) is on the inner side of every value in the file, and
+        /// clamping it would collapse the range to a single point that excludes the data. Such a
+        /// bound is not a usable range border.
+        if (lower_bound)
+        {
+            if (widened_value > limit)
+                return std::nullopt;
+            if (widened_value < -limit)
+                widened_value = -limit;
+        }
+        else
+        {
+            if (widened_value < -limit)
+                return std::nullopt;
+            if (widened_value > limit)
+                widened_value = limit;
+        }
 
         unscaled_value = widened_value;
     }

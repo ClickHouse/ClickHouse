@@ -549,9 +549,10 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
                 {
-                    /// A bound that does not decode is either wider than the storage of its type,
-                    /// or narrower than the column is now, which is what Iceberg leaves behind for a
-                    /// promoted column. The second is well formed, so this stays out of the warning
+                    /// A bound that does not decode is wider than the storage of its type, a decimal
+                    /// bound beyond the precision of its type on the inner side of the range, or
+                    /// narrower than the column is now, which is what Iceberg leaves behind for a
+                    /// promoted column. The last is well formed, so this stays out of the warning
                     /// log.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
