@@ -49,13 +49,12 @@ SELECT count() FROM t_lossy_const_key WHERE d != toDateTime64('2023-02-01 12:00:
         enable_parallel_replicas = 0; -- { serverError TOO_MANY_ROWS }
 
 -- `notIn` and `notHas` exclude a key point just like `notEquals`, so a truncated set element must not
--- exclude it either. A literal set is coerced to the type of the left argument before the index sees
--- it, which makes the index and the rows agree by construction; a subquery set keeps its own type.
+-- exclude it either. A subquery set keeps its own type. A literal set is coerced to the type of the
+-- left argument before the index sees it, so the index and the rows agree by construction there, and
+-- it does not exercise this change.
 SELECT 'a finer-scale set element';
 SELECT count() FROM t_lossy_const_key WHERE d NOT IN (SELECT toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'));
 SELECT countIf(d NOT IN (SELECT toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'))) FROM t_lossy_const_key;
-SELECT count() FROM t_lossy_const_key WHERE d NOT IN (toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'));
-SELECT countIf(d NOT IN (toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'))) FROM t_lossy_const_key;
 SELECT count() FROM t_lossy_const_key WHERE NOT has([toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC')], d);
 SELECT countIf(NOT has([toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC')], d)) FROM t_lossy_const_key;
 SELECT count() FROM t_lossy_const_key WHERE d IN (SELECT toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'));
@@ -78,12 +77,17 @@ INSERT INTO t_lossy_const_plain VALUES (toDateTime64('2023-02-01 13:00:00.000', 
 
 SELECT count() FROM t_lossy_const_plain WHERE d NOT IN (SELECT toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'));
 SELECT countIf(d NOT IN (SELECT toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'))) FROM t_lossy_const_plain;
-SELECT count() FROM t_lossy_const_plain WHERE d NOT IN (toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'));
-SELECT countIf(d NOT IN (toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'))) FROM t_lossy_const_plain;
 SELECT count() FROM t_lossy_const_plain WHERE NOT has([toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC')], d);
 SELECT countIf(NOT has([toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC')], d)) FROM t_lossy_const_plain;
 SELECT count() FROM t_lossy_const_plain WHERE d IN (SELECT toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'));
 SELECT countIf(d IN (SELECT toDateTime64('2023-02-01 12:00:00.000001', 6, 'UTC'))) FROM t_lossy_const_plain;
+
+-- A `String` subquery element is not rehabilitated the way a scalar `String` constant is: `Set::execute`
+-- casts the key into the set's type, so the key renders as `2023-02-01 12:00:00.000` and matches
+-- neither row. The element must stay inexact, or `notIn` drops a row.
+SELECT 'a String subquery element';
+SELECT count() FROM t_lossy_const_plain WHERE d NOT IN (SELECT '2023-02-01 12:00:00');
+SELECT countIf(d NOT IN (SELECT '2023-02-01 12:00:00')) FROM t_lossy_const_plain;
 
 -- A lossless element keeps its pruning here too: one row of the subquery plus the row of the part the
 -- set index did not exclude.
@@ -107,6 +111,27 @@ SELECT count() FROM t_lossy_const_part WHERE d != toDateTime64('2023-02-01 12:00
 SELECT count() FROM t_lossy_const_part WHERE d = toDateTime64('2023-02-01 12:00:00.000', 3, 'UTC');
 
 DROP TABLE t_lossy_const_part;
+
+-- `IN` asks a `Set`, and a `Set` over `Dynamic` compares the type each value carries before the value:
+-- the key is cast into `Dynamic` as `Int64`, which is not the `UInt8` element, so no row matches. The
+-- element normalized into the key type is `Int64(2)` all the same, so it must not be exact.
+SELECT 'a Dynamic subquery element';
+
+DROP TABLE IF EXISTS t_lossy_const_dynamic;
+
+CREATE TABLE t_lossy_const_dynamic (k Int64) ENGINE = MergeTree ORDER BY k;
+
+INSERT INTO t_lossy_const_dynamic VALUES (2);
+INSERT INTO t_lossy_const_dynamic VALUES (3);
+
+SELECT count() FROM t_lossy_const_dynamic WHERE k IN (SELECT CAST(toUInt8(2), 'Dynamic'));
+SELECT countIf(k IN (SELECT CAST(toUInt8(2), 'Dynamic'))) FROM t_lossy_const_dynamic;
+SELECT count() FROM t_lossy_const_dynamic WHERE k NOT IN (SELECT CAST(toUInt8(2), 'Dynamic'));
+SELECT countIf(k NOT IN (SELECT CAST(toUInt8(2), 'Dynamic'))) FROM t_lossy_const_dynamic;
+SELECT count() FROM t_lossy_const_dynamic WHERE k IN (SELECT CAST(toInt64(2), 'Dynamic'));
+SELECT count() FROM t_lossy_const_dynamic WHERE k NOT IN (SELECT CAST(toInt64(2), 'Dynamic'));
+
+DROP TABLE t_lossy_const_dynamic;
 
 SELECT 'a String constant that is not the key rendering';
 

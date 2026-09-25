@@ -2913,6 +2913,10 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
 
         if (isStringOrFixedString(removeLowCardinalityAndNullable(const_value_type)) && !isStringOrFixedString(comparison_type))
         {
+            /// Both sides are values of `comparison_type` - the conversion produces one, the normalization the
+            /// other - so they share a carrier and the strict `Field` comparison is the right relation here;
+            /// the cross-carrier fallback of `fieldsHoldTheSameValue` is needed only when a round trip
+            /// passes through a `Dynamic`.
             const Field compared_value = tryConvertFieldToType(const_value, *comparison_type, const_value_type.get(), {});
             cast_is_exact = !compared_value.isNull() && compared_value == (*transform_input_column)[0];
         }
@@ -3016,6 +3020,7 @@ static bool tryPrepareSetColumnsForIndex(
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
     size_t args_count,
+    bool membership_compares_carriers,
     bool & out_is_exact)
 {
     out_is_exact = true;
@@ -3066,6 +3071,18 @@ static bool tryPrepareSetColumnsForIndex(
         size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];
+
+        /// `IN` asks the `Set`, and a `Set` over a `Dynamic` element is carrier-sensitive: it hashes and
+        /// compares the type each value was inserted with before the value itself, and `Set::execute`
+        /// casts the key into the set's type, where it takes the key column's type as its carrier. So
+        /// `k IN (SELECT CAST(toUInt8(2), 'Dynamic'))` over `k Int64` matches no row, while the element
+        /// normalized into the key type is `Int64(2)`. A `Field` cannot see the difference - a `UInt8`
+        /// and a `UInt64` are both carried as `UInt64` - so the round trip below cannot either, and such
+        /// a set is reported as inexact. `has` compares by value, which is where the round trip is the
+        /// right question (`05055_not_has_tuple_layout_and_variant_key_condition`).
+        if (membership_compares_carriers && set_element_type->hasDynamicSubcolumns()
+            && !recursiveRemoveLowCardinality(set_element_type)->equals(*key_column_type))
+            out_is_exact = false;
 
         if (set_transforming_dags[indexes_mapping_index].has_value())
         {
@@ -3568,7 +3585,8 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 
     bool set_is_exact = true;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count, set_is_exact))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count,
+            /*membership_compares_carriers=*/ true, set_is_exact))
         return false;
 
     if (setElementsContainNaN(set_columns, data_types))
@@ -3761,7 +3779,8 @@ bool KeyCondition::tryPrepareSetIndexForHas(
 
     bool set_is_exact = true;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count, set_is_exact))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count,
+            /*membership_compares_carriers=*/ false, set_is_exact))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
