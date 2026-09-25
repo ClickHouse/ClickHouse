@@ -19,12 +19,19 @@ DROP TABLE IF EXISTS t_monotonicity_nan_const_dividend;
 CREATE TABLE t_monotonicity_nan_const_dividend (k Float64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic';
 INSERT INTO t_monotonicity_nan_const_dividend VALUES (1), (2), (3), (inf);
 
-SELECT 'the statistics pruner analyzes a constant dividend over this key';
--- `100 / k` over `[1, +inf]` transforms to `[0, 100]`: finite at both ends, so the guard does not fire and
+-- The liveness probes use an integer key over `[1, 100]`: the statistics pruner does not analyze a function
+-- chain over a `Float` column at all (its min/max can hide a `NaN`), so a probe over the `Float64` table
+-- could never show a `Statistics` entry. An integer key also makes a non-zero multiplier monotonic.
+DROP TABLE IF EXISTS t_monotonicity_const_dividend_finite;
+CREATE TABLE t_monotonicity_const_dividend_finite (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, auto_statistics_types = 'basic';
+INSERT INTO t_monotonicity_const_dividend_finite SELECT number + 1 FROM numbers(100);
+
+SELECT 'the statistics pruner analyzes a constant dividend';
+-- `100 / k` over `[1, 100]` transforms to `[1, 100]`: finite at both ends, so the guard does not fire and
 -- the transform stays monotonic. `> 200` cannot match, so the part must be pruned and `EXPLAIN` must report
 -- a `Statistics` entry. Without this, a `const / variable` chain that the statistics pruner stopped
 -- analyzing would make every `use_primary_key = 0` query below pass by full scan.
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_monotonicity_nan_const_dividend WHERE 100 / k > 200) WHERE explain LIKE '%Statistics%' SETTINGS use_primary_key = 0;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_monotonicity_const_dividend_finite WHERE 100 / k > 200) WHERE explain LIKE '%Statistics%' SETTINGS use_primary_key = 0;
 
 SELECT 'and keeps every part once an endpoint maps to NaN';
 -- The pruner records an entry only when it drops a part, so the guard holding means no `Statistics` entry.
@@ -41,11 +48,14 @@ SELECT count() FROM t_monotonicity_nan_const_dividend WHERE inf / k = inf SETTIN
 SELECT 'a constant multiplier that maps the inf endpoint to NaN';
 SELECT count() FROM t_monotonicity_nan_const_dividend WHERE 0 * k = 0;
 SELECT count() FROM t_monotonicity_nan_const_dividend WHERE 0 * k = 0 SETTINGS use_primary_key = 0, use_statistics_for_part_pruning = 0;
+SELECT count() FROM t_monotonicity_nan_const_dividend WHERE 0 * k = 0 SETTINGS use_statistics_for_part_pruning = 0;
+-- The primary key analyzes the `const * variable` chain (see the liveness probe below) and must keep every
+-- granule here, because `0 * inf` is `NaN`.
+SELECT toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) = toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')) AS all_granules_kept
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_monotonicity_nan_const_dividend WHERE 0 * k = 0 SETTINGS use_statistics_for_part_pruning = 0)
+WHERE explain LIKE '%Granules: %/%';
 
 SELECT 'pruning still applies with a constant dividend and a finite range';
-DROP TABLE IF EXISTS t_monotonicity_const_dividend_finite;
-CREATE TABLE t_monotonicity_const_dividend_finite (k Float64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, auto_statistics_types = 'basic';
-INSERT INTO t_monotonicity_const_dividend_finite SELECT number + 1 FROM numbers(100);
 SELECT count() FROM t_monotonicity_const_dividend_finite WHERE 100 / k > 2;
 SELECT count() FROM t_monotonicity_const_dividend_finite WHERE 100 / k > 2 SETTINGS use_primary_key = 0, use_statistics_for_part_pruning = 0;
 -- Granule counts depend on settings the test runner randomizes, so compare the two numbers rather than
@@ -54,14 +64,22 @@ SELECT toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(ex
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_monotonicity_const_dividend_finite WHERE 100 / k > 2)
 WHERE explain LIKE '%Granules: %/%';
 
-SELECT 'the statistics pruner analyzes a constant multiplier over this key';
+SELECT 'the statistics pruner analyzes a constant multiplier';
 -- The `multiply` counterpart of the probe above needs a range without `+inf`, since `0 * inf` is exactly
 -- the `NaN` the guard declines. Over `[1, 100]`, `0 * k` is the constant 0, so `= 5` cannot match and the
--- part must be pruned. (A non-zero multiplier would not do: the overflow check in
--- `FunctionBinaryArithmetic::getMonotonicityForRange` has no `Float` case and so always declines.)
+-- part must be pruned.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_monotonicity_const_dividend_finite WHERE 0 * k = 5) WHERE explain LIKE '%Statistics%' SETTINGS use_primary_key = 0;
 SELECT count() FROM t_monotonicity_const_dividend_finite WHERE 0 * k = 5 SETTINGS use_primary_key = 0;
 SELECT count() FROM t_monotonicity_const_dividend_finite WHERE 0 * k = 5 SETTINGS use_primary_key = 0, use_statistics_for_part_pruning = 0;
+
+SELECT 'the primary key analyzes a constant multiplier';
+-- Same probe for the primary-key layer: with statistics pruning off, `0 * k = 5` must still skip granules,
+-- otherwise a `const * variable` chain that `KeyCondition` stopped analyzing would make the `0 * k = 0`
+-- queries above pass by full scan.
+SELECT toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')) AS granules_pruned
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_monotonicity_const_dividend_finite WHERE 0 * k = 5 SETTINGS use_statistics_for_part_pruning = 0)
+WHERE explain LIKE '%Granules: %/%';
+SELECT count() FROM t_monotonicity_const_dividend_finite WHERE 0 * k = 5 SETTINGS use_statistics_for_part_pruning = 0;
 
 DROP TABLE t_monotonicity_const_dividend_finite;
 DROP TABLE t_monotonicity_nan_const_dividend;

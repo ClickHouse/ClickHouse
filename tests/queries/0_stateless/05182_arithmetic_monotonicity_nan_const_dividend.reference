@@ -1,4 +1,4 @@
-the statistics pruner analyzes a constant dividend over this key
+the statistics pruner analyzes a constant dividend
 1
 and keeps every part once an endpoint maps to NaN
 0
@@ -11,11 +11,16 @@ each pruning layer on its own
 a constant multiplier that maps the inf endpoint to NaN
 3
 3
+3
+1
 pruning still applies with a constant dividend and a finite range
 49
 49
 1
-the statistics pruner analyzes a constant multiplier over this key
+the statistics pruner analyzes a constant multiplier
 1
 0
+0
+the primary key analyzes a constant multiplier
+1
 0
