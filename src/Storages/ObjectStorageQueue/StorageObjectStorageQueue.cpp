@@ -471,7 +471,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
 
-    size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
+    const auto & synced_metadata = temp_metadata->getTableMetadata();
+    size_t task_count = synced_metadata.parallel_inserts ? synced_metadata.processing_threads_num.load() : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
         auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
@@ -748,6 +749,8 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     if (!metadata)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage->getStorageID());
 
+    /// Direct SELECT ignores `parallel_inserts` and always uses one pipeline with
+    /// `processing_threads_num` sources. That setting only splits background MV inserts.
     size_t processing_threads_num = metadata->getTableMetadata().processing_threads_num;
 
     createIterator(nullptr);
@@ -1022,8 +1025,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
     const bool parallel_inserts = table_metadata.parallel_inserts;
     const size_t threads = parallel_inserts ? 1 : processing_threads_num;
 
-    LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
-        threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
+    LOG_DEBUG(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, streaming_tasks: {}, async deduplicate: {})",
+        threads, processing_threads_num, parallel_inserts, streaming_tasks.size(), is_deduplication_v2);
 
     while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
     {

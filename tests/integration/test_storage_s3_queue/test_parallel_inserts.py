@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 import math
@@ -381,3 +382,366 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+def _queue_settings_table(engine_name):
+    return (
+        "system.s3_queue_settings"
+        if engine_name == "S3Queue"
+        else "system.azure_queue_settings"
+    )
+
+
+def _get_queue_setting(node, table_name, name, engine_name="S3Queue", database="default"):
+    system_table = _queue_settings_table(engine_name)
+    return node.query(
+        f"SELECT value FROM {system_table} "
+        f"WHERE database = '{database}' AND table = '{table_name}' AND name = '{name}'"
+    ).strip()
+
+
+def _bool_setting_is(value, expected):
+    normalized = value.lower()
+    if expected:
+        return normalized in ("1", "true")
+    return normalized in ("0", "false")
+
+
+def _get_keeper_metadata(started_cluster, keeper_path):
+    zk = started_cluster.get_kazoo_client("zoo1")
+    data, _stat = zk.get(f"{keeper_path}/metadata")
+    return json.loads(data.decode())
+
+
+def _set_keeper_metadata(started_cluster, keeper_path, meta):
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.set(f"{keeper_path}/metadata", json.dumps(meta).encode())
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+@pytest.mark.parametrize("parallel_inserts", [0, 1])
+def test_parallel_inserts_effective_settings(
+    started_cluster, engine_name, parallel_inserts
+):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_pi_settings_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        engine_name=engine_name,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": parallel_inserts,
+            "s3queue_processing_threads_num": 4,
+        },
+    )
+
+    assert _bool_setting_is(
+        _get_queue_setting(node, table_name, "parallel_inserts", engine_name),
+        parallel_inserts,
+    )
+
+    node.query(f"DETACH TABLE {table_name}")
+    node.query(f"ATTACH TABLE {table_name}")
+
+    assert _bool_setting_is(
+        _get_queue_setting(node, table_name, "parallel_inserts", engine_name),
+        parallel_inserts,
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+
+
+@pytest.mark.parametrize("parallel_inserts", [0, 1])
+def test_parallel_inserts_source_allocation(started_cluster, parallel_inserts):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_pi_alloc_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 8
+    processing_threads_num = 4
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": parallel_inserts,
+            "s3queue_processing_threads_num": processing_threads_num,
+        },
+    )
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    expected_processed = ["test_" + str(i) + ".csv" for i in range(files_to_generate)]
+
+    def get_count():
+        return int(node.query(f"select count() from {dst_table_name}"))
+
+    def get_processed_files():
+        return set(
+            node.query(
+                f"SELECT file_name FROM system.s3queue_metadata_cache "
+                f"WHERE zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 "
+            )
+            .strip()
+            .split("\n")
+        )
+
+    run_with_retry(lambda x: x == len(expected_processed), get_count)
+    run_with_retry(lambda x: x == set(expected_processed), get_processed_files)
+
+    if parallel_inserts:
+        assert node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Using 1 processing threads "
+            f"(processing_threads_num: {processing_threads_num}, parallel_inserts: true, streaming_tasks: {processing_threads_num}"
+        )
+        assert not node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Using {processing_threads_num} processing threads "
+            f"(processing_threads_num: {processing_threads_num}, parallel_inserts: true"
+        )
+    else:
+        assert node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Using {processing_threads_num} processing threads "
+            f"(processing_threads_num: {processing_threads_num}, parallel_inserts: false, streaming_tasks: 1"
+        )
+
+    node.query(
+        f"""
+    DROP TABLE {dst_table_name};
+    DROP TABLE {table_name};
+    """
+    )
+
+
+def test_parallel_inserts_default_processing_threads_num(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_pi_default_threads_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 4
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": 1,
+        },
+    )
+
+    assert _bool_setting_is(_get_queue_setting(node, table_name, "parallel_inserts"), True)
+    threads = int(_get_queue_setting(node, table_name, "processing_threads_num"))
+    assert threads >= 16
+
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"select count() from {dst_table_name}"))
+
+    run_with_retry(lambda x: x == files_to_generate, get_count)
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Using 1 processing threads "
+        f"(processing_threads_num: {threads}, parallel_inserts: true, streaming_tasks: {threads}"
+    )
+    assert not node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Using 1 processing threads "
+        f"(processing_threads_num: {threads}, parallel_inserts: true, streaming_tasks: 1,"
+    )
+
+    node.query(
+        f"""
+    DROP TABLE {dst_table_name};
+    DROP TABLE {table_name};
+    """
+    )
+
+
+def test_parallel_inserts_keeper_metadata(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_pi_keeper_{generate_random_string()}"
+    other_table = f"{table_name}_b"
+    conflict_table = f"{table_name}_conflict"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": 1,
+            "s3queue_processing_threads_num": 4,
+        },
+    )
+
+    meta = _get_keeper_metadata(started_cluster, keeper_path)
+    assert meta["parallel_inserts"] is True
+
+    create_table(
+        started_cluster,
+        node,
+        other_table,
+        "unordered",
+        f"{files_path}_b",
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": 1,
+            "s3queue_processing_threads_num": 4,
+        },
+    )
+
+    error = create_table(
+        started_cluster,
+        node,
+        conflict_table,
+        "unordered",
+        f"{files_path}_conflict",
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": 0,
+            "s3queue_processing_threads_num": 4,
+        },
+        expect_error=True,
+    )
+    assert "METADATA_MISMATCH" in error
+    assert "parallel_inserts" in error
+
+    node.query(
+        f"""
+    DROP TABLE {other_table};
+    DROP TABLE {table_name};
+    """
+    )
+
+
+@pytest.mark.parametrize("parallel_inserts", [0, 1])
+def test_parallel_inserts_legacy_keeper_metadata(started_cluster, parallel_inserts):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_pi_legacy_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": parallel_inserts,
+            "s3queue_processing_threads_num": 4,
+            "s3queue_loading_retries": 3,
+        },
+    )
+
+    node.query(f"DETACH TABLE {table_name}")
+    meta = _get_keeper_metadata(started_cluster, keeper_path)
+    assert "parallel_inserts" in meta
+    del meta["parallel_inserts"]
+    _set_keeper_metadata(started_cluster, keeper_path, meta)
+    node.query(f"ATTACH TABLE {table_name}")
+
+    assert _bool_setting_is(
+        _get_queue_setting(node, table_name, "parallel_inserts"), parallel_inserts
+    )
+
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING loading_retries = 8")
+    meta_after = _get_keeper_metadata(started_cluster, keeper_path)
+    assert "parallel_inserts" not in meta_after
+    assert meta_after["loading_retries"] == 8
+    assert _bool_setting_is(
+        _get_queue_setting(node, table_name, "parallel_inserts"), parallel_inserts
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+
+
+def test_parallel_inserts_shared_metadata(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_pi_shared_{generate_random_string()}"
+    match_table = f"{table_name}_match"
+    conflict_table = f"{table_name}_conflict"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": 1,
+            "s3queue_processing_threads_num": 4,
+        },
+    )
+
+    node.query(f"DETACH TABLE {table_name}")
+    meta = _get_keeper_metadata(started_cluster, keeper_path)
+    del meta["parallel_inserts"]
+    _set_keeper_metadata(started_cluster, keeper_path, meta)
+    node.query(f"ATTACH TABLE {table_name}")
+
+    assert _bool_setting_is(_get_queue_setting(node, table_name, "parallel_inserts"), True)
+
+    create_table(
+        started_cluster,
+        node,
+        match_table,
+        "unordered",
+        f"{files_path}_match",
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": 1,
+            "s3queue_processing_threads_num": 4,
+        },
+    )
+
+    error = create_table(
+        started_cluster,
+        node,
+        conflict_table,
+        "unordered",
+        f"{files_path}_conflict",
+        additional_settings={
+            "keeper_path": keeper_path,
+            "parallel_inserts": 0,
+            "s3queue_processing_threads_num": 4,
+        },
+        expect_error=True,
+    )
+    assert "METADATA_MISMATCH" in error
+    assert "parallel_inserts" in error
+
+    node.query(
+        f"""
+    DROP TABLE {match_table};
+    DROP TABLE {table_name};
+    """
+    )
