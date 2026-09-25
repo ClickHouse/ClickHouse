@@ -1,0 +1,45 @@
+==== unpartitioned
+versions after one INSERT: 00000000000000000000.json 00000000000000000001.json 
+commit 00000000000000000001:
+actions: add,commitInfo
+every line is a single action: 1
+metaData actions: 0
+protocol actions: 0
+add actions: 1
+relative paths: 1
+partitionValues keys == partition columns: 1
+dataChange: 1
+modificationTime set: 1
+size set: 1
+partitionValues: {} in .
+size matches object: 1
+rows in file: 10
+-- the same INSERT again appends a second version with the same rows (not idempotent)
+20	10
+versions after two INSERTs: 00000000000000000000.json 00000000000000000001.json 00000000000000000002.json 
+==== partitioned by p (a value with a space exercises the URI encoding of add.path, a NULL the default partition)
+versions after one INSERT: 00000000000000000000.json 00000000000000000001.json 
+commit 00000000000000000001:
+actions: add,add,add,commitInfo
+every line is a single action: 1
+metaData actions: 0
+protocol actions: 0
+add actions: 3
+relative paths: 1
+partitionValues keys == partition columns: 1
+dataChange: 1
+modificationTime set: 1
+size set: 1
+partitionValues: {"p":"even part"} in p=even part
+partitionValues: {"p":"odd"} in p=odd
+partitionValues: {"p":null} in p=__HIVE_DEFAULT_PARTITION__
+size matches object: 1
+rows in file: 1
+size matches object: 1
+rows in file: 5
+size matches object: 1
+rows in file: 4
+-- a 0-row INSERT on a partitioned table: no version at all
+10
+versions after a 0-row INSERT: 00000000000000000000.json 00000000000000000001.json 
+data files: 3

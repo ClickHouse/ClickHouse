@@ -1,0 +1,42 @@
+-- integer sources wider than long: values that fit are stored, the rest are rejected
+(CANNOT_CONVERT_TYPE)
+(CANNOT_CONVERT_TYPE)
+(CANNOT_CONVERT_TYPE)
+versions: 3
+-- non-numeric sources into a string column are stored in their text form
+versions: 13
+-- Variant and Dynamic sources: a value of a compatible type is stored (text is parsed), other text is rejected
+(CANNOT_PARSE_TEXT)
+(CANNOT_PARSE_TEXT)
+versions: 16
+-- Nullable sources into non-nullable columns: values are stored, NULL is rejected
+(CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN)
+versions: 17
+-- float sources: Float32 widens, a Decimal is converted, a numeric string is parsed
+versions: 20
+-- array sources: LowCardinality elements and numbers are stored as strings; a Map becomes an array of tuple strings
+versions: 23
+-- what a fresh reader sees
+-9223372036854775808	Int128 min long	0	[]
+1	61f0c404-5cb3-11e7-907b-a6006ad3dba0	0	[]
+1	UInt256 small	0	[]
+2	beta	0	[]
+3	192.168.0.1	0	[]
+4	2001:db8::1	0	[]
+5	low cardinality	0	[]
+6	ab	0	[]
+7	2024-06-01	0	[]
+8	2024-06-01 12:34:56.789	0	[]
+9	true	0	[]
+10	{"k":1}	0	[]
+11	variant int	0	[]
+12	dynamic int	0	[]
+12	dynamic numeric string	0	[]
+13	nullable with value	0	[]
+14	float32	0.5	[]
+15	decimal	1.125	[]
+16	string into double	1.5	[]
+17	array lc	0	['x','y']
+18	array uint8	0	['1','2']
+19	map	0	['(\'k\',\'v\')']
+9223372036854775807	UInt64 max long	0	[]
