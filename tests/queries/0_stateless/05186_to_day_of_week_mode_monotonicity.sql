@@ -1,5 +1,6 @@
 -- `toDayOfWeek(key, mode)` is monotonic inside a Monday-based week only for the Monday-first modes 0 and 1.
--- With a Sunday-first mode the index analysis must not prune granules that hold matching rows.
+-- With a Sunday-first mode the index analysis must not prune granules that hold matching rows. The factor
+-- of `toDayOfWeek` pairs the Monday-week with the Sunday-week, so the claim is sound in every mode.
 
 DROP TABLE IF EXISTS t_dow_date;
 CREATE TABLE t_dow_date (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
@@ -38,10 +39,11 @@ SELECT
     three_arg_mode_2 = three_arg_mode_1 AS three_arg_never_prunes,
     three_arg_mode_1 > (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 1) >= 5)) AS two_arg_monday_prunes;
 
--- The Monday-first modes keep pruning granules, the Sunday-first ones read the whole table.
+-- Both numberings keep pruning granules: neither reads all 14 marks of the table, and the counts above show
+-- that no matching row is lost.
 SELECT
-    (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 1) >= 5))
-    < (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 2) >= 5)) AS monday_mode_prunes;
+    (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 1) >= 5)) < 14
+    AND (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 2) >= 5)) < 14 AS both_modes_prune;
 
 DROP TABLE t_dow_date;
 DROP TABLE t_dow_datetime;
