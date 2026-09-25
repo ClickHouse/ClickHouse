@@ -65,7 +65,7 @@ void ASTConstraintDeclaration::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Unknown 'constraint_type' value '{}' in `ConstraintDeclaration` during AST JSON deserialization", constraint_type_str);
 
-    auto child = r.readChild("expr");
+    auto child = r.readExpressionChild("expr");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'expr' field in `ConstraintDeclaration` during AST JSON deserialization");
     set(expr, child);
