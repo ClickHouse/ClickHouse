@@ -1271,7 +1271,7 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 ## `DROP PARTITION` {#drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is currently supported for local and object-storage Iceberg tables, but not for catalog-backed tables.
+`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is supported for local, object-storage, and catalog-backed Iceberg tables.
 
 Enable `allow_insert_into_iceberg` to use this operation.
 

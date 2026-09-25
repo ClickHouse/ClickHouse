@@ -9,6 +9,8 @@
 
 #include <Core/Block.h>
 #include <Core/Settings.h>
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -217,7 +219,9 @@ AlterDropPartitionExecutor::AlterDropPartitionExecutor(
     const PersistentTableComponents & components_,
     const DataLakeStorageSettings & data_lake_settings_,
     String write_format_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    StorageID storage_id_)
     : command(command_)
     , metadata(metadata_)
     , context(context_)
@@ -226,6 +230,8 @@ AlterDropPartitionExecutor::AlterDropPartitionExecutor(
     , data_lake_settings(data_lake_settings_)
     , write_format(std::move(write_format_))
     , log(std::move(log_))
+    , catalog(std::move(catalog_))
+    , storage_id(std::move(storage_id_))
 {
 }
 
@@ -234,7 +240,8 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     SnapshotState state;
 
     {
-        auto [snapshot, table_state] = metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true);
+        auto [snapshot, table_state] = catalog ? metadata.getRelevantState(context, catalog, storage_id.getTableName())
+                                               : metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true);
         if (!snapshot)
             return std::nullopt;
 
@@ -587,11 +594,14 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
 
     buf->finalize();
 
-    return ManifestListWriteResult{.metadata_info = metadata_info};
+    return ManifestListWriteResult{.metadata_info = metadata_info, .new_snapshot = new_snapshot};
 }
 
 bool AlterDropPartitionExecutor::commitMetadataJSON(
-    SnapshotState & state, FileNamesGenerator & filename_generator, const GeneratedMetadataFileWithInfo & metadata_info)
+    SnapshotState & state,
+    FileNamesGenerator & filename_generator,
+    const GeneratedMetadataFileWithInfo & metadata_info,
+    const Poco::JSON::Object::Ptr & new_snapshot)
 {
     std::string json_representation = stringifyJSON(state.metadata_object, 4);
 
@@ -599,14 +609,28 @@ bool AlterDropPartitionExecutor::commitMetadataJSON(
 
     auto hint_path = filename_generator.generateVersionHint();
 
-    return writeMetadataFileAndVersionHint(
-        components.path_resolver,
-        metadata_info,
-        json_representation,
-        hint_path,
-        object_storage,
-        context,
-        data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
+    /// TODO: move it into a common helper
+    const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
+    if (!catalog_writes_metadata_file
+        && !writeMetadataFileAndVersionHint(
+            components.path_resolver,
+            metadata_info,
+            json_representation,
+            hint_path,
+            object_storage,
+            context,
+            data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        return false;
+
+    if (catalog)
+    {
+        auto catalog_filename = components.path_resolver.resolveForCatalog(metadata_info.path);
+        const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+            return false;
+    }
+
+    return true;
 }
 
 void AlterDropPartitionExecutor::cleanupNotCommited(std::vector<std::string> files)
@@ -642,9 +666,9 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
             cleanupNotCommited(std::move(files_for_cleanup));
     });
 
-    auto [metadata_info] = writeManifestList(state, plan, filename_generator, files_for_cleanup);
+    auto [metadata_info, new_snapshot] = writeManifestList(state, plan, filename_generator, files_for_cleanup);
 
-    committed = commitMetadataJSON(state, filename_generator, metadata_info);
+    committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
     if (!committed)
         return false;
 
@@ -660,7 +684,17 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
 
 void AlterDropPartitionExecutor::run()
 {
-    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+    /// Refuse up front: the default `updateMetadata` throws, and by the time the commit reaches it the
+    /// manifests and the metadata file have already been written.
+    if (catalog && !catalog->supportsMetadataUpdate())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is not supported for this catalog: it cannot commit a new metadata location");
+
+    /// A catalog-backed table always carries `iceberg_metadata_file_path`: the catalog database fills it
+    /// with the pointer the catalog returned, so `changed` says nothing about user intent here. The read
+    /// path re-resolves that pointer from the catalog for the same reason. Only outside a catalog does the
+    /// setting mean the user pinned a specific metadata version.
+    if (!catalog && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "DROP PARTITION does not support the iceberg_metadata_file_path setting");
 
     const auto & settings = context->getSettingsRef();

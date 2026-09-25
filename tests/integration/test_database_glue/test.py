@@ -19,6 +19,7 @@ from helpers.config_cluster import minio_access_key, minio_secret_key
 import decimal
 from pyiceberg.types import (
     DoubleType,
+    LongType,
     NestedField,
     StringType,
     StructType,
@@ -1930,3 +1931,114 @@ def test_catalog_schema_with_empty_column_name_is_rejected(started_cluster):
     assert node.query("SELECT 1") == "1\n"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def create_drop_partition_catalog_table(catalog, namespace, table_name):
+    schema = Schema(
+        NestedField(field_id=1, name="a", field_type=LongType(), required=False),
+        NestedField(field_id=2, name="b", field_type=StringType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(
+            source_id=1,
+            field_id=1000,
+            transform=IdentityTransform(),
+            name="a",
+        )
+    )
+    catalog.create_namespace(namespace)
+    create_table(
+        catalog,
+        namespace,
+        table_name,
+        schema=schema,
+        partition_spec=partition_spec,
+        sort_order=SortOrder(),
+        dir=table_name,
+    )
+
+
+def test_drop_partition_catalog_backed(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition"
+
+    create_drop_partition_catalog_table(catalog, namespace, table_name)
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+
+    for row in [(1, "x"), (2, "y"), (3, "z")]:
+        node.query(
+            f"INSERT INTO {qualified} VALUES {row}",
+            settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+    node.query(
+        f"ALTER TABLE {qualified} DROP PARTITION 2",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+
+    # Recreate the database so ClickHouse rereads the metadata location from the catalog.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT a FROM {qualified} ORDER BY a").strip() == "1\n3"
+
+
+def test_drop_partition_catalog_concurrent_insert_survives(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "drop_partition_concurrent"
+
+    create_drop_partition_catalog_table(catalog, namespace, table_name)
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    qualified = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+
+    node.query(
+        f"INSERT INTO {qualified} VALUES (1, 'before-drop-1'), (1, 'before-drop-2')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    node.query(
+        f"INSERT INTO {qualified} VALUES (2, 'keep')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_partition_pause_after_discovery")
+
+    executor = ThreadPoolExecutor(max_workers=3)
+    try:
+        wait_future = executor.submit(
+            lambda: node.query(
+                "SYSTEM WAIT FAILPOINT iceberg_drop_partition_pause_after_discovery PAUSE",
+                timeout=60,
+            )
+        )
+        drop_future = executor.submit(
+            lambda: node.query(
+                f"ALTER TABLE {qualified} DROP PARTITION 1",
+                settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+                timeout=120,
+            )
+        )
+        wait_future.result(timeout=60)
+
+        # Glue has no compare-and-swap commit, so this insert advancing the pointer must be caught
+        # by the create-if-absent write of the next metadata file, which makes the drop retry.
+        node.query(
+            f"INSERT INTO {qualified} VALUES (1, 'inserted-during-drop')",
+            settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_partition_pause_after_discovery")
+        drop_future.result(timeout=120)
+    finally:
+        try:
+            node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_partition_pause_after_discovery")
+        except Exception:
+            pass
+        executor.shutdown(wait=False)
+
+    expected = "1\tinserted-during-drop\n2\tkeep"
+    assert node.query(f"SELECT a, b FROM {qualified} ORDER BY a, b").strip() == expected
+
+    # Reread the catalog location and verify that the committed state is unchanged.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT a, b FROM {qualified} ORDER BY a, b").strip() == expected
