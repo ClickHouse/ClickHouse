@@ -25,6 +25,13 @@ void mapToRange(const UInt32 * hashes, size_t n, UInt32 range_size, UInt64 * res
         return;
     }
 #endif
+#if MULTITARGET_NEEDS_V3
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        mapToRangeImpl_x86_64_v3(hashes, n, range_size, result);
+        return;
+    }
+#endif
     mapToRangeImpl(hashes, n, range_size, result);
 }
 

@@ -146,6 +146,13 @@ struct AggregateFunctionSumData
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addManyImpl_x86_64_v3(ptr, start, end);
+            return;
+        }
+#endif
 
         addManyImpl(ptr, start, end);
     }
@@ -242,6 +249,13 @@ struct AggregateFunctionSumData
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalInternalImpl_x86_64_v4<Value, add_if_zero>(ptr, condition_map, start, end);
+            return;
+        }
+#endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addManyConditionalInternalImpl_x86_64_v3<Value, add_if_zero>(ptr, condition_map, start, end);
             return;
         }
 #endif

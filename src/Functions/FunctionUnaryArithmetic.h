@@ -60,6 +60,13 @@ struct UnaryOperationImpl
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            vectorImpl_x86_64_v3(a, c);
+            return;
+        }
+#endif
 
         vectorImpl(a, c);
     }
@@ -93,6 +100,13 @@ struct FixedStringUnaryOperationImpl
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            vectorImpl_x86_64_v3(a, c);
+            return;
+        }
+#endif
 
         vectorImpl(a, c);
     }
@@ -118,6 +132,12 @@ struct StringUnaryOperationReduceImpl
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             return vectorImpl_x86_64_v4(start, end);
+        }
+#endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            return vectorImpl_x86_64_v3(start, end);
         }
 #endif
 

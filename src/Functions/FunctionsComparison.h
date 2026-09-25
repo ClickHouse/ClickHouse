@@ -252,6 +252,13 @@ struct NumComparisonImpl
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            vectorVectorImpl_x86_64_v3(a, b, c);
+            return;
+        }
+#endif
 
         vectorVectorImpl(a, b, c);
     }
@@ -280,6 +287,13 @@ struct NumComparisonImpl
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorConstantImpl_x86_64_v4(a, b, c);
+            return;
+        }
+#endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            vectorConstantImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif

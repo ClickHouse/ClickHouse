@@ -1256,6 +1256,13 @@ private:
             return;
         }
 #endif
+#if MULTITARGET_NEEDS_V3
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            addSamplesToBucketsImpl_x86_64_v3(state, timestamps, values, row_begin, row_end);
+            return;
+        }
+#endif
         addSamplesToBucketsImpl(state, timestamps, values, row_begin, row_end);
     }
 

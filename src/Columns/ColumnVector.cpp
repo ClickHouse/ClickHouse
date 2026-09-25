@@ -338,6 +338,13 @@ void ColumnVector<T>::compareColumn(
         return;
     }
 #endif
+#if MULTITARGET_NEEDS_V3
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        compareColumnImpl_x86_64_v3<T>(data, value, compare_results, direction, nan_direction_hint);
+        return;
+    }
+#endif
     compareColumnImpl<T>(data, value, compare_results, direction, nan_direction_hint);
 }
 
@@ -402,6 +409,11 @@ static size_t getEqualRangeEndAssumeSortedImpl(const T * d, size_t begin, size_t
     if (isArchSupported(TargetArch::x86_64_v4))
         hit = findFirstNotEqualImpl_x86_64_v4<T>(d, begin, window_end, ref, nan_direction_hint);
     else
+#if MULTITARGET_NEEDS_V3
+    if (isArchSupported(TargetArch::x86_64_v3))
+        hit = findFirstNotEqualImpl_x86_64_v3<T>(d, begin, window_end, ref, nan_direction_hint);
+    else
+#endif
 #endif
         hit = findFirstNotEqualImpl<T>(d, begin, window_end, ref, nan_direction_hint);
 
@@ -1153,10 +1165,22 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
+    {
         if (use_window)
             replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
         else
             replicateImpl_x86_64_v4<T, false>(data.data(), size, window_size, offsets, res->getData().data());
+    }
+    else
+#endif
+#if MULTITARGET_NEEDS_V3
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        if (use_window)
+            replicateImpl_x86_64_v3<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+        else
+            replicateImpl_x86_64_v3<T, false>(data.data(), size, window_size, offsets, res->getData().data());
+    }
     else
 #endif
     {

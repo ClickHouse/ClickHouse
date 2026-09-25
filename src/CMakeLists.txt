@@ -19,20 +19,26 @@ configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_versi
 # See `src/Common/TargetSpecific.h`
 option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
 
-if (ARCH_AMD64 AND NOT X86_ARCH_LEVEL VERSION_EQUAL 3)
-    # Multi-target dispatch (see `src/Common/TargetSpecific.h`) is only useful at
-    # the default x86-64-v3 level, where the default code uses AVX2 and the v4
-    # variants add AVX-512.  At other levels it causes problems:
-    #  - Below v3: FORCE_INLINE in DECLARE_*_SPECIFIC_CODE blocks leaks higher
-    #    ISA requirements into generic code.
-    #  - Above v3 (e.g. v4): the default code already includes AVX-512, and
-    #    multi-target macros may conflict with third-party libraries that do
-    #    their own ISA detection (e.g. StringZilla, see #99172).
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER 3)
+    # Multi-target dispatch (see `src/Common/TargetSpecific.h`) is enabled at levels 1-3. At the default
+    # x86-64-v3 level the `Default` code is AVX2 and the v4 variants add AVX-512. Below v3 (levels 1 and 2,
+    # used by compatibility builds such as the nixpkgs binary cache and CI's `amd_compat`), `Default` is
+    # SSE2/SSE4.2 and the `_x86_64_v3` variants are what give modern CPUs their AVX2 kernels at runtime;
+    # `MULTITARGET_NEEDS_V3` in `TargetSpecific.h` makes the `MULTITARGET_FUNCTION_X86_V4` macro emit them.
+    # At v4 the default code already includes AVX-512 and the multi-target macros conflict with third-party
+    # libraries that do their own ISA detection (e.g. StringZilla, see #99172), so dispatch stays off there.
     set(ENABLE_MULTITARGET_CODE OFF)
 endif()
 
 if (ENABLE_MULTITARGET_CODE)
     add_definitions(-DENABLE_MULTITARGET_CODE=1)
+    # Below v3 the `Default` code has no AVX2, so the `_x86_64_v3` variants must be emitted and selected at
+    # runtime (see `MULTITARGET_NEEDS_V3` in `src/Common/TargetSpecific.h`). This is keyed on the global
+    # level rather than on the per-TU `__AVX2__` macro on purpose: the TUs pinned to `-march=x86-64-v2` in
+    # a v3 build (e.g. `arrayNorm.cpp`) were tuned as "v4 variant or 128-bit default" and must not change.
+    if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 3)
+        add_definitions(-DMULTITARGET_DEFAULT_BELOW_V3=1)
+    endif()
 else()
     add_definitions(-DENABLE_MULTITARGET_CODE=0)
 endif()
