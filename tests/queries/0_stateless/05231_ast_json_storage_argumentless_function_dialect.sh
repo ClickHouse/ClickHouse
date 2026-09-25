@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: the DDL worker re-parses the DDL with the session `dialect`
 # The `clickhouse_json` dialect builds storage metadata from a restored AST, which `formatQueryFromJSON`
 # (05230) never reaches. Without the boundary screen the server does not fail these payloads, it dies on
 # them (`Assertion 'px != 0' failed` in `checkFunctionIsInOrGlobalInOperator` for the `in` family, in
