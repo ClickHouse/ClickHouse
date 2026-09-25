@@ -47,13 +47,15 @@ namespace
         {
             if (ParserKeyword{Keyword::INNER_COLUMNS}.ignore(pos, expected))
             {
-                ASTPtr col_list;
+                ASTPtr inner_columns;
                 if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected)
-                    && ParserColumnDeclarationList{}.parse(pos, col_list, expected)
+                    && ParserTablePropertiesDeclarationList{}.parse(pos, inner_columns, expected)
                     && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
-                    auto inner_columns = make_intrusive<ASTColumns>();
-                    inner_columns->set(inner_columns->columns, col_list);
+                    const auto & columns = inner_columns->as<ASTColumns &>();
+                    if (columns.constraints || columns.projections || columns.primary_key || columns.primary_key_from_columns)
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only columns and indexes are supported in INNER COLUMNS");
+
                     if (!res)
                         res = make_intrusive<ASTViewTargets>();
                     res->setInnerColumns(kind, inner_columns);
@@ -67,7 +69,7 @@ namespace
         if (!res || !res->getInnerEngine(kind))
         {
             /// Skip optional INNER before ENGINE.
-            /// We support both syntaxes: `TAGS/DATA/METRICS ENGINE` and `TAGS/DATA/METRICS INNER ENGINE`.
+            /// We support both syntaxes: `SAMPLES/TAGS/METRIC FAMILIES ENGINE` and `SAMPLES/TAGS/METRIC FAMILIES INNER ENGINE`.
             ParserKeyword{Keyword::INNER}.ignore(pos, expected);
 
             if (ParserStorage{ParserStorage::TABLE_ENGINE}.parse(pos, ast, expected))
@@ -121,21 +123,22 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     break;
                 }
 
+                case ViewTarget::RecentSamples:
+                {
+                    parsed |= tryParseViewTarget(kind, Keyword::RECENT_SAMPLES, pos, expected, res);
+                    break;
+                }
+
                 case ViewTarget::Tags:
                 {
                     parsed |= tryParseViewTarget(kind, Keyword::TAGS, pos, expected, res);
                     break;
                 }
 
-                case ViewTarget::Metrics:
+                case ViewTarget::MetricFamilies:
                 {
+                    parsed |= tryParseViewTarget(kind, Keyword::METRIC_FAMILIES, pos, expected, res);
                     parsed |= tryParseViewTarget(kind, Keyword::METRICS, pos, expected, res);
-                    break;
-                }
-
-                case ViewTarget::RecentSamples:
-                {
-                    parsed |= tryParseViewTarget(kind, Keyword::RECENT_SAMPLES, pos, expected, res);
                     break;
                 }
 

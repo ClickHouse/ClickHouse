@@ -119,7 +119,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         if (res & drop_table)
             res |= drop_view;
 
-        if (res & alter_table)
+        if (res.contains(alter_table))
             res |= alter_view;
 
         /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
@@ -197,7 +197,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     /// If "select_from_system_db_requires_grant" is enabled we provide implicit grants only for a few tables in the system database.
     if (access_control.doesSelectFromSystemDatabaseRequireGrant())
     {
-        const char * always_accessible_tables[] = {
+        static constexpr std::string_view always_accessible_tables[] = {
             /// Constant tables
             "one",
 
@@ -234,7 +234,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "quota_usage"
         };
 
-        for (const auto * table_name : always_accessible_tables)
+        for (const std::string_view table_name : always_accessible_tables)
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
 
         /// `system.user_query_log` shows each user only their own query log records, so SELECT on it is
@@ -261,6 +261,20 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
+
+        if (max_flags.contains(AccessType::SYSTEM_JEMALLOC))
+        {
+            static constexpr std::string_view jemalloc_tables[] = {
+                "jemalloc_bins",
+                "jemalloc_arena_bins",
+                "jemalloc_stats",
+                "jemalloc_profile_text",
+                "jemalloc_sampled_allocations",
+            };
+
+            for (const std::string_view table_name : jemalloc_tables)
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
+        }
     }
     else
     {

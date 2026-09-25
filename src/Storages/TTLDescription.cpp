@@ -15,6 +15,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/TypeMismatchStrictness.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
@@ -1009,6 +1010,32 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
     checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
 
+/// `arrayJoin` is the one action that changes the number of rows in a block, while every consumer of a
+/// TTL expression indexes its result column positionally against the block's rows:
+/// `TTLDeleteAlgorithm::execute` sizes its loop by `block.rows()` and reads `timestamps[i]`. With a
+/// multi-element array a row is judged by an earlier row's timestamp - so rows whose own TTL is far in
+/// the future are deleted - and with an empty array the read goes past the end of the column, letting
+/// garbage decide deletion. Even `allow_suspicious_ttl_expressions` must not allow that. Loading already
+/// stored metadata is the one place that has to accept it, because a rejection there fails the whole load
+/// rather than the one table; `buildExpression` below then stops such a TTL before it ever executes.
+///
+/// The built DAG only carries an `ARRAY_JOIN` node when `ActionsVisitor` recognised the literal name
+/// `arrayJoin`, which it does not do for the `unnest` alias when `normalize_function_names = 0` left
+/// the name uncanonicalized (the expression is then built as an ordinary call of a special function
+/// that throws `FUNCTION_IS_SPECIAL` on every later TTL evaluation). The AST is therefore checked as
+/// well, by canonical function name, so the verdict does not depend on that setting or on the
+/// spelling of the alias.
+///
+/// Either argument may be null: the check on a stored expression runs before that expression is built,
+/// and a stored `GROUP BY ... SET` assignment has no AST to check.
+void checkTTLExpressionPreservesRowCount(const ExpressionActionsPtr & expression, const ASTPtr & ast, std::string_view expression_kind)
+{
+    if ((expression && expression->hasArrayJoin()) || expressionContainsArrayJoin(ast))
+        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+            "TTL {}expression cannot contain arrayJoin, because it changes the number of rows",
+            expression_kind);
+}
+
 void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
 {
     /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
@@ -1062,6 +1089,106 @@ public:
 
 using FindAggregateFunctionFinderMatcher = OneTypeMatcher<FindAggregateFunctionData>;
 using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFinderMatcher, true>;
+
+/// Widens `Date` / `DateTime` to `Date32` / `DateTime64(0, tz)`, recursively inside
+/// `Tuple`, `Array`, and `Map` carriers. A TTL expression can refer to a nested temporal
+/// value while its syntax-level source column is the enclosing carrier, so widening only
+/// top-level source types would leave that value in the 16/32-bit domain.
+DataTypePtr widenTemporalType(const DataTypePtr & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto widened_nested = widenTemporalType(nullable_type->getNestedType());
+        if (!nullable_type->getNestedType()->equals(*widened_nested))
+            return std::make_shared<DataTypeNullable>(std::move(widened_nested));
+
+        return type;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes widened_elements;
+        widened_elements.reserve(tuple_type->getElements().size());
+        bool widened_any = false;
+
+        for (const auto & element : tuple_type->getElements())
+        {
+            auto widened_element = widenTemporalType(element);
+            widened_any |= !element->equals(*widened_element);
+            widened_elements.push_back(std::move(widened_element));
+        }
+
+        if (widened_any)
+            return std::make_shared<DataTypeTuple>(std::move(widened_elements), tuple_type->getElementNames());
+
+        return type;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto widened_nested = widenTemporalType(array_type->getNestedType());
+        if (!array_type->getNestedType()->equals(*widened_nested))
+            return std::make_shared<DataTypeArray>(std::move(widened_nested));
+
+        return type;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto widened_key = widenTemporalType(map_type->getKeyType());
+        auto widened_value = widenTemporalType(map_type->getValueType());
+        if (!map_type->getKeyType()->equals(*widened_key) || !map_type->getValueType()->equals(*widened_value))
+            return std::make_shared<DataTypeMap>(std::move(widened_key), std::move(widened_value));
+
+        return type;
+    }
+
+    const auto inner = removeLowCardinalityAndNullable(type);
+    DataTypePtr widened;
+    if (isDate(inner))
+    {
+        widened = std::make_shared<DataTypeDate32>();
+    }
+    else if (isDateTime(inner))
+    {
+        const auto & dt = typeid_cast<const DataTypeDateTime &>(*inner);
+        const String & tz = dt.getTimeZone().getTimeZone();
+        widened = std::make_shared<DataTypeDateTime64>(0, tz);
+    }
+    else
+    {
+        return type;
+    }
+
+    if (isNullableOrLowCardinalityNullable(type))
+        widened = std::make_shared<DataTypeNullable>(widened);
+
+    return widened;
+}
+
+/// Returns the column list with every `Date` / `DateTime` source column widened to
+/// `Date32` / `DateTime64(0, tz)` (looking through `Nullable` / `LowCardinality` and
+/// through `Tuple`, `Array`, and `Map` carriers).
+/// The TTL expression is analyzed against this widened view so arithmetic in
+/// `column + INTERVAL ...` is performed in the 64-bit domain and cannot silently
+/// wrap on overflow. The original timezone is preserved so calendar transforms
+/// (`addMonths` / `addYears`) and DST boundaries produce the user-expected results.
+///
+/// `Nullable` is preserved: dropping it would let the analyzer treat the column as
+/// non-null, which constant-folds `isNull` / `ifNull` and silently changes TTL
+/// decisions for rows that are actually `NULL` (for both rows-TTL and `DELETE WHERE`).
+/// `LowCardinality` is dropped because `LowCardinality(DateTime64)` is not allowed
+/// in the type system; the runtime cast in `ITTLAlgorithm::executeExpressionAndGetColumn`
+/// converts the original `LC` column to the widened type.
+NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
+{
+    NamesAndTypesList result;
+    for (const auto & col : columns)
+    {
+        result.emplace_back(col.name, widenTemporalType(col.type));
+    }
+    return result;
+}
 
 }
 
@@ -1129,10 +1256,16 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 /// while the stored AST still refers to it and every later rebuild of that AST needs it to be available.
 /// The built expression's own required columns (the runtime read set the read planners consume) are taken
 /// separately, from `getRequiredColumnsWithTypes` of the returned expression.
-static ExpressionAndSets buildExpressionAndSets(
-    ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context, NamesAndTypesList * required_source_columns = nullptr)
+static ExpressionAndSets analyzeExpressionAndSets(
+    const ASTPtr & ast_template,
+    const NamesAndTypesList & columns,
+    const ContextPtr & context,
+    NamesAndTypesList * required_source_columns = nullptr)
 {
     ExpressionAndSets result;
+    /// `TreeRewriter::analyze` mutates the AST in place; clone so a failed attempt does
+    /// not leave a half-rewritten AST behind for the fallback analysis to choke on.
+    auto ast = ast_template->clone();
     auto ttl_string = ast->formatWithSecretsOneLine();
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
     if (required_source_columns)
@@ -1151,6 +1284,72 @@ static ExpressionAndSets buildExpressionAndSets(
     result.sets = analyzer.getPreparedSets();
 
     return result;
+}
+
+static ExpressionAndSets buildExpressionAndSets(
+    ASTPtr & ast,
+    const NamesAndTypesList & columns,
+    const ContextPtr & context,
+    NamesAndTypesList * required_source_columns = nullptr,
+    bool widen_temporal_columns = true)
+{
+    /// Analyze the TTL expression against `Date` / `DateTime` source columns widened to
+    /// `Date32` / `DateTime64(0, tz)`, so `column + INTERVAL ...` arithmetic runs in the
+    /// 64-bit domain and cannot silently 16/32-bit wrap on overflow (issue #101763).
+    ///
+    /// Some valid TTL expressions use functions that accept only the narrow temporal
+    /// types and reject the widened ones (e.g. `tumbleStart` / `tumbleEnd` require
+    /// `DateTime`, not `DateTime64`). The widened analysis would reject those and break
+    /// `ATTACH` of legacy tables after an upgrade, so we fall back to analyzing against
+    /// the original column types. Such expressions explicitly operate in the narrow
+    /// `Date` / `DateTime` domain and are out of scope for the overflow fix.
+    if (!widen_temporal_columns)
+        return analyzeExpressionAndSets(ast, columns, context, required_source_columns);
+
+    auto widened_columns = widenTemporalColumns(columns);
+    bool widened_any = !std::equal(
+        columns.begin(), columns.end(), widened_columns.begin(), widened_columns.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.type->equals(*rhs.type); });
+
+    if (widened_any)
+    {
+        try
+        {
+            auto result = analyzeExpressionAndSets(ast, widened_columns, context, required_source_columns);
+
+            /// The widening is an internal detail of the analysis, so report the required source columns
+            /// with their original (narrow) types. This keeps the reported list a subset of `columns` as
+            /// the caller passed them - it is stored in the TTL description and used as the column set of
+            /// every later rebuild of this AST, which widens them again from the real table types.
+            if (required_source_columns)
+            {
+                NamesAndTypesList narrow_source_columns;
+                for (const auto & required_column : *required_source_columns)
+                {
+                    /// The analysis can also report subcolumns (e.g. `j.ts` of a `JSON` column) that are
+                    /// not in `columns`. Keep those as reported: widening only alters the types of
+                    /// top-level temporal columns, and no subcolumn of a widened column changes its type
+                    /// (`Nullable` is preserved, so `.null` stays `UInt8`), so the reported types match
+                    /// what the narrow analysis would report.
+                    if (auto original = columns.tryGetByName(required_column.name))
+                        narrow_source_columns.push_back(*original);
+                    else
+                        narrow_source_columns.push_back(required_column);
+                }
+                *required_source_columns = std::move(narrow_source_columns);
+            }
+
+            return result;
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch): intentional fallback to the narrow analysis below
+        {
+            /// A function in the expression rejected the widened temporal type
+            /// (e.g. `tumbleStart` requires `DateTime`, not `DateTime64`).
+            /// Retry the analysis against the original (narrow) column types.
+        }
+    }
+
+    return analyzeExpressionAndSets(ast, columns, context, required_source_columns);
 }
 
 /// Collect the argument expressions of every aggregate function found in the AST.
@@ -1180,13 +1379,36 @@ static void checkTTLGroupBySetForAggregateFunctions(
     for (const auto & argument : aggregate_arguments)
     {
         auto argument_ast = argument->clone();
-        auto argument_expression = buildExpressionAndSets(argument_ast, columns, context).expression;
+        auto argument_expression = buildExpressionAndSets(
+            argument_ast, columns, context, nullptr, /*widen_temporal_columns=*/ false).expression;
         checkTTLExpressionForAggregateFunctions(argument_expression, /*expression_kind=*/ "GROUP BY SET ");
     }
 }
 
+/// A stored TTL is screened again here, every time it is turned back into a runnable expression.
+///
+/// `TTLValidationMode::Attach` cannot reject it while the metadata is being read - a rejection there
+/// fails the whole load rather than the one table, so the server would not start after an upgrade and a
+/// replica could not read the metadata another replica wrote - so a TTL stored before the `CREATE`-time
+/// check existed still loads. It must not then execute: it deletes rows whose own TTL is far in the
+/// future and reads past the end of the expression column for an empty array. `buildExpression` and
+/// `buildWhereExpression` are the only way a consumer gets a runnable expression out of a stored
+/// description (`TTLTransform`, `TTLCalcTransform`, `TTLDeleteFilterTransform` and
+/// `MergeTreeDataWriter::updateTTL` all go through them), so failing here turns the silent row loss into
+/// a failed INSERT or TTL merge. The table still attaches, so `ALTER TABLE ... REMOVE TTL` or a
+/// `MODIFY TTL` to a sane expression repairs it.
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
+    checkTTLExpressionPreservesRowCount(/*expression=*/ nullptr, expression_ast, /*expression_kind=*/ "");
+
+    /// A `GROUP BY ... SET` assignment is stored as prebuilt `ExpressionActions` and not as an AST, so it
+    /// is screened through the built expression, and it is screened here, because setting up the
+    /// `TTLAggregationAlgorithm` that executes it goes through this function too. A spelling that
+    /// `ActionsVisitor` does not recognise as `arrayJoin` is not built as an `ARRAY_JOIN` node at all and
+    /// throws `FUNCTION_IS_SPECIAL` when executed, which already fails closed.
+    for (const auto & set_part : set_parts)
+        checkTTLExpressionPreservesRowCount(set_part.expression, /*ast=*/ nullptr, /*expression_kind=*/ "GROUP BY SET ");
+
     auto ast = expression_ast->clone();
     return buildExpressionAndSets(ast, expression_source_columns, context);
 }
@@ -1195,8 +1417,12 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
 {
     if (where_expression_ast)
     {
+        checkTTLExpressionPreservesRowCount(/*expression=*/ nullptr, where_expression_ast, /*expression_kind=*/ "WHERE ");
+
         auto ast = where_expression_ast->clone();
-        return buildExpressionAndSets(ast, where_expression_source_columns, context);
+        /// Only the TTL timestamp expression needs widening. The `DELETE WHERE`
+        /// predicate must keep the table's original static column types.
+        return buildExpressionAndSets(ast, where_expression_source_columns, context, nullptr, false);
     }
 
     return {};
@@ -1261,7 +1487,8 @@ TTLDescription TTLDescription::getTTLFromAST(
 
                 ASTPtr ast = where_expr_ast->clone();
                 where_expression
-                    = buildExpressionAndSets(ast, columns.getAllPhysical(), context, &result.where_expression_source_columns).expression;
+                = buildExpressionAndSets(
+                    ast, columns.getAllPhysical(), context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
@@ -1270,15 +1497,45 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             const auto & pk_columns = primary_key.column_names;
 
-            if (ttl_element->group_by_key.size() > pk_columns.size())
+            auto is_primary_key_prefix = [&pk_columns](const ASTs & keys)
+            {
+                if (keys.size() > pk_columns.size())
+                    return false;
+                for (size_t i = 0; i < keys.size(); ++i)
+                    if (keys[i]->getColumnName() != pk_columns[i])
+                        return false;
+                return true;
+            };
+
+            /// `GROUP BY (a, b, c)` parses as a single `tuple(a, b, c)` expression, but it means the same list
+            /// of keys as `GROUP BY a, b, c`, exactly as `ORDER BY (a, b, c)` means the same key as
+            /// `ORDER BY a, b, c`. Unwrap it here rather than in the parser: the parsed AST is what gets
+            /// formatted back, and rewriting it there would make formatting non-idempotent, because the
+            /// formatted `GROUP BY a, b, c` would be unwrapped again on the next parse.
+            ///
+            /// The spelling is ambiguous when the first primary key element is itself a tuple: with
+            /// `ORDER BY ((a, b), c)`, the single key `GROUP BY (a, b)` already matches the primary key
+            /// prefix as an intact tuple, and such tables exist and must keep attaching. So the intact
+            /// interpretation wins whenever it is a prefix of the primary key, and only otherwise do we
+            /// fall back to reading the parentheses as a key list. An empty `GROUP BY ()` unwraps to
+            /// nothing, which would pass the prefix check vacuously, so it keeps the `tuple()` in place
+            /// and is rejected as before.
+            ASTs group_by_key = ttl_element->group_by_key;
+            if (group_by_key.size() == 1 && !is_primary_key_prefix(group_by_key))
+            {
+                if (auto unwrapped = extractKeyExpressionList(group_by_key.front())->children; !unwrapped.empty())
+                    group_by_key = std::move(unwrapped);
+            }
+
+            if (group_by_key.size() > pk_columns.size())
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
 
             NameSet aggregation_columns_set;
 
-            for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
+            for (size_t i = 0; i < group_by_key.size(); ++i)
             {
-                if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", ttl_element->group_by_key[i]->getColumnName(), pk_columns[i]);
+                if (group_by_key[i]->getColumnName() != pk_columns[i])
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", group_by_key[i]->getColumnName(), pk_columns[i]);
             }
 
             std::vector<std::pair<String, ASTPtr>> aggregations;
@@ -1305,7 +1562,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             if (aggregation_columns_set.size() != ttl_element->group_by_assignments.size())
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "Multiple aggregations set for one column in TTL Expression");
 
-            result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
+            result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + group_by_key.size());
 
             for (auto [name, value] : aggregations)
             {
@@ -1323,6 +1580,9 @@ TTLDescription TTLDescription::getTTLFromAST(
                 /// must be rejected here instead of failing during the TTL merge.
                 if (!skip_validation)
                     checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
+
+                if (validation_mode != TTLValidationMode::Attach)
+                    checkTTLExpressionPreservesRowCount(set_part.expression, value, /*expression_kind=*/ "GROUP BY SET ");
 
                 result.set_parts.emplace_back(set_part);
 
@@ -1344,6 +1604,13 @@ TTLDescription TTLDescription::getTTLFromAST(
     }
 
     checkTTLExpression(expression, result.result_column, skip_validation);
+
+    if (validation_mode != TTLValidationMode::Attach)
+    {
+        checkTTLExpressionPreservesRowCount(expression, result.expression_ast, /*expression_kind=*/ "");
+        if (where_expression)
+            checkTTLExpressionPreservesRowCount(where_expression, result.where_expression_ast, /*expression_kind=*/ "WHERE ");
+    }
 
     if (where_expression && !skip_validation)
         checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ");

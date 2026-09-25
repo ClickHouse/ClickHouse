@@ -33,17 +33,8 @@ void StatisticsMinMax::build(const ColumnPtr & column)
 
     column->getExtremes(min_field, max_field, 0, column->size());
 
-    if (!min_field.isNull())
-    {
-        if (min.isNull() || min_field < min)
-            min = min_field;
-    }
-
-    if (!max_field.isNull())
-    {
-        if (max.isNull() || max_field > max)
-            max = max_field;
-    }
+    StatisticsUtils::updateMin(min, min_field);
+    StatisticsUtils::updateMax(max, max_field);
 
     row_count += column->size();
 }
@@ -51,10 +42,8 @@ void StatisticsMinMax::build(const ColumnPtr & column)
 void StatisticsMinMax::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsMinMax * other = typeid_cast<const StatisticsMinMax *>(other_stats.get());
-    if (!other->min.isNull() && (min.isNull() || other->min < min))
-        min = other->min;
-    if (!other->max.isNull() && (max.isNull() || other->max > max))
-        max = other->max;
+    StatisticsUtils::updateMin(min, other->min);
+    StatisticsUtils::updateMax(max, other->max);
     row_count += other->row_count;
 }
 
@@ -108,9 +97,7 @@ String StatisticsMinMax::getNameForLogs() const
 
 bool minMaxStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    auto inner_data_type = removeNullable(data_type);
-    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber();
+    return canStatisticsTrackMinMax(data_type);
 }
 
 StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
