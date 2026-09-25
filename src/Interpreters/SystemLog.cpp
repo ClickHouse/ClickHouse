@@ -1,4 +1,5 @@
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/SystemLogSettingsFromConfig.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
@@ -128,6 +129,18 @@ constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
+bool getSystemTableSkipAliasColumnsOption(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.has("system_tables.skip_alias_columns"))
+        return config.getBool("system_tables.skip_alias_columns");
+    if (config.has("default_system_log_flush_policy.skip_alias_columns"))
+    {
+        LOG_WARNING(getLogger("SystemLog"), "Using deprecated default_system_log_flush_policy.skip_alias_columns, please use system_tables.skip_alias_columns instead");
+        return config.getBool("default_system_log_flush_policy.skip_alias_columns");
+    }
+    return false;
+}
+
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
 std::shared_ptr<TSystemLog> createSystemLog(
@@ -201,25 +214,24 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.engine = "ENGINE = MergeTree";
 
         /// PARTITION expr is not necessary.
-        String partition_by = config.getString(config_prefix + ".partition_by", TSystemLog::getDefaultPartitionBy());
+        String partition_by = getSystemTableOption<std::string>("partition_by", config, config_prefix).value_or(TSystemLog::getDefaultPartitionBy());
         if (!partition_by.empty())
             log_settings.engine += " PARTITION BY (" + partition_by + ")";
 
         /// TTL expr is not necessary.
-        String ttl = config.getString(config_prefix + ".ttl", "");
+        String ttl = getSystemTableOption<std::string>("ttl", config, config_prefix).value_or(TSystemLog::getDefaultTTL());
         if (!ttl.empty())
             log_settings.engine += " TTL " + ttl;
 
         /// ORDER BY expr is necessary.
-        String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
+        String order_by = getSystemTableOption<std::string>("order_by", config, config_prefix).value_or(TSystemLog::getDefaultOrderBy());
         log_settings.engine += " ORDER BY (" + order_by + ")";
 
-        /// SETTINGS expr is not necessary.
-        ///   https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree#settings
-        ///
         /// STORAGE POLICY expr is retained for backward compatible.
-        String storage_policy = config.getString(config_prefix + ".storage_policy", "");
-        String settings = config.getString(config_prefix + ".settings", "");
+        String storage_policy = getSystemTableOption<std::string>("storage_policy", config, config_prefix).value_or("");
+        /// Optional SETTINGS expr.
+        String settings = getSystemTableOption<std::string>("settings", config, config_prefix).value_or("");
+
         /// Some logs add engine settings to the default table definition
         /// (e.g. the bucketed Map serialization for the 'bucketed' schema of metric_log).
         String merged_settings = TSystemLog::getDefaultEngineSettings();
@@ -272,34 +284,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
                             " at least one of 'merge_rotated_tables' and 'cluster' has to be specified");
     }
 
-    log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
-                                                                               TSystemLog::getDefaultFlushIntervalMilliseconds());
-
-    log_settings.queue_settings.max_size_rows = config.getUInt64(config_prefix + ".max_size_rows",
-                                                                 TSystemLog::getDefaultMaxSize());
-
-    if (log_settings.queue_settings.max_size_rows < 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{0}.max_size_rows {1} should be 1 at least",
-                        config_prefix,
-                        log_settings.queue_settings.max_size_rows);
-
-    log_settings.queue_settings.reserved_size_rows = config.getUInt64(config_prefix + ".reserved_size_rows",
-                                                                      TSystemLog::getDefaultReservedSize());
-
-    if (log_settings.queue_settings.max_size_rows < log_settings.queue_settings.reserved_size_rows)
-    {
-         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                         "{0}.max_size_rows {1} should be greater or equal to {0}.reserved_size_rows {2}",
-                         config_prefix,
-                         log_settings.queue_settings.max_size_rows,
-                         log_settings.queue_settings.reserved_size_rows);
-    }
-
-    log_settings.queue_settings.buffer_size_rows_flush_threshold = config.getUInt64(config_prefix + ".buffer_size_rows_flush_threshold",
-                                                                                    log_settings.queue_settings.max_size_rows / 2);
-
-    log_settings.queue_settings.notify_flush_on_crash = config.getBool(config_prefix + ".flush_on_crash",
-                                                                       TSystemLog::shouldNotifyFlushOnCrash());
+    readSystemLogQueueSettingsFromConfig<TSystemLog>(log_settings.queue_settings, config, config_prefix);
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
@@ -716,7 +701,7 @@ SystemLog<LogElement>::SystemLog(
     , storage_def(settings_.engine)
     , union_table_merge_rotated_tables(settings_.union_table_merge_rotated_tables)
     , union_table_cluster(settings_.union_table_cluster)
-    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
+    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(getSystemTableSkipAliasColumnsOption(context_->getConfigRef())))
 {
     for (const auto * column : {"clickhouse_version", "system_processor"})
         if (!LogElement::getColumnsDescription().has(column))
@@ -1240,7 +1225,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     auto alias_columns = LogElement::getNamesAndAliases();
     /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
     /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
-    /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
+    /// `system_tables.skip_alias_columns` is set to `true` in config.
     if (flush_policy->shouldSkipAliasColumns())
     {
         /// Some logs keep their user-facing interface only in the alias columns
@@ -1252,7 +1237,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The table {} cannot be created without alias columns, but they are disabled "
                     "(the storage does not support them, or "
-                    "`default_system_log_flush_policy.skip_alias_columns` is set in the configuration). "
+                    "`system_tables.skip_alias_columns` is set in the configuration). "
                     "Use another schema of this table",
                     table_id.getFullTableName());
     }
