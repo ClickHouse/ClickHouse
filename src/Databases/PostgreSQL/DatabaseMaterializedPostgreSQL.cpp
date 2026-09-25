@@ -1594,6 +1594,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         .supports_table_overrides = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
+        .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
