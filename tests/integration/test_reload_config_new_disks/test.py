@@ -37,9 +37,9 @@ DISKS_CONFIG = """
 
 ADDED_DISKS_QUERY = "SELECT count() FROM system.disks WHERE name IN ('local_{suffix}', 'blob_{suffix}', 'cache_{suffix}')"
 
-# Logged by Context::updateStorageConfiguration() right after it publishes; reading `system.warnings`
-# would drain the recorded warnings itself, so publication is observed here instead.
-PUBLISHED_LOG_LINE = "recorded ext4 corruption kernel bug warnings"
+# Logged by Context::updateStorageConfiguration() at the end of the reload; the prefix keeps it apart
+# from the swap-time line below. Reading `system.warnings` would drain the warnings itself.
+PUBLISHED_LOG_LINE = "Reloaded the storage configuration and published"
 
 # Logged right after the disk selector swap: the new disks are active from there on, so their
 # warnings are published before any later step of the same reload can throw.
