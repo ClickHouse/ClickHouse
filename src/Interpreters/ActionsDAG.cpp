@@ -3232,7 +3232,11 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
     std::unordered_set<const Node *> split_nodes{array_join};
     if (nondeterministic_before_expansion)
     {
-        std::unordered_set<const Node *> depends_on_join{array_join};
+        /// Anything under a later array join stays in `after`, or the joins would swap order.
+        std::unordered_set<const Node *> depends_on_join;
+        for (const auto & node : nodes)
+            if (node.type == ActionType::ARRAY_JOIN)
+                depends_on_join.insert(&node);
         for (bool changed = true; changed;)
         {
             changed = false;

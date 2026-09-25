@@ -31,3 +31,8 @@ SELECT groupArray(rn) FROM (SELECT arrayJoin(range(3)) AS x, rowNumberInBlock() 
 SELECT uniqExact(d), max(d) FROM (SELECT runningDifference(arrayJoin(range(50000))) AS d FROM numbers(2)) SETTINGS allow_deprecated_error_prone_window_functions = 1, max_block_size = 65505, max_threads = 1;
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e, rowNumberInBlock() AS rn FROM numbers(2) SETTINGS serialize_query_plan = 0);
 
+-- two joins: a draw under the second join stays behind both, the order of the joins does not change
+SELECT groupArray((a, b)), uniqExact(r), count() FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b, rand64(b) AS r) SETTINGS arrayjoin_nondeterministic_functions_before_expansion = 1;
+SELECT uniqExact(r), count() FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b, rand64(a) AS r) SETTINGS arrayjoin_nondeterministic_functions_before_expansion = 1;
+SELECT uniqExact(r), count() FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b, rand64() AS r) SETTINGS arrayjoin_nondeterministic_functions_before_expansion = 1;
+
