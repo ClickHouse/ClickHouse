@@ -2329,9 +2329,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
+        /// Look through `LowCardinality` the same way `division_by_nullable` does in the resolver, so that
+        /// `canThrow` (which falls back to this method) agrees with the execution path.
         return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
             || (IsOperation<Op>::div_floating
-                && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
+                && (isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[0].type))
+                    || isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[1].type))));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
