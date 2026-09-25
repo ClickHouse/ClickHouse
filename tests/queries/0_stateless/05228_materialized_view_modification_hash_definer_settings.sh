@@ -20,7 +20,9 @@ set -u
 definer="definer_05228_${CLICKHOUSE_DATABASE}"
 
 # Pin every query-cache setting so the flaky check's settings randomizer cannot change the outcome.
-qc="use_query_cache = 1, enable_reads_from_query_cache = 1, enable_writes_to_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1"
+# Parallel replicas are pinned off: with them the definer's `CONST` read limit is not enforced on the
+# target read, so the read does not fail (the cache still misses, which is what this test is about).
+qc="use_query_cache = 1, enable_reads_from_query_cache = 1, enable_writes_to_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1, allow_experimental_parallel_reading_from_replicas = 0"
 
 $CLICKHOUSE_CLIENT -q "
     CREATE USER ${definer};
