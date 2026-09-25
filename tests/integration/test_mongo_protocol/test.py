@@ -446,6 +446,71 @@ def test_frame_split_across_packets(started_cluster):
         sock.close()
 
 
+def encode_op_msg_with_sequence(command, identifier, documents, request_id=1):
+    """Encodes a command as one OP_MSG frame: a body section and one document sequence section."""
+    body = b"\x00" + bson.encode(command)
+    sequence_payload = identifier.encode() + b"\x00" + b"".join(bson.encode(document) for document in documents)
+    sequence = b"\x01" + struct.pack("<i", 4 + len(sequence_payload)) + sequence_payload
+    payload = struct.pack("<I", 0) + body + sequence
+    header = struct.pack("<iiii", 16 + len(payload), request_id, 0, OP_MSG)
+    return header + payload
+
+
+def test_the_statements_of_a_write_in_the_command_body(started_cluster):
+    """`OP_MSG` lets a client send the statements of a write either as a document sequence or as an
+    array field of the command body; both are the same command. A document sequence that names
+    another field than the one of the command is refused rather than executed."""
+    node = cluster.instances["node"]
+    database = make_client()["db"]
+    database["body_only"].drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.body_only (id Int64, value Int64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+
+    # `Database.command` sends the whole command as one body section.
+    reply = database.command("insert", "body_only", documents=[{"id": 1, "value": 1}, {"id": 2, "value": 2}])
+    assert reply["ok"] == 1.0 and reply["n"] == 2
+
+    reply = database.command("update", "body_only", updates=[{"q": {"id": 1}, "u": {"$set": {"value": 10}}, "multi": True}])
+    assert reply["ok"] == 1.0
+
+    reply = database.command("delete", "body_only", deletes=[{"q": {"id": 2}, "limit": 0}])
+    assert reply["ok"] == 1.0
+
+    assert node.query("SELECT id, value FROM db.body_only ORDER BY id", password="123") == "1\t10\n"
+
+    sock = connect_raw()
+    try:
+        # A sequence named after another field of the command.
+        sock.sendall(
+            encode_op_msg_with_sequence(
+                {"insert": "body_only", "$db": "db"}, "deletes", [{"id": 3, "value": 3}]
+            )
+        )
+        reply = read_op_msg(sock)
+        assert reply["ok"] == 0.0
+        assert "must be named 'documents', not 'deletes'" in reply["errmsg"]
+
+        # The statements sent both in the body and as a sequence.
+        sock.sendall(
+            encode_op_msg_with_sequence(
+                {"insert": "body_only", "documents": [{"id": 4, "value": 4}], "$db": "db"},
+                "documents",
+                [{"id": 5, "value": 5}],
+            )
+        )
+        reply = read_op_msg(sock)
+        assert reply["ok"] == 0.0
+        assert "both in the command body and as a document sequence" in reply["errmsg"]
+    finally:
+        sock.close()
+
+    assert node.query("SELECT id, value FROM db.body_only ORDER BY id", password="123") == "1\t10\n"
+    node.query("DROP TABLE db.body_only", password="123")
+
+
 @pytest.mark.parametrize(
     "message_length",
     [
@@ -1682,6 +1747,46 @@ def test_create_of_an_existing_collection_is_an_error(started_cluster):
     database["created_twice"].drop()
 
 
+def test_a_collection_created_after_the_probe_of_create_is_an_error(started_cluster):
+    """`create` probes for the collection first; another session creating it between the probe and
+    the `CREATE TABLE` must still answer `NamespaceExists` (code 48) rather than a generic failure.
+    The failpoint holds the command after its probe while the table is created meanwhile."""
+    node = cluster.instances["node"]
+    database = make_client()["db"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.created_after_probe", password="123")
+
+    outcome = {}
+
+    def run():
+        try:
+            outcome["result"] = database.command("create", "created_after_probe")
+        except Exception as e:  # pylint: disable=broad-except
+            outcome["error"] = e
+
+    node.query("SYSTEM ENABLE FAILPOINT mongo_pause_after_namespace_probe", password="123")
+    try:
+        thread = threading.Thread(target=run)
+        thread.start()
+        # The command is held after its probe, which found no collection.
+        node.query("SYSTEM WAIT FAILPOINT mongo_pause_after_namespace_probe PAUSE", password="123")
+        node.query(
+            "CREATE TABLE db.created_after_probe (id Int64) ENGINE = MergeTree ORDER BY id",
+            password="123",
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT mongo_pause_after_namespace_probe", password="123")
+    thread.join(timeout=60)
+    assert not thread.is_alive()
+
+    assert "result" not in outcome, outcome
+    assert isinstance(outcome["error"], pymongo.errors.OperationFailure)
+    assert outcome["error"].code == 48
+    assert "already exists" in str(outcome["error"])
+
+    node.query("DROP TABLE db.created_after_probe", password="123")
+
+
 def test_missing_collection_reads_as_empty(started_cluster):
     """Mongo treats a collection that does not exist as empty on the read commands: `find`
     returns an empty cursor, `count` returns 0 and `distinct` returns no values, rather than
@@ -2248,6 +2353,24 @@ def test_an_object_id_of_a_failed_document_stays_free(started_cluster):
     assert sorted(
         (document["_id"], document["value"]) for document in collection.find({})
     ) == [("x", "third"), ("y", "second")]
+
+    collection.drop()
+
+
+def test_two_documents_of_one_insert_with_the_same_object_id(started_cluster):
+    """An object id addresses one document, so the second document of one `insert` command that
+    names the id of the first is refused, and the first one is written."""
+    client = make_client()
+    collection = client["db"]["duplicate_object_id"]
+
+    collection.drop()
+    with pytest.raises(pymongo.errors.BulkWriteError) as error:
+        collection.insert_many([{"_id": "x", "value": 1}, {"_id": "x", "value": 2}])
+    write_errors = error.value.details["writeErrors"]
+    assert [write_error["index"] for write_error in write_errors] == [1]
+    assert "more than one document with the object id 'x'" in write_errors[0]["errmsg"]
+
+    assert [(document["_id"], document["value"]) for document in collection.find({})] == [("x", 1)]
 
     collection.drop()
 

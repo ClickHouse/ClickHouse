@@ -1097,6 +1097,108 @@ Header makeResponseHeader(Header request_header, Int32 message_size, Int32 respo
     return result;
 }
 
+namespace
+{
+
+/// The field of a write command that holds its statements, and the only identifier a document
+/// sequence of that command may carry.
+std::string_view statementsFieldOfCommand(const String & command)
+{
+    if (command == "insert")
+        return "documents";
+    if (command == "update")
+        return "updates";
+    if (command == "delete")
+        return "deletes";
+    return {};
+}
+
+/** The sections of a message as the handlers read them: the command body first, then - for a
+  * write command - one document sequence with its statements.
+  *
+  * `OP_MSG` lets a client send the statements of a write either as a document sequence named
+  * after the field or as an array field of the body itself, and both mean the same command. The
+  * handlers read the sequence, so a body array is turned into one. A sequence that names another
+  * field than the one of the command, a second body, or the same field sent both ways, are
+  * refused: executing such a message would run statements the command does not name.
+  */
+std::vector<OpMessageSection> normalizeMessageSections(const std::vector<OpMessageSection> & sections, const String & command)
+{
+    const auto statements_field = statementsFieldOfCommand(command);
+
+    std::vector<OpMessageSection> result;
+    result.push_back(sections[0]);
+
+    std::optional<OpMessageSection> sequence;
+    for (size_t i = 1; i < sections.size(); ++i)
+    {
+        const auto & section = sections[i];
+        if (section.kind == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A Mongo message holds more than one command body");
+        if (statements_field.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The '{}' command takes no document sequence, but the message holds one named '{}'",
+                command,
+                section.identifier);
+        if (section.identifier != statements_field)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The document sequence of the '{}' command must be named '{}', not '{}'",
+                command,
+                statements_field,
+                section.identifier);
+        if (sequence)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A Mongo message holds more than one document sequence named '{}'", statements_field);
+        sequence.emplace(section);
+    }
+
+    if (!statements_field.empty())
+    {
+        bson_iter_t iter;
+        bool body_has_field = bson_iter_init_find(&iter, sections[0].documents[0].getBson(), String(statements_field).c_str());
+        if (body_has_field && sequence)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The '{}' of the '{}' command is sent both in the command body and as a document sequence",
+                statements_field,
+                command);
+
+        if (body_has_field)
+        {
+            if (!BSON_ITER_HOLDS_ARRAY(&iter))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of the '{}' command must be an array", statements_field, command);
+
+            std::vector<Document> statements;
+            bson_iter_t element;
+            if (!bson_iter_recurse(&iter, &element))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of the '{}' command is not a valid array", statements_field, command);
+            while (bson_iter_next(&element))
+            {
+                if (!BSON_ITER_HOLDS_DOCUMENT(&element))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "An element of the '{}' of the '{}' command must be a document", statements_field, command);
+                uint32_t length = 0;
+                const uint8_t * data = nullptr;
+                bson_iter_document(&element, &length, &data);
+                bson_t * statement = bson_new_from_data(data, length);
+                if (!statement)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "An element of the '{}' of the '{}' command is not a valid document", statements_field, command);
+                statements.emplace_back(statement);
+            }
+            sequence.emplace(/* kind_= */ UInt8(1), statements);
+            sequence->identifier = String(statements_field);
+        }
+    }
+
+    if (sequence)
+        result.push_back(std::move(*sequence));
+    return result;
+}
+
+}
+
 std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor)
 {
     if (sections.empty() || sections[0].kind != 0 || sections[0].documents.empty())
@@ -1111,7 +1213,7 @@ std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & se
     if (!handler)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command {} is not supported yet.", command);
 
-    return handler->handle(sections, executor);
+    return handler->handle(normalizeMessageSections(sections, command), executor);
 }
 
 std::vector<Document> runQueryRequst(const std::vector<Document> &, std::shared_ptr<QueryExecutor> executor)
