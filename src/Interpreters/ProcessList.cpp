@@ -1,8 +1,11 @@
 #include <Interpreters/ProcessList.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -19,6 +22,7 @@
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
+#include <Common/typeid_cast.h>
 #include <array>
 #include <chrono>
 #include <memory>
@@ -965,6 +969,41 @@ bool QueryStatus::updateProgressOut(const Progress & value)
     progress_out.incrementPiecewiseAtomically(value);
 
     return !is_killed.load(std::memory_order_relaxed);
+}
+
+
+void QueryStatus::addRemoteProfileEvents(const Block & block)
+{
+    const auto & types = typeid_cast<const ColumnInt8 &>(*block.getByName("type").column).getData();
+    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+    const auto & values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
+
+    std::lock_guard lock(remote_profile_events_mutex);
+    for (size_t row = 0; row < block.rows(); ++row)
+    {
+        /// The packet of a remote server carries the increments of its own query and, verbatim, those
+        /// it has received from the servers it has in turn sent parts of the query to, so the sum of
+        /// all increments is what the whole subtree of the query has produced.
+        if (types[row] != ProfileEvents::Type::INCREMENT || values[row] <= 0)
+            continue;
+
+        auto event = ProfileEvents::tryGetByName(names.getDataAt(row));
+        if (!event)
+            continue;
+
+        if (!remote_profile_events)
+            remote_profile_events = std::make_unique<ProfileEvents::Counters>(VariableContext::Process, /* parent = */ nullptr);
+        remote_profile_events->incrementNoTrace(*event, values[row]);
+    }
+}
+
+
+std::optional<ProfileEvents::Counters::Snapshot> QueryStatus::getRemoteProfileEvents() const
+{
+    std::lock_guard lock(remote_profile_events_mutex);
+    if (!remote_profile_events)
+        return {};
+    return remote_profile_events->getPartiallyAtomicSnapshot();
 }
 
 

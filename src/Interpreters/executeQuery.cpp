@@ -776,6 +776,19 @@ static void usedQuotaProfileEvents(
     /// finish; the quota, now exhausted, rejects the following queries.
     if (counters)
         quota->usedProfileEvents(normalized_query_hash, *counters, /* check_exceeded = */ false);
+
+    /// What the remote servers did for a distributed query, as they reported it (see `RemoteQueryExecutor`).
+    if (auto remote_counters = process_list_elem->getRemoteProfileEvents())
+        quota->usedProfileEvents(normalized_query_hash, *remote_counters, /* check_exceeded = */ false);
+}
+
+/// Whether the query is charged against the quotas over profile events. Like the predefined `errors`
+/// counter, only the outer query of an internal one is, with one exception: the deferred flush of
+/// asynchronous inserts, which is internal but runs on behalf of the user who submitted the inserts
+/// and under their quota (it charges the predefined `written_bytes` as well).
+static bool chargesQuotaProfileEvents(const ASTPtr & query_ast, bool internal)
+{
+    return !internal || (query_ast && query_ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush);
 }
 
 
@@ -914,6 +927,12 @@ void logQueryFinish(
     const auto time_now = std::chrono::system_clock::now();
     auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
     logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
+
+    /// The deferred flush of asynchronous inserts is not run by `executeQuery`, whose finish callback
+    /// charges the quotas over profile events for the other queries, so it is charged here; the
+    /// counters have been finalized above.
+    if (query_ast && query_ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush)
+        usedQuotaProfileEvents(context->getQuota(), context->getProcessListElementSafe(), elem.normalized_query_hash);
 }
 
 /// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
@@ -986,8 +1005,8 @@ void logQueryException(
 
     /// The resources the failed query consumed, including the failure itself (`FailedQuery` and
     /// friends), count against the quotas over profile events. Like the predefined `errors`
-    /// counter, only the outer query of an internal one is charged.
-    if (!internal)
+    /// counter, only the outer query of an internal one is charged (see `chargesQuotaProfileEvents`).
+    if (chargesQuotaProfileEvents(query_ast, internal))
         usedQuotaProfileEvents(context->getQuota(), process_list_elem, elem.normalized_query_hash);
 
     QueryStatusInfoPtr info;
@@ -1130,7 +1149,7 @@ void logExceptionBeforeStart(
 
     QueryStatusPtr process_list_elem = context->getProcessListElementSafe();
 
-    if (!internal)
+    if (chargesQuotaProfileEvents(ast, internal))
     {
         if (process_list_elem)
             usedQuotaProfileEvents(quota, process_list_elem, normalized_query_hash);
