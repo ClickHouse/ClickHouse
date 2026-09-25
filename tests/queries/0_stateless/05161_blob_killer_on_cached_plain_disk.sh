@@ -1,8 +1,14 @@
--- A cached disk keeps a queue of dead blobs of its own: every commit moves the blobs that the wrapped
--- storage removed into it, so that `BlobKillerThread` drops the stale cache entries for them. So the killer
--- of the cache layer has to run even when the disk it wraps removes its blobs synchronously and needs no
--- killer of its own.
+#!/usr/bin/env bash
+# A cached disk keeps a queue of dead blobs of its own: every commit moves the blobs that the wrapped
+# storage removed into it, so that `BlobKillerThread` drops the stale cache entries for them. So the killer
+# of the cache layer has to run even when the disk it wraps removes its blobs synchronously and needs no
+# killer of its own.
 
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+${CLICKHOUSE_CLIENT} --multiline -q "
 CREATE TABLE t_cached_plain_rewritable (a Int32) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(
     name = '05161_cache_over_plain_rewritable',
@@ -14,7 +20,7 @@ SETTINGS disk = disk(
         type = 'object_storage',
         object_storage_type = 'local',
         metadata_type = 'plain_rewritable',
-        path = 'disks/05161_plain_rewritable_under_cache/'));
+        path = '${CLICKHOUSE_DISKS_FILES}/05161_plain_rewritable_under_cache/'));
 
 INSERT INTO t_cached_plain_rewritable VALUES (1);
 SELECT * FROM t_cached_plain_rewritable;
@@ -34,3 +40,4 @@ WHERE logger_name = '05161_cache_over_plain_rewritable::BlobKillerThread' AND me
 
 SELECT 'disk under the cache, blob killer started', count() FROM system.text_log
 WHERE logger_name = '05161_plain_rewritable_under_cache::BlobKillerThread' AND message LIKE 'Execution started%';
+"

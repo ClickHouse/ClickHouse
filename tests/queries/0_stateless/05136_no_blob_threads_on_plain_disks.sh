@@ -1,16 +1,22 @@
--- The `plain_rewritable` metadata storage (like `plain` and `web`) removes blobs synchronously inside the
--- transaction and never replicates them, so a disk using it must never schedule the background tasks of
--- `BlobKillerThread` and `BlobCopierThread`. A disk with the default `local` metadata still runs the killer.
+#!/usr/bin/env bash
+# The `plain_rewritable` metadata storage (like `plain` and `web`) removes blobs synchronously inside the
+# transaction and never replicates them, so a disk using it must never schedule the background tasks of
+# `BlobKillerThread` and `BlobCopierThread`. A disk with the default `local` metadata still runs the killer.
 
--- The `local` metadata of a disk lives in `disks/<disk name>/`, and a `local` object storage deletes its
--- own root directory once it becomes empty, so `path` must not be `disks/05136_local_metadata/` here.
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+${CLICKHOUSE_CLIENT} --multiline -q "
+-- The \`local\` metadata of a disk lives in \`disks/<disk name>/\`, and a \`local\` object storage deletes its
+-- own root directory once it becomes empty, so \`path\` must not be \`disks/05136_local_metadata/\` here.
 CREATE TABLE t_local_metadata (a Int32) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(
     name = '05136_local_metadata',
     type = 'object_storage',
     object_storage_type = 'local',
     metadata_type = 'local',
-    path = 'disks/05136_local_metadata_blobs/');
+    path = '${CLICKHOUSE_DISKS_FILES}/05136_local_metadata_blobs/');
 
 CREATE TABLE t_plain_rewritable (a Int32) ENGINE = MergeTree ORDER BY a
 SETTINGS disk = disk(
@@ -18,14 +24,14 @@ SETTINGS disk = disk(
     type = 'object_storage',
     object_storage_type = 'local',
     metadata_type = 'plain_rewritable',
-    path = 'disks/05136_plain_rewritable/');
+    path = '${CLICKHOUSE_DISKS_FILES}/05136_plain_rewritable/');
 
 SYSTEM FLUSH LOGS text_log;
 
 SELECT 'local metadata, blob killer started', count() > 0 FROM system.text_log
 WHERE logger_name = '05136_local_metadata::BlobKillerThread' AND message LIKE 'Execution started%';
 
--- The copier reports this at startup even when `data_background_replication` is not enabled.
+-- The copier reports this at startup even when \`data_background_replication\` is not enabled.
 SELECT 'local metadata, blob copier not needed', count() > 0 FROM system.text_log
 WHERE logger_name = '05136_local_metadata::BlobCopierThread' AND message LIKE 'Execution is not needed%';
 
@@ -43,3 +49,4 @@ SYSTEM WAIT BLOBS CLEANUP '05136_plain_rewritable';
 
 DROP TABLE t_local_metadata;
 DROP TABLE t_plain_rewritable;
+"
