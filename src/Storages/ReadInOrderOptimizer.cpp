@@ -266,8 +266,11 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
           * the stream it advertises. The advertised order then disagrees with the order the merge upstream
           * assumes, for every type of key and not only for the `NULL`/`NaN` cases below. Reject a reverse
           * key column outright until this optimizer can fold the flags into the match direction.
+          * A reverse key column that is constant after filtering does not affect the order, so it is
+          * left to the fixed-column skip below.
           */
-        if (!sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[key_pos])
+        if (!sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[key_pos]
+            && !fixed_sorting_columns.contains(sorting_key_columns[key_pos]))
             break;
 
         /** A part stores a `Nullable` or `Float` key with its NULLs and NaNs at one physical end, and
