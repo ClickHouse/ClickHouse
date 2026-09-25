@@ -407,11 +407,19 @@ def grep_server_logs(server, substring: str) -> list[str]:
     """
     lines = []
     for filename in SERVER_LOG_FILES:
-        lines.extend(
-            server.grep_in_log(
-                substring, from_host=True, filename=filename
-            ).splitlines()
-        )
+        # `grep_in_log` globs `<filename>*`, and `zgrep` prefixes every hit with `<path>:` once
+        # that glob matches more than one file - so from the first rotation onwards, which here
+        # is every restart. Strip it against the path that was asked for: a record begins with
+        # its own timestamp, so cutting at the first colon would eat into `11:30:15` instead.
+        prefix = f"{server.logs_dir}/{filename}"
+        for line in server.grep_in_log(
+            substring, from_host=True, filename=filename
+        ).splitlines():
+            if line.startswith(prefix):
+                _, separator, rest = line[len(prefix) :].partition(":")
+                if separator:
+                    line = rest
+            lines.append(line)
     return lines
 
 
