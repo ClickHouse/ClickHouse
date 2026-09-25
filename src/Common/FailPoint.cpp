@@ -40,6 +40,19 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
+    REGULAR(materialized_postgresql_fail_teardown_after_shutdown) \
+    REGULAR(materialized_postgresql_fail_leader_release_at_shutdown) \
+    REGULAR(materialized_postgresql_fail_load_from_snapshot) \
+    REGULAR(materialized_postgresql_fail_nested_table_drop) \
+    REGULAR(materialized_postgresql_fail_nested_drop_on_detach) \
+    REGULAR(materialized_postgresql_fail_nested_drop_on_attach) \
+    REGULAR(materialized_postgresql_fail_database_startup) \
+    REGULAR(materialized_postgresql_fail_add_table_to_replication) \
+    PAUSEABLE(materialized_postgresql_pause_after_stop_replication) \
+    PAUSEABLE(materialized_postgresql_pause_before_register_replica) \
+    PAUSEABLE(materialized_postgresql_pause_before_marking_snapshot_completed) \
+    PAUSEABLE(materialized_postgresql_pause_before_redo_snapshot_truncate) \
+    PAUSEABLE(materialized_postgresql_pause_in_non_last_teardown) \
     REGULAR(smt_blobs_list_split_file_writes) \
     REGULAR(smt_blobs_list_split_file_writes_small) \
     REGULAR(smt_blobs_list_zero_byte_append) \

@@ -35,6 +35,44 @@ namespace ErrorCodes
     DECLARE(Bool, materialized_postgresql_use_extended_date_and_time_types, true, \
         "Map PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64` " \
         "(which cover the wider PostgreSQL value range). When disabled, the narrower `Date` and `DateTime` types are used.", 0) \
+    DECLARE(String, materialized_postgresql_table_engine, "ReplacingMergeTree", \
+        "Engine for the nested tables created by the engine. One of `ReplacingMergeTree`, " \
+        "`ReplicatedReplacingMergeTree`, `SharedReplacingMergeTree`. The replicated/shared variants require " \
+        "`materialized_postgresql_keeper_path` to be set (which enables single-active-worker coordination). " \
+        "`SharedReplacingMergeTree` is only available in ClickHouse Cloud; setting an engine that is not " \
+        "registered in this build is rejected at `CREATE` time.", 0) \
+    DECLARE(String, materialized_postgresql_keeper_path, "", \
+        "Keeper path used to coordinate the PostgreSQL logical replication slot across ClickHouse replicas. " \
+        "When non-empty, exactly one replica consumes the slot at a time (the others take over on its failure), " \
+        "and `materialized_postgresql_table_engine` must be set to a replicated/shared engine so that the " \
+        "standby replicas receive the data through ClickHouse replication. Coordination owns the shared slot, " \
+        "so it cannot be combined with a user-managed `materialized_postgresql_replication_slot` or " \
+        "`materialized_postgresql_snapshot`, nor with a column-filtered `materialized_postgresql_tables_list` " \
+        "(all replicas share one set of nested tables and must agree on the exact column projection). " \
+        "It must resolve to the same value on every replica (it is both the coordination namespace and the " \
+        "root of the shared nested tables), so it supports the {shard} macro but the per-replica {replica} " \
+        "macro is rejected: put the per-replica part in `materialized_postgresql_replica_name`. The {uuid} " \
+        "macro is accepted only when the UUID is identical on every replica (an ON CLUSTER query, a table " \
+        "inside a Replicated database, or an explicit UUID clause), because a plain CREATE generates a " \
+        "different UUID on every server. " \
+        "All replicas of one coordinated setup must agree on the naming-affecting settings " \
+        "(`materialized_postgresql_table_engine`, `materialized_postgresql_schema`, " \
+        "`materialized_postgresql_schema_list`, `materialized_postgresql_tables_list_with_schema`) " \
+        "and must replicate the same PostgreSQL source (the same source database and, for the single-table " \
+        "engine, the same source table - the single-table and the database engine can never share one path); " \
+        "a replica that disagrees with the identity published under this path is rejected.", 0) \
+    DECLARE(String, materialized_postgresql_replica_name, "{replica}", \
+        "Replica identity used for the Keeper coordination node and for the nested replicated table engine. " \
+        "Supports the {uuid}, {shard} and {replica} macros. It must resolve to a distinct value on every replica: " \
+        "the registration is ownership-checked, so a name already registered by another replica is rejected. " \
+        "It must also resolve to a single Keeper node name: an empty value or a value containing `/` is rejected, " \
+        "because a nested path under `<keeper_path>/replicas` would break the last-replica bookkeeping that " \
+        "decides when the shared replication slot and publication are removed. Together with " \
+        "`materialized_postgresql_keeper_path` it forms the coordination identity of the replica, which must " \
+        "stay the same for the lifetime of the setup: both are re-expanded from the server configuration on " \
+        "every startup, so a configuration-only change of a macro they expand through is refused (it would " \
+        "move the coordination bookkeeping away from the shared data this replica already holds). Dropping the " \
+        "engine after such a change still works and tears down the identity persisted in the nested tables.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MaterializedPostgreSQLSettings, MaterializedPostgreSQLSetting)
