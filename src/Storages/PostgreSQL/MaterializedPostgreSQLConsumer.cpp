@@ -944,7 +944,10 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (!relation_id_to_name.contains(relation_id))
                 relation_id_to_name[relation_id] = table_name;
 
-            if (!isSyncAllowed(relation_id, relation_name))
+            /// `waiting_list` and `deleted_tables` use the ClickHouse table name, which includes
+            /// the PostgreSQL schema in the multi-schema modes. Use the same key here so a table
+            /// reloaded by `ATTACH TABLE` does not apply WAL that predates its snapshot.
+            if (!isSyncAllowed(relation_id, table_name))
                 return;
 
             auto storage_iter = storages.find(table_name);
