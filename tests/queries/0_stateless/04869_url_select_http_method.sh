@@ -9,11 +9,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # The inner queries below go to this server's own HTTP interface (${CLICKHOUSE_URL}), so the
 # method that was actually used on the wire is recorded in `system.query_log.http_method`
-# (1 = GET, 2 = POST). Each inner query is tagged with a unique `log_comment`.
+# (`GET` or `POST`). Each inner query is tagged with a unique `log_comment`.
 #
 # `http_make_head_request=0`: with the default of 1, the delayed read buffer first issues a
 # HEAD pre-request for the file info, which the HTTP handler also executes and logs (with
-# `http_method` = 0), polluting the per-tag method sets below.
+# `http_method` = 'HEAD'), polluting the per-tag method sets below.
 # `schema_inference_use_cache_for_url=0` (query 6): keeps that query a plain fresh-inference
 # check, independent of the schema-cache behavior that query 8 covers.
 #
