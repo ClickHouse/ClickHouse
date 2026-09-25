@@ -1958,6 +1958,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 {
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
+    /// A `MODIFY QUERY` replaces a materialized view's whole column set, which this snapshot cannot follow.
+    bool columns_replaced_by_modify_query = false;
 
     /// Used to tell whether a command restates the definition the table already has, so it must not
     /// depend on whether the redundant parentheses were written on one side and not on the other.
@@ -1974,7 +1976,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
-            if (!has_column && command.if_exists)
+            if (!has_column && command.if_exists && !columns_replaced_by_modify_query)
                 command.ignore = true;
 
             if (!command.ignore)
@@ -2095,7 +2097,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                 || command.type == AlterCommand::COMMENT_COLUMN
                 || command.type == AlterCommand::RENAME_COLUMN)
         {
-            if (!has_column && command.if_exists)
+            if (!has_column && command.if_exists && !columns_replaced_by_modify_query)
                 command.ignore = true;
         }
         else if (command.type == AlterCommand::MODIFY_ORDER_BY)
@@ -2103,6 +2105,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
             if (ast_to_str(command.order_by) == ast_to_str(metadata.sorting_key.definition_ast))
                 command.ignore = true;
         }
+        else if (command.type == AlterCommand::MODIFY_QUERY)
+            columns_replaced_by_modify_query = true;
     }
 
     prepared = true;
@@ -2131,6 +2135,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    /// A materialized view's columns are its query's output, so a `MODIFY QUERY` here replaces the whole
+    /// set and this snapshot stops describing what the commands after it run against. Deriving the new
+    /// set means analysing the query, which is not this check's job; `AlterCommand::apply` screens those
+    /// names against the columns the new query really produces.
+    bool columns_replaced_by_modify_query = false;
     /// The constraint names the table has, followed through the adds and drops of this same `ALTER`
     /// - `apply()` runs the commands one after another - so that a command is screened below only when
     /// it will really install a declaration.
@@ -2231,7 +2240,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             if (!all_columns.has(column_name))
             {
-                if (!command.if_exists)
+                if (!command.if_exists && !columns_replaced_by_modify_query)
                 {
                     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Wrong column. Cannot find column {} to modify{}",
                                     backQuote(column_name), all_columns.getHintsMessage(column_name));
@@ -2390,7 +2399,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             if (!all_columns.has(command.column_name))
             {
-                if (!command.if_exists)
+                if (!command.if_exists && !columns_replaced_by_modify_query)
                 {
                     auto message = PreformattedMessage::create(
                         "Wrong column name. Cannot find column {} to comment", backQuote(command.column_name));
@@ -2494,6 +2503,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from nested struct to normal column and vice versa");
             }
         }
+        else if (command.type == AlterCommand::MODIFY_QUERY)
+            columns_replaced_by_modify_query = true;
         else if (command.type == AlterCommand::REMOVE_TTL && !metadata->hasAnyTableTTL())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have any table TTL expression, cannot remove");
