@@ -62,6 +62,25 @@ inline constexpr size_t NO_MATCH = static_cast<size_t>(-1);
 template <bool IsIndexOf>
 using SearchResult = std::conditional_t<IsIndexOf, size_t, bool>;
 
+/// Use the column's UInt8 result type for the scalar has() loop.
+template <SupportedNumeric T, bool IsIndexOf>
+ALWAYS_INLINE std::conditional_t<IsIndexOf, size_t, UInt8> findNumericScalar(const T * data, size_t size, T value)
+{
+    std::conditional_t<IsIndexOf, size_t, UInt8> found = IsIndexOf ? NO_MATCH : 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (data[i] == value)
+        {
+            if constexpr (IsIndexOf)
+                found = i;
+            else
+                found = true;
+            break;
+        }
+    }
+    return found;
+}
+
 template <SupportedNumeric T, bool IsIndexOf>
 ALWAYS_INLINE SearchResult<IsIndexOf> findNumericInternal(const T * data, size_t size, T value)
 {
@@ -131,39 +150,15 @@ ALWAYS_INLINE SearchResult<IsIndexOf> findNumeric(const T * data, size_t size, T
     }
 
     const size_t prefix_size = std::min(size, max_prefix_size);
-    for (size_t i = 0; i < prefix_size; ++i)
-    {
-        if (data[i] == value)
-        {
-            if constexpr (IsIndexOf)
-                return i;
-            else
-                return true;
-        }
-    }
-    if (prefix_size == size)
-    {
-        if constexpr (IsIndexOf)
-            return NO_MATCH;
-        else
-            return false;
-    }
+    const auto prefix_result = findNumericScalar<T, IsIndexOf>(data, prefix_size, value);
+    if (prefix_result != (IsIndexOf ? NO_MATCH : 0) || prefix_size == size)
+        return prefix_result;
 
     const auto found = findNumericInternal<T, IsIndexOf>(data + prefix_size, size - prefix_size, value);
     if constexpr (IsIndexOf)
         return found == NO_MATCH ? NO_MATCH : prefix_size + found;
     else
         return found;
-}
-
-template <SupportedNumeric T>
-ALWAYS_INLINE size_t findNumericScalarIndexOf(const T * data, size_t size, T value)
-{
-    for (size_t i = 0; i < size; ++i)
-        if (data[i] == value)
-            return i;
-
-    return NO_MATCH;
 }
 
 /// Short rows avoid memchr overhead or the block rescan needed by indexOf().
@@ -288,7 +283,7 @@ public:
             high = compare_result ? middle : high;
             low = compare_result ? low : middle + 1;
         }
-        if (low < array_size && compare(data, target, current_offset + low, 0))
+        if (low < array_size && compare(data, target, low + current_offset, 0))
         {
             ConcreteAction::apply(current, low);
         }
@@ -425,33 +420,13 @@ private:
                 const size_t array_size = next_offset - current_offset;
                 const Initial * __restrict row_data = raw_data + current_offset;
 
+                const auto found = array_size < min_array_size
+                    ? ArrayIndexImpl::findNumericScalar<Initial, is_index_of>(row_data, array_size, value)
+                    : ArrayIndexImpl::findNumeric<Initial, is_index_of>(row_data, array_size, value);
                 if constexpr (is_index_of)
-                {
-                    const size_t found = array_size < min_array_size
-                        ? ArrayIndexImpl::findNumericScalarIndexOf(row_data, array_size, value)
-                        : ArrayIndexImpl::findNumeric<Initial, true>(row_data, array_size, value);
                     raw_result[i] = found == ArrayIndexImpl::NO_MATCH ? 0 : static_cast<ResultType>(found + 1);
-                }
                 else
-                {
-                    if (array_size < min_array_size)
-                    {
-                        ResultType found = 0;
-                        for (size_t j = 0; j < array_size; ++j)
-                        {
-                            if (row_data[j] == value)
-                            {
-                                found = 1;
-                                break;
-                            }
-                        }
-                        raw_result[i] = found;
-                    }
-                    else
-                    {
-                        raw_result[i] = ArrayIndexImpl::findNumeric<Initial, false>(row_data, array_size, value);
-                    }
-                }
+                    raw_result[i] = static_cast<ResultType>(found);
 
                 current_offset = next_offset;
             }
@@ -905,6 +880,7 @@ private:
             arg.type = static_cast<const DataTypeNullable &>(*arguments[1].type).getNestedType();
 
             auto & null_map = source_columns[3];
+
             null_map.column = arg_nullable->getNullMapColumnPtr();
             null_map.type = std::make_shared<DataTypeUInt8>();
         }
