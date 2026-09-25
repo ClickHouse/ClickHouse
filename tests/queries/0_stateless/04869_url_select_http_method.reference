@@ -14,6 +14,7 @@ SUPPORT_IS_DISABLED
 SUPPORT_IS_DISABLED
 1
 BAD_ARGUMENTS
+cannot be combined with http_method='PUT'
 0
 0
 0

@@ -181,15 +181,6 @@ bool urlPathHasListableGlobs(std::string_view uri)
     return path.contains('*');
 }
 
-static void checkPostReadDoesNotUseIndexPageWildcards(const String & url, const String & http_method)
-{
-    if (urlPathHasListableGlobs(url) && IStorageURLBase::chooseReadMethod(http_method) == Poco::Net::HTTPRequest::HTTP_POST)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
-            url);
-}
-
 /// `ENGINE = URL` picks the wildcard (read-only, always `GET`) or the plain URL backend once, when the
 /// table is defined, so it cannot honor an explicit `http_method` and index-page expansion at the same time.
 static void checkIndexPageWildcardsNotCombinedWithHTTPMethod(const String & url, const String & http_method)
@@ -1363,7 +1354,8 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    checkPostReadDoesNotUseIndexPageWildcards(uri, http_method);
+    /// Tables loaded from metadata skip the create-time check, so check again here.
+    checkIndexPageWildcardsNotCombinedWithHTTPMethod(uri, http_method);
 
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(

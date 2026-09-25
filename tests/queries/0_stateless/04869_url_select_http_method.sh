@@ -34,6 +34,7 @@ TAG_CLUSTER="${CLICKHOUSE_DATABASE}_62352_cluster"
 NC_MAIN="nc_${CLICKHOUSE_DATABASE}_62352"
 NC_DISP="nc_disp_${CLICKHOUSE_DATABASE}_62352"
 NC_ENGINE="nc_eng_${CLICKHOUSE_DATABASE}_62352"
+NC_PUT="nc_put_${CLICKHOUSE_DATABASE}_62352"
 # Fixed UUIDs collide when the flaky check runs this test concurrently; generate per run.
 # The dummy arguments keep the three calls distinct: identical ones collapse into a single value.
 read -r UUID_ATTACH UUID_ACC UUID_WILD <<< "$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4(1), generateUUIDv4(2), generateUUIDv4(3)")"
@@ -101,6 +102,16 @@ $CLICKHOUSE_CLIENT -q "
     ATTACH TABLE url_${NC_MAIN}"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM url_${NC_MAIN}" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
 $CLICKHOUSE_CLIENT -q "DROP TABLE url_${NC_MAIN}; DROP NAMED COLLECTION ${NC_MAIN}"
+# The same holds for any explicit http_method, not only POST.
+$CLICKHOUSE_CLIENT -q "
+    DROP NAMED COLLECTION IF EXISTS ${NC_PUT};
+    CREATE NAMED COLLECTION ${NC_PUT} AS url = 'http://localhost:1/plain.csv', format = 'CSV', http_method = 'PUT';
+    CREATE TABLE url_${NC_PUT} (x String) ENGINE = URL(${NC_PUT});
+    ALTER NAMED COLLECTION ${NC_PUT} SET url = 'http://localhost:1/files/*.csv';
+    DETACH TABLE url_${NC_PUT};
+    ATTACH TABLE url_${NC_PUT}"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url_${NC_PUT}" 2>&1 | grep -o -m1 "cannot be combined with http_method='PUT'"
+$CLICKHOUSE_CLIENT -q "DROP TABLE url_${NC_PUT}; DROP NAMED COLLECTION ${NC_PUT}"
 # http_method is silently ignored for non-HTTP scheme dispatch (the delegate backend
 # never sees it); the error, if any, comes from the delegate, not from an http_method guard.
 $CLICKHOUSE_CLIENT -q "
