@@ -11,12 +11,18 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ProtocolDefines.h>
+#include <Common/Exception.h>
 
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/classification.hpp>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 namespace
 {
@@ -48,8 +54,12 @@ void insertUInt64Column(Block & block, std::string_view name, UInt64 value)
 /// A one-row meta block is read by column name: absent means "the writer predates this field".
 UInt64 getUInt64OrDefault(const Block & meta, std::string_view name, UInt64 default_value)
 {
+    if (meta.rows() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Expected exactly one row in the meta block of a stateless worker logs payload, got {}", meta.rows());
+
     String column_name(name);
-    if (meta.rows() != 1 || !meta.has(column_name))
+    if (!meta.has(column_name))
         return default_value;
     return meta.getByName(column_name).column->getUInt(0);
 }

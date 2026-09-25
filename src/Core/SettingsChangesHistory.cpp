@@ -60,6 +60,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_mutation_query", true, true, "Obsolete setting: mutation queries are always validated before being accepted. The recorded value does not change, because validation was already enabled by default and `compatibility` must not turn it back off."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
             {"parallel_replicas_for_queries_with_multiple_tables", true, true, "New setting to control whether parallel replicas are used for queries joining multiple tables (queries with JOIN). It does not affect a UNION query without a JOIN, nor ARRAY JOIN."},
+            {"distributed_plan_max_buffered_log_rows", 100000, 100000, "New setting bounding how many log lines a stateless-worker task buffers for forwarding to the coordinator between status polls; excess lines are dropped and counted. New feature, so the previous value equals the default."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -72,7 +73,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
             {"allow_nullable_tuple_in_extracted_subcolumns", false, true, "`Nullable(Tuple)` is now GA: a `Tuple` subcolumn extracted from a `Tuple`, `Variant`, `Dynamic` or `JSON` column is `Nullable(Tuple)` and is NULL in the rows where the subcolumn is missing. The setting is read once at server startup, so `compatibility` restores the previous behavior only from the startup profile (for example, users.xml), not from a session-level `SET`."},
             {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
-            {"distributed_plan_max_buffered_log_rows", 100000, 100000, "New setting bounding how many log lines a stateless-worker task buffers for forwarding to the coordinator between status polls; excess lines are dropped and counted. New feature, so the previous value equals the default."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
             {"query_plan_optimize_join_order_conflict_detector", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."},

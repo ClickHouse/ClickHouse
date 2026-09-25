@@ -92,17 +92,6 @@ struct DistributedQueryTaskStatus
 /// Frames one payload: tag, byte length, bytes. The payload is materialized first to learn its length.
 void writeTaskStatusPayloadFrame(WriteBuffer & out, UInt64 tag, const std::function<void(WriteBuffer &)> & write_payload);
 
-/// Walks the payload list that follows the fixed body: for every payload calls `on_payload` with its
-/// tag and a buffer bounded to exactly its bytes, then skips whatever the handler left unread, and
-/// stops at the end tag.
-///
-/// The list is a set, not a sequence. The worker appends one payload per collector the coordinator
-/// asked for, in whatever order it likes, and a reader may know only some of the tags. So the reader
-/// never assumes a position: it dispatches on the tag, skips unknown tags by their length, and skips
-/// bytes a newer worker appended inside a known payload. That is what lets collectors be added and
-/// combined later without both sides agreeing on an order. A truncated body throws instead of
-/// desynchronizing the list.
-
 /// The logs payload framed under `TASK_STATUS_PAYLOAD_LOGS`.
 void writeTaskStatusPayload(WriteBuffer & out, const TaskLogsPayload & logs);
 

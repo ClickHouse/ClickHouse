@@ -55,6 +55,14 @@ public:
         String message;
     };
 
+    /// Draining the queue and advancing the counter happen under one lock, so concurrent polls (a retried
+    /// request overlapping the original one) get offsets in the same order as the lines they drained.
+    struct ForwardedLogsCounter
+    {
+        std::mutex mutex;
+        UInt64 count TSA_GUARDED_BY(mutex) = 0;
+    };
+
     Result startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     Result cancelTask(const String & task_id);
@@ -81,7 +89,7 @@ private:
         InternalTextLogsQueuePtr logs_queue;
         /// Cumulative log lines drained into status replies; lets the coordinator detect lines lost to a
         /// retried status poll (the worker cannot observe that loss itself).
-        std::shared_ptr<std::atomic<UInt64>> forwarded_log_count = std::make_shared<std::atomic<UInt64>>(0);
+        std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;

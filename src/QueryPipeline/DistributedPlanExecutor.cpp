@@ -1558,11 +1558,13 @@ protected:
 
         /// Push a synthetic warning line into the client's log stream. The status-check threads are not
         /// attached to the initiator log queue, so a plain LOG_ would not reach the client; forward it the
-        /// same way worker log blocks are forwarded.
+        /// same way worker log blocks are forwarded. Honors the client's `send_logs_level` and
+        /// `send_logs_source_regexp` like any other line.
         void pushInitiatorLogLine(const String & query_id, const String & text)
         {
-            if (initiator_logs_queue)
-                initiator_logs_queue->pushMessage(Poco::Message::PRIO_WARNING, "DistributedQueryPlanExecutor", query_id, text);
+            static const String source = "DistributedQueryPlanExecutor";
+            if (initiator_logs_queue && initiator_logs_queue->isNeeded(Poco::Message::PRIO_WARNING, source))
+                initiator_logs_queue->pushMessage(Poco::Message::PRIO_WARNING, source, query_id, text);
         }
 
         /// Forward one batch of worker log lines from a status reply to the initiator's `send_logs_level`

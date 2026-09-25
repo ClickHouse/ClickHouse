@@ -114,7 +114,9 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     {
         timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
         timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
-        /// Safe to retry: read-only.
+        /// Not read-only when the task collects logs: each poll drains the worker's log queue, so a retry
+        /// loses the lines drained by the failed attempt. That is accepted (log forwarding is best effort);
+        /// the loss is detected on the coordinator through `begin_offset` and reported to the client.
         read_settings.http_settings.max_tries = 3;
         read_settings.http_settings.retry_initial_backoff_ms = 200;
         read_settings.http_settings.retry_max_backoff_ms = 1000;
@@ -140,7 +142,7 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     /// bytes after the end tag are a protocol violation, not a newer worker.
     if (!in->eof())
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unexpected trailing data in stateless worker task status response for task {} ", task_id);
+            "Unexpected trailing data in stateless worker task status response for task {}", task_id);
 
     return result;
 }
