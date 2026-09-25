@@ -18,9 +18,16 @@ namespace
 /// The database `system.table_settings` reports the named table under. A name without a database may be one of
 /// the session's temporary tables, which that table reports with an empty `database`. As in `SHOW CREATE TABLE`,
 /// a temporary table takes precedence over a table of the current database with the same name.
+///
+/// Asked of the session, which is where `system.table_settings` enumerates temporary tables from, as
+/// `system.tables` does. A request that carries external data without a session holds them in its query context
+/// instead, and resolving one here that the table will not report would answer with an empty result - a table
+/// that exists and states settings would read as one with none. Left unresolved, the name falls through to the
+/// current database and the lookup below says the table is not there, which is the truthful answer.
 String resolveReportedDatabase(const ASTShowTableSettingsQuery & query, const ContextPtr & context)
 {
-    if (query.database.empty() && context->tryResolveStorageID(StorageID("", query.table), Context::ResolveExternal))
+    if (query.database.empty() && context->hasSessionContext()
+        && context->getSessionContext()->tryResolveStorageID(StorageID("", query.table), Context::ResolveExternal))
         return "";
     return context->resolveDatabase(query.database);
 }
