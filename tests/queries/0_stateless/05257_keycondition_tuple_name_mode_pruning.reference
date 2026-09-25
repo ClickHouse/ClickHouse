@@ -1,0 +1,11 @@
+oracle_named_anon_tz	1
+partition_named_anon_tz	1
+oracle_named_anon	1
+partition_named_anon	1
+oracle_anon_named	1
+partition_anon_named	1
+oracle_anon_anon_tz	1
+partition_anon_anon_tz	1
+partition_named_named	1
+plan_anon_anon_tz_prunes	1
+plan_named_named_prunes	1

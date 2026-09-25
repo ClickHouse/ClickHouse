@@ -425,6 +425,11 @@ DataTypePtr replaceNestedTypesInPairImpl(
         const auto & left_tuple = assert_cast<const DataTypeTuple &>(*left);
         if (!right_tuple || right_tuple->getElements().size() != left_tuple.getElements().size())
             return nullptr;
+        /// `DataTypeTuple::equals` cannot see the naming mode (an anonymous tuple compares by its ordinal
+        /// names), while serialization does (`toJSONString` writes an object or an array), so a pair that
+        /// disagrees on it is not interchangeable whether or not a child moves.
+        if (right_tuple->hasExplicitNames() != left_tuple.hasExplicitNames())
+            return nullptr;
         DataTypes elements;
         elements.reserve(left_tuple.getElements().size());
         bool moved = false;
