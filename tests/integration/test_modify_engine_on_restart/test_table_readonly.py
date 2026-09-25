@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.database_disk import get_database_disk_name, replace_text_in_metadata
 from test_modify_engine_on_restart.common import get_table_path, set_convert_flags
 
 cluster = ClickHouseCluster(__file__)
@@ -110,21 +111,20 @@ def test_replicated_table_carrying_the_setting_loads(started_cluster):
     metadata_path = q(
         f"SELECT metadata_path FROM system.tables WHERE database = '{database_name}' AND name = 'legacy'"
     ).strip()
-    # `metadata_path` is reported relative to the server's data directory.
-    if not metadata_path.startswith("/"):
-        metadata_path = "/var/lib/clickhouse/" + metadata_path
 
     # The setting can no longer be introduced through SQL, so the definition of an older server is
-    # planted directly, which is the only way a table can carry it now.
-    ch1.stop_clickhouse()
-    ch1.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"sed -i 's/SETTINGS index_granularity = 8192/SETTINGS index_granularity = 8192, table_readonly = 1/' {metadata_path}",
-        ]
+    # planted directly, which is the only way a table can carry it now. The metadata is edited through
+    # the database disk, which is not the local filesystem in the `db disk` configuration.
+    replace_text_in_metadata(
+        ch1,
+        metadata_path,
+        "SETTINGS index_granularity = 8192",
+        "SETTINGS index_granularity = 8192, table_readonly = 1",
     )
-    ch1.start_clickhouse()
+    db_disk_name = get_database_disk_name(ch1)
+    if db_disk_name != "default":
+        ch1.query(f"SYSTEM CLEAR DISK METADATA CACHE {db_disk_name}")
+    ch1.restart_clickhouse(kill=True)
 
     assert "table_readonly = 1" in create_table_query_of("legacy")
     assert q("SELECT count() FROM legacy").strip() == "10"
