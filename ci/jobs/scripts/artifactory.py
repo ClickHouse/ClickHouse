@@ -137,6 +137,11 @@ class DebianArtifactory:
             self.pd.LOCAL_DIR + "/" + file for file in self.pd.get_deb_packages_files()
         ]
         REPREPRO_CMD_PREFIX = f"reprepro --ignore=unknownfield --basedir {R2MountPoint.MOUNT_POINT}/configs/deb --outdir {R2MountPoint.MOUNT_POINT}/deb --verbose"
+        # CreateRelease runs are serialized, so a lock here was left by a killed run
+        lockfile = Path(R2MountPoint.MOUNT_POINT) / "configs/deb/db/lockfile"
+        if lockfile.exists():
+            print(f"WARNING: removing stale reprepro lock [{lockfile}]")
+            lockfile.unlink()
         cmd = f"{REPREPRO_CMD_PREFIX} includedeb {self.codename} {' '.join(paths)} >> /tmp/reprepro.log 2>&1"
         print("Running export commands:")
         Shell.check(cmd, strict=True, verbose=True)
