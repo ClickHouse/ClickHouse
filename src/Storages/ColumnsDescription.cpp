@@ -46,6 +46,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
@@ -1052,7 +1053,7 @@ bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & colum
     for (const auto & stage : codec_func->arguments->children)
     {
         const auto * identifier = stage->as<ASTIdentifier>();
-        if (identifier && identifier->name() == DEFAULT_CODEC_NAME)
+        if (identifier && equalsCaseInsensitive(identifier->name(), DEFAULT_CODEC_NAME))
             return true;
     }
 

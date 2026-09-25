@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
 #include <Common/SetWithMemoryTracking.h>
+#include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 
@@ -54,11 +55,11 @@ void CompressionCodecFactory::validateCodec(
     {
         auto literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
         validateCodecAndGetPreprocessedAST(
-            makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {}, validation_settings);
+            makeASTFunction("CODEC", makeASTFunction(family_name, literal)), {}, validation_settings);
     }
     else
     {
-        auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
+        auto identifier = make_intrusive<ASTIdentifier>(family_name);
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier), {}, validation_settings);
     }
 }
@@ -67,7 +68,7 @@ void CompressionCodecFactory::validateCodecString(
     const String & compression_codec, const CodecValidationSettings & validation_settings) const
 {
     ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     validateCodecAndGetPreprocessedASTImpl(ast, {}, validation_settings.settings, /*sanity_check=*/ false);
 }
 
@@ -171,7 +172,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
             /// Default codec replaced with current default codec which may depend on different
             /// settings (and properties of data) in runtime.
             CompressionCodecPtr result_codec;
-            if (codec_family_name == DEFAULT_CODEC_NAME)
+            if (equalsCaseInsensitive(codec_family_name, DEFAULT_CODEC_NAME))
             {
                 if (codec_arguments != nullptr)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
