@@ -20,6 +20,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/DistributedPlanLocalObject.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
@@ -205,6 +206,8 @@ class AsyncLoader;
 class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
+struct QueryExecutionCounters;
+using QueryExecutionCountersPtr = std::shared_ptr<QueryExecutionCounters>;
 struct ICgroupsReader;
 class WasmModuleManager;
 
@@ -593,9 +596,13 @@ public:
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    /// Created by `makeQueryContext` and shared by every context copied from the query context.
+    DistributedPlanLocalObjectPtr distributed_plan_local_object;
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
+    /// Query metrics about the execution of a query.
+    mutable QueryExecutionCountersPtr query_execution_counters;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -1171,6 +1178,11 @@ public:
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
+
+    /// Records that the query resolved an object of this server by name (see `DistributedPlanLocalObject`). Written by
+    /// the resolvers, read by the `make_distributed_plan` fallback decision. No-op outside a query.
+    void addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const;
+    std::shared_ptr<const DistributedPlanLocalObject> getDistributedPlanLocalObject() const;
 
     /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
     /// Use it in introspection paths (e.g. reading system.functions) where instantiating
@@ -1864,12 +1876,6 @@ public:
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
 
-    /// Server-wide override for the analyzer in mutations.
-    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
-    /// Set from the main config reload callback.
-    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
-    std::optional<bool> getMutationsUseAnalyzerOverride() const;
-
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
@@ -2060,6 +2066,8 @@ public:
 #endif
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
+
+    QueryExecutionCountersPtr getQueryExecutionCounters() const;
 
     ThreadPool & getThreadPoolWriter() const;
 
