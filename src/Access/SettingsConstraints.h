@@ -183,7 +183,10 @@ private:
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
     Checker getChecker(
-        const Settings & current_settings, std::string_view setting_name, bool http_method_implies_readonly = false) const;
+        const Settings & current_settings,
+        std::string_view setting_name,
+        bool http_method_implies_readonly = false,
+        bool allow_readonly_tightening = false) const;
 
     bool isAnyTierRestricted() const;
 

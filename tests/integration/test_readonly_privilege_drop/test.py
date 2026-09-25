@@ -133,3 +133,52 @@ def test_system_settings_is_unchanged(started_cluster):
                 output, error = http(node, query, user, method=method)
                 assert error is None, error
                 assert output.strip() == expected, (node.name, user, method, output)
+
+
+def test_readonly_can_be_tightened(started_cluster):
+    assert (
+        node_on.query("SET readonly = 1; SELECT getSetting('readonly')", user="ro2").strip() == "1"
+    )
+    output, error = http(node_on, "SELECT getSetting('readonly')", "ro2", {"readonly": 1})
+    assert error is None, error
+    assert output.strip() == "1"
+
+    assert REFUSAL in node_off.query_and_get_error("SET readonly = 1", user="ro2")
+    output, error = http(node_off, "SELECT getSetting('readonly')", "ro2", {"readonly": 1})
+    assert error is not None and REFUSAL in error
+
+
+def test_readonly_cannot_be_loosened(started_cluster):
+    output, error = http(node_on, "SELECT 1", "ro2", {"readonly": 0})
+    assert error is not None and REFUSAL in error
+
+    # `readonly = 2` is less restrictive than `readonly = 1`, so this is a loosening too.
+    assert REFUSAL in node_on.query_and_get_error(
+        "SET readonly = 1; SET readonly = 2", user="ro2"
+    )
+
+    # A value the setting cannot take still fails the way it does today, not as a readonly refusal.
+    assert "CANNOT_PARSE_INPUT_ASSERTION_FAILED" in node_on.query_and_get_error(
+        "SET readonly = 'x'", user="ro2"
+    )
+
+
+def test_tightening_does_not_reopen_the_keyword_escape(started_cluster):
+    # `readonly = 2` plus `changeable_in_readonly` on `readonly`: the new permission must not turn
+    # into a two-step route out of readonly mode, so the session has to survive both requests.
+    output, error = http(node_on, "SET readonly = 1", "ro2_kw", {"session_id": "step_get"})
+    assert error is None, error
+    output, error = http(node_on, "SET readonly = 0", "ro2_kw", {"session_id": "step_get"})
+    assert error is not None and REFUSAL in error
+    output, error = http(
+        node_on, "SELECT getSetting('readonly')", "ro2_kw", {"session_id": "step_get"}, "POST"
+    )
+    assert error is None, error
+    assert output.strip() == "1"
+
+    # Off the read-only HTTP path both steps are accepted: that is what a `readonly = 1` user
+    # holding the same constraint can already do today, and it is the documented residual.
+    output, error = http(node_on, "SET readonly = 1", "ro2_kw", {"session_id": "step_post"}, "POST")
+    assert error is None, error
+    output, error = http(node_on, "SET readonly = 0", "ro2_kw", {"session_id": "step_post"}, "POST")
+    assert error is None, error

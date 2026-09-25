@@ -74,6 +74,20 @@ bool isChangeDisablingTheAnalyzer(std::string_view resolved_name, const Field & 
     return resolved_name == "allow_experimental_analyzer" && !SettingFieldBool{new_value}.value;
 }
 
+/// The restriction order of `readonly` is not its numeric order: 0 allows writes, 2 forbids writes but
+/// leaves every other setting changeable, 1 forbids both. 1 is the strictest value, so it is the only one
+/// a read-only session can tighten to.
+bool isReadonlyTightening(
+    const AccessControl * access_control,
+    const Settings & current_settings,
+    std::string_view resolved_name,
+    const Field & new_value)
+{
+    return access_control && access_control->doesReadonlyOnlyAllowTightening() && resolved_name == "readonly"
+        && current_settings[Setting::readonly] > 1 && new_value.getType() == Field::Types::UInt64
+        && new_value.safeGet<UInt64>() == 1;
+}
+
 /// Settings that are always allowed to change in readonly mode, regardless of the user profile's
 /// `<constraints>` block. These are per-request HTTP routing, query-construction, and output
 /// shaping settings (formerly special URL parameters like `?database=` and `?default_format=`)
@@ -494,7 +508,12 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         return true;
     }
 
-    return getChecker(current_settings, setting_name, http_method_implies_readonly).check(change, new_value, reaction, source);
+    return getChecker(
+               current_settings,
+               setting_name,
+               http_method_implies_readonly,
+               isReadonlyTightening(access_control, current_settings, setting_name, new_value))
+        .check(change, new_value, reaction, source);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
@@ -643,7 +662,10 @@ std::string_view SettingsConstraints::resolveSettingNameWithCache(std::string_vi
 }
 
 SettingsConstraints::Checker SettingsConstraints::getChecker(
-    const Settings & current_settings, std::string_view setting_name, bool http_method_implies_readonly) const
+    const Settings & current_settings,
+    std::string_view setting_name,
+    bool http_method_implies_readonly,
+    bool allow_readonly_tightening) const
 {
     /// The cache only knows the names constraints were declared with, which need not be the name a query
     /// uses. The caller has applied `Settings::resolveName` already, and that leaves a `merge_tree_`-prefixed
@@ -665,7 +687,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(
       * 2 - only read requests, as well as changing settings, except for the `readonly` setting.
       */
 
-    if (current_settings[Setting::readonly] > 1 && resolved_name == "readonly")
+    if (current_settings[Setting::readonly] > 1 && resolved_name == "readonly" && !allow_readonly_tightening)
         return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
 
     /// Not `current_settings.getTier`: a `merge_tree_`-prefixed name is a `MergeTreeSettings` setting.
