@@ -388,7 +388,11 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
 
 bool GraceHashJoin::spillForMemoryReservation()
 {
-    std::lock_guard lock(hash_join_mutex);
+    /// Delayed bucket loading publishes `current_bucket` under `current_bucket_mutex` and then
+    /// updates the active hash table under `hash_join_mutex`. Use the same lock order here so a
+    /// recovery spill observes one coherent bucket/table pair.
+    std::lock_guard current_bucket_lock(current_bucket_mutex);
+    std::lock_guard hash_join_lock(hash_join_mutex);
     /// During normal probing the current hash table is immutable. Delayed-bucket loading is a
     /// second build phase, so reservation recovery may rebucket only while that phase is active.
     if ((build_finished && !delayed_bucket_loading) || !current_bucket || !canForceRepartition())

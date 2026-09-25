@@ -597,14 +597,16 @@ ProcessorMemoryStats DelayedJoinedBlocksTransform::getMemoryStats()
         return {};
 
     ProcessorMemoryStats res;
-    res.spillable_memory_bytes = join->getTotalByteCount();
+    /// Resident bytes are not necessarily reclaimable: a GraceHashJoin bucket at the repartition
+    /// limit cannot spill further. Rank this processor only by memory it can actually release.
+    res.spillable_memory_bytes = static_cast<Int64>(join->getSpillableBytes());
     res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
     return res;
 }
 
 bool DelayedJoinedBlocksTransform::spillOnSize(size_t bytes)
 {
-    if (join->getTotalByteCount() < bytes)
+    if (join->getSpillableBytes() < bytes)
         return false;
 
     if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
