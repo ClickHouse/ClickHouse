@@ -1,0 +1,11 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The server that recovers the table: limits which the stored metadata exceeds. They are much
+                 lower than the stock 1000, so that the definition can stay shallow enough for the stack
+                 of sanitizer builds, but still enough for ordinary queries. -->
+            <max_parser_depth>50</max_parser_depth>
+            <max_ast_depth>50</max_ast_depth>
+        </default>
+    </profiles>
+</clickhouse>
