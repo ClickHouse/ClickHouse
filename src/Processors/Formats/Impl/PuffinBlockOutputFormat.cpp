@@ -46,7 +46,7 @@ Int64 getPosition(const IColumn & positions, size_t index, bool unsigned_positio
     const Int64 value = positions.getInt(index);
     if (value < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deleted row position {} is negative", value);
-    if (value > DELETION_VECTOR_MAX_POSITION)
+    if (value >  )
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Deleted row position {} exceeds the maximum deletion vector position {}",
@@ -154,7 +154,7 @@ void PuffinBlockOutputFormat::addPositions(const IColumn & positions, size_t beg
     for (size_t i = begin; i < end; ++i)
     {
         const Int64 position = getPosition(positions, i, positions_are_unsigned);
-        bitmaps[static_cast<UInt32>(position >> 32)].add(static_cast<UInt32>(position));
+        bitmaps[static_cast<UInt32>(position >> 32)].add(static_cast<UInt32>(position & 0xFFFFFFFFLL));
     }
 }
 

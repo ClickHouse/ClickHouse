@@ -89,7 +89,12 @@ def test_spark_reads_deletion_vector_written_by_clickhouse(started_cluster_icebe
     assert len(data_files) == 1
     data_file = data_files[0]
 
-    deleted = [0, 1, 7, 100, 65535, 65536, 65537, 99999]
+    deleted = [
+        0, 1, 7, 100, 65535, 65536, 65537, 99999,
+        2147483647, 2147483648, 4294967295, 4294967296, 4294967297,
+        6442450944, 8589934591, 8589934592, 12884901888, 17179869183,
+    ]
+    deleted_in_file = [position for position in deleted if position < 100000]
     puffin_path, offset, length, cardinality = write_puffin(
         instance,
         f"iceberg_data/default/{table_name}/data/{get_uuid_str()}-deletes.puffin",
@@ -106,7 +111,7 @@ def test_spark_reads_deletion_vector_written_by_clickhouse(started_cluster_icebe
 
     ids = [row["id"] for row in spark.sql(f"SELECT id FROM {table_name} ORDER BY id").collect()]
     assert ids == [i for i in range(100000) if i not in set(deleted)]
-    assert spark.sql(f"SELECT count(*) FROM {table_name}").collect()[0][0] == 100000 - len(deleted)
+    assert spark.sql(f"SELECT count(*) FROM {table_name}").collect()[0][0] == 100000 - len(deleted_in_file)
     assert [row["id"] for row in spark.sql(f"SELECT id FROM {table_name} WHERE id < 10 ORDER BY id").collect()] == [2, 3, 4, 5, 6, 8, 9]
     assert [row["id"] for row in spark.sql(f"SELECT id FROM {table_name} WHERE id >= 65530 AND id < 65540 ORDER BY id").collect()] == [
         65530, 65531, 65532, 65533, 65534, 65538, 65539,
@@ -126,7 +131,11 @@ def test_spark_reads_deletion_vector_written_by_clickhouse(started_cluster_icebe
     index = read_deletion_vector_with_iceberg(jvm, puffin_path, delete_file, data_file, cardinality)
     for position in deleted:
         assert index.isDeleted(position)
-    for position in [2, 6, 8, 99, 101, 65534, 65538, 99998]:
+    for position in [
+        2, 6, 8, 99, 101, 65534, 65538, 99998,
+        2147483646, 2147483649, 4294967294, 4294967298, 6442450943, 6442450945,
+        8589934590, 8589934593, 12884901887, 12884901889, 17179869182,
+    ]:
         assert not index.isDeleted(position)
 
 

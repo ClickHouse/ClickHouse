@@ -2,26 +2,47 @@
 1
 deletion-vector-v1	-1	-1	[2147483645]	4	58		{'cardinality':'5','referenced-data-file':'/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet'}
 /tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	[2,5,7,100,65536]
---- multiple blobs, unsorted duplicates, positions above 2^32, empty vector ---
-4	90	{'cardinality':'5','referenced-data-file':'data/a.parquet'}
-94	20	{'cardinality':'0','referenced-data-file':'data/b.parquet'}
-114	42	{'cardinality':'1','referenced-data-file':'data/c.parquet'}
-data/a.parquet	[0,2,5,4294967301,12884901888]
-data/b.parquet	[]
-data/c.parquet	[9223372030412324864]
+--- one position per row: unsorted duplicates, positions above 2^32, boundary position ---
+4	112	{'cardinality':'6','referenced-data-file':'data/a.parquet'}
+data/a.parquet	[0,2,5,4294967301,12884901888,9223372030412324864]
+--- large positions around 32-bit key and low part boundaries ---
+14
+2147483647	0	2147483647
+2147483648	0	2147483648
+4294967295	0	4294967295
+4294967296	1	0
+4294967297	1	1
+6442450944	1	2147483648
+8589934591	1	4294967295
+8589934592	2	0
+12884901888	3	0
+17179869183	3	4294967295
+9223372026117357567	2147483645	2147483647
+9223372026117357568	2147483645	2147483648
+9223372030412324863	2147483646	2147483647
+9223372030412324864	2147483646	2147483648
+1
+--- arrays from several rows are merged ---
+data/b.parquet	[1,2,3]
+--- no rows: empty deletion vector ---
+4	20	{'cardinality':'0','referenced-data-file':'data/c.parquet'}
+data/c.parquet	[]
 --- dense range round trip ---
 1	1
---- other integer array types ---
-data/d.parquet	[1,2,3]
-data/e.parquet	[7,4294967296]
+--- other integer types ---
+data/e.parquet	[1,2,3]
+data/f.parquet	[7,4294967296]
+--- blob metadata settings ---
+deletion-vector-v1	8143950620832403401	7	[2147483645,2147483546]	{'cardinality':'2','referenced-data-file':'data/g.parquet'}
 --- written to stdout, read from stdin ---
-data/f.parquet	[10,20,30]
+data/h.parquet	[10,20,30]
 --- errors ---
-Puffin output format requires exactly two columns
-Column referenced_data_file must have type String
-Column deleted_rows must have type Array of integers
-Column deleted_rows must have type Array of integers
-referenced_data_file must not be empty
+Setting output_format_puffin_referenced_data_file must be set
+Puffin output format requires exactly one column
+requires a column of deleted row positions of an integer type or an array of integers, got String
+requires a column of deleted row positions of an integer type or an array of integers, got Array(Nullable(UInt64))
 Deleted row position -1 is negative
 Deleted row position 9223372030412324865 exceeds the maximum deletion vector position
 Deleted row position 9223372036854775807 exceeds the maximum deletion vector position
+Setting output_format_puffin_field_ids must be a comma-separated list of Int32 field ids
+Setting output_format_puffin_field_ids must be a comma-separated list of Int32 field ids

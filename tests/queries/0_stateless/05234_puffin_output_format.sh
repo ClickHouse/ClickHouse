@@ -44,6 +44,34 @@ $CLICKHOUSE_LOCAL -q "
 SELECT referenced_data_file, deleted_rows FROM file('$OUT/rows.puffin', Puffin)
 "
 
+echo "--- large positions around 32-bit key and low part boundaries ---"
+$CLICKHOUSE_LOCAL -q "
+INSERT INTO FUNCTION file('$OUT/large.puffin', Puffin)
+SELECT arrayJoin([
+    9223372030412324864, 9223372030412324863, 9223372026117357567, 9223372026117357568,
+    17179869183, 12884901888, 8589934592, 8589934591, 6442450944,
+    4294967297, 4294967296, 4294967295, 2147483648, 2147483647
+])::UInt64 AS position
+SETTINGS output_format_puffin_referenced_data_file = 'data/large.parquet'
+"
+$CLICKHOUSE_LOCAL -q "
+SELECT properties['cardinality'] FROM file('$OUT/large.puffin', PuffinMetadata)
+"
+$CLICKHOUSE_LOCAL -q "
+SELECT arrayJoin(deleted_rows) AS position, bitShiftRight(position, 32) AS key, bitAnd(position, 0xFFFFFFFF) AS low
+FROM file('$OUT/large.puffin', Puffin)
+"
+$CLICKHOUSE_LOCAL -q "
+INSERT INTO FUNCTION file('$OUT/large_int64.puffin', Puffin)
+SELECT arrayJoin([toInt64(9223372030412324864), toInt64(17179869183), toInt64(4294967295), toInt64(2147483648)]) AS position
+SETTINGS output_format_puffin_referenced_data_file = 'data/large_int64.parquet'
+"
+$CLICKHOUSE_LOCAL -q "
+SELECT
+    (SELECT deleted_rows FROM file('$OUT/large_int64.puffin', Puffin))
+    = [2147483648, 4294967295, 17179869183, 9223372030412324864]
+"
+
 echo "--- arrays from several rows are merged ---"
 $CLICKHOUSE_LOCAL -q "
 INSERT INTO FUNCTION file('$OUT/arrays.puffin', Puffin)
