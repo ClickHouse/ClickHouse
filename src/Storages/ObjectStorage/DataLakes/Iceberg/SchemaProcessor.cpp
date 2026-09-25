@@ -43,6 +43,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 }
@@ -169,13 +170,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        std::unordered_map<String, String> type_mapping;
-        if (allow_geo_parser)
-        {
-            type_mapping[f_geography] = f_binary;
-            type_mapping[f_geometry] = f_binary;
-        }
-        if (schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
+        if (schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr))
         {
             /// An identical metadata.json copy confirms a copy that was registered from a manifest header.
             if (source == SchemaSource::Metadata)

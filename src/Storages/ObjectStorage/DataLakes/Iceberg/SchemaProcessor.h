@@ -92,8 +92,6 @@ public:
         ManifestFile,
     };
 
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
-
     void addIcebergTableSchema(
         Poco::JSON::Object::Ptr schema_ptr,
         SchemaSource source = SchemaSource::Metadata,
