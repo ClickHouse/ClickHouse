@@ -1158,11 +1158,14 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
 
 /** A subquery, union or table function without an alias cannot be referenced by name.
   *
+  * Exceptions are the table expressions that have a name of their own: a CTE, a parameterized view, and a view that was
+  * inlined as a subquery (its name is kept in the table expression data, see `QueryAnalyzer::inlineViewSubqueryIfNeeded`).
+  *
   * `ARRAY JOIN` is transparent for this purpose: it keeps the columns of the table expression it wraps, and an
   * array-joined column is a column of that table expression, so it is qualifiable only if the wrapped table
   * expression is. The column source of an array-joined column is the `ArrayJoinNode` itself, hence the unwrapping.
   */
-static QueryTreeNodePtr getUnaliasedSubqueryOrTableFunctionTableExpression(const QueryTreeNodePtr & table_expression)
+static QueryTreeNodePtr getUnaliasedSubqueryOrTableFunctionTableExpression(const QueryTreeNodePtr & table_expression, const IdentifierResolveScope & scope)
 {
     if (!table_expression || table_expression->hasAlias())
         return nullptr;
@@ -1170,29 +1173,42 @@ static QueryTreeNodePtr getUnaliasedSubqueryOrTableFunctionTableExpression(const
     switch (table_expression->getNodeType())
     {
         case QueryTreeNodeType::QUERY:
-            return table_expression->as<QueryNode &>().getCTEName().empty() ? table_expression : nullptr;
+            if (!table_expression->as<QueryNode &>().getCTEName().empty())
+                return nullptr;
+            break;
         case QueryTreeNodeType::UNION:
-            return table_expression->as<UnionNode &>().getCTEName().empty() ? table_expression : nullptr;
+            if (!table_expression->as<UnionNode &>().getCTEName().empty())
+                return nullptr;
+            break;
         case QueryTreeNodeType::TABLE_FUNCTION:
-            return table_expression;
+            if (table_expression->as<TableFunctionNode &>().isParameterizedView())
+                return nullptr;
+            break;
         case QueryTreeNodeType::ARRAY_JOIN:
-            return getUnaliasedSubqueryOrTableFunctionTableExpression(table_expression->as<ArrayJoinNode &>().getTableExpressionNode());
+            return getUnaliasedSubqueryOrTableFunctionTableExpression(table_expression->as<ArrayJoinNode &>().getTableExpressionNode(), scope);
         default:
             return nullptr;
     }
+
+    /// An inlined view is a subquery named by the view.
+    if (auto it = scope.table_expression_node_to_data.find(static_pointer_cast<ITableExpressionNode>(table_expression));
+        it != scope.table_expression_node_to_data.end() && !it->second.table_name.empty())
+        return nullptr;
+
+    return table_expression;
 }
 
-QueryTreeNodePtr IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(const QueryTreeNodePtr & resolved_expression)
+QueryTreeNodePtr IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(const QueryTreeNodePtr & resolved_expression, const IdentifierResolveScope & scope)
 {
     if (const auto * column_node = resolved_expression->as<ColumnNode>())
-        return getUnaliasedSubqueryOrTableFunctionTableExpression(column_node->getColumnSourceOrNull());
+        return getUnaliasedSubqueryOrTableFunctionTableExpression(column_node->getColumnSourceOrNull(), scope);
 
     /// Subcolumns and `Nested` columns are resolved into functions (`getSubcolumn`, `nested`) over the actual columns.
     if (const auto * function_node = resolved_expression->as<FunctionNode>())
     {
         for (const auto & argument : function_node->getArguments().getNodes())
         {
-            if (auto column_source = getUnaliasedSubqueryOrTableFunctionSource(argument))
+            if (auto column_source = getUnaliasedSubqueryOrTableFunctionSource(argument, scope))
                 return column_source;
         }
     }
@@ -1225,9 +1241,9 @@ static QueryTreeNodePtr getUnaliasedTableExpressionOfAmbiguousIdentifier(
     if (const auto * join = join_node->as<const JoinNode>(); join && join->getKind() == JoinKind::Paste)
         return nullptr;
 
-    auto unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(first_resolved_identifier);
+    auto unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(first_resolved_identifier, scope);
     if (!unaliased_table_expression)
-        unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(second_resolved_identifier);
+        unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(second_resolved_identifier, scope);
     return unaliased_table_expression;
 }
 
