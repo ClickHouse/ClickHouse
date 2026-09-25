@@ -1720,7 +1720,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         Names parts_in_progress_names;
         for (const auto &[part, future_version] : currently_mutating_part_future_versions)
         {
-            if (part->info.getDataVersion() < mutation_version && future_version >= mutation_version)
+            if (part->info.getDataVersion() < mutation_version && future_version >= mutation_version
+                && getPartMutationScope(*part, mutation_version, entry.tid) == PartMutationScope::Inside)
                 parts_in_progress_names.push_back(part->name);
         }
 
