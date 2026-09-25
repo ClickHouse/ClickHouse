@@ -14,21 +14,38 @@ namespace DB
 {
 class IProcessor;
 
+enum class MemoryRecoverySpillOutcome : UInt8
+{
+    Pending,
+    Progress,
+    NoProgress,
+};
+
+/// One query-level memory-pressure recovery attempt. The reservation owns the episode; the spill
+/// scheduler only keeps a weak reference to the currently active one. Results and exceptions stay
+/// attached to this object, so a later recovery attempt can never overwrite an earlier result.
+struct MemoryRecoveryEpisode
+{
+    UInt64 id = 0;
+    std::atomic<MemoryRecoverySpillOutcome> outcome = MemoryRecoverySpillOutcome::Pending;
+    std::atomic<Int64> reclaimed_bytes = 0;
+    std::atomic_bool completed = false;
+    std::atomic_bool closed = false;
+    std::atomic_bool execution_running = false;
+    std::atomic_bool async_running = false;
+
+    mutable std::mutex mutex;
+    std::condition_variable cv;
+    std::exception_ptr exception;
+};
+
+using MemoryRecoveryEpisodePtr = std::shared_ptr<MemoryRecoveryEpisode>;
+
 // MemorySpillScheduler is bound to one thread group. It's a query-scoped manager to trigger processor spill.
 class MemorySpillScheduler : public std::enable_shared_from_this<MemorySpillScheduler>
 {
 public:
-    enum class ForcedSpillOutcome : UInt8
-    {
-        Pending,
-        Progress,
-        NoProgress,
-    };
-
-    struct ForcedSpillRequest
-    {
-        UInt64 epoch = 0;
-    };
+    using ForcedSpillOutcome = MemoryRecoverySpillOutcome;
 
     struct ForcedSpillResult
     {
@@ -47,17 +64,21 @@ public:
     void registerProcessor(const std::shared_ptr<IProcessor> & processor);
     void remove(IProcessor * processor);
 
-    /// Start one exhaustive forced-spill pass when a query enters the eviction queue.
-    /// Repeated calls while that pass is active return the same epoch.
-    ForcedSpillRequest requestForcedSpill();
-    ForcedSpillResult getForcedSpillResult(UInt64 epoch) const;
+    /// Start one exhaustive forced-spill pass when a query enters recovery. Repeated calls for the
+    /// same active recovery return the same episode.
+    MemoryRecoveryEpisodePtr requestForcedSpill();
+    ForcedSpillResult getForcedSpillResult(const MemoryRecoveryEpisodePtr & episode) const;
     /// Query-thread recovery work, independent of processor readiness. No scheduler or graph lock
     /// is held while a processor spills. Ordinary pipeline work is not needed to finish this pass.
-    void executeForcedSpill(UInt64 epoch);
+    void executeForcedSpill(const MemoryRecoveryEpisodePtr & episode);
     /// Execute the same pass on a query-attached global-pool thread and wait only until `deadline`.
-    /// This keeps a slow processor callback from extending the user-visible suction timeout.
-    void executeForcedSpillUntil(UInt64 epoch, std::chrono::steady_clock::time_point deadline);
-    void finishMemoryPressure();
+    /// Work which has not started can be abandoned when recovery closes; an in-flight callback is
+    /// allowed to finish and keeps any exception on its originating episode.
+    void executeForcedSpillUntil(
+        const MemoryRecoveryEpisodePtr & episode,
+        std::chrono::steady_clock::time_point deadline);
+    void finishMemoryPressure(const MemoryRecoveryEpisodePtr & episode);
+    void rethrowIfFailed(const MemoryRecoveryEpisodePtr & episode) const;
 
 private:
     struct ProcessorState
@@ -72,12 +93,6 @@ private:
         std::weak_ptr<IProcessor> lifetime;
     };
 
-    struct AsyncForcedSpillState
-    {
-        bool running = false;
-        std::exception_ptr exception;
-    };
-
     bool enable = true;
     std::mutex mutex;
     std::mutex forced_spill_execution_mutex;
@@ -87,19 +102,9 @@ private:
     Int64 max_reserved_memory_bytes = 0;
     std::atomic<Int64> hard_limit = -1;
 
-    /// Monotonic epochs make completion observable without coupling the reservation to a processor.
-    std::atomic<UInt64> forced_spill_request_epoch = 0;
-    std::atomic<UInt64> forced_spill_completed_epoch = 0;
-    std::atomic<ForcedSpillOutcome> forced_spill_outcome = ForcedSpillOutcome::Pending;
-    std::atomic<Int64> forced_spill_reclaimed_bytes = 0;
-    bool forced_spill_active = false;
+    UInt64 next_recovery_id = 0; /// Protected by `mutex`.
+    std::weak_ptr<MemoryRecoveryEpisode> active_recovery; /// Protected by `mutex`.
     size_t forced_spill_remaining = 0; /// Protected by `mutex`.
-
-    /// Finite-timeout recovery runs the potentially blocking processor callback outside the
-    /// reservation thread. The detached task owns this scheduler through shared_from_this().
-    std::mutex async_forced_spill_mutex;
-    std::condition_variable async_forced_spill_cv;
-    std::unordered_map<UInt64, AsyncForcedSpillState> async_forced_spills;
 
     // When there is no need to spill, return nullptr. otherwise return top_processor;
     IProcessor * selectSpilledProcessor(
@@ -107,7 +112,7 @@ private:
 
     void updateTopProcessor();
     void registerProcessorImpl(IProcessor * processor, std::weak_ptr<IProcessor> lifetime, bool lifetime_tracked);
-    void completeForcedSpillProcessor(UInt64 epoch, ProcessorState & state);
+    void completeForcedSpillProcessor(const MemoryRecoveryEpisodePtr & episode, ProcessorState & state);
 
     Int64 getHardLimit();
 };
