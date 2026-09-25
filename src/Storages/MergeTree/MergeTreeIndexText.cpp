@@ -43,6 +43,7 @@
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/extractKeyExpressionList.h>
 
 #include <base/arithmeticOverflow.h>
 #include <base/range.h>
@@ -2328,13 +2329,24 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     return std::make_shared<MergeTreeIndexText>(std::move(metadata_snapshot), index, index_params, std::move(tokenizer), std::move(posting_list_codec));
 }
 
-void textIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & settings)
+void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)
 {
     auto options = convertArgumentsToOptionsMap(index.arguments);
 
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
     auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
+
+    /// A transform is rebuilt and evaluated on every index write (INSERT, merge, mutation) and again on part removal, none of
+    /// which has a SELECT pipeline to fill a set. Attach is exempt: an existing table stays loadable.
+    if (!attach)
+    {
+        if (preprocessor_ast)
+            checkExpressionDoesntContainSubqueries(*preprocessor_ast, "The text index preprocessor expression");
+        if (postprocessor_ast)
+            checkExpressionDoesntContainSubqueries(*postprocessor_ast, "The text index postprocessor expression");
+    }
+
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)

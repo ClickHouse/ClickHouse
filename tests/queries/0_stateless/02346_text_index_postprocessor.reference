@@ -85,3 +85,9 @@ started	1
 - The postprocessor must not contain non-deterministic functions
 - The postprocessor must not contain arrayJoin
 - A postprocessor that produces a token containing separator characters throws BAD_ARGUMENTS at query time
+- The postprocessor must not contain a subquery
+- The postprocessor must not contain a scalar subquery
+- The postprocessor must not contain a table on the right-hand side of IN
+- ALTER TABLE ADD INDEX rejects a postprocessor containing a subquery
+- ATTACH of a definition that CREATE now rejects still works, and DROP INDEX recovers
+legacy attach and drop index ok
