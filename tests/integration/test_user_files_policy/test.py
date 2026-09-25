@@ -1057,6 +1057,39 @@ def test_encrypted_disk_rejects_embedded_rocksdb():
     node_local.query("DROP TABLE rocksdb_plain_local")
 
 
+def test_encrypted_disk_filelog_create_rejected_attach_kept():
+    """`FileLog` reads and watches files via local POSIX APIs, so a fresh `CREATE` must reject a
+    `user_files_policy` disk that is not plain local. `ATTACH` (and metadata replay at startup)
+    must keep the previous contract of the engine's path check instead: log the error and keep
+    the table inert, so enabling such a policy never makes an existing `FileLog` table fail to
+    load."""
+    node_encrypted.query("DROP TABLE IF EXISTS filelog_enc SYNC")
+    err = node_encrypted.query_and_get_error(
+        "CREATE TABLE filelog_enc (x String) ENGINE = FileLog('filelog_enc_dir', 'CSV')"
+    )
+    assert "not a plain local filesystem disk" in err, err
+
+    node_encrypted.query(
+        f"ATTACH TABLE filelog_enc UUID '{uuid.uuid4()}' (x String) "
+        "ENGINE = FileLog('filelog_enc_dir', 'CSV')"
+    )
+    assert (
+        node_encrypted.query(
+            "SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'filelog_enc'"
+        ).strip()
+        == "FileLog"
+    )
+    # `contains_in_log` passes the pattern to `bash` in double quotes, so avoid the backticks.
+    assert node_encrypted.contains_in_log(
+        "the table will not read any data"
+    )
+
+    # The inert table can be detached, attached again and dropped.
+    node_encrypted.query("DETACH TABLE filelog_enc")
+    node_encrypted.query("ATTACH TABLE filelog_enc")
+    node_encrypted.query("DROP TABLE filelog_enc SYNC")
+
+
 def test_local_count_from_cache_fast_path():
     """The count-from-cache shortcut (`use_cache_for_count_from_files`) must keep working when a
     plain local disk is configured via `user_files_policy`, exactly as it does with the legacy
