@@ -2191,10 +2191,11 @@ function accumulateResourceEvents(state, events)
 
         /// Exclude compressed `NetworkSendBytes`, whose service bytes cannot be separated; decoded
         /// result payloads add the browser-download leg in `makeEventStreamHandler` instead.
+        /// Streaming exchanges of a distributed plan are not counted by the `Network*Bytes` events.
         if (e.name === 'OSReadBytes' || e.name === 'OSWriteBytes' || e.name === 'ReadBufferFromS3Bytes'
             || e.name === 'WriteBufferFromS3Bytes' || e.name === 'ReadBufferFromAzureBytes' || e.name === 'WriteBufferFromAzureBytes'
             || e.name === 'ReadWriteBufferFromHTTPBytes' || e.name === 'WriteBufferFromHTTPBytes'
-            || e.name === 'NetworkReceiveBytes')
+            || e.name === 'NetworkReceiveBytes' || e.name === 'StreamingExchangeSendBytes' || e.name === 'StreamingExchangeReceiveBytes')
         {
             state.io_bytes += value;
             continue;

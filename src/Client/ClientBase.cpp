@@ -213,6 +213,8 @@ namespace ProfileEvents
     extern const Event WriteBufferFromHTTPBytes;
     extern const Event NetworkReceiveBytes;
     extern const Event NativeProtocolDataBytes;
+    extern const Event StreamingExchangeSendBytes;
+    extern const Event StreamingExchangeReceiveBytes;
 }
 
 namespace
@@ -2154,6 +2156,9 @@ void ClientBase::onProfileEvents(Block & block)
         std::string_view http_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromHTTPBytes);
         std::string_view net_read_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkReceiveBytes);
         std::string_view native_data_bytes_name = ProfileEvents::getName(ProfileEvents::NativeProtocolDataBytes);
+        /// `NetworkSendBytes` and `NetworkReceiveBytes` do not count the sockets of streaming exchanges.
+        std::string_view exchange_send_bytes_name = ProfileEvents::getName(ProfileEvents::StreamingExchangeSendBytes);
+        std::string_view exchange_receive_bytes_name = ProfileEvents::getName(ProfileEvents::StreamingExchangeReceiveBytes);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2189,7 +2194,8 @@ void ClientBase::onProfileEvents(Block & block)
                 event_name == os_read_bytes_name || event_name == s3_read_bytes_name || event_name == azure_read_bytes_name
                 || event_name == os_write_bytes_name || event_name == s3_write_bytes_name || event_name == azure_write_bytes_name
                 || event_name == http_rw_bytes_name || event_name == http_write_bytes_name || event_name == net_read_bytes_name
-                || event_name == native_data_bytes_name)
+                || event_name == native_data_bytes_name || event_name == exchange_send_bytes_name
+                || event_name == exchange_receive_bytes_name)
                 thread_times[host_name].io_bytes += value;
         }
         progress_indication.updateThreadEventData(thread_times);
