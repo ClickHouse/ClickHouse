@@ -177,9 +177,11 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     const SelectQueryOptions & select_options,
     const QueryTreeNodePtr & single_node_query_tree,
     const BuiltSetsByHashPtr & built_sets,
+    const LoggerPtr & logger,
     Args &&... interpreter_args)
 {
-    const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
+    /// Every early return is logged: the caller counts it as the plan being unsuitable and relies on
+    /// this to tell a query shape from a setting that rules parallel replicas out.
     if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
     {
         LOG_TRACE(
@@ -195,12 +197,15 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     }
     if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
     {
-        LOG_DEBUG(logger, "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+        LOG_TRACE(logger, "Setting 'cluster_for_parallel_replicas' is empty. Skipping building query plan with parallel replicas.");
         return QueryPlanPtr{};
     }
     /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
     if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        LOG_TRACE(logger, "The query is a secondary query. Skipping building query plan with parallel replicas.");
         return QueryPlanPtr{};
+    }
     // We shouldn't apply heuristic since this plan is meant to be a plan with enforced parallel replicas usage
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
@@ -267,7 +272,7 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// and could answer no for a query that does materialize.
     if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
     {
-        LOG_DEBUG(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
+        LOG_TRACE(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
         return QueryPlanPtr{};
     }
 
@@ -382,8 +387,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            select_options = select_query_options_,
            single_node_tree = query_tree,
-           column_names](const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, logger, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -406,8 +411,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            storage = storage_,
            select_options = select_query_options_,
            single_node_tree = query_tree,
-           column_names](const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, storage, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, single_node_tree, built_sets, logger, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -427,8 +432,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           [tree = query_tree_->clone(),
            ctx = Context::createCopy(context_),
            select_options = select_query_options_,
-           single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets)
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets); })
+           single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, logger); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }

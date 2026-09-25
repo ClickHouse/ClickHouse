@@ -2,6 +2,7 @@
 
 #include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
+#include <Common/Logger.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -265,8 +266,8 @@ struct QueryPlanOptimizationSettings
     mutable UInt64 join_reorder_next_cluster_id = 0;
 
     /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
-    /// of re-running the same subqueries.
-    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
+    /// of re-running the same subqueries, and the logger to say why it could not build a plan on.
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &, const LoggerPtr &)> query_plan_with_parallel_replicas_builder;
 
     bool enable_parallel_replicas = false;
 };

@@ -819,11 +819,12 @@ void considerEnablingParallelReplicas(
     /// `buildOrderedSetInplace` for every `IN` whose left argument maps to key columns. The
     /// `selectRangesToRead` below reuses those `indexes` (it builds them only `if (!indexes)`), so it
     /// adds no set that collecting later would catch.
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(
+        collectBuiltSets(query_plan), getLogger("AutoParallelReplicas"));
     if (!plan_with_parallel_replicas)
     {
+        /// The builder has logged why.
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
-        LOG_TRACE(getLogger("AutoParallelReplicas"), "Cannot build a plan with parallel replicas. Skipping optimization");
         return;
     }
 
