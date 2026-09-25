@@ -65,7 +65,7 @@ void addMergingFinal(
         {
             case MergeTreeData::MergingParams::Ordinary:
                 return std::make_shared<MergingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, SortingQueueStrategy::Batch, limit);
+                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, SortingQueueStrategy::Batch);
 
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedTransform>(header, num_outputs,
@@ -112,7 +112,6 @@ void addMergingFinal(
     {
         switch (merging_params.mode)
         {
-            case MergeTreeData::MergingParams::Ordinary:
             case MergeTreeData::MergingParams::Aggregating:
             case MergeTreeData::MergingParams::Summing:
             case MergeTreeData::MergingParams::Coalescing:
