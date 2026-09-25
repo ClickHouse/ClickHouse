@@ -26,11 +26,11 @@ public:
     /// The input chunks are packets made by `StreamingExchangeSerializingTransform`, one per chunk,
     /// and are sent as they are. The sink adds the end-of-stream packet when the input ends.
     ///
-    /// An advisory sink carries data the receiver is free to stop reading at any moment, for
-    /// example a runtime filter: a receiver task that finished early disconnects or never connects.
-    /// For an advisory sink every peer-side problem (disconnect, reset, unexpected bytes) means
-    /// only "this destination gets nothing" - without this a vanished receiver would fail the
-    /// producing task and with it the whole query.
+    /// An advisory sink carries data that the receiver may stop reading at any moment, such as a
+    /// runtime filter: a receiver task that finished early disconnects or never connects. On an
+    /// advisory sink, a peer-side problem (disconnect, reset, unexpected bytes) only means that this
+    /// destination gets nothing. Otherwise a vanished receiver would fail the producing task, and
+    /// with it the whole query.
     StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_, bool advisory_)
         : ISink(std::move(header_))
         , future_connection(std::move(future_connection_))

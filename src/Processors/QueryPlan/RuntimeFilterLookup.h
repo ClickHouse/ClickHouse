@@ -274,11 +274,9 @@ private:
         RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter) const;
 
     const DataTypePtr filter_column_target_type;
-    /// Allocation size of the bloom filter the exact phase degrades to. Distinct from the inner
-    /// `ExactSetRuntimeFilter`'s byte limit (the exact-phase byte bound,
-    /// `RuntimeFilterGeometry::exact_bytes_limit`): a transported filter may keep an
-    /// estimate-raised exact set while degrading to the settings-sized bloom, which has to be
-    /// byte-identical on every node that merges a partial of the same exchange.
+    /// Size of the bloom filter the exact phase degrades to, from the geometry. It is not the exact-phase
+    /// byte bound (`RuntimeFilterGeometry::exact_bytes_limit`): transport may raise that bound from
+    /// estimates, but the bloom must be byte-identical on every node that merges a partial of one exchange.
     const UInt64 bloom_filter_bytes;
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;

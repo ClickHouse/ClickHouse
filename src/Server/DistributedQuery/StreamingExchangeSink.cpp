@@ -415,18 +415,14 @@ void StreamingExchangeSink::abandonDelivery(const String & reason)
 
 void StreamingExchangeSink::tryReceiveControlPacket()
 {
-    if (!advisory)
-    {
-        receiveControlPacket();
-        return;
-    }
-
     try
     {
         receiveControlPacket();
     }
     catch (...)
     {
+        if (!advisory)
+            throw;
         /// Whatever went wrong on the peer's side of an advisory stream, the outcome is the
         /// same: this destination gets nothing more, and that is not an error.
         abandonDelivery(getCurrentExceptionMessage(/*with_stacktrace*/ false));

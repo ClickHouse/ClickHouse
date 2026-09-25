@@ -54,15 +54,13 @@ public:
         size_t fan_in = 0;
     };
 
-    /// Destinations are the consuming-stage task buckets. One filter may be applied in several
-    /// stages, so the partials go out over one exchange per receiving stage. Used when the build
-    /// stage has a single task (the task is then the root of the merge tree and broadcasts directly).
+    /// Sends the partial directly to the consuming-stage task buckets, over one exchange per receiving
+    /// stage. `wireRuntimeFilterExchangeTopology` does not use it: every transported filter goes through a
+    /// merge stage (`setTreeExchange`), even from a single build task.
     void addExchange(String exchange_id_, Strings destination_buckets_);
 
-    /// The build stage has several tasks and the partials go through a merge tree: each build task
-    /// sends its partial once, to its parent merge task, computed from the task's position in
-    /// `source_buckets` (the ordered buckets of the build stage) as `index / fan_in`. Mutually
-    /// exclusive with `addExchange`.
+    /// Sends the partial through a merge tree: each build task sends it once, to its parent merge task
+    /// (see `TreeExchange::source_buckets`). Mutually exclusive with `addExchange`.
     void setTreeExchange(String exchange_id_, Strings source_buckets_, size_t fan_in_);
 
     bool hasFilterExchanges() const { return !exchanges.empty() || tree_exchange; }

@@ -102,7 +102,7 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
 
 void BuildRuntimeFilterTransform::finish()
 {
-    /// A deserialized step has no random key and is never executed in practice; nothing to register.
+    /// Without a rendezvous key no `__applyFilter` can look the filter up, so there is nothing to register.
     if (filter_key.empty())
         return;
     if (!query_context)

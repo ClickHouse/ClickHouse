@@ -1,17 +1,18 @@
 """Runtime-filter transport on a 3-node cluster.
 
-Shuffle joins ship partials through the merge tree (build -> `rf_merge_*` -> probe). Result
-equals the same query with `make_distributed_plan` off. Per-task `RuntimeFilterState*`
-ProfileEvents (`system.query_log`; workers share the initiator `initial_query_id`) pin stream
-and byte counts: `2 * N` states for `N` build and `N` probe tasks (all-to-all was `N * N`).
-A send is counted where the state is serialized, but the root skips serializing when every probe
-task has already closed its receive branch, so send counts are bounded rather than exact. Through
-the merge tree every state normally arrives, while the root's broadcast to the probe tasks is
+Shuffle joins ship partials through the merge tree (build -> `rf_merge_*` -> probe). Results
+equal the same query with `make_distributed_plan` off. Per-task `RuntimeFilterState*`
+ProfileEvents in `system.query_log` (worker tasks carry the initiator's query id as
+`initial_query_id`) check the stream and byte counts. With `N` build and `N` probe tasks a
+one-level tree sends at most `2 * N` states, against `N * N` for all-to-all delivery. A send is
+counted where the state is serialized. Total send counts are bounded rather than exact because
+the root skips serializing when every probe task has already closed its receive branch. Inside
+the merge tree every state normally arrives. The root's broadcast to the probe tasks is
 best-effort by design, so its arrivals are only bounded. A receiver consumes at most
-`RUNTIME_FILTER_MERGE_FAN_IN` (16) states, including through a
-2-level tree (`N = 32` -> 2 first-level merges -> root). Peak merge-task memory compared
-across `N = 2 / 8 / 32` with equal bloom sizes. Persisted exchanges, cancellation, and LIMIT
-early-close are separate cases.
+`RUNTIME_FILTER_MERGE_FAN_IN` (16) states, including in a 2-level tree (`N = 32` -> 2
+first-level merges -> root). Peak merge-task memory is compared across `N = 2 / 8 / 32` with
+equal bloom sizes. Persisted exchanges, cancellation, and `LIMIT` early close are separate
+cases.
 """
 
 import logging
@@ -88,10 +89,10 @@ def _dist_settings(buckets, extra=""):
 
 
 # The exact-values limit is tiny, so every non-empty partial degrades to the settings-sized
-# bloom filter: an equal payload per build task. The always-true predicate on the build side
-# keeps the tiny limit authoritative: it denies the plan a cardinality estimate (an unindexed
-# filter on a >50000-row scan), and without an estimate the transported geometry stays at the
-# settings, for variable-width and fixed-width keys alike.
+# bloom filter: an equal payload per build task. The always-true predicate on the build side of
+# `JOIN_QUERY` keeps the tiny limit in force: an unindexed plan-time filter gives transport no
+# cardinality estimate, and without one the transported geometry stays at the settings, for
+# variable-width and fixed-width keys alike.
 BLOOM_STATE_SETTINGS = (
     f"join_runtime_filter_exact_values_limit = 10, join_runtime_bloom_filter_bytes = {BLOOM_BYTES}"
 )
@@ -221,10 +222,8 @@ def _check_topology(tasks, buckets, levels):
     # the root broadcasts once per probe task -- against N * N for all-to-all delivery.
     tree_edges = buckets + sum(levels[:-1])
     broadcast_edges = buckets
-    # Bounded, not pinned. The root serializes its union once per probe task. It skips that work
-    # when every probe task has already closed its receive branch, so a broadcast send can be
-    # missing. Observed at `N = 32` on a machine oversubscribed 6x. The tree leg below pins the
-    # shape exactly; this bound is what separates a linear topology from all-to-all, which would
+    # Bounded, not pinned: the root skips its broadcast when every probe task has already closed
+    # its receive branch. The bound still separates a linear topology from all-to-all, which would
     # send `N * N`.
     assert total_sent <= tree_edges + broadcast_edges, (total_sent, tree_edges, broadcast_edges)
 
@@ -238,18 +237,16 @@ def _check_topology(tasks, buckets, levels):
     assert all(t["states_sent"] <= 1 for t in build_tasks), tasks
     assert sum(t["states_sent"] for t in build_tasks) == buckets, tasks
 
-    # Tree-leg completeness, conditioned on the guard that makes it an invariant rather than a
-    # race. A merge task publishes only once every input has arrived
-    # (`MergeRuntimeFiltersTransform::finalize`), so a root that forwarded anything proves the
-    # whole tree leg: each state it merged was itself published by a merge task that had consumed
-    # all of its own inputs.
+    # Tree-leg completeness holds whenever the root forwarded. A merge task publishes only after
+    # every input arrived (`MergeRuntimeFiltersTransform::finalize`), so a root that forwarded
+    # anything proves that each state it merged came from a merge task that consumed all of its
+    # own inputs.
     #
-    # Unconditionally it is a race, and losing it needs no cancellation. A probe task closes its
-    # receive branch as soon as its own scan ends, and once every destination has gone,
-    # `MergeRuntimeFiltersTransform::prepare` closes the merge task's inputs unread -- discarding a
-    # partial that had already arrived. At `N = 32` a probe scans only `BIG_ROWS / N` rows while
-    # the build side moves `N` blooms through two merge levels, so the probes normally finish
-    # first: two CI workers running this concurrently on one runner split 34/34 and 33/34.
+    # Without that condition it is a race, and losing it needs no cancellation. A probe task
+    # closes its receive branch as soon as its own scan ends. Once every destination has gone,
+    # `MergeRuntimeFiltersTransform::prepare` closes the merge task's inputs unread and discards a
+    # partial that had already arrived. At `N = 32` the probes normally finish first: each scans
+    # only `BIG_ROWS / N` rows while the build side moves `N` blooms through two merge levels.
     root_published = any(t["states_sent"] == buckets for t in merge_tasks)
     if root_published:
         assert merge_received == tree_edges, (merge_received, tree_edges, tasks)
@@ -257,8 +254,8 @@ def _check_topology(tasks, buckets, levels):
     # The root's broadcast to the probe tasks is best-effort by design: a probe task cancels its
     # receive branch once its data work is done (`RuntimeFilterReceiveBranches::finish`), and a
     # filter that arrives after the scan it would have narrowed has nothing left to serve. So on
-    # that leg `received` may legitimately fall short of `sent` -- pinning them equal is what made
-    # this test fail in CI. It can never exceed it, because delivery invents no states.
+    # that leg `received` may fall short of `sent`, but never exceeds it: delivery invents no
+    # states.
     assert total_received <= total_sent, (total_received, total_sent, tasks)
 
     # Every state put on an exchange is the settings-sized bloom. On the send side that is exact:
@@ -285,28 +282,25 @@ def _check_topology(tasks, buckets, levels):
 
 
 def _assert_broadcast_delivered(probe_arrivals):
-    """At least one probe task consumed the complete union somewhere in a bucket sweep. Takes a
-    whole sweep and never a single topology: at one topology this is a race the receiver is
-    allowed to lose, and losing it is not a defect. Measured on a machine oversubscribed 6x, 10 of
-    139 single topologies saw no arrival, while none of 93 sweeps came up empty and the emptiest
-    of them still delivered 2 states. Worth asserting even so: every other count here is taken
-    where a state is serialized, so a broadcast that dropped all of them would pass unnoticed.
+    """At least one probe task consumed the complete union somewhere in a bucket sweep.
 
-    Under thread sanitizer the sweep loses often enough to be unusable in CI, so it is skipped
-    there. Measured over the runs that carry this assertion, each of the two tests calling it went
-    6 passes to 1 failure under tsan and 32 for 32 everywhere else, and the failures arrive as an
-    all-zero sweep. So tsan does not make arrival impossible - it makes it roughly a one-in-seven
-    loss, which is more than a required check can carry when the thing it watches is best-effort
-    by design. Skipping it does give up the configuration where a delivery race would show most
-    readily; the send-side counts, which are exact, stay in force there."""
+    Arrival at a single topology is a race the receiver may lose without any defect, so the
+    check takes a whole sweep. On a machine oversubscribed 6x, 10 of 139 single topologies saw
+    no arrival, while none of 93 sweeps came up empty. The check still matters: every other
+    count here is taken where a state is serialized, so a broadcast that dropped all of them
+    would pass unnoticed.
+
+    Under TSan about one sweep in seven delivers nothing, too often for a required check on a
+    best-effort leg, so the check is skipped there. That gives up the configuration where a
+    delivery race would show most readily; the exact send-side counts still run."""
     if INITIATOR.is_built_with_thread_sanitizer():
-        logging.info("skipping the broadcast-arrival check under tsan: %s", probe_arrivals)
+        logging.info("skipping the broadcast-arrival check under TSan: %s", probe_arrivals)
         return
     assert max(probe_arrivals) >= 1, probe_arrivals
 
 
 def test_topology_is_linear(started_cluster):
-    """N = 2, 4, 8 symmetric topologies: identical results and exactly 2 * N filter streams."""
+    """N = 2, 4, 8 symmetric topologies: identical results and at most 2 * N filter streams."""
     expected_totals = {}
     probe_arrivals = []
     for buckets in (2, 4, 8):
@@ -326,9 +320,8 @@ def test_topology_is_linear(started_cluster):
         )
 
     # Linear growth: at most 2 * N streams, against N * N for all-to-all. Bounded rather than
-    # pinned for the same reason as in `_check_topology` -- the root may skip a broadcast whose
-    # destinations have all finished. `merge_received == tree_edges` there pins the tree leg of
-    # each of these topologies exactly.
+    # pinned because the root may skip a broadcast whose destinations have all finished.
+    # `_check_topology` pins the build leg of each topology exactly.
     assert all(sent <= 2 * buckets for buckets, sent in expected_totals.items()), expected_totals
     _assert_broadcast_delivered(probe_arrivals)
 
@@ -394,7 +387,7 @@ def test_multi_level_tree_and_memory_bound(started_cluster):
     # chunk per destination, and cloning shares the payload column, so the 32-destination root at
     # N = 32 peaks within a couple of KiB of the 2-destination root at N = 2. The bound below is
     # therefore far looser than what it watches; it still catches a regression that materialized
-    # one copy per destination, which is what the replaced topology paid per build task.
+    # one copy per destination.
     root_peak = max(t["memory_usage"] for t in merge_tasks_by_buckets[max_buckets])
     assert root_peak <= two_input_root_peak + (max_buckets + FAN_IN) * BLOOM_BYTES, (
         root_peak,
@@ -407,15 +400,13 @@ def test_multi_level_tree_and_memory_bound(started_cluster):
 def test_exact_states_topology(started_cluster):
     """With fixed-width keys and default limits the estimates keep the transported states exact
     (not bloom): the stream counts are identical, only the byte volume differs."""
-    query_id = f"rf_tree_{uuid.uuid4().hex}"
-    result = INITIATOR.query(
-        f"SELECT count() FROM big, small WHERE toUInt64(bid) = toUInt64(sid) "
-        f"SETTINGS {_dist_settings(4)}",
-        query_id=query_id,
-    ).strip()
+    result, tasks = _run_and_collect(
+        "SELECT count() FROM big, small WHERE toUInt64(bid) = toUInt64(sid)",
+        4,
+        extra_settings="",
+    )
     assert result == JOIN_EXPECTED
 
-    tasks = _collect_task_rows(query_id)
     total_sent = sum(t["states_sent"] for t in tasks)
     total_received = sum(t["states_received"] for t in tasks)
     merge_received = sum(
@@ -424,18 +415,15 @@ def test_exact_states_topology(started_cluster):
     # 4 into the root + 4 broadcast, bounded for the same reason as in `_check_topology`: the
     # root may skip a broadcast whose destinations have all finished.
     assert total_sent <= 8, tasks
-    # The same delivery split as in `_check_topology`, and conditioned the same way: a root that
-    # forwarded proves it consumed all four partials, because `finalize` publishes nothing until
-    # every input arrived. Unconditionally the probes can close their receive branches first and
-    # leave an arrived partial unread.
+    # Conditioned as in `_check_topology`: a root that forwarded proves it consumed all four
+    # partials, because `finalize` publishes nothing until every input arrived.
     if any(t["states_sent"] == 4 for t in tasks if t["task"].startswith("rf_merge_")):
         assert merge_received == 4, (merge_received, tasks)
     assert total_received <= total_sent, (total_received, total_sent, tasks)
 
     # The states must be exact, not degraded blooms: the default bloom is 512 KiB, and the 64000
     # exact keys of this join stay far below it, so a single degraded state would push some task's
-    # byte counter past this bound. Without this the byte volume was only logged, so a regression
-    # that transported blooms instead of exact states would have passed.
+    # byte counter past this bound.
     default_bloom_bytes = 512 * 1024
     for task in tasks:
         assert task["bytes_received"] < default_bloom_bytes, task
@@ -452,15 +440,11 @@ def test_short_string_keys_arrive_exact(started_cluster):
     transported row bound for variable-width keys as for fixed-width ones, so every
     transported state (partials, merged union, probe broadcast) stays exact, sized by
     actual key bytes, well below the settings bloom that any one degraded state would reach."""
-    query_id = f"rf_tree_{uuid.uuid4().hex}"
-    result = INITIATOR.query(
-        f"SELECT count() FROM big INNER JOIN tiny ON bid = tid "
-        f"SETTINGS {_dist_settings(4)}",
-        query_id=query_id,
-    ).strip()
+    result, tasks = _run_and_collect(
+        "SELECT count() FROM big INNER JOIN tiny ON bid = tid", 4, extra_settings=""
+    )
     assert result == str(TINY_ROWS)
 
-    tasks = _collect_task_rows(query_id)
     total_sent = sum(t["states_sent"] for t in tasks)
     total_received = sum(t["states_received"] for t in tasks)
     merge_received = sum(
@@ -522,12 +506,10 @@ def test_result_equality_nested_joins(started_cluster):
     assert all(t["states_sent"] <= 1 for t in build_tasks), tasks
     assert sum(t["states_sent"] for t in build_tasks) == 2 * 4, tasks
 
-    # The broadcast leg is deliberately not counted. How many stages a filter is delivered to is
-    # the planner's to choose: here `bid = s1.sid` and `bid = concat(s2.sid, '')` make `s1.sid`
-    # equi-joined with `big.bid`, so the second filter may also be applied to the first join's
-    # build side, and a read path that finds that site delivers to four more tasks than one that
-    # does not. Both are correct and the extra delivery prunes strictly more, so pinning a
-    # destination count here would only encode one planner's choice.
+    # The broadcast leg is deliberately not counted: the planner chooses how many stages get a
+    # filter. `s1.sid` is equi-joined with `big.bid`, so the second filter may also apply to the
+    # first join's build side, which adds four destination tasks. Both plans are correct, so a
+    # destination count would only encode one planner's choice.
     total_sent = sum(t["states_sent"] for t in tasks)
     total_received = sum(t["states_received"] for t in tasks)
     assert total_received <= total_sent, tasks

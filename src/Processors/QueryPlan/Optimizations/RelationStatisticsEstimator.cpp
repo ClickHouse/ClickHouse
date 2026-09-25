@@ -141,7 +141,6 @@ bool isRuntimeFilterOnlyPredicate(const ActionsDAG::Node * node)
 
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
 {
-    /// Estimate the unfiltered relation: a runtime-filter-only predicate carries no plan-time selectivity.
     if (isRuntimeFilterOnlyPredicate(filter))
         filter = nullptr;
 
@@ -186,12 +185,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         }
 
         /// A PREWHERE that only applies runtime filters is likewise not a plan-time filter.
-        PrewhereInfoPtr prewhere_info_for_estimate = reading->getPrewhereInfo();
-        if (prewhere_info_for_estimate
-            && isRuntimeFilterOnlyPredicate(
-                static_cast<const ActionsDAG::Node *>(
-                    prewhere_info_for_estimate->prewhere_actions.tryFindInOutputs(prewhere_info_for_estimate->prewhere_column_name))))
-            prewhere_info_for_estimate = nullptr;
+        const PrewhereInfoPtr prewhere_info = reading->getPrewhereInfo();
+        const ActionsDAG::Node * prewhere_node = prewhere_info
+            ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+            : nullptr;
+        const bool has_prewhere_filter = prewhere_info && !isRuntimeFilterOnlyPredicate(prewhere_node);
+        if (!has_prewhere_filter)
+            prewhere_node = nullptr;
 
         bool is_filtered_by_index = false;
         if (analyzed_result)
@@ -216,12 +216,12 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     break;
             }
         }
-        const bool has_filter = filter || prewhere_info_for_estimate;
+        const bool has_filter = filter || has_prewhere_filter;
 
-        /// Runtime-filter transport uses this estimate as a hard exact-phase row cap. An unindexed
-        /// plan-time filter makes that cap unusable: column statistics still emit a number, but it
-        /// would override a settings-tiny exact limit (the bloom-payload tests rely on that limit
-        /// staying in force). Join-order estimation keeps using statistics.
+        /// Runtime-filter transport may raise its hard exact-phase row cap to this estimate. Under an
+        /// unindexed plan-time filter, column statistics still produce a number, but it is only a guess
+        /// and would override the exact limit from the settings. So the transport gets no estimate and
+        /// keeps the settings geometry. Join-order estimation keeps using statistics.
         if (for_runtime_filter_transport && has_filter && !is_filtered_by_index)
         {
             return RelationStats{
@@ -236,10 +236,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         {
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
-                const ActionsDAG::Node * prewhere_node = prewhere_info_for_estimate
-                    ? static_cast<const ActionsDAG::Node *>(
-                          prewhere_info_for_estimate->prewhere_actions.tryFindInOutputs(prewhere_info_for_estimate->prewhere_column_name))
-                    : nullptr;
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats{
                     .estimated_rows = relation_profile.rows,

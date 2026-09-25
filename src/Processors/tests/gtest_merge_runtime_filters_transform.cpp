@@ -7,13 +7,10 @@
 #include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/ISink.h>
 #include <Processors/ISource.h>
-#include <Processors/ResizeProcessor.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
-#include <QueryPipeline/Pipe.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
@@ -219,8 +216,8 @@ struct TestPipeline
     RuntimeFilterGeometry geometry = testGeometry();
     UInt64 max_received_state_bytes = MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES;
 
-    /// Data ports pass through; partial sources feed the merge, which ends in its own sink so the
-    /// executor schedules the filter branch independently of data-side demand.
+    /// Partial sources feed the merge, which ends in its own sink, so the executor schedules the
+    /// filter branch independently of data-side demand. `data_source` feeds `data_sink` directly.
     void build(
         Processors filter_inputs,
         ProcessorPtr data_source,
@@ -240,41 +237,22 @@ struct TestPipeline
             /*num_forward_destinations_=*/1,
             max_received_state_bytes);
 
-        OutputPortRawPtrs data_ports{&data_source->getOutputs().front()};
-        Processors cluster;
-        for (auto * port : data_ports)
-        {
-            auto pass = std::make_shared<ResizeProcessor>(port->getSharedHeader(), 1, 1);
-            connect(*port, pass->getInputs().front());
-            cluster.emplace_back(std::move(pass));
-        }
+        if (!data_sink)
+            data_sink = std::make_shared<CountingSink>(dataHeader(), data_rows, open_gate_at, std::move(gate));
+        connect(data_source->getOutputs().front(), data_sink->getInputs().front());
+        processors->emplace_back(std::move(data_source));
 
         auto input = transform->getInputs().begin();
         for (auto & source : filter_inputs)
         {
             connect(source->getOutputs().front(), *input++);
-            cluster.emplace_back(std::move(source));
+            processors->emplace_back(std::move(source));
         }
 
         auto sink = std::make_shared<EmptySink>(transform->getOutputs().front().getSharedHeader());
         connect(transform->getOutputs().front(), sink->getPort());
-        cluster.emplace_back(std::move(transform));
-        cluster.emplace_back(std::move(sink));
-
-        OutputPort * data_out = nullptr;
-        for (const auto & processor : cluster)
-            for (auto & out : processor->getOutputs())
-                if (!out.isConnected())
-                    data_out = &out;
-        ASSERT_NE(data_out, nullptr);
-
-        if (!data_sink)
-            data_sink = std::make_shared<CountingSink>(dataHeader(), data_rows, open_gate_at, std::move(gate));
-        connect(*data_out, data_sink->getInputs().front());
-
-        processors->emplace_back(std::move(data_source));
-        for (auto & processor : cluster)
-            processors->emplace_back(std::move(processor));
+        processors->emplace_back(std::move(transform));
+        processors->emplace_back(std::move(sink));
         processors->emplace_back(std::move(data_sink));
     }
 
@@ -580,10 +558,7 @@ private:
 };
 
 /// Runs [sources -> forward-mode transform -> collecting sink] and returns the emitted states.
-std::vector<String> runForward(
-    Processors sources,
-    UInt64 max_received_state_bytes = MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES,
-    const RuntimeFilterGeometry & geometry = testGeometry())
+std::vector<String> runForward(Processors sources, UInt64 max_received_state_bytes = MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES)
 {
     auto processors = std::make_shared<Processors>();
     auto transform = std::make_shared<MergeRuntimeFiltersTransform>(
@@ -593,7 +568,7 @@ std::vector<String> runForward(
         "test_filter",
         /*filter_key_=*/"",
         std::make_shared<DataTypeUInt64>(),
-        geometry,
+        testGeometry(),
         /*filter_lookup_=*/nullptr,
         /*num_forward_destinations_=*/1,
         max_received_state_bytes);
@@ -682,12 +657,11 @@ TEST(MergeRuntimeFiltersTransform, PayloadRetentionIndependentOfInputCount)
 {
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
     /// `BloomFilter` holds its bits in a `std::vector`, so a payload reaches `MemoryTracker` only
-    /// through the global `operator new` in `AllocationInterceptors.cpp`. These sanitizers ship
-    /// their own `operator new`, force-loaded ahead of `libclickhouse_new_delete.a`. The tracking
-    /// one is never linked in, so every payload is invisible and the peak reads 0. This is why
-    /// `00877_memory_limit_for_new_delete.sql` is tagged `no-asan`, `no-msan` and `no-tsan`.
-    /// UBSan keeps the tracking `operator new`, so it still runs there.
-    GTEST_SKIP() << "Payload accounting needs the tracking `operator new`, which asan/msan/tsan replace";
+    /// through the tracking `operator new` in `AllocationInterceptors.cpp`. ASan, MSan and TSan
+    /// force-load their own `operator new` ahead of `libclickhouse_new_delete.a`, so the peak reads 0.
+    /// `00877_memory_limit_for_new_delete.sql` is tagged `no-asan`, `no-msan` and `no-tsan` for the
+    /// same reason. UBSan keeps the tracking `operator new`, so the test still runs there.
+    GTEST_SKIP() << "Payload accounting needs the tracking `operator new`, which ASan, MSan and TSan replace";
 #else
     /// The transform must merge each arriving state immediately instead of retaining the
     /// serialized payloads: with equally sized bloom states, the peak allocation of the merge

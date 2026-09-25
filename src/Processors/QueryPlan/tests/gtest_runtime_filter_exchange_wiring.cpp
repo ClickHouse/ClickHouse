@@ -293,11 +293,6 @@ DistributedQueryPlan wireSymmetric(size_t num_build_tasks, size_t num_receive_ta
 
 }
 
-/// `__applyFilter` requires a query context whenever the label is non-empty (it looks the filter
-/// up in that context's runtime-filter lookup, and fail-opens on a miss). Constructing a `FilterStep`
-/// computes the output header by executing the DAG on an empty block, so every consumer-fragment
-/// construction and `wireRuntimeFilterExchangeTopology` call must run with the test thread attached
-/// to a query context. Production always has one.
 /// Frees the `current_thread` slot for the duration of a fixture: another suite in the binary can
 /// leave it set for the process lifetime (e.g. via `MainThreadStatus`), and constructing a
 /// `ThreadStatus` over an occupied slot asserts. Declared before `thread_status`, so the slot is
@@ -311,6 +306,10 @@ struct CurrentThreadSlot
     ~CurrentThreadSlot() { current_thread = previous; }
 };
 
+/// A `FilterStep` computes its output header by running its DAG on an empty block. With a non-empty
+/// label, `__applyFilter` needs a query context to look the filter up in, and a lookup miss passes
+/// all rows. So building a consumer fragment or calling `wireRuntimeFilterExchangeTopology` needs
+/// the test thread attached to a query context, which production always has.
 class RuntimeFilterExchangeWiring : public ::testing::Test
 {
 protected:
@@ -702,8 +701,8 @@ TEST_F(RuntimeFilterExchangeWiring, SameStageBothTinyStaysLocal)
 
 TEST_F(RuntimeFilterExchangeWiring, SameStageStatsLessSiblingStillAdmits)
 {
-    /// Tiny numbered site visited first, sibling has no row estimate. Budget is not upsized
-    /// (100 * 8 < 4096), so the no-estimate path admits.
+    /// The tiny site with a row estimate is visited first; its sibling has no estimate. The budget
+    /// is not upsized (100 * 8 < 4096), so the sibling takes the no-estimate path and admits.
     DistributedQueryPlan plan;
     addBuildStage(plan, "build", 1, "key");
     auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);

@@ -13,7 +13,7 @@ INSERT INTO small_nullable SELECT number * 100 FROM numbers(100);
 
 SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
-SET explain_query_plan_default = 'legacy', log_processors_profiles = 1;
+SET log_processors_profiles = 1;
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 -- Admission of transported filters depends on which relation ends up at each apply site, so pin
 -- the join order and the estimate source against test-level randomization.
@@ -62,11 +62,8 @@ SYSTEM FLUSH LOGS query_log, processors_profile_log;
 -- task's lookup and produces neither: that transform is present in equal numbers with the setting
 -- on and off, which is why it cannot serve as the signal.
 --
--- Nothing below asserts on the receiving side. The merge -> probe broadcast is best-effort by
--- design (a probe task cancels its receive branch once its data work is done), so a receive-side
--- count is not a property of this code: at 24 concurrent clients the previous receive-side form
--- of the two-join check failed 20 of 48 runs, and 8 of 36 with `ThreadFuzzer` enabled, while the
--- send-side counts used below were exact in all 48 and all 24 runs of the same conditions.
+-- Nothing below asserts on the receiving side: the merge -> probe broadcast is best-effort by
+-- design, because a probe task cancels its receive branch once its data work is done.
 SELECT '-- Nullable key sent no states';
 -- A `Nullable` join key is not transportable, so neither transported processor may appear.
 -- `count() > 0` keeps this from holding just because no task ran.

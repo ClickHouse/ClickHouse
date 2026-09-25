@@ -3,7 +3,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/ISink.h>
-#include <Processors/ISource.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
@@ -55,8 +54,6 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
     const String bucket_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
     const size_t bucket_index = parse<size_t>(bucket_id);
 
-    /// Task `i` consumes child buckets `[i * fan_in, (i + 1) * fan_in)`; the wiring enumerated the
-    /// exchange streams with the same rule.
     const size_t children_begin = bucket_index * fan_in;
     const size_t children_end = std::min(children_begin + fan_in, source_buckets.size());
     if (children_begin >= children_end)

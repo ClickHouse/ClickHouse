@@ -32,7 +32,6 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -1778,10 +1777,10 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
         distributed_plan.stage_depends_on["main"] = main_stage_depends_on;
     }
 
-    /// Now that the stages and their task lists exist, wire exchanges for runtime filters whose
-    /// build and apply sites landed in different stages (matched by the rendezvous key). The
-    /// filter exchanges start from the same kind as the data exchanges above, so a forced or
-    /// auto-selected Persisted plan does not plan Streaming filter exchanges.
+    /// Now that the stages and their tasks exist, wire exchanges for runtime filters whose build and
+    /// apply sites landed in different stages. The filter exchanges start from the same kind as the
+    /// data exchanges above, and the wiring switches a chain to `Persisted` when a receiving stage
+    /// reads the build stage over a persisted data edge.
     if (optimization_settings.distributed_plan_join_runtime_filters)
         wireRuntimeFilterExchangeTopology(
             distributed_plan,

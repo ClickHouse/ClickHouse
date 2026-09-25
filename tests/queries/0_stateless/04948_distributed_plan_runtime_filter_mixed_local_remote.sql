@@ -1,8 +1,8 @@
 -- Tags: no-old-analyzer
 
--- Broadcast dim next to local_probe; remote_probe stays behind a shuffle. Same-stage apply
--- used to fail-open once the producer also shipped a filter. Dual-mode registers after
--- serialize so that apply still prunes.
+-- `dim` is broadcast into the stage that scans `local_probe`, while `remote_probe` stays behind
+-- a shuffle, so one filter has a same-stage apply site and a remote one. The build side ships the
+-- filter and also registers it locally after serializing it, so the same-stage apply must prune.
 
 CREATE TABLE dim (id UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE local_probe (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
@@ -29,7 +29,8 @@ SETTINGS log_comment = '04948_mixed';
 SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 
--- Fail-open never calls find(), so it never logs a Stats line with checked > passed.
+-- A fail-open `__applyFilter` never calls `RuntimeFilter::find`, so it leaves no `Stats for` line
+-- with fewer rows passed than checked.
 SELECT '-- local apply pruned the same-stage probe';
 SELECT count() >= 1
 FROM system.text_log
@@ -47,17 +48,15 @@ WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday()
               AND current_database = currentDatabase() AND log_comment = '04948_mixed')
         AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'));
 
--- The check above is about the local apply. This one is about the producer having shipped the
--- filter at all, which is what made the fail-open bug possible: with nothing on the exchange the
--- same-stage apply had nothing to race. `BuildRuntimeFilterPartialTransform` serializes the build
--- task's partial and appends it to the task's exchange sink as one extra row, so
--- `output_rows > input_rows` marks a task that put a state on an exchange. It exists only on the
--- transported path - a filter that stays local is built by `BuildRuntimeFilterTransform`, which
--- appears in equal numbers either way - and it is counted where the state is serialized.
+-- The local apply is at risk only when the producer also ships the filter, so check that it did.
+-- `BuildRuntimeFilterPartialTransform` serializes the build task's partial and appends it to the
+-- task's exchange sink as one extra row, so `output_rows > input_rows` marks a task that put a
+-- state on an exchange. It exists only on the transported path: a filter that stays local is
+-- built by `BuildRuntimeFilterTransform`, which appears in equal numbers either way.
 --
--- It does not assert that the remote probe received the state. The merge -> probe broadcast is
+-- It does not assert that the remote probe received the state: the merge -> probe broadcast is
 -- best-effort by design, because a probe task cancels its receive branch once its data work is
--- done, so an arrival count is not a property of this code.
+-- done.
 SELECT '-- the producer also shipped the filter over the exchange';
 SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows) >= 1
 FROM system.processors_profile_log

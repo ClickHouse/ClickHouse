@@ -90,8 +90,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// The runtime filter receive cap mirrors the data plane's packet limit; keep them in sync (see
-/// the comment at `MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES`).
+/// The comment at `MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES` explains why the two limits are equal.
 static_assert(MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES == StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES);
 
 namespace Setting
@@ -805,10 +804,11 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
 
 /// Runs the runtime filter receive branches of a task beside its data pipeline, each in its own
 /// executor thread. A branch waits for a filter that the producer builds only after reading its
-/// whole build side, so the filter can arrive late or never. Keeping the branch out of the data
-/// pipeline guarantees two things: the task finishes when its data work finishes (`finish`
-/// cancels the still-waiting branches), and a branch error never fails the task - the filter is
-/// simply not registered and `__applyFilter` passes all rows.
+/// whole build side, so the filter can arrive late or never. Keeping the branches out of the data
+/// pipeline has three effects. The task finishes when its data work finishes, because `finish`
+/// cancels the branches that still wait. A branch error never fails the task: the filter is not
+/// registered, and `__applyFilter` passes all rows. And a remote worker does not deadlock, which a
+/// branch folded into the data streams would do (see `MergeRuntimeFiltersTransform`).
 class RuntimeFilterReceiveBranches
 {
 public:
@@ -949,18 +949,12 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 
-    /// Each receive descriptor is a separate side pipeline (sources -> union -> sink) run by
-    /// `receive_branches` in its own thread. It is kept out of the data pipeline for two reasons.
-    /// Folded into the data streams it deadlocks a remote worker, for the reason
-    /// `MergeRuntimeFiltersTransform` spells out. And a filter can arrive after the data work is
-    /// done, or never, so the task must not stay alive waiting for one: the branches are cancelled
-    /// once the data pipeline finishes.
     RuntimeFilterReceiveBranches receive_branches(logger);
     for (const auto & descriptor : task.runtime_filter_descriptors)
     {
         const auto partials_header = runtimeFilterPartialsHeader();
-        /// The streams of one descriptor belong to one exchange. One stream per source, so the
-        /// merge counts the states it receives per input.
+        /// All streams of a descriptor belong to one exchange. The merge expects one state per
+        /// input, so the streams are not spread over threads and each input is one stream.
         chassert(!descriptor.streams.empty());
         VectorWithMemoryTracking<ExchangeStreamId> streams(descriptor.streams.begin(), descriptor.streams.end());
         auto partials = receiveExchangeStreams(
@@ -2151,9 +2145,8 @@ void DistributedQueryPlanExecutor::start()
             startStageWithDependencies(stage_name, executed_stages);
     }
 
-    /// Wait for all data stages to finish. Filter-only stages are excluded: once the data
-    /// stages are done an undelivered filter has nobody left to serve, so the query result is
-    /// complete without them, and cleanup cancels their tasks (a clean finish, not an error).
+    /// Wait for all data stages to finish. Filter-only stages are not waited for, see
+    /// `DistributedQueryStage::filter_only`.
     for (const auto & [stage_name, stage] : distributed_query_plan.stages)
         if (!stage.filter_only)
             running_stages.push_back(stage_name);

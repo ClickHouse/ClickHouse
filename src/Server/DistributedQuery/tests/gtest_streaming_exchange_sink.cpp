@@ -76,8 +76,7 @@ QueryPipeline makeSinkPipeline(std::shared_ptr<FutureConnection> future_connecti
     return pipeline;
 }
 
-/// Runs the sink against a peer that reads a little and disconnects without sending
-/// `NoMoreDataNeeded`, the way a task torn down mid-delivery does. Returns the executor error.
+/// Runs the sink against `readALittleAndDisconnect` and returns the executor error.
 std::exception_ptr runSinkAgainstDisconnectingPeer(bool advisory)
 {
     /// A send to a peer that already reset the connection raises SIGPIPE otherwise.

@@ -728,15 +728,9 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
     auto values = exact_filter->getValuesColumn();
 
-    /// The bloom filter is allocated at the geometry's `bloom_filter_bytes`, not at the exact
-    /// phase's byte bound: a transported plan may raise the exact budget above the settings
-    /// geometry, and a partial that degrades has to fit the bloom every receiver allocates.
-    ///
-    /// The stats-sized growth applies only to a filter that lives and dies in one pipeline. A
-    /// transported partial never carries the hint: its serialized state must match the plan's
-    /// geometry on the receiving side and must never cost more on the wire than the
-    /// settings-sized bloom. So the growth stays in a local and never reaches the member the
-    /// wire contract is validated against.
+    /// Only a filter that stays in one pipeline grows its bloom from statistics. A transported
+    /// partial carries no hint: its bloom must match the plan geometry on every receiver and must
+    /// not cost more on the wire than the settings-sized bloom.
     UInt64 grown_bloom_filter_bytes = bloom_filter_bytes;
 
     if (distinct_keys_hint)

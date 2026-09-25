@@ -81,9 +81,9 @@ void finishInsert(AdaptiveSetRuntimeFilter & filter, const RuntimeFilterGeometry
 }
 
 /// Publishes a completed union the way `MergeRuntimeFiltersTransform` does in `RegisterUnion` mode.
-UniqueRuntimeFilterPtr publish(AdaptiveSetRuntimeFilter && filter, const RuntimeFilterGeometry & geometry = makeGeometry())
+UniqueRuntimeFilterPtr publish(AdaptiveSetRuntimeFilter && filter)
 {
-    return std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, makeConfig(geometry), std::move(filter));
+    return std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, makeConfig(makeGeometry()), std::move(filter));
 }
 
 ColumnPtr makeColumn(UInt64 from, UInt64 to)
@@ -427,9 +427,9 @@ TEST(RuntimeFilterSerialization, LongTypeNameFitsTheExactStateBound)
 
 TEST(RuntimeFilterSerialization, OversizedExactStateRejected)
 {
-    /// Regression for the receive-side gap: the declared row count bounds nothing for
-    /// variable-width keys, so a state whose serialized bytes blow the exact budget (plus framing
-    /// slack) must be rejected before the decoded column is materialized.
+    /// The declared row count bounds nothing for variable-width keys. The receiver must reject a
+    /// state whose serialized bytes exceed the exact budget (plus framing slack) before it decodes
+    /// the column.
     auto relaxed_geometry = makeGeometry();
     relaxed_geometry.exact_bytes_limit = 1 << 20;
 
@@ -629,9 +629,9 @@ UInt64 buildStepVersionToWrite(UInt64 plan_version)
     return registry.versionToWrite("BuildRuntimeFilter", plan_version);
 }
 
-QueryPlanStepPtr roundTripBuildStep(const BuildRuntimeFilterStep & step, UInt64 version)
+/// Writes the step's settings into `settings` and returns the serialized step body.
+String serializeBuildStep(const BuildRuntimeFilterStep & step, UInt64 version, QueryPlanSerializationSettings & settings)
 {
-    QueryPlanSerializationSettings settings;
     step.serializeSettings(settings, version);
 
     WriteBufferFromOwnString out;
@@ -643,8 +643,15 @@ QueryPlanStepPtr roundTripBuildStep(const BuildRuntimeFilterStep & step, UInt64 
         .step_version = buildStepVersionToWrite(version),
     };
     step.serialize(serialization);
+    return out.str();
+}
 
-    ReadBufferFromString in(out.str());
+QueryPlanStepPtr roundTripBuildStep(const BuildRuntimeFilterStep & step, UInt64 version)
+{
+    QueryPlanSerializationSettings settings;
+    const String payload = serializeBuildStep(step, version, settings);
+
+    ReadBufferFromString in(payload);
     DeserializedSetsRegistry deserialize_registry;
     SharedHeaders input_headers;
     input_headers.push_back(step.getInputHeaders().front());
@@ -665,26 +672,13 @@ QueryPlanStepPtr roundTripBuildStep(const BuildRuntimeFilterStep & step, UInt64 
 
 }
 
-TEST(RuntimeFilterSerialization, BuildStepTopologyRoundTripsAtVersion7)
+TEST(RuntimeFilterSerialization, BuildStepTopologyRoundTrips)
 {
     auto step = makeBuildStep(/*with_topology=*/true);
     ASSERT_TRUE(step.hasFilterExchanges());
 
-    const String payload = [&]
-    {
-        QueryPlanSerializationSettings settings;
-        step.serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-        WriteBufferFromOwnString out;
-        SerializedSetsRegistry serialize_registry;
-        IQueryPlanStep::Serialization serialization{
-            .out = out,
-            .registry = serialize_registry,
-            .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
-            .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
-        };
-        step.serialize(serialization);
-        return out.str();
-    }();
+    QueryPlanSerializationSettings settings;
+    const String payload = serializeBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings);
 
     auto restored_ptr = roundTripBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     auto * restored = typeid_cast<BuildRuntimeFilterStep *>(restored_ptr.get());
@@ -700,17 +694,7 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRoundTripsAtVersion7)
     restored->getGeometry().validateTransported();
 
     QueryPlanSerializationSettings restored_settings;
-    restored->serializeSettings(restored_settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    WriteBufferFromOwnString out_again;
-    SerializedSetsRegistry serialize_registry;
-    IQueryPlanStep::Serialization serialization{
-        .out = out_again,
-        .registry = serialize_registry,
-        .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
-        .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
-    };
-    restored->serialize(serialization);
-    EXPECT_EQ(out_again.str(), payload);
+    EXPECT_EQ(serializeBuildStep(*restored, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, restored_settings), payload);
 }
 
 TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchangesVersion)
@@ -718,18 +702,9 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchanges
     constexpr UInt64 pre_exchanges_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES - 1;
     auto with_topology = makeBuildStep(/*with_topology=*/true);
     QueryPlanSerializationSettings settings;
-    with_topology.serializeSettings(settings, pre_exchanges_version);
-    WriteBufferFromOwnString out;
-    SerializedSetsRegistry serialize_registry;
-    IQueryPlanStep::Serialization serialization{
-        .out = out,
-        .registry = serialize_registry,
-        .version = pre_exchanges_version,
-        .step_version = buildStepVersionToWrite(pre_exchanges_version),
-    };
     try
     {
-        with_topology.serialize(serialization);
+        serializeBuildStep(with_topology, pre_exchanges_version, settings);
         FAIL() << "serializing filter exchanges below the runtime-filter-exchanges version should throw";
     }
     catch (const Exception & e)
@@ -746,17 +721,14 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchanges
     EXPECT_TRUE(restored->getFilterKey().empty());
     EXPECT_EQ(restored->getFilterName(), "f");
     EXPECT_EQ(restored->getFilterColumnName(), "x");
-    /// `join_runtime_filter_exact_bytes_limit` is written only from the version that knows the filter
-    /// exchanges; a stream below that version omits it and the reader falls back to the constructor
-    /// floor (the bloom filter size is the default when the setting is absent, and the limit
-    /// defaults to the bloom size).
+    /// A stream below the filter-exchanges version omits `join_runtime_filter_exact_bytes_limit`, so
+    /// the reader takes that setting's default, 512 KiB, not the sender's limit (`BLOOM_BYTES`).
     auto expected_geometry = makeGeometry();
-    expected_geometry.exact_bytes_limit = restored->getGeometry().exact_bytes_limit;
-    EXPECT_EQ(restored->getGeometry().exact_bytes_limit, 512 * 1024);
+    expected_geometry.exact_bytes_limit = 512 * 1024;
     expectGeometryMatches(restored->getGeometry(), expected_geometry);
 }
 
-TEST(RuntimeFilterSerialization, BuildStepTreeExchangeRoundTripsAtVersion7)
+TEST(RuntimeFilterSerialization, BuildStepTreeExchangeRoundTrips)
 {
     auto step = makeBuildStep(/*with_topology=*/false);
     Strings source_buckets;
@@ -766,21 +738,8 @@ TEST(RuntimeFilterSerialization, BuildStepTreeExchangeRoundTripsAtVersion7)
     step.setTreeExchange("exchange_tree", source_buckets, 16);
     ASSERT_TRUE(step.hasFilterExchanges());
 
-    const String payload = [&]
-    {
-        QueryPlanSerializationSettings settings;
-        step.serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-        WriteBufferFromOwnString out;
-        SerializedSetsRegistry serialize_registry;
-        IQueryPlanStep::Serialization serialization{
-            .out = out,
-            .registry = serialize_registry,
-            .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
-            .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
-        };
-        step.serialize(serialization);
-        return out.str();
-    }();
+    QueryPlanSerializationSettings settings;
+    const String payload = serializeBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings);
 
     auto restored_ptr = roundTripBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     auto * restored = typeid_cast<BuildRuntimeFilterStep *>(restored_ptr.get());
@@ -796,39 +755,16 @@ TEST(RuntimeFilterSerialization, BuildStepTreeExchangeRoundTripsAtVersion7)
     restored->getGeometry().validateTransported();
 
     QueryPlanSerializationSettings restored_settings;
-    restored->serializeSettings(restored_settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    WriteBufferFromOwnString out_again;
-    SerializedSetsRegistry serialize_registry;
-    IQueryPlanStep::Serialization serialization{
-        .out = out_again,
-        .registry = serialize_registry,
-        .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
-        .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
-    };
-    restored->serialize(serialization);
-    EXPECT_EQ(out_again.str(), payload);
+    EXPECT_EQ(serializeBuildStep(*restored, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, restored_settings), payload);
 }
 
-TEST(RuntimeFilterSerialization, BuildStepWithoutTopologyRoundTripsAtVersion7)
+TEST(RuntimeFilterSerialization, BuildStepWithoutTopologyRoundTrips)
 {
     auto step = makeBuildStep(/*with_topology=*/false);
     ASSERT_FALSE(step.hasFilterExchanges());
 
-    const String payload = [&]
-    {
-        QueryPlanSerializationSettings settings;
-        step.serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-        WriteBufferFromOwnString out;
-        SerializedSetsRegistry serialize_registry;
-        IQueryPlanStep::Serialization serialization{
-            .out = out,
-            .registry = serialize_registry,
-            .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
-            .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
-        };
-        step.serialize(serialization);
-        return out.str();
-    }();
+    QueryPlanSerializationSettings settings;
+    const String payload = serializeBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings);
 
     auto restored_ptr = roundTripBuildStep(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     auto * restored = typeid_cast<BuildRuntimeFilterStep *>(restored_ptr.get());
@@ -840,15 +776,5 @@ TEST(RuntimeFilterSerialization, BuildStepWithoutTopologyRoundTripsAtVersion7)
     expectGeometryMatches(restored->getGeometry(), makeGeometry());
 
     QueryPlanSerializationSettings restored_settings;
-    restored->serializeSettings(restored_settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    WriteBufferFromOwnString out_again;
-    SerializedSetsRegistry serialize_registry;
-    IQueryPlanStep::Serialization serialization{
-        .out = out_again,
-        .registry = serialize_registry,
-        .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
-        .step_version = buildStepVersionToWrite(DBMS_QUERY_PLAN_SERIALIZATION_VERSION),
-    };
-    restored->serialize(serialization);
-    EXPECT_EQ(out_again.str(), payload);
+    EXPECT_EQ(serializeBuildStep(*restored, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, restored_settings), payload);
 }

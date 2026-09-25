@@ -65,12 +65,9 @@ static ITransformingStep::Traits getTraits()
 namespace
 {
 
-/// The partial filter shared by all streams of one task: each stream merges its part in at end of
-/// stream, and the stream that completes the merge serializes the result.
-/// It holds the filter implementation, not a `RuntimeFilter`: a transported partial has no build
-/// state to account for (`streams_left` below does that) and no evaluation state to feed, and it is
-/// serialized before it is ever published. The last stream wraps it in a `RuntimeFilter` for the
-/// same-task lookup.
+/// The partial filter shared by all streams of one task. It holds an `AdaptiveSetRuntimeFilter`, not a
+/// `RuntimeFilter`: `streams_left` counts the streams still to merge in, and nothing evaluates the
+/// partial before it is serialized. The last stream wraps it in a `RuntimeFilter` for the same-task lookup.
 struct TaskPartialFilter
 {
     std::mutex mutex;
@@ -205,11 +202,11 @@ public:
         if (--task_filter->streams_left > 0)
             return;
 
+        /// Serialize first: the filter is moved into the lookup below, where `add` calls `finishInsert`.
         WriteBufferFromOwnString out;
         task_filter->filter->serialize(out);
-        /// Same-stage `__applyFilter` is not on the exchange (that edge would cycle the scheduler).
-        /// Serialize before `add`: it takes ownership and `finishInsert`s. Every stream has merged
-        /// in by now, so the published filter expects no further merges.
+        /// Same-stage `__applyFilter` sites read this task's lookup: an exchange edge back to this stage
+        /// would cycle the scheduler. Every stream has merged in, so the published filter expects no merges.
         if (!filter_key.empty())
         {
             if (!query_context)
@@ -275,7 +272,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     validateRuntimeBloomFilterParameters(bloom_filter_parameters);
 
     /// The exact phase is byte-bounded by the bloom size unless the plan raised it explicitly
-    /// (runtime-filter transport does, from cardinality estimates).
+    /// (runtime-filter transport does, from build-side row estimates).
     if (!geometry.exact_bytes_limit)
         geometry.exact_bytes_limit = geometry.bloom_filter_bytes;
 }
@@ -300,6 +297,9 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
         return;
     }
 
+    /// The key is not serialized: a deserialized step has one only if
+    /// `restoreRuntimeFilterRendezvousKeys` copied it from a matching `__applyFilter` in its
+    /// fragment. Without a key no lookup could find the filter, so there is nothing to build.
     if (filter_key.empty())
         return;
 
@@ -328,9 +328,8 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
     const String bucket_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
     auto partials_header = runtimeFilterPartialsHeader();
 
-    /// Destination streams of this task's single serialized partial: through the merge tree the
-    /// partial goes out exactly once, to the parent merge task; a single-task build stage is
-    /// itself the tree root and broadcasts to every destination of every receiving stage.
+    /// Destination streams of this task's single serialized partial. With a merge tree it goes out
+    /// once, to the parent merge task; with broadcast exchanges it goes to every destination bucket.
     std::vector<ExchangeStreamId> destination_streams;
     if (tree_exchange)
     {
@@ -510,6 +509,8 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         RuntimeFilterBuildOptions{
             .geometry = geometry,
             .polarity = allow_to_use_not_exact_filter ? RuntimeFilterPolarity::Contains : RuntimeFilterPolarity::NotContains,
+            /// Not serialized: a deserialized step builds without key-range tracking and without the
+            /// statistics hint that sizes the bloom filter.
             .track_key_range = false,
             .distinct_keys_hint = std::nullopt,
             .distinct_keys_hint_matches_filter_key = false});

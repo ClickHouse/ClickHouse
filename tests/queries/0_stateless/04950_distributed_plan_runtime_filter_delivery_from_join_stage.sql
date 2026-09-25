@@ -16,10 +16,8 @@ SET distributed_plan_join_runtime_filters = 1;
 -- case where the producing stage is itself downstream of a cut, so the filter is built with no
 -- table to estimate from and the receiving stage is one the producing stage depends on.
 --
--- Forcing the shape needs the legacy planner: under `enable_cascades_optimizer` this query gets a
--- `Broadcast HashJoin` in one stage with nothing transported at all, and
--- `param__internal_join_table_stat_hints` does not steer that decision - inverting the two
--- cardinalities by a factor of four million leaves the plan byte-identical.
+-- This shape needs the legacy planner: `enable_cascades_optimizer` plans this query as a
+-- single-stage `Broadcast HashJoin` that transports nothing.
 SELECT count() FROM big JOIN (SELECT sid FROM small_build GROUP BY sid) AS s ON big.bid = s.sid
 WHERE v < 90000
 SETTINGS log_comment = '04950_delivery_from_join_stage';

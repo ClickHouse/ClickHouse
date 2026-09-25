@@ -36,7 +36,7 @@ SET make_distributed_plan = 0;
 
 -- Local distributed-plan tasks inherit `log_comment`, log as `stage_%` / `rf_merge_%` in
 -- `system.query_log`, and record their pipeline processors under the initiator's `query_id`.
--- Two processors exist only on the transported path and are the transport signal here:
+-- Two signals exist only on the transported path:
 --
 --   `BuildRuntimeFilterPartialTransform` serializes a build task's partial and appends it to the
 --   task's exchange sink as one extra row, so `output_rows > input_rows` marks a task that put a
@@ -46,14 +46,11 @@ SET make_distributed_plan = 0;
 --   `rf_merge_%` is a task of the merge tree, which is planned only for a transported filter.
 --
 -- A filter that stays local is built by `BuildRuntimeFilterTransform` straight into its own
--- task's lookup and produces neither: that transform is present in equal numbers with the
--- setting on and off, which is why it cannot serve as the signal.
+-- task's lookup and produces neither. That transform appears in equal numbers with the setting
+-- on and off, so it cannot serve as the signal.
 --
--- Nothing below asserts on the receiving side. The merge -> probe broadcast is best-effort by
--- design (a probe task cancels its receive branch once its data work is done), so a receive-side
--- count is not a property of this code: measured on a busy machine at 24 concurrent clients, the
--- previous receive-side form of these checks failed 44% (shuffle join) and 38% (multiple keys)
--- of the time, while every count used below was exact in 288 out of 288 runs.
+-- Nothing below asserts on the receiving side: the merge -> probe broadcast is best-effort by
+-- design, because a probe task cancels its receive branch once its data work is done.
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
 SELECT '-- shuffle join, setting on: states crossed the exchange';
@@ -87,7 +84,7 @@ WHERE event_date >= yesterday()
 
 SELECT '-- multiple keys, setting on: each key is sent';
 -- Two join keys means two filters, each with its own merge tree and its own 8 serialized
--- partials: 2 trees and 16 partials, checked as 2 trees with >= 2 partials each.
+-- partials: 2 trees and 16 partials, checked as at least 2 trees and at least 4 partials.
 SELECT uniqExact(extract(query, '^rf_merge_\\d+_(_runtime_filter_\\d+)')) >= 2
    AND (
        SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows)

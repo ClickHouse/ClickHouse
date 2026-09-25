@@ -9,7 +9,6 @@ INSERT INTO dim2 SELECT number * 100, number FROM numbers(1000);
 
 SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
-SET explain_query_plan_default = 'legacy';
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 -- The plan shape and transported-filter admission depend on the join order and the estimate
 -- source, so pin them against test-level randomization.
@@ -34,13 +33,10 @@ SYSTEM FLUSH LOGS query_log, processors_profile_log;
 -- filter, or the two collapsing into one, still fails. The partial count is a bound, so a
 -- different bucket count does not break it. A local filter plans no tree and serializes nothing.
 --
--- The previous form counted `RuntimeFilter` log lines on the `stage_0_%` probe tasks. It did not
--- work as written: with `distributed_plan_execute_locally` every task of the query shares the
--- initiator's `query_id`, so the `stage_0_%` restriction selected nothing and a line from any
--- task satisfied it - including the ones a purely local filter writes, so the check also passed
--- with `distributed_plan_join_runtime_filters = 0`. Its premise was wrong too: a probe task
--- cancels its receive branch once its data work is done, so it can and does finish before a
--- filter arrives, and an arrival count is not a property of this code.
+-- Nothing here asserts on the receiving side. The merge -> probe broadcast is best-effort by
+-- design: a probe task cancels its receive branch once its data work is done, so the filter may
+-- never arrive. And with `distributed_plan_execute_locally` every task logs under the initiator's
+-- `query_id`, so a `system.text_log` line cannot be attributed to the probe tasks.
 SELECT '-- both filters registered on fact-scan tasks';
 SELECT uniqExact(extract(query, '^rf_merge_\\d+_(_runtime_filter_\\d+)')) = 2
    AND (

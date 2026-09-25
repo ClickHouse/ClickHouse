@@ -69,9 +69,8 @@ RuntimeFilterConfig makeRuntimeFilterConfig()
                                /*blocks_to_skip_before_reenabling=*/30};
 }
 
-/// The sizing an adaptive filter needs. A locally built filter degrades to a bloom filter of the
-/// same size as the exact phase's byte budget, so both fields carry `bytes_limit`; the transport
-/// tests (`gtest_runtime_filter_serialization`) are the ones that pull them apart.
+/// `bytes_limit` sets both the exact-phase byte budget and the bloom filter size, as for a locally
+/// built filter. `gtest_runtime_filter_serialization` covers geometries where the two differ.
 RuntimeFilterGeometry makeGeometry(
     UInt64 bytes_limit, UInt64 exact_values_limit, UInt64 bloom_filter_hash_functions, Float64 max_ratio_of_set_bits_in_bloom_filter)
 {

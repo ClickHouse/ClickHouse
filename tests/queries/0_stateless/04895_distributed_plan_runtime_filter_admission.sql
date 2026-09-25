@@ -7,7 +7,7 @@ INSERT INTO t_large SELECT number FROM numbers(1000000);
 
 SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
-SET explain_query_plan_default = 'legacy', log_processors_profiles = 1;
+SET log_processors_profiles = 1;
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 SET distributed_plan_join_runtime_filters = 1;
 
@@ -45,9 +45,8 @@ SELECT
                     AND current_database = currentDatabase() AND event_date >= yesterday())
     ),
     -- A refused filter must never reach an exchange, so neither transported processor may appear.
-    -- This one stays an expected zero: it separates a refused filter from the admitted one below,
-    -- which scores 8 on the same count, not a transported filter from a local one.
-    -- `count() > 0` keeps it from holding just because no task ran.
+    -- This zero separates a refused filter from the admitted one below; it does not show that the
+    -- local filter was built. `count() > 0` keeps it from holding just because no task ran.
     (
         SELECT count() > 0 AND (
             SELECT count()

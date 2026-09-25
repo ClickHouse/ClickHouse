@@ -640,7 +640,7 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-RuntimeFilterGeometry makeEnvelopeGeometry()
+RuntimeFilterGeometry makeDescriptorGeometry()
 {
     return RuntimeFilterGeometry{
         .exact_values_limit = 100,
@@ -682,17 +682,40 @@ RuntimeFilterReceiveDescriptor makeDescriptor(const String & key, const DataType
     descriptor.filter_key = key;
     descriptor.filter_name = "filter_" + key;
     descriptor.key_column_type = type;
-    descriptor.geometry = makeEnvelopeGeometry();
+    descriptor.geometry = makeDescriptorGeometry();
     descriptor.streams = std::move(streams);
     return descriptor;
 }
 
-}
-
-TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTripAtVersion4)
+/// Serializes a task that carries `descriptors` and expects `deserializeTask` to reject it with
+/// `INCORRECT_DATA`.
+void expectDescriptorsRejected(std::vector<RuntimeFilterReceiveDescriptor> descriptors, const String & what)
 {
     DistributedQueryTaskDescription description;
-    description.serialization_version = 4;
+    description.serialization_version = DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS;
+    description.task.runtime_filter_descriptors = std::move(descriptors);
+
+    WriteBufferFromOwnString out;
+    serializeTask(description, out);
+    ReadBufferFromString in(out.str());
+    DistributedQueryTaskDescription restored;
+    try
+    {
+        deserializeTask(restored, in);
+        FAIL() << what << " should be rejected";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+    }
+}
+
+}
+
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTrip)
+{
+    DistributedQueryTaskDescription description;
+    description.serialization_version = DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS;
     description.initial_query_id = "q1";
     description.task.task_id = "t0";
 
@@ -718,79 +741,30 @@ TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTripAtVersion4)
 
 TEST(DistributedTaskSerialization, RuntimeFilterDescriptorEmptyFilterKeyIsRejected)
 {
-    DistributedQueryTaskDescription description;
-    description.serialization_version = 4;
-    description.task.runtime_filter_descriptors.push_back(
-        makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")}));
-    description.task.runtime_filter_descriptors.front().filter_key.clear();
-
-    WriteBufferFromOwnString out;
-    serializeTask(description, out);
-    ReadBufferFromString in(out.str());
-    DistributedQueryTaskDescription restored;
-    try
-    {
-        deserializeTask(restored, in);
-        FAIL() << "empty filter_key should be rejected";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
-    }
+    auto descriptor = makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")});
+    descriptor.filter_key.clear();
+    expectDescriptorsRejected({descriptor}, "empty filter_key");
 }
 
 TEST(DistributedTaskSerialization, RuntimeFilterDescriptorEmptyStreamsAreRejected)
 {
-    DistributedQueryTaskDescription description;
-    description.serialization_version = 4;
-    description.task.runtime_filter_descriptors.push_back(
-        makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")}));
-    description.task.runtime_filter_descriptors.front().streams.clear();
-
-    WriteBufferFromOwnString out;
-    serializeTask(description, out);
-    ReadBufferFromString in(out.str());
-    DistributedQueryTaskDescription restored;
-    try
-    {
-        deserializeTask(restored, in);
-        FAIL() << "empty streams should be rejected";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
-    }
+    auto descriptor = makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), /*streams=*/{});
+    expectDescriptorsRejected({descriptor}, "empty streams");
 }
 
 TEST(DistributedTaskSerialization, RuntimeFilterDescriptorDuplicateFilterKeyIsRejected)
 {
-    DistributedQueryTaskDescription description;
-    description.serialization_version = 4;
     auto descriptor = makeDescriptor("dup", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")});
-    description.task.runtime_filter_descriptors = {descriptor, descriptor};
-
-    WriteBufferFromOwnString out;
-    serializeTask(description, out);
-    ReadBufferFromString in(out.str());
-    DistributedQueryTaskDescription restored;
-    try
-    {
-        deserializeTask(restored, in);
-        FAIL() << "duplicate filter_key should be rejected";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
-    }
+    expectDescriptorsRejected({descriptor, descriptor}, "duplicate filter_key");
 }
 
-TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsAtVersion3ThrowOnSerialize)
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsBelowMinVersionThrowOnSerialize)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
     GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
 #else
     DistributedQueryTaskDescription description;
-    description.serialization_version = 3;
+    description.serialization_version = DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS - 1;
     description.task.runtime_filter_descriptors.push_back(
         makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")}));
 
@@ -798,7 +772,7 @@ TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsAtVersion3ThrowOnSeri
     try
     {
         serializeTask(description, out);
-        FAIL() << "descriptors at version 3 should throw";
+        FAIL() << "descriptors below their minimum serialization version should throw";
     }
     catch (const Exception & e)
     {

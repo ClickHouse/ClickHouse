@@ -10,9 +10,8 @@ SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 SET log_processors_profiles = 1;
 SET distributed_plan_join_runtime_filters = 1;
--- More than one build task, so the partials go through the bounded merge tree instead of
--- all-to-all delivery (the bucket count is kept even for tiny tables, see
--- `setupDistributedReadBuckets`).
+-- Four build tasks, so more than one partial goes into the merge tree (the bucket count is kept
+-- even for tiny tables, see `setupDistributedReadBuckets`).
 SET distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4;
 
 SELECT '-- tree delivery, streaming exchange';
@@ -36,14 +35,9 @@ SYSTEM FLUSH LOGS query_log, processors_profile_log;
 -- keeps the check off the exact bucket count. A filter that stays local is built by
 -- `BuildRuntimeFilterTransform` straight into its own task's lookup and ships nothing.
 --
--- Neither signal is on the receiving side. The previous form asked whether the probe-scan tasks
--- carried a `RuntimeFilter` log line, on the premise that a probe task cannot finish before
--- consuming the filter stream. It can: a probe task cancels its receive branch once its data work
--- is done, and a filter that arrives after the scan it would have narrowed has nothing left to
--- serve, so an arrival count is not a property of this code. That form also could not tell the
--- paths apart - with `distributed_plan_execute_locally` every task shares the initiator's
--- `query_id`, so the `stage_0_%` restriction selected nothing and the local path's own log lines
--- satisfied it, which is why that column read 1 with `distributed_plan_join_runtime_filters = 0`.
+-- Neither signal is on the receiving side: the merge -> probe broadcast is best-effort by design,
+-- because a probe task cancels its receive branch once its data work is done and the filter may
+-- never arrive.
 SELECT '-- merge stage ran and the partials went through the tree';
 SELECT
     comment,

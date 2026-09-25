@@ -5,14 +5,13 @@
 namespace DB
 {
 
-/// Hard safety cap on one serialized runtime filter state accepted by a receiver. Kept equal to
-/// `StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES` (the limit the streaming data plane
-/// already enforces on both ends of every exchange packet) so a filter state is never more
-/// permissive than any other exchange payload; the equality is pinned by a static_assert in
-/// `DistributedPlanExecutor.cpp`. A compliant sender stays far below this bound (the geometry caps
-/// a state at `MAX_RUNTIME_BLOOM_FILTER_BYTES`), so only a buggy or hostile peer can hit it; the
-/// check exists because the persisted (temporary file) and in-memory exchange paths have no
-/// packet-level limit of their own.
+/// Hard cap on one serialized runtime filter state that a receiver accepts. It equals
+/// `StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES`, the limit the streaming exchange enforces
+/// on both ends of every packet, so a filter state is never allowed more than any other exchange
+/// payload. A static_assert in `DistributedPlanExecutor.cpp` pins the equality. A compliant sender
+/// stays far below the cap, because the geometry caps a state at `MAX_RUNTIME_BLOOM_FILTER_BYTES`.
+/// Only a buggy or hostile peer can hit it. The check is needed because the persisted (temporary file)
+/// and in-memory exchanges have no packet limit of their own.
 constexpr UInt64 MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES = 256ULL * 1024 * 1024;
 
 /// Header of the stream carrying serialized partial runtime filters between tasks.
@@ -77,13 +76,13 @@ private:
     const size_t num_forward_destinations;
     const UInt64 max_received_state_bytes;
 
-    /// Compact per-source delivery metadata: which inputs delivered their state already.
+    /// Which inputs have delivered their state.
     std::vector<bool> received;
     size_t states_received = 0;
-    /// The single private accumulated filter; arrived states are merged into it and destroyed.
-    /// It is the filter implementation, not a `RuntimeFilter`: while it accumulates it belongs to
-    /// nobody, so it needs neither the build-state accounting (`received` above does that) nor an
-    /// evaluation state. `RegisterUnion` wraps the finished union in a `RuntimeFilter` to publish it.
+    /// Union of the states received so far; each state is merged in and then destroyed. It is a bare
+    /// `AdaptiveSetRuntimeFilter`, not a `RuntimeFilter`: it is not registered while it accumulates,
+    /// so it needs neither the build-state accounting (`received` does that) nor an evaluation state.
+    /// `RegisterUnion` wraps the finished union in a `RuntimeFilter` to publish it.
     std::unique_ptr<AdaptiveSetRuntimeFilter> accumulated;
     /// An oversized state was rejected: publish nothing, fail open.
     bool skipped = false;

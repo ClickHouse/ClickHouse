@@ -175,7 +175,6 @@ void MergeRuntimeFiltersTransform::consume()
         }
         else
         {
-            /// Deserialize-and-merge immediately; the decoded state dies at the end of this block.
             accumulated->mergeFrom(AdaptiveSetRuntimeFilter::deserialize(in, filter_column_target_type, geometry));
         }
     }
