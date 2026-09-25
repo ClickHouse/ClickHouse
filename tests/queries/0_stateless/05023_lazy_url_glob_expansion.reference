@@ -1,0 +1,14 @@
+--- reading one address out of twenty, with room for five
+0
+--- schema inference reads one address as well
+0
+--- reading all of them is still limited
+too many result addresses
+--- a pattern that fits into the limit is read in full
+20	190
+--- a hundred million addresses under the default limit
+0
+--- a _path predicate is applied to every generated address, which counts against the limit
+too many result addresses
+--- with room for the whole pattern the predicate prunes every address and nothing is read
+0
