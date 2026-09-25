@@ -2,12 +2,13 @@
 
 # Regression for per-child column resolution in StorageMerge access checks. A Merge table over
 # heterogeneous children must re-resolve each requested dotted identifier against EACH child's own
-# (locked) schema, because the same name can mean different things:
+# schema, because the same name can mean different things (two children are needed because both shapes
+# cannot coexist in one table: their streams collide in the file name `a%2Eb`):
 #   - in `src_tuple` the column `a` is a `Tuple(b UInt8)`, so `a.b` is a subcolumn and maps to `a`
 #     (i.e. `GRANT SELECT(a)` authorizes it, `GRANT SELECT(`a.b`)` does not);
 #   - in `src_real` there is a real top-level column literally named `a.b`, so `a.b` maps to itself
 #     (i.e. `GRANT SELECT(`a.b`)` authorizes it, `GRANT SELECT(a)` does not).
-# The access mapping in StorageMerge::createSources must stay aligned with the actual child read path:
+# The access mapping in ReadFromMerge::getSelectedTables must stay aligned with the actual child read path:
 # each allow case therefore checks that the correct grant both passes the access check AND returns the
 # expected value; each swapped grant must be denied. Children the user cannot SHOW are skipped, which
 # lets us exercise one child at a time by granting only on that child.

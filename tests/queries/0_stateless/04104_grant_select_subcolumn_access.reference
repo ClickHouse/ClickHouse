@@ -26,3 +26,11 @@ hello
 ACCESS_DENIED
 === select t.a after revoke (denied) ===
 ACCESS_DENIED
+=== select arr.size0 after table grant ===
+3
+=== select m after partial revoke (denied) ===
+ACCESS_DENIED
+=== select m.keys after partial revoke (denied) ===
+ACCESS_DENIED
+=== select t.a after partial revoke (denied) ===
+ACCESS_DENIED

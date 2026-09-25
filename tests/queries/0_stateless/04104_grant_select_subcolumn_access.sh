@@ -72,5 +72,13 @@ run_denied "select id (denied)" "SELECT id FROM ${CLICKHOUSE_DATABASE}.t_sub_acc
 $CLICKHOUSE_CLIENT -q "REVOKE SELECT(t) ON ${CLICKHOUSE_DATABASE}.t_sub_access FROM ${USER}"
 run_denied "select t.a after revoke (denied)" "SELECT t.a FROM ${CLICKHOUSE_DATABASE}.t_sub_access"
 
+# Partial revoke: a table-level grant with a column revoked must deny that column's subcolumns too.
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_sub_access TO ${USER}"
+$CLICKHOUSE_CLIENT -q "REVOKE SELECT(m, t) ON ${CLICKHOUSE_DATABASE}.t_sub_access FROM ${USER}"
+run_ok "select arr.size0 after table grant" "SELECT arr.size0 FROM ${CLICKHOUSE_DATABASE}.t_sub_access"
+run_denied "select m after partial revoke (denied)" "SELECT m FROM ${CLICKHOUSE_DATABASE}.t_sub_access"
+run_denied "select m.keys after partial revoke (denied)" "SELECT m.keys FROM ${CLICKHOUSE_DATABASE}.t_sub_access"
+run_denied "select t.a after partial revoke (denied)" "SELECT t.a FROM ${CLICKHOUSE_DATABASE}.t_sub_access"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_sub_access"
 $CLICKHOUSE_CLIENT -q "DROP USER ${USER}"
