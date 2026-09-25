@@ -424,12 +424,12 @@ void ReadFromMemoryStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     /// This has to happen here, during plan optimization: at the end of `QueryPlan::optimize`,
     /// `DelayedCreatingSetsStep` takes the subquery plans out of the sets, and an in-place build
     /// from `initializePipeline` would find nothing to execute.
-    /// Sets of `GLOBAL IN` are excluded: `ReadFromRemote` has to attach an external table to them
-    /// before they are built.
+    /// Sets of `GLOBAL IN` in an explicit `PREWHERE` or a row policy are built here too; only the
+    /// optimizer-moved condition in `updatePrewhereInfo` has to leave them out.
     if (query_info.row_level_filter)
-        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.row_level_filter->actions, context);
+        VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
     if (query_info.prewhere_info)
-        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
+        VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
 
     filters_applied = true;
 }
@@ -442,6 +442,8 @@ void ReadFromMemoryStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
     /// into `PREWHERE` still needs its set built in place, for the reason given in `applyFilters`.
     /// Only when `applyFilters` did run for this step: otherwise the sets are left to the
     /// `CreatingSetsStep` of the plan, and building one here would execute the subquery twice.
+    /// Sets of `GLOBAL IN` are excluded: `ReadFromRemote` may still have to attach an external table
+    /// to them, which fails on a set that is already built.
     if (filters_applied && query_info.prewhere_info)
         VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
 }
