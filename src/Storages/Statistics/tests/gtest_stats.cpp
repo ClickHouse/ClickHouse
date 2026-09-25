@@ -793,7 +793,7 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
 {
     auto data_type = std::make_shared<DataTypeInt32>();
 
-    auto lengthPrefixed = [](WriteBuffer & out, const String & stat_payload)
+    auto length_prefixed = [](WriteBuffer & out, const String & stat_payload)
     {
         writeIntBinary(static_cast<UInt64>(stat_payload.size()), out);
         out.write(stat_payload.data(), stat_payload.size());
@@ -824,8 +824,8 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
         /// bit 3 = `MinMax`, bit 4 = the reverted `NullCount`, which is today's `Basic` slot
         writeIntBinary(static_cast<UInt64>((1ULL << 3) | (1ULL << 4)), buf);
         writeIntBinary(static_cast<UInt64>(100), buf); /// rows
-        lengthPrefixed(buf, minmax_payload);
-        lengthPrefixed(buf, null_count_payload);
+        length_prefixed(buf, minmax_payload);
+        length_prefixed(buf, null_count_payload);
         buf.finalize();
     }
 

@@ -254,8 +254,9 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
     /// Equality key pairs, for the output column equivalences.
     std::vector<std::pair<String, String>> equi_pairs;
+    const auto & join_operator = join_step.getJoinOperator();
 
-    for (const auto & predicate_expression : join_step.getJoinOperator().expression)
+    for (const auto & predicate_expression : join_operator.expression)
     {
         const auto & predicate = predicate_expression.asBinaryPredicate();
         auto left_column_actions = get<1>(predicate);
@@ -337,7 +338,6 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     /// Constrain the inner-product estimate to the join semantics (outer joins keep the preserved side,
     /// semi/anti/any bound it). Applied after the join-order hint so a hint cannot exceed a semantic
     /// upper bound (e.g. a semi join above its preserved-side row count).
-    const auto & join_operator = join_step.getJoinOperator();
     statistics.estimated_row_count = clampJoinRowCount(join_operator.kind, join_operator.strictness,
         statistics.estimated_row_count, left_statistics.estimated_row_count, right_statistics.estimated_row_count);
     statistics.max_row_count = clampJoinMaxRowCount(join_operator.kind, join_operator.strictness,
@@ -394,13 +394,13 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     if (read_step.getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
     {
         /// TODO: Move this to IOptimizerStatistics implementation
-        if (auto estimator = read_step.getConditionSelectivityEstimator(read_step.getAllColumnNames()))
+        if (auto estimator = read_step.getConditionSelectivityEstimator(read_step.getAllColumnNames(), analyzed_result))
         {
             auto prewhere_info = read_step.getPrewhereInfo();
             const ActionsDAG::Node * prewhere_node = prewhere_info
                 ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                 : nullptr;
-            auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
+            auto relation_profile = estimator->estimateRelationProfile(read_step.getStorageMetadata(), nullptr, prewhere_node);
 
             /// Index analysis already bounds the read: it cannot emit more than `selected_rows`.
             /// Without a `PREWHERE` the profile carries no filter, its row count is only the
