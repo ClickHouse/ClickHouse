@@ -179,6 +179,22 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/log_export.py",
+            # `find_tests.py` selects which tests this job runs, and
+            # `Result.complete_job` in `result.py` builds the summary the job
+            # publishes. Both are runner inputs, so the digest must cover them:
+            # `_filter_unaffected_jobs` skips this job before `find_tests.py`
+            # ever reads `_STATELESS_HARNESS_PATHS`, so an entry there only
+            # takes effect when the digest keeps the job alive.
+            "./ci/jobs/scripts/find_tests.py",
+            "./ci/praktika/result.py",
+            # `find_tests.py` selects the targeted and selected arms from CIDB
+            # (`get_all_relevant_tests_with_info` queries `CIDB` and reads
+            # `Info`), so both modules decide which tests this job runs and
+            # belong here for the same reason. The other CI-level entries of
+            # `_STATELESS_HARNESS_PATHS` stay out: they drive job orchestration
+            # and the job itself never reads them.
+            "./ci/praktika/cidb.py",
+            "./ci/praktika/info.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
             "./tests/clickhouse-test",
@@ -673,7 +689,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
-        timeout=900,
+        timeout=1800,
         # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
         # images before installing, not just afterwards. Best-effort: praktika does
         # not propagate a hook's exit code to the job status.
@@ -712,7 +728,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
-        timeout=900,
+        timeout=1800,
         # See install_check_jobs above.
         pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
@@ -1305,10 +1321,9 @@ class JobConfigs:
                 "./ci/jobs/scripts/s3_key_lifecycle.py",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
-                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
-                # not cover ./tests/ci.
-                "./tests/ci/get_previous_release_tag.py",
-                "./tests/ci/download_release_packages.py",
+                # upgrade_runner.sh symlinks and runs both of these
+                "./ci/tools/get_previous_release_tag.py",
+                "./ci/tools/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
@@ -2143,6 +2158,7 @@ class JobConfigs:
                 "./ci/jobs/llvm_coverage_job.py",
                 "./ci/jobs/scripts/merge_llvm_coverage.sh",
                 "./ci/jobs/scripts/generate_diff_coverage_report.sh",
+                "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",

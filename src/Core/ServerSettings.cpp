@@ -2026,18 +2026,11 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         const auto & name = setting.getName();
         String path {setting.getPath()};
         const String * path_or_name = path.empty() ? &name : &path;
-        try
-        {
-            if (config.has(*path_or_name))
-                set(name, config.getString(*path_or_name));
-            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
-                set(name, config.getString("profiles.default." + *path_or_name));
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("while parsing setting '{}' value", name);
-            throw;
-        }
+        /// `set` names the setting and the value it was given, so nothing has to be added here.
+        if (config.has(*path_or_name))
+            set(name, config.getString(*path_or_name));
+        else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
+            set(name, config.getString("profiles.default." + *path_or_name));
     }
 }
 
@@ -2329,6 +2322,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "server_uuid_from_replica_name",
         "cloud",
         "default_user_for_system_dictionaries",
+        "default_user_for_backups",
 
         /// Miscellaneous
         "core_dump",
@@ -2366,7 +2360,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "warning_supress_regexp",
         "enable_system_unfreeze",
         "disable_insertion_and_mutation",
-        "use_analyzer_for_mutations",
         "streaming_storage_shutdown_threads",
         "local_disk_check_period_ms",
         "page_cache_size",
