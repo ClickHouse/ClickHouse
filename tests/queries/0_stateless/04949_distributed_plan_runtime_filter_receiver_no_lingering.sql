@@ -1,7 +1,7 @@
 -- Tags: no-old-analyzer
 
-CREATE TABLE big (bid UInt64, v UInt64) ENGINE = MergeTree ORDER BY bid;
-CREATE TABLE small (sid UInt64, name String) ENGINE = MergeTree ORDER BY sid;
+CREATE TABLE big (bid UInt64, v UInt64) ENGINE = MergeTree ORDER BY bid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE small (sid UInt64, name String) ENGINE = MergeTree ORDER BY sid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO big SELECT number, number FROM numbers(100000);
 INSERT INTO small SELECT number * 100, toString(number) FROM numbers(100);
 

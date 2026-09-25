@@ -5,8 +5,8 @@
 -- serialize so that apply still prunes.
 
 CREATE TABLE dim (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE local_probe (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE remote_probe (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE local_probe (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE remote_probe (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO dim SELECT number FROM numbers(10);
 INSERT INTO local_probe SELECT number FROM numbers(100000);
 INSERT INTO remote_probe SELECT number FROM numbers(100000);

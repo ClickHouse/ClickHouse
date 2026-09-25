@@ -1,7 +1,7 @@
 -- Tags: no-old-analyzer
 
 CREATE TABLE t_small (sid UInt64) ENGINE = MergeTree ORDER BY sid;
-CREATE TABLE t_large (lid UInt64) ENGINE = MergeTree ORDER BY lid;
+CREATE TABLE t_large (lid UInt64) ENGINE = MergeTree ORDER BY lid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t_small SELECT number * 100 FROM numbers(100);
 INSERT INTO t_large SELECT number FROM numbers(1000000);
 

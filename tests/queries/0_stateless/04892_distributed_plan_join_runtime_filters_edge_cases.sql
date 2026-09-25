@@ -2,8 +2,8 @@
 
 CREATE TABLE tiny (tid UInt64) ENGINE = MergeTree ORDER BY tid;
 CREATE TABLE mid (tid UInt64) ENGINE = MergeTree ORDER BY tid;
-CREATE TABLE huge (hid UInt64, hid2 UInt64, s String) ENGINE = MergeTree ORDER BY hid;
-CREATE TABLE big_nullable (bid Nullable(UInt64), v UInt64) ENGINE = MergeTree ORDER BY v;
+CREATE TABLE huge (hid UInt64, hid2 UInt64, s String) ENGINE = MergeTree ORDER BY hid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE big_nullable (bid Nullable(UInt64), v UInt64) ENGINE = MergeTree ORDER BY v SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE small_nullable (sid Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tiny SELECT number * 100 FROM numbers(100);
 INSERT INTO mid SELECT number * 10 FROM numbers(10000);

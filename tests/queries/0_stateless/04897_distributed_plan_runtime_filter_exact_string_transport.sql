@@ -4,7 +4,7 @@
 -- Transport must raise the row bound from the cardinality estimate for variable-width
 -- keys too, so the filter can arrive exact.
 
-CREATE TABLE big (bid String, v UInt64) ENGINE = MergeTree ORDER BY bid;
+CREATE TABLE big (bid String, v UInt64) ENGINE = MergeTree ORDER BY bid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE small (sid String) ENGINE = MergeTree ORDER BY sid;
 INSERT INTO big SELECT toString(number), number FROM numbers(100000);
 INSERT INTO small SELECT toString(number * 5) FROM numbers(20000);

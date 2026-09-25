@@ -1,6 +1,6 @@
 -- Tags: no-old-analyzer
 
-CREATE TABLE fact (k1 UInt64, k2 UInt64, v UInt64) ENGINE = MergeTree ORDER BY k1;
+CREATE TABLE fact (k1 UInt64, k2 UInt64, v UInt64) ENGINE = MergeTree ORDER BY k1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE dim1 (d1 UInt64) ENGINE = MergeTree ORDER BY d1;
 CREATE TABLE dim2 (d2 UInt64, attr UInt64) ENGINE = MergeTree ORDER BY d2;
 INSERT INTO fact SELECT number, number, number FROM numbers(1000000);
