@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1152576",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1156400",
       "email": "support@clickhouse.com"
     }
   },
@@ -8561,7 +8561,7 @@
       },
       "patch": {
         "summary": "Update ClickPipe",
-        "description": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce) are not applied, except schema registry credentials, which are rejected.",
+        "description": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce, tombstoneMode) are not applied, except schema registry credentials, which are rejected.",
         "operationId": "clickPipeUpdate",
         "parameters": [
           {
@@ -8687,7 +8687,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce) are not applied, except schema registry credentials, which are rejected.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
+          "content": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce, tombstoneMode) are not applied, except schema registry credentials, which are rejected.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -22156,6 +22156,14 @@
           }
         }
       },
+      "OrganizationCapabilities": {
+        "properties": {
+          "snapshots": {
+            "description": "Whether the organization is eligible to use service snapshots: true only when the organization has the snapshots feature enabled, is on a PPv2 tier, and has the backups entitlement — the same conditions enforced when a snapshotConfiguration is saved. Check this before configuring snapshots on a service. Snapshots apply to primary services only, so a secondary/replica service is rejected regardless of organization eligibility.",
+            "type": "boolean"
+          }
+        }
+      },
       "Organization": {
         "properties": {
           "id": {
@@ -22189,6 +22197,9 @@
           "enableCoreDumps": {
             "description": "Whether crash reports (core dumps) collection is enabled for services in the organization. When disabled at the organization level, individual services cannot enable crash reports.",
             "type": "boolean"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/OrganizationCapabilities"
           }
         }
       },
@@ -23046,8 +23057,9 @@
             "type": "string"
           },
           "topics": {
-            "description": "Topics of the Kafka source.",
-            "type": "string"
+            "description": "One or more Kafka topics as a comma-separated string. All topics must have the same schema and are ingested into the same destination table by a single ClickPipe.",
+            "type": "string",
+            "example": "topic1,topic2"
           },
           "consumerGroup": {
             "description": "Consumer group of the Kafka source. If not provided \"clickpipes-<<ID>>\" will be used.",
@@ -23118,6 +23130,17 @@
               "boolean",
               "null"
             ]
+          },
+          "tombstoneMode": {
+            "description": "How Kafka tombstone records are handled. Set to \"delete\" to delete the matching destination row. Requires exactly-once delivery and can only be set at pipe creation.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "delete"
+            ],
+            "example": "delete"
           }
         }
       },
@@ -23152,8 +23175,9 @@
             "type": "string"
           },
           "topics": {
-            "description": "Topics of the Kafka source.",
-            "type": "string"
+            "description": "One or more Kafka topics as a comma-separated string. All topics must have the same schema and are ingested into the same destination table by a single ClickPipe.",
+            "type": "string",
+            "example": "topic1,topic2"
           },
           "consumerGroup": {
             "description": "Consumer group of the Kafka source. If not provided \"clickpipes-<<ID>>\" will be used.",
@@ -23224,6 +23248,17 @@
               "boolean",
               "null"
             ]
+          },
+          "tombstoneMode": {
+            "description": "How Kafka tombstone records are handled. Set to \"delete\" to delete the matching destination row. Requires exactly-once delivery and can only be set at pipe creation.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "delete"
+            ],
+            "example": "delete"
           },
           "credentials": {
             "description": "Credentials for Kafka source. Choose one that is supported by the authentication method.",
@@ -23311,6 +23346,40 @@
           }
         }
       },
+      "ClickPipeKinesisSchemaRegistry": {
+        "properties": {
+          "type": {
+            "description": "Type of the schema registry. Kinesis ClickPipes support the AWS Glue Schema Registry, which authenticates with IAM instead of credentials.",
+            "type": "string",
+            "enum": [
+              "glue"
+            ]
+          },
+          "glueRegion": {
+            "description": "AWS region of the Glue Schema Registry.",
+            "type": "string",
+            "example": "us-east-1"
+          },
+          "glueRegistryName": {
+            "description": "Name of the Glue Schema Registry.",
+            "type": "string",
+            "example": "my-registry"
+          },
+          "glueRoleArn": {
+            "description": "IAM role to assume for Glue Schema Registry access. Defaults to the IAM identity of the Kinesis source.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "arn:aws:iam::123456789012:role/MyGlueRegistryRole"
+          }
+        },
+        "required": [
+          "type",
+          "glueRegion",
+          "glueRegistryName"
+        ]
+      },
       "ClickPipeKinesisSource": {
         "properties": {
           "format": {
@@ -23372,6 +23441,16 @@
               "null"
             ],
             "example": "arn:aws:iam::123456789012:role/MyRole"
+          },
+          "schemaRegistry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipeKinesisSchemaRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -23437,6 +23516,16 @@
             ],
             "example": "arn:aws:iam::123456789012:role/MyRole"
           },
+          "schemaRegistry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipeKinesisSchemaRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "accessKey": {
             "oneOf": [
               {
@@ -23448,7 +23537,7 @@
             ]
           },
           "protobufSchema": {
-            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Required with Protobuf format and not supported with other formats.",
+            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Required with Protobuf format unless a schema registry is configured, and not supported with other formats.",
             "type": "string",
             "example": "c3ludGF4ID0gInByb3RvMyI7IG1lc3NhZ2UgRXZlbnQge30=",
             "maxLength": 1048576,
@@ -32928,7 +33017,7 @@
           },
           "groups": {
             "type": "array",
-            "description": "A list of groups to which the user belongs. Role may be derived from group display or value.",
+            "description": "A list of groups to which the user belongs. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserGroup"
             }
@@ -32942,7 +33031,7 @@
           },
           "roles": {
             "type": "array",
-            "description": "A list of roles for the user.",
+            "description": "A list of roles for the user. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserRole"
             }
@@ -33150,7 +33239,7 @@
           },
           "groups": {
             "type": "array",
-            "description": "A list of groups to which the user belongs. Role may be derived from group display or value.",
+            "description": "A list of groups to which the user belongs. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserGroup"
             }
@@ -33164,7 +33253,7 @@
           },
           "roles": {
             "type": "array",
-            "description": "A list of roles for the user.",
+            "description": "A list of roles for the user. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserRole"
             }
