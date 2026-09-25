@@ -11,6 +11,7 @@
 #include <atomic>
 #include <barrier>
 #include <cerrno>
+#include <exception>
 #include <memory>
 #include <optional>
 #include <limits>
@@ -443,16 +444,14 @@ TEST(ProfileEvents, ColdTimerPreparesBeforeCleanup)
     ProfileEvents::Counters counters(VariableContext::Thread, &parent);
     std::optional<ProfileEvents::Timer> timer;
     timer.emplace(counters, event, ProfileEvents::Timer::Resolution::Nanoseconds);
-    try
-    {
-        DENY_ALLOCATIONS_IN_SCOPE;
-        SCOPE_EXIT({ timer.reset(); });
-        /// An integer exception avoids allocating an exception message.
-        throw 1;
-    }
-    catch (int)
-    {
-    }
+    EXPECT_THROW(
+        {
+            DENY_ALLOCATIONS_IN_SCOPE;
+            SCOPE_EXIT({ timer.reset(); });
+            /// A default-constructed exception avoids allocating an exception message.
+            throw std::exception{};
+        },
+        std::exception);
     EXPECT_GT(counters[event], 0);
     EXPECT_EQ(counters[event], parent[event]);
 }
