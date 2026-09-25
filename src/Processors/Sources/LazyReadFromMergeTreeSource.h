@@ -68,7 +68,7 @@ private:
     /// Point-read fast path for a `Quantized(...)` vector column stored one vector per block: fetch each shortlisted
     /// row's single block instead of whole granules. See MergeTreePointReadSource. Takes the parts it can serve out
     /// of `parts`, leaving the rest to the granule read.
-    void takePointReadSources(RangesInDataParts & parts, SourcesByPart & sources);
+    void buildPointReadSourcesForEligibleParts(RangesInDataParts & parts, SourcesByPart & sources);
     RangesInDataParts splitRanges(RangesInDataParts parts_with_ranges, size_t total_marks) const;
 };
 

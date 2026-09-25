@@ -45,7 +45,7 @@ struct PointReadVectorColumn
 
 /// The single vector column the point read may serve, if the lazy header holds exactly one. The step is not told which
 /// column the search ranks by, so with several we could point-read payload and leave the rescored one on the granule read.
-std::optional<PointReadVectorColumn> findPointReadVectorColumn(const Block & lazy_header, const ColumnsDescription & columns_desc)
+std::optional<PointReadVectorColumn> findPointReadEligibleVectorColumn(const Block & lazy_header, const ColumnsDescription & columns_desc)
 {
     std::optional<PointReadVectorColumn> found;
 
@@ -279,11 +279,11 @@ IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
-void LazyReadFromMergeTreeSource::takePointReadSources(RangesInDataParts & parts, SourcesByPart & sources)
+void LazyReadFromMergeTreeSource::buildPointReadSourcesForEligibleParts(RangesInDataParts & parts, SourcesByPart & sources)
 {
     const Block & lazy_header = outputs.front().getHeader();
 
-    auto vector_column = findPointReadVectorColumn(lazy_header, storage_snapshot->metadata->getColumns());
+    auto vector_column = findPointReadEligibleVectorColumn(lazy_header, storage_snapshot->metadata->getColumns());
     if (!vector_column)
         return;
 
@@ -302,7 +302,7 @@ void LazyReadFromMergeTreeSource::takePointReadSources(RangesInDataParts & parts
     for (auto & part_with_ranges : parts)
     {
         /// Each part is judged on its own: a part the point read cannot serve - a Compact one from a recent insert,
-        /// a pending mutation, an unaligned layout - costs only its own granule read, not the whole fast path.
+        /// a pending mutation, an unaligned layout.
         if (!canPointReadPart(part_with_ranges, *vector_column, lazy_header, mutations_snapshot, context))
         {
             not_taken.push_back(std::move(part_with_ranges));
@@ -327,9 +327,7 @@ void LazyReadFromMergeTreeSource::takePointReadSources(RangesInDataParts & parts
         sources.emplace(part_starting_offset, std::move(source));
     }
 
-    /// The runtime-statistics sample is collected by `MergeTreeReadTask`, which this path does not go through, so
-    /// every part served here is missing from it. An entry short of the rescoring read is worse than none, because
-    /// it prices later parallel-replica decisions.
+    /// If point read activated, we don't support statistics updater.
     if (updater && !sources.empty())
         updater->markUnsupportedCase();
 
@@ -342,7 +340,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
 
     auto & parts = lazy_materializing_rows->ranges_in_data_parts;
     SourcesByPart sources;
-    takePointReadSources(parts, sources);
+    buildPointReadSourcesForEligibleParts(parts, sources);
 
     auto collect = [&sources]
     {
