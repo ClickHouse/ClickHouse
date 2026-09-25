@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 
 #include <limits>
+#include <string_view>
+#include <unordered_set>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -21,9 +23,24 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
     const auto lineage = traceActionsDAGLineage(actions);
     const auto & inputs = actions.getInputs();
     const auto & outputs = actions.getOutputs();
+
+    /// The result map is still name-keyed. If multiple positional outputs use the same
+    /// name, retaining either output's statistics would silently attribute them to both.
+    /// Drop the name regardless of whether the duplicate outputs have equal lineage.
+    std::unordered_set<std::string_view> output_names;
+    std::unordered_set<std::string_view> ambiguous_output_names;
+    output_names.reserve(outputs.size());
+    for (const auto * output : outputs)
+    {
+        const std::string_view output_name = output->result_name;
+        if (!output_names.insert(output_name).second)
+            ambiguous_output_names.insert(output_name);
+    }
+
     for (const auto & output_lineage : lineage)
     {
-        if (!output_lineage.input)
+        const auto & output = *outputs[output_lineage.output_position];
+        if (!output_lineage.input || ambiguous_output_names.contains(output.result_name))
             continue;
 
         const auto stats_it = original.find(inputs[output_lineage.input->input_position]->result_name);
@@ -47,7 +64,7 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             stats.max_value.reset();
             stats.null_fraction.reset();
         }
-        mapped[outputs[output_lineage.output_position]->result_name] = stats;
+        mapped[output.result_name] = stats;
     }
 }
 

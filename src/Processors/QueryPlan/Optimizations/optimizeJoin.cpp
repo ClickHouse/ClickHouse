@@ -63,8 +63,6 @@ namespace Setting
 namespace QueryPlanOptimizations
 {
 
-static String dumpStatsForLogs(const RelationStats & stats);
-
 struct RuntimeHashStatisticsContext
 {
     /// `HashTablesStatistics` keys identify a specific hash table BUILT from a subtree AND
@@ -214,13 +212,13 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        auto lhs_estimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
+        auto rhs_estimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
-            lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
-            rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
+            lhs_estimation ? toString(lhs_estimation.value()) : "unknown",
+            rhs_estimation ? toString(rhs_estimation.value()) : "unknown");
 
-        if (lhs_extimation && rhs_extimation && lhs_extimation < rhs_extimation)
+        if (lhs_estimation && rhs_estimation && lhs_estimation < rhs_estimation)
             need_swap = true;
     }
     else if (join_step->swap_join_tables.value())
@@ -383,19 +381,6 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 }
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
-
-static String dumpStatsForLogs(const RelationStats & stats)
-{
-    return fmt::format("{}: {} rows, columns: [{}]",
-        stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
-        fmt::join(stats.column_stats | std::views::transform(
-            [](const auto & p)
-            {
-                return fmt::format("{}: {}", p.first, p.second.num_distinct_values);
-            }), ", "));
-}
-
 
 void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
@@ -572,7 +557,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
-        node->step->getName(), dumpStatsForLogs(stats));
+        node->step->getName(), ::DB::dumpRelationStatsForLogs(stats));
     graph.relation_stats.push_back(stats);
     return 1;
 }
