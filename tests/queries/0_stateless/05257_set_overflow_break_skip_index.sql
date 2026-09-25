@@ -20,6 +20,9 @@ SELECT '-- both indexes answer an IN over a subquery';
 SELECT count() FROM t_set_break_skip_index WHERE s IN (SELECT 'word5')
 SETTINGS force_data_skipping_indices = 'idx_tokenbf,idx_text';
 
+-- The expected 8 is two blocks of `max_block_size` rows, the second crossing `max_rows_in_set`, so it
+-- depends on `numbers` emitting exactly that many rows per block and on the set receiving the blocks
+-- unsquashed. If that ever changes, check that the two counts are equal and below 64 instead.
 SELECT '-- a truncated set: with and without the skip indexes must agree';
 SELECT count() FROM t_set_break_skip_index
 WHERE s IN (SELECT 'word' || toString(number) FROM numbers(64))
