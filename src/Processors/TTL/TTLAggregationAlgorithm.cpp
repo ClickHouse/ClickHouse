@@ -311,6 +311,8 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 {
     if (!aggregation_result.empty())
     {
+        description.checkSetPartsAreExecutable();
+
         auto aggregated_res = aggregator->convertToChunks(aggregation_result, true);
         auto res_header = aggregator->getParams().getHeader(header, true);
 

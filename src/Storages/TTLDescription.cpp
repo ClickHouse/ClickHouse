@@ -43,9 +43,11 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 
 #include <optional>
 #include <unordered_set>
@@ -64,6 +66,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 TTLAggregateDescription::TTLAggregateDescription(const TTLAggregateDescription & other)
     : column_name(other.column_name)
     , expression_result_column_name(other.expression_result_column_name)
+    , requires_sets_from_subqueries(other.requires_sets_from_subqueries)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -76,6 +79,7 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
 
     column_name = other.column_name;
     expression_result_column_name = other.expression_result_column_name;
+    requires_sets_from_subqueries = other.requires_sets_from_subqueries;
     if (other.expression)
         expression = other.expression->clone();
     else
@@ -1413,6 +1417,19 @@ ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) co
     return buildExpressionAndSets(ast, expression_source_columns, context);
 }
 
+/// A `GROUP BY ... SET` assignment whose `IN` needs a set built from a subquery or a table read cannot run:
+/// `TTLTransform` collects the subqueries of the timestamp and `WHERE` expressions only, so the set stays unbuilt.
+void TTLDescription::checkSetPartsAreExecutable() const
+{
+    for (const auto & set_part : set_parts)
+        if (set_part.requires_sets_from_subqueries)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "TTL GROUP BY SET expression for column {} contains a subquery or a table in the 'IN' "
+                "operator, which cannot be evaluated during a TTL merge. Rewrite the expression without "
+                "that 'IN'; for a table that already stores this TTL, use ALTER TABLE ... MODIFY TTL to "
+                "replace it", backQuote(set_part.column_name));
+}
+
 ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
 {
     if (where_expression_ast)
@@ -1574,6 +1591,10 @@ TTLDescription TTLDescription::getTTLFromAST(
                 set_part.expression_result_column_name = value->getColumnName();
                 set_part.expression = expr_analyzer.getActions(false);
 
+                /// `hasSubqueries()` covers exactly the sets that stay empty until their caller builds them;
+                /// a literal set and a `Set`-engine table are complete already and are not reported here.
+                set_part.requires_sets_from_subqueries = expr_analyzer.getPreparedSets()->hasSubqueries();
+
                 /// The post-aggregation expression (including the implicit cast to the target column type)
                 /// is executed later by TTLAggregationAlgorithm. When an aggregate returns an AggregateFunction
                 /// state itself (e.g. `any(ts)`), casting it to an incompatible target type (e.g. `DateTime`)
@@ -1589,6 +1610,9 @@ TTLDescription TTLDescription::getTTLFromAST(
                 for (const auto & descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)
                     result.aggregate_descriptions.push_back(descr);
             }
+
+            if (!skip_validation)
+                result.checkSetPartsAreExecutable();
         }
         else if (ttl_element->mode == TTLMode::RECOMPRESS)
         {
