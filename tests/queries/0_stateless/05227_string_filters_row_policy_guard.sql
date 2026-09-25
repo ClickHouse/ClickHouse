@@ -11,6 +11,11 @@
 DROP TABLE IF EXISTS t_string_filter_row_policy;
 DROP TABLE IF EXISTS t_string_filter_row_policy_parquet;
 
+-- With parallel replicas the `INSERT INTO ... SELECT` into the `File` table would be executed by several
+-- replicas writing the same file (`Lock timeout exceeded`), and the reads would be done by the replicas,
+-- which makes the `ProfileEvents` assertion at the end depend on where the scan happened.
+SET enable_parallel_replicas = 0;
+
 CREATE TABLE t_string_filter_row_policy (id UInt32, s String)
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1.0;
@@ -21,7 +26,9 @@ FROM numbers(10000);
 
 CREATE TABLE t_string_filter_row_policy_parquet (id UInt32, s String) ENGINE = File(Parquet);
 
-INSERT INTO t_string_filter_row_policy_parquet SELECT * FROM t_string_filter_row_policy;
+INSERT INTO t_string_filter_row_policy_parquet
+SELECT number, if(number % 3 = 0, 'lorem needle ipsum ' || toString(number), 'nothing interesting ' || toString(number))
+FROM numbers(10000);
 
 CREATE ROW POLICY OR REPLACE guard_05227 ON t_string_filter_row_policy
     USING throwIf(empty(s), 'the value was replaced') = 0 TO ALL;
