@@ -21,9 +21,15 @@ namespace Setting
     extern const SettingsBool delta_lake_accurate_write_cast;
 }
 
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
 namespace FailPoints
 {
     extern const char delta_lake_write_cancel_in_commit_window[];
+    extern const char delta_lake_write_throw_before_commit[];
 }
 
 DeltaLakeSink::DeltaLakeSink(
@@ -139,6 +145,12 @@ void DeltaLakeSink::onFinish()
     fiu_do_on(FailPoints::delta_lake_write_cancel_in_commit_window, {
         if (auto query_context = CurrentThread::tryGetQueryContext())
             query_context->killCurrentQuery();
+    });
+
+    /// Test-only hook: fail between the finalized data files and the commit, exercising the
+    /// cleanup of already-uploaded files for a failed commit.
+    fiu_do_on(FailPoints::delta_lake_write_throw_before_commit, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the Delta commit");
     });
 
     try
