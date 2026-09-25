@@ -393,6 +393,39 @@ namespace
 
     using CompletionCallback = std::function<void(bool)>;
 
+    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
+    class BoolState
+    {
+    public:
+        explicit BoolState(bool initial_value) : value(initial_value) {}
+
+        bool get() const
+        {
+            std::lock_guard lock{mutex};
+            return value;
+        }
+
+        void set(bool new_value)
+        {
+            std::lock_guard lock{mutex};
+            if (value == new_value)
+                return;
+            value = new_value;
+            changed.notify_all();
+        }
+
+        void wait(bool wanted_value) const
+        {
+            std::unique_lock lock{mutex};
+            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
+        }
+
+    private:
+        bool value;
+        mutable std::mutex mutex;
+        mutable std::condition_variable changed;
+    };
+
     /// Requests a connection and provides low-level interface for reading and writing.
     class BaseResponder
     {
@@ -451,6 +484,48 @@ namespace
         /// Makes the pending operations of this call complete (with `ok` set to false).
         void cancel() { grpc_context.TryCancel(); }
 
+        void notifyWhenDone()
+        {
+            grpc_context.AsyncNotifyWhenDone(getCallbackPtr([this](bool)
+            {
+                if (grpc_context.IsCancelled())
+                {
+                    auto exception = std::make_exception_ptr(
+                        Exception(ErrorCodes::NETWORK_ERROR, "The gRPC call was cancelled by the client"));
+                    cancelQueryOnTransportFailure(std::move(exception));
+                }
+                done_notification_received.set(true);
+            }));
+        }
+
+        void setTransportQueryStatus(QueryStatusPtr query_status)
+        {
+            std::exception_ptr exception;
+            {
+                std::lock_guard lock{transport_failure_mutex};
+                transport_query_status = query_status;
+                exception = transport_failure;
+            }
+
+            if (query_status && exception)
+                query_status->cancelQuery(CancelReason::CANCELLED_BY_USER, std::move(exception));
+        }
+
+        void cancelQueryOnTransportFailure(std::exception_ptr exception)
+        {
+            QueryStatusPtr process_list_element;
+            {
+                std::lock_guard lock{transport_failure_mutex};
+                transport_failure = exception;
+                process_list_element = transport_query_status;
+            }
+
+            if (process_list_element)
+                process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::move(exception));
+        }
+
+        void waitForDoneNotification() { done_notification_received.wait(true); }
+
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
         {
@@ -480,6 +555,10 @@ namespace
         std::unordered_map<size_t, CompletionCallback> callbacks;
         size_t next_callback_id = 0;
         std::mutex mutex;
+        BoolState done_notification_received{false};
+        std::mutex transport_failure_mutex;
+        QueryStatusPtr transport_query_status;
+        std::exception_ptr transport_failure;
     };
 
     enum CallType
@@ -696,40 +775,6 @@ namespace
     };
 
 
-    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
-    class BoolState
-    {
-    public:
-        explicit BoolState(bool initial_value) : value(initial_value) {}
-
-        bool get() const
-        {
-            std::lock_guard lock{mutex};
-            return value;
-        }
-
-        void set(bool new_value)
-        {
-            std::lock_guard lock{mutex};
-            if (value == new_value)
-                return;
-            value = new_value;
-            changed.notify_all();
-        }
-
-        void wait(bool wanted_value) const
-        {
-            std::unique_lock lock{mutex};
-            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
-        }
-
-    private:
-        bool value;
-        mutable std::mutex mutex;
-        mutable std::condition_variable changed;
-    };
-
-
     /// Handles a connection after a responder is started (i.e. after getting a new call).
     class Call // NOLINT(clang-analyzer-optin.performance.Padding)
     {
@@ -836,7 +881,6 @@ namespace
         std::atomic<bool> check_query_info_contains_cancel_only = false;
         BoolState sending_result{false};
         std::atomic<bool> failed_to_send_result = false;
-        QueryStatusPtr transport_query_status;
 
         ThreadFromGlobalPool call_thread;
     };
@@ -1121,7 +1165,7 @@ namespace
         }
         String query(begin, query_end);
         io = ::DB::executeQuery(query, query_context).second;
-        std::atomic_store(&transport_query_status, query_context->getProcessListElementSafe());
+        responder->setTransportQueryStatus(query_context->getProcessListElementSafe());
     }
 
     void Call::processInput()
@@ -1569,7 +1613,7 @@ namespace
         io.process_list_entries.clear();
         if (query_context)
             query_context->setProcessListElement(nullptr);
-        std::atomic_store(&transport_query_status, QueryStatusPtr{});
+        responder->setTransportQueryStatus({});
         if (session)
             session->releaseSessionID();
     }
@@ -1586,6 +1630,12 @@ namespace
                 responder->cancel();
             reading_query_info.wait(false);
         }
+
+        /// The done callback accesses the responder state, so the responder must stay alive
+        /// until the notification has been dispatched on the queue thread.
+        if (!responder_finished)
+            responder->cancel();
+        responder->waitForDoneNotification();
 
         responder.reset();
         pipeline_executor.reset();
@@ -1629,10 +1679,6 @@ namespace
                 {
                     /// We cannot throw an exception right here because this code is executed
                     /// on queue_thread.
-                    auto exception = initial_query_info_read
-                        ? std::make_exception_ptr(Exception(ErrorCodes::NETWORK_ERROR, "Failed to read extra QueryInfo"))
-                        : std::make_exception_ptr(Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo"));
-                    cancelQueryOnTransportFailure(exception);
                     failed_to_read_query_info = true;
                 }
                 reading_query_info.set(false);
@@ -1699,8 +1745,7 @@ namespace
 
     void Call::cancelQueryOnTransportFailure(std::exception_ptr exception)
     {
-        if (auto process_list_element = std::atomic_load(&transport_query_status))
-            process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::move(exception));
+        responder->cancelQueryOnTransportFailure(std::move(exception));
     }
 
     void Call::addQueryDetailsToResult()
@@ -2026,6 +2071,9 @@ private:
         /// `mutex` is already locked.
         responders_for_new_calls[call_type] = makeResponder(call_type);
 
+        /// For asynchronous server calls `ServerContext::IsCancelled` is safe to use only
+        /// after this notification. It has to be registered before requesting the RPC.
+        responders_for_new_calls[call_type]->notifyWhenDone();
         responders_for_new_calls[call_type]->start(
             owner.grpc_service, *owner.queue, *owner.queue,
             [this, call_type](bool ok) { onNewCall(call_type, ok); });

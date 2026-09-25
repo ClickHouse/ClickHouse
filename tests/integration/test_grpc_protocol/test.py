@@ -932,6 +932,7 @@ def test_stream_io_disconnect_cancels_remote_read():
     query_id = f"grpc_disconnect_remote_read_{uuid.uuid4().hex}"
     keep_open = Event()
     call = None
+    channel = create_channel()
 
     def send_query_info():
         yield clickhouse_grpc_pb2.QueryInfo(
@@ -945,12 +946,14 @@ def test_stream_io_disconnect_cancels_remote_read():
         keep_open.wait()
 
     node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
     try:
         call = stub.ExecuteQueryWithStreamIO(send_query_info(), timeout=60)
         node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
 
         assert call.cancel()
+        keep_open.set()
+        channel.close()
         is_cancelled = node.query_with_retry(
             "SELECT is_cancelled FROM system.processes "
             f"WHERE query_id='{query_id}'",
@@ -975,6 +978,7 @@ def test_stream_io_disconnect_cancels_remote_read():
         if call is not None:
             call.cancel()
         keep_open.set()
+        channel.close()
         node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
