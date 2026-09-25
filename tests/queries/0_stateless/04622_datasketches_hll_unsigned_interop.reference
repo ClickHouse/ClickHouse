@@ -1,0 +1,15 @@
+UInt32 above signed range
+1
+1
+UInt16 above signed range
+1
+1
+UInt8 above signed range
+1
+1
+Values within the signed range are unaffected by the width
+1
+1
+Signed types sign-extend to Int64
+1
+1
