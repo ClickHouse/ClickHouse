@@ -1,5 +1,3 @@
-SET allow_experimental_dynamic_type = 1;
-SET allow_experimental_variant_type = 1;
 
 -- min/max with nested Dynamic in Tuple
 SELECT min(tuple(number::Dynamic, number)) FROM numbers(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

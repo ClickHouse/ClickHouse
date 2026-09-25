@@ -1,8 +1,6 @@
 -- { echo }
 -- Tests for check_referential_table_dependencies with Alias table engine
 
-SET allow_experimental_alias_table_engine = 1;
-
 -- Test: check_referential_table_dependencies prevents dropping target
 SELECT 'Test check_referential_table_dependencies';
 DROP TABLE IF EXISTS ref_dep_alias;

@@ -1,4 +1,3 @@
-SET allow_experimental_variant_type = 1;
 SET input_format_null_as_default = 0;
 
 DROP TABLE IF EXISTS test_variant_null_expr;

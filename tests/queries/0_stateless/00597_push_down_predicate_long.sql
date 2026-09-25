@@ -17,8 +17,6 @@ SELECT * FROM (SELECT floor(floor(1, floor(NULL), id = 257), floor(floor(floor(f
 INSERT INTO test_00597 VALUES('2000-01-01', 1, 'test string 1', 1);
 INSERT INTO test_00597 VALUES('2000-01-01', 2, 'test string 2', 2);
 
-SET enable_optimize_predicate_expression = 1;
-
 SELECT '-------No need for predicate optimization, but still works-------';
 SELECT 1;
 SELECT 1 AS id WHERE id = 1;

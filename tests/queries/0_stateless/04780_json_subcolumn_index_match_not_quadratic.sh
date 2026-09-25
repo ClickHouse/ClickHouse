@@ -24,7 +24,7 @@ MAX_RATIO_PERCENT=150
 LONG_SUFFIX=$(printf 'a%.0s' $(seq 1 170))
 
 $CLICKHOUSE_CLIENT -nm -q "
-    SET enable_json_type = 1, allow_suspicious_indices = 1;
+    SET allow_suspicious_indices = 1;
 
     -- index_granularity is pinned on every table: the granule counts asserted below are
     -- ceil(rows / index_granularity), which the test runner otherwise randomizes.
@@ -101,7 +101,6 @@ done
 # A dotted constant must not change which granules are read, and a real JSON subcolumn filter on
 # the same table must still prune.
 $CLICKHOUSE_CLIENT -nm -q "
-    SET enable_json_type = 1;
     SELECT count() FROM withjson WHERE position(repeat('a.', 100), s) = 1;
     SELECT trimLeft(explain) FROM (
         EXPLAIN indexes = 1 SELECT count() FROM withjson WHERE j.absent_path = 'zzz'

@@ -71,13 +71,13 @@ SELECT '-- 7. a collection with a trailing delimiter keeps the type it always ha
 -- the integer parsers, exactly as before this fix.
 -- CAST to Dynamic only runs inference while cast_string_to_dynamic_use_inference is on, so the
 -- setting is part of this scenario and is pinned per statement.
-SELECT dynamicType(CAST('(1, 2, )', 'Dynamic')) SETTINGS enable_dynamic_type = 1, cast_string_to_dynamic_use_inference = 1;
-SELECT dynamicType(CAST('[1, ]', 'Dynamic')) SETTINGS enable_dynamic_type = 1, cast_string_to_dynamic_use_inference = 1;
+SELECT dynamicType(CAST('(1, 2, )', 'Dynamic')) SETTINGS cast_string_to_dynamic_use_inference = 1;
+SELECT dynamicType(CAST('[1, ]', 'Dynamic')) SETTINGS cast_string_to_dynamic_use_inference = 1;
 -- the value parser reads back every type inferred above, which is the property under test
 SELECT CAST('(1, 2, )', 'Tuple(UInt8, UInt8, UInt8)'), CAST('[1, ]', 'Array(UInt8)');
 -- an existing integer variant must not swallow the whole tuple, which is what a rejection here costs
 DROP TABLE IF EXISTS t04652;
-CREATE TABLE t04652 (c0 Dynamic) ENGINE = Memory SETTINGS enable_dynamic_type = 1;
+CREATE TABLE t04652 (c0 Dynamic) ENGINE = Memory;
 INSERT INTO TABLE t04652 (c0) VALUES (1), ((FALSE, FALSE, 'was', ));
 SELECT c0, dynamicType(c0) FROM t04652 ORDER BY toString(c0);
 DROP TABLE t04652;

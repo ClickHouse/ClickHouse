@@ -39,7 +39,6 @@ TYPE_MAP = {
 # data_type_default_nullable is used only for schema creation and data loading,
 # not for query execution — it causes Nullable(Array(...)) errors with groupArray.
 CLICKHOUSE_SETTINGS = [
-    "allow_experimental_join_condition = 1",
     "allow_experimental_analyzer = 1",
     "use_query_cache = 0",
     "union_default_mode = 'DISTINCT'",

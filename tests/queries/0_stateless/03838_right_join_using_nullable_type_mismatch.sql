@@ -5,7 +5,6 @@
 -- See: https://github.com/ClickHouse/ClickHouse/issues/96101
 
 SET enable_analyzer = 1;
-SET query_plan_use_logical_join_step = 0;
 SET enable_join_runtime_filters = 0;
 
 DROP TABLE IF EXISTS t1;

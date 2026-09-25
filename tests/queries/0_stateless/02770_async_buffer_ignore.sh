@@ -18,7 +18,6 @@ INSERT INTO test_s3 SELECT number, number FROM numbers(1000000);
 "
 query="SELECT sum(b) FROM test_s3 WHERE a >= 100000 AND a <= 102000"
 query_id=$(${CLICKHOUSE_CLIENT} -nm --query "
-SET read_through_distributed_cache=0;
 SET remote_filesystem_read_method='threadpool';
 select queryID() from ($query) limit 1
 " 2>&1)

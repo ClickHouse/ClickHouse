@@ -2,7 +2,6 @@
     <settings>
         <max_block_size>1000</max_block_size>
         <enable_named_columns_in_function_tuple>0</enable_named_columns_in_function_tuple>
-        <allow_experimental_variant_type>1</allow_experimental_variant_type>
         <allow_suspicious_variant_types>1</allow_suspicious_variant_types>
     </settings>
 

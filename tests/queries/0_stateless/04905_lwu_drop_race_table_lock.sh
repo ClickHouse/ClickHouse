@@ -157,11 +157,11 @@ race_with_drop alter --enable_lightweight_update 1 --alter_update_mode 'lightwei
 
 # An Alias table resolves a different storage, so the update has to hold the target's lock as well.
 setup_table alias
-${CLICKHOUSE_CLIENT} --allow_experimental_alias_table_engine 1 --query "
+${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.a SYNC;
     CREATE TABLE ${CLICKHOUSE_DATABASE_1}.a ENGINE = Alias('${CLICKHOUSE_DATABASE_1}', 't');
 " < /dev/null
-race_with_drop alias --allow_experimental_alias_table_engine 1 --enable_lightweight_update 1 \
+race_with_drop alias --enable_lightweight_update 1 \
     --query "UPDATE ${CLICKHOUSE_DATABASE_1}.a SET c2 = 'xx' WHERE id = 1"
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE_1}" < /dev/null

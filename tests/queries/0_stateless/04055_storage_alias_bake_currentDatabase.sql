@@ -1,7 +1,5 @@
 -- { echo }
 
-SET allow_experimental_alias_table_engine = 1;
-
 CREATE TABLE source_bake (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
 
 -- Two-argument case: currentDatabase() should be baked to literal

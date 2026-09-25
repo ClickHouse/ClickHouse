@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-random-merge-tree-settings, no-object-storage
 
-CLICKHOUSE_CLIENT_OPT="--max_threads_min_free_memory_per_thread=0 --enable_json_type=1"
+CLICKHOUSE_CLIENT_OPT="--max_threads_min_free_memory_per_thread=0"
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

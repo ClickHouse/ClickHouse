@@ -28,10 +28,10 @@ echo
 
 # --- JSON (new JSON type) ---
 ${CLICKHOUSE_CLIENT} -q "SELECT '--- JSON, default ---' FORMAT LineAsString;"
-${CLICKHOUSE_CLIENT} -q "SELECT materialize('{\"k\":\"a\\'b\"}')::JSON FORMAT Values SETTINGS output_format_values_escape_quote_with_quote = 0, enable_json_type = 1;"
+${CLICKHOUSE_CLIENT} -q "SELECT materialize('{\"k\":\"a\\'b\"}')::JSON FORMAT Values SETTINGS output_format_values_escape_quote_with_quote = 0;"
 echo
 ${CLICKHOUSE_CLIENT} -q "SELECT '--- JSON, escape_quote_with_quote = 1 ---' FORMAT LineAsString;"
-${CLICKHOUSE_CLIENT} -q "SELECT materialize('{\"k\":\"a\\'b\"}')::JSON FORMAT Values SETTINGS output_format_values_escape_quote_with_quote = 1, enable_json_type = 1;"
+${CLICKHOUSE_CLIENT} -q "SELECT materialize('{\"k\":\"a\\'b\"}')::JSON FORMAT Values SETTINGS output_format_values_escape_quote_with_quote = 1;"
 echo
 
 # --- AggregateFunction (binary state); use a custom helper format to keep the

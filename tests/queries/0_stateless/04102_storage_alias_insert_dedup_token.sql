@@ -1,4 +1,3 @@
-SET allow_experimental_alias_table_engine = 1;
 
 DROP TABLE IF EXISTS dedup_alias_target;
 DROP TABLE IF EXISTS dedup_alias_table;

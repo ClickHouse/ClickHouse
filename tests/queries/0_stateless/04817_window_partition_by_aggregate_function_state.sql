@@ -1,10 +1,6 @@
 -- Window PARTITION BY and ORDER BY over an aggregate function state used to be accepted by at
 -- least one analyzer. Both are refused now, like top-level ORDER BY already refuses them.
 
-SET allow_experimental_qbit_type = 1;
-SET allow_experimental_variant_type = 1;
-SET allow_experimental_dynamic_type = 1;
-
 DROP TABLE IF EXISTS t_wpb_state;
 CREATE TABLE t_wpb_state
 (

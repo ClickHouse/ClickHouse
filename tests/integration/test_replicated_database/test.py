@@ -2192,7 +2192,6 @@ def test_alias_with_dropped_target(started_cluster):
     main_node.query(
         f"""
         CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
-        SET allow_experimental_alias_table_engine = 1;
         CREATE TABLE {db_name}.base_table (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
         CREATE TABLE {db_name}.alias_table ENGINE = Alias('{db_name}', 'base_table');
         DROP TABLE {db_name}.base_table;

@@ -1,7 +1,6 @@
 -- Validate that window PARTITION BY rejects Dynamic/Variant types
 -- when allow_suspicious_types_in_group_by = 0, same as GROUP BY does.
 
-SET allow_experimental_dynamic_type = 1;
 SET allow_suspicious_types_in_group_by = 0;
 SET allow_suspicious_types_in_order_by = 1;
 

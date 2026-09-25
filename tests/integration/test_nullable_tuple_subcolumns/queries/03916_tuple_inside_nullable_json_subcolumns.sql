@@ -1,7 +1,5 @@
 -- Tuple-related queries from tests/queries/0_stateless/03916_tuple_inside_nullable_json_subcolumns.sql.
 
-SET enable_json_type = 1;
-
 SET enable_nullable_tuple_type = 0;
 
 DROP TABLE IF EXISTS test;

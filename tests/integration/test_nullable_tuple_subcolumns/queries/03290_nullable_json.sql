@@ -1,7 +1,5 @@
 -- Tuple-related queries from tests/queries/0_stateless/03290_nullable_json.sql.j2.
 
-SET enable_json_type = 1;
-
 DROP TABLE IF EXISTS test;
 
 SELECT '---';

@@ -10,7 +10,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "
-    SET enable_json_type = 1;
     DROP TABLE IF EXISTS t_read_buffer_log;
     CREATE TABLE t_read_buffer_log (json JSON(max_dynamic_paths = 0))
     ENGINE = MergeTree ORDER BY tuple()
@@ -30,7 +29,7 @@ query_id="read_buffer_log_${CLICKHOUSE_DATABASE}_$$"
 # use_uncompressed_cache=0: with the cache on, reads go through CachedCompressedReadBuffer
 # (a different class without the removed logs), which would make the test pass even unfixed.
 $CLICKHOUSE_CLIENT --send_logs_level=test --query_id="$query_id" -q "
-    SET enable_json_type = 1, use_uncompressed_cache = 0;
+    SET use_uncompressed_cache = 0;
     SELECT json.a FROM t_read_buffer_log FORMAT Null;
 " 2>/dev/null
 

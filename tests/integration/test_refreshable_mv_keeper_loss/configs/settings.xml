@@ -1,7 +1,6 @@
 <clickhouse>
     <profiles>
         <default>
-            <allow_experimental_refreshable_materialized_view>1</allow_experimental_refreshable_materialized_view>
             <session_timezone>Etc/UTC</session_timezone>
         </default>
     </profiles>

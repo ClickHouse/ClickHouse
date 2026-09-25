@@ -3686,7 +3686,6 @@ def test_rabbitmq_reject_broken_messages_dead_letter_queue(rabbitmq_cluster, db,
 def test_rabbitmq_json_type(rabbitmq_cluster, db, unique):
     instance.query(
         f"""
-        SET enable_json_type=1;
         CREATE TABLE {db}.rabbitmq (data JSON)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',

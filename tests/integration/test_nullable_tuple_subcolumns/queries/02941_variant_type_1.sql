@@ -1,6 +1,5 @@
 -- Tuple-related queries from tests/queries/0_stateless/02941_variant_type_1.sh.
 
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 
 DROP TABLE IF EXISTS test;

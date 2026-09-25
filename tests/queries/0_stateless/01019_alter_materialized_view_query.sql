@@ -10,8 +10,6 @@ SELECT v FROM src_01019;
 
 INSERT INTO src_01019 VALUES (1), (2), (3);
 
-SET allow_experimental_alter_materialized_view_structure = 1;
-
 -- Live alter which changes query logic and adds an extra column.
 ALTER TABLE pipe_01019
     MODIFY QUERY

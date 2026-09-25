@@ -9,8 +9,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 
 OPTIMIZATION_SETTING="query_plan_remove_redundant_distinct"
-DISABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;set enable_analyzer=1;SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;set enable_analyzer=1;SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;set enable_analyzer=1;SET $OPTIMIZATION_SETTING=0"
+ENABLE_OPTIMIZATION="SET query_plan_optimize_join_order_randomize=0;set enable_analyzer=1;SET $OPTIMIZATION_SETTING=1"
 
 echo "-- Disabled $OPTIMIZATION_SETTING"
 query="SELECT DISTINCT *

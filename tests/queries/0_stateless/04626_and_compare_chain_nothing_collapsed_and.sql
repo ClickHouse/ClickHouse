@@ -75,8 +75,6 @@ SELECT count() = 2 FROM (EXPLAIN QUERY TREE SELECT tuple((materialize(toNullable
 --    guard, fold the contradictory `x = 1 AND x = 2`, and change the handled exception depending on the
 --    setting. The error must now be the same regardless of the pruning / chain settings.
 SET allow_suspicious_low_cardinality_types = 1;
-SET allow_experimental_dynamic_type = 1;
-SET allow_experimental_variant_type = 1;
 SELECT tuple((x = 1) AND (x = 2) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x LowCardinality(Nullable(Int32))', NULL) SETTINGS optimize_and_compare_chain = 0, optimize_redundant_comparisons = 0; -- { serverError ILLEGAL_COLUMN }
 SELECT tuple((x = 1) AND (x = 2) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x LowCardinality(Nullable(Int32))', NULL) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1; -- { serverError ILLEGAL_COLUMN }
 SELECT tuple((x = 1) AND (x = 2) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x Dynamic', NULL) SETTINGS optimize_and_compare_chain = 0, optimize_redundant_comparisons = 0; -- { serverError ILLEGAL_COLUMN }

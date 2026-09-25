@@ -4,8 +4,6 @@
 
 SET allow_deprecated_error_prone_window_functions = 1;
 SET allow_suspicious_low_cardinality_types = 1;
-SET enable_dynamic_type = 1;
-SET enable_variant_type = 1;
 -- The running family restarts per block, so the oracle depends on all rows landing in one block.
 SET max_threads = 1;
 SET max_block_size = 65505;

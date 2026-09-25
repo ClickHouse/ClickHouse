@@ -1,7 +1,5 @@
 -- Tuple-related queries from tests/queries/0_stateless/03041_dynamic_type_check_table.sh.
 
-SET allow_experimental_dynamic_type = 1;
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 
 DROP TABLE IF EXISTS test;

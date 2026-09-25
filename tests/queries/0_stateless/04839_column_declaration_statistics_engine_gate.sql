@@ -27,7 +27,6 @@ SHOW CREATE TABLE t_stats_gate_local;
 
 -- The gate must follow the target table through an `Alias`: an alias over `MergeTree` supports statistics,
 -- so both the dedicated and the column-declaration spelling are accepted through it.
-SET allow_experimental_alias_table_engine = 1;
 DROP TABLE IF EXISTS t_stats_gate_alias;
 CREATE TABLE t_stats_gate_alias ENGINE = Alias('t_stats_gate_local');
 ALTER TABLE t_stats_gate_alias MODIFY STATISTICS x TYPE uniq;

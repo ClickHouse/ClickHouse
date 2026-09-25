@@ -5,7 +5,6 @@ SET query_plan_optimize_join_order_algorithm='greedy';
 SET query_plan_optimize_join_order_limit=1;
 SET query_plan_join_swap_table=0;
 SET allow_suspicious_low_cardinality_types=1;
-SET allow_experimental_dynamic_type=1;
 SET allow_dynamic_type_in_join_keys=1;
 
 

@@ -1,8 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the ORC input format, which is not built in fasttest.
 
-SET allow_experimental_variant_type = 1;
-
 -- union<list<int32>, string>: complex branches follow the inferred schema (per-branch type hints
 -- align the branch types with Variant alternatives such as Array(Nullable(Int32))), and a non-null
 -- union row that selects a null list or string payload becomes a Variant NULL, not the branch's

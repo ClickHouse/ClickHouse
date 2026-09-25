@@ -26,7 +26,6 @@ SELECT toTypeName(L2Normalize([1.0::Float64, 2.0::Float64]));
 SELECT L2Normalize([3.0::Float32, 4.0::Float32]);
 
 -- BFloat16 arrays normalize to Array(Float32), just like Float32 arrays.
-SET allow_experimental_bfloat16_type = 1;
 SELECT toTypeName(L2Normalize([3.0::BFloat16, 4.0::BFloat16]));
 SELECT toTypeName(LpNormalize([3.0::BFloat16, 4.0::BFloat16], 3.));
 SELECT L2Normalize([3.0::BFloat16, 4.0::BFloat16]);

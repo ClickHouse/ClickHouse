@@ -271,7 +271,7 @@ def test_query_settings_do_not_leak_into_disk_client(started_cluster):
     before = s3_clients_created()
     assert (
         node.query(
-            "SELECT count() FROM t_ice8", settings={"s3_max_redirects": 5}
+            "SELECT count() FROM t_ice8", settings={"s3_use_adaptive_timeouts": 0}
         ).strip()
         == "1"
     )

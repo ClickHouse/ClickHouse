@@ -35,7 +35,7 @@ DROP TABLE prewhere_sizes_pruned;
 SET enable_analyzer = 1, explain_query_plan_default = 'legacy';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, move_all_conditions_to_prewhere = 0;
 SET enable_multiple_prewhere_read_steps = 1, allow_reorder_prewhere_conditions = 0, query_plan_merge_filters = 1;
-SET optimize_functions_to_subcolumns = 0, query_plan_optimize_primary_key = 1, enable_parallel_replicas = 0;
+SET optimize_functions_to_subcolumns = 0, enable_parallel_replicas = 0;
 SET use_statistics = 0, allow_calculating_subcolumns_sizes_for_merge_tree_reading = 1, use_partition_pruning = 1;
 
 CREATE TABLE prewhere_sizes_pruned_plan

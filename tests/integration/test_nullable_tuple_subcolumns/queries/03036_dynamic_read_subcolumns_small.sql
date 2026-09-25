@@ -1,8 +1,6 @@
 -- Tuple-related queries from tests/queries/0_stateless/03036_dynamic_read_subcolumns_small.sql.j2.
 
-SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
-SET allow_experimental_dynamic_type = 1;
 SET allow_suspicious_types_in_order_by = 1;
 
 DROP TABLE IF EXISTS test;

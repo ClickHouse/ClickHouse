@@ -1,4 +1,3 @@
-SET allow_experimental_bfloat16_type = 1;
 
 -- Exact full-chunk boundaries for the AVX-512 const-left `arrayDistance` kernels changed here.
 WITH range(16)::Array(Float32) AS a

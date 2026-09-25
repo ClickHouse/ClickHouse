@@ -148,10 +148,10 @@ select accurateCast(CAST('test', 'FixedString(4)'), 'Nullable(IPv6)');   -- { se
 select accurateCast(CAST('test', 'FixedString(4)'), 'Nullable(IPv4)');   -- { serverError ILLEGAL_COLUMN }
 
 -- A String variant of Variant/Dynamic is converted by the same per-variant recursion.
-select accurateCast(CAST('abc', 'Variant(String, Int64)'), 'Nullable(Int32)') settings enable_variant_type = 1;   -- { serverError CANNOT_PARSE_TEXT }
-select accurateCast(CAST('42', 'Variant(String, Int64)'), 'Nullable(Int32)') settings enable_variant_type = 1;
-select accurateCast(CAST(NULL, 'Variant(String, Int64)'), 'Nullable(Int32)') settings enable_variant_type = 1;
-select accurateCast(CAST('abc', 'Dynamic'), 'Nullable(Int32)') settings enable_dynamic_type = 1;   -- { serverError CANNOT_PARSE_TEXT }
+select accurateCast(CAST('abc', 'Variant(String, Int64)'), 'Nullable(Int32)');   -- { serverError CANNOT_PARSE_TEXT }
+select accurateCast(CAST('42', 'Variant(String, Int64)'), 'Nullable(Int32)');
+select accurateCast(CAST(NULL, 'Variant(String, Int64)'), 'Nullable(Int32)');
+select accurateCast(CAST('abc', 'Dynamic'), 'Nullable(Int32)');   -- { serverError CANNOT_PARSE_TEXT }
 
 -- A NULL the source carries is returned whatever bytes its nested column holds.
 select accurateCast(nullIf(materialize(1::Int64), 1), 'Nullable(Int8)');

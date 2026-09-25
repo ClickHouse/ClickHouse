@@ -6,8 +6,6 @@
 -- increment the depth counter, causing the function to consume the real
 -- closing `)` of `JSON(...)` and produce a malformed type name.
 
-SET allow_experimental_json_type = 1;
-
 DROP TABLE IF EXISTS test_typed_json;
 
 -- SKIP REGEXP with a single unbalanced open parenthesis.

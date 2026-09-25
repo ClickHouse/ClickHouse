@@ -1,6 +1,5 @@
 -- Tuple-related queries from tests/queries/0_stateless/02940_variant_text_deserialization.sql.
 
-SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
 SET session_timezone = 'UTC';
 

@@ -12,7 +12,6 @@ profiles:
         async_insert_busy_timeout_max_ms: 5000
         # Avoid polluting caches
         enable_filesystem_cache_on_write_operations: 0
-        write_through_distributed_cache: 0
         # Override local default limit of 32G
         max_memory_usage_for_user: 0
         # Force INSERT in background
@@ -37,8 +36,6 @@ profiles:
             async_insert_busy_timeout_max_ms:
                 readonly: true
             enable_filesystem_cache_on_write_operations:
-                readonly: true
-            write_through_distributed_cache:
                 readonly: true
             max_memory_usage_for_user:
                 readonly: true

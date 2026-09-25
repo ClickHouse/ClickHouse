@@ -44,16 +44,16 @@ CH_CLIENT_NO_FALLBACK="${CLICKHOUSE_CLIENT} --input_format_values_interpret_expr
 # outer SQL parser interferes with the apostrophes; the only parser that sees
 # them is `SerializationJSON::deserializeTextQuoted`.
 ${CLICKHOUSE_CLIENT} -q "SELECT '--- JSON, SQL-style apostrophe escape (was broken pre-fix) ---' FORMAT LineAsString;"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_roundtrip_103860; CREATE TABLE t_json_roundtrip_103860 (j JSON) ENGINE = Memory SETTINGS enable_json_type = 1;"
-printf "('{\"k\":\"a''b\"}')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_json_roundtrip_103860 FORMAT Values" --enable_json_type=1
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_roundtrip_103860; CREATE TABLE t_json_roundtrip_103860 (j JSON) ENGINE = Memory;"
+printf "('{\"k\":\"a''b\"}')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_json_roundtrip_103860 FORMAT Values"
 ${CLICKHOUSE_CLIENT} -q "SELECT toString(j) FROM t_json_roundtrip_103860;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_json_roundtrip_103860;"
 echo
 
 # Same JSON parse path, with the legacy backslash form — must keep working.
 ${CLICKHOUSE_CLIENT} -q "SELECT '--- JSON, legacy backslash apostrophe escape (must still parse) ---' FORMAT LineAsString;"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_roundtrip_103860; CREATE TABLE t_json_roundtrip_103860 (j JSON) ENGINE = Memory SETTINGS enable_json_type = 1;"
-printf "('{\"k\":\"a\\\\'b\"}')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_json_roundtrip_103860 FORMAT Values" --enable_json_type=1
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_roundtrip_103860; CREATE TABLE t_json_roundtrip_103860 (j JSON) ENGINE = Memory;"
+printf "('{\"k\":\"a\\\\'b\"}')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_json_roundtrip_103860 FORMAT Values"
 ${CLICKHOUSE_CLIENT} -q "SELECT toString(j) FROM t_json_roundtrip_103860;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_json_roundtrip_103860;"
 echo

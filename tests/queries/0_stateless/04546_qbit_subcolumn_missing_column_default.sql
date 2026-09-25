@@ -2,7 +2,6 @@
 -- expression (reading its source columns from the part) instead of substituting type defaults.
 -- https://github.com/ClickHouse/ClickHouse/issues/110634
 
-SET allow_experimental_qbit_type = 1;
 SET optimize_qbit_distance_function_reads = 1;
 
 DROP TABLE IF EXISTS t_qbit_subcolumn_default;

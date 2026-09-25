@@ -106,7 +106,6 @@ def started_cluster():
             with_minio=True,
             main_configs=["configs/defaultS3.xml"],
             user_configs=[
-                "configs/s3_max_redirects.xml",
                 "configs/s3_retry.xml",
                 "configs/sync_insert.xml",
                 "configs/allow_server_credentials.xml",

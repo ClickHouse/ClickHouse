@@ -2,8 +2,6 @@
 -- crash (SIGSEGV in release / type-mismatch assertion in debug) because executeMap()
 -- reached executeGeneric() without stripping LowCardinality from the lookup column.
 
-SET allow_experimental_dynamic_type = 1;
-
 SELECT has(map('a'::Dynamic, toLowCardinality('x')), toLowCardinality('b'));
 SELECT has(map('a'::Dynamic, toLowCardinality('x'), 'b'::Dynamic, toLowCardinality('y')), toLowCardinality('b'));
 SELECT has(map(_CAST('1000.0001', 'Dynamic(max_types=19)'), toLowCardinality(toString(0))), toLowCardinality(';--'));

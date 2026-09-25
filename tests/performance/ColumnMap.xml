@@ -1,9 +1,4 @@
 <test>
-
-    <settings>
-        <allow_experimental_map_type>1</allow_experimental_map_type>
-    </settings>
-
     <substitutions>
         <substitution>
             <name>key_suffix</name>

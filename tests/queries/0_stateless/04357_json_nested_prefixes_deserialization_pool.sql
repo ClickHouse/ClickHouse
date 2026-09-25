@@ -10,8 +10,6 @@
 -- nested object as a standalone pool owner, so it does not exercise the re-entry; only a
 -- full-column read does.
 
-SET enable_json_type = 1;
-
 DROP TABLE IF EXISTS t_json_nested_pool;
 
 CREATE TABLE t_json_nested_pool (id UInt64, data JSON)

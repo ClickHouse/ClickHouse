@@ -13,14 +13,14 @@ INSERT INTO t_106533 VALUES (1), (-1);
 
 SELECT c0 FROM t_106533 GROUP BY c0
 HAVING NOT ((SUM(c0) > 0) OR (sqrt(c0) > 10))
-SETTINGS aggregate_functions_null_for_empty = 1, enable_optimize_predicate_expression = 0;
+SETTINGS aggregate_functions_null_for_empty = 1;
 
 SELECT c0 FROM t_106533 GROUP BY c0
 HAVING NOT (SUM(c0) > 0)
 INTERSECT DISTINCT
 SELECT c0 FROM t_106533 GROUP BY c0
 HAVING NOT (sqrt(c0) > 10)
-SETTINGS aggregate_functions_null_for_empty = 1, enable_optimize_predicate_expression = 0;
+SETTINGS aggregate_functions_null_for_empty = 1;
 
 -- Direct probe: the partition for c0 = -1 must NOT be pruned by `not(sqrt(c0) > 10)`.
 -- IEEE-754 says `not(NaN > 10) = not(false) = true`, so both rows pass.

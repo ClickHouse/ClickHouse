@@ -8,8 +8,6 @@
 SET enable_analyzer = 1;
 SET optimize_limit_by_function_keys = 0;
 SET optimize_injective_functions_in_limit_by = 1;
-SET allow_experimental_variant_type = 1;
-SET allow_experimental_dynamic_type = 1;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (v Variant(UInt64, String), d Dynamic) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test VALUES (42, 42), ('42', '42');

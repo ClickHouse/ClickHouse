@@ -74,8 +74,7 @@ FROM (
 SELECT '--- empty left, new logical join step off ---';
 SELECT r.id, r.val
 FROM t_left_empty AS l INNER JOIN t_right AS r ON l.id = r.id
-ORDER BY r.id
-SETTINGS query_plan_use_new_logical_join_step = 0;
+ORDER BY r.id;
 
 -- Sanity check: non-empty left still absorbs the whole join via parallel replicas
 -- (results must be correct).

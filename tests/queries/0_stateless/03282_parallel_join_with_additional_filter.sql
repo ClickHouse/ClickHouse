@@ -13,7 +13,6 @@ CREATE TABLE t2 (
 INSERT INTO t1 (key, a, attr) VALUES (1, 10, 'alpha'), (2, 15, 'beta'), (3, 20, 'gamma');
 INSERT INTO t2 (key, a, attr) VALUES (1, 5, 'ALPHA'), (2, 10, 'beta'), (4, 25, 'delta');
 
-SET allow_experimental_join_condition = 1;
 SET enable_analyzer = 1;
 SET max_threads = 16;
 

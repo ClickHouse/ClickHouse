@@ -82,8 +82,7 @@ def test_301_redirect_target_is_host_filtered(cluster):
     # NOSIGN keeps the request anonymous so it reaches the redirect rather than being refused by the
     # server-managed S3 credential restriction (this test is about the host filter, not credentials).
     error = node.query_and_get_error(
-        "SELECT * FROM s3('http://resolver:8080/bucket/key', NOSIGN, 'TSV', 'x String') "
-        "SETTINGS s3_max_redirects=5"
+        "SELECT * FROM s3('http://resolver:8080/bucket/key', NOSIGN, 'TSV', 'x String')"
     )
     assert "not allowed in configuration file" in error, (
         "expected RemoteHostFilter to reject the 301 redirect target, got: " + error

@@ -1,7 +1,5 @@
 -- Tuple-related queries from tests/queries/0_stateless/03369_variant_escape_filename_merge_tree.sql.
 
-SET enable_variant_type = 1;
-
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (

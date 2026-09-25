@@ -8,7 +8,6 @@ INSERT INTO src_table (a, b) VALUES (1, 1), (2, 2);
 
 SELECT * FROM mv;
 
-SET allow_experimental_alter_materialized_view_structure = 1;
 ALTER TABLE mv MODIFY QUERY SELECT a, b FROM src_table; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 
 DROP TABLE src_table;

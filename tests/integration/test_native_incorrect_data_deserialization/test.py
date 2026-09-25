@@ -68,7 +68,6 @@ def started_cluster():
         cluster.start()
         node.query(
             "CREATE TABLE variant_data (x Variant(String, UInt8)) ENGINE = Memory",
-            settings={"allow_experimental_variant_type": "1"},
         )
         yield cluster
 
