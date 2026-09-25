@@ -15,8 +15,8 @@
 --     absolute row id, so a series starting at 0 makes the wrong answer coincide with the right one.
 --   * 'aaa' is absent at row 1026 (the bogus id 1025 + 1), otherwise the lost row is replaced by a
 --     spurious match and `count()` alone is unchanged.
---   * `text_index_lazy_intersection_density_threshold = 1.0` forces the leapfrog intersection, which
---     is the only one reaching the block decoder; brute force takes the dense-segment shortcut.
+--   * `text_index_postings_intersection_algorithm = 'leapfrog'` forces the leapfrog intersection,
+--     which is the only one reaching the block decoder; brute force takes the dense-segment shortcut.
 
 SET use_query_condition_cache = 0;
 -- The lazy-cursor counters below are only incremented when a posting segment is decoded, so keep them independent of what earlier queries have already put into the server-wide postings cache.
@@ -50,7 +50,7 @@ SELECT 'rowscan', count(), sum(id) FROM t_lazy_single_posting_segment WHERE hasT
 SELECT 'lazy leapfrog, on_data_read=1', count(), sum(id) FROM t_lazy_single_posting_segment
 WHERE hasAllTokens(s, ['aaa', 'bbb'])
 SETTINGS text_index_posting_list_apply_mode = 'lazy',
-         text_index_lazy_intersection_density_threshold = 1.0,
+         text_index_postings_intersection_algorithm = 'leapfrog',
          query_plan_direct_read_from_text_index = 1,
          use_skip_indexes = 1,
          use_skip_indexes_on_data_read = 1,
@@ -59,7 +59,7 @@ SETTINGS text_index_posting_list_apply_mode = 'lazy',
 SELECT 'lazy leapfrog, on_data_read=0', count(), sum(id) FROM t_lazy_single_posting_segment
 WHERE hasAllTokens(s, ['aaa', 'bbb'])
 SETTINGS text_index_posting_list_apply_mode = 'lazy',
-         text_index_lazy_intersection_density_threshold = 1.0,
+         text_index_postings_intersection_algorithm = 'leapfrog',
          query_plan_direct_read_from_text_index = 1,
          use_skip_indexes = 1,
          use_skip_indexes_on_data_read = 0,
@@ -70,7 +70,7 @@ SETTINGS text_index_posting_list_apply_mode = 'lazy',
 SELECT 'lazy brute force (control)', count(), sum(id) FROM t_lazy_single_posting_segment
 WHERE hasAllTokens(s, ['aaa', 'bbb'])
 SETTINGS text_index_posting_list_apply_mode = 'lazy',
-         text_index_lazy_intersection_density_threshold = 0.0,
+         text_index_postings_intersection_algorithm = 'bruteforce',
          query_plan_direct_read_from_text_index = 1,
          use_skip_indexes = 1,
          use_skip_indexes_on_data_read = 1,
