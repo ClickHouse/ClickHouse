@@ -88,6 +88,15 @@ touch -d '2020-01-02 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/a.parquet"
 run rewritten_nowhere "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 3"
 run rewritten_where "SELECT k, s FROM t_05243 WHERE k % 3 = 0 ORDER BY k DESC LIMIT 3"
 
+echo "--- a file changes after the cache was used"
+# The entries under the key may only be used while every file the query reads is in the version the
+# key was made for. The failpoint stands in for a file rewritten after an entry was used for another
+# file: the query must fail rather than return what those entries left of the result.
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT file_top_k_query_condition_cache_inject_file_change"
+${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 3 SETTINGS ${SETTINGS}" 2>&1 | grep -o -m1 FILE_CHANGED_DURING_READ
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT file_top_k_query_condition_cache_inject_file_change"
+${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 3 SETTINGS ${SETTINGS}"
+
 echo "--- use_query_condition_cache_for_top_k = 0"
 run gate_1 "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 5" ", use_query_condition_cache_for_top_k = 0"
 run gate_2 "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 5" ", use_query_condition_cache_for_top_k = 0"

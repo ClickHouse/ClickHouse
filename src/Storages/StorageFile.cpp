@@ -169,6 +169,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char file_read_inject_version_token_mismatch[];
+    extern const char file_top_k_query_condition_cache_inject_file_change[];
 }
 
 using String = std::string;
@@ -1768,7 +1769,8 @@ StorageFileSource::~StorageFileSource()
 
 void StorageFileSource::writePendingTopKQueryConditionCacheEntries() noexcept
 {
-    if (pending_top_k_query_condition_cache_entries.empty())
+    /// A file changed during the query: the files read are not the ones the key describes.
+    if (pending_top_k_query_condition_cache_entries.empty() || top_k_query_condition_cache_key->invalidated.load())
         return;
 
     try
@@ -2027,6 +2029,8 @@ Chunk StorageFileSource::generate()
                         && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
                         current_file_version_settled = false;
                 }
+
+                checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ true);
             }
 
             size_t file_num = 0;
@@ -2110,8 +2114,20 @@ Chunk StorageFileSource::generate()
                     merge_matching_marks(query_condition_cache->read(
                         table_uuid, cache_file_key, *plain_condition_hash, /*increment_profile_events=*/false));
                 if (top_k_condition_hash)
-                    merge_matching_marks(query_condition_cache->read(
-                        table_uuid, cache_file_key, *top_k_condition_hash, /*increment_profile_events=*/false));
+                {
+                    auto marks = query_condition_cache->read(
+                        table_uuid, cache_file_key, *top_k_condition_hash, /*increment_profile_events=*/false);
+                    if (marks)
+                    {
+                        /// Paired with `checkTopKQueryConditionCacheKeyHolds` (both sequentially consistent):
+                        /// either this read sees the key invalidated and does not use the entry, or the
+                        /// invalidating one sees it consulted and fails the query.
+                        top_k_query_condition_cache_key->consulted.store(true);
+                        if (top_k_query_condition_cache_key->invalidated.load())
+                            marks.reset();
+                    }
+                    merge_matching_marks(std::move(marks));
+                }
                 ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
 
                 if (matching_marks.has_value())
@@ -2350,6 +2366,9 @@ Chunk StorageFileSource::generate()
         /// source is destroyed, against the final threshold (see `writePendingTopKQueryConditionCacheEntries`).
         /// A cancelled read may stop before it has seen every row group, and the ones it has not
         /// read report no matching rows either, so it writes nothing.
+        if (input_format && current_file_cache_version.has_value() && top_k_query_condition_cache_key)
+            checkTopKQueryConditionCacheKeyHolds(fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version));
+
         if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
             && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
@@ -2411,7 +2430,8 @@ Chunk StorageFileSource::generate()
 
 std::optional<UInt64> StorageFileSource::getTopKConditionHashForCurrentFile() const
 {
-    if (!top_k_query_condition_cache_key || !current_file_cache_version.has_value())
+    if (!top_k_query_condition_cache_key || !current_file_cache_version.has_value()
+        || top_k_query_condition_cache_key->invalidated.load())
         return {};
 
     /// The key covers the version token each file had when the key was made. A file that has changed
@@ -2421,6 +2441,37 @@ std::optional<UInt64> StorageFileSource::getTopKConditionHashForCurrentFile() co
         return {};
 
     return top_k_query_condition_cache_key->condition_hash;
+}
+
+void StorageFileSource::checkTopKQueryConditionCacheKeyHolds(bool still_holds) const
+{
+    if (!top_k_query_condition_cache_key)
+        return;
+
+    /// The entries under the key record which row groups hold no row of the result for the files in
+    /// the versions the key was made for. Once a file is read in another version, the threshold comes
+    /// from other rows, and a row group another file skipped by such an entry may hold rows of the
+    /// result. The file may also have been rewritten while it was read. Only files that are opened
+    /// matter: a file the query does not read does not contribute to the threshold.
+    const auto & tokens = top_k_query_condition_cache_key->file_version_tokens;
+    auto it = tokens.find(current_path);
+    bool holds = still_holds && current_file_cache_version.has_value() && current_file_version_settled
+        && it != tokens.end() && it->second == *current_file_cache_version;
+    /// Armed, this stands in for a file rewritten after the key was made and after an entry was used.
+    fiu_do_on(FailPoints::file_top_k_query_condition_cache_inject_file_change,
+    {
+        if (top_k_query_condition_cache_key->consulted.load())
+            holds = false;
+    });
+    if (holds)
+        return;
+
+    top_k_query_condition_cache_key->invalidated.store(true);
+    if (top_k_query_condition_cache_key->consulted.load())
+        throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+            "File {} was modified while the query was running, after the query condition cache had been used for the "
+            "`ORDER BY ... LIMIT` read of its files. Rerun the query",
+            current_path);
 }
 
 void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }

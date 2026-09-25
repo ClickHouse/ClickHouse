@@ -28,6 +28,11 @@
 100998	100998
 100995	100995
 100992	100992
+--- a file changes after the cache was used
+FILE_CHANGED_DURING_READ
+100999
+100998
+100997
 --- use_query_condition_cache_for_top_k = 0
 100999
 100998

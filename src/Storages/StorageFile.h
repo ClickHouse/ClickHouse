@@ -306,6 +306,13 @@ private:
         /// A printable description of the key for `system.query_condition_cache`.
         String condition;
         std::unordered_map<String, String> file_version_tokens;
+
+        /// Set once a file of the query turns out to be read in another version than the one the key
+        /// was made for: the key then no longer describes the files whose rows make the threshold, so
+        /// it must neither be consulted nor written any more.
+        mutable std::atomic<bool> invalidated = false;
+        /// Set before an entry under the key is used to skip row groups.
+        mutable std::atomic<bool> consulted = false;
     };
     using TopKQueryConditionCacheKeyPtr = std::shared_ptr<const TopKQueryConditionCacheKey>;
 
@@ -347,6 +354,10 @@ private:
 
     /// The TopK query condition cache key if it applies to the version of the file being read.
     std::optional<UInt64> getTopKConditionHashForCurrentFile() const;
+
+    /// Invalidates the TopK query condition cache key if the file being read is not in the version the
+    /// key was made for; `still_holds` is false if the file has changed since it was opened.
+    void checkTopKQueryConditionCacheKeyHolds(bool still_holds) const;
 
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries() noexcept;
