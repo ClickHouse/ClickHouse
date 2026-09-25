@@ -914,14 +914,13 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     PostingsSerialization & postings_serialization,
     const String & index_id_for_caches)
 {
-    auto * data_buffer = stream.getDataBuffer();
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*state.condition);
 
     const auto load_postings = [&]
     {
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
         stream.seekToMark({token_info.offsets[block_idx], 0});
-        auto postings = postings_serialization.deserializeToBitmap(*data_buffer, token_info, block_idx);
+        auto postings = postings_serialization.deserializeToBitmap(*stream.getDataBuffer(), token_info, block_idx);
         return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
     };
 

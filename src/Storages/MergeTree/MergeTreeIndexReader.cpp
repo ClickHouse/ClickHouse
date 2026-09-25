@@ -13,6 +13,21 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Mirrors IMergeTreeDataPart::getFileSizeOrZeroResolved: the on-disk name (original or hashed)
+/// comes from checksums, and a stream with no checksums entry is sized via the storage.
+static size_t getIndexStreamFileSize(
+    const MergeTreeDataPartInfoForReaderPtr & data_part_info,
+    const String & stream_name,
+    const String & extension)
+{
+    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, data_part_info->getChecksums()))
+        return data_part_info->getFileSizeOrZero(*actual + extension);
+
+    const auto & part_storage = *data_part_info->getDataPartStorage();
+    const String file_name = stream_name + extension;
+    return part_storage.existsFile(file_name) ? part_storage.getFileSize(file_name) : 0;
+}
+
 static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     const String & stream_name,
     const String & extension,
@@ -46,20 +61,6 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
 
     marks_loader->startAsyncLoad();
 
-    /// Mirrors IMergeTreeDataPart::getFileSizeOrZeroResolved: the on-disk name (original or hashed)
-    /// comes from checksums, and a stream with no checksums entry is sized via the storage.
-    const auto & part_storage = *data_part_info->getDataPartStorage();
-    size_t data_file_size = 0;
-    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, data_part_info->getChecksums()))
-    {
-        data_file_size = data_part_info->getFileSizeOrZero(*actual + extension);
-    }
-    else
-    {
-        const String file_name = stream_name + extension;
-        data_file_size = part_storage.existsFile(file_name) ? part_storage.getFileSize(file_name) : 0;
-    }
-
     return std::make_unique<MergeTreeReaderStreamSingleColumn>(
         data_part_info->getDataPartStorage(),
         stream_name,
@@ -68,8 +69,33 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         all_mark_ranges,
         std::move(settings),
         uncompressed_cache,
-        data_file_size,
+        getIndexStreamFileSize(data_part_info, stream_name, extension),
         std::move(marks_loader),
+        ReadBufferFromFileBase::ProfileCallback{},
+        CLOCK_MONOTONIC_COARSE);
+}
+
+/// A text index is written for the whole part and addresses its own data by offsets kept in its
+/// header, so its marks are never read. The other text index readers use makeTextIndexInputStream.
+static std::unique_ptr<MergeTreeReaderStream> makeTextIndexReaderStream(
+    const String & stream_name,
+    const String & extension,
+    const MergeTreeDataPartInfoForReaderPtr & data_part_info,
+    size_t marks_count,
+    UncompressedCache * uncompressed_cache,
+    MergeTreeReaderSettings settings)
+{
+    return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
+        data_part_info->getDataPartStorage(),
+        stream_name,
+        extension,
+        marks_count,
+        /// The reader's own ranges repeat the single text index mark once per selected data range.
+        MarkRanges{{0, marks_count}},
+        std::move(settings),
+        uncompressed_cache,
+        getIndexStreamFileSize(data_part_info, stream_name, extension),
+        /*marks_loader=*/ nullptr,
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);
 }
@@ -107,6 +133,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     auto index_format = index->getDeserializedFormat(*data_part_info, index->getFileName());
     auto index_name = index->getFileName();
     auto last_mark = getLastMark(all_mark_ranges);
+    const bool is_text_index = index->isTextIndex();
 
     for (const auto & substream : index_format.substreams)
     {
@@ -116,24 +143,40 @@ void MergeTreeIndexReader::initStreamIfNeeded()
         auto full_stream_name = index_name + substream.suffix;
         auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, checksums);
 
-        /// If the stream doesn't exist (neither original nor hashed name), use the full name
-        /// and let it fail later when trying to open the file. This preserves the original error
-        /// behavior and compatibility - the error message will indicate the missing file path.
+        /// If the stream doesn't exist (neither original nor hashed name), use the full name and
+        /// let the first read of its file report the missing path.
         auto stream_name = stream_name_opt.value_or(full_stream_name);
+        auto stream_settings = patchSettings(settings, substream.type);
 
-        auto stream = makeIndexReaderStream(
-            stream_name,
-            substream.extension,
-            data_part_info,
-            marks_count,
-            all_mark_ranges,
-            mark_cache,
-            uncompressed_cache,
-            patchSettings(settings, substream.type),
-            interruptible_marks_read);
+        std::unique_ptr<MergeTreeReaderStream> stream;
+        if (is_text_index)
+        {
+            /// A granule answering from its caches reads none of its substreams: leave each open
+            /// to the first read of that substream.
+            stream = makeTextIndexReaderStream(
+                stream_name,
+                substream.extension,
+                data_part_info,
+                marks_count,
+                uncompressed_cache,
+                std::move(stream_settings));
+        }
+        else
+        {
+            stream = makeIndexReaderStream(
+                stream_name,
+                substream.extension,
+                data_part_info,
+                marks_count,
+                all_mark_ranges,
+                mark_cache,
+                uncompressed_cache,
+                std::move(stream_settings),
+                interruptible_marks_read);
 
-        stream->adjustRightMark(last_mark);
-        stream->seekToStart();
+            stream->adjustRightMark(last_mark);
+            stream->seekToStart();
+        }
 
         streams[substream.type] = stream.get();
         stream_holders.emplace_back(std::move(stream));

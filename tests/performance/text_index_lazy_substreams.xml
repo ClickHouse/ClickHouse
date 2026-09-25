@@ -1,0 +1,44 @@
+<test>
+  <settings>
+      <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+      <use_query_condition_cache>0</use_query_condition_cache>
+      <use_query_cache>0</use_query_cache>
+      <max_threads>1</max_threads>
+      <force_data_skipping_indices>idx</force_data_skipping_indices>
+  </settings>
+
+  <!-- The cost measured here is paid once per part, so the table must keep many parts (400):
+       max_bytes_to_merge_at_max_space_in_pool = 1 prevents merges, and the block-size settings on
+       the insert stop the pipeline from squashing the 400 blocks back together. -->
+  <create_query>
+    CREATE TABLE t_text_index_lazy_substreams
+    (
+        id UInt64,
+        val UInt64,
+        msg String,
+        INDEX idx msg TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS index_granularity = 1024, min_bytes_for_wide_part = '1G',
+             max_bytes_to_merge_at_max_space_in_pool = 1
+  </create_query>
+
+  <fill_query>
+    INSERT INTO t_text_index_lazy_substreams
+    SELECT number, number,
+        if(number BETWEEN 400000 AND 400004, 'rareneedle midtok extra',
+           concat('midtok filler', toString(number % 97), ' tok', toString(number % 13)))
+    FROM numbers(800000)
+    SETTINGS max_block_size = 2000, max_insert_block_size = 2000,
+             min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+  </fill_query>
+
+  <!-- Selective: one part has the needle, and the other 399 answer from the index caches without
+       reading a substream. -->
+  <query>SELECT sum(val) FROM t_text_index_lazy_substreams WHERE hasToken(msg, 'rareneedle')</query>
+  <!-- Nothing pruned: every part reads its dictionary and postings. -->
+  <query>SELECT sum(val) FROM t_text_index_lazy_substreams WHERE hasToken(msg, 'midtok')</query>
+
+  <drop_query>DROP TABLE IF EXISTS t_text_index_lazy_substreams</drop_query>
+</test>
