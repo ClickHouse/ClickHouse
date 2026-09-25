@@ -257,11 +257,14 @@ addFlightSQLTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWit
         const auto type = unwrapType(column.type);
         const std::string family_name = getTypeFamilyName(type);
         const auto * type_info = findXdbcTypeInfo(family_name);
-        const bool is_xdbc_datetime
-            = family_name == "DateTime" && schema->field(static_cast<int>(i))->type()->id() == arrow::Type::TIMESTAMP;
+        /// Only a `DateTime`/`DateTime64` with an explicit time zone is exported as an Arrow `timestamp`;
+        /// the bare form travels as raw epoch values (`uint32`/`int64`) and must not advertise the
+        /// standard timestamp metadata.
+        const bool is_xdbc_timestamp = (family_name == "DateTime" || family_name == "DateTime64")
+            && schema->field(static_cast<int>(i))->type()->id() == arrow::Type::TIMESTAMP;
 
         auto metadata_builder = arrow::flight::sql::ColumnMetadata::Builder();
-        if (type_info && (family_name != "DateTime" || is_xdbc_datetime))
+        if (type_info && (family_name == "DateTime" || family_name == "DateTime64" ? is_xdbc_timestamp : true))
             metadata_builder.TypeName(std::string(family_name));
 
         if (family_name == "Decimal")
@@ -269,16 +272,19 @@ addFlightSQLTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWit
             metadata_builder.Precision(static_cast<int32_t>(getDecimalPrecision(*type)));
             metadata_builder.Scale(static_cast<int32_t>(getDecimalScale(*type)));
         }
-        else if (is_xdbc_datetime)
+        else if (is_xdbc_timestamp)
         {
-            metadata_builder.Precision(19);
-            metadata_builder.Scale(0);
-        }
-        else if (family_name == "DateTime64")
-        {
-            const auto scale = static_cast<int32_t>(assert_cast<const DataTypeDateTime64 &>(*type).getScale());
-            metadata_builder.Precision(19 + (scale == 0 ? 0 : scale + 1));
-            metadata_builder.Scale(scale);
+            if (family_name == "DateTime64")
+            {
+                const auto scale = static_cast<int32_t>(assert_cast<const DataTypeDateTime64 &>(*type).getScale());
+                metadata_builder.Precision(19 + (scale == 0 ? 0 : scale + 1));
+                metadata_builder.Scale(scale);
+            }
+            else
+            {
+                metadata_builder.Precision(19);
+                metadata_builder.Scale(0);
+            }
         }
         else if (family_name == "FixedString")
         {

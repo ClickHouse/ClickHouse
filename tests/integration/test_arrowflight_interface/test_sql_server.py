@@ -1097,18 +1097,28 @@ def test_bare_datetime_schema_is_session_timezone_independent():
     client = get_client("bare_datetime_schema")
 
     try:
-        result = client.set_session_options({"session_timezone": "UTC"})
+        result = client.set_session_options(
+            {
+                "session_timezone": "UTC",
+                "allow_suspicious_low_cardinality_types": True,
+            }
+        )
         assert len(result.errors) == 0
 
         client.execute_update(
             "CREATE TABLE mytable ("
             "dt DateTime, nullable_dt Nullable(DateTime), "
             "lc_dt LowCardinality(DateTime), simple_dt SimpleAggregateFunction(anyLast, DateTime), "
-            "explicit_dt DateTime('UTC')) ENGINE = Memory"
+            "explicit_dt DateTime('UTC'), "
+            "dt64 DateTime64(3), nullable_dt64 Nullable(DateTime64(3)), "
+            "simple_dt64 SimpleAggregateFunction(anyLast, DateTime64(3)), "
+            "explicit_dt64 DateTime64(3, 'UTC')) ENGINE = Memory"
         )
         client.execute_update(
             "INSERT INTO mytable VALUES "
-            "(1705314600, 1705314600, 1705314600, 1705314600, 1705314600)"
+            "(1705314600, 1705314600, 1705314600, 1705314600, 1705314600, "
+            "'2024-01-15 10:30:00.123', '2024-01-15 10:30:00.123', "
+            "'2024-01-15 10:30:00.123', '2024-01-15 10:30:00.123')"
         )
 
         command = CommandStatementQuery(query="SELECT * FROM mytable")
@@ -1117,17 +1127,20 @@ def test_bare_datetime_schema_is_session_timezone_independent():
 
         get_schema = client.client.get_schema(descriptor, options).schema
         bare_columns = {
-            "dt": b"DateTime",
-            "nullable_dt": b"Nullable(DateTime)",
-            "lc_dt": b"LowCardinality(DateTime)",
-            "simple_dt": b"SimpleAggregateFunction(anyLast, DateTime)",
+            "dt": (b"DateTime", pa.uint32(), 1705314600),
+            "nullable_dt": (b"Nullable(DateTime)", pa.uint32(), 1705314600),
+            "lc_dt": (b"LowCardinality(DateTime)", pa.uint32(), 1705314600),
+            "simple_dt": (b"SimpleAggregateFunction(anyLast, DateTime)", pa.uint32(), 1705314600),
+            "dt64": (b"DateTime64(3)", pa.int64(), 1705314600123),
+            "nullable_dt64": (b"Nullable(DateTime64(3))", pa.int64(), 1705314600123),
+            "simple_dt64": (b"SimpleAggregateFunction(anyLast, DateTime64(3))", pa.int64(), 1705314600123),
         }
 
         def assert_datetime_metadata(schema):
-            for name, clickhouse_type_name in bare_columns.items():
+            for name, (clickhouse_type_name, arrow_type, _) in bare_columns.items():
                 field = schema.field(name)
                 metadata = _field_metadata(field)
-                assert field.type == pa.uint32()
+                assert field.type == arrow_type
                 assert FLIGHT_SQL_TYPE_NAME not in metadata
                 assert FLIGHT_SQL_PRECISION not in metadata
                 assert FLIGHT_SQL_SCALE not in metadata
@@ -1141,6 +1154,14 @@ def test_bare_datetime_schema_is_session_timezone_independent():
             assert explicit_metadata[FLIGHT_SQL_SCALE] == b"0"
             assert explicit_metadata[CLICKHOUSE_TYPE_NAME] == b"DateTime('UTC')"
 
+            explicit_dt64_field = schema.field("explicit_dt64")
+            explicit_dt64_metadata = _field_metadata(explicit_dt64_field)
+            assert explicit_dt64_field.type == pa.timestamp("ms", tz="UTC")
+            assert explicit_dt64_metadata[FLIGHT_SQL_TYPE_NAME] == b"DateTime64"
+            assert explicit_dt64_metadata[FLIGHT_SQL_PRECISION] == b"23"
+            assert explicit_dt64_metadata[FLIGHT_SQL_SCALE] == b"3"
+            assert explicit_dt64_metadata[CLICKHOUSE_TYPE_NAME] == b"DateTime64(3, 'UTC')"
+
         assert_datetime_metadata(get_schema)
 
         result = client.set_session_options({"session_timezone": "Asia/Tokyo"})
@@ -1152,8 +1173,8 @@ def test_bare_datetime_schema_is_session_timezone_independent():
         table = client.do_get(flight_info.endpoints[0].ticket).read_all()
         _assert_schema_equal_with_metadata(table.schema, get_schema)
         assert_datetime_metadata(table.schema)
-        for name in bare_columns:
-            assert table.column(name)[0].as_py() == 1705314600
+        for name, (_, _, expected_value) in bare_columns.items():
+            assert table.column(name)[0].as_py() == expected_value
 
         tables_info = client.get_tables(
             db_schema_filter_pattern="default",
@@ -1167,7 +1188,7 @@ def test_bare_datetime_schema_is_session_timezone_independent():
         _assert_schema_equal_with_metadata(table_schema, get_schema)
         assert_datetime_metadata(table_schema)
     finally:
-        result = client.set_session_options({"session_timezone": None})
+        result = client.set_session_options({"session_timezone": None, "allow_suspicious_low_cardinality_types": None})
         assert len(result.errors) == 0
 
 

@@ -346,8 +346,35 @@ namespace DB
     {
         const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(type.get());
         const auto & column = assert_cast<const ColumnDecimal<DateTime64> &>(*write_column);
-        arrow::TimestampBuilder & builder = assert_cast<arrow::TimestampBuilder &>(*array_builder);
         arrow::Status status;
+
+        if (array_builder->type()->id() != arrow::Type::TIMESTAMP)
+        {
+            /// Bare `DateTime64` (no explicit time zone) is exported as raw `Int64` ticks.
+            const auto & internal_data = column.getData();
+            arrow::Int64Builder & builder = assert_cast<arrow::Int64Builder &>(*array_builder);
+
+            if (null_bytemap)
+            {
+                for (size_t value_i = start; value_i < end; ++value_i)
+                {
+                    if ((*null_bytemap)[value_i])
+                        status = builder.AppendNull();
+                    else
+                        status = builder.Append(static_cast<Int64>(internal_data[value_i]));
+
+                    checkStatus(status, write_column->getName(), format_name);
+                }
+            }
+            else
+            {
+                status = builder.AppendValues(reinterpret_cast<const int64_t *>(internal_data.data() + start), end - start);
+                checkStatus(status, write_column->getName(), format_name);
+            }
+            return;
+        }
+
+        arrow::TimestampBuilder & builder = assert_cast<arrow::TimestampBuilder &>(*array_builder);
 
         auto scale = datetime64_type->getScale();
         bool need_rescale = scale % 3;
@@ -1839,6 +1866,15 @@ namespace DB
         if (isDateTime64(column_type))
         {
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_type.get());
+            if (settings.output_datetime_as_timestamp)
+            {
+                /// A `DateTime64` without an explicit time zone resolves its zone from the mutable
+                /// `session_timezone` setting, so export it as raw `Int64` ticks: the Arrow field type
+                /// must not depend on the session state that builds the schema.
+                if (datetime64_type->hasExplicitTimeZone())
+                    return arrow::timestamp(getArrowTimeUnit(datetime64_type), datetime64_type->getTimeZone().getTimeZone());
+                return arrow::int64();
+            }
             return arrow::timestamp(getArrowTimeUnit(datetime64_type), datetime64_type->getTimeZone().getTimeZone());
         }
 

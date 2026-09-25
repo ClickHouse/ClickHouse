@@ -56,7 +56,8 @@ CHColumnToArrowColumn::Settings arrowConversionSettings(const ContextPtr & conte
     /// `GetSchema` and `DoGet` are distinct calls, each building its own query context from the session -
     /// so every setting that can move the schema is another way for the advertised schema and the
     /// delivered stream to disagree. For the same reason, a `DateTime` without an explicit time zone stays
-    /// `uint32` instead of using the effective time zone from the mutable `session_timezone` setting.
+    /// `uint32` instead of using the effective time zone from the mutable `session_timezone` setting, and
+    /// a `DateTime64` without an explicit time zone stays raw `int64` ticks for the same reason.
     ///
     /// `output_format_arrow_unsupported_types` is the exception because `JSON`, `Dynamic`, `QBit` and
     /// `AggregateFunction` have no canonical Arrow mapping at all. ClickHouse has to invent one, only the
