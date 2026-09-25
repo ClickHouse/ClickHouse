@@ -28,6 +28,7 @@
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/Set.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -820,6 +821,30 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
                 }
             }
         }
+    }
+}
+
+void appendBuiltSetsFromActionsDAG(const ActionsDAG & dag, BuiltSetsByHash & built)
+{
+    UsefulSets sets;
+    appendSetsFromActionsDAG(dag, sets);
+
+    for (const auto & future_set : sets)
+    {
+        auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
+        if (!from_subquery)
+            continue;
+
+        const auto & set_and_key = from_subquery->getSetAndKey();
+        if (!set_and_key || !set_and_key->set || !set_and_key->set->isCreated())
+            continue;
+
+        /// Filling a `GLOBAL IN` set also populates the temporary table the remote replicas read, so
+        /// adopting such a set in place of a fill would skip that write.
+        if (set_and_key->external_table_expected || from_subquery->hasExternalTable())
+            continue;
+
+        built.sets.emplace(from_subquery->getHash(), set_and_key);
     }
 }
 
