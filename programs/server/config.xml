@@ -210,6 +210,24 @@
     -->
     <postgresql_port>9005</postgresql_port>
 
+    <!-- Compatibility with Redis protocol.
+         ClickHouse will pretend to be Redis for applications connecting to this port.
+         Each entry of the db section maps a Redis database number (the key is the number prefixed with an underscore)
+         to a ClickHouse table. db_type determines the set of allowed operations: string (GET, MGET) or hash (HGET, HMGET).
+         For the string type, value_column must also be specified.
+    <redis>
+        <port>9006</port>
+        <db>
+            <_0>
+                <db_type>hash</db_type>
+                <clickhouse_db>database</clickhouse_db>
+                <clickhouse_table>table</clickhouse_table>
+                <key_column>column</key_column>
+            </_0>
+        </db>
+    </redis>
+    -->
+
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.
          See the OpenSSL section below.
