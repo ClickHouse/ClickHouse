@@ -55,11 +55,13 @@ ${CLICKHOUSE_LOCAL} --query "
 "
 state
 
-echo "-- a SETTINGS clause on the INSERT statement enables writes for that statement only"
+echo "-- a SETTINGS clause on the INSERT statement enables writes for that statement only:"
+echo "-- the next INSERT of the same session, without the clause, is rejected again"
 ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=0 --query "
     INSERT INTO FUNCTION deltaLakeLocal('${TABLE}') SETTINGS allow_delta_lake_writes = 1 VALUES (3);
     SELECT count() FROM deltaLakeLocal('${TABLE}');
-"
+    INSERT INTO FUNCTION deltaLakeLocal('${TABLE}') VALUES (33);
+" 2>&1 | grep -oE "^[0-9]+$|SUPPORT_IS_DISABLED" | sort -u
 state
 
 echo "-- a read-only session cannot write even with the setting on (enabled before entering readonly)"

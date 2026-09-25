@@ -13,8 +13,10 @@ versions: 2, data files: 1
 -- SET in the session enables writes
 2
 versions: 3, data files: 2
--- a SETTINGS clause on the INSERT statement enables writes for that statement only
+-- a SETTINGS clause on the INSERT statement enables writes for that statement only:
+-- the next INSERT of the same session, without the clause, is rejected again
 3
+SUPPORT_IS_DISABLED
 versions: 4, data files: 3
 -- a read-only session cannot write even with the setting on (enabled before entering readonly)
 READONLY

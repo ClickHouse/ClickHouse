@@ -1,6 +1,7 @@
 -- integer sources wider than long: values that fit are stored, the rest are rejected
 (CANNOT_CONVERT_TYPE)
 (CANNOT_CONVERT_TYPE)
+(CANNOT_CONVERT_TYPE)
 versions: 3
 -- non-numeric sources into a string column are stored in their text form
 versions: 13
