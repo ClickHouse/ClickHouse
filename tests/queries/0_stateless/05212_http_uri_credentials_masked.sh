@@ -62,14 +62,18 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM RELOAD DICTIONARY dict_uri_leak" 2>&1 \
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE DICTIONARY dict_uri_leak" 2>&1 | assert_shape "show_create" "$PW" "$USERINFO_SHAPE"
 
 # 3. system.query_log must store neither the query text nor the exception with the cleartext password.
-#    The needle is split so that this checking query does not itself contain the contiguous secret.
+#    Print the offending rows rather than a count: on success this selects nothing (the reference has
+#    no line here), and any row printed on failure is the culprit - its query and exception show what
+#    leaked. The needle is split so that this checking query does not itself contain the contiguous
+#    secret.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT 'query_log_cleartext', count()
+    SELECT type, query, exception
     FROM system.query_log
     WHERE event_date >= yesterday()
       AND current_database = currentDatabase()
-      AND (query LIKE '%' || 'pwleakprobe' || '9f2a%' OR exception LIKE '%' || 'pwleakprobe' || '9f2a%')"
+      AND (query LIKE '%' || 'pwleakprobe' || '9f2a%' OR exception LIKE '%' || 'pwleakprobe' || '9f2a%')
+    FORMAT Vertical"
 
 # 4. The url() table function feeds its query text into system.query_log through the same sanitizer.
 #    It must mask the shapes the old password-only masker missed: a userinfo password that itself
@@ -90,14 +94,18 @@ ${CLICKHOUSE_CLIENT} --query "
       AND current_database = currentDatabase()
       AND query LIKE '%' || 'urlprobe_' || '${CLICKHOUSE_TEST_UNIQUE_NAME}%'
       AND query LIKE '%[HIDDEN]%'"
+# On success this selects nothing; any row printed on failure is the culprit, and its query and
+# exception columns show exactly what leaked and where. The needles are split so this checking query
+# does not itself carry a contiguous secret.
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT 'url_query_log_cleartext', count()
+    SELECT type, query, exception
     FROM system.query_log
     WHERE event_date >= yesterday()
       AND current_database = currentDatabase()
       AND (query LIKE '%' || 'atprobe' || '7k3%' OR exception LIKE '%' || 'atprobe' || '7k3%'
            OR query LIKE '%' || 'tokprobe' || '5x9%' OR exception LIKE '%' || 'tokprobe' || '5x9%'
-           OR query LIKE '%' || 'sigprobe' || '3q8%' OR exception LIKE '%' || 'sigprobe' || '3q8%')"
+           OR query LIKE '%' || 'sigprobe' || '3q8%' OR exception LIKE '%' || 'sigprobe' || '3q8%')
+    FORMAT Vertical"
 
 # 5. Schema inference stores the source URL in system.schema_inference_cache; the credential in its
 #    userinfo must be masked there too. Inferring a schema from a credentialed /ping URL (which needs
