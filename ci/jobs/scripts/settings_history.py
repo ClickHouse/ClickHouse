@@ -232,10 +232,15 @@ def main():
     parser = argparse.ArgumentParser(description="Check the settings history of the working tree against a base.")
     parser.add_argument("--base", default="blessed/master", help="Revision to diff against (default: blessed/master)")
     args = parser.parse_args()
+    # Diff from the merge base, as the PR patch in CI does: a two-endpoint diff against a base that moved
+    # on would report the base's own changes as reversions made here.
+    merge_base = subprocess.run(
+        ["git", "merge-base", args.base, "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
     files = {}
     for path in SETTINGS_DECLARATION_FILES:
         patch = subprocess.run(
-            ["git", "diff", "--no-ext-diff", "-U3", args.base, "--", path],
+            ["git", "diff", "--no-ext-diff", "-U3", merge_base, "--", path],
             check=True, capture_output=True, text=True,
         ).stdout
         if patch:
