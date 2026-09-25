@@ -143,7 +143,7 @@ void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
     granularity = r.getUInt("granularity");
     part_of_create_index_query = r.getBool("part_of_create_index_query");
 
-    auto expression = r.readChild("expression");
+    auto expression = r.readExpressionChild("expression");
     if (!expression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration must have an expression during AST JSON deserialization");
     children.push_back(expression);
