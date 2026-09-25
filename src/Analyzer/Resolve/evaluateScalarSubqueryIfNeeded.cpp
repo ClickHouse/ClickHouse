@@ -18,6 +18,8 @@
 
 #include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -263,7 +265,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 if (column.column->empty())
                 {
                     auto mut_col = column.column->cloneEmpty();
-                    mut_col->insertDefault();
+                    /// Not `NULL`: the placeholder is still evaluated in the enclosing expression, and
+                    /// e.g. a cast to a non-Nullable type would throw. `Nothing` has no other value.
+                    auto nested_type = removeNullable(removeLowCardinality(column.type));
+                    if (isNothing(nested_type))
+                        mut_col->insertDefault();
+                    else
+                        mut_col->insert(nested_type->getDefault());
                     column.column = std::move(mut_col);
                 }
             }
