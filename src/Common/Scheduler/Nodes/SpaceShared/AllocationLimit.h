@@ -50,11 +50,9 @@ private:
     /// Allocation that is being killed (if any)
     ResourceAllocation * allocation_to_kill = nullptr;
 
-    /// Regular growth whose first hard-limit conflict yielded to other work in this subtree.
-    IncreaseRequest * suspended_growth = nullptr;
-    /// The one request at this level which has finished spilling and is at the final step before eviction.
-    IncreaseRequest * suction_growth = nullptr;
-    bool suspended_growth_retry_pending = false;
+    /// The one recovery owner in this scope. `memory_growth_suction_priority` marks its final retry phase.
+    IncreaseRequest * recovery_growth = nullptr;
+    bool recovery_growth_retry_pending = false;
 
     SpaceSharedNodePtr child;
 };

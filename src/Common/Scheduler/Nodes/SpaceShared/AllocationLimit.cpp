@@ -89,16 +89,15 @@ void AllocationLimit::approveIncrease()
     SCHED_DBG("{} -- approveIncrease({})", getPath(), increase->allocation.id);
     chassert(increase);
     chassert(increase->approval_epoch > 0);
-    const bool completes_suction = increase == suction_growth;
-    if (increase == suspended_growth)
+    const bool completes_recovery = increase == recovery_growth;
+    const bool completes_final_retry = completes_recovery && increase->allocation.isSuctioned();
+    if (completes_recovery)
         clearMemoryGrowthSuspension();
-    if (completes_suction)
-        suction_growth = nullptr;
     apply(*increase);
     increase = nullptr;
     child->approveIncrease();
     setIncrease(child->increase, false);
-    if (completes_suction)
+    if (completes_final_retry)
         retrySuctionWaiters();
 }
 
@@ -110,44 +109,44 @@ void AllocationLimit::approveDecrease()
     apply(*decrease);
 
     ResourceAllocation & decreased_allocation = decrease->allocation;
-    const bool removed_suspended_growth = suspended_growth
-        && &decreased_allocation == &suspended_growth->allocation
+    const bool removed_recovery_owner = recovery_growth
+        && &decreased_allocation == &recovery_growth->allocation
         && decrease->removing_allocation;
-    const bool removed_suction = suction_growth
-        && &decreased_allocation == &suction_growth->allocation
-        && decrease->removing_allocation;
+    const bool recovery_is_final_retry = recovery_growth
+        && recovery_growth->allocation.isSuctioned();
 
-    // Check if allocation being killed released all its resources
     if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
         allocation_to_kill = nullptr;
-    if (removed_suspended_growth)
-        clearMemoryGrowthSuspension();
-    if (removed_suction)
-        clearSuction();
-
-    if (suction_growth && decrease->size > 0)
+    if (removed_recovery_owner)
     {
-        /// During suction, the slot owner is the only local beneficiary. Other force-spilling
-        /// requests stay parked and therefore cannot capture this release.
-        suction_growth->allocation.queue.retrySuction(suction_growth->allocation);
+        if (recovery_is_final_retry)
+            clearSuction();
+        else
+            clearMemoryGrowthSuspension();
     }
-    else if (suspended_growth && decrease->size > 0)
+
+    if (recovery_growth && decrease->size > 0)
     {
-        suspended_growth_retry_pending = true;
-        child->retrySuspendedIncreases();
+        if (recovery_growth->allocation.isSuctioned())
+        {
+            /// During the final retry, the recovery owner is the only local beneficiary.
+            recovery_growth->allocation.queue.retrySuction(recovery_growth->allocation);
+        }
+        else
+        {
+            recovery_growth_retry_pending = true;
+            child->retrySuspendedIncreases();
+        }
     }
 
     IncreaseRequest * old_increase = increase;
 
     /// Keep the in-flight decrease visible while the child approves it. The child may propagate an
     /// updated increase before returning, and victim selection can recurse into the same queue while
-    /// that queue still holds its mutex. Clearing the guard only after approval keeps suction deferred
-    /// until the retry below runs outside the child lock.
+    /// that queue still holds its mutex. Clear the guard only after child approval.
     child->approveDecrease();
     setDecrease(child->decrease);
-    // Check if we can now process pending increase request in case it was not changed (e.g. other allocation was decreased here)
-    // NOTE: if increase was changed, it is already propagated in approveDecrease()
-    if (!suspended_growth_retry_pending && old_increase == increase && setIncrease(child->increase, true))
+    if (!recovery_growth_retry_pending && old_increase == increase && setIncrease(child->increase, true))
         propagate(Update().setIncrease(increase));
 }
 
@@ -157,9 +156,9 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     chassert(&from_child == child.get());
     bool detached_suspended_subtree = false;
     bool detached_suction_subtree = false;
-    if (update.detached && suspended_growth)
+    if (update.detached && recovery_growth)
     {
-        for (ISchedulerNode * node = &suspended_growth->allocation.queue; node; node = node->parent)
+        for (ISchedulerNode * node = &recovery_growth->allocation.queue; node; node = node->parent)
         {
             if (node == update.detached)
             {
@@ -168,9 +167,9 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
             }
         }
     }
-    if (update.detached && suction_growth)
+    if (update.detached && recovery_growth)
     {
-        for (ISchedulerNode * node = &suction_growth->allocation.queue; node; node = node->parent)
+        for (ISchedulerNode * node = &recovery_growth->allocation.queue; node; node = node->parent)
         {
             if (node == update.detached)
             {
@@ -187,25 +186,21 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         ResourceAllocation * child_suction = *update.suction;
         if (child_suction)
         {
-            IncreaseRequest * child_suction_request = &child_suction->increase;
-            /// A leaf queue owns ordering between its nominated entries. Before suction starts it
-            /// may replace that queue's provisional spiller; the exact selected owner then climbs.
-            const bool replaces_queue_spiller = suspended_growth
-                && &suspended_growth->allocation.queue == &child_suction->queue;
-            chassert(!suction_growth || suction_growth == child_suction_request);
-            chassert(!suspended_growth || suspended_growth == child_suction_request || replaces_queue_spiller);
-            if ((!suction_growth || suction_growth == child_suction_request)
-                && (!suspended_growth || suspended_growth == child_suction_request || replaces_queue_spiller))
+            IncreaseRequest * child_recovery_request = &child_suction->increase;
+            const bool replaces_queue_owner = recovery_growth
+                && &recovery_growth->allocation.queue == &child_suction->queue;
+            chassert(!recovery_growth || recovery_growth == child_recovery_request || replaces_queue_owner);
+            if (!recovery_growth || recovery_growth == child_recovery_request || replaces_queue_owner)
             {
-                suction_growth = child_suction_request;
-                suspended_growth = nullptr;
-                suspended_growth_retry_pending = false;
+                recovery_growth = child_recovery_request;
+                recovery_growth_retry_pending = false;
             }
         }
-        else if (suction_growth && !child->getSuctionAllocation())
+        else if (recovery_growth
+            && recovery_growth->allocation.isSuctioned()
+            && !child->getSuctionAllocation())
         {
-            suction_growth = nullptr;
-            retrySuctionWaiters();
+            clearSuction();
         }
         update.setSuction(getSuctionAllocation());
     }
@@ -268,32 +263,29 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
         /// A child suction must be followed by every ancestor on its path. The child queue may
         /// replace its provisional spiller before suction starts, but cannot replace a suction or
         /// a spiller owned by another queue in this scope.
-        const bool replaces_queue_spiller = suspended_growth
-            && &suspended_growth->allocation.queue == &new_increase->allocation.queue;
-        chassert(!suction_growth || suction_growth == new_increase);
-        chassert(!suspended_growth || suspended_growth == new_increase || replaces_queue_spiller);
-        if ((suction_growth && suction_growth != new_increase)
-            || (suspended_growth && suspended_growth != new_increase && !replaces_queue_spiller))
-        {
+        const bool replaces_queue_owner = recovery_growth
+            && &recovery_growth->allocation.queue == &new_increase->allocation.queue;
+        chassert(!recovery_growth || recovery_growth == new_increase || replaces_queue_owner);
+        if (recovery_growth && recovery_growth != new_increase && !replaces_queue_owner)
             new_increase = nullptr;
-        }
         else
         {
-            suction_growth = new_increase;
-            suspended_growth = nullptr;
-            suspended_growth_retry_pending = false;
+            recovery_growth = new_increase;
+            recovery_growth_retry_pending = false;
         }
     }
 
     /// The active suction is the only request allowed to consume a local release. If a policy
     /// temporarily presents another request, keep it queued and reactivate the slot owner.
-    if (suction_growth && new_increase != suction_growth)
+    if (recovery_growth
+        && recovery_growth->allocation.isSuctioned()
+        && new_increase != recovery_growth)
     {
-        suction_growth->allocation.queue.retrySuction(suction_growth->allocation);
+        recovery_growth->allocation.queue.retrySuction(recovery_growth->allocation);
         new_increase = nullptr;
     }
 
-    if (!new_increase && !suspended_growth && !suction_growth)
+    if (!new_increase && !recovery_growth)
     {
         // There is no increase request to satisfy anymore, so forget any victim we were
         // reclaiming from. The killer increase that selected `allocation_to_kill` is gone — its
@@ -311,28 +303,29 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
 
     /// A non-reapply call represents a fresh child-policy observation (normally an activation).
     /// It completes the deferred hierarchy update requested by the previous suspension/retry.
-    if (!reapply_constraint && suspended_growth_retry_pending)
-        suspended_growth_retry_pending = false;
+    if (!reapply_constraint && recovery_growth_retry_pending)
+        recovery_growth_retry_pending = false;
 
     /// Spill completion becomes suction only after this constrained scope has no normal request
     /// left to present. The query owns completion; the limit that nominated it owns promotion.
     bool promoted_to_suction = false;
     if (!new_increase
-        && suspended_growth
-        && !suspended_growth_retry_pending
-        && suspended_growth->allocation.memory_growth_recovery_pending
+        && recovery_growth
+        && !recovery_growth_retry_pending
+        && recovery_growth->allocation.memory_growth_recovery_pending
         && decrease == nullptr
         && !allocation_to_kill)
     {
-        if (suspended_growth->allocation.queue.retrySuction(suspended_growth->allocation))
-        {
-            suction_growth = suspended_growth;
-            suspended_growth = nullptr;
+        if (recovery_growth->allocation.queue.retrySuction(recovery_growth->allocation))
             promoted_to_suction = true;
-        }
     }
 
-    if (!promoted_to_suction && !new_increase && suction_growth && decrease == nullptr && !allocation_to_kill)
+    if (!promoted_to_suction
+        && !new_increase
+        && recovery_growth
+        && recovery_growth->allocation.isSuctioned()
+        && decrease == nullptr
+        && !allocation_to_kill)
         processSuction();
 
     /// A suction cap applies even when reserved capacity makes the workload fit check succeed.
@@ -360,7 +353,7 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
             // the releases prove insufficient and no decrease is pending, the eviction fires.
             if (!allocation_to_kill && decrease == nullptr)
             {
-                if (new_increase == suction_growth)
+                if (new_increase == recovery_growth && new_increase->allocation.isSuctioned())
                 {
                     processSuction();
                     increase = nullptr;
@@ -369,7 +362,7 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
 
                 /// Preserve the old scheduler boundary: recovery applies only after the existing
                 /// victim policy proves that this request would evict an allocation.
-                if (!suspended_growth && new_increase->kind == IncreaseRequest::Kind::Regular)
+                if (!recovery_growth && new_increase->kind == IncreaseRequest::Kind::Regular)
                 {
                     String nomination_details;
                     if (!selectAllocationToKill(*new_increase, effective_limit, nomination_details))
@@ -383,19 +376,19 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                 /// The child can then expose other work hidden behind running-query growth. Memory releases
                 /// retry the parked growth, so independent work can continue while pressure drains. If
                 /// nothing can make progress, the existing kill policy remains the fallback.
-                const bool retrying_suspended_owner = new_increase == suspended_growth;
+                const bool retrying_suspended_owner = new_increase == recovery_growth;
                 bool suspended = false;
-                if (!suspended_growth)
+                if (!recovery_growth)
                 {
                     suspended = new_increase->kind == IncreaseRequest::Kind::Regular
                         && new_increase->allocation.canRecoverFromGrowthPressure()
                         && new_increase->allocation.queue.trySuspendIncrease(new_increase->allocation);
                     if (suspended)
                     {
-                        suspended_growth = new_increase;
+                        recovery_growth = new_increase;
                     }
                 }
-                else if (new_increase == suspended_growth)
+                else if (new_increase == recovery_growth)
                 {
                     suspended = new_increase->allocation.queue.trySuspendIncrease(new_increase->allocation);
                 }
@@ -412,13 +405,13 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                     /// exhaustion is meaningful. When an existing owner resurfaces, that traversal
                     /// has already completed; do not depend on a leaf self-activation that may be
                     /// coalesced with the activation currently being processed.
-                    suspended_growth_retry_pending = !retrying_suspended_owner;
+                    recovery_growth_retry_pending = !retrying_suspended_owner;
 
                     SCHED_DBG("{} -- suspending increase(allocated={}, increase_size={}, max={}, allocation={})",
                         getPath(), allocated, new_increase->size, effective_limit, new_increase->allocation.id);
 
                 }
-                else if (!suspended_growth
+                else if (!recovery_growth
                     || new_increase->kind != IncreaseRequest::Kind::Regular
                     || !new_increase->allocation.canRecoverFromGrowthPressure())
                 {
@@ -450,47 +443,51 @@ void AllocationLimit::retrySuspendedIncreases()
 
 bool AllocationLimit::hasSuspendedIncrease() const
 {
-    return suspended_growth || (child && child->hasSuspendedIncrease());
+    return recovery_growth || (child && child->hasSuspendedIncrease());
 }
 
 ResourceAllocation * AllocationLimit::getLocalSpillingAllocation() const
 {
-    return suspended_growth ? &suspended_growth->allocation : nullptr;
+    return recovery_growth && !recovery_growth->allocation.isSuctioned()
+        ? &recovery_growth->allocation
+        : nullptr;
 }
 
 ResourceAllocation * AllocationLimit::getLocalSuctionAllocation() const
 {
-    return suction_growth ? &suction_growth->allocation : nullptr;
+    return recovery_growth && recovery_growth->allocation.isSuctioned()
+        ? &recovery_growth->allocation
+        : nullptr;
 }
 
 ResourceAllocation * AllocationLimit::getSuctionAllocation() const
 {
-    if (suction_growth)
-        return &suction_growth->allocation;
+    if (auto * local = getLocalSuctionAllocation())
+        return local;
     return child ? child->getSuctionAllocation() : nullptr;
 }
 
 void AllocationLimit::clearMemoryGrowthSuspension()
 {
-    if (suspended_growth)
+    if (recovery_growth)
     {
-        suspended_growth->allocation.onGrowthPressureResolved();
-        suspended_growth->allocation.memory_growth_suction_priority = false;
+        recovery_growth->allocation.onGrowthPressureResolved();
+        recovery_growth->allocation.memory_growth_suction_priority = false;
     }
-    suspended_growth = nullptr;
-    suspended_growth_retry_pending = false;
+    recovery_growth = nullptr;
+    recovery_growth_retry_pending = false;
     if (child)
         child->retrySuspendedIncreases();
 }
 
 void AllocationLimit::clearSuction()
 {
-    if (suction_growth)
-    {
-        suction_growth->allocation.memory_growth_suction_priority = false;
-        suction_growth->allocation.onGrowthPressureResolved();
-    }
-    suction_growth = nullptr;
+    if (!recovery_growth)
+        return;
+    recovery_growth->allocation.memory_growth_suction_priority = false;
+    recovery_growth->allocation.onGrowthPressureResolved();
+    recovery_growth = nullptr;
+    recovery_growth_retry_pending = false;
     retrySuctionWaiters();
 }
 
@@ -506,17 +503,17 @@ void AllocationLimit::retrySuctionWaiters()
 
 void AllocationLimit::processSuction()
 {
-    if (!suction_growth || decrease != nullptr || allocation_to_kill
-        || !suction_growth->allocation.memory_growth_suction_priority)
+    if (!recovery_growth || decrease != nullptr || allocation_to_kill
+        || !recovery_growth->allocation.memory_growth_suction_priority)
         return;
 
     /// Ownership follows a child upward, but eviction still requires pressure at this limit.
     /// A hidden child request may already be waiting for a victim's release farther down.
-    if (suction_growth->allocation.canAllocateInSuction(suction_growth->size)
-        && allocated + suction_growth->size <= getEffectiveLimit(*suction_growth))
+    if (recovery_growth->allocation.canAllocateInSuction(recovery_growth->size)
+        && allocated + recovery_growth->size <= getEffectiveLimit(*recovery_growth))
         return;
 
-    selectAndKill(*suction_growth);
+    selectAndKill(*recovery_growth);
 }
 
 bool AllocationLimit::isTopLevelLimit() const

@@ -170,8 +170,8 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
             allocation.onSuctionStarted();
         }
         allocation.memory_growth_eviction_order = ++last_eviction_order;
-        if (!suspended_growth)
-            suspended_growth = &allocation;
+        if (!recovery_growth)
+            recovery_growth = &allocation;
     }
 
     allocation.memory_growth_suspended = true;
@@ -207,10 +207,8 @@ bool AllocationQueue::retrySuction(ResourceAllocation & allocation)
         if (!canEnterSuction(allocation))
             return false;
         allocation.memory_growth_suction_priority = true;
-        suction_growth = &allocation;
+        recovery_growth = &allocation;
         allocation.memory_growth_eviction_order = 0;
-        if (suspended_growth == &allocation)
-            suspended_growth = nullptr;
     }
     allocation.memory_growth_suspended = false;
     memory_growth_suspension_changed = true;
@@ -241,12 +239,10 @@ void AllocationQueue::consumeSuctionClaim(ResourceAllocation & recovering)
     chassert(recovering.memory_growth_recovery_pending);
     chassert(recovering.memory_growth_suction_priority);
 
-    suction_growth = &recovering;
+    recovery_growth = &recovering;
     recovering.memory_growth_recovery_pending = false;
     recovering.memory_growth_eviction_order = 0;
     recovering.memory_growth_suspended = false;
-    if (suspended_growth == &recovering)
-        suspended_growth = nullptr;
 
     const ResourceCost old_size = recovering.increase.size;
     const ResourceCost reconciled_size = recovering.reconcilePendingIncrease(recovering.allocated, old_size);
@@ -262,7 +258,7 @@ void AllocationQueue::consumeSuctionClaim(ResourceAllocation & recovering)
         else
         {
             recovering.memory_growth_suction_priority = false;
-            suction_growth = nullptr;
+            recovery_growth = nullptr;
             recovering.onGrowthPressureResolved();
             recovering.memory_growth_suspension_attempted = false;
             recovering.increaseCancelled();
@@ -292,7 +288,7 @@ bool AllocationQueue::tryPromoteEvictionQueueHead(IncreaseRequest * & preferred_
         });
     if (first_nominated == increasing_allocations.end())
     {
-        suspended_growth = nullptr;
+        recovery_growth = nullptr;
         return false;
     }
 
@@ -317,13 +313,13 @@ bool AllocationQueue::tryPromoteEvictionQueueHead(IncreaseRequest * & preferred_
     if (!next)
         return false;
 
-    suspended_growth = next;
-    ResourceAllocation & recovering = *suspended_growth;
+    recovery_growth = next;
+    ResourceAllocation & recovering = *recovery_growth;
     if (!canEnterSuction(recovering))
         return false;
 
     recovering.memory_growth_suction_priority = true;
-    suction_growth = &recovering;
+    recovery_growth = &recovering;
     consumeSuctionClaim(recovering);
     if (recovering.increasing_hook.is_linked() && recovering.memory_growth_suction_priority)
         preferred_suction = &recovering.increase;
@@ -341,12 +337,12 @@ void AllocationQueue::retrySuspendedIncreases()
 
 bool AllocationQueue::hasSuspendedIncrease() const
 {
-    return suspended_growth != nullptr;
+    return recovery_growth != nullptr;
 }
 
 ResourceAllocation * AllocationQueue::getSuctionAllocation() const
 {
-    return suction_growth && suction_growth->memory_growth_suction_priority ? suction_growth : nullptr;
+    return recovery_growth && recovery_growth->memory_growth_suction_priority ? recovery_growth : nullptr;
 }
 
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
@@ -372,8 +368,7 @@ void AllocationQueue::purgeQueue()
     std::lock_guard lock(mutex);
     chassert(parent == nullptr);
     cancelActivation();
-    suspended_growth = nullptr;
-    suction_growth = nullptr;
+    recovery_growth = nullptr;
     memory_growth_suspension_retry_requested = false;
 
     auto reason = std::make_exception_ptr(
@@ -464,6 +459,7 @@ void AllocationQueue::approveIncrease()
     std::lock_guard lock(mutex);
     chassert(increase);
     ResourceAllocation & allocation = increase->allocation;
+    const bool completes_recovery = recovery_growth == &allocation;
     SCHED_DBG("{} -- approveIncrease(id={}, size={}, allocated={})", getPath(), allocation.id, increase->size, allocated);
     if (allocation.increase.kind == IncreaseRequest::Kind::Pending)
     {
@@ -477,32 +473,34 @@ void AllocationQueue::approveIncrease()
     chassert(increase->approval_epoch > 0);
     apply(*increase);
     allocation.allocated += increase->size;
+
     if (allocation.increase.kind == IncreaseRequest::Kind::Regular)
     {
         allocation.memory_growth_eviction_order = 0;
         allocation.memory_growth_suction_priority = false;
-        if (suction_growth == &allocation)
-            suction_growth = nullptr;
         allocation.onGrowthPressureResolved();
     }
 
-    if (suspended_growth == &allocation)
+    if (completes_recovery)
     {
-        /// A beneficiary released enough memory for the parked growth to fit. End this suspension
-        /// round; the remaining allocations continue under the normal queue policy.
-        clearMemoryGrowthSuspension();
+        recovery_growth = nullptr;
+        memory_growth_suspension_retry_requested = false;
+        for (ResourceAllocation & pending : pending_allocations)
+        {
+            pending.memory_growth_suspended = false;
+            pending.memory_growth_suspension_attempted = false;
+        }
+        for (ResourceAllocation & increasing : increasing_allocations)
+            increasing.memory_growth_suspended = false;
+        memory_growth_suspension_changed = true;
     }
-    /// A successfully approved request gets a fresh suspension chance on its next growth conflict.
+
     allocation.memory_growth_suspended = false;
     allocation.memory_growth_suspension_attempted = false;
-    // `apply` above incremented `allocations` for `Kind::Pending`/`Kind::Initial`. Mark the
-    // allocation as admitted so its eventual removal propagates a matching `removing_allocation`
-    // decrease (instead of underflowing `allocations` in the hierarchy).
     if (allocation.increase.kind == IncreaseRequest::Kind::Pending
         || allocation.increase.kind == IncreaseRequest::Kind::Initial)
         allocation.admitted = true;
 
-    // Notify allocation
     increase->allocation.increaseApproved(*increase);
     increase = nullptr;
 
@@ -528,8 +526,12 @@ void AllocationQueue::approveDecrease()
     apply(*decrease);
     allocation.allocated -= decrease->size;
     allocation.fair_key -= decrease->size;
-    if (decrease->removing_allocation && suction_growth == &allocation)
-        suction_growth = nullptr;
+    if (decrease->removing_allocation && recovery_growth == &allocation)
+    {
+        allocation.onGrowthPressureResolved();
+        allocation.memory_growth_suction_priority = false;
+        recovery_growth = nullptr;
+    }
     // Reinsert into the appropriate data structures unless this is a removal
     if (!decrease->removing_allocation)
     {
@@ -549,10 +551,12 @@ void AllocationQueue::approveDecrease()
             break;
         }
     }
-    bool retry_suspended_growth = suspended_growth != nullptr && !ancestor_has_suction;
-    if (retry_suspended_growth)
+    bool retry_recovery_growth = recovery_growth != nullptr
+        && !recovery_growth->memory_growth_suction_priority
+        && !ancestor_has_suction;
+    if (retry_recovery_growth)
     {
-        suspended_growth->memory_growth_suspended = false;
+        recovery_growth->memory_growth_suspended = false;
         /// Capacity changed, so every alternative rejected in the previous round deserves a fresh
         /// fit check as well. This preserves queue order without letting one oversized request hide
         /// a later fitting request permanently.
@@ -569,7 +573,7 @@ void AllocationQueue::approveDecrease()
     }
 
     // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
-    if (is_increasing || retry_suspended_growth)
+    if (is_increasing || retry_recovery_growth)
     {
         Update update;
         IncreaseRequest * preferred_suction = nullptr;
@@ -680,9 +684,9 @@ void AllocationQueue::processActivation()
             /// Forced spill can change actual demand while the original request remains parked.
             /// Reconcile it on the scheduler thread before the next fit check, so retry/eviction
             /// never uses the stale pre-spill size.
-            if (suspended_growth && suspended_growth->increasing_hook.is_linked())
+            if (recovery_growth && recovery_growth->increasing_hook.is_linked())
             {
-                ResourceAllocation & recovering = *suspended_growth;
+                ResourceAllocation & recovering = *recovery_growth;
                 const ResourceCost old_size = recovering.increase.size;
                 const ResourceCost reconciled_size = recovering.reconcilePendingIncrease(recovering.allocated, old_size);
                 if (reconciled_size != old_size)
@@ -731,7 +735,7 @@ void AllocationQueue::processActivation()
         {
             ResourceAllocation & allocation = removing_allocations.front();
             removing_allocations.pop_front(); // Unlink before calling allocationFailed() to avoid use-after-free race
-            if (&allocation == suspended_growth)
+            if (&allocation == recovery_growth)
                 clearMemoryGrowthSuspension();
             else
                 allocation.memory_growth_eviction_order = 0;
@@ -794,10 +798,10 @@ void AllocationQueue::processActivation()
         }
 
         const bool has_active_suction = preferred_suction
-            || (suction_growth
-                && suction_growth->increasing_hook.is_linked()
-                && suction_growth->memory_growth_suction_priority
-                && !suction_growth->memory_growth_recovery_pending);
+            || (recovery_growth
+                && recovery_growth->increasing_hook.is_linked()
+                && recovery_growth->memory_growth_suction_priority
+                && !recovery_growth->memory_growth_recovery_pending);
 
         // Update requests. A completed spill enters suction only after this queue has exhausted
         // every currently visible fitting opportunity. This preserves normal scheduling during
@@ -897,7 +901,7 @@ bool AllocationQueue::setIncrease(IncreaseRequest * preferred_suction) // TSA_RE
     };
     /// A rejected pending allocation may already be destroyed by `allocationFailed`.
     /// Use the tracked suction owner; `old_increase` is only safe for pointer comparison.
-    IncreaseRequest * current_suction = suction_growth ? &suction_growth->increase : nullptr;
+    IncreaseRequest * current_suction = recovery_growth ? &recovery_growth->increase : nullptr;
     IncreaseRequest * suction = is_eligible_suction(preferred_suction)
         ? preferred_suction
         : (is_eligible_suction(current_suction) ? current_suction : nullptr);
@@ -925,18 +929,16 @@ bool AllocationQueue::setIncrease(IncreaseRequest * preferred_suction) // TSA_RE
 
 void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
 {
-    if (suspended_growth)
+    if (recovery_growth)
     {
-        suspended_growth->onGrowthPressureResolved();
-        suspended_growth->memory_growth_suspended = false;
-        suspended_growth->memory_growth_suspension_attempted = false;
-        suspended_growth->memory_growth_eviction_order = 0;
-        suspended_growth->memory_growth_recovery_pending = false;
-        suspended_growth->memory_growth_suction_priority = false;
-        if (suction_growth == suspended_growth)
-            suction_growth = nullptr;
+        recovery_growth->onGrowthPressureResolved();
+        recovery_growth->memory_growth_suspended = false;
+        recovery_growth->memory_growth_suspension_attempted = false;
+        recovery_growth->memory_growth_eviction_order = 0;
+        recovery_growth->memory_growth_recovery_pending = false;
+        recovery_growth->memory_growth_suction_priority = false;
     }
-    suspended_growth = nullptr;
+    recovery_growth = nullptr;
     memory_growth_suspension_retry_requested = false;
 
     /// Ending an owner round must also make every request hidden behind that owner visible again.
