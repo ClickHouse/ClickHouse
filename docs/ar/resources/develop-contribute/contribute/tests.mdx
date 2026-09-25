@@ -65,6 +65,21 @@ PATH=<path to clickhouse-client>:$PATH tests/clickhouse-test 01428_hash_set_nan_
 يمكنك تشغيل جميع الاختبارات أو تشغيل مجموعة فرعية منها بتمرير عامل تصفية لأسماء الاختبارات: `./clickhouse-test substring`.
 توجد أيضًا خيارات لتشغيل الاختبارات بالتوازي أو بترتيب عشوائي.
 
+<div id="running-tests-on-macos">
+  #### تشغيل الاختبارات على macOS (Darwin)
+</div>
+
+يعتمد العديد من الاختبارات الوظيفية على استدعاء أدوات GNU لسطر الأوامر (`timeout`, `head`, `sed`, `grep`, `date`، وغيرها). يأتي macOS مزوّدًا بإصدارات BSD من هذه الأدوات، لكن سلوكها وخياراتها تختلف (فعلى سبيل المثال، يرفض BSD `head` الأمر `head -c 1G`، ويفتقر BSD `ps` إلى الخيارات الطويلة `--`، كما لا تتوفر أداة `timeout` أصلًا). ويؤدي تشغيل الاختبارات باستخدام أدوات BSD إلى حالات فشل زائفة.
+
+تُثبّت مشغّلات CI الخاصة بـ macOS أدوات GNU عبر Homebrew وتضعها قبل أدوات BSD في `PATH`. أعِد تنفيذ الأمر نفسه محليًا:
+
+```sh
+brew install coreutils gnu-sed grep
+export PATH="$(brew --prefix)/opt/coreutils/libexec/gnubin:$(brew --prefix)/opt/gnu-sed/libexec/gnubin:$(brew --prefix)/opt/grep/libexec/gnubin:$PATH"
+```
+
+يوفّر `coreutils` أدوات GNU مثل `timeout` و`head` و`date` وغيرها؛ كما يوفّر `gnu-sed` و`grep` أداتي GNU `sed` و`grep`. بعد ذلك، ينبغي أن يشير `which timeout head sed grep` إلى مسارات `gnubin`.
+
 <div id="running-fast-tests">
   ### تشغيل الاختبارات السريعة
 </div>

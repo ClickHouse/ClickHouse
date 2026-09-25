@@ -33,6 +33,7 @@ class LocalServer : public ClientApplicationBase, public Loggers, public IServer
 {
 public:
     LocalServer() = default;
+    ~LocalServer() override;
 
     void initialize(Poco::Util::Application & self) override;
 
@@ -53,6 +54,10 @@ protected:
     void processError(std::string_view query) const override;
 
     String getName() const override { return "local"; }
+
+    /// In `clickhouse-local`, `--format` keeps its historical meaning of both the default input
+    /// and the default output format, so it maps to the bidirectional `format` setting.
+    std::string_view mappedFormatOptionSetting() const override { return "format"; }
 
     void printHelpMessage(const OptionsDescription & options_description) override;
 
@@ -83,6 +88,14 @@ private:
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
 
+    /// Sets the fallback `default_format` for the sessions of the embedded protocol listeners,
+    /// unless a real user default (command line or profile) is already in place.
+    void seedListenerDefaultFormat();
+
+    /// Removes the client's own format options from the global context, leaving them on
+    /// `client_context`, so they do not leak into the sessions of the embedded protocol listeners.
+    void makeFormatOptionsPrivateToTheClient();
+
     void createClientContext();
 
     void startServers(const ServerType & server_type);
@@ -90,17 +103,27 @@ private:
 
     ServerSettings server_settings;
 
+    /// Whether `seedListenerDefaultFormat` had to seed a synthetic `default_format` on
+    /// `global_context` for the sessions of the embedded protocol listeners. It does so only when
+    /// neither the command line nor the default profile provided one, so this flag tells the
+    /// synthetic seed apart from a real user default regardless of the value, and
+    /// `makeFormatOptionsPrivateToTheClient` resets only the seed on `client_context`.
+    bool listener_default_format_is_seeded = false;
+
     /// Host passed explicitly via the `--listen_host` command-line option, if any. Stored separately
     /// from the configuration because it must act as a hard override: `config.setString("listen_host", ...)`
     /// would only replace the first `listen_host` key, leaving lower-priority repeated `listen_host[...]`
     /// entries from a loaded config file visible to `getMultipleValuesFromConfig` in `startServers`.
     std::optional<String> cli_listen_host;
 
-    /// Path of the config file actually loaded in `initialize`. Empty if no config file was loaded.
-    /// Tracks loads from all sources: `--config-file` flag, `./config.xml`, and `getLocalConfigPath`
+    /// Path of the main config file processed in `initialize`, from any of its sources: the
+    /// `--config-file` flag, `./config.xml`, or `getLocalConfigPath`
     /// (`./clickhouse-local.{xml,yaml,yml}`, `~/.clickhouse-local/config.{xml,yaml,yml}`,
-    /// `/etc/clickhouse-local/config.{xml,yaml,yml}`). Needed by `setupUsers` to resolve relative
-    /// paths in `user_directories.users_xml.path` against the config's own directory.
+    /// `/etc/clickhouse-local/config.{xml,yaml,yml}`). When none of them exists, it is `config.xml`
+    /// in the current directory, which does not exist either: a config embedded in the binary is
+    /// processed in its place, so that the merge directories of the current directory still apply.
+    /// Needed by `setupUsers` to resolve relative paths in `user_directories.users_xml.path`
+    /// against the config's own directory.
     String loaded_config_path;
 
     std::optional<StatusFile> status;

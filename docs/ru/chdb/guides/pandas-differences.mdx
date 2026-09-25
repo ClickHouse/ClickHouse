@@ -1,0 +1,456 @@
+---
+title: 'Ключевые различия с pandas'
+sidebarTitle: 'Ключевые различия'
+slug: /chdb/guides/pandas-differences
+description: 'Важные различия между DataStore и pandas'
+keywords: ['chdb', 'datastore', 'pandas', 'различия', 'поведение']
+doc_type: 'guide'
+---
+
+Хотя DataStore во многом совместим с pandas, важно понимать ключевые различия.
+
+<div id="summary">
+  ## Сводная таблица
+</div>
+
+| Aspect                | pandas              | DataStore                                                                                                         |
+| --------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Выполнение**        | Немедленное (сразу) | Отложенное (по необходимости)                                                                                     |
+| **Возвращаемые типы** | DataFrame/Series    | DataStore/ColumnExpr                                                                                              |
+| **Порядок строк**     | Сохраняется         | Сохраняется (автоматически); не гарантируется в [режиме производительности](/ru/chdb/configuration/performance-mode) |
+| **inplace**           | Поддерживается      | Не поддерживается                                                                                                 |
+| **Индекс**            | Полная поддержка    | Упрощённая поддержка                                                                                              |
+| **Память**            | Все данные в памяти | Данные остаются в источнике                                                                                       |
+
+***
+
+<div id="lazy-execution">
+  ## 1. Отложенное и немедленное выполнение
+</div>
+
+<div id="pandas-eager">
+  ### pandas (немедленное выполнение)
+</div>
+
+Operations выполняются сразу:
+
+```python
+import pandas as pd
+
+df = pd.read_csv("data.csv")  # Loads entire file NOW
+result = df[df['age'] > 25]   # Filters NOW
+grouped = result.groupby('city')['salary'].mean()  # Aggregates NOW
+```
+
+<div id="datastore-lazy">
+  ### DataStore (отложенное выполнение)
+</div>
+
+Выполнение операций откладывается до тех пор, пока не потребуются результаты:
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("data.csv")  # Just records the source
+result = ds[ds['age'] > 25]   # Just records the filter
+grouped = result.groupby('city')['salary'].mean()  # Just records
+
+# Execution happens here:
+print(grouped)        # Executes when displaying
+df = grouped.to_df()  # Or when converting to pandas
+```
+
+<div id="why-lazy">
+  ### Почему это важно
+</div>
+
+Отложенное выполнение позволяет:
+
+* **Оптимизация запросов**: Несколько операций объединяются в один SQL-запрос
+* **Отсечение столбцов**: Считываются только необходимые столбцы
+* **Pushdown фильтров**: Фильтры применяются на стороне источника
+* **Эффективное использование памяти**: Загружаются только нужные данные
+
+***
+
+<div id="return-types">
+  ## 2. Типы возвращаемых значений
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+```python
+df['col']           # Returns pd.Series
+df[['a', 'b']]      # Returns pd.DataFrame
+df[df['x'] > 10]    # Returns pd.DataFrame
+df.groupby('x')     # Returns DataFrameGroupBy
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+```python
+ds['col']           # Returns ColumnExpr (lazy)
+ds[['a', 'b']]      # Returns DataStore (lazy)
+ds[ds['x'] > 10]    # Returns DataStore (lazy)
+ds.groupby('x')     # Returns LazyGroupBy
+```
+
+<div id="converting-to-pandas-types">
+  ### Преобразование в типы pandas
+</div>
+
+```python
+# Get pandas DataFrame
+df = ds.to_df()
+df = ds.to_pandas()
+
+# Get pandas Series from column
+series = ds['col'].to_pandas()
+
+# Or trigger execution
+print(ds)  # Automatically converts for display
+```
+
+***
+
+<div id="triggers">
+  ## 3. Триггеры выполнения
+</div>
+
+DataStore выполняет вычисления, когда нужны реальные значения:
+
+| Триггер              | Пример             | Примечания               |
+| -------------------- | ------------------ | ------------------------ |
+| `print()` / `repr()` | `print(ds)`        | Для вывода нужны данные  |
+| `len()`              | `len(ds)`          | Нужно количество строк   |
+| `.columns`           | `ds.columns`       | Нужны имена столбцов     |
+| `.dtypes`            | `ds.dtypes`        | Нужна информация о типах |
+| `.shape`             | `ds.shape`         | Нужны размеры            |
+| `.values`            | `ds.values`        | Нужны фактические данные |
+| `.index`             | `ds.index`         | Нужен индекс             |
+| `to_df()`            | `ds.to_df()`       | Явное преобразование     |
+| Итерация             | `for row in ds`    | Нужно пройти по данным   |
+| `equals()`           | `ds.equals(other)` | Нужно сравнение          |
+
+<div id="stay-lazy">
+  ### Операции с отложенным выполнением
+</div>
+
+| Операция         | Возвращает  |
+| ---------------- | ----------- |
+| `filter()`       | DataStore   |
+| `select()`       | DataStore   |
+| `sort()`         | DataStore   |
+| `groupby()`      | LazyGroupBy |
+| `join()`         | DataStore   |
+| `ds['col']`      | ColumnExpr  |
+| `ds[['a', 'b']]` | DataStore   |
+| `ds[condition]`  | DataStore   |
+
+***
+
+<div id="row-order">
+  ## 4. Порядок строк
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+Порядок строк всегда сохраняется:
+
+```python
+df = pd.read_csv("data.csv")
+print(df.head())  # Always same order as file
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+Порядок строк **автоматически сохраняется** в большинстве операций:
+
+```python
+ds = pd.read_csv("data.csv")
+print(ds.head())  # Matches file order
+
+# Filter preserves order
+ds_filtered = ds[ds['age'] > 25]  # Same order as pandas
+```
+
+DataStore автоматически отслеживает исходные позиции строк (с помощью `rowNumberInAllBlocks()`), чтобы порядок оставался согласованным с pandas.
+
+<div id="order-preserved">
+  ### Когда порядок сохраняется
+</div>
+
+* Источники на основе файлов (CSV, Parquet, JSON и т. д.)
+* Источники pandas DataFrame
+* Операции фильтрации
+* Выбор столбцов
+* После явного вызова `sort()` или `sort_values()`
+* Операции, задающие порядок (`nlargest()`, `nsmallest()`, `head()`, `tail()`)
+
+<div id="order-may-differ">
+  ### Когда порядок может отличаться
+</div>
+
+* После агрегаций `groupby()` (используйте `sort_values()`, чтобы обеспечить стабильный порядок)
+* После `merge()` / `join()` с некоторыми типами JOIN
+* В **режиме производительности** (`config.use_performance_mode()`): порядок строк не гарантируется для любых операций. См. [режим производительности](/ru/chdb/configuration/performance-mode).
+
+***
+
+<div id="no-inplace">
+  ## 5. Параметр inplace отсутствует
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+```python
+df.drop(columns=['col'], inplace=True)  # Modifies df
+df.fillna(0, inplace=True)              # Modifies df
+df.rename(columns={'old': 'new'}, inplace=True)
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+Параметр `inplace=True` не поддерживается. Всегда присваивайте результат:
+
+```python
+ds = ds.drop(columns=['col'])           # Returns new DataStore
+ds = ds.fillna(0)                       # Returns new DataStore
+ds = ds.rename(columns={'old': 'new'})  # Returns new DataStore
+```
+
+<div id="why-no-inplace">
+  ### Почему нет inplace?
+</div>
+
+DataStore использует неизменяемые операции, чтобы обеспечить:
+
+* Построение запросов (отложенное вычисление)
+* Потокобезопасность
+* Упростить отладку
+* Более аккуратный код
+
+***
+
+<div id="index">
+  ## 6. Поддержка индексов
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+Полная поддержка индексов:
+
+```python
+df = df.set_index('id')
+df.loc['user123']           # Label-based access
+df.loc['a':'z']             # Label-based slicing
+df.reset_index()
+df.index.name = 'user_id'
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+Упрощённая поддержка индексов:
+
+```python
+# Basic operations work
+ds.loc[0:10]               # Integer position
+ds.iloc[0:10]              # Same as loc for DataStore
+
+# For pandas-style index operations, convert first
+df = ds.to_df()
+df = df.set_index('id')
+df.loc['user123']
+```
+
+<div id="datastore-source-matters">
+  ### Важен источник DataStore
+</div>
+
+* **Источник DataFrame**: сохраняет индекс pandas
+* **Источник File**: использует простой целочисленный индекс
+
+***
+
+<div id="comparison">
+  ## 7. Поведение при сравнении
+</div>
+
+<div id="comparing-with-pandas">
+  ### Сравнение с pandas
+</div>
+
+pandas не распознаёт объекты типа DataStore:
+
+```python
+import pandas as pd
+from chdb import datastore as ds
+
+pdf = pd.DataFrame({'a': [1, 2, 3]})
+dsf = ds.DataFrame({'a': [1, 2, 3]})
+
+# This doesn't work as expected
+pdf == dsf  # pandas doesn't know DataStore
+
+# Solution: convert DataStore to pandas
+pdf.equals(dsf.to_pandas())  # True
+```
+
+<div id="using-equals">
+  ### Использование функции equals()
+</div>
+
+```python
+# DataStore.equals() also works
+dsf.equals(pdf)  # Compares with pandas DataFrame
+```
+
+***
+
+<div id="types">
+  ## 8. Вывод типов
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+Используются типы numpy/pandas:
+
+```python
+df['col'].dtype  # int64, float64, object, datetime64, etc.
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+Может использовать типы данных ClickHouse:
+
+```python
+ds['col'].dtype  # Int64, Float64, String, DateTime, etc.
+
+# Types are converted when going to pandas
+df = ds.to_df()
+df['col'].dtype  # Now pandas type
+```
+
+<div id="explicit-casting">
+  ### Явное приведение типов
+</div>
+
+```python
+# Force specific type
+ds['col'] = ds['col'].astype('int64')
+```
+
+***
+
+<div id="memory">
+  ## 9. Модель памяти
+</div>
+
+<div id="pandas-return-types">
+  ### pandas
+</div>
+
+Все данные хранятся в памяти:
+
+```python
+df = pd.read_csv("huge.csv")  # 10GB in memory!
+```
+
+<div id="datastore-return-types">
+  ### DataStore
+</div>
+
+Данные остаются в источнике, пока они не понадобятся:
+
+```python
+ds = pd.read_csv("huge.csv")  # Just metadata
+ds = ds.filter(ds['year'] == 2024)  # Still just metadata
+
+# Only filtered result is loaded
+df = ds.to_df()  # Maybe only 1GB now
+```
+
+***
+
+<div id="errors">
+  ## 10. Сообщения об ошибках
+</div>
+
+<div id="different-error-sources">
+  ### Различные источники ошибок
+</div>
+
+* **ошибки pandas**: Из библиотеки pandas
+* **ошибки DataStore**: Из chDB или ClickHouse
+
+```python
+# May see ClickHouse-style errors
+# "Code: 62. DB::Exception: Syntax error..."
+```
+
+<div id="debugging-tips">
+  ### Советы по отладке
+</div>
+
+```python
+# View the SQL to debug
+print(ds.to_sql())
+
+# See execution plan
+ds.explain()
+
+# Enable debug logging
+from chdb.datastore.config import config
+config.enable_debug()
+```
+
+***
+
+<div id="checklist">
+  ## Контрольный список для миграции
+</div>
+
+При миграции с pandas:
+
+* [ ] Измените инструкцию import
+* [ ] Уберите параметры `inplace=True`
+* [ ] Явно добавьте `to_df()` там, где требуется pandas DataFrame
+* [ ] Добавьте сортировку, если важен порядок строк
+* [ ] Используйте `to_pandas()` для сравнительных тестов
+* [ ] Протестируйте на данных репрезентативного объёма
+
+***
+
+<div id="quick-ref">
+  ## Краткий справочник
+</div>
+
+| pandas                  | DataStore                      |
+| ----------------------- | ------------------------------ |
+| `df[condition]`         | То же (возвращает DataStore)   |
+| `df.groupby()`          | То же (возвращает LazyGroupBy) |
+| `df.drop(inplace=True)` | `ds = ds.drop()`               |
+| `df.equals(other)`      | `ds.to_pandas().equals(other)` |
+| `df.loc['label']`       | `ds.to_df().loc['label']`      |
+| `print(df)`             | То же (запускает выполнение)   |
+| `len(df)`               | То же (запускает выполнение)   |

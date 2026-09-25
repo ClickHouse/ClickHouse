@@ -8,6 +8,7 @@ SET explain_query_plan_default = 'legacy';
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';
 SET query_plan_join_swap_table = 0;
+SET join_runtime_filter_min_probe_rows = 0;
 
 DROP TABLE IF EXISTS t_rf_mixed_left;
 DROP TABLE IF EXISTS t_rf_mixed_right;

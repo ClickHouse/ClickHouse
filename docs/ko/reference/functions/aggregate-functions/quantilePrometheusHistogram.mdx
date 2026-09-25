@@ -35,12 +35,12 @@ quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
 
 **인수**
 
-* `bucket_upper_bound` — 히스토그램 버킷의 상한값입니다. 가장 큰 버킷의 상한은 반드시 `+Inf`여야 합니다. [`Float64`](/ko/reference/data-types/float)
-* `cumulative_bucket_value` — 히스토그램 버킷의 누적값입니다. 값은 버킷 상한이 증가할수록 단조 증가해야 합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float64`](/ko/reference/data-types/float)
+* `bucket_upper_bound` — 히스토그램 버킷의 상한값입니다. 가장 큰 버킷의 상한은 반드시 `+Inf`여야 합니다. [`Float*`](/ko/reference/data-types/float)
+* `cumulative_bucket_value` — 히스토그램 버킷의 누적값입니다. 값은 버킷 상한이 증가할수록 단조 증가해야 합니다. [`UInt*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
 
 **반환 값**
 
-지정된 레벨의 분위수를 반환합니다. [`Float64`](/ko/reference/data-types/float)
+지정된 레벨의 분위수를 반환합니다. 결과의 부동소수점 타입은 `bucket_upper_bound`의 타입과 일치합니다. [`Float32`](/ko/reference/data-types/float) 또는 [`Float64`](/ko/reference/data-types/float)
 
 **예시**
 

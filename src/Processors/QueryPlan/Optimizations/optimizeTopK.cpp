@@ -1,6 +1,7 @@
 #include <Columns/Collator.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -9,6 +10,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Functions/FunctionFactory.h>
@@ -17,6 +20,85 @@
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// True if a value of this type can contain a floating-point number anywhere inside it - directly,
+/// or nested in a `Nullable`, `Array`, `Tuple`, `Map`, ... (`forEachChild` recurses on its own).
+static bool typeCanContainFloat(const DataTypePtr & type)
+{
+    if (isFloat(type))
+        return true;
+    bool found = false;
+    type->forEachChild([&](const IDataType & child) { found = found || isFloat(child); });
+    return found;
+}
+
+/// TopN dynamic filtering for sources that read data formats (e.g. Parquet files). There are no
+/// marks or skip indexes here, so only the dynamic-filtering path applies, and it is delivered
+/// through `FormatTopKFilterInfo` rather than an injected PREWHERE: the format appends the
+/// threshold filter to its own filtering pipeline, and can additionally use the threshold to
+/// skip whole row groups and pages by their statistics - which an opaque `__topKFilter` inside
+/// a PREWHERE expression could never provide. The filter only ever removes rows that cannot
+/// enter the top-K heap above, so it composes with any `WHERE` or `PREWHERE` the source already
+/// has, in any order.
+static size_t tryTopKForFormatSource(
+    IQueryPlanStep * step,
+    SortingStep * sorting_step,
+    const ColumnWithTypeAndName & sort_column,
+    const String & sort_column_name,
+    const SortColumnDescription & sort_col_desc,
+    const Optimization::ExtraSettings & settings)
+{
+    auto * source_step = dynamic_cast<SourceStepWithFilterBase *>(step);
+    if (!source_step)
+        return 0;
+
+    if (!settings.use_top_k_dynamic_filtering)
+        return 0;
+
+    /// Same eligibility as the MergeTree dynamic-filtering path below: Dynamic and Variant
+    /// columns cannot be reliably compared by `__topKFilter`, and for variable-length types the
+    /// per-row comparison cost can exceed its savings, so they are gated behind an explicit
+    /// opt-in.
+    const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
+    if (isDynamic(sort_column.type) || isVariant(sort_column.type)
+        || (sort_column_is_variable_length && !settings.use_top_k_dynamic_filtering_for_variable_length_types))
+        return 0;
+
+    /// `ORDER BY` sorts `nan` together with `NULL` (see `SortColumnDescription::nulls_direction`),
+    /// but the comparison functions behind `__topKFilter` do not: a `nan` can become the published
+    /// threshold and then reject every finite value, or be dropped under `NULLS FIRST`. That is a
+    /// pre-existing defect of the `MergeTree` path, tracked in
+    /// https://github.com/ClickHouse/ClickHouse/issues/116705. Formats add a second, independent
+    /// hazard: `nan` values are legally absent from Parquet min/max statistics, so a finite range
+    /// cannot prove that a row group holds no `nan` row that must sort first. Keep floating-point
+    /// sort keys off this path until both are `nan`-aware.
+    if (typeCanContainFloat(sort_column.type))
+        return 0;
+
+    /// The resolved sort column must be one of the source's outputs with an unchanged type: the
+    /// source compares its own column against thresholds the sorting transforms above produce
+    /// from that very column.
+    const auto * source_column = source_step->getOutputHeader()->findByName(sort_column_name);
+    if (!source_column || !source_column->type->equals(*sort_column.type))
+        return 0;
+
+    /// Being in the output header is necessary but not sufficient: the source must physically
+    /// read the column itself. `ReadFromFile` appends virtual columns (`_path`, `_file`, ...) and
+    /// Hive partition columns after the format has read the file, so the format could never
+    /// evaluate the threshold against them; the source decides from its format-facing header.
+    if (!source_step->supportsTopKDynamicFilter(*source_column))
+        return 0;
+
+    auto threshold_tracker = std::make_shared<TopKThresholdTracker>(sort_col_desc);
+    sorting_step->setTopKThresholdTracker(threshold_tracker);
+
+    auto info = std::make_shared<FormatTopKFilterInfo>();
+    info->column_name = sort_column_name;
+    info->threshold_tracker = std::move(threshold_tracker);
+    source_step->setTopKFilter(std::move(info));
+
+    return 0;
+}
 
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
@@ -40,6 +122,10 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     /// Cannot support LIMIT 10 WITH TIES because we don't know how many rows will be output
     if (limit_step->withTies())
+        return 0;
+
+    /// TopK filtering can skip source rows, so it is incompatible with exact rows_before_limit_at_least.
+    if (limit_step->alwaysReadTillEnd())
         return 0;
 
     node = node->children.front();
@@ -79,8 +165,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     }
 
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
-    if (!read_from_mergetree_step)
-        return 0;
 
     /// FINAL queries deduplicate overlapping parts via merging sorted transforms
     /// (e.g. `ReplacingSortedTransform`, `CollapsingSortedTransform`) which require
@@ -88,7 +172,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     /// per key. Both the dynamic prewhere filter and minmax-based granule skipping
     /// can drop rows that are needed for correct deduplication, producing wrong
     /// results when these rows are duplicates of a row that survives the top-K.
-    if (read_from_mergetree_step->isQueryWithFinal())
+    if (read_from_mergetree_step && read_from_mergetree_step->isQueryWithFinal())
         return 0;
 
     size_t n = limit_step->getLimitForSorting();
@@ -105,8 +189,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     auto sort_column_name = sort_description.front().column_name;
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_column_name);
-
-    const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
 
     ///remove alias
     if (sort_column_name.contains('.'))
@@ -134,6 +216,20 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         }
     }
 
+    const auto & sort_col_desc = sort_description.front();
+
+    if (!read_from_mergetree_step)
+        return tryTopKForFormatSource(node->step.get(), sorting_step, sort_column, sort_column_name, sort_col_desc, settings);
+
+    /// A row-level policy filter restricts the rows inside the reader just like a `WHERE` / `PREWHERE`,
+    /// so it must count as a `where_clause` as well. Otherwise a query filtered only by a row policy leaves
+    /// `where_clause == false`, `MergeTreeDataSelectExecutor` enables `perform_top_k_optimization` and narrows
+    /// the read to the top-K marks before the policy runs: the policy then discards the rows in those marks
+    /// and the query returns fewer rows than the `LIMIT` - or none at all - even though later marks hold rows
+    /// the policy keeps.
+    const bool where_clause
+        = filter_step || read_from_mergetree_step->getPrewhereInfo() || read_from_mergetree_step->getRowLevelFilter();
+
     const auto & read_columns = read_from_mergetree_step->getAllColumnNames();
     if (std::find(read_columns.begin(), read_columns.end(), sort_column_name) == read_columns.end())
     {
@@ -142,8 +238,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     }
 
     TopKThresholdTrackerPtr threshold_tracker = nullptr;
-
-    const auto & sort_col_desc = sort_description.front();
 
     /// The skip-index top-k path ranks granules via raw Field comparison
     /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
@@ -160,7 +254,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
     /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
-    /// logical error when the prewhere filter is executed. Skip the optimization for them.
+    /// logical error when the prewhere filter is executed. Comparison functions also
+    /// reject zero-sized tuples even though ORDER BY supports them. Skip the optimization
+    /// for these types.
     ///
     /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
     /// elements), the per-row threshold comparison cost can exceed its savings — most notably
@@ -168,10 +264,12 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     /// path behind an explicit opt-in. Nullable and Tuple of fixed-length types are still
     /// considered fixed-length (haveMaximumSizeOfValue forwards through them).
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
+    const auto * sort_column_tuple_type = typeid_cast<const DataTypeTuple *>(sort_column.type.get());
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !read_from_mergetree_step->getPrewhereInfo()
         && !isDynamic(sort_column.type)
         && !isVariant(sort_column.type)
+        && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
     /// When read-in-order optimization is enabled and the sort column is a prefix

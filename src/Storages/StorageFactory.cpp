@@ -1,13 +1,19 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace DB
 {
@@ -25,6 +31,7 @@ namespace ErrorCodes
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int BAD_ARGUMENTS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
+    extern const int UNKNOWN_SETTING;
 }
 
 
@@ -34,6 +41,52 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
     for (const auto & elem : names_and_types)
         if (elem.type->cannotBeStoredInTables())
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} of column '{}' cannot be used in tables", elem.type->getName(), elem.name);
+}
+
+
+void checkStorageSettingNames(const StorageFactory::Arguments & args)
+{
+    if (!args.storage_def || !args.storage_def->settings)
+        return;
+
+    const auto local_context = args.getLocalContext();
+
+    /// Each term marks a definition this server did not judge: `attach` outranks `secondary` in
+    /// `LoadingStrictnessLevel`, Keeper recovery carries no metadata transaction, and Shared Catalog
+    /// secondaries re-execute the initiator's DDL. A secondary refusing one retries its queue entry forever.
+    const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
+    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay
+        = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+    if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_ddl_replay
+        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay)
+        return;
+
+    /// A name that is neither a setting of this engine nor a query setting of this context is no setting at
+    /// all: it is the complement of what `InterpreterSetQuery::applySettingsFromQuery` moves to the query
+    /// context, which counts a custom setting the context holds as a query setting.
+    const auto & features = StorageFactory::instance().getStorageFeatures(args.engine_name);
+    chassert(features.has_builtin_setting_fn != nullptr);
+    const Settings & query_settings = local_context->getSettingsRef();
+    auto check = [&](std::string_view name)
+    {
+        if (!features.has_builtin_setting_fn(name) && !query_settings.has(name))
+            throw Exception(
+                ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", name, args.engine_name);
+    };
+
+    for (const auto & change : args.storage_def->settings->changes)
+        check(change.name);
+    /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and is serialized back into the stored definition.
+    for (const auto & name : args.storage_def->settings->default_settings)
+        check(name);
+    /// `param_x = ...` lands in `query_parameters` with the prefix stripped, and only a standalone `SET` reads that payload.
+    for (const auto & parameter : args.storage_def->settings->query_parameters)
+        check(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
 }
 
 
@@ -105,10 +158,6 @@ StoragePtr StorageFactory::get(
         {
             name = "MaterializedView";
         }
-        else if (query.is_window_view)
-        {
-            name = "WindowView";
-        }
         else
         {
             if (!query.storage)
@@ -142,14 +191,6 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE MaterializedView "
                     "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
-            if (name == "WindowView")
-            {
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Direct creation of tables with ENGINE WindowView "
-                    "is not supported, use CREATE WINDOW VIEW statement");
-            }
-
             auto it = storages.find(name);
             if (it == storages.end())
             {
@@ -206,6 +247,11 @@ StoragePtr StorageFactory::get(
                 check_feature(
                     "projections",
                     [](StorageFeatures features) { return features.supports_projections; });
+
+            if (query.sql_security)
+                check_feature(
+                    "SQL SECURITY clause",
+                    [](StorageFeatures features) { return features.supports_sql_security; });
         }
     }
 

@@ -206,7 +206,7 @@ Après avoir sélectionné un membre de l&#39;équipe, une nouvelle ligne doit a
   ### Accéder aux requêtes partagées
 </div>
 
-Si une requête a été partagée avec vous, elle s’affiche dans l’onglet « Queries » de la barre latérale gauche de la console SQL :
+Si une requête a été partagée avec vous, elle s’affichera dans l’onglet « Queries » de la barre latérale gauche de la console SQL :
 
 <Image img="/images/cloud/sqlconsole/sql-console-access-queries.webp" size="md" alt="Accéder aux requêtes" />
 
@@ -247,7 +247,7 @@ La sélection d’une taille de page applique immédiatement la pagination au je
 <Image img="/images/cloud/sqlconsole/pagination-nav.webp" size="md" alt="Navigation de pagination" />
 
 <div id="exporting-query-result-data">
-  ### Exporter les données des résultats de requête
+  ### Exportation des données de résultat de la requête
 </div>
 
 Les résultats des requêtes peuvent être facilement exportés au format CSV directement depuis la console SQL. Pour ce faire, ouvrez le menu `•••` à droite de la barre d’outils du volet des résultats, puis sélectionnez &#39;Télécharger au format CSV&#39;.
@@ -290,7 +290,7 @@ Commençons par créer un simple graphique à barres pour suivre `trip_total` pa
 
 <Image img="/images/cloud/sqlconsole/trip-total-by-week.webp" size="md" alt="Total des trajets par semaine" />
 
-La plupart des types de graphiques prennent en charge plusieurs champs sur les axes numériques. Pour l’illustrer, faites glisser le champ `fare_total` sur l’axe des y :
+La plupart des types de graphiques prennent en charge plusieurs champs sur les axes numériques. Pour l’illustrer, faites glisser le champ fare&#95;total sur l’axe des y :
 
 <Image img="/images/cloud/sqlconsole/bar-chart.webp" size="md" alt="Graphique à barres" />
 
@@ -298,7 +298,7 @@ La plupart des types de graphiques prennent en charge plusieurs champs sur les a
   ### Personnaliser les graphiques
 </div>
 
-La console SQL prend en charge dix types de graphiques, sélectionnables depuis le sélecteur de type dans le volet de configuration du graphique. Par exemple, nous pouvons facilement faire passer le type de graphique précédent de Bar à Area :
+La console SQL prend en charge dix types de graphiques, sélectionnables depuis le sélecteur de type dans le panneau de configuration du graphique. Par exemple, nous pouvons facilement faire passer le type de graphique précédent de Bar à Area :
 
 <Image img="/images/cloud/sqlconsole/change-from-bar-to-area.webp" size="md" alt="Passer du graphique Bar à Area" />
 
@@ -306,7 +306,7 @@ Le titre des graphiques correspond au nom de la requête qui fournit les donnée
 
 <Image img="/images/cloud/sqlconsole/update-query-name.webp" size="md" alt="Mettre à jour le nom de la requête" />
 
-Vous pouvez également ajuster plusieurs paramètres de graphique plus avancés dans la section &#39;Advanced&#39; du volet de configuration du graphique. Pour commencer, nous allons modifier les paramètres suivants :
+Vous pouvez également ajuster plusieurs paramètres de graphique plus avancés dans la section &#39;Advanced&#39; du panneau de configuration du graphique. Pour commencer, nous allons modifier les paramètres suivants :
 
 * Sous-titre
 * Titres des axes
@@ -316,6 +316,6 @@ Le graphique sera mis à jour en conséquence :
 
 <Image img="/images/cloud/sqlconsole/update-subtitle-etc.webp" size="md" alt="Mettre à jour le sous-titre, etc." />
 
-Dans certains cas, il peut être nécessaire d’ajuster indépendamment l’échelle des axes pour chaque champ. Pour cela, utilisez la section &#39;Advanced&#39; du volet de configuration du graphique et définissez les valeurs minimale et maximale de la plage d’un axe. Par exemple, le graphique ci-dessus est correct, mais pour mieux montrer la corrélation entre nos champs `trip_total` et `fare_total`, les plages des axes doivent être ajustées :
+Dans certains cas, il peut être nécessaire d’ajuster indépendamment l’échelle des axes pour chaque champ. Pour cela, utilisez la section &#39;Advanced&#39; du panneau de configuration du graphique et définissez les valeurs minimale et maximale de la plage d’un axe. Par exemple, le graphique ci-dessus est correct, mais pour mieux montrer la corrélation entre nos champs `trip_total` et `fare_total`, les plages des axes doivent être ajustées :
 
 <Image img="/images/cloud/sqlconsole/adjust-axis-scale.webp" size="md" alt="Ajuster l’échelle des axes" />

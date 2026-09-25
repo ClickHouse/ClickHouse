@@ -11,7 +11,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Event deltas associe une heatmap de latence à une analyse automatique des attributs pour vous permettre de visualiser la structure de vos données de trace et d’identifier ce qui distingue les spans lents, sans écrire de requêtes. Il existe trois façons de l’utiliser :
 
-* **Mode distribution (toujours activé)** : lorsqu’il n’y a aucune sélection sur la heatmap, la distribution des valeurs de chaque attribut est affichée pour la population actuelle de spans. Utile pour repérer les valeurs dominantes ou inhabituellement rares (valeurs aberrantes de cardinalité).
+* **mode de distribution (toujours activé)** : lorsqu’il n’y a aucune sélection sur la heatmap, la distribution des valeurs de chaque attribut est affichée pour la population actuelle de spans. Utile pour repérer les valeurs dominantes ou inhabituellement rares (valeurs aberrantes de cardinalité).
 * **Mode de comparaison** : faites glisser un rectangle sur la heatmap pour comparer les spans à l’intérieur (Selection) à tout ce qui se trouve à l’extérieur (Background). Utile pour isoler les écarts.
 * **Drill-down itératif** : cliquez sur n’importe quelle barre pour filtrer (ou exclure) cette valeur. La heatmap est recalculée en fonction de la population filtrée, ce qui vous permet d’affiner progressivement jusqu’à ce que la cause devienne évidente.
 
@@ -86,7 +86,7 @@ C’est la bonne forme si vous voulez poser la question « qu’est-ce qui a ch
   ### Cas d’usage 2 : lent ou rapide
 </div>
 
-Lorsque la heatmap montre deux populations de latence nettement séparées sur l’axe de Duration, faites glisser un grand rectangle couvrant toute la plage temporelle, mais uniquement la bande supérieure bien distincte. La population lente devient la Selection ; la masse rapide devient le Background.
+Lorsque la heatmap montre deux populations de latence nettement séparées sur l’axe de Duration, faites glisser un grand rectangle couvrant tout l’intervalle de temps, mais uniquement la bande supérieure bien distincte. La population lente devient la Selection ; la masse rapide devient le Background.
 
 <Image img="/images/clickstack/event-deltas/slow-vs-fast.webp" alt="Comparaison lent/rapide sur frontend-proxy avec un rectangle couvrant uniquement la bande supérieure nettement séparée, bien à l’écart de la masse dense" size="lg" />
 

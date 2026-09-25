@@ -100,6 +100,29 @@ struct CustomType
     std::shared_ptr<const CustomTypeImpl> impl;
 };
 
+/// Holds the unparsed string representation of a numeric literal.
+/// Used when the literal doesn't fit in Int64/UInt64 (e.g. big integers).
+/// The actual parsing to a concrete numeric type is deferred until the target type is known.
+struct NumberLiteral
+{
+    String value;
+
+    NumberLiteral() = default;
+    explicit NumberLiteral(String s) : value(std::move(s)) {}
+
+    /// Parse the literal text as Float64. This is the single place that turns a numeric literal
+    /// into a float, so every resolution path stays consistent. Decimal/exponent literals go
+    /// through ClickHouse's own precise reader (deterministic, locale-independent); hex floats,
+    /// which the reader can't parse, fall back to strtod.
+    Float64 toFloat64() const;
+
+    bool operator == (const NumberLiteral & rhs) const { return value == rhs.value; }
+    bool operator < (const NumberLiteral &) const;
+    bool operator <= (const NumberLiteral &) const;
+    bool operator > (const NumberLiteral &) const;
+    bool operator >= (const NumberLiteral &) const;
+};
+
 template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
@@ -228,6 +251,7 @@ template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
 
 template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 template <> struct NearestFieldTypeImpl<CustomType> { using Type = CustomType; };
+template <> struct NearestFieldTypeImpl<NumberLiteral> { using Type = NumberLiteral; };
 
 // For enum types, use the field type that corresponds to their underlying type.
 template <typename T>
@@ -301,6 +325,7 @@ public:
             IPv4 = 30,
             IPv6 = 31,
             CustomType = 32,
+            Number = 33,
         };
     };
 
@@ -315,6 +340,45 @@ public:
             || which == Types::Decimal64
             || which == Types::Decimal128
             || which == Types::Decimal256;
+    }
+
+    /// Whether values of the type are single scalar values with a plain value comparison, as opposed
+    /// to composite values (Array, Tuple, Map, Object — compared element-wise, where elements of
+    /// different types are ordered by type index rather than by value) and opaque values
+    /// (AggregateFunctionState, CustomType).
+    static bool isScalar(Types::Which which)
+    {
+        switch (which)
+        {
+            case Types::Null:
+            case Types::UInt64:
+            case Types::Int64:
+            case Types::Float64:
+            case Types::UInt128:
+            case Types::Int128:
+            case Types::String:
+            case Types::Decimal32:
+            case Types::Decimal64:
+            case Types::Decimal128:
+            case Types::Decimal256:
+            case Types::UInt256:
+            case Types::Int256:
+            case Types::UUID:
+            case Types::Bool:
+            case Types::IPv4:
+            case Types::IPv6:
+                return true;
+            case Types::Array:
+            case Types::Tuple:
+            case Types::Map:
+            case Types::Object:
+            case Types::CustomType:
+            case Types::AggregateFunctionState:
+            /// A NumberLiteral holds unparsed literal text and throws on comparison.
+            case Types::Number:
+                return false;
+        }
+        UNREACHABLE();
     }
 
     Field() : Field(Null{}) {}
@@ -512,17 +576,23 @@ public:
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
+            case Types::Number: return f(field.template get<NumberLiteral>());
         }
     }
 
     String dump() const;
     static Field restoreFromDump(std::string_view dump_);
 
+    /// If this Field is a NumberLiteral, resolve it to a concrete numeric type
+    /// (Float64 for decimal-looking strings, UInt128/Int128/etc for big integers).
+    /// Returns *this unchanged if it's not a NumberLiteral.
+    Field resolveNumberLiteral() const;
+
 private:
     AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
-        AggregateFunctionStateData, CustomType
+        AggregateFunctionStateData, CustomType, NumberLiteral
         > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
 
     Types::Which which{};
@@ -589,11 +659,24 @@ private:
         ptr->assign(std::move(str));
     }
 
-    void create(const Field & x)
+    /// Array/Tuple/Map/Object nest Fields inside Fields, so a straightforward
+    /// (recursive) copy/destroy overflows the native stack for a deeply nested value.
+    /// These containers are handled by explicit-worklist iterative helpers instead.
+    static bool isContainer(Types::Which w)
     {
-        dispatch([this] (auto & value) { createConcrete(value); }, x);
+        return w == Types::Array || w == Types::Tuple || w == Types::Map || w == Types::Object;
     }
 
+    void create(const Field & x)
+    {
+        if (isContainer(x.which))
+            createContainerIteratively(x);
+        else
+            dispatch([this] (auto & value) { createConcrete(value); }, x);
+    }
+
+    /// Moving a Field just steals the container buffer (no per-element recursion), so
+    /// the move paths only need the iterative teardown of the value being overwritten.
     void create(Field && x)
     {
         dispatch([this] (auto & value) { createConcrete(std::move(value)); }, x);
@@ -601,12 +684,26 @@ private:
 
     void assign(const Field & x)
     {
-        dispatch([this] (auto & value) { assignConcrete(value); }, x);
+        if (isContainer(x.which))
+        {
+            /// A vector/map copy-assignment would recurse per nesting level; rebuild instead.
+            destroy();
+            create(x);
+        }
+        else
+            dispatch([this] (auto & value) { assignConcrete(value); }, x);
     }
 
     void assign(Field && x)
     {
-        dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
+        if (isContainer(x.which))
+        {
+            /// A vector/map move-assignment first destroys the old (possibly deep) value recursively.
+            destroy();
+            create(std::move(x));
+        }
+        else
+            dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
     }
 
     template <typename CharT>
@@ -633,22 +730,19 @@ private:
                 destroy<String>();
                 break;
             case Types::Array:
-                destroy<Array>();
-                break;
             case Types::Tuple:
-                destroy<Tuple>();
-                break;
             case Types::Map:
-                destroy<Map>();
-                break;
             case Types::Object:
-                destroy<Object>();
+                destroyContainerIteratively(old_which);
                 break;
             case Types::AggregateFunctionState:
                 destroy<AggregateFunctionStateData>();
                 break;
             case Types::CustomType:
                 destroy<CustomType>();
+                break;
+            case Types::Number:
+                destroy<NumberLiteral>();
                 break;
             default: [[likely]]
                  break;
@@ -661,6 +755,14 @@ private:
         T * MAY_ALIAS ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();
     }
+
+    /// Placement-construct an empty container of the given type into raw (or Null) storage.
+    void initEmptyContainer(Types::Which w);
+
+    /// Copy/destroy a (possibly deeply nested) Array/Tuple/Map/Object value using an explicit
+    /// worklist so the native stack depth stays bounded regardless of the nesting depth.
+    void createContainerIteratively(const Field & src);
+    void destroyContainerIteratively(Types::Which old_which) noexcept;
 };
 
 #undef DBMS_MIN_FIELD_SIZE
@@ -693,6 +795,7 @@ template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static constexpr
 template <> struct Field::TypeToEnum<DecimalField<Time64>>{ static constexpr Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static constexpr Types::Which value = Types::AggregateFunctionState; };
 template <> struct Field::TypeToEnum<CustomType>{ static constexpr Types::Which value = Types::CustomType; };
+template <> struct Field::TypeToEnum<NumberLiteral>{ static constexpr Types::Which value = Types::Number; };
 template <> struct Field::TypeToEnum<bool>{ static constexpr Types::Which value = Types::Bool; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
@@ -717,6 +820,7 @@ template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = De
 template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = AggregateFunctionStateData; };
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
+template <> struct Field::EnumToType<Field::Types::Number> { using Type = NumberLiteral; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
 /// Use it to prevent inclusion of magic_enum in headers, which is very expensive for the compiler
@@ -846,12 +950,25 @@ Field readFieldBinary(ReadBuffer & buf);
 
 String fieldToString(const Field & x);
 
+/// Rewrite every `Bool`-tagged `Field` inside `field`, recursively through `Tuple`/`Array`/`Map`, as
+/// the `UInt64` form `IColumn::get` produces: a boolean has both representations, and `Field`
+/// comparison and hashing read the tag before the value, so the two forms neither compare equal nor
+/// hash alike. An `Object` is deliberately not entered, because its paths disagree: a dynamic path
+/// keeps the `Bool` form on both sides, since `ColumnDynamic::get` rebuilds it, while a typed path is
+/// read from its declared column as `UInt64`. Entering it needs path-aware handling, not this rewrite.
+void normalizeBoolFields(Field & field);
+
 /// Check if a Field contains a NaN value.
 /// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
 inline bool isNaNField(const Field & f)
 {
     return f.isNaN();
 }
+
+/// True when `field`, or any Field nested inside it at any depth, satisfies `predicate`.
+/// The predicates above answer for a single value, while `Array`, `Tuple`, `Map` and `Object` hold Fields,
+/// so they say nothing about what a container carries.
+bool anyFieldSatisfies(const Field & field, bool (*predicate)(const Field &));
 
 }
 

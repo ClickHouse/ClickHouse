@@ -24,7 +24,7 @@ import S3Settings from '/snippets/ko/_s3_settings.mdx';
 데이터 처리나 데이터 손상을 초래하는 소프트웨어 버그가 발생할 수 있습니다.
 
 이러한 실수는 많은 경우 모든 레플리카에 영향을 미칩니다. ClickHouse에는 일부 유형의 실수를 방지하기 위한 내장
-보호 장치가 있습니다. 예를 들어 [기본값](/ko/reference/settings/session-settings#max_table_size_to_drop)으로
+보호 장치가 있습니다. 예를 들어 [기본값](/ko/reference/settings/session-settings/max#max_table_size_to_drop)으로
 50 Gb를 초과하는 데이터를 포함하는 `MergeTree` 계열 엔진의 테이블은
 바로 삭제할 수 없습니다. 하지만 이러한 보호 장치가 모든 경우를 포괄하는 것은 아니며,
 문제는 여전히 발생할 수 있습니다.

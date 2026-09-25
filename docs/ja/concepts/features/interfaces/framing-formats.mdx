@@ -1,0 +1,124 @@
+---
+description: 'フレーミングフォーマットは、HTTP 経由の単一レスポンスストリームでデータ、totals、extremes、progress、プロファイルイベント、サーバーログを多重化します'
+sidebarTitle: 'フレーミングフォーマット'
+slug: /interfaces/framing-formats
+title: 'フレーミングフォーマット'
+doc_type: 'reference'
+---
+
+フレーミングフォーマットは、クエリのさまざまなレスポンス部分を単一のストリームに多重化します。データの chunk、totals と extremes、progress パケット、プロファイルイベント (メトリクス) 、サーバーログなど、ネイティブプロトコルでサポートされるすべてが対象です。これにより、HTTP プロトコルでリッチなデータ交換が可能になります。
+
+フレーミングフォーマットは [出力フォーマット](/ja/reference/formats)とは独立しています。任意の出力フォーマットによって生成されたバイト列を、その chunk を分離し、必要に応じてエンコードすることでカプセル化します。すべての `data`、`totals`、`extremes` パケットのペイロードを連結した結果は、フレーミングなしで出力フォーマットが生成する内容と完全に一致します。補助パケット (progress、ログ、プロファイルイベント、例外) は JSON で表現されます。
+
+フレーミングにより、出力フォーマットの表現力を高めることもできます。これは上記のルールに対する唯一の意図的な例外です。`JSONCompactEachRow` フォーマット群は、totals と extremes の行が通常のデータ行と区別できないため、プレーン出力では totals と extremes を省略します。フレーミングフォーマットではパケット種別によって区別できるため、これらのフォーマットは `totals` および `extremes` パケットに totals と extremes の行を (通常の行構文で) 出力します。これらのフォーマットでは、`data` パケットのペイロードのみを連結した結果が、フレーミングなしで出力フォーマットが生成する内容と完全に一致します。一方、`totals` および `extremes` パケットには、フレーミングなしの出力には含まれない追加の行が格納されます。そのため、このようなストリームからフレーミングなしの出力を再構築するクライアントは、`data` のペイロードのみを連結する必要があります。
+
+フレーミングフォーマットは、クエリレベルの設定 `framing_output_format` で選択します。現在は HTTP プロトコルに適用され、他のインターフェイスでは無視されます。
+
+`send_logs_level` 設定が指定されている場合、サーバーログはパケットとして含まれます。`send_profile_events` 設定が有効な場合 (デフォルト) 、プロファイルイベントが含まれます。progress およびプロファイルイベントのパケットは、`interactive_delay` マイクロ秒あたり最大 1 回送信されます。
+
+成功したストリームは、ネイティブプロトコルの最終 progress パケットと同様に、最終カウンター (`result_rows`、`result_bytes`、`memory_usage`) を含む最後の `progress` パケットで終了します。これらのカウンターはクエリの完了後にのみ判明するため、それ以前の `progress` パケットには含まれません。最終 `progress` パケットは、クエリ完了時のロギングによって出力される末尾の `log` および `profile_events` パケット (たとえば「ピークメモリ使用量」のログエントリ) の後に書き込まれるため、実際にストリームの最後のパケットとなります。失敗時は代わりに `exception` パケットが最後のパケットとなり、最終カウンターを含む `progress` パケットはまったく書き込まれません。これはストリームが正常終了したことを示す終端パケットであるためです。クエリ自体が完了し、最終カウンターがすでに判明した後に失敗が発生した場合 (たとえばクエリログの書き込み中の失敗) も同様です。
+
+このストリームの末尾部分は `system.query_log` の `QueryFinish` エントリが記録された後に書き込まれるため、クエリのネットワーク送信プロファイルイベント (`NetworkSendBytes`、`NetworkSendElapsedMicroseconds`) には、末尾パケットの送信およびレスポンスのクローズは含まれません。また、レスポンスがバッファリングされる場合 (`http_response_buffer_size` または `wait_end_of_query`) 、クエリ完了後にのみ送信されるバッファリング済みレスポンス本文の送信も含まれません。これはネイティブプロトコルと一致しており、ネイティブプロトコルでもクエリログエントリの後に末尾のログとプロファイルイベントを送信します。
+
+フレーミングフォーマット、`send_logs_level`、`send_profile_events` など、クエリ自身の `SETTINGS`句でのみ有効化されるものは、クエリが解析されるまで判明しません。そのため、対応するログとプロファイルイベントはクエリ実行以降のものだけが取得されます。解析、プランニング、分析フェーズのログおよびプロファイルイベントは、設定がセッションまたは URL から指定された場合にのみ取得されます。特に、分析中 (パイプライン実行前) に失敗するクエリ、たとえば不明なテーブルを参照するクエリで、`SETTINGS`句内でのみ `send_logs_level` を有効にした場合、分析フェーズのログではなく `exception` パケットのみが返されます。それらを取得するには、セッションまたは URL で `send_logs_level` を設定してください。
+
+`send_logs_source_regexp`にも、検出が遅れる場合の同じ注意事項が当てはまります。ログキューは各エントリがキャプチャされた時点でログソースに基づいてエントリをフィルタリングするため、クエリ自身の`SETTINGS`句でのみ設定した正規表現は、クエリ実行後にのみ有効になります。解析、プランニング、分析フェーズの`log`パケットは、セッションまたはURLで設定された値によりフィルタリングされます。そこに設定されていない場合はフィルタリングされないため、クエリレベルの正規表現に一致しないログソースが含まれることがあります。逆に、より限定的なセッションまたはURLの正規表現によって除外されたエントリは失われ、より広範なクエリレベルの正規表現によって復元されることはありません。クエリのライフサイクル全体をフィルタリングするには、セッションまたはURLで`send_logs_source_regexp`を設定してください。
+
+クエリ実行中に例外が発生した場合、`http_write_exception_in_output_format`設定にかかわらず、クライアントが常にレスポンスをパケットストリームとして解析できるよう、`exception`パケット (ストリームの最後のパケット) として送信されます。例外が記録されると、出力フォーマットから追加のペイロードバイトが出力されることはありません。出力を生成する前に失敗したクエリでは、`data`パケットは一切送信されません (フォーマットの空のドキュメントスケルトンも含まれません) 。また、ストリーム途中で失敗したクエリでは、連結されたペイロードは失敗箇所で切り詰められ、フォーマットの接尾辞は付加されません。失敗したクエリのペイロードが完全なドキュメントに見えてはなりません。
+
+これには1つ例外があります。パケット自体の書き込みが途中で失敗した場合 (たとえば、パケットの一部のバイトがすでにクライアントに到達した後に接続が切断された場合) 、フレーミングはフェイルクローズし、最終的な`exception`パケットなしでストリームが終了します。途中まで書き込まれたパケットが再試行されることはありません。再送すると、切り詰められたバイトの後に重複分が追加され、ストリームが破損するためです。この場合、クライアントには整形式の終端パケットではなく、切り詰められたレスポンスと中断されたHTTP接続が確認されます。同じ規則は、レスポンスストリーム自体を閉じる際の失敗 (バッファリングされた結果のフラッシュ、HTTP圧縮の完了、ソケットのクローズ) にも適用されます。その時点では成功ストリームの一部またはすべてがすでに送信中であるため、`exception`パケットも汎用HTTPエラーブロックも追加されず、クライアントには切り詰められたレスポンスと中断された接続が確認されます。例外の配信自体が失敗した場合にも同様です。端末の`exception`パケットの書き込みが、パケットストリームの一部が生成された後 (すでに送信済みか、サーバー側のレスポンスバッファー (`http_response_buffer_size`) にまだ残っているかを問わず) に失敗した場合 (たとえば、末尾のログを排出している間) は、同様に何も追加せずにストリームが終了します。そのため、通常のHTTPエラーボディが部分的なパケットストリームに混在することはありません。補助的な`log`、`profile_events`、`exception`パケットの文字列フィールドの書き込み中の失敗も、文字列の最後のバイトの書き込み失敗を含め、途中まで書き込まれたパケットとして扱われます。この場合、ストリームはその切り詰められたパケットで終了し、終端パケットは一切含まれません。`exception`パケットも最終カウンターを含む`progress`パケットもありません。そのため、終端パケットを必要とするクライアントは、クエリ自体が成功した場合でも失敗を検出できます。
+
+フレーミングフォーマットは、結果ストリームを生成しないクエリにも適用されます。成功した`INSERT`、DDLクエリ、または出力のないその他のクエリです。このようなレスポンスには`data`パケットは含まれませんが、レスポンスの`Content-Type`はフレーミングフォーマットに切り替わり、ネイティブプロトコルに合わせて`progress`、`log`、`profile_events`パケットをストリーミングします。ストリームは、最終カウンターを含む最後の`progress`パケットで終了します (たとえば`INSERT`では、書き込まれた行数を示す`result_rows`および`result_bytes`) 。ペイロードはフォーマットされないため、このようなクエリでは出力フォーマットは無関係であり、フレーミングされたストリームに影響しません。
+
+<div id="available-framing-formats">
+  ## 利用可能なフレーミングフォーマット
+</div>
+
+| 名前                                                       | 説明                                             |
+| -------------------------------------------------------- | ---------------------------------------------- |
+| [`None`](#framing-format-none)                           | フレーミングなし。デフォルトではそのまま動作します。                     |
+| [`EventStream`](#framing-format-eventstream)             | HTTP Server-Sent Events (`text/event-stream`) 。         |
+| [`JSONEachPacketBase64`](#framing-format-jsoneachpacket) | パケットごとに1つのJSONオブジェクト。整形されたデータはBase64エンコードされます。 |
+| [`JSONEachPacketString`](#framing-format-jsoneachpacket) | パケットごとに1つのJSONオブジェクト。整形されたデータはJSON文字列に格納されます。  |
+
+<div id="framing-format-none">
+  ## None
+</div>
+
+デフォルトの設定です。該当するすべて (data、totals、extremes、progress) は出力フォーマットにそのまま渡され、該当しないもの (メトリクス、ログ) はすべて無視されます。したがって、`JSONEachRowWithProgress` のように progress 自体を表現するフォーマットを含め、すべてがデフォルトどおりに動作します。
+
+<div id="framing-format-eventstream">
+  ## EventStream
+</div>
+
+パケットを[HTTP Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html)としてフレーミングし、レスポンスの`Content-Type`を`text/event-stream; charset=UTF-8; payload=base64`に設定します。各パケットは、パケット種別にちなんだ名前のイベントとして送信されます: `data`、`totals`、`extremes`、`progress`、`log`、`profile_events`、`exception`。進捗などの補助パケットはJSONで送信されます。
+
+Server-Sent Eventsは、復帰文字 (`\r`) を含む改行をフィールド区切り文字として扱うテキストプロトコルです。そのため、出力フォーマットによって生成されたバイト列はそのまま埋め込まれません。整形済みデータのブロックは単一の`data:`フィールドにBase64エンコードされ、すべての改行を含む完全に整形されたペイロードにデコードされます。これが`Content-Type`の`payload=base64`パラメータの意味です。`data`、`totals`、`extremes`パケットのデコード済みペイロードを連結したものは、テキスト、バイナリ (`Native`、`RowBinary`) 、生データのパススルー (`RawBLOB`、`TSVRaw`) を含むあらゆる出力フォーマットにおいて、フレーミングなしで出力フォーマットが生成する内容とバイト単位で完全に一致します。
+
+補助JSONパケット (`progress`、`log`、`profile_events`、`exception`) はエンコードされません。これらは改行を含まないJSONを含む単一の`data:`フィールドとして書き込まれます。
+
+`*WithProgress`出力フォーマット (`JSONEachRowWithProgress`、`JSONCompactEachRowWithProgress`) は、出力の一部となるインバンド行として進捗を書き込みます。一方、フレーミングフォーマットは進捗を個別の`progress`パケットとして配信するため、これらの出力フォーマットとは互換性がなく、受け付けません。フレーミングでは基本の出力フォーマット (例: `JSONEachRow`) を使用するか、`*WithProgress`フォーマットでは`None`フレーミングを使用してください。
+
+```bash
+curl "http://localhost:8123/?framing_output_format=EventStream" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+```text
+event: data
+data: eyJudW1iZXIiOiIwIn0KeyJudW1iZXIiOiIxIn0KeyJudW1iZXIiOiIyIn0K
+
+event: profile_events
+data: [{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"},{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedBytes","value":"24"}]
+
+event: progress
+data: {"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1174415"}
+
+```
+
+`EventStream` は HTTP プロトコルと統合されており、該当しない場合は例外をスローします。
+
+<div id="framing-format-jsoneachpacket">
+  ## JSONEachPacketBase64 と JSONEachPacketString
+</div>
+
+各パケットは、パケットに関する情報を含む 1 行ごとの JSON オブジェクト (改行区切り JSON、`application/x-ndjson`) です。出力フォーマットで生成されたバイトは、`JSONEachPacketBase64` では base64 エンコードされて (バイナリ出力フォーマットに適しています) 、`JSONEachPacketString` では JSON 文字列として、`data` フィールドに格納されます。
+
+2 つのバリアントでは `data` フィールドのエンコード方法が異なるため、`EventStream` と同様に、レスポンスの `Content-Type` で区別できます。`JSONEachPacketBase64` は `application/x-ndjson; charset=UTF-8; payload=base64` を設定し、`JSONEachPacketString` は `application/x-ndjson; payload=string` を設定します。したがって、クライアントはレスポンスのメタデータだけで、`data` フィールドを base64 デコードする必要があるかどうかを判断できます。`charset=UTF-8` が保証されるのは `JSONEachPacketBase64` のみです。base64 エンコードでは、ペイロードのバイトにかかわらずストリーム全体が有効な UTF-8 になるためです。以下を参照してください。
+
+`JSONEachPacketString` はペイロードのバイトを JSON 文字列に格納するため、有効な UTF-8 テキストを生成する出力フォーマット向けです。`String` および `FixedString` カラムには任意のバイト列を格納できるため、`JSONEachRow`、`TSV`、`CSV` などのテキスト出力フォーマットでは、このような値に対して無効な UTF-8 が出力される場合があります。これは、デフォルトの `output_format_json_validate_utf8 = 0` を使用する ClickHouse の `JSONEachRow` でも同様です。この場合、生成される JSON 文字列、ひいては NDJSON ストリーム全体が有効な UTF-8 であることは保証されません。`JSONEachPacketString` はペイロードを検証も再エンコードもしません。任意のバイト列を正確に転送するには、`JSONEachPacketBase64` を使用してください。
+
+非 UTF-8 バイトを生成することが明らかな出力フォーマットは、クエリの実行前に `JSONEachPacketString` によりエラーとして拒否されます。これには、バイナリ形式 (`Native`、`RowBinary`) 、生データをそのまま渡すフォーマット (`RawBLOB`、`TSVRaw`) 、クエリヘッダーに含まれる非 UTF-8 のカラム名、データ型名、または `Tuple` 要素名を出力に書き込むフォーマット、および設定に基づくリテラルがシリアライゼーションによってそのまま書き込まれ、有効な UTF-8 ではない構成が含まれます。該当する設定は、`format_csv_delimiter`、`format_tsv_null_representation` / `format_csv_null_representation`、および `bool_true_representation` / `bool_false_representation` です。
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+```
+
+`JSONEachPacketBase64` では、同じ `data` パケットは次のようになります。
+
+```text
+{"packet":"data","data":"eyJudW1iZXIiOiIwIn0KeyJudW1iZXIiOiIxIn0KeyJudW1iZXIiOiIyIn0K"}
+```
+
+<div id="framing-format-packet-kinds">
+  ## パケットの種類
+</div>
+
+| パケット             | 内容                                                                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`           | メインの結果に対して出力フォーマットが生成するバイト列 (フォーマットのプレフィックスと接尾辞を含む) 。                                                                                   |
+| `totals`         | totals 行 (`WITH TOTALS`) に対して出力フォーマットが生成するバイト列。                                                                                         |
+| `extremes`       | extremes (`extremes` 設定) に対して出力フォーマットが生成するバイト列。                                                                                         |
+| `progress`       | JSON 形式のクエリ進捗: `read_rows`、`read_bytes`、`total_rows_to_read`、`result_rows`、`result_bytes`、`elapsed_ns`、`memory_usage` (値がゼロのフィールドは省略) 。 |
+| `log`            | JSON 形式のサーバーログエントリ: `event_time`、`host_name`、`query_id`、`thread_id`、`priority`、`source`、`text`。                                         |
+| `profile_events` | JSON 形式のプロファイルイベントの配列: `host_name`、`current_time`、`thread_id`、`type` (`increment` または `gauge`) 、`name`、`value`。                         |
+| `exception`      | JSON 形式の例外メッセージ。                                                                                                                        |
+
+`data`、`totals`、`extremes` のペイロード (上記のバイト完全性に関する注記を参照) とは異なり、補助パケットの文字列フィールド (`log` の `query_id`、`text`、`source`、`profile_events` の `name`、および `exception` のメッセージ) には、base64 でエスケープする手段がありません。また、一部のフィールド (たとえばクエリから取得される `query_id`) には任意のバイト列を格納できます。これらのフィールドは常に有効な UTF-8 にサニタイズされ、無効なシーケンスは置換文字 (`U+FFFD`) に置き換えられるため、補助パケットは常に有効な JSON になります。
+
+複数のクエリを同時に処理する機能はまだ実装されていませんが、設計上は対応可能です。すべてのパケットは、複数クエリの中でのクエリ索引に関する情報を追加できるよう拡張できます。

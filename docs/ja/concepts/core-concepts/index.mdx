@@ -1,19 +1,41 @@
 ---
 slug: /managing-data/core-concepts
 title: '基本概念'
-description: 'ClickHouse の基本概念とその仕組みを学びます'
+description: 'ClickHouseの仕組みに関する基本概念を学ぶ'
 keywords: ['概念', 'パーツ', 'パーティション', 'プライマリインデックス']
 doc_type: 'guide'
+mode: wide
 ---
 
 このドキュメントのセクションでは、
-ClickHouse の仕組みに関する基本概念を学びます。
+ClickHouseの仕組みに関する基本概念を学びます。
 
-| Page                                                      | Description                                                                                                                                                           |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [テーブルパーツ](/ja/concepts/core-concepts/parts)                  | ClickHouse におけるテーブルパーツとは何かを学びます。                                                                                                                                      |
-| [テーブルパーティション](./partitions.mdx)                           | テーブルパーティションとは何か、また何のために使われるのかを学びます。                                                                                                                                   |
-| [テーブルパーツのマージ](./merges.mdx)                               | テーブルパーツのマージとは何か、また何のために使われるのかを学びます。                                                                                                                                   |
-| [テーブルの分片とレプリカ](/ja/guides/oss/deployment-and-scaling/shards) | テーブルの分片とレプリカとは何か、また何のために使われるのかを学びます。                                                                                                                                  |
-| [プライマリインデックス](./primary-indexes.mdx)                      | ClickHouse のスパースプライマリインデックスと、それがクエリ実行時に不要なデータを効率よくスキップする仕組みを紹介します。索引がどのように構築され、どのように使われるのかを、例やその効果を確認するためのツールとともに説明します。さらに、高度なユースケースやベストプラクティスを詳しく扱った解説へのリンクも掲載しています。 |
-| [アーキテクチャ概要](/ja/concepts/core-concepts/academic-overview)    | VLDB 2024 の当社の学術論文に基づき、ClickHouse アーキテクチャの全体像を簡潔に学術的な観点から概説します。                                                                                                       |
+<CardGroup cols={2}>
+  <Card title="用語集" icon="book-open" href="/ja/concepts/core-concepts/glossary">
+    ClickHouseでよく使われる用語や語句と、その定義を紹介します。
+  </Card>
+
+  <Card title="テーブルパーツ" icon="cubes" href="/ja/concepts/core-concepts/parts">
+    ClickHouseにおけるテーブルパーツとは何かを学びます。
+  </Card>
+
+  <Card title="テーブルパーティション" icon="table-cells-large" href="/ja/concepts/core-concepts/partitions">
+    テーブルパーティションとは何か、そして何に使われるのかを学びます。
+  </Card>
+
+  <Card title="テーブルパーツのマージ" icon="code-merge" href="/ja/concepts/core-concepts/merges">
+    テーブルパーツのマージとは何か、そして何に使われるのかを学びます。
+  </Card>
+
+  <Card title="プライマリインデックス" icon="key" href="/ja/concepts/core-concepts/primary-indexes">
+    ClickHouseのスパースプライマリインデックスが、クエリ実行時に不要なデータを効率的にスキップする仕組みを説明します。
+  </Card>
+
+  <Card title="クエリ並列度" icon="bolt" href="/ja/concepts/core-concepts/query-parallelism">
+    ClickHouseが処理レーンと`max_threads`設定を使って、クエリ実行をどのように並列化するかを説明します。
+  </Card>
+
+  <Card title="アーキテクチャ概要" icon="graduation-cap" href="/ja/concepts/core-concepts/academic-overview">
+    VLDB 2024の学術論文に基づく、ClickHouseアーキテクチャの全構成要素についての簡潔な学術的概要です。
+  </Card>
+</CardGroup>

@@ -223,10 +223,12 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
         chunk.setColumns(std::move(input_columns), output_rows);
     }
 
-    /// Update total output rows and check limits
+    /// Update total output rows and check limits. The size limits are checked before the limit
+    /// hint, matching DistinctTransform: in the `throw` overflow mode `check` throws, and a limit
+    /// hint reached by the same chunk must not turn that exception into a silent stop.
     total_output_rows += output_rows;
-    if ((limit_hint && total_output_rows >= limit_hint)
-        || !output_size_limits.check(total_output_rows, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    if (!output_size_limits.check(total_output_rows, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED)
+        || (limit_hint && total_output_rows >= limit_hint))
     {
         stopReading();
     }

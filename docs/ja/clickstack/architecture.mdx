@@ -21,7 +21,7 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
   <Tab title="Managed ClickStack">
     Managed ClickStack は **ClickHouse Cloud** 内で完全に動作し、ClickStack と同じデータモデルとユーザー体験を維持しながら、完全マネージド型のオブザーバビリティ バックエンドを提供します。
 
-    このモデルでは、**ClickHouse と ClickStack UI (HyperDX)&#x20;**&#x20;は ClickHouse Cloud によってホスト、運用、保護されます。ユーザーが担うのは、テレメトリー データをマネージドサービスに送信するための **OpenTelemetry (OTel)  collector** を実行することだけです。
+    このモデルでは、**ClickHouse と ClickStack UI (HyperDX)** は ClickHouse Cloud によってホスト、運用、保護されます。ユーザーが担うのは、テレメトリー データをマネージドサービスに送信するための **OpenTelemetry (OTel) collector** を実行することだけです。
 
     <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="マネージド アーキテクチャ" size="lg" />
 
@@ -49,7 +49,7 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     ### OpenTelemetry collector: データ インジェスト
 
-    ClickStack Managed には、オープンで標準化された方法でテレメトリーを取り込むため、事前設定済みの OpenTelemetry (OTel)  collector が含まれています。データは OTLP プロトコルを使用して次の方法で送信できます。
+    ClickStack Managed には、オープンで標準化された方法でテレメトリーを取り込むため、事前設定済みの OpenTelemetry (OTel) collector が含まれています。データは OTLP プロトコルを使用して次の方法で送信できます。
 
     * gRPC (ポート `4317`)
     * HTTP (ポート `4318`)

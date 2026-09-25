@@ -54,7 +54,7 @@ void registerInputFormatOne(FormatFactory & factory)
 
 ## Description {#description}
 
-The `One` format is a special input format that doesn't read any data from file, and returns only one row with column of type [`UInt8`](../../sql-reference/data-types/int-uint.md), name `dummy` and value `0` (like the `system.one` table).
+The `One` format is a special input format that doesn't read any data from file, and returns only one row with column of type [`UInt8`](/reference/data-types/int-uint), name `dummy` and value `0` (like the `system.one` table).
 Can be used with virtual columns `_file/_path`  to list all files without reading actual data.
 
 ## Example usage {#example-usage}

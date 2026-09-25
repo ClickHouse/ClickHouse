@@ -10,7 +10,7 @@ keywords: ['jeu de données d’exemple', 'menus', 'données historiques', 'donn
 
 Ce jeu de données a été créé par la New York Public Library. Il contient des données historiques sur les menus d&#39;hôtels, de restaurants et de cafés, avec les plats et leurs prix.
 
-Source : http://menus.nypl.org/data
+Source : https://www.nypl.org/research/support/whats-on-the-menu
 Les données sont dans le domaine public.
 
 Ces données proviennent des archives de la bibliothèque et peuvent être incomplètes, ce qui les rend difficiles à exploiter pour une analyse statistique. Néanmoins, elles sont aussi très appétissantes.
@@ -29,7 +29,7 @@ md5sum 2021_08_01_07_01_17_data.tgz
 # Checksum should be equal to: db6126724de939a5481e3160a2d67d15
 ```
 
-Remplacez le lien par le lien mis à jour disponible sur http://menus.nypl.org/data, si nécessaire.
+Remplacez le lien par le lien mis à jour disponible sur https://www.nypl.org/research/support/whats-on-the-menu, si nécessaire.
 La taille du téléchargement est d’environ 35 Mo.
 
 <div id="unpack-dataset">
@@ -135,9 +135,9 @@ Nous utilisons le format [CSVWithNames](/fr/reference/formats/CSV/CSVWithNames),
 
 Nous désactivons `format_csv_allow_single_quotes`, car seuls les guillemets doubles sont utilisés pour les champs de données, et les guillemets simples peuvent apparaître dans les valeurs sans perturber l&#39;analyseur CSV.
 
-Nous désactivons [input&#95;format&#95;null&#95;as&#95;default](/fr/reference/settings/formats#input_format_null_as_default), car nos données ne contiennent pas de [NULL](/fr/reference/settings/formats#input_format_null_as_default). Sinon, ClickHouse essaiera d&#39;analyser les séquences `\N`, ce qui peut les faire confondre avec `\` dans les données.
+Nous désactivons [input&#95;format&#95;null&#95;as&#95;default](/fr/reference/settings/formats/input-format#input_format_null_as_default), car nos données ne contiennent pas de [NULL](/fr/reference/settings/formats/input-format#input_format_null_as_default). Sinon, ClickHouse essaiera d&#39;analyser les séquences `\N`, ce qui peut les faire confondre avec `\` dans les données.
 
-Le paramètre [date&#95;time&#95;input&#95;format best&#95;effort](/fr/reference/settings/formats#date_time_input_format) permet d&#39;analyser des champs [DateTime](/fr/reference/data-types/datetime) dans une grande variété de formats. Par exemple, un format ISO-8601 sans secondes comme &#39;2000-01-01 01:02&#39; sera reconnu. Sans ce paramètre, seul le format DateTime fixe est accepté.
+Le paramètre [date&#95;time&#95;input&#95;format best&#95;effort](/fr/reference/settings/formats/date-time#date_time_input_format) permet d&#39;analyser des champs [DateTime](/fr/reference/data-types/datetime) dans une grande variété de formats. Par exemple, un format ISO-8601 sans secondes comme &#39;2000-01-01 01:02&#39; sera reconnu. Sans ce paramètre, seul le format DateTime fixe est accepté.
 
 <div id="denormalize-data">
   ## Dénormaliser les données

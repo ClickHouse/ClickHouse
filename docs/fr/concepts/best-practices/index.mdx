@@ -1,14 +1,57 @@
 ---
 slug: /best-practices
 keywords: ['Cloud', 'Clé primaire', 'Clé de tri', 'Vues matérialisées', 'Bonnes pratiques', 'Insertions en masse', 'Insertions asynchrones', 'Éviter les mutations', 'Éviter les colonnes Nullable', 'Éviter OPTIMIZE FINAL', 'Clé de partitionnement']
-title: 'Bonnes pratiques de ClickHouse'
+title: 'Bonnes pratiques avec ClickHouse'
 hide_title: true
 description: 'Page d’accueil de la section Bonnes pratiques de ClickHouse'
 doc_type: 'landing-page'
+mode: wide
 ---
-
-import TableOfContents from '/snippets/fr/_table_of_contents.mdx';
 
 Cette section présente les bonnes pratiques à suivre pour tirer le meilleur parti de ClickHouse.
 
-<TableOfContents />
+<CardGroup cols={2}>
+  <Card title="Choisir une clé primaire" icon="key" href="/fr/concepts/best-practices/choosing-a-primary-key">
+    Comment choisir une clé primaire dans ClickHouse.
+  </Card>
+
+  <Card title="Sélectionner les types de données" icon="shapes" href="/fr/concepts/best-practices/select-data-type">
+    Comment choisir les bons types de données pour vos colonnes.
+  </Card>
+
+  <Card title="Utiliser des vues matérialisées" icon="layer-group" href="/fr/concepts/best-practices/use-materialized-views">
+    Déporter le calcul du moment de la requête vers celui de l’insertion grâce aux vues matérialisées.
+  </Card>
+
+  <Card title="Réduire et optimiser les JOIN" icon="link" href="/fr/concepts/best-practices/minimize-optimize-joins">
+    Bonnes pratiques pour utiliser les JOIN dans ClickHouse.
+  </Card>
+
+  <Card title="Choisir une clé de partitionnement" icon="folder-tree" href="/fr/concepts/best-practices/partitioning-keys">
+    Comment choisir une clé de partitionnement.
+  </Card>
+
+  <Card title="Sélectionner une stratégie d’insertion" icon="file-import" href="/fr/concepts/best-practices/selecting-an-insert-strategy">
+    Comment choisir une stratégie d’insertion, notamment pour les insertions en masse et asynchrones.
+  </Card>
+
+  <Card title="Utiliser les indices de saut de données lorsque c’est pertinent" icon="filter" href="/fr/concepts/best-practices/using-data-skipping-indices">
+    Comment et quand utiliser les indices de saut de données.
+  </Card>
+
+  <Card title="Éviter les mutations" icon="ban" href="/fr/concepts/best-practices/avoid-mutations">
+    Pourquoi il faut éviter les mutations dans ClickHouse.
+  </Card>
+
+  <Card title="Éviter OPTIMIZE FINAL" icon="triangle-exclamation" href="/fr/concepts/best-practices/avoid-optimize-final">
+    Pourquoi il faut éviter `OPTIMIZE TABLE ... FINAL`.
+  </Card>
+
+  <Card title="Éviter les colonnes Nullable" icon="circle-minus" href="/fr/concepts/best-practices/avoidnullablecolumns">
+    Pourquoi il faut éviter les colonnes Nullable dans ClickHouse.
+  </Card>
+
+  <Card title="Utiliser JSON lorsque c’est pertinent" icon="code" href="/fr/concepts/best-practices/json-type">
+    Quand utiliser le type de données `JSON`.
+  </Card>
+</CardGroup>

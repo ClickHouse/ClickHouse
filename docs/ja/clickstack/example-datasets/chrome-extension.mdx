@@ -41,18 +41,14 @@ SDK は拡張機能内にバンドルされているため (約480 KB) 、ペー
 </div>
 
 <Steps>
-  <Step>
-    ### 拡張機能のリポジトリをクローンする
-
+  <Step title="拡張機能のリポジトリをクローンする" id="clone-extension">
     ```shell
     git clone https://github.com/kyreddie/hyperdx-chrome-extension
     cd hyperdx-chrome-extension
     ```
   </Step>
 
-  <Step>
-    ### 拡張機能をインストールする
-
+  <Step title="拡張機能をインストールする" id="install-extension">
     1. Chrome を開き、`chrome://extensions` にアクセスします。
     2. **デベロッパー モード** を有効にします (右上) 。
     3. **パッケージ化されていない拡張機能を読み込む** をクリックします。
@@ -61,9 +57,7 @@ SDK は拡張機能内にバンドルされているため (約480 KB) 、ペー
     拡張機能はツールバーに **HyperDX Browser Extension** として表示されます。
   </Step>
 
-  <Step>
-    ### ClickStack を起動する
-
+  <Step title="ClickStack を起動する" id="start-clickstack">
     すでに ClickStack または HyperDX のインジェスト エンドポイントがある場合は、[拡張機能を設定する](#configure-extension) に進んでください。
 
     ローカルの ClickStack 環境では、OpenTelemetry Collector を起動します。`{{CLICKHOUSE_ENDPOINT}}` と `{{CLICKHOUSE_PASSWORD}}` は ClickHouse の接続情報に置き換えてください。
@@ -87,22 +81,18 @@ SDK は拡張機能内にバンドルされているため (約480 KB) 、ペー
     ClickHouse と HyperDX UI を含む完全なローカルデプロイについては、[ClickStack を使い始める](/ja/clickstack/getting-started/oss) を参照してください。
   </Step>
 
-  <Step>
-    ### API key を取得する
-
+  <Step title="API key を取得する" id="get-api-key">
     ローカルの ClickStack では、API key が不要な場合があります。`http://localhost:4318` 上のセルフホスト collector にテレメトリーを送信する場合は、拡張機能のこのフィールドを空のままにしてください。
 
-    ClickStack Cloud または HyperDX Cloud へインジェストする場合は、HyperDX を開いて **Team Settings → API Keys** に移動し、**Ingestion API Key** をコピーします。
+    ClickStack Cloud または HyperDX Cloud へインジェストする場合は、HyperDX を開いて **Team Settings → API Keys** に移動し、**インジェスト API key** をコピーします。
   </Step>
 
-  <Step>
-    ### 拡張機能を設定する
-
+  <Step title="拡張機能を設定する" id="configure-extension">
     Chrome のツールバーにある **HyperDX Browser Extension** アイコンをクリックし、各設定を入力します。
 
     | Field                            | ローカル ClickStack の例                    | 注記                                                           |
     | -------------------------------- | ------------------------------------- | ------------------------------------------------------------ |
-    | **Enable HyperDX Monitoring**    | On                                    | 挿入全体を切り替えるマスタートグル                                      |
+    | **Enable HyperDX Monitoring**    | On                                    | 挿入全体を切り替えるマスタートグル                                            |
     | **Service Name**                 | `my-frontend-app`                     | 必須 — ClickStack 上でサービスを識別します                                 |
     | **API Key**                      | *(空)*                                 | Cloud へのインジェストでは必須。一部のセルフホスト構成では任意                           |
     | **Collector URL**                | `http://localhost:4318`               | OTLP HTTP エンドポイント。Cloud のデフォルトは `https://in-otel.hyperdx.io` |
@@ -119,17 +109,13 @@ SDK は拡張機能内にバンドルされているため (約480 KB) 、ペー
     上のスクリーンショットは、典型的なローカル設定を示しています。監視が有効で、サービス名が設定され、collector は `http://localhost:4318` を指し、トレース伝播は API と localhost の URL に限定されています。
   </Step>
 
-  <Step>
-    ### サイトを閲覧してセッションを生成する
-
+  <Step title="サイトを閲覧してセッションを生成する" id="browse-site">
     Chrome で任意の Web サイトまたはローカルアプリケーションを開きます。たとえば、フロントエンドの開発サーバーなら [http://localhost:3000](http://localhost:3000) です。
 
     通常どおりにページを操作します。リンクをクリックし、フォームを送信し、エラーをトリガーし、ビュー間を移動します。設定が正しければ、拡張機能はページの読み込みごとに Browser SDK を自動的にインジェクトします。
   </Step>
 
-  <Step>
-    ### セッションリプレイを表示する
-
+  <Step title="セッションリプレイを表示する" id="view-session-replay">
     [http://localhost:8080](http://localhost:8080) の HyperDX に戻り、左側のサイドバーから **Client Sessions** に移動します。
 
     セッションが継続時間とイベント数とともに一覧表示されるはずです。▶️ ボタンをクリックしてリプレイします。

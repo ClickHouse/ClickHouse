@@ -34,7 +34,7 @@ public:
 
     bool empty() const override;
 
-    DB::Names getTables() const override;
+    CatalogTables getTables() const override;
 
     Namespaces getNamespaces() const override;
 
@@ -48,13 +48,15 @@ public:
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE; }
 
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
+
 private:
     void reconnectUnlocked() const TSA_REQUIRES(client_mutex);
 
     template <typename Func>
     void executeWithRetry(Func && func) const;
 
-    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
     String base_url;
 

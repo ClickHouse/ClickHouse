@@ -5,8 +5,11 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Common/Logger_fwd.h>
 
+#include <memory>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace DB
@@ -25,6 +28,7 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class Pipe;
 class QueryPlan;
+using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -55,6 +59,42 @@ namespace ClusterProxy
 
 class SelectStreamFactory;
 
+/// `database` is an initiator-only setting: it selects the default database for the user's query
+/// (the equivalent of `USE`), and a remote server applies it the same way. But a query sent to a
+/// remote server as part of a distributed query (a `Distributed` fan-out, a cluster table function,
+/// parallel replicas) must resolve an unqualified table against the server's own default database —
+/// set from the cluster config (`default_database` per replica) or from the connection. Forwarding
+/// `database` would make the remote server `USE` the initiator's database first, reading the wrong
+/// same-named table or failing with `UNKNOWN_TABLE` (and would also attribute the secondary queries
+/// to the initiator's database in `system.query_log`). Strip it from every set of settings that is
+/// sent along with such a query.
+void stripDatabaseSetting(Settings & settings);
+
+/// Reset every "initiator-only" setting — the query-shaping settings (`select`, `order`, `sort`,
+/// `filter`, `limit`, `offset`, `page`, `additional_result_filter`), the result-serialisation
+/// settings (`format`, `output_format`, `default_format`, `compression`), and the HTTP/path-only
+/// settings (`http_allow_database_as_path`, `http_allow_table_as_file`, `http_allow_filters_as_path`,
+/// `http_allow_filters_as_unrecognized_url_parameters`, `implicit_table_at_top_level`), plus
+/// `database` (via `stripDatabaseSetting`). These are materialized on the initiator and must not be
+/// forwarded to remote servers, where they would re-shape the per-shard subquery a second time, break
+/// it (see the `format = 'Null'` case in the implementation), or — for the settings new to this
+/// feature — be rejected as `UNKNOWN_SETTING` by an older shard during a rolling upgrade. Shared by
+/// the `Distributed` fan-out, the `*Cluster` table functions (`IStorageCluster`), and the optimized
+/// `parallel_distributed_insert_select` paths in `StorageDistributed`.
+void stripInitiatorOnlySettings(Settings & settings);
+
+/// True for exactly the settings reset by `stripInitiatorOnlySettings`. Used to also strip those
+/// settings from a query's own `SETTINGS` clause before the query *text* is forwarded to a shard (the
+/// optimized `parallel_distributed_insert_select` paths in `StorageDistributed` send a formatted query
+/// string, not just a settings packet).
+bool isInitiatorOnlySettingName(std::string_view name);
+
+/// Strip the initiator-only settings (the `isInitiatorOnlySettingName` names, in both the `name = value`
+/// and `name = DEFAULT` forms) from a query's own query-level `SETTINGS` clauses, so they are not carried
+/// in the forwarded query *text*. Used by `IStorageCluster::read`, whose `ReadFromCluster` sends the query
+/// via `formatWithSecretsOneLine()` in addition to the (already stripped) inter-server settings packet.
+void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
+
 /// Update settings for Distributed query.
 ///
 /// - Removes different restrictions (like max_concurrent_queries_for_user, max_memory_usage_for_user, etc.)
@@ -72,6 +112,16 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
+
+/// Whether 'max_execution_time_leaf' requires all leaf reading of a parallel-replicas query to happen on
+/// remote replicas. The local replica executes inside the initiator's pipeline and shares the initiator's
+/// 'QueryStatus', so it cannot be bounded by the leaf timeout separately - the leaf timeout is substituted
+/// into 'max_execution_time' only for remote replicas, which build their own 'QueryStatus' from the shipped
+/// settings. Remote-only reading is therefore needed exactly when the leaf timeout is stricter than the
+/// initiator's own 'max_execution_time': when the initiator's timeout is at most the leaf timeout, it already
+/// bounds the local reading at least as tightly (a profile that caps both settings to the same value, like the
+/// one used by the Fast test job, must not disable the local plan for every query).
+bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings);
 
 /// Parallel-replicas state captured from the `ReadFromParallelRemoteReplicasStep` removed from the local
 /// INSERT SELECT plan. Carrying it into the remote-pool pass lets that pass reuse the exact coordinator,
@@ -134,19 +184,13 @@ void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
     QueryProcessingStage::Enum processed_stage,
-    const ASTPtr & query_ast,
-    ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits);
-
-void executeQueryWithParallelReplicas(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    QueryProcessingStage::Enum processed_stage,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
     QueryPlanStepPtr read_from_merge_tree);
+
+QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr context);
 
 void executeQueryWithParallelReplicasCustomKey(
     QueryPlan & query_plan,
@@ -168,15 +212,6 @@ void executeQueryWithParallelReplicasCustomKey(
     const QueryTreeNodePtr & query_tree,
     ContextPtr context);
 
-void executeQueryWithParallelReplicasCustomKey(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    SelectQueryInfo query_info,
-    const ColumnsDescription & columns,
-    const StorageSnapshotPtr & snapshot,
-    QueryProcessingStage::Enum processed_stage,
-    const ASTPtr & query_ast,
-    ContextPtr context);
 }
 
 }

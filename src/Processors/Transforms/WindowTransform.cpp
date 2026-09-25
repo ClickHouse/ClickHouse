@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/SortCursor.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -21,7 +22,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
-#include <Core/SortCursor.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -294,7 +294,13 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
     }
     input_header.setColumns(input_columns);
 
-    // Initialize window function workspaces.
+    resolveColumnIndices(functions);
+    initWorkspaces(functions);
+    setupRangeOffsetComparison();
+}
+
+void WindowTransform::initWorkspaces(const std::vector<WindowFunctionDescription> & functions)
+{
     workspaces.reserve(functions.size());
     for (const auto & f : functions)
     {
@@ -326,6 +332,9 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 window_description.frame = *custom_default_frame;
         }
 
+        if (workspace.window_function_impl && !workspace.window_function_impl->checkWindowFrameType(this))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'", workspace.aggregate_function->getName());
+
         workspace.is_aggregate_function_state = workspace.aggregate_function->isState();
         workspace.aggregate_function_state.reset(
             aggregate_function->sizeOfData(),
@@ -334,7 +343,10 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
 
         workspaces.push_back(std::move(workspace));
     }
+}
 
+void WindowTransform::resolveColumnIndices(const std::vector<WindowFunctionDescription> & functions)
+{
     partition_by_indices.reserve(window_description.partition_by.size());
     for (const auto & column : window_description.partition_by)
     {
@@ -359,68 +371,41 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
     for (const auto index : order_by_indices)
         should_materialize[index] = 1;
 
-    for (const auto & workspace : workspaces)
-        for (auto argument_column_indice : workspace.argument_column_indices)
-            should_materialize[argument_column_indice] = 1;
+    for (const auto & f : functions)
+        for (const auto & argument_name : f.argument_names)
+            should_materialize[input_header.getPositionByName(argument_name)] = 1;
+}
+
+void WindowTransform::setupRangeOffsetComparison()
+{
+    auto & frame = window_description.frame;
+    const bool begin_is_offset = frame.begin_type == WindowFrame::BoundaryType::Offset;
+    const bool end_is_offset = frame.end_type == WindowFrame::BoundaryType::Offset;
+    const bool is_range_offset_frame = frame.type == WindowFrame::FrameType::RANGE && (begin_is_offset || end_is_offset);
+    if (!is_range_offset_frame)
+        return;
 
     // Choose a row comparison function for RANGE OFFSET frame based on the
     // type of the ORDER BY column.
-    if (window_description.frame.type == WindowFrame::FrameType::RANGE
-        && (window_description.frame.begin_type
-                == WindowFrame::BoundaryType::Offset
-            || window_description.frame.end_type
-                == WindowFrame::BoundaryType::Offset))
+    chassert(order_by_indices.size() == 1);
+    const auto & entry = input_header.getByPosition(order_by_indices[0]);
+    const IColumn * column = entry.column.get();
+    APPLY_FOR_TYPES(compareValuesWithOffset)
+
+    // Convert the offsets to the ORDER BY column type. We can't just check
+    // that the type matches, because e.g. the int literals are always
+    // (U)Int64, but the column might be Int8 and so on.
+    auto convert_offset = [&](Field & offset, std::string_view bound_name)
     {
-        chassert(order_by_indices.size() == 1);
-        const auto & entry = input_header.getByPosition(order_by_indices[0]);
-        const IColumn * column = entry.column.get();
-        APPLY_FOR_TYPES(compareValuesWithOffset)
+        offset = convertFieldToTypeOrThrow(offset, *entry.type, nullptr, {}, /*convert_inexact_floats=*/true);
+        if (accurateLess(offset, Field(0)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame {} offset must be nonnegative, {} given", bound_name, offset);
+    };
 
-        // Convert the offsets to the ORDER BY column type. We can't just check
-        // that the type matches, because e.g. the int literals are always
-        // (U)Int64, but the column might be Int8 and so on.
-        if (window_description.frame.begin_type
-            == WindowFrame::BoundaryType::Offset)
-        {
-            window_description.frame.begin_offset = convertFieldToTypeOrThrow(
-                window_description.frame.begin_offset,
-                *entry.type);
-
-            if (accurateLess(window_description.frame.begin_offset, Field(0)))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
-                    window_description.frame.begin_offset);
-            }
-        }
-        if (window_description.frame.end_type
-            == WindowFrame::BoundaryType::Offset)
-        {
-            window_description.frame.end_offset = convertFieldToTypeOrThrow(
-                window_description.frame.end_offset,
-                *entry.type);
-
-            if (accurateLess(window_description.frame.end_offset, Field(0)))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
-                    window_description.frame.end_offset);
-            }
-        }
-    }
-
-    for (const auto & workspace : workspaces)
-    {
-        if (workspace.window_function_impl)
-        {
-            if (!workspace.window_function_impl->checkWindowFrameType(this))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'",
-                    workspace.aggregate_function->getName());
-            }
-        }
-
-    }
+    if (begin_is_offset)
+        convert_offset(frame.begin_offset, "start");
+    if (end_is_offset)
+        convert_offset(frame.end_offset, "end");
 }
 
 WindowTransform::~WindowTransform()
@@ -569,7 +554,7 @@ void WindowTransform::advancePartitionEnd()
     chassert(!partition_ended && partition_end == blocksEnd());
 }
 
-auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const
+MovedRow WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const
 {
     RowNumber moved_row_number = original_row_number;
 
@@ -634,23 +619,21 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number
         }
     }
 
-    return std::tuple<RowNumber, Int64>{moved_row_number, offset};
+    return {moved_row_number, offset};
 }
 
-auto WindowTransform::moveRowNumber(const RowNumber & original_row_number, Int64 offset) const
+MovedRow WindowTransform::moveRowNumber(const RowNumber & original_row_number, Int64 offset) const
 {
-    auto [moved_row_number, offset_after_move] = moveRowNumberNoCheck(original_row_number, offset);
+    const MovedRow moved = moveRowNumberNoCheck(original_row_number, offset);
 
 #ifndef NDEBUG
     /// Check that it was reversible. If we move back, we get the original row number with zero offset.
-    const auto [original_row_number_to_validate, offset_after_move_back]
-        = moveRowNumberNoCheck(moved_row_number, -(offset - offset_after_move));
-
-    chassert(original_row_number_to_validate == original_row_number);
-    chassert(0 == offset_after_move_back);
+    const MovedRow moved_back = moveRowNumberNoCheck(moved.row, -(offset - moved.offset_left));
+    chassert(moved_back.row == original_row_number);
+    chassert(0 == moved_back.offset_left);
 #endif
 
-    return std::tuple<RowNumber, Int64>{moved_row_number, offset_after_move};
+    return moved;
 }
 
 
@@ -734,6 +717,8 @@ void WindowTransform::advanceFrameStart()
         case WindowFrame::BoundaryType::Unbounded:
             // UNBOUNDED PRECEDING, just mark it valid. It is initialized when
             // the new partition starts.
+            // partition_start is in the first group.
+            frame_start_group_number = 1;
             frame_started = true;
             break;
         case WindowFrame::BoundaryType::Current:
@@ -743,6 +728,8 @@ void WindowTransform::advanceFrameStart()
             chassert(peer_group_start < partition_end);
             chassert(peer_group_start <= current_row);
             frame_start = peer_group_start;
+            // peer_group_start is in the current group.
+            frame_start_group_number = peer_group_number;
             frame_started = true;
             break;
         case WindowFrame::BoundaryType::Offset:
@@ -754,11 +741,9 @@ void WindowTransform::advanceFrameStart()
                 case WindowFrame::FrameType::RANGE:
                     advanceFrameStartRangeOffset();
                     break;
-                default:
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Frame start type '{}' for frame '{}' is not implemented",
-                        window_description.frame.begin_type,
-                        window_description.frame.type);
+                case WindowFrame::FrameType::GROUPS:
+                    advanceFrameStartGroupsOffset();
+                    break;
             }
             break;
     }
@@ -766,14 +751,17 @@ void WindowTransform::advanceFrameStart()
     chassert(frame_start_before <= frame_start);
     if (frame_start == frame_start_before)
     {
-        // If the frame start didn't move, this means we validated that the frame
-        // starts at the point we reached earlier but were unable to validate.
-        // This probably only happens in degenerate cases where the frame start
-        // is further than the end of partition, and the partition ends at the
-        // last row of the block, but we can only tell for sure after a new
-        // block arrives. We still have to update the state of aggregate
-        // functions when the frame start becomes valid, so we continue.
-        chassert(frame_started);
+        // The frame start didn't move. Usually this means we re-validated a
+        // position reached on an earlier call, so the frame is now started.
+        // This happens in degenerate cases where the frame start is further than
+        // the end of partition, and the partition ends at the last row of the
+        // block, but we can only tell for sure after a new block arrives.
+        // A GROUPS frame with a FOLLOWING-offset start is the exception: it can
+        // leave frame_start at its previous position when it still needs more
+        // input to locate the target peer group. Then the frame is not started
+        // yet and the partition cannot have ended -- the main loop waits for
+        // more data and retries.
+        chassert(frame_started || !partition_ended);
     }
 
     chassert(partition_start <= frame_start);
@@ -795,14 +783,18 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
         return true;
     }
 
-    if (window_description.frame.type == WindowFrame::FrameType::ROWS)
+    switch (window_description.frame.type)
     {
-        // For ROWS frame, row is only peers with itself (checked above);
-        return false;
+        case WindowFrame::FrameType::ROWS:
+            // For a ROWS frame a row is only a peer with itself (checked above).
+            return false;
+        case WindowFrame::FrameType::RANGE:
+        case WindowFrame::FrameType::GROUPS:
+            // For RANGE and GROUPS frames, rows that compare equal on the ORDER
+            // BY key are peers.
+            break;
     }
 
-    // For RANGE and GROUPS frames, rows that compare equal w/ORDER BY are peers.
-    chassert(window_description.frame.type == WindowFrame::FrameType::RANGE);
     const size_t n = order_by_indices.size();
     if (n == 0)
     {
@@ -1004,6 +996,152 @@ void WindowTransform::advanceFrameEndRangeOffset()
     frame_ended = partition_ended;
 }
 
+RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const
+{
+    need_more_data = false;
+
+    if (start == partition_end)
+        return partition_end;
+
+    // Resume from the frontier of a previous, unfinished scan of the same peer group: every row in
+    // [start, scan_frontier] is already known to be a peer of `start`. A frontier before `start` is
+    // stale (the boundary has moved to another group or partition since the last scan).
+    if (scan_frontier < start)
+        scan_frontier = start;
+
+    // Walk forward block by block while the peer group keeps extending.
+    const UInt64 blocks_end_block = first_block_number + blocks.size();
+    for (RowNumber cur = scan_frontier; cur.block < blocks_end_block; cur = RowNumber{cur.block + 1, 0})
+    {
+        const size_t block_rows = blockRowsNumber(cur);
+        const bool partition_ends_in_block = partition_end.block == cur.block;
+        const size_t end_bound = partition_ends_in_block ? partition_end.row : block_rows;
+
+        // `cur` is a valid row inside the partition, so the equal-range search has at least one row.
+        chassert(cur.row < end_bound);
+
+        // Try to jump over the whole peer group at once: the end of the run of rows equal to `cur` across
+        // all ORDER BY columns, within the sorted, partition-bounded range [cur.row, end_bound).
+        const size_t run_end = getEqualRangeEndAssumeSorted(
+            inputAt(cur), order_by_indices, cur.row, end_bound, 1 /* nan_direction_hint */);
+
+        if (run_end < end_bound)
+            return RowNumber{cur.block, run_end};   // a real peer-group boundary inside this block
+
+        // No earlier boundary, so the run of peers reached the bound. getEqualRangeEndAssumeSorted
+        // never returns past `end_bound`, so the group extends exactly to the end of what we scanned
+        // in this block -- the precondition for both the partition-end and cross-block cases below.
+        chassert(run_end == end_bound);
+
+        if (partition_ends_in_block)
+            return partition_end;                   // the peer group reaches the partition end
+
+        // The group extends to the end of `cur`'s block. It continues into the next block only if
+        // that block is buffered, is still in this partition, and its first row is a peer.
+        const RowNumber next_block_start{cur.block + 1, 0};
+
+        // We cannot extend the scan into the next block when it has not arrived yet, or when the next
+        // row is the partition boundary (a peer group never crosses partitions). In both cases the
+        // group's end depends on whether the partition has ended, which is decided after the loop.
+        // Remember the proven scan progress so a retry does not rescan the group from its first row.
+        if (next_block_start.block >= blocks_end_block || next_block_start == partition_end)
+        {
+            scan_frontier = RowNumber{cur.block, block_rows - 1};
+            break;
+        }
+
+        if (!arePeers({cur.block, block_rows - 1}, next_block_start))
+            return next_block_start;                // the peer group ends exactly at the block boundary
+
+        // Otherwise the group spans the boundary; the loop advances `cur` into the next block.
+    }
+
+    // We broke out because the group either reaches a partition boundary that sits on a block edge,
+    // or extends past the rows we can currently resolve. If the partition has ended, the group ends
+    // at the partition end.
+    if (partition_ended)
+        return partition_end;
+
+    // The partition has not ended and we ran past the buffered rows wait for more input.
+    chassert(partition_end == blocksEnd());
+    need_more_data = true;
+    return start;
+}
+
+bool WindowTransform::advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const
+{
+    chassert(target_group >= 1);
+    chassert(group_counter <= static_cast<UInt64>(std::numeric_limits<Int64>::max()));
+
+    while (static_cast<Int64>(group_counter) < target_group)
+    {
+        bool need_more_data = false;
+        const RowNumber group_end = findPeerGroupEnd(pointer, scan_frontier, need_more_data);
+
+        if (need_more_data)
+        {
+            // Leave `pointer` and `group_counter` untouched so we can resume later.
+            return false;
+        }
+
+        if (group_end == partition_end)
+        {
+            // The target peer group is past the last group in the partition; clamp to the end.
+            pointer = partition_end;
+            return true;
+        }
+
+        // Move to the first row of the next peer group.
+        pointer = group_end;
+        ++group_counter;
+    }
+
+    return true;
+}
+
+void WindowTransform::advanceFrameStartGroupsOffset()
+{
+    const Int64 offset
+        = static_cast<Int64>(window_description.frame.begin_offset.safeGet<UInt64>()) * (window_description.frame.begin_preceding ? -1 : 1);
+
+    // The frame starts at the first row of the peer group `offset` groups away from the current one.
+    const Int64 target_group = static_cast<Int64>(peer_group_number) + offset;
+
+    if (target_group <= 1)
+    {
+        // The target peer group is at or before the first group: clamp to the partition start.
+        frame_start = partition_start;
+        frame_start_group_number = 1;
+        frame_started = true;
+        return;
+    }
+
+    frame_started = advanceGroupBoundary(frame_start, frame_start_group_number, frame_start_group_scan_frontier, target_group);
+}
+
+void WindowTransform::advanceFrameEndGroupsOffset()
+{
+    if (frame_end == frame_start)
+        frame_end_group_number = frame_start_group_number;
+
+    const Int64 offset
+        = static_cast<Int64>(window_description.frame.end_offset.safeGet<UInt64>()) * (window_description.frame.end_preceding ? -1 : 1);
+
+    // frame_end is not inclusive, so it must reach the first row of the group after the target one.
+    const Int64 target_group = static_cast<Int64>(peer_group_number) + offset + 1;
+
+    if (target_group <= 1)
+    {
+        // The frame ends before the first peer group: it is empty.
+        frame_end = frame_start;
+        frame_end_group_number = frame_start_group_number;
+        frame_ended = true;
+        return;
+    }
+
+    frame_ended = advanceGroupBoundary(frame_end, frame_end_group_number, frame_end_group_scan_frontier, target_group);
+}
+
 void WindowTransform::advanceFrameEnd()
 {
     // No reason for this function to be called again after it succeeded.
@@ -1028,10 +1166,9 @@ void WindowTransform::advanceFrameEnd()
                 case WindowFrame::FrameType::RANGE:
                     advanceFrameEndRangeOffset();
                     break;
-                default:
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "The frame end type '{}' is not implemented",
-                        window_description.frame.end_type);
+                case WindowFrame::FrameType::GROUPS:
+                    advanceFrameEndGroupsOffset();
+                    break;
             }
             break;
     }
@@ -1163,8 +1300,6 @@ void WindowTransform::writeOutCurrentRow()
         IColumn * result_column = block.output_columns[wi].get();
         const auto * a = ws.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
-        // FIXME does it also allocate the result on the arena?
-        // We'll have to pass it out with blocks then...
 
         if (frame_unchanged && !ws.is_aggregate_function_state && current_row.row > 0)
         {
@@ -1226,70 +1361,60 @@ static void assertSameColumns(const Columns & left_all, const Columns & right_al
     }
 }
 
-void WindowTransform::appendChunk(Chunk & chunk)
+void WindowTransform::addInputBlock(Chunk chunk)
 {
-    // First, prepare the new input block and add it to the queue. We might not
-    // have it if it's end of data, though.
-    if (!input_is_finished)
+    blocks.push_back({});
+    auto & block = blocks.back();
+
+    // Use the number of rows from the Chunk, because it is correct even in
+    // the case where the Chunk has no columns. Not sure if this actually
+    // happens, because even in the case of `count() over ()` we have a dummy
+    // input column.
+    block.rows = chunk.getNumRows();
+
+    // If we have a (logically) constant column, some Chunks will have a
+    // Const column for it, and some -- materialized. Such difference is
+    // generated by e.g. MergingSortedAlgorithm, which mostly materializes
+    // the constant ORDER BY columns, but in some obscure cases passes them
+    // through, unmaterialized. This mix is a pain to work with in Window
+    // Transform, because we have to compare columns across blocks, when e.g.
+    // searching for peer group boundaries, and each of the four combinations
+    // of const and materialized requires different code.
+    // Another problem with Const columns is that the aggregate functions
+    // can't work with them, so we have to materialize them like the
+    // Aggregator does.
+    // Likewise, aggregate functions can't work with LowCardinality,
+    // so we have to materialize them too.
+    // We only materialize the columns we actually read: the PARTITION BY / ORDER BY keys and
+    // the function arguments. The other columns are emitted to the output as-is from original_input_columns to
+    // avoid paying unnecessary Const/LowCardinality/Sparse cost.
+    auto columns = chunk.detachColumns();
+    block.original_input_columns = columns;
+    for (size_t i = 0; i < columns.size(); ++i)
+        if (should_materialize[i])
+            columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullIfWrapped());
+
+    block.input_columns = std::move(columns);
+
+    // Initialize output columns.
+    for (auto & ws : workspaces)
     {
-        if (!chunk.hasRows())
-        {
-            // Joins may generate empty input chunks when it's not yet end of
-            // input. Just ignore them. They probably shouldn't be sending empty
-            // chunks up the pipeline, but oh well.
-            return;
-        }
+        block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
 
-        blocks.push_back({});
-        auto & block = blocks.back();
-
-        // Use the number of rows from the Chunk, because it is correct even in
-        // the case where the Chunk has no columns. Not sure if this actually
-        // happens, because even in the case of `count() over ()` we have a dummy
-        // input column.
-        block.rows = chunk.getNumRows();
-
-        // If we have a (logically) constant column, some Chunks will have a
-        // Const column for it, and some -- materialized. Such difference is
-        // generated by e.g. MergingSortedAlgorithm, which mostly materializes
-        // the constant ORDER BY columns, but in some obscure cases passes them
-        // through, unmaterialized. This mix is a pain to work with in Window
-        // Transform, because we have to compare columns across blocks, when e.g.
-        // searching for peer group boundaries, and each of the four combinations
-        // of const and materialized requires different code.
-        // Another problem with Const columns is that the aggregate functions
-        // can't work with them, so we have to materialize them like the
-        // Aggregator does.
-        // Likewise, aggregate functions can't work with LowCardinality,
-        // so we have to materialize them too.
-        // We only materialize the columns we actually read: the PARTITION BY / ORDER BY keys and
-        // the function arguments. The other columns are emitted to the output as-is from original_input_columns to
-        // avoid paying unnecessary Const/LowCardinality/Sparse cost.
-        auto columns = chunk.detachColumns();
-        block.original_input_columns = columns;
-        for (size_t i = 0; i < columns.size(); ++i)
-            if (should_materialize[i])
-                columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
-
-        block.input_columns = std::move(columns);
-
-        // Initialize output columns.
-        for (auto & ws : workspaces)
-        {
-            block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
-
-            block.output_columns.push_back(ws.aggregate_function->getResultType()
-                ->createColumn());
-            block.output_columns.back()->reserve(block.rows);
-        }
-
-        // As a debugging aid, assert that all chunks have the same C++ type of
-        // columns, that also matches the input header, because we often have to
-        // work across chunks.
-        assertSameColumns(input_header.getColumns(), block.input_columns, should_materialize);
+        block.output_columns.push_back(ws.aggregate_function->getResultType()
+            ->createColumn());
+        block.output_columns.back()->reserve(block.rows);
     }
 
-    // Start the calculations. First, advance the partition end.
+    // As a debugging aid, assert that all chunks have the same C++ type of
+    // columns, that also matches the input header, because we often have to
+    // work across chunks.
+    assertSameColumns(input_header.getColumns(), block.input_columns, should_materialize);
+}
+
+void WindowTransform::computeReadyRows()
+{
+    // First, advance the partition end.
     for (;;)
     {
         advancePartitionEnd();
@@ -1387,7 +1512,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
             // because current_row might now be past-the-end.
             advanceRowNumber(current_row);
             ++current_row_number;
-            first_not_ready_row = current_row;
             frame_ended = false;
             frame_started = false;
         }
@@ -1406,60 +1530,65 @@ void WindowTransform::appendChunk(Chunk & chunk)
             // we are going to receive more data.
             chassert(partition_end == blocksEnd());
             chassert(!input_is_finished);
-            break;
+            return;
         }
 
-        // Start the next partition.
-        partition_start = partition_end;
-        advanceRowNumber(partition_end);
-        partition_ended = false;
-        // We have to reset the frame and other pointers when the new partition
-        // starts.
-        frame_start = partition_start;
-        frame_end = partition_start;
-        prev_frame_start = partition_start;
-        prev_frame_end = partition_start;
-        chassert(current_row == partition_start);
-        current_row_number = 1;
-        peer_group_start = partition_start;
-        peer_group_start_row_number = 1;
-        peer_group_number = 1;
+        startNextPartition();
+    }
+}
 
-        // Reinitialize the aggregate function states because the new partition
-        // has started.
-        for (auto & ws : workspaces)
+void WindowTransform::startNextPartition()
+{
+    partition_start = partition_end;
+    advanceRowNumber(partition_end);
+    partition_ended = false;
+    // We have to reset the frame and other pointers when the new partition
+    // starts.
+    frame_start = partition_start;
+    frame_end = partition_start;
+    prev_frame_start = partition_start;
+    prev_frame_end = partition_start;
+    chassert(current_row == partition_start);
+    current_row_number = 1;
+    peer_group_start = partition_start;
+    peer_group_start_row_number = 1;
+    peer_group_number = 1;
+    frame_start_group_number = 1;
+    frame_end_group_number = 1;
+
+    // Reinitialize the aggregate function states because the new partition
+    // has started.
+    for (auto & ws : workspaces)
+    {
+        if (ws.window_function_impl)
         {
-            if (ws.window_function_impl)
-            {
-                continue;
-            }
-
-            const auto * a = ws.aggregate_function.get();
-            auto * buf = ws.aggregate_function_state.data();
-
-            a->destroy(buf);
+            continue;
         }
 
-        // Release the arena we use for aggregate function states, so that it
-        // doesn't grow without limit. Not sure if it's actually correct, maybe
-        // it allocates the return values in the Arena as well...
-        if (arena)
+        const auto * a = ws.aggregate_function.get();
+        auto * buf = ws.aggregate_function_state.data();
+
+        a->destroy(buf);
+    }
+
+    // Replace the arena so that it does not grow across partitions. All states
+    // were destroyed above and no result lives in it, see the field comment.
+    if (arena)
+    {
+        arena = std::make_unique<Arena>();
+    }
+
+    for (auto & ws : workspaces)
+    {
+        if (ws.window_function_impl)
         {
-            arena = std::make_unique<Arena>();
+            continue;
         }
 
-        for (auto & ws : workspaces)
-        {
-            if (ws.window_function_impl)
-            {
-                continue;
-            }
+        const auto * a = ws.aggregate_function.get();
+        auto * buf = ws.aggregate_function_state.data();
 
-            const auto * a = ws.aggregate_function.get();
-            auto * buf = ws.aggregate_function_state.data();
-
-            a->create(buf);
-        }
+        a->create(buf);
     }
 }
 
@@ -1467,34 +1596,25 @@ IProcessor::Status WindowTransform::prepare()
 {
     if (output.isFinished() || isCancelled())
     {
-        // The consumer asked us not to continue (or we decided it ourselves),
-        // so we abort. Not sure what the difference between the two conditions
-        // is, but it seemed that output.isFinished() is not enough to cancel on
-        // Ctrl+C. Test manually if you change it.
+        // output.isFinished(): the consumer closed the port early, e.g. LIMIT is
+        // satisfied. isCancelled(): KILL QUERY, a client disconnect or Ctrl+C
+        // cancelled the processor. Either way there is nothing more to produce.
         input.close();
         return Status::Finished;
     }
 
-    if (output_data.exception)
-    {
-        // An exception occurred during processing.
-        output.pushData(std::move(output_data));
-        output.finish();
-        input.close();
-        return Status::Finished;
-    }
-
-    chassert(first_not_ready_row.block >= first_block_number);
-    // The first_not_ready_row might be past-the-end if we have already
-    // calculated the window functions for all input rows. That's why the
-    // equality is also valid here.
-    chassert(first_not_ready_row.block <= first_block_number + blocks.size());
+    chassert(current_row.block >= first_block_number);
+    // The current_row might be past-the-end if we have already calculated the
+    // window functions for all input rows. That's why the equality is also
+    // valid here.
+    chassert(current_row.block <= first_block_number + blocks.size());
     chassert(next_output_block_number >= first_block_number);
 
-    // Output the ready data prepared by work().
+    // Output the ready data prepared by work(). A block is ready when the
+    // current row has left it, because rows are computed in order.
     // We inspect the calculation state and create the output chunk right here,
     // because this is pretty lightweight.
-    if (next_output_block_number < first_not_ready_row.block)
+    if (next_output_block_number < current_row.block)
     {
         if (output.canPush())
         {
@@ -1506,11 +1626,12 @@ IProcessor::Status WindowTransform::prepare()
             {
                 columns.push_back(ColumnPtr(std::move(res)));
             }
-            output_data.chunk.setColumns(columns, block.rows);
+            Chunk chunk;
+            chunk.setColumns(columns, block.rows);
 
             ++next_output_block_number;
 
-            output.pushData(std::move(output_data));
+            output.push(std::move(chunk));
         }
 
         // We don't need input.setNotNeeded() here, because we already pull with
@@ -1524,35 +1645,23 @@ IProcessor::Status WindowTransform::prepare()
         // and we don't have ready output data (checked above). We must be
         // finished.
         chassert(next_output_block_number == first_block_number + blocks.size());
-        chassert(first_not_ready_row == blocksEnd());
+        chassert(current_row == blocksEnd());
 
-        // FIXME do we really have to do this?
+        // The consumer learns that the data ended only from the closed output port.
         output.finish();
 
         return Status::Finished;
     }
 
     // Consume input data if we have any ready.
-    if (!has_input && input.hasData())
+    if (!pending_input && input.hasData())
     {
         // Pulling with set_not_needed = true and using an explicit setNeeded()
         // later is somewhat more efficient, because after the setNeeded(), the
         // required input block will be generated in the same thread and passed
         // to our prepare() + work() methods in the same thread right away, so
         // hopefully we will work on hot (cached) data.
-        input_data = input.pullData(true /* set_not_needed */);
-
-        // If we got an exception from input, just return it and mark that we're
-        // finished.
-        if (input_data.exception)
-        {
-            output.pushData(std::move(input_data));
-            output.finish();
-
-            return Status::PortFull;
-        }
-
-        has_input = true;
+        pending_input = input.pull(true /* set_not_needed */);
 
         // Now we have new input and can try to generate more output in work().
         return Status::Ready;
@@ -1577,23 +1686,23 @@ IProcessor::Status WindowTransform::prepare()
 
 void WindowTransform::work()
 {
-    // Exceptions should be skipped in prepare().
-    chassert(!input_data.exception);
+    chassert(pending_input || input_is_finished);
 
-    chassert(has_input || input_is_finished);
+    if (pending_input)
+    {
+        Chunk chunk = std::exchange(pending_input, std::nullopt).value();
+        if (!chunk.hasRows())
+            return;
 
-    try
-    {
-        has_input = false;
-        appendChunk(input_data.chunk);
-    }
-    catch (DB::Exception &)
-    {
-        output_data.exception = std::current_exception();
-        has_input = false;
-        return;
+        addInputBlock(std::move(chunk));
     }
 
+    computeReadyRows();
+    releaseUnusedBlocks();
+}
+
+void WindowTransform::releaseUnusedBlocks()
+{
     // We don't really have to keep the entire partition, and it can be big, so
     // we want to drop the starting blocks to save memory. We can drop the old
     // blocks if we already returned them as output, and the frame and the
@@ -1602,8 +1711,13 @@ void WindowTransform::work()
     // than the current frame start, so we don't have to check the latter. Note
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
+    // We also keep the start of the current peer group: it can lag behind the
+    // current row (its group may have started in an earlier block), and it is
+    // dereferenced by arePeers() on the next row. A FOLLOWING frame pushes the
+    // frame pointers ahead of the current row, so peer_group_start can be the
+    // trailing pointer.
     chassert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block});
+    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block, peer_group_start.block});
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -2944,7 +3058,70 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                     name, argument_types.size());
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Ranks the current row within its partition with gaps. In other words, if the value of any row it encounters is equal to the value of a previous row then it will receive the same rank as that previous row.
+The rank of the next row is then equal to the rank of the previous row plus a gap equal to the number of times the previous rank was given.
+
+The [dense_rank](/reference/functions/window-functions/dense_rank) function provides the same behaviour but without gaps in ranking.
+
+**Syntax**
+
+```sql
+rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Returned value**
+
+- A number for the current row within its partition, including gaps. [UInt64](/reference/data-types/int-uint).
+
+**Example**
+
+The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       rank() OVER (ORDER BY salary DESC) AS rank
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─rank─┐
+1. │ Gary Chen       │ 195000 │    1 │
+2. │ Robert George   │ 195000 │    1 │
+3. │ Charles Juarez  │ 190000 │    3 │
+4. │ Douglas Benson  │ 150000 │    4 │
+5. │ Michael Stanley │ 150000 │    4 │
+6. │ Scott Harrison  │ 150000 │    4 │
+7. │ James Henderson │ 140000 │    7 │
+   └─────────────────┴────────┴──────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("denseRank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings * settings)
@@ -2958,7 +3135,71 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                     name, argument_types.size());
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+Ranks the current row within its partition without gaps. In other words, if the value of any new row encountered is equal to the value of one of the previous rows then it will receive the next successive rank without any gaps in ranking.
+
+The [rank](/reference/functions/window-functions/rank) function provides the same behaviour, but with gaps in ranking.
+
+**Syntax**
+
+Alias: `denseRank` (case-sensitive)
+
+```sql
+dense_rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Returned value**
+
+- A number for the current row within its partition, without gaps in ranking. [UInt64](/reference/data-types/int-uint).
+
+**Example**
+
+The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       dense_rank() OVER (ORDER BY salary DESC) AS dense_rank
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─dense_rank─┐
+1. │ Gary Chen       │ 195000 │          1 │
+2. │ Robert George   │ 195000 │          1 │
+3. │ Charles Juarez  │ 190000 │          2 │
+4. │ Michael Stanley │ 150000 │          3 │
+5. │ Douglas Benson  │ 150000 │          3 │
+6. │ Scott Harrison  │ 150000 │          3 │
+7. │ James Henderson │ 140000 │          4 │
+   └─────────────────┴────────┴────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerAlias("dense_rank", "denseRank", AggregateFunctionFactory::Case::Insensitive);
 
@@ -2967,7 +3208,67 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionPercentRank>(name, argument_types,
                 parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+returns the relative rank (i.e. percentile) of rows within a window partition.
+
+**Syntax**
+
+Alias: `percentRank` (case-sensitive)
+
+```sql
+percent_rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+FROM table_name
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+```
+
+The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Example**
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       percent_rank() OVER (ORDER BY salary DESC) AS percent_rank
+FROM salaries;
+```
+
+```response title="Response"
+
+   ┌─player──────────┬─salary─┬───────percent_rank─┐
+1. │ Gary Chen       │ 195000 │                  0 │
+2. │ Robert George   │ 195000 │                  0 │
+3. │ Charles Juarez  │ 190000 │ 0.3333333333333333 │
+4. │ Michael Stanley │ 150000 │                0.5 │
+5. │ Scott Harrison  │ 150000 │                0.5 │
+6. │ Douglas Benson  │ 150000 │                0.5 │
+7. │ James Henderson │ 140000 │                  1 │
+   └─────────────────┴────────┴────────────────────┘
+
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Insensitive);
 
@@ -2976,56 +3277,588 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionCumeDist>(name, argument_types,
                 parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+Computes the cumulative distribution of a value within a group of values, i.e., the percentage of rows with values less than or equal to the current row's value. Can be used to determine relative standing of a value within a partition.
+
+**Syntax**
+
+```sql
+cume_dist ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+FROM table_name
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+```
+
+The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Returned value**
+
+- The relative rank of the current row. The return type is Float64 in the range [0, 1]. [Float64](/reference/data-types/float).
+
+**Example**
+
+The following example calculates the cumulative distribution of salaries within a team:
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       cume_dist() OVER (ORDER BY salary DESC) AS cume_dist
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬───────────cume_dist─┐
+1. │ Robert George   │ 195000 │  0.2857142857142857 │
+2. │ Gary Chen       │ 195000 │  0.2857142857142857 │
+3. │ Charles Juarez  │ 190000 │ 0.42857142857142855 │
+4. │ Douglas Benson  │ 150000 │  0.8571428571428571 │
+5. │ Michael Stanley │ 150000 │  0.8571428571428571 │
+6. │ Scott Harrison  │ 150000 │  0.8571428571428571 │
+7. │ James Henderson │ 140000 │                   1 │
+   └─────────────────┴────────┴─────────────────────┘
+```
+
+**Implementation Details**
+
+The `cume_dist()` function calculates the relative position using the following formula:
+
+```text
+cume_dist = (number of rows ≤ current row value) / (total number of rows in partition)
+```
+
+Rows with equal values (peers) receive the same cumulative distribution value, which corresponds to the highest position of the peer group.
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Numbers the current row within its partition starting from 1.
+
+**Syntax**
+
+```sql
+row_number (column_name)
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Returned value**
+
+- A number for the current row within its partition. [UInt64](/reference/data-types/int-uint).
+
+**Example**
+
+The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       row_number() OVER (ORDER BY salary DESC) AS row_number
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─row_number─┐
+1. │ Gary Chen       │ 195000 │          1 │
+2. │ Robert George   │ 195000 │          2 │
+3. │ Charles Juarez  │ 190000 │          3 │
+4. │ Scott Harrison  │ 150000 │          4 │
+5. │ Michael Stanley │ 150000 │          5 │
+   └─────────────────┴────────┴────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("ntile", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionNtile>(name, argument_types,
                 parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Divides the ordered rows within a partition into a specified number of buckets (groups) of as equal a size as possible, and returns the bucket number that the current row belongs to. Buckets are numbered starting from 1. For each partition, the rows are assigned to buckets in order: if the number of rows is not divisible by the number of buckets, the earlier buckets receive one more row than the later ones.
+
+**Syntax**
+
+```sql
+ntile (buckets)
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
+FROM table_name
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+```
+
+The argument `buckets` must be a constant positive integer.
+
+An `ORDER BY` clause is required. The window frame must be the whole partition (`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`), which is also the default frame used when none is specified explicitly.
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Returned value**
+
+- The bucket number of the current row within its partition. [UInt64](/reference/data-types/int-uint).
+
+**Example**
+
+The following example divides the players into four buckets ordered by descending salary.
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       ntile(4) OVER (ORDER BY salary DESC, player ASC) AS bucket
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─bucket─┐
+1. │ Gary Chen       │ 195000 │      1 │
+2. │ Robert George   │ 195000 │      1 │
+3. │ Charles Juarez  │ 190000 │      2 │
+4. │ Douglas Benson  │ 150000 │      2 │
+5. │ Michael Stanley │ 150000 │      3 │
+6. │ Scott Harrison  │ 150000 │      3 │
+7. │ James Henderson │ 140000 │      4 │
+   └─────────────────┴────────┴────────┘
+```
+
+Here there are seven rows and four buckets, so the first three buckets contain two rows each and the last bucket contains a single row.
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("nth_value", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionNthValue>(
                 name, argument_types, parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+
+**Syntax**
+
+```sql
+nth_value (x, offset)
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Parameters**
+
+- `x` — Column name.
+- `offset` — nth row to evaluate current row against.
+
+**Returned value**
+
+- The first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+
+**Example**
+
+In this example the `nth-value` function is used to find the third-highest salary from a fictional dataset of salaries of Premier League football players.
+
+```sql title="Query"
+DROP TABLE IF EXISTS salaries;
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 100000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 180000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_highest_salary FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─third_highest_salary─┐
+1. │ Gary Chen       │ 195000 │                      │
+2. │ Robert George   │ 195000 │                      │
+3. │ Charles Juarez  │ 190000 │ Charles Juarez       │
+4. │ Scott Harrison  │ 180000 │ Charles Juarez       │
+5. │ Douglas Benson  │ 150000 │ Charles Juarez       │
+6. │ James Henderson │ 140000 │ Charles Juarez       │
+7. │ Michael Stanley │ 100000 │ Charles Juarez       │
+   └─────────────────┴────────┴──────────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("lagInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+Returns a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+
+<Warning>
+`lagInFrame` behavior differs from the standard SQL `lag` window function.
+ClickHouse window function `lagInFrame` respects the window frame.
+To get behavior identical to the `lag`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+</Warning>
+
+**Syntax**
+
+```sql
+lagInFrame(x[, offset[, default]])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Parameters**
+- `x` — Column name.
+- `offset` — Offset to apply. [(U)Int*](/reference/data-types/int-uint). (Optional - `1` by default).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+
+**Returned value**
+
+- Value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
+
+**Example**
+
+This example looks at historical data for a specific stock and uses the `lagInFrame` function to calculate a day-to-day delta and percentage change in the closing price of the stock.
+
+```sql title="Query"
+CREATE TABLE stock_prices
+(
+    `date`   Date,
+    `open`   Float32, -- opening price
+    `high`   Float32, -- daily high
+    `low`    Float32, -- daily low
+    `close`  Float32, -- closing price
+    `volume` UInt32   -- trade volume
+)
+Engine = Memory;
+
+INSERT INTO stock_prices FORMAT Values
+    ('2024-06-03', 113.62, 115.00, 112.00, 115.00, 438392000),
+    ('2024-06-04', 115.72, 116.60, 114.04, 116.44, 403324000),
+    ('2024-06-05', 118.37, 122.45, 117.47, 122.44, 528402000),
+    ('2024-06-06', 124.05, 125.59, 118.32, 121.00, 664696000),
+    ('2024-06-07', 119.77, 121.69, 118.02, 120.89, 412386000);
+```
+
+```sql title="Query"
+SELECT
+    date,
+    close,
+    lagInFrame(close, 1, close) OVER (ORDER BY date ASC
+       ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+     ) AS previous_day_close,
+    COALESCE(ROUND(close - previous_day_close, 2)) AS delta,
+    COALESCE(ROUND((delta / previous_day_close) * 100, 2)) AS percent_change
+FROM stock_prices
+ORDER BY date DESC
+```
+
+```response title="Response"
+   ┌───────date─┬──close─┬─previous_day_close─┬─delta─┬─percent_change─┐
+1. │ 2024-06-07 │ 120.89 │                121 │ -0.11 │          -0.09 │
+2. │ 2024-06-06 │    121 │             122.44 │ -1.44 │          -1.18 │
+3. │ 2024-06-05 │ 122.44 │             116.44 │     6 │           5.15 │
+4. │ 2024-06-04 │ 116.44 │                115 │  1.44 │           1.25 │
+5. │ 2024-06-03 │    115 │                115 │     0 │              0 │
+   └────────────┴────────┴────────────────────┴───────┴────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerFunction("lag", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLead<false>>(
                 name, argument_types, parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Returns a value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
+This function is similar to [`lagInFrame`](/reference/functions/window-functions/lagInFrame), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.
+
+**Syntax**
+
+```sql
+lag(x[, offset[, default]])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Parameters**
+
+- `x` — Column name.
+- `offset` — Offset to apply. [(U)Int*](/reference/data-types/int-uint). (Optional - `1` by default).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+
+**Returned value**
+
+- Value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
+
+**Example**
+
+This example looks at historical data for a specific stock and uses the `lag` function to calculate a day-to-day delta and percentage change in the closing price of the stock.
+
+```sql title="Query"
+CREATE TABLE stock_prices
+(
+    `date`   Date,
+    `open`   Float32, -- opening price
+    `high`   Float32, -- daily high
+    `low`    Float32, -- daily low
+    `close`  Float32, -- closing price
+    `volume` UInt32   -- trade volume
+)
+Engine = Memory;
+
+INSERT INTO stock_prices FORMAT Values
+    ('2024-06-03', 113.62, 115.00, 112.00, 115.00, 438392000),
+    ('2024-06-04', 115.72, 116.60, 114.04, 116.44, 403324000),
+    ('2024-06-05', 118.37, 122.45, 117.47, 122.44, 528402000),
+    ('2024-06-06', 124.05, 125.59, 118.32, 121.00, 664696000),
+    ('2024-06-07', 119.77, 121.69, 118.02, 120.89, 412386000);
+```
+
+```sql title="Query"
+SELECT
+    date,
+    close,
+    lag(close, 1, close) OVER (ORDER BY date ASC) AS previous_day_close,
+    COALESCE(ROUND(close - previous_day_close, 2)) AS delta,
+    COALESCE(ROUND((delta / previous_day_close) * 100, 2)) AS percent_change
+FROM stock_prices
+ORDER BY date DESC
+```
+
+```response title="Response"
+   ┌───────date─┬──close─┬─previous_day_close─┬─delta─┬─percent_change─┐
+1. │ 2024-06-07 │ 120.89 │                121 │ -0.11 │          -0.09 │
+2. │ 2024-06-06 │    121 │             122.44 │ -1.44 │          -1.18 │
+3. │ 2024-06-05 │ 122.44 │             116.44 │     6 │           5.15 │
+4. │ 2024-06-04 │ 116.44 │                115 │  1.44 │           1.25 │
+5. │ 2024-06-03 │    115 │                115 │     0 │              0 │
+   └────────────┴────────┴────────────────────┴───────┴────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("leadInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
+
+<Warning>
+`leadInFrame` behavior differs from the standard SQL `lead` window function.
+ClickHouse window function `leadInFrame` respects the window frame.
+To get behavior identical to the `lead`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+</Warning>
+
+**Syntax**
+
+```sql
+leadInFrame(x[, offset[, default]])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Parameters**
+- `x` — Column name.
+- `offset` — Offset to apply. [(U)Int*](/reference/data-types/int-uint). (Optional - `1` by default).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+
+**Returned value**
+
+- value evaluated at the row that is offset rows after the current row within the ordered frame.
+
+**Example**
+
+This example looks at [historical data](https://www.kaggle.com/datasets/sazidthe1/nobel-prize-data) for Nobel Prize winners and uses the `leadInFrame` function to return a list of successive winners in the physics category.
+
+```sql title="Query"
+CREATE OR REPLACE VIEW nobel_prize_laureates
+AS SELECT *
+FROM file('nobel_laureates_data.csv');
+```
+
+```sql title="Query"
+SELECT
+    fullName,
+    leadInFrame(year, 1, year) OVER (PARTITION BY category ORDER BY year ASC
+      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS year,
+    category,
+    motivation
+FROM nobel_prize_laureates
+WHERE category = 'physics'
+ORDER BY year DESC
+LIMIT 9
+```
+
+```response title="Response"
+   ┌─fullName─────────┬─year─┬─category─┬─motivation─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ Anne L Huillier  │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+2. │ Pierre Agostini  │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+3. │ Ferenc Krausz    │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+4. │ Alain Aspect     │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+5. │ Anton Zeilinger  │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+6. │ John Clauser     │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+7. │ Giorgio Parisi   │ 2021 │ physics  │ for the discovery of the interplay of disorder and fluctuations in physical systems from atomic to planetary scales                │
+8. │ Klaus Hasselmann │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
+9. │ Syukuro Manabe   │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
+   └──────────────────┴──────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 
     factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLead<true>>(
                 name, argument_types, parameters);
-        }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, {.description = R"DOCS_MD(
+Returns a value evaluated at the row that is offset rows after the current row within the ordered frame.
+This function is similar to [`leadInFrame`](/reference/functions/window-functions/leadInFrame), but always uses the `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` frame.
+
+**Syntax**
+
+```sql
+lead(x[, offset[, default]])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Parameters**
+
+- `x` — Column name.
+- `offset` — Offset to apply. [(U)Int*](/reference/data-types/int-uint). (Optional - `1` by default).
+- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+
+**Returned value**
+
+- value evaluated at the row that is offset rows after the current row within the ordered frame.
+
+**Example**
+
+This example looks at [historical data](https://www.kaggle.com/datasets/sazidthe1/nobel-prize-data) for Nobel Prize winners and uses the `lead` function to return a list of successive winners in the physics category.
+
+```sql title="Query"
+CREATE OR REPLACE VIEW nobel_prize_laureates
+AS SELECT *
+FROM file('nobel_laureates_data.csv');
+```
+
+```sql title="Query"
+SELECT
+    fullName,
+    lead(year, 1, year) OVER (PARTITION BY category ORDER BY year ASC
+      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS year,
+    category,
+    motivation
+FROM nobel_prize_laureates
+WHERE category = 'physics'
+ORDER BY year DESC
+LIMIT 9
+```
+
+```response title="Query"
+   ┌─fullName─────────┬─year─┬─category─┬─motivation─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ Anne L Huillier  │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+2. │ Pierre Agostini  │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+3. │ Ferenc Krausz    │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
+4. │ Alain Aspect     │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+5. │ Anton Zeilinger  │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+6. │ John Clauser     │ 2022 │ physics  │ for experiments with entangled photons establishing the violation of Bell inequalities and  pioneering quantum information science │
+7. │ Giorgio Parisi   │ 2021 │ physics  │ for the discovery of the interplay of disorder and fluctuations in physical systems from atomic to planetary scales                │
+8. │ Klaus Hasselmann │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
+9. │ Syukuro Manabe   │ 2021 │ physics  │ for the physical modelling of Earths climate quantifying variability and reliably predicting global warming                        │
+   └──────────────────┴──────┴──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.
@@ -3415,6 +4248,88 @@ FROM
         {
             return std::make_shared<WindowFunctionNonNegativeDerivative>(
                 name, argument_types, parameters);
-        }, {}, properties});
+        }, {.description = R"DOCS_MD(
+Computes the non-negative derivative of `metric_column` with respect to `timestamp_column`.
+This is a ClickHouse-specific window function, not part of standard SQL.
+
+For each row, the derivative is computed against the *previous row in the window's evaluation order*, which is determined by the window's `ORDER BY` clause - not by `timestamp_column`.
+The `timestamp_column` argument is read only to measure the elapsed time between the current row and that previous row; it does not order the rows itself.
+
+<Warning>
+`nonNegativeDerivative` does not order rows by `timestamp_column`; the window's `ORDER BY` does.
+For the formula below to apply, `timestamp_column` must be strictly increasing in the window's evaluation order, so you should normally order the window by `timestamp_column` ascending (for example `... OVER (ORDER BY ts ASC)` together with `nonNegativeDerivative(metric, ts)`).
+Whenever the elapsed time between the current row and the previous row is non-positive - which happens with `ORDER BY timestamp_column DESC` or with duplicate (equal) timestamps - the function returns `0` for that row instead of following the formula.
+</Warning>
+
+The result is the rate of change of the metric per `INTERVAL`, with any negative value clamped to `0`.
+This is useful for monotonically increasing metrics, such as counters, where a decrease usually indicates a reset rather than a real negative rate.
+
+**Syntax**
+
+```sql
+nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group])
+```
+
+For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
+
+**Arguments**
+
+- `metric_column` — The column whose derivative is computed. [(U)Int*](/reference/data-types/int-uint) or [Float*](/reference/data-types/float).
+- `timestamp_column` — The column used to measure the elapsed time between the current row and the previous row in the window order. It does not order the rows; the window's `ORDER BY` does, and should normally use this same column. [DateTime](/reference/data-types/datetime) or [DateTime64](/reference/data-types/datetime64).
+- `INTERVAL X UNITS` — Optional. The time unit the result is scaled to. Defaults to `INTERVAL 1 SECOND`. Only fixed-length units are supported (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`, `SECOND`, `MINUTE`, `HOUR`, `DAY`, `WEEK`); variable-length units (`MONTH`, `QUARTER`, `YEAR`) raise an exception.
+
+**Returned value**
+
+For each row, the value is computed as:
+
+- `0` for the first row;
+- `0` for any row whose elapsed time since the previous row is non-positive (that is, $\text{timestamp}_i - \text{timestamp}_{i-1} \le 0$, as happens with descending order or duplicate timestamps); and
+- ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}} * \text{interval}$ otherwise.
+
+If the computed value would be negative, it is clamped to `0`. The return type is [Float64](/reference/data-types/float).
+
+**Example**
+
+The following example computes the per-second rate of change of a sensor reading.
+Note that the third row drops from `110` to `105`, so its derivative is clamped to `0`.
+
+```sql title="Query"
+CREATE TABLE sensor_readings
+(
+    `sensor_id` UInt32,
+    `ts`        DateTime,
+    `reading`   Float64
+)
+ENGINE = Memory;
+
+INSERT INTO sensor_readings VALUES
+    (1, '2024-01-01 00:00:00', 100),
+    (1, '2024-01-01 00:00:10', 110),
+    (1, '2024-01-01 00:00:20', 105),
+    (1, '2024-01-01 00:00:30', 130);
+```
+
+```sql title="Query"
+SELECT
+    ts,
+    reading,
+    nonNegativeDerivative(reading, ts) OVER (ORDER BY ts ASC) AS deriv_per_second
+FROM sensor_readings
+ORDER BY ts ASC;
+```
+
+```response title="Response"
+   ┌──────────────────ts─┬─reading─┬─deriv_per_second─┐
+1. │ 2024-01-01 00:00:00 │     100 │                0 │
+2. │ 2024-01-01 00:00:10 │     110 │                1 │
+3. │ 2024-01-01 00:00:20 │     105 │                0 │
+4. │ 2024-01-01 00:00:30 │     130 │              2.5 │
+   └─────────────────────┴─────────┴──────────────────┘
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties});
 }
 }

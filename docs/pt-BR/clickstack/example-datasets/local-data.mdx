@@ -18,19 +18,17 @@ Este guia de introdução permite coletar logs e métricas locais do seu sistema
     Este guia pressupõe que você concluiu o [Guia de Primeiros Passos do Managed ClickStack](/pt-BR/clickstack/deployment/managed) e tem as [credenciais de conexão anotadas](/pt-BR/clickstack/getting-started/managed#next-steps).
 
     <Steps>
-      <Step>
-        ### Crie uma configuração personalizada do OpenTelemetry
-
-        Crie o arquivo `custom-local-config.yaml` com o seguinte conteúdo:
+      <Step title="Criar uma configuração personalizada do OpenTelemetry" id="create-otel-configuration">
+        Crie um arquivo `custom-local-config.yaml` com o seguinte conteúdo:
 
         ```yaml
         receivers:
           filelog:
             include:
-              - /host/var/log/**/*.log        # Logs do Linux do host
+              - /host/var/log/**/*.log        # Linux logs from host
               - /host/var/log/syslog
               - /host/var/log/messages
-              - /host/private/var/log/*.log   # Logs do macOS do host
+              - /host/private/var/log/*.log   # macOS logs from host
             start_at: beginning
             resource:
               service.name: "system-logs"
@@ -102,9 +100,7 @@ Este guia de introdução permite coletar logs e métricas locais do seu sistema
         Para mais detalhes sobre a estrutura de configuração do OpenTelemetry (OTel), recomendamos [o guia oficial](https://opentelemetry.io/docs/collector/configuration/).
       </Step>
 
-      <Step>
-        ### Inicie o coletor OpenTelemetry
-
+      <Step title="Inicie o coletor OpenTelemetry" id="start-the-otel-collector">
         Execute um coletor autônomo com o seguinte comando:
 
         ```shell
@@ -124,17 +120,13 @@ Este guia de introdução permite coletar logs e métricas locais do seu sistema
         O coletor começará imediatamente a coletar os logs e as métricas do sistema local.
       </Step>
 
-      <Step>
-        ### Selecione seu serviço
-
+      <Step title="Selecione seu serviço" id="select-your-service">
         Selecione o serviço Managed ClickStack na página inicial do ClickHouse Cloud.
 
         <Image img="/images/clickstack/select_service.webp" alt="Selecionar serviço" size="lg" />
       </Step>
 
-      <Step>
-        ### Explore os logs do sistema
-
+      <Step title="Explore os logs do sistema" id="navigate-to-the-hyperdx-ui">
         Selecione `ClickStack` no menu à esquerda para acessar a UI do ClickStack, onde você será autenticado automaticamente.
 
         A UI de pesquisa deve ser preenchida com logs locais do sistema. Expanda os filtros para selecionar `system.log`:
@@ -142,9 +134,7 @@ Este guia de introdução permite coletar logs e métricas locais do seu sistema
         <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="Logs locais do HyperDX" size="lg" />
       </Step>
 
-      <Step>
-        ### Explore as métricas do sistema
-
+      <Step title="Explore as métricas do sistema" id="explore-system-metrics">
         Podemos explorar nossas métricas usando gráficos.
 
         Navegue até o Chart Explorer pelo menu à esquerda. Selecione a fonte `Metrics` e `Maximum` como tipo de agregação.
@@ -175,10 +165,10 @@ Este guia de introdução permite coletar logs e métricas locais do seu sistema
     receivers:
       filelog:
         include:
-          - /host/var/log/**/*.log        # Logs do Linux do host
+          - /host/var/log/**/*.log        # Linux logs from host
           - /host/var/log/syslog
           - /host/var/log/messages
-          - /host/private/var/log/*.log   # Logs do macOS do host
+          - /host/private/var/log/*.log   # macOS logs from host
         start_at: beginning
         resource:
           service.name: "system-logs"
@@ -235,16 +225,16 @@ Este guia de introdução permite coletar logs e métricas locais do seu sistema
             - clickhouse
     ```
 
-    Esta configuração coleta logs e métricas do sistema para OSX e Linux, enviando os resultados ao ClickStack. A configuração estende o collector do ClickStack adicionando novos receivers e pipelines — você referencia o exporter `clickhouse` existente e os processors (`memory_limiter`, `batch`) já configurados no collector base do ClickStack.
+    Esta configuração coleta logs e métricas do sistema em sistemas OSX e Linux, enviando os resultados para o ClickStack. Ela estende o ClickStack collector com a adição de novos receivers e pipelines — você faz referência ao exporter `clickhouse` e aos processors (`memory_limiter`, `batch`) já configurados no ClickStack collector base.
 
     <Info>
       **Timestamps de ingestão**
 
-      Esta configuração ajusta os timestamps durante a ingestão, atribuindo um valor de tempo atualizado a cada evento. O ideal é [pré-processar ou interpretar timestamps](/pt-BR/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) usando processadores ou operadores do OTel nos arquivos de log para garantir que o horário correto do evento seja preservado.
+      Esta configuração ajusta os timestamps na ingestão, atribuindo um valor de tempo atualizado a cada evento. O ideal é [pré-processar ou fazer o parse dos timestamps](/pt-BR/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) usando processors ou operators do OTel nos arquivos de log para garantir que o horário exato do evento seja preservado.
 
-      Com esta configuração de exemplo, se o receiver ou o processador de arquivo estiver configurado para começar no início do arquivo, todas as entradas de log existentes receberão o mesmo timestamp ajustado: o horário do processamento, em vez do horário original do evento. Quaisquer novos eventos acrescentados ao arquivo receberão timestamps próximos do horário real em que foram gerados.
+      Com esta configuração de exemplo, se o receiver ou o processor de arquivos estiver configurado para iniciar no começo do arquivo, todas as entradas de log existentes receberão o mesmo timestamp ajustado — o horário do processamento, em vez do horário original do evento. Quaisquer novos eventos acrescentados ao arquivo receberão timestamps que se aproximam do momento real em que foram gerados.
 
-      Para evitar esse comportamento, você pode definir a posição inicial como `end` na configuração do receiver. Isso garante que apenas novas entradas sejam ingeridas e recebam timestamps próximos do seu horário real de chegada.
+      Para evitar esse comportamento, você pode definir a posição inicial como `end` na configuração do receiver. Isso garante que apenas novas entradas sejam ingeridas e recebam timestamps próximos do horário real de chegada.
     </Info>
 
     Para mais detalhes sobre a estrutura de configuração do OpenTelemetry (OTel), recomendamos [o guia oficial](https://opentelemetry.io/docs/collector/configuration/).
@@ -272,32 +262,32 @@ Este guia de introdução permite coletar logs e métricas locais do seu sistema
       Observe que montamos o `/var/log` do host em `/host/var/log` dentro do contêiner para evitar conflitos com os arquivos de log do próprio contêiner.
     </Info>
 
-    ### Explorar logs do sistema
+    ### Explore os logs do sistema
 
-    Acesse [http://localhost:8080](http://localhost:8080) para acessar a UI do ClickStack caso esteja fazendo a implantação localmente.
+    Acesse [http://localhost:8080](http://localhost:8080) para acessar a interface do ClickStack se estiver implantando localmente.
 
     As fontes de dados devem ser pré-criadas automaticamente. A UI de pesquisa deve estar preenchida com logs do sistema local. Expanda os filtros para selecionar o `system.log`:
 
     <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="Logs locais do HyperDX" size="lg" />
 
-    ### Explorar métricas do sistema
+    ### Explore as métricas do sistema
 
     Podemos explorar nossas métricas usando gráficos.
 
-    Navegue até o Chart Explorer pelo menu lateral esquerdo. Selecione a source `Metrics` e `Maximum` como tipo de agregação.
+    Navegue até o Chart Explorer pelo menu à esquerda. Selecione a source `Metrics` e `Maximum` como tipo de agregação.
 
-    No menu `Select a Metric`, digite `memory` e selecione `system.memory.utilization (Gauge)`.
+    No menu `Select a Metric`, basta digitar `memory` antes de selecionar `system.memory.utilization (Gauge)`.
 
-    Pressione o botão de execução para visualizar o uso de memória ao longo do tempo.
+    Pressione o botão de execução para visualizar a utilização de memória ao longo do tempo.
 
-    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Memory com o passar do tempo" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Memória ao longo do tempo" size="lg" />
 
-    Observe que o número é retornado como ponto flutuante `%`. Para exibi-lo de forma mais clara, selecione `Set number format`.
+    Observe que o valor é retornado como uma porcentagem (`%`) em ponto flutuante. Para exibi-lo com mais clareza, selecione `Set number format`.
 
-    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Formato numérico" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Formato do número" size="lg" />
 
-    No menu seguinte, selecione `Percentage` no menu suspenso `Output format` e clique em `Apply`.
+    No menu seguinte, você pode selecionar `Percentage` no menu suspenso `Output format` antes de clicar em `Apply`.
 
-    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="% do tempo de memória" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="Memória % ao longo do tempo" size="lg" />
   </Tab>
 </Tabs>

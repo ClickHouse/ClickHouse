@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_DATABASE;
 }
 
 namespace Setting
@@ -100,6 +101,13 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
         database_is_regexp = false;
         source_database_name_or_regexp = context->getCurrentDatabase();
 
+        /// The current database is not set, for example, in a background thread that interprets a mutation.
+        if (source_database_name_or_regexp.empty())
+            throw Exception(
+                ErrorCodes::UNKNOWN_DATABASE,
+                "Table function 'merge' is called with a single argument, so it uses the current database, "
+                "but the current database is not set. Specify the database explicitly: merge('db_name', 'tables_regexp')");
+
         args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
         source_table_regexp = checkAndGetLiteralArgument<String>(args[0], "table_name_regexp");
     }
@@ -159,11 +167,27 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
 void registerTableFunctionMerge(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMerge>(
-        {
-            .description = "Creates a temporary Merge table. The structure will be derived from underlying tables by using a union of their columns and by deriving common types.",
-            .examples = {{"merge", "SELECT * FROM merge(db, '^table_.*')", ""}},
-            .category = FunctionDocumentation::Category::TableFunction
-        },
+        {.description = R"DOCS_MD(
+Creates a temporary [Merge](/reference/engines/table-engines/special/merge) table.
+The table schema is derived from underlying tables by using a union of their columns and by deriving common types.
+The same virtual columns are available as for the [Merge](/reference/engines/table-engines/special/merge) table engine.
+
+## Syntax {#syntax}
+
+```sql
+merge(['db_name',] 'tables_regexp')
+```
+## Arguments {#arguments}
+
+| Argument        | Description                                                                                                                                                                                                                                                                                     |
+|-----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `db_name`       | Possible values (optional, default is `currentDatabase()`):<br/>    - database name,<br/>    - constant expression that returns a string with a database name, for example, `currentDatabase()`,<br/>    - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names. |
+| `tables_regexp` | A regular expression to match the table names in the specified DB or DBs.                                                                                                                                                                                                                       |
+
+## Related {#related}
+
+- [Merge](/reference/engines/table-engines/special/merge) table engine
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = true}
     );
 }

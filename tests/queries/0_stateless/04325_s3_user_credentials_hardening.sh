@@ -4,8 +4,9 @@
 # which are not compiled into the fast-test build.
 #
 # Verify that user SQL cannot make S3 clients use the server's environment
-# (IMDS/IRSA/STS) credentials, and that user SQL cannot trigger an STS
-# AssumeRole without supplying explicit S3 credentials.
+# (IMDS/IRSA) credentials directly. role_arn-based STS assume-role is allowed
+# (the target role must trust the server's identity, and only the assumed
+# role's credentials sign the query's S3 requests).
 #
 # All globally-scoped names (named collections, table names, disk names) are
 # qualified with `$CLICKHOUSE_DATABASE` so that several invocations of this
@@ -29,7 +30,6 @@ NC_ROLE_PARTIAL="s3_role_partial_${DB}"
 NC_ROLE_OK="s3_role_ok_${DB}"
 NC_NOSIGN="s3_nosign_${DB}"
 NC_ENV_OFF="s3_env_off_${DB}"
-NC_BACKUP_ROLE="s3_backup_role_${DB}"
 NC_BACKUP_ENV="s3_backup_env_${DB}"
 NC_BACKUP_NOSIGN="s3_backup_nosign_${DB}"
 NC_BACKUP_NOCREDS="s3_backup_nocreds_${DB}"
@@ -57,7 +57,6 @@ cleanup() {
         DROP NAMED COLLECTION IF EXISTS ${NC_ROLE_OK};
         DROP NAMED COLLECTION IF EXISTS ${NC_NOSIGN};
         DROP NAMED COLLECTION IF EXISTS ${NC_ENV_OFF};
-        DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ROLE};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ENV};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_NOSIGN};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_NOCREDS};
@@ -95,8 +94,6 @@ $CLICKHOUSE_CLIENT -m -q "
         url = 'http://localhost:11111/test/${DB}_missing.tsv';
     CREATE NAMED COLLECTION ${NC_NOSIGN_ROLE} AS
         url = 'http://localhost:11111/test/${DB}_missing.tsv', no_sign_request = 1, role_arn = '${ROLE_ARN}';
-    CREATE NAMED COLLECTION ${NC_BACKUP_ROLE} AS
-        url = 'http://localhost:11111/test/${DB}_backup3/', role_arn = '${ROLE_ARN}';
     CREATE NAMED COLLECTION ${NC_BACKUP_ENV} AS
         url = 'http://localhost:11111/test/${DB}_backup4/', use_environment_credentials = 1;
     CREATE NAMED COLLECTION ${NC_ENV_OFF} AS
@@ -129,22 +126,16 @@ $CLICKHOUSE_CLIENT -m -q "
 # independently.
 #
 #  * ${NC_ENV}            - use_environment_credentials, no explicit keys
-#  * ${NC_ROLE}           - role_arn, no explicit S3 credentials
-#  * ${NC_ROLE_PARTIAL}   - role_arn with only access_key_id (half a key pair)
 #  * ${NC_GCP_OAUTH}      - http_client = gcp_oauth (server GCP metadata token)
 #  * ${NC_GCP_OAUTH_NOSIGN} - gcp_oauth still mints a token even with NOSIGN
 #  * ${NC_GCP_OAUTH_CASE} - http client name matched case-insensitively
-#  * extra_credentials    - s3() with extra_credentials(role_arn) and no keys: the query-supplied role_arn is
-#                           dropped (it must not assume the role with the server's keys), so the request goes
-#                           anonymous and reaches S3 (S3_ERROR), it is not a server-credential rejection
 #  * ${NC_NOCREDS}        - url only -> anonymous, reaches S3 (S3_ERROR)
 #  * ${NC_NOSIGN_ROLE}    - NOSIGN with a stray role_arn stays anonymous (S3_ERROR)
+# role_arn-based STS assume-role without explicit keys is allowed (the role must trust the server's identity);
+# it is covered by the DESCRIBE positives below (client construction only, no STS network call) and end-to-end
+# with a mocked STS in tests/integration/test_storage_s3/test_sts.py.
 $CLICKHOUSE_CLIENT -m -q "
     SELECT * FROM s3(${NC_ENV}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
-    SELECT * FROM s3(${NC_ROLE}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
-    SELECT * FROM s3(${NC_ROLE_PARTIAL}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
-    SELECT * FROM s3('http://localhost:11111/test/${DB}.tsv', format = 'TSV', structure = 'x UInt8',
-                     extra_credentials(role_arn = '${ROLE_ARN}')); -- { serverError S3_ERROR }
     SELECT * FROM s3(${NC_GCP_OAUTH}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
     SELECT * FROM s3(${NC_GCP_OAUTH_NOSIGN}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
     SELECT * FROM s3(${NC_GCP_OAUTH_CASE}, format = 'TSV', structure = 'x UInt8'); -- { serverError ACCESS_DENIED }
@@ -204,13 +195,11 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_include=1 -q "
 
 # Create a dummy table so the `BACKUP` statements reach credential resolution and
 # not an earlier "unknown table" error, then batch the negative backups:
-#  * named collection with role_arn but no explicit S3 credentials -> server-credential rejection
 #  * named collection with use_environment_credentials = 1 -> server-credential rejection
-# (The `extra_credentials(role_arn)` backup form is covered by the s3() SELECT case above: a query-supplied
-# role_arn with no keys is dropped to anonymous, whose backup write outcome is bucket-policy dependent.)
+# (A role-only backup collection is allowed now - the role is assumed with the server's ambient identity - so
+# it would make a real STS network call here; it is covered with a mocked STS in integration tests instead.)
 $CLICKHOUSE_CLIENT -m -q "
     CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple();
-    BACKUP TABLE ${TABLE} TO S3(${NC_BACKUP_ROLE}); -- { serverError ACCESS_DENIED }
     BACKUP TABLE ${TABLE} TO S3(${NC_BACKUP_ENV}); -- { serverError ACCESS_DENIED }
 "
 
@@ -224,12 +213,19 @@ $CLICKHOUSE_CLIENT -m -q "
 #  * nc_role_with_keys       - role_arn AND explicit keys (assume-role uses user creds)
 #  * nc_nosign               - NOSIGN bypasses credential resolution
 #  * extra_credentials_with_keys - extra_credentials(role_arn) allowed with explicit keys
-describe_labels="nc_env_off nc_role_with_keys nc_nosign extra_credentials_with_keys"
+#  * nc_role_only            - role_arn without keys: allowed, assume-role with the server's ambient identity
+#  * nc_role_partial         - role_arn with half a key pair: same, the pair does not count as explicit keys
+#  * extra_credentials_no_keys - s3() with extra_credentials(role_arn) and no keys: allowed the same way
+describe_labels="nc_env_off nc_role_with_keys nc_nosign extra_credentials_with_keys nc_role_only nc_role_partial extra_credentials_no_keys"
 if describe_out="$($CLICKHOUSE_CLIENT -m -q "
     DESCRIBE TABLE s3(${NC_ENV_OFF}, format = 'TSV', structure = 'x UInt8');
     DESCRIBE TABLE s3(${NC_ROLE_OK}, format = 'TSV', structure = 'x UInt8');
     DESCRIBE TABLE s3(${NC_NOSIGN}, format = 'TSV', structure = 'x UInt8');
     DESCRIBE TABLE s3('http://localhost:11111/test/${DB}.tsv', 'k', 's',
+                      format = 'TSV', structure = 'x UInt8', extra_credentials(role_arn = '${ROLE_ARN}'));
+    DESCRIBE TABLE s3(${NC_ROLE}, format = 'TSV', structure = 'x UInt8');
+    DESCRIBE TABLE s3(${NC_ROLE_PARTIAL}, format = 'TSV', structure = 'x UInt8');
+    DESCRIBE TABLE s3('http://localhost:11111/test/${DB}.tsv',
                       format = 'TSV', structure = 'x UInt8', extra_credentials(role_arn = '${ROLE_ARN}'));
 " 2>&1)"; then
     for label in $describe_labels; do echo "${label}: pass"; done

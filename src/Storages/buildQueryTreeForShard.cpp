@@ -1,5 +1,6 @@
 #include <Storages/buildQueryTreeForShard.h>
 
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
@@ -7,15 +8,21 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Core/Block.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 
+#include <limits>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/StringUtils.h>
@@ -27,6 +34,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <IO/WriteHelpers.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/PlannerContext.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -37,6 +45,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageSnapshot.h>
 #include <Analyzer/UnionNode.h>
 
 #include <stack>
@@ -47,6 +56,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_bytes_to_transfer;
@@ -65,10 +75,155 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
 {
+
+/// The side of a global join that is materialized into a temporary table on the initiator, the other
+/// one being read by each replica: the right side, except for a RIGHT JOIN reached through a path
+/// that allows the right table to be the one read with replicas.
+QueryTreeNodePtr & getMaterializedTableExpressionNode(JoinNode & join_node, bool allow_global_join_for_right_table)
+{
+    if (allow_global_join_for_right_table && join_node.getKind() == JoinKind::Right)
+        return join_node.getLeftTableExpressionNode();
+
+    return join_node.getRightTableExpressionNode();
+}
+
+/// Return a clone of the defining expression of an inlineable `ALIAS` column node, or nullptr otherwise.
+/// A JOIN / CROSS_JOIN / ARRAY_JOIN source puts a `ListNode` of the joined sides in the expression child,
+/// which is not an alias body. The expression is cloned so each occurrence gets its own copy: that lets
+/// one occurrence be aliased (a projection output) without mutating another (a reference in ORDER BY).
+QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & node)
+{
+    const auto * column_node = node->as<ColumnNode>();
+    if (!column_node || !column_node->hasExpression())
+        return nullptr;
+
+    const auto & column_source = column_node->getColumnSourceOrNull();
+    if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                       || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
+                       || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        return nullptr;
+
+    return column_node->getExpression()->clone();
+}
+
+void inlineAliasColumnsImpl(QueryTreeNodePtr & node);
+void inlineAliasColumnsInExpression(QueryTreeNodePtr & node);
+
+/// A `JOIN USING` key is a `ColumnNode` whose expression is a `ListNode` recording how the key resolves on
+/// each side, and a side's entry can itself be an `ALIAS` column. Such an entry keeps the key's name as an
+/// alias when inlined, because the shipped SQL renders the entry rather than the key: `USING (x AS a)` is
+/// what lets a remote server resolve a key that exists only as an `ALIAS` column of the initiator's table.
+/// The alias also tells `rejectUnshippableJoinUsingKeys` which keys no remote server can resolve, and it
+/// reads the entry expecting exactly this shape.
+void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression)
+{
+    auto * using_list = join_expression->as<ListNode>();
+    if (!using_list)
+        return;
+
+    for (auto & using_node : using_list->getNodes())
+    {
+        auto * using_column = using_node->as<ColumnNode>();
+        if (!using_column || !using_column->hasExpression())
+            continue;
+
+        auto * key_sides = using_column->getExpression()->as<ListNode>();
+        if (!key_sides)
+            continue;
+
+        for (auto & side : key_sides->getNodes())
+        {
+            const auto * side_column = side->as<ColumnNode>();
+            auto expression = getInlineableAliasColumnExpression(side);
+            if (!expression)
+                continue;
+
+            const String key_name = side_column->getColumnName();
+            inlineAliasColumnsInExpression(expression);
+            expression->setAlias(key_name);
+            side = expression;
+        }
+    }
+}
+
+/// Inline `ALIAS` columns inside an expression subtree without assigning any alias. Nested subqueries are
+/// handed back to `inlineAliasColumnsImpl` so their own projection columns keep their names.
+void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
+{
+    if (node->as<QueryNode>() || node->as<UnionNode>())
+    {
+        inlineAliasColumnsImpl(node);
+        return;
+    }
+
+    /// An `ALIAS` column may be defined over another one, so keep unwrapping.
+    while (auto expression = getInlineableAliasColumnExpression(node))
+        node = expression;
+
+    auto * join_node = node->as<JoinNode>();
+    const bool using_join = join_node && join_node->isUsingJoinExpression();
+
+    for (auto & child : node->getChildren())
+    {
+        if (!child)
+            continue;
+
+        if (using_join && child == join_node->getJoinExpression())
+            inlineJoinUsingKeys(child);
+        else
+            inlineAliasColumnsInExpression(child);
+    }
+}
+
+/// Inline `ALIAS` columns into their defining expressions, so the expression is evaluated on the
+/// shard/replica reading the real table instead of the column being resolved there as if it were physical.
+///
+/// The defining expression keeps the column's logical name as an alias only when the `ALIAS` column is a
+/// top-level projection item, so the mergeable-state output column keeps its name. Inside expression
+/// clauses (`WHERE`/`GROUP BY`/`ORDER BY`/`HAVING`/`JOIN ON`) no alias is set; otherwise two same-named
+/// `ALIAS` columns from different `JOIN` sources land in one scope with different bodies and the remote
+/// side throws `MULTIPLE_EXPRESSIONS_FOR_ALIAS` (https://github.com/ClickHouse/ClickHouse/issues/107990).
+void inlineAliasColumnsImpl(QueryTreeNodePtr & node)
+{
+    if (auto * union_node = node->as<UnionNode>())
+    {
+        for (auto & query : union_node->getQueries().getNodes())
+            inlineAliasColumnsImpl(query);
+        return;
+    }
+
+    auto * query_node = node->as<QueryNode>();
+    if (!query_node)
+    {
+        inlineAliasColumnsInExpression(node);
+        return;
+    }
+
+    for (auto & projection_item : query_node->getProjection().getNodes())
+    {
+        const auto * column_node = projection_item->as<ColumnNode>();
+        if (auto expression = getInlineableAliasColumnExpression(projection_item))
+        {
+            const String output_alias = column_node->getColumnName();
+            inlineAliasColumnsInExpression(expression);
+            expression->setAlias(output_alias);
+            projection_item = expression;
+        }
+        else
+        {
+            inlineAliasColumnsInExpression(projection_item);
+        }
+    }
+
+    for (auto & child : query_node->getChildren())
+        if (child && child != query_node->getProjectionNode())
+            inlineAliasColumnsInExpression(child);
+}
 
 /// Visitor that collect column source to columns mapping from query and all subqueries
 class CollectColumnSourceToColumnsVisitor : public InDepthQueryTreeVisitor<CollectColumnSourceToColumnsVisitor>
@@ -78,6 +233,7 @@ public:
     {
         NameSet column_names;
         NamesAndTypes columns;
+        TableExpressionNodePtr source;
 
         void addColumn(NameAndTypePair column)
         {
@@ -109,6 +265,7 @@ public:
         {
             auto [insert_it, _] = column_source_to_columns.emplace(column_source, Columns());
             it = insert_it;
+            it->second.source = column_source;
         }
 
         it->second.addColumn(column_node->getColumn());
@@ -136,8 +293,9 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<DistributedProductModeRewriteInJoinVisitor>;
     using Base::Base;
 
-    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_)
+    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_, bool allow_global_join_for_right_table_)
         : Base(context_)
+        , allow_global_join_for_right_table(allow_global_join_for_right_table_)
     {}
 
     struct InFunctionOrJoin
@@ -146,7 +304,7 @@ public:
         size_t subquery_depth = 0;
     };
 
-    const std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> & getReplacementMap() const
+    const IQueryTreeNode::ReplacementMap & getReplacementMap() const
     {
         return replacement_map;
     }
@@ -156,14 +314,15 @@ public:
         return global_in_or_join_nodes;
     }
 
-    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child) const
     {
         auto * function_node = parent->as<FunctionNode>();
         if (function_node && isNameOfGlobalInFunction(function_node->getFunctionName()))
             return false;
 
         auto * join_node = parent->as<JoinNode>();
-        if (join_node && join_node->getLocality() == JoinLocality::Global && join_node->getRightTableExpression() == child)
+        if (join_node && join_node->getLocality() == JoinLocality::Global
+            && getMaterializedTableExpressionNode(*join_node, allow_global_join_for_right_table) == child)
             return false;
 
         return true;
@@ -171,6 +330,9 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            ++query_node_depth;
+
         auto * function_node = node->as<FunctionNode>();
         auto * join_node = node->as<JoinNode>();
 
@@ -179,7 +341,7 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
-            in_function_or_join_entry.subquery_depth = getSubqueryDepth();
+            in_function_or_join_entry.subquery_depth = query_node_depth;
             global_in_or_join_nodes.push_back(std::move(in_function_or_join_entry));
             return;
         }
@@ -189,7 +351,7 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
-            in_function_or_join_entry.subquery_depth = getSubqueryDepth();
+            in_function_or_join_entry.subquery_depth = query_node_depth;
             in_function_or_join_stack.push_back(in_function_or_join_entry);
             return;
         }
@@ -200,6 +362,9 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            --query_node_depth;
+
         if (!in_function_or_join_stack.empty() && node.get() == in_function_or_join_stack.back().query_node.get())
             in_function_or_join_stack.pop_back();
     }
@@ -237,21 +402,34 @@ private:
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
             if (auto table_expression_modifiers = table_node_typed.getTableExpressionModifiers())
                 replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
-            replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
+            replacement_map.emplace(&table_node_typed, std::move(replacement_table_expression));
         }
         else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&
             !in_function_or_join_stack.empty())
         {
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
 
+            /** A single `IN` function or `JOIN` is reached once per distributed table inside of it.
+              * For example, the right argument of an `IN` function can be a `UNION` of several
+              * distributed tables. Only the first of them rewrites the node, and the node has to be
+              * collected only once, otherwise the same subquery is prepared twice.
+              * A node on the stack is `GLOBAL` only if we made it `GLOBAL` ourselves, because
+              * `enterImpl` puts a node on the stack only while it is local.
+              */
             if (auto * in_function_to_modify = in_or_join_node_to_modify->as<FunctionNode>())
             {
+                if (isNameOfGlobalInFunction(in_function_to_modify->getFunctionName()))
+                    return;
+
                 auto global_in_function_name = getGlobalInFunctionNameForLocalInFunctionName(in_function_to_modify->getFunctionName());
                 auto global_in_function_resolver = FunctionFactory::instance().get(global_in_function_name, getContext());
                 in_function_to_modify->resolveAsFunction(global_in_function_resolver->build(in_function_to_modify->getArgumentColumns()));
             }
             else if (auto * join_node_to_modify = in_or_join_node_to_modify->as<JoinNode>())
             {
+                if (join_node_to_modify->getLocality() == JoinLocality::Global)
+                    return;
+
                 join_node_to_modify->setLocality(JoinLocality::Global);
             }
 
@@ -270,9 +448,13 @@ private:
         }
     }
 
+    /// Number of enclosing SELECT queries; a UNION is not a level. `max_subquery_depth` is checked against
+    /// this same count for a plain IN/JOIN, so a GLOBAL subquery recorded here needs no higher limit.
+    size_t query_node_depth = 0;
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
+    bool allow_global_join_for_right_table = false;
 };
 
 /** Replaces large constant values with `__getScalar` function calls to avoid
@@ -322,6 +504,21 @@ public:
             if (query_node->hasLimitByLimit() && query_node->getLimitByLimit() == child)
                 return false;
             if (query_node->hasLimitByOffset() && query_node->getLimitByOffset() == child)
+                return false;
+        }
+
+        if (auto * sort_node = parent->as<SortNode>())
+        {
+            /// Do not replace WITH FILL FROM/TO/STEP/STALENESS constants. The planner reads them
+            /// directly via `as<ConstantNode &>()` in extractWithFillValue (PlannerSorting.cpp),
+            /// so a `__getScalar` FunctionNode there would cause a bad cast during planning.
+            if (sort_node->hasFillFrom() && sort_node->getFillFrom() == child)
+                return false;
+            if (sort_node->hasFillTo() && sort_node->getFillTo() == child)
+                return false;
+            if (sort_node->hasFillStep() && sort_node->getFillStep() == child)
+                return false;
+            if (sort_node->hasFillStaleness() && sort_node->getFillStaleness() == child)
                 return false;
         }
 
@@ -486,7 +683,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     /// only writes the materialized rows into `external_table` and applies
     /// `network_transfer_limits` after `materializeBlock`, raising
     /// `SET_SIZE_LIMIT_EXCEEDED` with the `"IN/JOIN external table"` reason on
-    /// `THROW` and stopping the input on `BREAK`. This keeps the new analyzer
+    /// `THROW` and stopping the input on `BREAK`. This keeps the analyzer
     /// behaviour in lockstep with the old analyzer.
     const auto & subquery_settings = mutable_context->getSettingsRef();
     SizeLimits network_transfer_limits(
@@ -519,12 +716,12 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 }
 
 QueryTreeNodePtr getSubqueryFromTableExpression(
-    const QueryTreeNodePtr & join_table_expression,
+    const TableExpressionNodePtr & join_table_expression,
     const std::unordered_map<QueryTreeNodePtr, CollectColumnSourceToColumnsVisitor::Columns> & column_source_to_columns,
     const ContextPtr & context)
 {
     auto join_table_expression_node_type = join_table_expression->getNodeType();
-    QueryTreeNodePtr subquery_node;
+    TableExpressionNodePtr subquery_node;
 
     if (join_table_expression_node_type == QueryTreeNodeType::QUERY || join_table_expression_node_type == QueryTreeNodeType::UNION)
     {
@@ -558,7 +755,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
                 {
                     if (seen_column_names.insert(col.name).second)
                     {
-                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, current));
+                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, columns_it->second.source));
                         projection_columns.push_back(col);
                     }
                 }
@@ -582,7 +779,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
         auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
         query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
         query_node->resolveProjectionColumns(std::move(projection_columns));
-        query_node->getJoinTree() = join_table_expression;
+        query_node->getJoinTreeNode() = join_table_expression;
         query_node->setIsSubquery(true);
 
         subquery_node = query_node;
@@ -598,6 +795,134 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     return subquery_node;
 }
 
+/// Does `query_node` expose `name` as a top-level projection column?
+bool hasProjectionColumn(const QueryNode & query_node, const String & name)
+{
+    for (const auto & projection_column : query_node.getProjectionColumns())
+        if (projection_column.name == name)
+            return true;
+    return false;
+}
+
+/// Does the JOIN's left table expression expose `name` as a real column the shard can resolve?
+bool leftTableHasColumn(const QueryTreeNodePtr & node, const String & name)
+{
+    /// Flat worklist over the left table expression (same node-kind coverage as the join tree).
+    QueryTreeNodes nodes_to_process{node};
+    for (size_t i = 0; i < nodes_to_process.size(); ++i)
+    {
+        const auto current = nodes_to_process[i];
+        if (!current)
+            continue;
+
+        if (const auto * table_node = current->as<TableNode>())
+        {
+            if (table_node->getStorageSnapshot()->tryGetColumn(GetColumnsOptions::All, name).has_value())
+                return true;
+        }
+        else if (const auto * table_function_node = current->as<TableFunctionNode>())
+        {
+            if (table_function_node->getStorageSnapshot()->tryGetColumn(GetColumnsOptions::All, name).has_value())
+                return true;
+        }
+        else if (const auto * query_node = current->as<QueryNode>())
+        {
+            if (hasProjectionColumn(*query_node, name))
+                return true;
+        }
+        else if (const auto * union_node = current->as<UnionNode>())
+        {
+            for (const auto & projection_column : union_node->computeProjectionColumns())
+                if (projection_column.name == name)
+                    return true;
+        }
+        else if (const auto * join_node = current->as<JoinNode>())
+        {
+            nodes_to_process.push_back(join_node->getLeftTableExpressionNode());
+            nodes_to_process.push_back(join_node->getRightTableExpressionNode());
+        }
+        else if (const auto * cross_join_node = current->as<CrossJoinNode>())
+        {
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+                nodes_to_process.push_back(table_expression);
+        }
+        else if (const auto * array_join_node = current->as<ArrayJoinNode>())
+        {
+            nodes_to_process.push_back(array_join_node->getTableExpressionNode());
+        }
+    }
+    return false;
+}
+
+/// Throw only when nothing on the remote server can resolve the `JOIN USING` key.
+void checkJoin(const JoinNode & join_node, const QueryNode & enclosing_query)
+{
+    const auto & using_list = join_node.getJoinExpression()->as<ListNode &>();
+    for (const auto & using_node : using_list.getNodes())
+    {
+        /// USING key `N`: a `ColumnNode` whose expression is a `ListNode{left, right}` (see `QueryAnalyzer::resolveJoin`).
+        const auto * using_column = using_node->as<ColumnNode>();
+        if (!using_column || !using_column->hasExpression())
+            continue;
+
+        const auto & using_elements = using_column->getExpression()->as<ListNode &>().getNodes();
+        if (using_elements.empty())
+            continue;
+
+        const auto & name = using_column->getColumnName();
+        const auto & left_element = using_elements.front();
+
+        /// Marker: the left element carries a resolved alias body (a `ColumnNode` with an expression, or a non-`ColumnNode` with an alias); plain-column keys never reach the throw.
+        const auto * left_column = left_element->as<ColumnNode>();
+        if (left_column)
+        {
+            if (!left_column->hasExpression())
+                continue;
+        }
+        else if (!left_element->hasAlias())
+        {
+            continue;
+        }
+
+        /// Top-level alias re-emitted as a projection name in the shipped SQL, re-resolves on the shard.
+        if (hasProjectionColumn(enclosing_query, name))
+            continue;
+
+        /// A shadowed column resolves on the shard and may join differently than the initiator's alias; accepted.
+        if (leftTableHasColumn(join_node.getLeftTableExpressionNode(), name))
+            continue;
+
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "JOIN {} using identifier '{}' is resolved from an alias nested in the SELECT list, which is not "
+            "supported for queries sent to remote servers. Move the alias to the top level of the SELECT list",
+            join_node.formatASTForErrorMessage(), name);
+    }
+}
+
+/// Reject `JOIN USING` keys that no remote server can resolve; keys the shard can re-resolve are shipped.
+void rejectUnshippableJoinUsingKeys(const QueryTreeNodePtr & root)
+{
+    /// The enclosing query travels with the node so each `JOIN USING` is checked against its own projection.
+    std::vector<std::pair<const IQueryTreeNode *, const QueryNode *>> nodes_to_process{{root.get(), nullptr}};
+    while (!nodes_to_process.empty())
+    {
+        auto [node, enclosing_query] = nodes_to_process.back();
+        nodes_to_process.pop_back();
+        if (const auto * query_node = node->as<QueryNode>())
+            enclosing_query = query_node;
+        else if (const auto * join_node = node->as<JoinNode>(); join_node && join_node->isUsingJoinExpression() && enclosing_query)
+            checkJoin(*join_node, *enclosing_query);
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.emplace_back(child.get(), enclosing_query);
+    }
+}
+
+}
+
+void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
+{
+    inlineAliasColumnsImpl(query_tree_to_modify);
 }
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
@@ -607,13 +932,13 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     const auto & column_source_to_columns = collect_column_source_to_columns_visitor.getColumnSourceToColumns();
 
-    DistributedProductModeRewriteInJoinVisitor visitor(planner_context->getQueryContext());
+    DistributedProductModeRewriteInJoinVisitor visitor(planner_context->getQueryContext(), allow_global_join_for_right_table);
     visitor.visit(query_tree_to_modify);
 
     auto replacement_map = visitor.getReplacementMap();
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
 
-    QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
+    QueryTreeNodePtrWithHashIgnoreAliasesMap<TableNodePtr> global_in_temporary_tables;
 
     bool enable_add_distinct_to_in_subqueries = planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
 
@@ -621,15 +946,15 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     {
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
         {
-            QueryTreeNodePtr join_table_expression;
+            TableExpressionNodePtr join_table_expression;
             const auto join_kind = join_node->getKind();
             if (!allow_global_join_for_right_table || join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
             {
-                join_table_expression = join_node->getRightTableExpression();
+                join_table_expression = join_node->getRightTableExpressionNodeTyped();
             }
             else if (join_kind == JoinKind::Right)
             {
-                join_table_expression = join_node->getLeftTableExpression();
+                join_table_expression = join_node->getLeftTableExpressionNodeTyped();
             }
             else
             {
@@ -659,7 +984,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 const auto * descendant = descendants_to_map.back();
                 descendants_to_map.pop_back();
 
-                replacement_map.emplace(descendant, temporary_table_expression_node);
+                if (const auto * ptr = descendant->asTableExpression())
+                    replacement_map.emplace(ptr, temporary_table_expression_node);
 
                 for (const auto & child : descendant->getChildren())
                     if (child)
@@ -677,14 +1003,14 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            QueryTreeNodePtr replacement_table_expression;
+            TableExpressionNodePtr replacement_table_expression;
             auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
             if (!temporary_table_expression_node)
             {
                 auto subquery_to_execute = in_function_subquery_node;
                 if (subquery_to_execute->as<TableNode>())
                     subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(
-                        subquery_to_execute,
+                        static_pointer_cast<TableNode>(subquery_to_execute),
                         planner_context->getQueryContext());
 
                 // If DISTINCT optimization is enabled, add DISTINCT before executing the subquery
@@ -699,10 +1025,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
             else
             {
-                replacement_table_expression = temporary_table_expression_node->clone();
+                replacement_table_expression = static_pointer_cast<ITableExpressionNode>(temporary_table_expression_node->clone());
             }
 
-            replacement_map.emplace(in_function_subquery_node.get(), replacement_table_expression);
+            replacement_map.emplace(in_function_subquery_node->asTableExpression(), replacement_table_expression);
         }
         else
         {
@@ -717,6 +1043,11 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
 
     createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
+
+    /// Reject `JOIN USING` keys that no remote server can resolve; keys the shard can re-resolve are shipped.
+    /// Such keys can only be produced by the projection-alias resolution, so check only when it is enabled.
+    if (planner_context->getQueryContext()->getSettingsRef()[Setting::analyzer_compatibility_join_using_top_level_identifier])
+        rejectUnshippableJoinUsingKeys(query_tree_to_modify);
 
     // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
     // settings won't break any remote parser. It's also more reasonable since the query settings
@@ -743,18 +1074,44 @@ public:
     void visitImpl(QueryTreeNodePtr & node)
     {
         if (auto * table_node = node->as<TableNode>())
+        {
             storages.push_back(table_node->getStorage());
+            table_nodes.push_back(table_node);
+        }
         else if (auto * table_func_node = node->as<TableFunctionNode>())
         {
             /// See https://github.com/ClickHouse/ClickHouse/issues/77990
             /// Now that parallel replicas support TableFunctionRemote, GlobalJoin also needs to support TableFunctionRemote.
             const auto & name = table_func_node->getTableFunctionName();
             if (name == "cluster" || name == "clusterAllReplicas" || name == "remote" || name == "remoteSecure")
+            {
                 storages.push_back(table_func_node->getStorage());
+                table_nodes.push_back(nullptr);
+            }
+            else
+                has_uncollected_table_function = true;
         }
     }
 
+    /// The materialized side of a GLOBAL join and the arguments of a GLOBAL IN are read on the
+    /// initiator and shipped as temporary tables, so no replica reads the storages under them.
+    /// Same two cases, in the same order, as the collector that does the materializing.
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        auto * function_node = parent->as<FunctionNode>();
+        if (function_node && isNameOfGlobalInFunction(function_node->getFunctionName()))
+            return false;
+
+        auto * join_node = parent->as<JoinNode>();
+        return !(join_node && join_node->getLocality() == JoinLocality::Global
+            && getMaterializedTableExpressionNode(*join_node, /*allow_global_join_for_right_table=*/true) == child);
+    }
+
     std::vector<StoragePtr> storages;
+    /// Parallel to `storages`; null where the storage came from a table function, which has no TableNode.
+    std::vector<const TableNode *> table_nodes;
+    /// Set when a table function was left out of `storages`, which on its own reads as "no storages".
+    bool has_uncollected_table_function = false;
 };
 
 class RewriteJoinToGlobalJoinVisitor : public InDepthQueryTreeVisitorWithContext<RewriteJoinToGlobalJoinVisitor>
@@ -763,13 +1120,34 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<RewriteJoinToGlobalJoinVisitor>;
     using Base::Base;
 
-    static bool allStoragesAreMergeTree(QueryTreeNodePtr & node)
+    /// Whether the materialized side may be left for each replica to read on its own.
+    bool materializedSideCanStayLocal(JoinNode & join_node)
     {
         CollectStoragesVisitor collect_storages;
-        collect_storages.visit(node);
-        for (const auto & storage : collect_storages.storages)
-            if (!storage->isMergeTree())
+        collect_storages.visit(getMaterializedTableExpressionNode(join_node, /*allow_global_join_for_right_table=*/true));
+
+        const bool is_right_join = join_node.getKind() == JoinKind::Right;
+
+        /// An uncollected table function leaves `storages` empty, which the loop below would read
+        /// as all-MergeTree.
+        if (is_right_join && collect_storages.has_uncollected_table_function)
+            return false;
+
+        for (size_t i = 0; i < collect_storages.storages.size(); ++i)
+        {
+            const auto & storage = collect_storages.storages[i];
+            const auto * table_node = collect_storages.table_nodes[i];
+
+            /// Nothing else checks eligibility on a RIGHT JOIN's materialized side: the candidate
+            /// walk admits it by node type alone.
+            if (is_right_join && table_node)
+            {
+                if (!canUseTableForParallelReplicas(*table_node, getContext()))
+                    return false;
+            }
+            else if (!storage->isMergeTree())
                 return false;
+        }
 
         return true;
     }
@@ -779,7 +1157,7 @@ public:
         if (auto * join_node = node->as<JoinNode>())
         {
             bool prefer_local_join = getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
-            bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpression());
+            bool should_use_global_join = !prefer_local_join || !materializedSideCanStayLocal(*join_node);
             if (should_use_global_join)
                 join_node->setLocality(JoinLocality::Global);
         }
@@ -788,7 +1166,7 @@ public:
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         auto * join_node = parent->as<JoinNode>();
-        if (join_node && join_node->getRightTableExpression() == child)
+        if (join_node && getMaterializedTableExpressionNode(*join_node, /*allow_global_join_for_right_table=*/true) == child)
             return false;
 
         return true;
@@ -804,40 +1182,13 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 namespace
 {
 
-/// Replace ALIAS column nodes with their defining expression. The action name computed afterwards then matches the name
-/// the shard's ActionsDAG assigns (the shard works on the inlined query tree).
-class InlineAliasColumnsForNamingVisitor : public InDepthQueryTreeVisitor<InlineAliasColumnsForNamingVisitor>
-{
-    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
-    {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return nullptr;
-
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-            return nullptr;
-
-        auto column_expression = column_node->getExpression();
-        column_expression->setAlias(column_node->getColumnName());
-        return column_expression;
-    }
-
-public:
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto column_expression = getColumnNodeAliasExpression(node))
-            node = column_expression;
-    }
-};
-
 String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
 {
+    /// The action name computed afterwards then matches the name the shard's ActionsDAG assigns
+    /// (the shard works on the inlined query tree). Action names come from the column identifier or the
+    /// expression rather than the SQL alias, so inlining without aliasing is what this needs.
     auto node_clone = node->clone();
-    InlineAliasColumnsForNamingVisitor visitor;
-    visitor.visit(node_clone);
+    inlineAliasColumnsInExpression(node_clone);
 
     /// `buildQueryTreeForShard` performs one more naming-relevant rewrite after inlining ALIAS columns:
     /// `ReplaceLongConstWithScalarVisitor` turns over-threshold constants into `__getScalar('<hash>')` calls
@@ -892,6 +1243,88 @@ private:
     const PlannerContext & planner_context;
     std::unordered_map<String, String> & translation;
 };
+
+/// Collect, for every `ALIAS` column in the query tree, the inlined clone of its defining expression, keyed by the
+/// column's identifier-based action name (the name `expected_header` uses). Nested `ALIAS` columns are inlined in the
+/// clone as well, so its `COLUMN` leaves are named as the shard header names them and it can be built on that header.
+class CollectInlinedAliasExpressionsVisitor : public InDepthQueryTreeVisitor<CollectInlinedAliasExpressionsVisitor>
+{
+public:
+    CollectInlinedAliasExpressionsVisitor(
+        const PlannerContext & planner_context_, std::unordered_map<String, QueryTreeNodePtr> & alias_expressions_)
+        : planner_context(planner_context_)
+        , alias_expressions(alias_expressions_)
+    {
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (node->getNodeType() != QueryTreeNodeType::COLUMN)
+            return;
+
+        auto inlined = getInlineableAliasColumnExpression(node);
+        if (!inlined)
+            return;
+
+        auto identifier_name = calculateActionNodeName(node, planner_context, /*use_column_identifier_as_action_node_name=*/true);
+        if (alias_expressions.contains(identifier_name))
+            return;
+
+        inlineAliasColumnsInExpression(inlined);
+        alias_expressions.emplace(std::move(identifier_name), std::move(inlined));
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
+    {
+        auto child_type = child->getNodeType();
+        return child_type != QueryTreeNodeType::QUERY && child_type != QueryTreeNodeType::UNION
+            && child_type != QueryTreeNodeType::TABLE_FUNCTION && child_type != QueryTreeNodeType::TABLE;
+    }
+
+private:
+    const PlannerContext & planner_context;
+    std::unordered_map<String, QueryTreeNodePtr> & alias_expressions;
+};
+
+/// Collect the identifier-based action name of every `COLUMN` leaf of an already-inlined expression. These are the
+/// names `PlannerActionsVisitor` will look up when it builds the expression, so they are what has to resolve to the
+/// shard header's columns.
+void collectLeafColumnActionNames(
+    const QueryTreeNodePtr & node, const PlannerContext & planner_context, std::unordered_set<String> & leaf_names)
+{
+    if (node->getNodeType() == QueryTreeNodeType::COLUMN)
+    {
+        leaf_names.emplace(calculateActionNodeName(node, planner_context, /*use_column_identifier_as_action_node_name=*/true));
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectLeafColumnActionNames(child, planner_context, leaf_names);
+}
+
+/// True if `node`'s value depends on which server evaluates it: a function that is not deterministic (`rand`, `now`,
+/// ...), or a `ConstantNode` the analyzer produced by folding a server-local call (`hostName`, `tcpPort`, ...), which
+/// the fold marks non-deterministic while a plain literal stays deterministic.
+bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * function_node = node->as<FunctionNode>())
+        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
+            return true;
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+        if (!constant_node->isDeterministic())
+            return true;
+
+    for (const auto & child : node->getChildren())
+        if (containsNonDeterministicFunction(child))
+            return true;
+
+    return false;
+}
 
 /// Collect the set of genuine column-name tails of analyzer-generated table qualifiers in the query tree. A real
 /// qualifier in a column identifier has the form `__tableN.<tail>`, where `__tableN` is the alias
@@ -1039,21 +1472,29 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     const Block & shard_header,
-    const Block & expected_header)
+    const Block & expected_header,
+    std::unordered_map<String, String> * duplicate_to_representative)
 {
+    if (duplicate_to_representative)
+        duplicate_to_representative->clear();
+
     if (!planner_context || !query_tree)
         return {};
 
-    /// The shard-side deduplication can only remove columns, so a recognized collapse has a strictly smaller shard header.
-    if (shard_header.columns() == 0 || shard_header.columns() >= expected_header.columns())
+    /// A zero-column shard header carries no expression to map from, so nothing here can explain it.
+    if (shard_header.columns() == 0)
         return {};
 
     std::unordered_map<String, String> identifier_to_inlined_name;
+    std::unordered_map<String, QueryTreeNodePtr> identifier_to_alias_expression;
     std::unordered_set<String> genuine_qualifier_tails;
     {
         QueryTreeNodePtr query_tree_for_visit = query_tree;
         CollectAliasNameTranslationVisitor visitor(*planner_context, identifier_to_inlined_name);
         visitor.visit(query_tree_for_visit);
+
+        CollectInlinedAliasExpressionsVisitor alias_visitor(*planner_context, identifier_to_alias_expression);
+        alias_visitor.visit(query_tree_for_visit);
 
         CollectGenuineQualifierTailsVisitor tails_visitor(*planner_context, genuine_qualifier_tails);
         tails_visitor.visit(query_tree_for_visit);
@@ -1066,15 +1507,25 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     /// shard but `__tableK.x` (K > 1) in the initiator's tree. Erasing the genuine qualifier number on both sides
     /// removes exactly that difference, so corresponding columns match while every other difference (including user
     /// text that merely looks like a qualifier) is preserved. Matching is by name, not position, so it tolerates the
-    /// shard returning its deduplicated columns in a different order than the initiator expects. If two shard columns
-    /// share a normalized name we keep the first; the "every shard column used" guard below then rejects the ambiguous
-    /// case and we fall back safely.
+    /// shard returning its columns in a different order than the initiator expects. Two shard columns sharing a
+    /// normalized name make it undecidable which of them feeds an expected column resolving to that name, so such names
+    /// are recorded and any expected column hitting one is rejected below.
     std::unordered_map<String, size_t> shard_normalized_to_index;
+    std::unordered_set<String> ambiguous_shard_names;
     shard_normalized_to_index.reserve(shard_header.columns());
     for (size_t i = 0; i < shard_header.columns(); ++i)
-        shard_normalized_to_index.emplace(normalizeGenuineQualifiers(shard_header.getByPosition(i).name, genuine_qualifier_tails), i);
+    {
+        auto normalized = normalizeGenuineQualifiers(shard_header.getByPosition(i).name, genuine_qualifier_tails);
+        if (!shard_normalized_to_index.emplace(normalized, i).second)
+            ambiguous_shard_names.emplace(std::move(normalized));
+    }
+
+    /// Sentinel in `shard_index_for_expected`: this expected column has no single shard column feeding it and is
+    /// computed from the shard header by `expression_for_expected` instead.
+    static constexpr size_t computed_from_expression = std::numeric_limits<size_t>::max();
 
     std::vector<size_t> shard_index_for_expected(expected_header.columns());
+    std::vector<QueryTreeNodePtr> expression_for_expected(expected_header.columns());
     std::vector<bool> shard_column_used(shard_header.columns(), false);
     bool collapse_detected = false;
 
@@ -1087,43 +1538,160 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
             inlined_name = it->second;
 
         /// Match by normalized name so the independent shard/initiator qualifier numbering does not matter.
-        auto shard_it = shard_normalized_to_index.find(normalizeGenuineQualifiers(inlined_name, genuine_qualifier_tails));
-        if (shard_it == shard_normalized_to_index.end())
+        auto normalized_inlined_name = normalizeGenuineQualifiers(inlined_name, genuine_qualifier_tails);
+        if (ambiguous_shard_names.contains(normalized_inlined_name))
+            return {}; /// Two shard columns share this name, so which one feeds this column is undecidable.
+
+        auto shard_it = shard_normalized_to_index.find(normalized_inlined_name);
+        if (shard_it != shard_normalized_to_index.end())
+        {
+            shard_index_for_expected[i] = shard_it->second;
+            shard_column_used[shard_it->second] = true;
+            /// The matched shard column carries a name different from the initiator-side `expected_name` (whether by
+            /// the ALIAS inlining or only by the qualifier renumbering); that is the signature of an
+            /// inlined/deduplicated ALIAS column the shard collapsed.
+            if (shard_header.getByPosition(shard_it->second).name != expected_name)
+                collapse_detected = true;
+            continue;
+        }
+
+        /// An `ALIAS` whose declared type differs from its body's inlines to `_CAST(<body>, '<Type>')`, and one over an
+        /// expression to that expression; neither is a column the shard emits at a mergeable-state boundary. The body's
+        /// leaves are raw columns the shard does send, so evaluate the body here instead of looking the column up.
+        auto alias_it = identifier_to_alias_expression.find(expected_name);
+        if (alias_it == identifier_to_alias_expression.end())
             return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
 
-        shard_index_for_expected[i] = shard_it->second;
-        shard_column_used[shard_it->second] = true;
-        /// The matched shard column carries a name different from the initiator-side `expected_name` (whether by the
-        /// ALIAS inlining or only by the qualifier renumbering); that is the signature of an inlined/deduplicated
-        /// ALIAS column the shard collapsed.
-        if (shard_header.getByPosition(shard_it->second).name != expected_name)
-            collapse_detected = true;
+        /// Evaluating the body here reproduces what the shard would have computed only while the body is a function of
+        /// the shard's columns alone. One whose value depends on the evaluating server would take this server's value.
+        if (containsNonDeterministicFunction(alias_it->second))
+            return {};
+
+        shard_index_for_expected[i] = computed_from_expression;
+        expression_for_expected[i] = alias_it->second;
+        collapse_detected = true;
     }
 
     if (!collapse_detected)
         return {};
 
-    for (bool used : shard_column_used)
-        if (!used)
-            return {}; /// Some shard column is unaccounted for; fall back to be safe.
+    /// Every expected column reads the shard column at its own position and nothing has to be computed, so the caller's
+    /// positional reconciliation already produces exactly this mapping. Decline, to leave such plans untouched.
+    if (shard_header.columns() == expected_header.columns())
+    {
+        bool identity_mapping = true;
+        for (size_t i = 0; i < expected_header.columns() && identity_mapping; ++i)
+            identity_mapping = shard_index_for_expected[i] == i;
+        if (identity_mapping)
+            return {};
+    }
 
     ActionsDAG dag;
     std::vector<const ActionsDAG::Node *> shard_input_nodes;
+    std::unordered_set<std::string_view> shard_column_names;
     shard_input_nodes.reserve(shard_header.columns());
+    shard_column_names.reserve(shard_header.columns());
     for (size_t i = 0; i < shard_header.columns(); ++i)
     {
         const auto & column = shard_header.getByPosition(i);
         shard_input_nodes.push_back(&dag.addInput(column.name, column.type));
+        shard_column_names.emplace(shard_input_nodes.back()->result_name);
     }
+    /// Leaf names already aliased onto a shard column by an earlier computed expression, so the alias is added once.
+    std::unordered_set<String> renamed_leaves;
 
     ActionsDAG::NodeRawConstPtrs outputs;
     outputs.reserve(expected_header.columns());
+    /// The first expected column mapping onto a given shard column is its "representative"; any later expected column
+    /// mapping onto the same shard column is a duplicate of that representative. Report those duplicates so a downstream
+    /// aggregation merge can bucket by only the representative key columns (matching the shard's collapsed bucketing).
+    std::unordered_map<size_t, String> representative_for_shard_index;
+    /// Collected locally and published to `duplicate_to_representative` only on the successful return, so that a
+    /// declining return always leaves the caller's map empty however many decline paths there are.
+    std::unordered_map<String, String> duplicates;
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
     for (size_t i = 0; i < expected_header.columns(); ++i)
     {
-        const auto & expected_name = expected_header.getByPosition(i).name;
-        const auto * source_node = shard_input_nodes[shard_index_for_expected[i]];
+        const auto & expected_column = expected_header.getByPosition(i);
+        const auto & expected_name = expected_column.name;
+        const size_t shard_index = shard_index_for_expected[i];
+
+        if (shard_index == computed_from_expression)
+        {
+            /// The body's leaves are named by the initiator's column identifiers, while the shard header carries the
+            /// shard's own independently renumbered qualifiers (see `normalizeGenuineQualifiers`). Aliasing the shard
+            /// column under the initiator's name resolves the expression onto an existing input instead of adding one.
+            std::unordered_set<String> leaf_names;
+            collectLeafColumnActionNames(expression_for_expected[i], *planner_context, leaf_names);
+            for (const auto & leaf_name : leaf_names)
+            {
+                /// Two shard columns share this name, so which one the leaf reads is undecidable. An exact-name hit
+                /// does not settle it either: the shard column of that exact name may belong to the other source.
+                auto normalized_leaf_name = normalizeGenuineQualifiers(leaf_name, genuine_qualifier_tails);
+                if (ambiguous_shard_names.contains(normalized_leaf_name))
+                    return {};
+                /// Already resolvable: the leaf names a shard column directly, or an earlier expression aliased it.
+                if (shard_column_names.contains(leaf_name) || !renamed_leaves.emplace(leaf_name).second)
+                    continue;
+                auto leaf_it = shard_normalized_to_index.find(normalized_leaf_name);
+                if (leaf_it == shard_normalized_to_index.end())
+                    continue;
+                dag.addAlias(*shard_input_nodes[leaf_it->second], leaf_name);
+            }
+
+            PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, /*use_column_identifier_as_action_node_name=*/true);
+            auto [expression_outputs, correlated_subtrees] = actions_visitor.visit(dag, expression_for_expected[i]);
+            if (correlated_subtrees.notEmpty() || expression_outputs.size() != 1)
+                return {};
+
+            const auto * computed_node = expression_outputs.front();
+            if (!computed_node->result_type->equals(*expected_column.type))
+                return {};
+
+            outputs.push_back(&dag.addAlias(*computed_node, expected_name));
+            continue;
+        }
+
+        const auto * source_node = shard_input_nodes[shard_index];
         outputs.push_back(&dag.addAlias(*source_node, expected_name));
+
+        if (duplicate_to_representative)
+        {
+            auto [it, inserted] = representative_for_shard_index.emplace(shard_index, expected_name);
+            if (!inserted && it->second != expected_name)
+                duplicates.emplace(expected_name, it->second);
+        }
     }
+
+    /// The resulting DAG runs on the shard header, so every input it reads must be a column of that header. Building a
+    /// computed expression adds an input for any leaf that did not resolve above, and such a DAG would throw
+    /// `NOT_FOUND_COLUMN_IN_BLOCK` while the plan is built. Decline instead and let the caller reconcile.
+    for (const auto * input : dag.getInputs())
+        if (!shard_column_names.contains(input->result_name))
+            return {};
+
+    /// Every shard column must be accounted for: either it feeds an expected column directly, or a computed expression
+    /// above reads it. A leftover column means the mapping does not explain this header, so fall back to be safe.
+    {
+        std::unordered_set<const ActionsDAG::Node *> reachable;
+        std::vector<const ActionsDAG::Node *> to_visit = outputs;
+        while (!to_visit.empty())
+        {
+            const auto * node = to_visit.back();
+            to_visit.pop_back();
+            if (!reachable.emplace(node).second)
+                continue;
+            for (const auto * child : node->children)
+                to_visit.push_back(child);
+        }
+
+        for (size_t i = 0; i < shard_header.columns(); ++i)
+            if (!shard_column_used[i] && !reachable.contains(shard_input_nodes[i]))
+                return {};
+    }
+
+    if (duplicate_to_representative)
+        *duplicate_to_representative = std::move(duplicates);
 
     dag.getOutputs() = std::move(outputs);
     return dag;

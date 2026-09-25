@@ -25,9 +25,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="استخدام القاموس مع LEFT ANY JOIN" />
 
-في هذه الحالة، يمكن لـ ClickHouse الاستفادة من القاموس لتنفيذ [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). وهذه أسرع خوارزمية JOIN في ClickHouse، وتُطبَّق عندما يدعم [محرك الجدول](/ar/reference/engines/table-engines/index) الأساسي للجدول الأيمن طلبات مفتاح-قيمة منخفضة زمن الانتقال. يوفّر ClickHouse ثلاثة محركات جداول تدعم ذلك: [Join](/ar/reference/engines/table-engines/special/join) (وهو في الأساس جدول hash محسوب مسبقًا)، و[EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb)، و[Dictionary](/ar/reference/engines/table-engines/special/dictionary). سنشرح النهج القائم على القاموس، لكن الآلية نفسها تنطبق على المحركات الثلاثة جميعًا.
+في هذه الحالة، يمكن لـ ClickHouse الاستفادة من القاموس لتنفيذ [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). وهذه أسرع خوارزمية JOIN في ClickHouse، وتُطبَّق عندما يدعم [محرك الجدول](/ar/reference/engines/table-engines/index) الأساسي للجدول الموجود على الجانب الأيمن طلبات مفتاح-قيمة منخفضة زمن الانتقال. يوفّر ClickHouse ثلاثة محركات جداول تدعم ذلك: [Join](/ar/reference/engines/table-engines/special/join) (وهو في الأساس جدول hash محسوب مسبقًا)، و[EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb)، و[Dictionary](/ar/reference/engines/table-engines/special/dictionary). سنشرح النهج القائم على القاموس، لكن الآلية نفسها تنطبق على المحركات الثلاثة جميعًا.
 
-تتطلب خوارزمية Direct Join أن يكون الجدول الأيمن مدعومًا بقاموس، بحيث تكون البيانات المراد ربطها من ذلك الجدول موجودة مسبقًا في الذاكرة على هيئة بنية بيانات مفتاح-قيمة منخفضة زمن الانتقال.
+تتطلب خوارزمية Direct Join أن يكون الجدول الأيمن معتمدًا على قاموس، بحيث تكون البيانات المراد ربطها من ذلك الجدول موجودة مسبقًا في الذاكرة على هيئة بنية بيانات مفتاح-قيمة منخفضة زمن الانتقال.
 
 <div id="example">
   ### مثال
@@ -366,6 +366,6 @@ Peak memory usage: 666.82 MiB.
   ### للمزيد من القراءة
 </div>
 
-* [أفضل ممارسات القواميس](/ar/concepts/features/dictionaries/best-practices) — اختيار البنية، القواميس مقابل JOINs، المراقبة
+* [أفضل ممارسات القواميس](/ar/concepts/features/dictionaries/best-practices) — اختيار البنية، القواميس مقابل عبارات JOIN، المراقبة
 * [استخدام القواميس لتسريع الاستعلامات](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
-* [التهيئة المتقدمة للقواميس](/ar/reference/statements/create/dictionary)
+* [الإعدادات المتقدمة للقواميس](/ar/reference/statements/create/dictionary)

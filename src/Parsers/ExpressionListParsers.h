@@ -307,7 +307,9 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// Parser for key-value pair, where value can be list of pairs.
+/// Parser for key-value pair, where value can be a scalar literal, an array of literals
+/// (with tuples of literals inside, e.g. [(0, 0.6), (1, 0.4)]), an identifier, a function,
+/// or a nested list of pairs.
 class ParserKeyValuePair : public IParserBase
 {
 protected:
@@ -331,6 +333,16 @@ protected:
     const char * getName() const override { return "ttl expression list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
+
+/// Whether the parentheses that `pos` points at hold an expression over a column named `from`, rather
+/// than a subquery. Does not move `pos`.
+///
+/// `from` is a keyword that ClickHouse has always accepted as an unquoted identifier, and a subquery
+/// may omit its SELECT clause and start with the FROM clause instead (`(FROM t)` means
+/// `(SELECT * FROM t)`), so both readings parse for `WHERE (from IN ('a'))`: the expression
+/// `from IN ('a')`, and the subquery `SELECT * FROM IN('a')` over a table function named `IN`. The
+/// column reading is older than the FROM-first form, so it wins the ambiguity.
+bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos);
 
 }
 

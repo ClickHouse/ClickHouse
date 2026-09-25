@@ -96,7 +96,7 @@ As datas de uso e da fatura serão diferentes se essas datas não coincidirem. C
   ### Onde posso encontrar informações gerais sobre faturamento​?
 </div>
 
-Consulte a [página de visão geral do faturamento](/pt-BR/products/cloud/reference/billing/index).
+Consulte a [página de visão geral do faturamento](/pt-BR/products/cloud/reference/billing/billing-overview).
 
 <div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
   ### Há diferença nos preços do ClickHouse Cloud ao pagar pelo marketplace do provedor de Cloud ou diretamente à ClickHouse?
@@ -110,8 +110,14 @@ Não há diferença de preço entre o faturamento do marketplace e a contrataç�
 
 Sim. É possível configurar várias organizações do ClickHouse para cobrar o uso em atraso na mesma conta de faturamento do cloud marketplace (AWS, GCP ou Azure). No entanto, créditos pré-pagos não são compartilhados entre organizações por padrão. Se você precisar compartilhar créditos entre organizações, entre em contato com o [ClickHouse Cloud Support](https://clickhouse.com/support/program).
 
-<div id="automatically-move-to-PAYG-when-running-out-of-credit">
-  ### Se a minha organização do ClickHouse for faturada por meio de um acordo de gasto comprometido em um marketplace de nuvem, ela migrará automaticamente para a cobrança PAYG quando meus créditos acabarem?
+<div id="can-i-bill-different-services-within-the-same-organization-to-different-marketplace-subscriptions">
+  ### Posso faturar serviços diferentes da mesma organização em assinaturas diferentes do marketplace?
 </div>
 
-Se o seu contrato de gasto comprometido no marketplace estiver ativo e seus créditos acabarem, sua organização será automaticamente migrada para a cobrança PAYG. No entanto, quando o contrato atual expirar, você precisará vincular um novo contrato de marketplace à sua organização ou migrá-la para o faturamento direto via cartão de crédito.
+Não. O faturamento é configurado no nível da organização, portanto todos os serviços de uma mesma organização do ClickHouse Cloud são faturados pela mesma assinatura do marketplace. Se precisar faturar os serviços separadamente, crie organizações distintas para cada configuração de faturamento. Você pode gerenciar várias organizações na mesma conta de usuário do console do ClickHouse Cloud, cada uma com sua própria configuração de faturamento.
+
+<div id="automatically-move-to-PAYG-when-running-out-of-credit">
+  ### Se a minha organização ClickHouse for faturada por meio de um acordo de gastos comprometidos em um marketplace de nuvem, ela migrará automaticamente para a cobrança PAYG quando meus créditos acabarem?
+</div>
+
+Se o seu contrato de gastos comprometidos no marketplace estiver ativo e seus créditos acabarem, migraremos automaticamente sua organização para a cobrança PAYG. No entanto, quando o seu contrato atual expirar, você precisará vincular um novo contrato de marketplace à sua organização ou migrá-la para a cobrança direta via cartão de crédito. 

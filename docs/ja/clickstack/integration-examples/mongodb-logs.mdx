@@ -33,9 +33,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 * MongoDB のログファイルへのアクセス
 
 <Steps>
-  <Step>
-    #### MongoDB のロギング設定を確認する
-
+  <Step title="MongoDB のロギング設定を確認する" id="verify-mongodb">
     MongoDB 4.4 以降では、デフォルトで構造化された JSON 形式のログが出力されます。ログファイルの場所を確認してください。
 
     ```bash
@@ -60,17 +58,15 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     設定を変更したら、MongoDB を再起動します。
 
     ```bash
-    # systemdの場合
+    # For systemd
     sudo systemctl restart mongod
 
-    # Dockerの場合
+    # For Docker
     docker restart <mongodb-container>
     ```
   </Step>
 
-  <Step>
-    #### MongoDB 用のカスタム OTel collector 設定を作成する
-
+  <Step title="MongoDB 用のカスタム OTel collector 設定を作成する" id="custom-otel">
     ClickStack では、カスタム設定ファイルをマウントし、環境変数を設定することで、ベースの OpenTelemetry Collector 設定を拡張できます。カスタム設定は、HyperDX が OpAMP 経由で管理するベース設定にマージされます。
 
     次の内容で、`mongodb-monitoring.yaml` という名前のファイルを作成します。
@@ -134,9 +130,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### ClickStack でカスタム設定を読み込むように構成する
-
+  <Step title="ClickStack でカスタム設定を読み込むように構成する" id="load-custom">
     既存の ClickStack デプロイメントでカスタム collector 設定を有効にするには、次の作業が必要です。
 
     1. カスタム設定ファイルを `/etc/otelcol-contrib/custom.config.yaml` にマウントする
@@ -180,9 +174,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### HyperDX でログを確認する
-
+  <Step title="HyperDX でログを確認する" id="verifying-logs">
     設定が完了したら、HyperDX にログインして、ログが流れてきていることを確認します。
 
     <Image img="/images/clickstack/mongodb/search-view.webp" alt="MongoDB ログの検索ビュー" />
@@ -198,9 +190,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 本番環境を構成する前に、事前生成済みのサンプルデータセットを使って MongoDB インテグレーションをテストできます。
 
 <Steps>
-  <Step>
-    #### サンプルデータセットをダウンロードする
-
+  <Step title="サンプルデータセットをダウンロードする" id="download-sample">
     サンプルのログファイルをダウンロードします。
 
     ```bash
@@ -208,9 +198,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### テスト用の collector 設定を作成する
-
+  <Step title="テスト用の collector 設定を作成する" id="test-config">
     以下の設定内容で、`mongodb-demo.yaml` という名前のファイルを作成します。
 
     ```yaml
@@ -269,9 +257,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### デモ設定で ClickStack を実行する
-
+  <Step title="デモ設定で ClickStack を実行する" id="run-demo">
     デモ用のログと設定を使用して ClickStack を実行します。
 
     ```bash
@@ -302,13 +288,11 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>してダッシュボード設定を取得します
+  <Step title="ダッシュボード設定をダウンロード" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>します。
   </Step>
 
-  <Step>
-    #### あらかじめ用意されたダッシュボードをインポートします
-
+  <Step title="あらかじめ用意されたダッシュボードをインポートします" id="import-dashboard">
     1. HyperDX を開き、Dashboards セクションに移動します。
     2. 右上の省略記号メニューから「Import Dashboard」をクリックします。
 
@@ -319,9 +303,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/mongodb/finish-import.webp" alt="MongoDB ログダッシュボードのインポート完了" />
   </Step>
 
-  <Step>
-    #### ダッシュボードが作成され、すべての可視化があらかじめ設定された状態になります
-
+  <Step title="ダッシュボードが作成され、すべての可視化があらかじめ設定された状態になります" id="created-dashboard">
     デモデータセットでは、時間範囲に **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)** が含まれるように設定します。
 
     <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="MongoDB ログダッシュボード" />
@@ -371,4 +353,4 @@ tail -1 /var/log/mongodb/mongod.log | python3 -m json.tool
   ## 本番環境への移行
 </div>
 
-このガイドでは、迅速にセットアップできるよう、ClickStack に組み込まれた OpenTelemetry Collector を拡張して使用します。本番環境でのデプロイメントでは、独自の OTel Collector を実行し、データを ClickStack の OTLPエンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+このガイドでは、迅速にセットアップできるよう、ClickStack に組み込まれた OpenTelemetry Collector をベースにしています。本番環境にデプロイする場合は、独自の OTel Collector を実行し、ClickStack の OTLP エンドポイントにデータを送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

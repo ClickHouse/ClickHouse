@@ -29,12 +29,12 @@ ClickHouse에서 에이전트형 분석을 실행하는 가장 쉬운 방법은 
 * **답변을 평가하고 개선**할 수 있습니다. Langfuse에서 사람의 검토 또는 LLM 판정으로 응답을 점수화하고, 프롬프트와 에이전트를 개선하면 됩니다.
 
 <div id="architecture">
-  ## 에이전트형 데이터 스택이 어떻게 맞물려 작동하는지
+  ## 에이전트형 데이터 스택이 어떻게 함께 작동하는지
 </div>
 
 <Image img="/images/agentic-data-stack/01-architecture.webp" alt="에이전트형 데이터 스택 아키텍처: 사용자는 LibreChat와 상호작용하고, LibreChat은 LLM, MCP 서버를 통해 ClickHouse, 그리고 tracing을 위한 Langfuse에 연결됩니다" size="md" />
 
-사용자가 LibreChat에서 질문하면 모델이 응답 계획을 세우고, MCP 서버를 통해 도구를 호출해 ClickHouse를 탐색하고 쿼리합니다. 결과가 다시 전달되면 에이전트가 답변을 구성합니다. OpenTelemetry를 기반으로 하는 Langfuse는 prompt부터 도구 호출, 응답에 이르기까지 각 실행을 기록하고, 자동 또는 사람의 검토를 통해 출력을 평가할 수 있게 하며, 품질, 비용, 지연 시간을 추적합니다.
+사용자가 LibreChat에서 질문하면 모델이 응답 계획을 세우고, MCP 서버를 통해 도구를 호출해 ClickHouse를 탐색하고 쿼리합니다. 결과가 다시 돌아오면 에이전트가 답변을 구성합니다. OpenTelemetry를 기반으로 하는 Langfuse는 prompt부터 도구 호출, 응답에 이르기까지 각 실행을 기록하고, 자동 또는 사람의 검토를 통해 출력을 평가할 수 있게 하며, 품질, 비용, 지연 시간을 추적합니다.
 
 ClickHouse MCP 서버는 개방형 표준인 [Model Context Protocol](https://modelcontextprotocol.io/)을 기반으로 하므로 LibreChat뿐 아니라 MCP와 호환되는 모든 클라이언트 또는 에이전트 프레임워크와 함께 사용할 수 있습니다. 클라이언트와 에이전트 라이브러리에 대한 내용은 [MCP 가이드](/ko/guides/use-cases/ai-ml/MCP)를 참조하십시오.
 
@@ -42,9 +42,9 @@ ClickHouse MCP 서버는 개방형 표준인 [Model Context Protocol](https://mo
   ## 구성 요소
 </div>
 
-| 구성 요소             | 역할                                          | 자세히 알아보기                                                       |
-| ----------------- | ------------------------------------------- | -------------------------------------------------------------- |
-| ClickHouse        | 에이전트가 쿼리하는 분석 엔진                            | [ClickHouse 시작하기](/ko/get-started/setup/install)             |
+| 구성 요소             | 역할                                          | 자세히 알아보기                                                          |
+| ----------------- | ------------------------------------------- | ----------------------------------------------------------------- |
+| ClickHouse        | 에이전트가 쿼리하는 분석 엔진                            | [ClickHouse 시작하기](/ko/get-started/setup/install)                  |
 | ClickHouse MCP 서버 | 에이전트가 도구로 사용할 수 있도록 ClickHouse를 노출하는 개방형 표준 | [MCP 서버](/ko/products/agentic-data-stack/components/mcp-server)   |
 | LibreChat         | 사용자가 상호작용하는 채팅 및 에이전트 프런트엔드                 | [LibreChat](/ko/products/agentic-data-stack/components/librechat) |
 | Langfuse          | 모든 프롬프트, 도구 호출, 응답에 대한 관측성                  | [Langfuse](/ko/products/agentic-data-stack/components/langfuse)   |

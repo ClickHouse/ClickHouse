@@ -1,4 +1,5 @@
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/HistogramMetrics.h>
 #include <Core/Settings.h>
@@ -29,6 +30,8 @@ ColumnsDescription MetricLogElement::getColumnsDescription()
     ColumnsDescription result;
 
     result.add({"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."});
+    result.add({"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."});
+    result.add({"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."});
     result.add({"event_date", std::make_shared<DataTypeDate>(), "Event date."});
     result.add({"event_time", std::make_shared<DataTypeDateTime>(), "Event time."});
     result.add({"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Event time with microseconds resolution."});
@@ -66,6 +69,8 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
+    columns[column_idx++]->insert(VERSION_STRING);
+    columns[column_idx++]->insert(SYSTEM_PROCESSOR);
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
@@ -83,11 +88,12 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(histogram_sum);
 }
 
-void MetricLog::stepFunction(const std::chrono::system_clock::time_point current_time)
+void collectMetricLogElement(
+    MetricLogElement & elem,
+    const std::chrono::system_clock::time_point current_time,
+    std::vector<ProfileEvents::Count> & previous_profile_events,
+    bool show_zero_values_in_histograms)
 {
-    std::lock_guard lock(previous_profile_events_mutex);
-
-    MetricLogElement elem;
     elem.event_time = std::chrono::system_clock::to_time_t(current_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
 
@@ -115,7 +121,7 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
         elem.current_metrics[i] = CurrentMetrics::values[i];
     }
 
-    const bool show_zero_values = getContext()->getSettingsRef()[Setting::system_metric_log_show_zero_values_in_histograms];
+    const bool show_zero_values = show_zero_values_in_histograms;
 
     HistogramMetrics::Factory::instance().forEachFamily([&](const HistogramMetrics::MetricFamily & family)
     {
@@ -154,8 +160,21 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
             elem.histogram_sum.push_back(metric.getSum());
         });
     });
+}
 
-    add(std::move(elem));
+void MetricLog::stepFunction(const std::chrono::system_clock::time_point current_time)
+{
+    std::lock_guard lock(previous_profile_events_mutex);
+
+    const bool show_zero_values = getContext()->getSettingsRef()[Setting::system_metric_log_show_zero_values_in_histograms];
+
+    add([&](MetricLogElement & element)
+    {
+        /// previous_profile_events is guarded by the mutex held above; thread-safety analysis cannot
+        /// see the lock through this callback, so suppress the false positive on this access.
+        collectMetricLogElement(
+            element, current_time, TSA_SUPPRESS_WARNING_FOR_WRITE(previous_profile_events), show_zero_values);
+    });
 }
 
 }

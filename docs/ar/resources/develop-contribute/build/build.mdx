@@ -53,7 +53,7 @@ sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm y
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 21
+sudo ./llvm.sh 22
 ```
 
 بالنسبة إلى توزيعات Linux الأخرى، تحقّق مما إذا كان بإمكانك تثبيت أيٍّ من [الحزم الجاهزة مسبقًا الخاصة بـ LLVM](https://releases.llvm.org/download.html).
@@ -86,20 +86,20 @@ rustup component add rust-src
   ## بناء ClickHouse
 </div>
 
-نوصي بإنشاء مجلد منفصل باسم `build` داخل `ClickHouse` ليحتوي على جميع نواتج البناء:
+نوصي بإنشاء دليل منفصل باسم `build` داخل `ClickHouse` ليحتوي على جميع نواتج البناء:
 
 ```sh
 mkdir build
 cd build
 ```
 
-يمكنك استخدام عدة مجلدات مختلفة (مثل `build_release` و`build_debug` وما إلى ذلك) لأنواع البناء المختلفة.
+يمكنك استخدام عدة أدلة مختلفة (مثل `build_release` و`build_debug` وما إلى ذلك) لأنواع البناء المختلفة.
 
 اختياري: إذا كان لديك عدة إصدارات من المصرّف مثبّتة، يمكنك أيضًا تحديد المصرّف المطلوب استخدامه بدقة.
 
 ```sh
-export CC=clang-21
-export CXX=clang++-21
+export CC=clang-22
+export CXX=clang++-22
 ```
 
 لأغراض التطوير، يُوصى باستخدام بُنى تصحيح الأخطاء.
@@ -134,15 +134,16 @@ ninja -j 1 clickhouse
 
 <Note>
   تُعدّ `clickhouse-server` و`clickhouse-client` والملفات التنفيذية المشابهة روابط رمزية في الدليل `programs/` تشير إلى الملف التنفيذي `clickhouse` بعد اكتمال البناء.
+</Note>
 
-  :::tip
-  يوفّر CMake اختصارات للأوامر أعلاه:
+<Tip>
+  يوفّر CMake اختصارات للأوامر المذكورة أعلاه:
 
   ```sh
   cmake -S . -B build  # تهيئة البناء، شغّل الأمر من الدليل الجذري للمستودع
   cmake --build build  # تجميع
   ```
-</Note>
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## تشغيل الملف التنفيذي لـ ClickHouse

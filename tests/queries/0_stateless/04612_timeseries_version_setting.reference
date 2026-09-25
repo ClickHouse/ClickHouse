@@ -1,0 +1,12 @@
+--- the version survives DETACH/ATTACH ---
+6
+--- the version cannot be altered ---
+--- altering another setting does not drop the version or other settings from the metadata ---
+6	1	1	1
+--- PromQL works on tables of every supported version ---
+0
+0
+0
+0
+0
+0

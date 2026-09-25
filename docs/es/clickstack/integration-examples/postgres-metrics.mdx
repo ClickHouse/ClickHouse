@@ -35,9 +35,7 @@ Si desea probar la integración de métricas de PostgreSQL antes de configurar s
 * Usuario de monitorización de PostgreSQL con los permisos adecuados
 
 <Steps>
-  <Step>
-    #### Asegúrese de que el usuario de monitorización tenga los permisos necesarios
-
+  <Step title="Asegúrese de que el usuario de monitorización tenga los permisos necesarios" id="monitoring-permissions">
     El PostgreSQL receiver requiere un usuario con acceso de lectura a las vistas de estadísticas. Otorgue el rol `pg_monitor` a su usuario de monitorización:
 
     ```sql
@@ -45,9 +43,7 @@ Si desea probar la integración de métricas de PostgreSQL antes de configurar s
     ```
   </Step>
 
-  <Step>
-    #### Cree una configuración personalizada del OpenTelemetry Collector
-
+  <Step title="Cree una configuración personalizada del OpenTelemetry Collector" id="create-custom-config">
     ClickStack le permite ampliar la configuración base del OpenTelemetry Collector montando un archivo de configuración personalizado y estableciendo una variable de entorno.
 
     Cree `postgres-metrics.yaml`:
@@ -93,9 +89,7 @@ Si desea probar la integración de métricas de PostgreSQL antes de configurar s
     </Note>
   </Step>
 
-  <Step>
-    #### Despliegue ClickStack con una configuración personalizada
-
+  <Step title="Despliegue ClickStack con una configuración personalizada" id="deploy-clickstack">
     Monte su configuración personalizada:
 
     ```bash
@@ -111,9 +105,7 @@ Si desea probar la integración de métricas de PostgreSQL antes de configurar s
     ```
   </Step>
 
-  <Step>
-    #### Verifique la recopilación de métricas
-
+  <Step title="Verifique la recopilación de métricas" id="verify-metrics">
     Una vez configurado, inicie sesión en HyperDX y verifique que las métricas se estén recibiendo:
 
     1. Vaya a Metrics Explorer
@@ -137,9 +129,7 @@ Para los usuarios que quieran probar la integración de métricas de PostgreSQL 
 </Info>
 
 <Steps>
-  <Step>
-    #### Descargar el conjunto de datos de muestra de métricas
-
+  <Step title="Descargar el conjunto de datos de muestra de métricas" id="download-sample">
     Descargue los archivos de métricas pregenerados (24 horas de métricas de PostgreSQL con patrones realistas):
 
     ```bash
@@ -158,9 +148,7 @@ Para los usuarios que quieran probar la integración de métricas de PostgreSQL 
     * **Incidentes de deadlock (14:15, 16:30)** - Deadlocks poco frecuentes
   </Step>
 
-  <Step>
-    #### Iniciar ClickStack
-
+  <Step title="Iniciar ClickStack" id="start-clickstack">
     Inicie una instancia de ClickStack:
 
     ```bash
@@ -172,9 +160,7 @@ Para los usuarios que quieran probar la integración de métricas de PostgreSQL 
     Espere aproximadamente 30 segundos hasta que ClickStack se inicie por completo.
   </Step>
 
-  <Step>
-    #### Cargar métricas en ClickStack
-
+  <Step title="Cargar métricas en ClickStack" id="load-metrics">
     Cargue las métricas directamente en ClickHouse:
 
     ```bash
@@ -188,9 +174,7 @@ Para los usuarios que quieran probar la integración de métricas de PostgreSQL 
     ```
   </Step>
 
-  <Step>
-    #### Verificar métricas en HyperDX
-
+  <Step title="Verificar métricas en HyperDX" id="verify-metrics-demo">
     Una vez cargadas, la forma más rápida de ver sus métricas es mediante el dashboard preconfigurado.
 
     Continúe en la sección [Dashboards y visualización](#dashboards) para importar el dashboard y ver varias métricas de PostgreSQL a la vez.
@@ -210,13 +194,11 @@ Para los usuarios que quieran probar la integración de métricas de PostgreSQL 
 Para ayudarte a empezar a monitorear PostgreSQL con ClickStack, proporcionamos visualizaciones esenciales de las métricas de PostgreSQL.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">Descargar</TrackedLink> la configuración del dashboard
+  <Step title="Descargar la configuración del dashboard" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">Descargar el archivo de configuración del dashboard</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importa el dashboard preconfigurado
-
+  <Step title="Importa el dashboard preconfigurado" id="import-dashboard">
     1. Abre HyperDX y ve a la sección Dashboards
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, en el menú de los tres puntos
 
@@ -227,15 +209,13 @@ Para ayudarte a empezar a monitorear PostgreSQL con ClickStack, proporcionamos v
     <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="Cuadro de diálogo para finalizar la importación" />
   </Step>
 
-  <Step>
-    #### Ver el dashboard
-
+  <Step title="Ver el dashboard" id="created-dashboard">
     El dashboard se creará con todas las visualizaciones preconfiguradas:
 
     <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="Dashboard de métricas de PostgreSQL" />
 
     <Note>
-      Para el demo dataset, establece el intervalo de tiempo en **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (ajústalo según tu zona horaria local). El dashboard importado no tendrá ningún intervalo de tiempo especificado de forma predeterminada.
+      Para el conjunto de datos de demostración, establece el intervalo de tiempo en **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (ajústalo según tu zona horaria local). El dashboard importado no tendrá ningún intervalo de tiempo especificado de forma predeterminada.
     </Note>
   </Step>
 </Steps>
@@ -301,7 +281,7 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
 * Supervisa varias instancias de PostgreSQL duplicando la configuración del receiver con distintos endpoints y nombres de servicio
 
 <div id="going-to-production">
-  ## Paso a producción
+  ## Pasar a producción
 </div>
 
-Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para ofrecer una configuración rápida. Para implementaciones en producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint de OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.
+Esta guía se basa en el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones de producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Enviar datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para obtener una configuración de producción.

@@ -6,7 +6,12 @@ from helpers.config_cluster import arrowflight_user, arrowflight_pass
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", with_arrowflight=True, stay_alive=True)
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/remote_host_filter.xml"],
+    with_arrowflight=True,
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -343,3 +348,75 @@ def test_arrowflight_storage_with_named_collection():
     node.query("DROP TABLE arrow_test_named")
     node.query("DROP TABLE arrow_test_named_2")
     node.query("DROP NAMED COLLECTION arrowflight_storage_collection")
+
+
+def test_remote_host_filter():
+    # Only "arrowflight1" is allow-listed in configs/remote_host_filter.xml,
+    # so a connection to any other host must be rejected before it is opened.
+    error = node.query_and_get_error(
+        "SELECT * FROM arrowFlight('127.0.0.1:5005', 'ABC')"
+    )
+    assert "not allowed in configuration file" in error
+
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE arrow_blocked (column1 String, column2 String)
+        ENGINE=ArrowFlight('127.0.0.1:5005', 'ABC')
+        """
+    )
+    assert "not allowed in configuration file" in error
+
+    # The named-collection branch of getConfiguration is also guarded: creating
+    # the collection is harmless (no connection), but using it must be rejected.
+    node.query(
+        """
+        CREATE NAMED COLLECTION arrowflight_blocked_collection AS
+        host = '127.0.0.1',
+        port = 5005,
+        dataset = 'ABC',
+        use_basic_authentication = False
+        """
+    )
+    try:
+        error = node.query_and_get_error(
+            "SELECT * FROM arrowFlight(arrowflight_blocked_collection)"
+        )
+        assert "not allowed in configuration file" in error
+    finally:
+        node.query("DROP NAMED COLLECTION arrowflight_blocked_collection")
+
+
+def test_insert_unsupported_type_follows_setting():
+    # `ArrowFlightSink::consume` builds its own Arrow conversion settings, so it needs its own coverage that
+    # `output_format_arrow_unsupported_types` reaches it: `QBit` has no Arrow mapping, and in `text` mode it
+    # is written as a `utf8` column, which is what the test server's schema accepts.
+    dataset = uuid.uuid4().hex
+
+    node.query(
+        f"""
+        CREATE TABLE arrow_qbit_test (
+            column1 QBit(BFloat16, 3),
+            column2 String
+        ) ENGINE=ArrowFlight('arrowflight1:5005', '{dataset}')
+        """
+    )
+
+    try:
+        assert "UNKNOWN_TYPE" in node.query_and_get_error(
+            "INSERT INTO arrow_qbit_test "
+            "SELECT [1,2,3]::QBit(BFloat16, 3), 'rejected' "
+            "SETTINGS output_format_arrow_unsupported_types = 'throw'"
+        )
+
+        node.query(
+            "INSERT INTO arrow_qbit_test "
+            "SELECT [1,2,3]::QBit(BFloat16, 3), 'accepted' "
+            "SETTINGS output_format_arrow_unsupported_types = 'text'"
+        )
+
+        # Read back through the table function, whose columns come from the remote schema, so the opaque
+        # column arrives as the text the sink sent rather than as `QBit`.
+        result = node.query(f"SELECT * FROM arrowFlight('arrowflight1:5005', '{dataset}')")
+        assert result == TSV([["[1,2,3]", "accepted"]])
+    finally:
+        node.query("DROP TABLE IF EXISTS arrow_qbit_test SYNC")

@@ -17,7 +17,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -40,10 +40,10 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int ACCESS_DENIED;
 }
 
 class MergeTreeIndexSource final : public ISource, WithContext
@@ -114,7 +114,19 @@ protected:
                 /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
                 if (index_position < index_ptr->size())
                 {
-                    result_columns[pos] = index_ptr->at(index_position);
+                    auto index_column = index_ptr->at(index_position);
+
+                    /// The index holds the key column in the representation the part was written with, while
+                    /// column_type is the current one. Wrapping or unwrapping LowCardinality on a key column
+                    /// is allowed and does not rewrite parts that already exist.
+                    DataTypePtr index_column_type = removeLowCardinality(column_type);
+                    if (index_column->lowCardinality())
+                        index_column_type = std::make_shared<DataTypeLowCardinality>(index_column_type);
+
+                    if (!index_column_type->equals(*column_type))
+                        index_column = recursiveLowCardinalityTypeConversion(index_column, index_column_type, column_type);
+
+                    result_columns[pos] = std::move(index_column);
                 }
                 else
                 {
@@ -416,19 +428,14 @@ void StorageMergeTreeIndex::readImpl(
 
     /// Column-level grants are tracked against top-level storage columns only, so map any requested
     /// subcolumns (e.g. `t.a`) to their parent storage column (e.g. `t`).
-    auto required_storage_columns = storage_columns.getColumnNamesInStorageForAccessCheck(columns_from_storage);
-    context->checkAccess(AccessType::SELECT, source_storage_id, required_storage_columns);
+    context->checkAccess(
+        AccessType::SELECT, source_storage_id, storage_columns.getColumnNamesInStorageForAccessCheck(columns_from_storage));
 
-    /// `mergeTreeIndex` exposes granule-level primary key values (and, with marks, per-column mark
-    /// offsets) for every row, including rows a row policy is supposed to hide. A column-overlap check is
-    /// not enough (e.g. `USING 0` hides rows without naming a column), so reject the read whenever the
-    /// source table has an effective (present and not always-true) row policy.
-    auto row_policy_filter = context->getRowPolicyFilter(
-        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    /// We cannot apply a row policy to granules, but the index leaks keys of the rows it hides
+    if (getEffectiveRowPolicyFilter(*source_table, context))
         throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Cannot read from `mergeTreeIndex` because a row policy is defined on table {}: it would "
-            "expose index metadata for rows that the row policy hides",
+            "Cannot read from `mergeTreeIndex` because a row policy is applied on table {}. "
+            "Reading the index could violate the row policy",
             source_storage_id.getNameForLogs());
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));

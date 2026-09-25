@@ -1,5 +1,5 @@
 ---
-description: 'Guia para usar o utilitário de formatação com formatos de dados do ClickHouse'
+description: 'Guia para usar o utilitário format ao trabalhar com formatos de dados do ClickHouse'
 slug: /operations/utilities/clickhouse-format
 title: 'clickhouse-format'
 doc_type: 'reference'
@@ -13,20 +13,20 @@ Opções:
 * `--query` — Formata consultas de qualquer tamanho e complexidade.
 * `--hilite` ou `--highlight` — Adiciona realce de sintaxe com sequências de escape ANSI do terminal.
 * `--oneline` — Formata em uma única linha.
-* `--max_line_length` — Formata em uma única linha as consultas com comprimento menor que o especificado.
-* `--comments` — Mantém os comentários na saída.
+* `--max_line_length` — Formata consultas em uma única linha com comprimento menor que o especificado.
+* `--comments` — Mantém comentários na saída.
 * `--quiet` ou `-q` — Apenas verifica a sintaxe, sem saída em caso de sucesso.
 * `--multiquery` ou `-n` — Permite várias consultas no mesmo arquivo.
 * `--obfuscate` — Ofusca em vez de formatar.
-* `--seed <string>` — String arbitrária que determina o resultado da ofuscação.
-* `--backslash` — Adiciona uma barra invertida ao final de cada linha da consulta formatada. Isso pode ser útil quando você copia uma consulta da web ou de outro lugar com várias linhas e quer executá-la na linha de comando.
-* `--semicolons_inline` — No modo multiquery, escreve ponto e vírgula na última linha da consulta em vez de em uma nova linha.
+* `--seed <string>` — Define uma string arbitrária que determina o resultado da ofuscação.
+* `--backslash` — Adiciona uma barra invertida ao final de cada linha da consulta formatada. Pode ser útil quando você copia uma consulta da web ou de outro lugar com várias linhas e quer executá-la na linha de comando.
+* `--semicolons_inline` — No modo multiquery, escreve os pontos e vírgulas na última linha da consulta em vez de em uma nova linha.
 
 <div id="examples">
   ## Exemplos
 </div>
 
-1. Formatando uma consulta:
+1. Formatação de uma consulta:
 
 ```bash title="Query"
 $ clickhouse-format --query "select number from numbers(10) where number%2 order by number desc;"
@@ -39,7 +39,7 @@ WHERE number % 2
 ORDER BY number DESC
 ```
 
-2. Realce e linha única:
+2. Destaque e linha única:
 
 ```bash title="Query"
 $ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
@@ -76,7 +76,7 @@ $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWE
 SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
 ```
 
-A mesma consulta e outra string de seed:
+A mesma consulta e uma string de seed diferente:
 
 ```bash title="Query"
 $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
@@ -86,7 +86,7 @@ $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWE
 SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
 ```
 
-5. Adicionando a barra invertida:
+5. Adicionando um backslash:
 
 ```bash title="Query"
 $ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"

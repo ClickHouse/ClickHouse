@@ -3,9 +3,7 @@ title: 애플리케이션 계측하기
 ---
 
 <Steps>
-  <Step>
-    ## 애플리케이션 복제 및 실행
-
+  <Step title="애플리케이션 복제 및 실행" id="clone-and-run-the-application">
     리포지토리를 복제하고 의존성을 설치한 다음, `.env` 파일을 생성합니다:
 
     ```bash
@@ -23,14 +21,14 @@ title: 애플리케이션 계측하기
 
     [http://localhost:5001](http://localhost:5001)을 여십시오. 연도 셀렉터, 요약 통계, 활동 차트, 상위 사용자 및 도메인 테이블, 그리고 검색 상자가 표시됩니다. 이리저리 클릭해 보십시오. 연도를 바꿔 보고, 스토리를 자세히 살펴보십시오.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="로컬에서 실행 중인 HackerNews Analyzer 애플리케이션" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="로컬에서 실행 중인 HackerNews Analyzer 애플리케이션" />
+    </Frame>
 
     이 시점에서 애플리케이션은 실행 중이지만 계측이 적용되지 않은 상태입니다. ClickStack에는 데이터가 표시되지 않습니다. 텔레메트리를 기다리는 상태입니다. 이것이 &quot;이전&quot; 상태입니다.
   </Step>
 
-  <Step>
-    ## 연결 정보 가져오기
-
+  <Step title="연결 정보 가져오기" id="get-connection-details">
     애플리케이션이 collector에 연결하려면 두 개의 값이 필요합니다:
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: collector가 노출하는 OTLP endpoint입니다(일반적으로 HTTP 기반 OTLP에는 포트 `4318`을 사용합니다).
@@ -47,9 +45,7 @@ title: 애플리케이션 계측하기
     SDK는 세 가지 신호인 트레이스, 메트릭, 로그 모두에 대한 authorization 헤더를 설정하기 위해 `OTEL_EXPORTER_OTLP_HEADERS`를 사용합니다. collector가 로컬에서 실행되고 인증을 강제하지 않는 경우 값은 비워 둘 수 있지만(`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), 변수는 반드시 존재해야 합니다. 이 변수가 설정되지 않았거나 완전히 비어 있으면 SDK는 초기화를 아예 수행하지 않습니다.
   </Step>
 
-  <Step>
-    ## 애플리케이션 계측
-
+  <Step title="애플리케이션 계측" id="instrument-the-application">
     계측은 세 부분으로 구성됩니다. SDKs를 설치하고, 실행 명령을 전환하고, 브라우저 SDK를 활성화합니다. 이 중 어느 것도 애플리케이션의 비즈니스 로직을 변경하지 않습니다.
 
     ### SDKs 설치
@@ -102,9 +98,7 @@ title: 애플리케이션 계측하기
     </Warning>
   </Step>
 
-  <Step>
-    ## 트래픽을 생성하고 telemetry를 확인합니다
-
+  <Step title="트래픽을 생성하고 telemetry를 확인합니다" id="generate-traffic-and-view-telemetry">
     변경된 실행 명령과 새로 빌드한 브라우저 번들이 적용되도록 애플리케이션을 다시 시작하십시오:
 
     ```bash
@@ -118,15 +112,21 @@ title: 애플리케이션 계측하기
 
     1. **검색**으로 이동해 최근 5분으로 필터링합니다. `hn-analyzer-api`의 로그가 스트리밍되어 들어옵니다.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack 로그" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack 로그" />
+    </Frame>
 
     2. 요청을 클릭해 열고 트레이스를 상위 스팬 방향으로 따라갑니다. Express handler 스팬, 실제 네트워크 지속 시간을 보여주면서 ClickHouse 클러스터를 가리키는 하위 HTTP 스팬, 그리고 동일한 트레이스에 연관된 `console.log` 레코드를 확인할 수 있습니다.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack 트레이스" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack 트레이스" />
+    </Frame>
 
     3. **세션 리플레이**를 열어 트레이스 타임라인과 동기화된 브라우저 세션 영상을 재생합니다. 재생 위치도 자유롭게 이동할 수 있습니다.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack 세션" />
+    <Frame>
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack 세션" />
+    </Frame>
 
     로그, 메트릭, 트레이스, 세션 리플레이는 모두 동일한 UI에 수집되며, 같은 쿼리 언어를 사용하고, 자동으로 연관됩니다.
   </Step>

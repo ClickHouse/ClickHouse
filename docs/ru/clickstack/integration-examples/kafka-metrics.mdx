@@ -35,9 +35,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * JAR-файл OpenTelemetry JMX Metric Gatherer (инструкции по загрузке ниже)
 
 <Steps>
-  <Step>
-    #### Получите ключ API ClickStack
-
+  <Step title="Получите ключ API ClickStack" id="get-api-key">
     JMX Metric Gatherer отправляет данные в конечную точку OTLP ClickStack, которая требует аутентификации.
 
     1. Откройте HyperDX по адресу вашего ClickStack (например, http://localhost:8080)
@@ -54,9 +52,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Скачайте OpenTelemetry JMX Metric Gatherer
-
+  <Step title="Скачайте OpenTelemetry JMX Metric Gatherer" id="download-jmx">
     Скачайте JAR-файл JMX Metric Gatherer:
 
     ```bash
@@ -65,9 +61,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Убедитесь, что JMX в Kafka включен
-
+  <Step title="Убедитесь, что JMX в Kafka включен" id="verify-jmx">
     Убедитесь, что JMX включен на ваших брокерах Kafka. Для Docker-развертываний:
 
     ```yaml
@@ -77,7 +71,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
         environment:
           JMX_PORT: 9999
           KAFKA_JMX_HOSTNAME: kafka
-          # ... другие настройки Kafka
+          # ... other Kafka configuration
         ports:
           - "9092:9092"
           - "9999:9999"
@@ -96,9 +90,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Развертывание JMX Metric Gatherer с помощью Docker Compose
-
+  <Step title="Развертывание JMX Metric Gatherer с помощью Docker Compose" id="deploy-jmx">
     В этом примере показана полная конфигурация с Kafka, JMX Metric Gatherer и ClickStack. Измените имена сервисов и конечные точки в соответствии с существующим развертыванием:
 
     ```yaml
@@ -176,9 +168,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * `10000` - Интервал сбора в миллисекундах (10 секунд)
   </Step>
 
-  <Step>
-    #### Проверьте метрики в HyperDX
-
+  <Step title="Проверьте метрики в HyperDX" id="verify-metrics">
     Войдите в HyperDX и убедитесь, что метрики поступают:
 
     1. Перейдите в Chart Explorer
@@ -196,10 +186,10 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Чтобы сгенерировать активность и получить больше метрик:
 
     ```bash
-    # Создать тестовый топик
+    # Create a test topic
     docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-    # Отправить тестовые сообщения
+    # Send test messages
     echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
     ```
 
@@ -216,9 +206,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Для пользователей, которые хотят протестировать интеграцию Kafka Metrics перед настройкой продакшен-систем, мы предоставляем заранее сгенерированный набор данных с реалистичной динамикой метрик Kafka.
 
 <Steps>
-  <Step>
-    #### Скачайте пример набора данных с метриками
-
+  <Step title="Скачайте пример набора данных с метриками" id="download-sample">
     Скачайте заранее сгенерированные файлы метрик (29 часов метрик Kafka с реалистичной динамикой):
 
     ```bash
@@ -240,9 +228,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * **20:00-22:00: Вечерний спад** - Резкое снижение до ночных уровней
   </Step>
 
-  <Step>
-    #### Запустите ClickStack
-
+  <Step title="Запустите ClickStack" id="start-clickstack">
     Запустите экземпляр ClickStack:
 
     ```bash
@@ -252,9 +238,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Загрузите метрики в ClickStack
-
+  <Step title="Загрузите метрики в ClickStack" id="load-metrics">
     Загрузите метрики напрямую в ClickHouse:
 
     ```bash
@@ -268,9 +252,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### Проверьте метрики в HyperDX
-
+  <Step title="Проверьте метрики в HyperDX" id="verify-demo-metrics">
     После загрузки самый быстрый способ увидеть метрики — открыть преднастроенную панель мониторинга.
 
     Перейдите к разделу [Панели мониторинга и визуализация](#dashboards), чтобы импортировать панель мониторинга и сразу увидеть все метрики Kafka.
@@ -290,13 +272,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Чтобы вам было проще начать мониторинг Kafka с помощью ClickStack, мы предоставляем набор основных визуализаций метрик Kafka.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Скачайте</TrackedLink> конфигурацию панели мониторинга
+  <Step title="Скачайте конфигурацию панели мониторинга" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Скачайте файл конфигурации панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Импортируйте преднастроенный дашборд
-
+  <Step title="Импортируйте преднастроенную панель мониторинга" id="import-dashboard">
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу, в меню с многоточием
 
@@ -307,9 +287,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="Диалог завершения импорта" />
   </Step>
 
-  <Step>
-    #### Откройте панель мониторинга
-
+  <Step title="Откройте панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
     <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="Панель мониторинга метрик Kafka" />
@@ -432,11 +410,11 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 * Отслеживайте несколько брокеров Kafka, добавив дополнительные экземпляры JMX Metric Gatherer с уникальными атрибутами ресурса `kafka.broker.id`
 
 <div id="going-to-production">
-  ## Переход к промышленной эксплуатации
+  ## Переход в продакшн
 </div>
 
 В этом руководстве метрики отправляются напрямую из JMX Metric Gatherer в конечную точку OTLP ClickStack, что хорошо подходит для тестирования и небольших развертываний.
 
-Для промышленной эксплуатации разверните собственный OpenTelemetry Collector в роли агента, чтобы он принимал метрики от JMX Exporter и пересылал их в ClickStack. Это обеспечивает пакетную обработку, отказоустойчивость и централизованное управление конфигурацией.
+Для продакшн-среды разверните собственный OpenTelemetry Collector в роли агента, чтобы принимать метрики из JMX Exporter и пересылать их в ClickStack. Это обеспечивает батчинг, отказоустойчивость и централизованное управление конфигурацией.
 
-См. [Приём данных с помощью OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), где описаны схемы развертывания для промышленной эксплуатации и приведены примеры конфигурации OpenTelemetry Collector.
+См. [Приём данных с помощью OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), чтобы ознакомиться с шаблонами развертывания для продакшн-среды и примерами конфигурации OpenTelemetry Collector.

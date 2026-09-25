@@ -13,6 +13,31 @@ integration:
 ### Does the MySQL ClickPipe support MariaDB? {#does-the-clickpipe-support-mariadb}
 Yes, the MySQL ClickPipe supports MariaDB 10.0 and above. The configuration for it is very similar to MySQL, using GTID replication by default.
 
+### Why did my pipe fail with an unsupported MariaDB partial row event? {#mariadb-partial-row-event-unsupported}
+
+MariaDB 12.3 and above can emit a [partial rows event](https://mariadb.com/docs/server/server-management/server-monitoring-logs/binary-log/row-binlog-events#partial_rows_log_event) in the binlog, which we don't support yet.
+
+To recover, resync the pipe. To reduce the chance of hitting this again, you can also raise the `binlog_row_event_fragment_threshold` setting on the source so fewer row changes get fragmented — keep it below your `max_allowed_packet`, since a single unfragmented binlog event larger than `max_allowed_packet` will fail the replication stream instead (see [Why is my pipe failing with a max_allowed_packet binlog error?](#binlog-event-exceeded-max-allowed-packet)).
+
+### Why did my pipe fail with an unsupported MariaDB COMPRESSED column? {#mariadb-compressed-column-unsupported}
+
+If your pipe fails with an error similar to:
+
+```text
+table <database>.<table> has MariaDB COMPRESSED column(s) [<columns>], which cannot be replicated via CDC;
+convert them to a non-compressed type or remove the table from the mirror
+```
+
+it means the table has one or more columns using MariaDB's [column compression](https://mariadb.com/kb/en/storage-engine-independent-column-compression/) (`COLUMN_FORMAT COMPRESSED`). We can't decompress these values from the binlog, so the affected table can't be replicated via CDC.
+
+To resolve it:
+
+- **Convert the compressed columns to a non-compressed type** on the source (or remove a table from the pipe):
+  ```sql
+  ALTER TABLE <table> MODIFY <column> <type>; -- without COLUMN_FORMAT COMPRESSED
+  ```
+- resync the table or the pipe
+
 ### Does the MySQL ClickPipe support PlanetScale, Vitess, or TiDB? {#does-the-clickpipe-support-planetscale-vitess}
 No, these don't support MySQL's binlog API.
 
@@ -42,6 +67,43 @@ This is most often caused by rows containing large `BLOB`, `TEXT`, or `JSON` val
   ```
   Set it in your server configuration (e.g. `my.cnf` or the DB Parameter Group) as well so it persists across restarts.
 - **If a single row is larger than 1G:** resync the pipe.
+
+### Why is my pipe failing with a partial JSON binlog error? {#binlog-partial-json-unsupported}
+
+If your pipe fails with an error similar to:
+
+```text
+Received a partial JSON update event while processing <database>.<table>; binlog_row_value_options must be disabled (set to '')
+```
+
+it means the source MySQL server has [`binlog_row_value_options`](https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_value_options) set to `PARTIAL_JSON`. With this option enabled, MySQL logs updates to `JSON` columns as partial diffs (only the changed paths) rather than the full document. ClickPipes cannot apply these partial diffs, so CDC can't progress.
+
+To resolve it:
+
+- **Disable `PARTIAL_JSON` on the source.** Set the value back to empty:
+  ```sql
+  SET GLOBAL binlog_row_value_options = '';
+  ```
+  Clear it in your server configuration (e.g. `my.cnf` or the DB Parameter Group) as well so it persists across restarts.
+- **Resync the pipe** so replication resumes from a clean offset.
+
+### Why is my pipe failing with a require_secure_transport error? {#secure-transport-required}
+
+If your pipe fails with an error similar to:
+
+```text
+MySQL execute error: handleAuthResult: ERROR 3159 (HY000): Connections using insecure transport
+are prohibited while --require_secure_transport=ON.
+```
+
+it means the source server has [`require_secure_transport`](https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_require_secure_transport) enabled — it rejects any connection that isn't encrypted — while the ClickPipe has TLS turned off. On RDS for MySQL it comes from the instance's [DB parameter group](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-ssl-connections.require-ssl.html). On Aurora MySQL it is a [DB cluster parameter group](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraMySQL.Security.html#AuroraMySQL.Security.SSL.RequireSSL) setting and isn't available in instance parameter groups at all. Neither needs a reboot to take effect, and Aurora MySQL 8.4 defaults it to `ON` where versions 2 and 3 default to `OFF`, so a pipe that has been replicating fine can start failing after a parameter change or a version upgrade, with no change on the pipe's side.
+
+To resolve it:
+
+- **Re-enable TLS on the pipe.** In the pipe's **Settings**, open the connection settings and turn off the **Disable TLS** toggle. If saving then surfaces a certificate error, see [Why am I getting a TLS certificate validation error when connecting to MySQL?](#tls-certificate-validation-error) for how to set a TLS host, upload a root CA, or skip certificate verification.
+- **Or turn off `require_secure_transport` on the source** — in the DB parameter group on RDS, or the DB cluster parameter group on Aurora — if unencrypted connections are acceptable in your environment.
+
+Replication resumes from where it stopped once the connection succeeds. If the pipe was failing for longer than your binlog retention period (see [How is replication managed?](#how-is-replication-managed)), you will need to resync it.
 
 ### Why am I getting a TLS certificate validation error when connecting to MySQL? {#tls-certificate-validation-error}
 

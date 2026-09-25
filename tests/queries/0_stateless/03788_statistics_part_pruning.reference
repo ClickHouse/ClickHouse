@@ -56,7 +56,7 @@ Expression ((Project names + Projection))
             Granules: 2/2
           Ranges: 2
 99
--- AND with column without statistics (str has no minmax), should prune parts
+-- AND with column without statistics (str (String) has only basic, which does not drive range pruning), should prune parts
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -82,7 +82,7 @@ Expression ((Project names + Projection))
             Granules: 1/1
           Ranges: 1
 1
--- OR with column without statistics (str has no minmax), should NOT prune parts
+-- OR with column without statistics (str (String) has only basic, which does not drive range pruning), should NOT prune parts
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -107,7 +107,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_pruning)
         Indexes:
           Min-Max
@@ -134,7 +134,7 @@ Expression ((Project names + Projection))
             Granules: 0/0
           Ranges: 0
 0
--- Nullable column pruning, Part 3 has NULL values, should NOT be pruned (whole-universe range for safety)
+-- Nullable column pruning, Part 3 has only NULL values, IS pruned via NULL count
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -149,11 +149,16 @@ Expression ((Project names + Projection))
             Condition: true
             Parts: 4/4
             Granules: 4/4
+          Statistics
+            Keys:
+              value_nullable
+            Parts: 1/4
+            Granules: 1/4
           PrimaryKey
             Condition: true
-            Parts: 4/4
-            Granules: 4/4
-          Ranges: 4
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
 51
 -- FINAL query should NOT use Statistics pruning
 Expression ((Project names + Projection))

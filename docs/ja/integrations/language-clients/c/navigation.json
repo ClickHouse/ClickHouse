@@ -1,0 +1,7 @@
+{
+  "group": "C",
+  "icon": "/images/integrations/logos/logo_c.svg",
+  "pages": [
+    "ja/integrations/language-clients/c/index"
+  ]
+}

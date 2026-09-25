@@ -57,11 +57,18 @@ private:
         size_t required_readers_num = 0;
     };
 
+    struct ThreadTask;
+
     class PrefetchedReaders
     {
     public:
         PrefetchedReaders(
             ThreadPool & pool, MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & read_prefetch);
+
+        /// Refining constructor: runs "refine the task ranges, create readers, prefetch" as a
+        /// single job in the prefetch thread pool, so that ranges dropped by the refiner are
+        /// never prefetched. A fully pruned task sets task.pruned_by_refiner and gets no readers.
+        PrefetchedReaders(ThreadPool & pool, ThreadTask & task, MergeTreePrefetchedReadPool & read_prefetch);
 
         void wait();
         MergeTreeReadTask::Readers get();
@@ -96,6 +103,10 @@ private:
         std::vector<MarkRanges> patches_ranges;
         Priority priority;
         std::unique_ptr<PrefetchedReaders> readers_future;
+
+        /// Set by the refining prefetch job when the whole task was dropped by the ranges
+        /// refiner. Read it only after readers_future->wait().
+        bool pruned_by_refiner = false;
     };
 
     struct TaskHolder
@@ -117,7 +128,9 @@ private:
     void createPrefetchedReadersForTask(ThreadTask & task);
     std::function<void()> createPrefetchedTask(IMergeTreeReader * reader, Priority priority);
 
-    MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
+    /// Returns a raw thread task to steal (the caller resolves it into a read task
+    /// outside of the mutex), or nullptr if there is nothing to steal.
+    ThreadTaskPtr stealTask(size_t thread);
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
 
     static std::string dumpTasks(const TasksPerThread & tasks);

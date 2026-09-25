@@ -64,6 +64,21 @@ PATH=<path to clickhouse-client>:$PATH tests/clickhouse-test 01428_hash_set_nan_
 테스트 이름 filter를 지정하여 모든 테스트를 실행하거나 일부 테스트만 실행할 수 있습니다: `./clickhouse-test substring`.
 테스트를 병렬로 실행하거나 무작위 순서로 실행하는 옵션도 있습니다.
 
+<div id="running-tests-on-macos">
+  #### macOS(Darwin)에서 테스트 실행
+</div>
+
+많은 기능 테스트는 GNU 명령줄 유틸리티(`timeout`, `head`, `sed`, `grep`, `date` 등)를 셸에서 호출합니다. macOS에는 이러한 도구의 BSD 버전이 포함되어 있는데, GNU 버전과 동작 및 옵션이 다릅니다(예를 들어 BSD `head`는 `head -c 1G`를 허용하지 않고, BSD `ps`에는 `--` 긴 옵션이 없으며, `timeout`은 아예 없습니다). BSD 도구로 테스트를 실행하면 실제 문제와 무관한 실패가 발생합니다.
+
+macOS CI 러너는 Homebrew를 통해 GNU 도구를 설치하고, `PATH`에서 BSD 도구보다 앞에 오도록 구성합니다. 로컬에서도 동일하게 재현하십시오:
+
+```sh
+brew install coreutils gnu-sed grep
+export PATH="$(brew --prefix)/opt/coreutils/libexec/gnubin:$(brew --prefix)/opt/gnu-sed/libexec/gnubin:$(brew --prefix)/opt/grep/libexec/gnubin:$PATH"
+```
+
+`coreutils`는 GNU `timeout`, `head`, `date` 등을 제공하고, `gnu-sed`와 `grep`은 GNU `sed`와 `grep`을 제공합니다. 이후 `which timeout head sed grep`을 실행하면 `gnubin` 경로가 반환되어야 합니다.
+
 <div id="running-fast-tests">
   ### 빠른 테스트 실행
 </div>

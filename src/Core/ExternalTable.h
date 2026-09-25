@@ -50,6 +50,7 @@ public:
 
     /// Get the table data - a pair (a stream with the contents of the table, the name of the table)
     ExternalTableDataPtr getData(ContextPtr context);
+    Block getScalar(ContextPtr context);
 
 protected:
     /// Clear all accumulated information
@@ -90,6 +91,9 @@ public:
 
 private:
     const Poco::Net::NameValueCollection & params;
+    /// `http_max_multipart_form_data_size` is one budget across the form's external-table parts, not a
+    /// fresh limit per part. Other fields have their own bound, `http_max_field_value_size`.
+    size_t form_data_bytes_read = 0;
 };
 
 

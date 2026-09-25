@@ -30,7 +30,7 @@ INSERT INTO test FORMAT JSONColumns {
     "ID": [10, 20, 30],
     "NAME": ["a", "b", "c"],
     "NaMe": ["yy", "zz", "xx"]
-} -- { clientError 117 }
+} -- { error 117 }
 
 SELECT * FROM test;
 
@@ -83,7 +83,7 @@ INSERT INTO test FORMAT JSONColumns {
     "ID": [10, 20, 30],
     "NAME": ["a", "b", "c"],
     "NaMe": ["yy", "zz", "xx"]
-}; -- { clientError 117 }
+}; -- { error 117 }
 
 SELECT * FROM test;
 
@@ -99,7 +99,7 @@ SET input_format_column_name_matching_mode='auto';
 INSERT INTO test FORMAT JSONColumns {
     "id": [0, 1, 2],
     "ID": [10, 20, 30]
-} -- { clientError 117 }
+} -- { error 117 }
 
 SELECT * FROM test;
 
@@ -110,7 +110,7 @@ CREATE TABLE json_test (id Int);
 
 SET input_format_column_name_matching_mode='ignore_case';
 
-INSERT INTO json_test FORMAT JSONColumns {"ID": [444], "id": [123]} -- { clientError 117 }
+INSERT INTO json_test FORMAT JSONColumns {"ID": [444], "id": [123]} -- { error 117 }
 
 SELECT * FROM json_test;
 

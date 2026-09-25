@@ -1,13 +1,16 @@
 -- Tags: no-parallel, no-flaky-check
 -- CNF optimization uses QueryNodeHash to order conditions. We need fixed database.table.column identifier name to stabilize result
 SET explain_query_plan_default = 'legacy';
+SET use_statistics_for_part_pruning = 1, materialize_statistics_on_insert = 1;
 DROP DATABASE IF EXISTS db_memory_01625;
 CREATE DATABASE db_memory_01625 ENGINE = Memory;
 USE db_memory_01625;
 
 DROP TABLE IF EXISTS index_append_test_test;
 
-CREATE TABLE index_append_test_test (i Int64, a UInt32, b UInt64, CONSTRAINT c1 ASSUME i <= 2 * b AND i + 40 > a) ENGINE = MergeTree() ORDER BY i;
+-- Pin min/max statistics so randomized statistics types do not change the asserted plans.
+CREATE TABLE index_append_test_test (i Int64, a UInt32, b UInt64, CONSTRAINT c1 ASSUME i <= 2 * b AND i + 40 > a) ENGINE = MergeTree() ORDER BY i
+SETTINGS auto_statistics_types = 'basic';
 
 INSERT INTO index_append_test_test VALUES (1, 10, 1), (2, 20, 2);
 
@@ -16,13 +19,10 @@ SET optimize_using_constraints = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_substitute_columns = 1;
 SET optimize_append_index = 1;
+SET optimize_redundant_comparisons = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_extract_common_expressions = 0;
 
-SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT i FROM index_append_test_test WHERE a = 0) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' SETTINGS enable_analyzer=0;
-SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT i FROM index_append_test_test WHERE a < 0) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' SETTINGS enable_analyzer=0;
-SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT i FROM index_append_test_test WHERE a >= 0) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' SETTINGS enable_analyzer=0;
-SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT i FROM index_append_test_test WHERE 2 * b < 100) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' SETTINGS enable_analyzer=0;
 
 SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT i FROM index_append_test_test WHERE a = 0) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' SETTINGS enable_analyzer=1;
 SELECT replaceRegexpAll(explain, '__table1\.|_UInt8', '') FROM (EXPLAIN actions=1 SELECT i FROM index_append_test_test WHERE a < 0) WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%' SETTINGS enable_analyzer=1;

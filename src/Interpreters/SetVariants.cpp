@@ -1,8 +1,12 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/SetVariants.h>
+#include <base/arithmeticOverflow.h>
+
+#include <limits>
 
 
 namespace DB
@@ -32,6 +36,52 @@ void SetVariantsTemplate<Variant>::init(Type type_)
 }
 
 template <typename Variant>
+size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t num_rows) const
+    requires std::is_same_v<Variant, NonClearableSet>
+{
+    chassert(type != Type::EMPTY);
+
+    size_t arena_growth_memory = 0;
+    if (type == Type::key_string || type == Type::key_fixed_string)
+    {
+        chassert(key_columns.size() == 1);
+        size_t key_bytes = 0;
+        if (type == Type::key_string)
+        {
+            const auto & offsets = assert_cast<const ColumnString &>(*key_columns.front()).getOffsets();
+            key_bytes = num_rows == 0 ? 0 : offsets[num_rows - 1];
+        }
+        else
+            key_bytes = num_rows * assert_cast<const ColumnFixedString &>(*key_columns.front()).getN();
+        arena_growth_memory = string_pool.estimateGrowthMemory(num_rows, key_bytes);
+    }
+
+    auto estimate = [num_rows, arena_growth_memory]<typename Method>(const Method & method) -> size_t
+    {
+        using Table = typename Method::Data;
+        if constexpr (std::is_same_v<Table, FixedHashSet<UInt8>> || std::is_same_v<Table, FixedHashSet<UInt16>>)
+            return 0;
+        else
+        {
+            size_t growth_memory = 0;
+            if (common::addOverflow(method.data.estimateGrowthMemory(num_rows), arena_growth_memory, growth_memory))
+                return std::numeric_limits<size_t>::max();
+            return growth_memory;
+        }
+    };
+
+    switch (type)
+    {
+        case Type::EMPTY: UNREACHABLE();
+
+    #define M(NAME) case Type::NAME: return estimate(*(NAME));
+        APPLY_FOR_SET_VARIANTS(M)
+    #undef M
+    }
+    UNREACHABLE();
+}
+
+template <typename Variant>
 size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
 {
     switch (type)
@@ -48,15 +98,18 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
 template <typename Variant>
 size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
 {
+    /// String keys are stored in the string_pool arena, not in the hash table buffer.
+    size_t bytes = string_pool.allocatedBytes();
     switch (type)
     {
-        case Type::EMPTY: return 0;
+        case Type::EMPTY: break;
 
     #define M(NAME) \
-        case Type::NAME: return (NAME)->data.getBufferSizeInBytes();
+        case Type::NAME: bytes += (NAME)->data.getBufferSizeInBytes(); break;
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
+    return bytes;
 }
 
 template <typename Variant>

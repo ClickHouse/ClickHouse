@@ -1,0 +1,269 @@
+---
+title: 'chDB لـ Go'
+sidebarTitle: 'Go'
+slug: /chdb/install/go
+description: 'كيفية تثبيت chDB واستخدامه مع Go'
+keywords: ['chdb', 'go', 'golang', 'embedded', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+يوفّر chDB-go روابط Go لـ chDB، مما يتيح لك تشغيل استعلامات ClickHouse مباشرةً داخل تطبيقات Go بدون أي تبعيات خارجية.
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+<Steps>
+  <Step title="تثبيت libchdb" id="install-libchdb">
+    أولًا، ثبّت مكتبة chDB:
+
+    ```bash
+    curl -sL https://lib.chdb.io | bash
+    ```
+  </Step>
+
+  <Step title="تثبيت chdb-go" id="install-chdb-go">
+    ثبّت حزمة Go:
+
+    ```bash
+    go install github.com/chdb-io/chdb-go@latest
+    ```
+
+    أو أضِفها إلى `go.mod`:
+
+    ```bash
+    go get github.com/chdb-io/chdb-go
+    ```
+  </Step>
+</Steps>
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+<div id="cli">
+  ### واجهة سطر الأوامر
+</div>
+
+يتضمن chDB-go واجهة سطر أوامر (CLI) لتنفيذ استعلامات سريعة:
+
+```bash
+# Simple query
+./chdb-go "SELECT 123"
+
+# Interactive mode
+./chdb-go
+
+# Interactive mode with persistent storage
+./chdb-go --path /tmp/chdb
+```
+
+<div id="quick-start">
+  ### البدء السريع بمكتبة Go
+</div>
+
+<div id="stateless-queries">
+  #### استعلامات عديمة الحالة
+</div>
+
+للاستعلامات البسيطة التي تُنفَّذ مرة واحدة:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Execute a simple query
+    result, err := chdb.Query("SELECT version()", "CSV")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(result)
+}
+```
+
+<div id="stateful-queries">
+  #### استعلامات ذات حالة باستخدام جلسة
+</div>
+
+بالنسبة إلى الاستعلامات المعقدة ذات الحالة الدائمة:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Create a session with persistent storage
+    session, err := chdb.NewSession("/tmp/chdb-data")
+    if err != nil {
+        panic(err)
+    }
+    defer session.Cleanup()
+
+    // Create database and table
+    _, err = session.Query(`
+        CREATE DATABASE IF NOT EXISTS testdb;
+        CREATE TABLE IF NOT EXISTS testdb.test_table (
+            id UInt32,
+            name String
+        ) ENGINE = MergeTree() ORDER BY id
+    `, "")
+    
+    if err != nil {
+        panic(err)
+    }
+
+    // Insert data
+    _, err = session.Query(`
+        INSERT INTO testdb.test_table VALUES 
+        (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')
+    `, "")
+    
+    if err != nil {
+        panic(err)
+    }
+
+    // Query data
+    result, err := session.Query("SELECT * FROM testdb.test_table ORDER BY id", "Pretty")
+    if err != nil {
+        panic(err)
+    }
+    
+    fmt.Println(result)
+}
+```
+
+<div id="sql-driver">
+  #### واجهة مشغّل SQL
+</div>
+
+يوفّر chDB-go تنفيذًا لواجهة `database/sql` في Go:
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    _ "github.com/chdb-io/chdb-go/chdb/driver"
+)
+
+func main() {
+    // Open database connection
+    db, err := sql.Open("chdb", "")
+    if err != nil {
+        panic(err)
+    }
+    defer db.Close()
+
+    // Query with standard database/sql interface
+    rows, err := db.Query("SELECT COUNT(*) FROM url('https://datasets.clickhouse.com/hits/hits.parquet')")
+    if err != nil {
+        panic(err)
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var count int
+        err := rows.Scan(&count)
+        if err != nil {
+            panic(err)
+        }
+        fmt.Printf("Count: %d\n", count)
+    }
+}
+```
+
+<div id="query-streaming">
+  #### البث المتدفق للاستعلامات لمجموعات البيانات الكبيرة
+</div>
+
+لمعالجة مجموعات البيانات الكبيرة التي لا يمكن تحميلها بالكامل في الذاكرة، استخدم الاستعلامات المتدفقة:
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Create a session for streaming queries
+    session, err := chdb.NewSession("/tmp/chdb-stream")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer session.Cleanup()
+
+    // Execute a streaming query for large dataset
+    streamResult, err := session.QueryStreaming(
+        "SELECT number, number * 2 as double FROM system.numbers LIMIT 1000000", 
+        "CSV",
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer streamResult.Free()
+
+    rowCount := 0
+    
+    // Process data in chunks
+    for {
+        chunk := streamResult.GetNext()
+        if chunk == nil {
+            // No more data
+            break
+        }
+        
+        // Check for streaming errors
+        if err := streamResult.Error(); err != nil {
+            log.Printf("Streaming error: %v", err)
+            break
+        }
+        
+        rowsRead := chunk.RowsRead()
+        // You can process the chunk data here
+        // For example, write to file, send over network, etc.
+        fmt.Printf("Processed chunk with %d rows\n", rowsRead)
+        rowCount += int(rowsRead)
+        if rowCount%100000 == 0 {
+            fmt.Printf("Processed %d rows so far...\n", rowCount)
+        }
+    }
+    
+    fmt.Printf("Total rows processed: %d\n", rowCount)
+}
+```
+
+**فوائد بث الاستعلامات:**
+
+* **فعّال في استخدام الذاكرة** - عالج مجموعات البيانات الكبيرة دون تحميل كل شيء إلى الذاكرة
+* **المعالجة في الوقت الفعلي** - ابدأ معالجة البيانات بمجرد وصول أول جزء
+* **دعم الإلغاء** - يمكنك إلغاء الاستعلامات طويلة التشغيل باستخدام `Cancel()`
+* **معالجة الأخطاء** - تحقّق من الأخطاء أثناء البث باستخدام `Error()`
+
+<div id="api-documentation">
+  ## توثيق واجهات برمجة التطبيقات
+</div>
+
+يوفّر chDB-go واجهات برمجة تطبيقات عالية المستوى ومنخفضة المستوى:
+
+* **[توثيق واجهات برمجة التطبيقات عالية المستوى](https://github.com/chdb-io/chdb-go/blob/main/chdb.md)** - موصى به لمعظم حالات الاستخدام
+* **[توثيق واجهات برمجة التطبيقات منخفضة المستوى](https://github.com/chdb-io/chdb-go/blob/main/lowApi.md)** - مخصص لحالات الاستخدام المتقدمة التي تتطلب تحكمًا دقيقًا
+
+<div id="requirements">
+  ## متطلبات النظام
+</div>
+
+* Go 1.21 أو إصدار أحدث
+* متوافق مع Linux وmacOS

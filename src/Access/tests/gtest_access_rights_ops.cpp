@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <Access/AccessRights.h>
 #include <Access/AccessRights.cpp>  // NOLINT(bugprone-suspicious-include)
+#include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/AccessType.h>
 #include <IO/WriteBufferFromString.h>
 
 using namespace DB;
@@ -545,6 +547,46 @@ TEST(AccessRights, Filter)
     root.revoke(AccessType::READ, "URL");
     res = root.getFilters("URL");
     ASSERT_EQ(res.size(), 0);
+
+    res = root.getFilters("NoSuchParam");
+    ASSERT_EQ(res.size(), 0);
+}
+
+TEST(AccessRights, FilterDoesNotMutate)
+{
+    AccessRights root;
+    root.grant(AccessType::READ, "S3", "s3://url1.*");
+
+    /// operator = is a deep copy, so `before` is an independent snapshot of the tree.
+    const AccessRights before = root;
+    const auto nodes_before = root.dumpNodes();
+
+    /// A parameter that is absent from the tree: "URL" shares no first character with
+    /// "S3", so the lookup misses and a mutating find-or-create would insert nodes.
+    root.getFilters("URL");
+    ASSERT_EQ(root, before);
+    ASSERT_EQ(root.dumpNodes(), nodes_before);
+
+    /// A parameter that is present must likewise leave the tree untouched.
+    root.getFilters("S3");
+    ASSERT_EQ(root, before);
+    ASSERT_EQ(root.dumpNodes(), nodes_before);
+}
+
+TEST(AccessRights, FilterDoesNotMutateOnPrefixSplit)
+{
+    AccessRights root;
+    root.grant(AccessType::READ, "S3", "s3://url1.*");
+
+    const AccessRights before = root;
+    const auto nodes_before = root.dumpNodes();
+
+    /// "SQLITE" shares its first character with the existing "S3" node but mismatches
+    /// after it, so a mutating find-or-create would rename "S3" in place and splice it
+    /// into a new "S" parent. Both are real source names.
+    root.getFilters("SQLITE");
+    ASSERT_EQ(root, before);
+    ASSERT_EQ(root.dumpNodes(), nodes_before);
 }
 
 TEST(AccessRights, RevokeWithParameters)
@@ -596,6 +638,55 @@ TEST(AccessRights, ParialRevokeWithGrantOption)
     root.revoke(AccessType::SELECT, "default", "zookeeper");
     ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "default", "zoo"));
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "default", "zoo"));
+}
+
+TEST(AccessRights, PartialRevokeGrantOptionWithSharedPrefix)
+{
+    /// Each arm pairs a grant-option-only revoke whose name shares a prefix with a plain revoke
+    /// (the shape that used to be dropped) with a control name that shares nothing.
+
+    /// Database level.
+    AccessRights root;
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "db1");
+    root.revokeGrantOption(AccessType::SELECT, "db2");
+    root.revokeGrantOption(AccessType::SELECT, "zdb2");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE SELECT ON db1.*, "
+                               "REVOKE GRANT OPTION SELECT ON db2.*, REVOKE GRANT OPTION SELECT ON zdb2.*");
+
+    /// Database level, grant-option name is a strict prefix of the plain one.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "dbx");
+    root.revokeGrantOption(AccessType::SELECT, "db");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE GRANT OPTION SELECT ON db.*, "
+                               "REVOKE SELECT ON dbx.*");
+
+    /// Table level.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "d", "t1");
+    root.revokeGrantOption(AccessType::SELECT, "d", "t2");
+    root.revokeGrantOption(AccessType::SELECT, "d", "zt2");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE SELECT ON d.t1, "
+                               "REVOKE GRANT OPTION SELECT ON d.t2, REVOKE GRANT OPTION SELECT ON d.zt2");
+
+    /// Column level.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "d", "t", "c1");
+    root.revokeGrantOption(AccessType::SELECT, "d", "t", "c2");
+    root.revokeGrantOption(AccessType::SELECT, "d", "t", "zc2");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE SELECT(c1) ON d.t, "
+                               "REVOKE GRANT OPTION SELECT(c2, zc2) ON d.t");
+
+    /// Wildcard grant-option revoke whose name is a strict prefix of the plain one.
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revoke(AccessType::SELECT, "dbx1");
+    root.revokeWildcardGrantOption(AccessType::SELECT, "db");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE GRANT OPTION SELECT ON db*.*, "
+                               "REVOKE SELECT ON dbx1.*");
 }
 
 TEST(AccessRights, WildcardGrantEdgeCases)
@@ -1195,4 +1286,38 @@ TEST(AccessRights, MultipleAccessTypesPartialRevoke)
     // Wildcard checks
     ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "readonl"));
     ASSERT_TRUE(root.isGrantedWildcard(AccessType::INSERT, "readonl"));
+}
+
+/// A per-authentication-method GRANTS clause (see CREATE/ALTER USER) is a token-style credential limit, and
+/// its serialized form is used as part of a session's privilege identity in the query-result cache and the
+/// asynchronous-insert queue keys. That serialization must be *precise*: the backward-compatibility widening
+/// that `formatElementsWithoutOptions(precise=false)` / `toString` apply for the benefit of old replicas
+/// collapses distinct source-level limits (e.g. `READ ON FILE` and `WRITE ON FILE`, which both fold to the
+/// whole `FILE` source when `enable_read_write_grants` is off) into one string. If the identity used that
+/// widened form, a read-only source token and a write-only source token would share a cache entry / flush
+/// bucket, so `AccessRightsElements::toStringPrecise` must keep them distinct.
+TEST(AccessRightsElementsSerialization, PreciseAvoidsBackwardCompatibleWidening)
+{
+    AccessRightsElements read_file;
+    read_file.emplace_back(AccessFlags(AccessType::READ), "FILE");
+    AccessRightsElements write_file;
+    write_file.emplace_back(AccessFlags(AccessType::WRITE), "FILE");
+
+    /// The backward-compatibility widening (used by the rest of the PR for old-replica compatibility) folds
+    /// both source limits to the same string. `makeBackwardCompatible` treats `enable_read_write_grants` as
+    /// off by default, so this holds regardless of whether a global context is present.
+    WriteBufferFromOwnString widened_read;
+    WriteBufferFromOwnString widened_write;
+    read_file.formatElementsWithoutOptions(widened_read, /*precise=*/false);
+    write_file.formatElementsWithoutOptions(widened_write, /*precise=*/false);
+    ASSERT_EQ(widened_read.str(), widened_write.str());
+
+    /// The precise serialization (used to derive credential identity) keeps them distinct.
+    ASSERT_NE(read_file.toStringPrecise(), write_file.toStringPrecise());
+
+    /// A deny-all clause (semantically empty) still has a stable precise form, and it must not collide with a
+    /// real source grant.
+    AccessRightsElements deny_all;
+    ASSERT_EQ(deny_all.toStringPrecise(), "USAGE ON *.*");
+    ASSERT_NE(deny_all.toStringPrecise(), read_file.toStringPrecise());
 }

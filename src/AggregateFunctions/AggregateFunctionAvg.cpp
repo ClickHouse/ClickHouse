@@ -5,6 +5,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime64.h>
+#include <DataTypes/getLeastSupertype.h>
 
 namespace DB
 {
@@ -29,7 +30,8 @@ bool allowType(const DataTypePtr& type) noexcept
         || t.isDateTime()
         || t.isTime()
         || t.isDateTime64()
-        || t.isTime64();
+        || t.isTime64()
+        || t.isInterval();
 }
 
 AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -40,8 +42,8 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
     const DataTypePtr& data_type = argument_types[0];
 
     if (!allowType(data_type))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
-            data_type->getName(), name);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}{}",
+            data_type->getName(), name, getNumericVariantSupertypeHint(data_type));
 
     AggregateFunctionPtr res;
 
@@ -79,6 +81,13 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
         /// Preserve Time result type: average over underlying Int32 value, rounded and returned as Time
         res = std::make_shared<AggregateFunctionAvg<Int32>>(argument_types, data_type);
     }
+    else if (which.isInterval())
+    {
+        /// Preserve the interval unit: average over the underlying Int64 number of units, rounded
+        /// and returned as the same `Interval` type. Intervals of different units are not
+        /// commensurable (a month is not a fixed number of days), so there is nothing to convert to.
+        res = std::make_shared<AggregateFunctionAvg<Int64>>(argument_types, data_type);
+    }
     else
     {
         res.reset(createWithNumericType<AggregateFunctionAvg>(*data_type, argument_types));
@@ -99,9 +108,9 @@ avg(x)
     )";
     FunctionDocumentation::Parameters parameters_avg = {};
     FunctionDocumentation::Arguments arguments_avg = {
-        {"x", "Input values.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Input values.", {"(U)Int*", "Float*", "Decimal", "Date", "Date32", "DateTime", "DateTime64(P)", "Time", "Time64(P)", "Interval"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_avg = {"Returns the arithmetic mean, otherwise returns `NaN` if the input parameter `x` is empty.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value_avg = {"Returns the arithmetic mean. For a numeric `x` the result is a `Float64`, and `NaN` if `x` is empty. For a date, time or interval `x` the result keeps the type of `x`: the mean is rounded to the nearest representable value, and an empty `x` gives the zero value of that type.", {"Float64", "Date", "Date32", "DateTime", "DateTime64(P)", "Time", "Time64(P)", "Interval"}};
     FunctionDocumentation::Examples examples_avg = {
     {
         "Basic usage",
@@ -122,9 +131,24 @@ CREATE TABLE test (t UInt8) ENGINE = Memory;
 SELECT avg(t) FROM test;
         )",
         R"(
-┌─avg(x)─┐
+┌─avg(t)─┐
 │    nan │
 └────────┘
+        )"
+    },
+    {
+        "Average of an interval",
+        R"(
+CREATE TABLE requests (req_id Int64, duration IntervalMillisecond) ENGINE = Memory;
+
+INSERT INTO requests VALUES (1, 100), (2, 200), (3, 300);
+
+SELECT avg(duration) AS avg_duration, toTypeName(avg_duration) FROM requests;
+        )",
+        R"(
+┌─avg_duration─┬─toTypeName(avg_duration)─┐
+│          200 │ IntervalMillisecond      │
+└──────────────┴──────────────────────────┘
         )"
     }
     };

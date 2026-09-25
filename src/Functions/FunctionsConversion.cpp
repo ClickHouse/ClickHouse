@@ -427,6 +427,10 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     WhichDataType to(to_type_index);
     bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && (which.isInt() || which.isUInt() || which.isFloat());
+    /// `Time` and `Time64` share the accurate temporal path: widening an exact `Time` value to
+    /// `Time64(0)` must not change what `accurateCast` accepts.
+    can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
+        && which.isTimeOrTime64() && (to.isTime() || to.isDateOrDate32() || to.isDateTimeOrDateTime64());
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
     if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -472,7 +476,7 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if constexpr (IsDataTypeNumber<LeftDataType>)
+            if constexpr (IsDataTypeNumber<LeftDataType> || is_any_of<LeftDataType, DataTypeTime, DataTypeTime64>)
             {
                 if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType>)
                 {
@@ -637,7 +641,7 @@ FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypeP
 
 FunctionCast::WrapperType FunctionCast::createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const
 {
-    switch (kind.kind)
+    switch (kind.getKind())
     {
         GENERATE_INTERVAL_CASE(Nanosecond)
         GENERATE_INTERVAL_CASE(Microsecond)
@@ -705,6 +709,52 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
 
                     return true;
                 }
+            }
+            else if constexpr (std::is_same_v<LeftDataType, DataTypeTime64>
+                && (std::is_same_v<RightDataType, DataTypeTime64> || std::is_same_v<RightDataType, DataTypeDateTime64>))
+            {
+                if (cast_type == CastType::accurate)
+                {
+                    AccurateConvertStrategyAdditions additions;
+                    additions.scale = scale;
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
+                }
+                else if (cast_type == CastType::accurateOrNull)
+                {
+                    AccurateOrNullConvertStrategyAdditions additions;
+                    additions.scale = scale;
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
+                }
+                else
+                {
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                }
+
+                return true;
+            }
+            else if constexpr (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
+            {
+                /// The only conversion handled by this wrapper that can overflow the target: the whole-seconds value
+                /// of a `Date32` day does not always fit the `Int64` ticks of a high-precision `DateTime64` (a scale-9
+                /// one ends at 2262-04-11), so `date_time_overflow_behavior` has to reach the transform - unlike the
+                /// other branches here, which cannot lose a value and therefore use the default mode.
+#define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
+    case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
+            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale); \
+        break;
+                switch (settings.date_time_overflow_behavior)
+                {
+                    GENERATE_OVERFLOW_MODE_CASE(Throw)
+                    GENERATE_OVERFLOW_MODE_CASE(Ignore)
+                    GENERATE_OVERFLOW_MODE_CASE(Saturate)
+                }
+#undef GENERATE_OVERFLOW_MODE_CASE
+
+                return true;
             }
             else if constexpr (std::is_same_v<LeftDataType, DataTypeString>)
             {
@@ -818,6 +868,49 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
             from_type_untyped->getName(), to_type->getName());
 }
 
+namespace
+{
+
+/// The number of `Array` dimensions of a type as `CAST` sees it. It is a range rather than a single
+/// number, because `Map(K, V)` is physically an `Array(Tuple(K, V))` and `CAST` converts between the
+/// two spellings: a `Map` can be matched either by another `Map`, contributing no dimension of its
+/// own, or by the `Array(Tuple(K, V))` it stands for, contributing one. A `Tuple` adds no dimension,
+/// hence a `Map` is at most one dimension whatever its value type is.
+///
+/// The array spelling is how a `Map` constant is written down when the analyzer serializes a query
+/// for a remote server: `ConstantNode::toASTImpl` renders the field as an array of tuples and wraps
+/// it into `_CAST(..., 'Array(Map(K, V))')`.
+struct DimensionsRange
+{
+    size_t min;
+    size_t max;
+};
+
+DimensionsRange getNumberOfDimensionsForCast(const IDataType & type)
+{
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(&type))
+    {
+        const DimensionsRange nested = getNumberOfDimensionsForCast(*type_array->getNestedType());
+        return {nested.min + 1, nested.max + 1};
+    }
+    if (typeid_cast<const DataTypeMap *>(&type))
+        return {0, 1};
+    return {0, 0};
+}
+
+/// The nesting depths have to be reconcilable under some spelling of the `Map`s the two types
+/// contain. This rejects a genuine depth mismatch, such as `Array(String)` to `Array(Array(String))`,
+/// before an element wrapper does something unexpected with it (`CAST` from a `String` parses it).
+/// Anything else is left to the element wrappers, which name the types that cannot be converted.
+bool canHaveSameNumberOfDimensions(const IDataType & from, const IDataType & to)
+{
+    const DimensionsRange from_dimensions = getNumberOfDimensionsForCast(from);
+    const DimensionsRange to_dimensions = getNumberOfDimensionsForCast(to);
+    return from_dimensions.min <= to_dimensions.max && to_dimensions.min <= from_dimensions.max;
+}
+
+}
+
 FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const
 {
     /// Conversion from String through parsing.
@@ -871,7 +964,7 @@ FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & f
     /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
     bool from_empty_array = isNothing(from_nested_type);
 
-    if (from_type->getNumberOfDimensions() != to_type.getNumberOfDimensions() && !from_empty_array)
+    if (!canHaveSameNumberOfDimensions(*from_type, to_type) && !from_empty_array)
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "CAST AS Array can only be performed between same-dimensional array types");
 
@@ -953,10 +1046,19 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     ElementWrappers element_wrappers;
     VectorWithMemoryTracking<std::optional<size_t>> to_reverse_index;
 
-    /// For named tuples allow conversions for tuples with
-    /// different sets of elements. If element exists in @to_type
-    /// and doesn't exist in @to_type it will be filled by default values.
-    if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
+    /// For named tuples with at least one element name in common allow conversions for tuples
+    /// with different sets of elements: elements are matched by name, source elements without
+    /// a counterpart are dropped, and target elements without a counterpart are filled by default
+    /// values (schema evolution: adding, dropping and renaming elements of a Tuple or a Nested
+    /// column with ALTER).
+    /// For named tuples with disjoint sets of element names, matching by name cannot be meant,
+    /// and elements are converted positionally, as for unnamed tuples (e.g. the result of function
+    /// tuple with enable_named_columns_in_function_tuple inserted into a column whose tuple
+    /// elements are named differently). Previously such conversions silently filled the whole
+    /// result by default values, losing all the data (see issue #70830).
+    bool convert_positionally = !(from_type->hasExplicitNames() && to_type->hasExplicitNames());
+
+    if (!convert_positionally)
     {
         const auto & from_names = from_type->getElementNames();
         UnorderedMapWithMemoryTracking<String, size_t> from_positions;
@@ -965,25 +1067,38 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             from_positions[from_names[i]] = i;
 
         const auto & to_names = to_type->getElementNames();
-        element_wrappers.reserve(to_names.size());
-        to_reverse_index.reserve(from_names.size());
 
-        for (size_t i = 0; i < to_names.size(); ++i)
+        size_t common_names_count = 0;
+        for (const auto & to_name : to_names)
+            common_names_count += from_positions.contains(to_name);
+
+        if (common_names_count == 0)
         {
-            auto it = from_positions.find(to_names[i]);
-            if (it != from_positions.end())
+            convert_positionally = true;
+        }
+        else
+        {
+            element_wrappers.reserve(to_names.size());
+            to_reverse_index.reserve(from_names.size());
+
+            for (size_t i = 0; i < to_names.size(); ++i)
             {
-                element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
-                to_reverse_index.emplace_back(it->second);
-            }
-            else
-            {
-                element_wrappers.emplace_back();
-                to_reverse_index.emplace_back();
+                auto it = from_positions.find(to_names[i]);
+                if (it != from_positions.end())
+                {
+                    element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
+                    to_reverse_index.emplace_back(it->second);
+                }
+                else
+                {
+                    element_wrappers.emplace_back();
+                    to_reverse_index.emplace_back();
+                }
             }
         }
     }
-    else
+
+    if (convert_positionally)
     {
         if (from_element_types.size() != to_element_types.size())
             throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
@@ -1138,19 +1253,18 @@ FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & fr
     /// From another QBit
     if (from_qbit_type)
     {
-        if (from_qbit_type->getDimension() != to_type.getDimension() || from_qbit_type->getStride() != to_type.getStride())
+        /// A QBit -> QBit cast keeps the dimension (the number of vector elements), but may change the element type
+        /// and/or the stride (the number of stride groups). Changing the dimension would change the vector itself, so
+        /// it is rejected. Identical types never reach here — they take createIdentityWrapper in prepareImpl.
+        if (from_qbit_type->getDimension() != to_type.getDimension())
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
-                "CAST AS between two QBits can only be performed if they have the same number of elements and stride. From: {}, To: {}",
+                "CAST AS between two QBits can only be performed if they have the same number of elements (dimension). "
+                "From: {}, To: {}",
                 from_qbit_type->getName(),
                 to_type.getName());
-        else if (!from_qbit_type->getElementType()->equals(*to_type.getElementType()))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "CAST AS between two QBits containing different types isn't implemented. From: {}, To: {}",
-                from_qbit_type->getName(),
-                to_type.getName());
-        /// For identical types we create createIdentityWrapper in prepareImpl, so this is unreachable
-        UNREACHABLE();
+
+        return createQBitToQBitWrapper(*from_qbit_type, to_type);
     }
 
     /// From Array to QBit
@@ -1485,6 +1599,195 @@ FunctionCast::WrapperType FunctionCast::createQBitToArrayWrapper(const DataTypeQ
         ColumnsWithTypeAndName nested_columns{{col_array.getDataPtr(), from_nested_type, ""}};
         auto converted_nested = nested_function(nested_columns, to_nested_type, nullptr, col_array.getData().size());
         return ColumnArray::create(converted_nested, col_array.getOffsetsPtr());
+    };
+}
+
+ColumnPtr FunctionCast::repackQBit(
+    const ColumnQBit & src,
+    size_t from_element_size,
+    size_t to_element_size,
+    size_t dimension,
+    size_t from_stride,
+    size_t to_stride)
+{
+    /// Repack the bit planes into the target layout without reconstructing the vector through floats. This is possible
+    /// whenever the target's bit planes are made only of bytes that already exist in the source, which covers two casts:
+    ///   * a stride change with the same element type — a pure regrouping of the bit-plane bytes;
+    ///   * a Float32 <-> BFloat16 change — BFloat16 is Float32 truncated to its top 16 bits, so the two share their top
+    ///     16 bit planes, and Float32's other 16 planes are exactly the low mantissa bits that truncation drops (and
+    ///     that widening back to Float32 fills with zeros).
+    /// Bit plane `b` holds the (b+1)-th most significant bit of every element, so the shared planes are `0 .. min` and
+    /// BFloat16's 16 planes coincide with Float32's first 16. Extra target planes (Float32 <- BFloat16) stay zero; extra
+    /// source planes (Float32 -> BFloat16) are dropped.
+    const size_t shared_planes = std::min(from_element_size, to_element_size);
+
+    const size_t rows = src.size();
+    const ColumnTuple & src_tuple = src.getNestedData();
+
+    const size_t from_num_strides = dimension / from_stride;
+    const size_t to_num_strides = dimension / to_stride;
+    const size_t from_bytes = DataTypeQBit::bitsToBytes(from_stride);
+    const size_t to_bytes = DataTypeQBit::bitsToBytes(to_stride);
+    const size_t to_num_columns = to_element_size * to_num_strides;
+
+    /// Allocate the target bit-plane FixedStrings, zero-filled and grouped as [stride group][bit plane] to match
+    /// createColumn / convertArrayToQBit. The zero fill is what leaves the extra Float32 planes (Float32 <- BFloat16)
+    /// zero; every occupied byte is overwritten below, and the same-stride path re-clears the padding bits it copies.
+    MutableColumns dst_columns(to_num_columns);
+    VectorWithMemoryTracking<UInt8 *> dst_data(to_num_columns);
+    for (size_t c = 0; c < to_num_columns; ++c)
+    {
+        auto col = ColumnFixedString::create(to_bytes);
+        col->getChars().resize_fill(rows * to_bytes);
+        dst_data[c] = col->getChars().data();
+        dst_columns[c] = std::move(col);
+    }
+
+    /// Stable base pointers into each source bit-plane FixedString.
+    const size_t from_num_columns = from_element_size * from_num_strides;
+    VectorWithMemoryTracking<const UInt8 *> src_data(from_num_columns);
+    for (size_t c = 0; c < from_num_columns; ++c)
+        src_data[c] = assert_cast<const ColumnFixedString &>(src_tuple.getColumn(c)).getChars().data();
+
+    if (from_stride == to_stride)
+    {
+        /// The stride is unchanged, so the shared bit planes have byte-identical layouts. Copy each one wholesale. This
+        /// is the Float32 <-> BFloat16 case; a same-stride same-element-type cast is the identity and never reaches here.
+        ///
+        /// When the stride is not a multiple of 8 each bit plane ends in a partial byte whose top bits are unused
+        /// padding. A tuple-backed source (a QBit value from a VALUES / IN section) is not required to zero that padding
+        /// -- convertFieldToType checks only the string count and length -- so copying the plane wholesale would carry
+        /// stray padding bits into the target. The reconstruct-and-convert path always leaves them zero and QBit equality
+        /// compares the raw bytes, so we must clear them here to keep the fast path's output canonical. The padded byte is
+        /// the one at offset 0 of each stride group (it holds the group's highest dimensions, matching the else branch's
+        /// `dst_off`); its low `to_stride % 8` bits are the valid ones. Every other byte is fully occupied.
+        const size_t padding_bits = to_bytes * 8 - to_stride;
+        const UInt8 valid_mask = static_cast<UInt8>(0xFF >> padding_bits);
+        for (size_t group = 0; group < to_num_strides; ++group)
+            for (size_t b = 0; b < shared_planes; ++b)
+            {
+                UInt8 * d = dst_data[group * to_element_size + b];
+                std::memcpy(d, src_data[group * from_element_size + b], rows * to_bytes);
+                if (padding_bits)
+                    for (size_t row = 0; row < rows; ++row)
+                        d[row * to_bytes] &= valid_mask;
+            }
+    }
+    else
+    {
+        /// The stride changes. Every valid such cast is octet-aligned: a stride below the dimension must be a multiple of
+        /// 8 (and divide it), forcing the dimension — and a stride equal to it — to be a multiple of 8 too. So each bit
+        /// plane is a whole number of bytes and every byte holds exactly one dimension-octet.
+        chassert(dimension % 8 == 0 && from_stride % 8 == 0 && to_stride % 8 == 0);
+        const size_t num_octets = dimension / 8;
+        for (size_t j = 0; j < num_octets; ++j)
+        {
+            /// A byte holds bit `b` of the 8 dimensions in octet `j`; its content is stride-independent, so restriding
+            /// only moves it. Byte offsets run high-row-first, hence `bytes - 1 - ...`.
+            const size_t src_group = j / from_bytes;
+            const size_t src_off = from_bytes - 1 - (j % from_bytes);
+            const size_t dst_group = j / to_bytes;
+            const size_t dst_off = to_bytes - 1 - (j % to_bytes);
+            for (size_t b = 0; b < shared_planes; ++b)
+            {
+                const UInt8 * s = src_data[src_group * from_element_size + b];
+                UInt8 * d = dst_data[dst_group * to_element_size + b];
+                for (size_t row = 0; row < rows; ++row)
+                    d[row * to_bytes + dst_off] = s[row * from_bytes + src_off];
+            }
+        }
+    }
+
+    ColumnPtr tuple = ColumnTuple::create(std::move(dst_columns));
+    return ColumnQBit::create(tuple, dimension, to_stride);
+}
+
+FunctionCast::WrapperType FunctionCast::createQBitToQBitWrapper(const DataTypeQBit & from_qbit_type, const DataTypeQBit & to_qbit_type) const
+{
+    /// A QBit -> QBit cast keeps the dimension but may change the element type and/or the stride (the number of stride
+    /// groups). We reconstruct the source vector at its native precision into an Array, then reuse the Array -> QBit path
+    /// to convert the element type and transpose it into the target layout. This reuses the existing, tested conversions
+    /// and inherits their element-conversion (widening/narrowing) and NULL semantics for free. Because the dimension is
+    /// preserved, the reconstructed Array always has exactly the size the target layout expects.
+
+    /// Fast path: a pure byte operation on the bit planes (see repackQBit), avoiding float reconstruction. It applies
+    /// when the target's planes are a subset (or a zero-padded superset) of the source's: either the element type is
+    /// unchanged and only the stride differs (identical types never reach here — they take createIdentityWrapper in
+    /// prepareImpl), or the element type changes between Float32 and BFloat16 (BFloat16 being Float32 truncated to its
+    /// top 16 bits). NULL rows carry zero bytes that repack to zeros, so the outer machinery can mask them without any
+    /// special handling here. Everything else (Float64, Int8, or a genuine numeric conversion) falls through.
+    const TypeIndex from_tid = from_qbit_type.getElementType()->getTypeId();
+    const TypeIndex to_tid = to_qbit_type.getElementType()->getTypeId();
+    const bool same_element_type = from_qbit_type.getElementType()->equals(*to_qbit_type.getElementType());
+    const bool float32_bfloat16_pair = (from_tid == TypeIndex::Float32 && to_tid == TypeIndex::BFloat16)
+        || (from_tid == TypeIndex::BFloat16 && to_tid == TypeIndex::Float32);
+
+    /// Under accurate / accurateOrNull, a narrowing Float32 -> BFloat16 element cast must reject (throw / NULL) any value
+    /// that does not survive the round trip — for example 0.1f — matching accurate::convertNumeric. The byte-repack
+    /// drops the low mantissa bits unconditionally and can neither throw nor null a row, so this one direction must fall
+    /// through to the reconstruct-and-convert path in those modes. The fast path's other cases stay exact regardless of
+    /// mode: a stride-only regrouping never changes a value, and widening BFloat16 -> Float32 is always representable.
+    const bool accurate = cast_type == CastType::accurate || cast_type == CastType::accurateOrNull;
+    const bool narrowing_float32_to_bfloat16 = from_tid == TypeIndex::Float32 && to_tid == TypeIndex::BFloat16;
+    if (same_element_type || (float32_bfloat16_pair && !(accurate && narrowing_float32_to_bfloat16)))
+    {
+        return [from_element_size = from_qbit_type.getElementSize(),
+                to_element_size = to_qbit_type.getElementSize(),
+                dimension = from_qbit_type.getDimension(),
+                from_stride = from_qbit_type.getStride(),
+                to_stride = to_qbit_type.getStride()](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr & /*result_type*/,
+                   const ColumnNullable * /*nullable_source*/,
+                   size_t /*input_rows_count*/) -> ColumnPtr
+        {
+            const auto & src = assert_cast<const ColumnQBit &>(*arguments.front().column);
+            return repackQBit(src, from_element_size, to_element_size, dimension, from_stride, to_stride);
+        };
+    }
+
+    /// Kernel that reconstructs the source QBit into an Array of its own (native) element type, chosen by the source
+    /// element size. `convertQBitToArray` is a static function, so a plain function pointer suffices.
+    using ReconstructFn = ColumnPtr (*)(ColumnsWithTypeAndName &, const ColumnNullable *, size_t, size_t);
+    ReconstructFn reconstruct = nullptr;
+    switch (from_qbit_type.getElementSize())
+    {
+        case 8: reconstruct = &FunctionCast::convertQBitToArray<Int8>; break;
+        case 16: reconstruct = &FunctionCast::convertQBitToArray<BFloat16>; break;
+        case 32: reconstruct = &FunctionCast::convertQBitToArray<Float32>; break;
+        case 64: reconstruct = &FunctionCast::convertQBitToArray<Float64>; break;
+        default: UNREACHABLE();
+    }
+
+    /// The reconstructed Array carries the source element type; the Array -> QBit wrapper (chosen by the target element
+    /// size) converts it to the target element type and transposes it into the target (possibly restrided) layout.
+    auto native_array_type = std::make_shared<DataTypeArray>(from_qbit_type.getElementType());
+    WrapperType array_to_qbit;
+    switch (to_qbit_type.getElementSize())
+    {
+        case 8: array_to_qbit = createArrayToQBitWrapper<Int8>(*native_array_type, to_qbit_type); break;
+        case 16: array_to_qbit = createArrayToQBitWrapper<BFloat16>(*native_array_type, to_qbit_type); break;
+        case 32: array_to_qbit = createArrayToQBitWrapper<Float32>(*native_array_type, to_qbit_type); break;
+        case 64: array_to_qbit = createArrayToQBitWrapper<Float64>(*native_array_type, to_qbit_type); break;
+        default: UNREACHABLE();
+    }
+
+    return [reconstruct,
+            array_to_qbit,
+            native_array_type,
+            dimension = from_qbit_type.getDimension(),
+            stride = from_qbit_type.getStride()](
+               ColumnsWithTypeAndName & arguments,
+               const DataTypePtr & result_type,
+               const ColumnNullable * nullable_source,
+               size_t input_rows_count) -> ColumnPtr
+    {
+        /// Reconstruct at native precision using the source dimension and stride, then convert the element type and
+        /// transpose into the target layout. `nullable_source` is threaded through so both halves skip NULL rows
+        /// (avoiding a wasted untranspose/transpose) and the outer machinery re-wraps the result as Nullable.
+        ColumnPtr native_array = reconstruct(arguments, nullable_source, dimension, stride);
+        ColumnsWithTypeAndName array_arguments{{native_array, native_array_type, arguments.front().name}};
+        return array_to_qbit(array_arguments, result_type, nullable_source, input_rows_count);
     };
 }
 
@@ -2566,6 +2869,12 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
 
 FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
 {
+    /// A `Nothing` column carries no values, so it converts trivially to any target, which is what
+    /// `createNothingWrapper` does. `Variant` and `Dynamic` instead resolve the source against their
+    /// member list, which cannot name `Nothing`, so they need that path rather than the one below.
+    if (isNothing(from_type) && (isVariant(to_type) || isDynamic(to_type)))
+        return createNothingWrapper(to_type.get());
+
     /// Conversion from/to Variant/Dynamic data type is processed in a special way.
     /// We don't need to remove LowCardinality/Nullable.
     if (isDynamic(to_type) || isDynamic(from_type))
@@ -2678,11 +2987,24 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
     bool source_is_nullable = from_type->isNullable();
     bool result_is_nullable = to_type->isNullable();
 
-    auto wrapper = prepareImpl(removeNullable(from_type), removeNullable(to_type), result_is_nullable);
+    const DataTypePtr from_nested_type = removeNullable(from_type);
+    const DataTypePtr to_nested_type = removeNullable(to_type);
+
+    /// A text conversion asked for a Nullable result reports a value the target cannot represent as a NULL
+    /// indistinguishable from one the source carried; `CastType::accurate` must throw instead.
+    const bool strict_text_conversion = result_is_nullable && cast_type == CastType::accurate
+        && isStringOrFixedString(from_nested_type);
+
+    /// An identity conversion can neither reject a value nor produce a NULL, so a source NULL needs no filtering.
+    const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
+
+    auto wrapper = prepareImpl(from_nested_type, to_nested_type, result_is_nullable && !strict_text_conversion);
 
     if (result_is_nullable)
     {
-        return [wrapper, source_is_nullable]
+        bool exclude_source_nulls = source_is_nullable && cast_type == CastType::accurate && !nested_types_equal;
+
+        return [wrapper, source_is_nullable, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
             /// Create a temporary columns on which to perform the operation.
@@ -2703,6 +3025,34 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
                 if (arguments.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of arguments");
                 nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
+            }
+
+            if (exclude_source_nulls)
+            {
+                /// The nested column of a NULL row holds a default, not a value to convert.
+                const auto & nullable_column = assert_cast<const ColumnNullable &>(*arguments.front().column);
+                const auto & null_map = nullable_column.getNullMapData();
+                const size_t rows_with_nulls = countBytesInFilter(null_map.data(), 0, input_rows_count);
+
+                if (rows_with_nulls == input_rows_count && input_rows_count != 0)
+                    return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
+
+                if (rows_with_nulls != 0)
+                {
+                    const size_t rows_without_nulls = input_rows_count - rows_with_nulls;
+
+                    IColumn::Filter not_null(input_rows_count);
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                        not_null[row] = !null_map[row];
+
+                    for (auto & column : tmp_args)
+                        column.column = column.column->filter(not_null, rows_without_nulls);
+
+                    auto filtered_res = wrapper(tmp_args, nested_type, nullptr, rows_without_nulls);
+                    auto mutable_res = IColumn::mutate(std::move(filtered_res));
+                    mutable_res->expand(not_null, /* inverted */ false);
+                    return wrapInNullable(std::move(mutable_res), nullable_column.getNullMapColumnPtr());
+                }
             }
 
             /// Perform the requested conversion.
@@ -2996,14 +3346,20 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
 }
 
+FunctionConvertSettingsPtr createFunctionConvertSettings(
+    const ContextPtr & context,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+{
+    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior);
+}
+
 FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context,
+    const FunctionConvertSettingsPtr & settings,
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+    CastType cast_type)
 {
     DataTypes data_types(arguments.size());
 
@@ -3049,7 +3405,7 @@ FunctionBasePtr createFunctionBaseCast(
     }
 
     return std::make_unique<detail::FunctionCast>(
-        context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, date_time_overflow_behavior);
+        *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
 }
 
 
@@ -3093,6 +3449,43 @@ bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
+/// Whether a numeric conversion `from` -> `to` can be JIT-compiled. Compiled code cannot raise, so only
+/// conversions whose interpreted form has no range check are compilable: number to number, which wraps
+/// interpreted too; `Decimal` to float, or to a signed integer at least as wide as its storage (the
+/// `convertToImpl` arms that never throw); and any source to `Bool`, a raw comparison with zero. A
+/// `Decimal` destination range-checks `value * 10^scale`; `fptosi` / `fptoui` are undefined out of range.
+static bool isCompilableNumericConversion(const IDataType * from, const IDataType * to)
+{
+    return castBothTypes(from, to, [](const auto & left, const auto & right)
+    {
+        using LeftDataType = std::decay_t<decltype(left)>;
+        using RightDataType = std::decay_t<decltype(right)>;
+
+        if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+        {
+            if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+            {
+                if constexpr (is_floating_point<typename LeftDataType::FieldType>
+                    && !is_floating_point<typename RightDataType::FieldType>)
+                    return isBool(right.getPtr());
+                return true;
+            }
+            else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+            {
+                using RightFieldType = typename RightDataType::FieldType;
+                if (isBool(right.getPtr()))
+                    return true;
+                if constexpr (is_floating_point<RightFieldType>)
+                    return true;
+                else
+                    return !is_unsigned_v<RightFieldType>
+                        && sizeof(RightFieldType) >= sizeof(NativeType<typename LeftDataType::FieldType>);
+            }
+        }
+        return false;
+    });
+}
+
 bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result_type)
 {
     if (types.empty())
@@ -3101,25 +3494,7 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
     if (!canBeNativeType(types[0]) || !canBeNativeType(result_type))
         return false;
 
-    return castBothTypes(
-        types[0].get(),
-        result_type.get(),
-        [](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
-            {
-                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                    return true;
-                else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                    return true;
-                else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                    return true;
-            }
-            return false;
-        });
+    return isCompilableNumericConversion(types[0].get(), result_type.get());
 }
 
 llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type)
@@ -3152,6 +3527,9 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
                 }
                 else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                 {
+                    /// Interpreted, this conversion range-checks `value * 10^scale`; the lowerings below do not.
+                    chassert(false, "Number to Decimal must not be JIT-compiled");
+
                     auto scale = right.getScale();
                     auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                     if constexpr (std::is_floating_point_v<LeftFieldType>)
@@ -3216,26 +3594,18 @@ bool FunctionCast::isCompilable() const
 
     const auto & input_type = argument_types[0];
     const auto & result_type = getResultType();
+
+    /// Converting a NULL to a non-Nullable type raises CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+    /// and a compiled expression produces a value with no way to raise.
+    if (isNullableOrLowCardinalityNullable(input_type) && !isNullableOrLowCardinalityNullable(result_type))
+        return false;
+
     auto denull_input_type = removeNullable(input_type);
     auto denull_result_type = removeNullable(result_type);
     if (!canBeNativeType(denull_input_type) || !canBeNativeType(denull_result_type))
         return false;
 
-    return castBothTypes(denull_input_type.get(), denull_result_type.get(), [](const auto & left, const auto & right)
-    {
-        using LeftDataType = std::decay_t<decltype(left)>;
-        using RightDataType = std::decay_t<decltype(right)>;
-        if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
-        {
-            if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                return true;
-            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
-                return true;
-            else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
-                return true;
-        }
-        return false;
-    });
+    return isCompilableNumericConversion(denull_input_type.get(), denull_result_type.get());
 }
 
 llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const
@@ -3283,6 +3653,9 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
                 }
                 else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                 {
+                    /// Interpreted, this conversion range-checks `value * 10^scale`; the lowerings below do not.
+                    chassert(false, "Number to Decimal must not be JIT-compiled");
+
                     auto scale = right.getScale();
                     auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                     if constexpr (std::is_floating_point_v<LeftFieldType>)

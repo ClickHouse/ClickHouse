@@ -1,0 +1,4 @@
+readonly	1	123456789	0
+writable	1	5000000000	1
+dst_readonly	123456789
+dst_writable	5000000000

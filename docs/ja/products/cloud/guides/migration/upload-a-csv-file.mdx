@@ -7,10 +7,10 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-ClickHouse Cloud では、ファイルを簡単にインポートでき、以下の
+ClickHouse Cloud では、ファイルを簡単にインポートでき、次の
 フォーマットをサポートしています。
 
-| Format                          |
+| フォーマット                          |
 | ------------------------------- |
 | `CSV`                           |
 | `CSVWithNamesAndTypes`          |
@@ -21,10 +21,8 @@ ClickHouse Cloud では、ファイルを簡単にインポートでき、以下
 | `TabSeparatedWithNamesAndTypes` |
 
 <Steps>
-  <Step>
-    ## ファイルをアップロードする
-
-    Cloud のホーム画面で、以下のようにサービスを選択します。
+  <Step title="ファイルをアップロードする" id="upload-file">
+    以下のように、Cloud のホームページからサービスを選択します。
 
     <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
 
@@ -34,25 +32,23 @@ ClickHouse Cloud では、ファイルを簡単にインポートでき、以下
 
     <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
 
-    次に、data sources ページの右側で `Upload a file` を選択します。
+    次に、データソースページの右側で `Upload a file` を選択します。
 
     <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
 
-    ファイル選択ダイアログが表示され、Cloud サービス上のテーブルにデータを
-    挿入するためのファイルを選択できます。
+    ファイル選択ダイアログが表示され、Cloud サービス上のテーブルに
+    データを挿入するためのファイルを選択できます。
 
     <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
   </Step>
 
-  <Step>
-    ## テーブルを設定する
-
+  <Step title="テーブルを設定する" id="configure-table">
     ファイルのアップロードが完了すると、データの挿入先となるテーブルを
     設定できます。先頭 3 行を含むテーブルのプレビューも表示されます。
 
     <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
 
-    次に、宛先テーブルを選択できます。選択肢は次のとおりです。
+    ここで宛先テーブルを選択できます。選択肢は次のとおりです。
 
     * 新しいテーブル
     * 既存のテーブル
@@ -64,10 +60,10 @@ ClickHouse Cloud では、ファイルを簡単にインポートでき、以下
 
     <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
 
-    ファイルから読み取られたカラムは `Source field` として表示され、各フィールドについて
+    ファイルから読み取られたカラムは `Source field` として表示され、各フィールドに対して
     次の項目を変更できます。
 
-    * 推定された型
+    * 推論された型
     * デフォルト値
     * カラムを [Nullable](/ja/reference/data-types/nullable) にするかどうか
 
@@ -76,7 +72,7 @@ ClickHouse Cloud では、ファイルを簡単にインポートでき、以下
     <Info>
       **フィールドの除外**
 
-      インポートに含めたくない場合は、フィールドを削除することもできます。
+      インポートに含めたくない場合は、フィールドを除外することもできます
     </Info>
 
     使用するテーブルエンジンの種類を指定できます。
@@ -88,22 +84,22 @@ ClickHouse Cloud では、ファイルを簡単にインポートでき、以下
 
     <br />
 
-    パーティションキー式とプライマリ
+    パーティション化キー式とプライマリ
     キー式を指定できます。
 
     <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
 
     データをインポートするには、`Import to ClickHouse` (上図参照) をクリックします。データのインポートはキューに追加され、
-    以下に示すように `Status` カラムの `queued` ステータスバッジで確認できます。また、
-    `Open as query` (上図参照) をクリックすると、SQL コンソールで INSERT クエリを開くこともできます。このクエリは、
-    `URL` table function を使用して S3 バケットにアップロードされたファイルを挿入します。
+    以下のように `Status` カラムの `queued` ステータスバッジで示されます。また、
+    `Open as query` (上図参照) をクリックして、SQL Console で INSERT クエリを開くこともできます。このクエリは、
+    `URL` テーブル関数を使用して S3 bucket にアップロードされたファイルを挿入します。
 
     <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
 
-    ジョブが失敗すると、`Data upload history` タブの `Status` カラムに
+    ジョブが失敗した場合は、`Data upload history` タブの `Status` カラムに
     `failed` ステータスバッジが表示されます。`View Details` をクリックすると、
-    アップロードが失敗した理由の詳細を確認できます。失敗した INSERT のエラーメッセージに基づいて、
-    テーブル設定を修正したり、データをクリーンアップしたりする必要がある場合があります。
+    アップロードが失敗した理由の詳細を確認できます。失敗した挿入のエラーメッセージに応じて、
+    テーブル設定を変更するか、データをクリーンアップする必要がある場合があります。
 
     <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
   </Step>

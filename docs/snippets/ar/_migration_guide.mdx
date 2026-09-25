@@ -8,7 +8,11 @@ title: دليل الترحيل
 
 يُعد [Amazon Redshift](https://aws.amazon.com/redshift/) حلاً شائعًا لمستودعات البيانات السحابية، وهو جزء من عروض Amazon Web Services. يقدّم هذا الدليل أساليب مختلفة لترحيل البيانات من مثيل Redshift إلى ClickHouse. وسنغطي ثلاثة خيارات:
 
-<Image img="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" size="md" alt="خيارات ترحيل Redshift إلى ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" alt="خيارات ترحيل Redshift إلى ClickHouse" />
+  </Frame>
+</div>
 
 من منظور مثيل ClickHouse، يمكنك إما:
 
@@ -16,10 +20,10 @@ title: دليل الترحيل
 
 2. **[PULL](#pull-data-from-redshift-to-clickhouse)** سحب البيانات من Redshift بالاستفادة من ClickHouse JDBC Bridge
 
-3. **[PIVOT](#pivot-data-from-redshift-to-clickhouse-using-s3)** استخدام تخزين الكائنات S3 وفق آلية &quot;التفريغ ثم التحميل&quot;
+3. **[PIVOT](#pivot-data-from-redshift-to-clickhouse-using-s3)** استخدام S3 object storage وفق آلية &quot;التفريغ ثم التحميل&quot;
 
 <Note>
-  استخدمنا Redshift كمصدر بيانات في هذا البرنامج التعليمي. ومع ذلك، فإن أساليب الترحيل المعروضة هنا لا تقتصر على Redshift، ويمكن استنباط خطوات مماثلة لأي مصدر بيانات متوافق.
+  استخدمنا Redshift كمصدر بيانات في هذا الدليل العملي. ومع ذلك، فإن أساليب الترحيل المعروضة هنا لا تقتصر على Redshift، ويمكن استنباط خطوات مماثلة لأي مصدر بيانات متوافق.
 </Note>
 
 <div id="push-data-from-redshift-to-clickhouse">
@@ -28,7 +32,11 @@ title: دليل الترحيل
 
 في سيناريو الإرسال، تتمثل الفكرة في الاستفادة من أداة أو خدمة من جهة خارجية (سواء كانت شيفرة مخصصة أو أداة [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) لإرسال بياناتك إلى مثيل ClickHouse لديك. على سبيل المثال، يمكنك استخدام أداة مثل [Airbyte](https://www.airbyte.com/) لنقل البيانات بين مثيل Redshift لديك (كمصدر) وClickHouse كوجهة ([راجع دليل التكامل الخاص بنا لـ Airbyte](/ar/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
 
-<Image img="/images/integrations/data-ingestion/redshift/push.webp" size="md" alt="إرسال Redshift إلى ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/integrations/data-ingestion/redshift/push.webp" alt="إرسال Redshift إلى ClickHouse" />
+  </Frame>
+</div>
 
 <div id="pros">
   ### المزايا
@@ -51,7 +59,11 @@ title: دليل الترحيل
 
 في سيناريو السحب، تعتمد الفكرة على استخدام ClickHouse JDBC Bridge للاتصال مباشرةً بعنقود Redshift من مثيل ClickHouse وتنفيذ استعلامات `INSERT INTO ... SELECT`:
 
-<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="السحب من Redshift إلى ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/integrations/data-ingestion/redshift/pull.webp" alt="السحب من Redshift إلى ClickHouse" />
+  </Frame>
+</div>
 
 <div id="pros">
   ### المزايا
@@ -77,9 +89,7 @@ title: دليل الترحيل
 لاستخدام هذا الخيار، تحتاج إلى إعداد ClickHouse JDBC Bridge. وClickHouse JDBC Bridge هو تطبيق Java مستقل يتولى اتصال JDBC ويعمل كوكيل بين مثيل ClickHouse ومصادر البيانات. في هذا البرنامج التعليمي، استخدمنا مثيل Redshift مُجهزًا مسبقًا مع [قاعدة بيانات تجريبية](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html).
 
 <Steps>
-  <Step>
-    #### نشر ClickHouse JDBC Bridge
-
+  <Step title="نشر ClickHouse JDBC Bridge" id="deploy-clickhouse-jdbc-bridge">
     قم بنشر ClickHouse JDBC Bridge. لمزيد من التفاصيل، راجع دليل المستخدم الخاص بنا حول [JDBC لمصادر البيانات الخارجية](/ar/integrations/connectors/data-ingestion/jdbc-with-clickhouse)
 
     <Note>
@@ -87,9 +97,7 @@ title: دليل الترحيل
     </Note>
   </Step>
 
-  <Step>
-    #### تكوين مصدر بيانات Redshift الخاص بك
-
+  <Step title="تكوين مصدر بيانات Redshift الخاص بك" id="configure-your-redshift-datasource">
     كوّن مصدر بيانات Redshift لاستخدامه مع ClickHouse JDBC Bridge. على سبيل المثال: `/etc/clickhouse-jdbc-bridge/config/datasources/redshift.json `
 
     ```json
@@ -111,9 +119,7 @@ title: دليل الترحيل
     ```
   </Step>
 
-  <Step>
-    #### الاستعلام عن مثيل Redshift الخاص بك من ClickHouse
-
+  <Step title="الاستعلام عن مثيل Redshift الخاص بك من ClickHouse" id="query-your-redshift-instance-from-clickhouse">
     بمجرد نشر ClickHouse JDBC Bridge وتشغيله، يمكنك البدء في الاستعلام عن مثيل Redshift الخاص بك من ClickHouse
 
     ```sql
@@ -151,10 +157,8 @@ title: دليل الترحيل
     ```
   </Step>
 
-  <Step>
-    #### استيراد البيانات من Redshift إلى ClickHouse
-
-    فيما يلي، نعرض كيفية استيراد البيانات باستخدام تعليمة `INSERT INTO ... SELECT`
+  <Step title="استيراد البيانات من Redshift إلى ClickHouse" id="import-data-from-redshift-to-clickhouse">
+    فيما يلي، نعرض كيفية استيراد البيانات باستخدام عبارة `INSERT INTO ... SELECT`
 
     ```sql
     # إنشاء TABLE بثلاثة columns
@@ -195,9 +199,13 @@ title: دليل الترحيل
   ## ترحيل البيانات بأسلوب Pivot من Redshift إلى ClickHouse باستخدام S3
 </div>
 
-في هذا السيناريو، نُصدِّر البيانات إلى S3 بصيغة Pivot وسيطة، ثم في خطوة ثانية نحمّل البيانات من S3 إلى ClickHouse.
+في هذا السيناريو، نُصدِّر البيانات إلى S3 بتنسيق Pivot وسيط، ثم في خطوة ثانية نحمّل البيانات من S3 إلى ClickHouse.
 
-<Image img="/images/integrations/data-ingestion/redshift/pivot.webp" size="md" alt="PIVOT من Redshift باستخدام S3" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/integrations/data-ingestion/redshift/pivot.webp" alt="PIVOT من Redshift باستخدام S3" />
+  </Frame>
+</div>
 
 <div id="pros">
   ### المزايا
@@ -219,21 +227,25 @@ title: دليل الترحيل
 </div>
 
 <Steps>
-  <Step>
-    #### صدّر البيانات إلى حاوية S3 باستخدام UNLOAD
-
+  <Step title="صدّر البيانات إلى حاوية S3 باستخدام UNLOAD" id="export-data-into-an-s3-bucket-using-unload">
     باستخدام ميزة [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) في Redshift، صدّر البيانات إلى حاوية S3 خاصة موجودة مسبقًا:
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="UNLOAD من Redshift إلى S3" background="white" />
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/integrations/data-ingestion/redshift/s3-1.webp" alt="UNLOAD من Redshift إلى S3" style={{ backgroundColor: "white" }} />
+      </Frame>
+    </div>
 
     سينتج عن ذلك ملفات أجزاء تحتوي على البيانات الخام في S3
 
-    <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="البيانات في S3" background="white" />
+    <div className="ch-image-md">
+      <Frame>
+        <img src="/images/integrations/data-ingestion/redshift/s3-2.webp" alt="البيانات في S3" style={{ backgroundColor: "white" }} />
+      </Frame>
+    </div>
   </Step>
 
-  <Step>
-    #### أنشئ الجدول في ClickHouse
-
+  <Step title="أنشئ الجدول في ClickHouse" id="create-the-table-in-clickhouse">
     أنشئ الجدول في ClickHouse:
 
     ```sql
@@ -259,9 +271,7 @@ title: دليل الترحيل
     يعمل هذا بشكل جيد خصوصًا عندما تكون البيانات بتنسيق يتضمن معلومات عن أنواع البيانات، مثل Parquet.
   </Step>
 
-  <Step>
-    #### حمّل ملفات S3 إلى ClickHouse
-
+  <Step title="حمّل ملفات S3 إلى ClickHouse" id="load-s3-files-into-clickhouse">
     حمّل ملفات S3 إلى ClickHouse باستخدام عبارة `INSERT INTO ... SELECT`:
 
     ```sql
@@ -278,7 +288,7 @@ title: دليل الترحيل
     ```
 
     <Note>
-      يستخدم هذا المثال CSV كتنسيق وسيط. ومع ذلك، نوصي في أحمال العمل الإنتاجية باستخدام Apache Parquet باعتباره الخيار الأفضل لعمليات الترحيل الكبيرة، لأنه يدعم الضغط ويمكن أن يوفّر بعض تكاليف التخزين مع تقليل أزمنة النقل. (افتراضيًا، تُضغط كل مجموعة صفوف باستخدام SNAPPY). كما يستفيد ClickHouse من البنية العمودية في Parquet لتسريع إدخال البيانات.
+      يستخدم هذا المثال CSV كتنسيق Pivot وسيط. ومع ذلك، نوصي في أحمال العمل الإنتاجية باستخدام Apache Parquet باعتباره الخيار الأفضل لعمليات الترحيل الكبيرة، لأنه يدعم الضغط ويمكن أن يوفّر بعض تكاليف التخزين مع تقليل أزمنة النقل. (افتراضيًا، تُضغط كل مجموعة صفوف باستخدام SNAPPY). كما يستفيد ClickHouse من البنية العمودية في Parquet لتسريع إدخال البيانات.
     </Note>
   </Step>
 </Steps>

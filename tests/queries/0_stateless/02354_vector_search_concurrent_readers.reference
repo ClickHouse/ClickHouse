@@ -1,0 +1,11 @@
+one_part	1
+concurrent_readers	1
+index_used_distance	1
+exact_topk	1
+topk_rescoring	1
+topk_filtered	1
+threads_and_index	1	1	1
+concurrent_readers_rescoring	1
+concurrent_readers_filtered	1
+diff_rescoring	1
+diff_filtered	1

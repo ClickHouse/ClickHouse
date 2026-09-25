@@ -17,6 +17,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Poco/String.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -103,6 +104,93 @@ void buildLifetimeConfiguration(
     root->appendChild(lifetime_element);
 }
 
+/// Element names for the entries of a layout parameter given as a key-value collection literal.
+/// Every layout parameter that accepts a collection literal declares its names here, so the generated
+/// configuration has the same shape a user writes in an XML dictionary definition; the layout's create
+/// function reads the same names back from the configuration.
+struct KeyValueCollectionElementNames
+{
+    String entry;
+    String key;
+    String value;
+};
+
+/// Returns nullptr when the layout parameter does not support a collection value.
+const KeyValueCollectionElementNames * tryGetKeyValueCollectionElementNames(const String & layout_type, const String & parameter_name)
+{
+    static const KeyValueCollectionElementNames naive_bayes_priors{"prior", "class", "probability"};
+
+    if (layout_type == "naive_bayes" && parameter_name == "priors")
+        return &naive_bayes_priors;
+
+    return nullptr;
+}
+
+/* Transforms a layout parameter whose value is a key-value collection literal
+ *  PRIORS [(0, 0.6), (1, 0.4)]
+ * to the next configuration
+ *  <priors>
+ *    <prior>
+ *      <class>0</class>
+ *      <probability>0.6</probability>
+ *    </prior>
+ *    <prior>
+ *      <class>1</class>
+ *      <probability>0.4</probability>
+ *    </prior>
+ *  </priors>
+ * so the layout reads it as structured configuration instead of parsing a string.
+ */
+void buildLayoutParameterKeyValueCollection(
+    AutoPtr<Document> doc,
+    AutoPtr<Element> parameter_element,
+    const String & parameter_name,
+    const KeyValueCollectionElementNames & element_names,
+    const Field & collection)
+{
+    const auto & entries = collection.safeGet<Array>();
+
+    for (const auto & entry : entries)
+    {
+        if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter '{}' must be a collection of (key, value) pairs, got element '{}' instead",
+                parameter_name,
+                fieldToString(entry));
+        }
+
+        const auto & key_and_value = entry.safeGet<Tuple>();
+
+        AutoPtr<Element> entry_element(doc->createElement(element_names.entry));
+        parameter_element->appendChild(entry_element);
+
+        auto append_scalar_child = [&](const String & element_name, const Field & field)
+        {
+            const auto field_type = field.getType();
+            if (field_type != Field::Types::UInt64 && field_type != Field::Types::Int64 && field_type != Field::Types::Float64
+                && field_type != Field::Types::String)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary layout parameter '{}' entry element '{}' must be a number or a string, got '{}' instead",
+                    parameter_name,
+                    element_name,
+                    field.getTypeName());
+            }
+
+            AutoPtr<Element> field_element(doc->createElement(element_name));
+            AutoPtr<Text> field_text(doc->createTextNode(convertFieldToString(field)));
+            field_element->appendChild(field_text);
+            entry_element->appendChild(field_element);
+        };
+
+        append_scalar_child(element_names.key, key_and_value[0]);
+        append_scalar_child(element_names.value, key_and_value[1]);
+    }
+}
+
 /* Transforms next definition
  *  LAYOUT(FLAT())
  * to the next configuration
@@ -137,7 +225,7 @@ void buildLayoutConfiguration(
     {
         AutoPtr<Element> settings_element(doc->createElement("settings"));
         root->appendChild(settings_element);
-        for (const auto & [name, value] : settings->changes)
+        for (const auto & [name, value, _] : settings->changes)
         {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);
@@ -170,11 +258,32 @@ void buildLayoutConfiguration(
 
         const Field & value_field = value_literal->value;
 
+        /// A collection-valued parameter (an array of (key, value) tuples) becomes structured child
+        /// elements instead of a text node.
+        if (value_field.getType() == Field::Types::Array)
+        {
+            const auto * element_names = tryGetKeyValueCollectionElementNames(layout->layout_type, pair->first);
+            if (!element_names)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary layout parameter '{}' of layout '{}' does not accept a collection value",
+                    pair->first,
+                    layout->layout_type);
+            }
+
+            AutoPtr<Element> collection_parameter_element(doc->createElement(pair->first));
+            layout_type_element->appendChild(collection_parameter_element);
+            buildLayoutParameterKeyValueCollection(doc, collection_parameter_element, pair->first, *element_names, value_field);
+            continue;
+        }
+
         if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
         {
             throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary layout parameter value must be an UInt64, Float64 or String, got '{}' instead",
+                "Dictionary layout parameter value must be an UInt64, Float64, String, or a collection of (key, value) pairs, "
+                "got '{}' instead",
                 value_field.getTypeName());
         }
 
@@ -494,6 +603,17 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * literal = pair->second->as<const ASTLiteral>())
         {
+            /// The grammar admits an array literal for any key-value parameter, but a dictionary
+            /// source parameter has no structured representation for it, so reject a collection
+            /// instead of silently stringifying it.
+            if (literal->value.getType() == Field::Types::Array)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary source parameter '{}' does not accept a collection value",
+                    pair->first);
+            }
+
             AutoPtr<Text> value(doc->createTextNode(convertFieldToString(literal->value)));
             current_xml_element->appendChild(value);
         }
@@ -576,7 +696,7 @@ void buildSourceConfiguration(
     {
         AutoPtr<Element> settings_element(doc->createElement("settings"));
         outer_element->appendChild(settings_element);
-        for (const auto & [name, value] : settings->changes)
+        for (const auto & [name, value, _] : settings->changes)
         {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);
@@ -732,16 +852,39 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 
     try
     {
-        if (isLocalAddress({host, port}, default_port))
-            info.is_local = true;
+        info.is_local = isLocalAddress({host, port}, default_port);
     }
     catch (const Poco::Net::DNSException &)
     {
-        /// Server may fail to start if we cannot resolve some hostname. It's ok to ignore exception and leave is_local false.
+        /// Server may fail to start if we cannot resolve some hostname.
+        info.host_unresolved = true;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     return info;
+}
+
+bool mayBeLocalClickHouseDictionarySource(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
+{
+    if (!query.is_dictionary || !query.dictionary || !query.dictionary->source)
+        return false;
+    if (Poco::toLower(query.dictionary->source->name) != "clickhouse")
+        return false;
+
+    auto config = getDictionaryConfigurationFromAST(query, context, database_);
+
+    /// A named collection keeps the host out of the definition and is not expanded here, so locality
+    /// is undecidable: count it as local.
+    const String prefix = "dictionary.source.clickhouse";
+    if (!config->getString(prefix + ".name", "").empty())
+        return true;
+
+    auto info = getInfoIfClickHouseDictionarySource(config, context->getGlobalContext());
+    if (!info)
+        return false;
+
+    /// An unresolvable host is not a remote one: the loader resolves it again and may go local.
+    return info->is_local || info->host_unresolved;
 }
 
 }

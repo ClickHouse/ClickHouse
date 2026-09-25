@@ -13,18 +13,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 > このガイドでは、[Jan.ai](https://jan.ai/docs) で ClickHouse MCPサーバー を使う方法を説明します。
 
 <Steps>
-  <Step>
-    ## Jan.ai をインストールする
-
+  <Step title="Jan.ai をインストールする" id="install-janai">
     Jan.ai は、100% オフラインで動作するオープンソースの ChatGPT 代替アプリです。
-    Jan.ai は [Mac](https://jan.ai/docs/desktop/mac)、[Windows](https://jan.ai/docs/desktop/windows)、[Linux](https://jan.ai/docs/desktop/linux) 向けにダウンロードできます。
+    Jan.ai は [Mac](https://jan.ai/docs/desktop/install/mac)、[Windows](https://jan.ai/docs/desktop/windows)、[Linux](https://jan.ai/docs/desktop/linux) 向けにダウンロードできます。
 
     ネイティブアプリなので、ダウンロード後すぐに起動できます。
   </Step>
 
-  <Step>
-    ## Jan.ai に LLM を追加する
-
+  <Step title="Jan.ai に LLM を追加する" id="add-llm-to-janai">
     設定メニューからモデルを有効にできます。
 
     OpenAI を有効にするには、以下のように APIキーを入力する必要があります。
@@ -32,9 +28,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="OpenAI モデルを有効化" size="md" />
   </Step>
 
-  <Step>
-    ## MCPサーバーを有効にする
-
+  <Step title="MCPサーバーを有効にする" id="enable-mcp-servers">
     本稿執筆時点では、MCPサーバーは Jan.ai の実験的機能です。
     実験的機能をオンにすると有効化できます。
 
@@ -43,9 +37,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     このトグルをオンにすると、左側のメニューに `MCP servers` が表示されます。
   </Step>
 
-  <Step>
-    ## ClickHouse MCPサーバー を設定する
-
+  <Step title="ClickHouse MCPサーバー を設定する" id="configure-clickhouse-mcp-server">
     `MCP servers` メニューをクリックすると、接続可能な MCPサーバーの一覧が表示されます。
 
     <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="MCPサーバー一覧" size="md" />
@@ -65,9 +57,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="ClickHouse MCPサーバー のツール" size="md" />
   </Step>
 
-  <Step>
-    ## Jan.ai で ClickHouse MCPサーバー とチャットする
-
+  <Step title="Jan.ai で ClickHouse MCPサーバー とチャットする" id="chat-to-clickhouse-mcp-server">
     それでは、ClickHouse に保存されているデータについて対話してみましょう。
     質問してみます。
 

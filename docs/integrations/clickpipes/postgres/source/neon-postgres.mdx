@@ -57,7 +57,7 @@ Connect to your Neon instance as an admin user and execute the following command
       CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
       ```
 
-   The `clickpipes` publication will contain the set of change events generated from the specified tables, and will later be used to ingest the replication stream.
+   The `clickpipes` publication defines the set of tables whose change events will be streamed to ClickPipes. We recommend against using `FOR ALL TABLES` unless you intend to replicate every table, as including unnecessary tables increases WAL traffic from Postgres to ClickPipes and reduces overall replication efficiency.
 
 ## Enable logical replication {#enable-logical-replication}
 In Neon, you can enable logical replication through the UI. This is necessary for ClickPipes's CDC to replicate data.
@@ -77,7 +77,7 @@ SHOW max_replication_slots; -- should be 10
 ```
 
 ## IP whitelisting (for Neon enterprise plan) {#ip-whitelisting-for-neon-enterprise-plan}
-If you have Neon Enterprise plan, you can whitelist the [ClickPipes IPs](/integrations/clickpipes/home#list-of-static-ips) to allow replication from ClickPipes to your Neon Postgres instance.
+If you have Neon Enterprise plan, you can whitelist the [ClickPipes IPs](/integrations/clickpipes/networking/static-ips) to allow replication from ClickPipes to your Neon Postgres instance.
 To do this you can click on the **Settings** tab and go to the **IP Allow** section.
 
 <Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="Allow IPs screen" border/>
