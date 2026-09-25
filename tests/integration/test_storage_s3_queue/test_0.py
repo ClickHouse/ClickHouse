@@ -1094,7 +1094,9 @@ def test_move_fails_closed_when_source_rewritten_before_post_processing(
     # The refusal did not commit the file, so the newer generation is read on a later attempt and
     # the object is then moved as itself. Nothing is moved away unread, and nothing is lost.
     wait_until(
-        lambda: node.query(f"SELECT * FROM {table_name}_dst ORDER BY ALL")
+        lambda: node.query(
+            f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL"
+        )
         == "1\t2\t3\n7\t8\t9\n",
         timeout=90,
     )
