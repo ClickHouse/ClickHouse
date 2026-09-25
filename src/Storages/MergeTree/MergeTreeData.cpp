@@ -639,13 +639,18 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     }
 }
 DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
-    : wait_watch(Stopwatch(CLOCK_MONOTONIC))
-    , lock(data_parts_mutex_)
-    , lock_watch(Stopwatch(CLOCK_MONOTONIC))
+    : counters(&CurrentThread::getProfileEvents())
+    , lock(data_parts_mutex_, std::defer_lock)
     , data(data_)
 {
-    ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
-    ProfileEvents::increment(ProfileEvents::PartsLocks);
+    counters->preallocate(ProfileEvents::PartsLockWaitMicroseconds);
+    counters->preallocate(ProfileEvents::PartsLocks);
+    counters->preallocate(ProfileEvents::PartsLockHoldMicroseconds);
+    wait_watch.emplace(CLOCK_MONOTONIC);
+    lock.lock();
+    lock_watch.emplace(CLOCK_MONOTONIC);
+    counters->incrementNonAllocating(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
+    counters->incrementNonAllocating(ProfileEvents::PartsLocks);
 }
 
 
@@ -657,23 +662,28 @@ DataPartsLock::~DataPartsLock()
         data->shared_ranges_in_parts.reset();
     }
     if (lock_watch.has_value())
-        ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
+        counters->incrementNonAllocating(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
 
 DataPartsSharedLock::DataPartsSharedLock(DB::SharedMutex & data_parts_mutex_)
-    : wait_watch(Stopwatch(CLOCK_MONOTONIC))
-    , lock(data_parts_mutex_)
-    , lock_watch(Stopwatch(CLOCK_MONOTONIC))
+    : counters(&CurrentThread::getProfileEvents())
+    , lock(data_parts_mutex_, std::defer_lock)
 {
-    ProfileEvents::increment(ProfileEvents::SharedPartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
-    ProfileEvents::increment(ProfileEvents::SharedPartsLocks);
+    counters->preallocate(ProfileEvents::SharedPartsLockWaitMicroseconds);
+    counters->preallocate(ProfileEvents::SharedPartsLocks);
+    counters->preallocate(ProfileEvents::SharedPartsLockHoldMicroseconds);
+    wait_watch.emplace(CLOCK_MONOTONIC);
+    lock.lock();
+    lock_watch.emplace(CLOCK_MONOTONIC);
+    counters->incrementNonAllocating(ProfileEvents::SharedPartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
+    counters->incrementNonAllocating(ProfileEvents::SharedPartsLocks);
 }
 
 
 DataPartsSharedLock::~DataPartsSharedLock()
 {
     if (lock_watch.has_value())
-        ProfileEvents::increment(ProfileEvents::SharedPartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
+        counters->incrementNonAllocating(ProfileEvents::SharedPartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
 
 static Int64 extractVersion(const auto & versions, const String & partition_id, Int64 default_value)

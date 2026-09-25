@@ -218,6 +218,9 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     if (wait_thread_group)
         wait_counters = &wait_thread_group->performance_counters;
 
+    /// The timer publishes while holding `mutex`, including on the scheduler thread.
+    wait_counters->preallocate(ProfileEvents::ConcurrencyControlWaitMicroseconds);
+
     std::unique_lock lock{mutex};
     if (!schedule(lock))
         grantImpl(lock);
@@ -284,14 +287,14 @@ void CPULeaseAllocation::free()
 
 AcquiredSlotPtr CPULeaseAllocation::acquireImpl(std::unique_lock<std::mutex> &)
 {
-    ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired);
+    ProfileEvents::incrementNonAllocating(ProfileEvents::ConcurrencyControlSlotsAcquired);
     acquired_increment.add();
     return AcquiredSlotPtr(new Lease(std::static_pointer_cast<CPULeaseAllocation>(shared_from_this()), upscale()));
 }
 
 size_t CPULeaseAllocation::upscale()
 {
-    ProfileEvents::increment(ProfileEvents::ConcurrencyControlUpscales);
+    ProfileEvents::incrementNonAllocating(ProfileEvents::ConcurrencyControlUpscales);
 
     // New thread take one granted slot
     --granted; // Might became negative, but it is ok because we are going to allocate a slot later
@@ -320,7 +323,7 @@ size_t CPULeaseAllocation::upscale()
 void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
 {
     if (!shutdown_)
-        ProfileEvents::increment(ProfileEvents::ConcurrencyControlDownscales);
+        ProfileEvents::incrementNonAllocating(ProfileEvents::ConcurrencyControlDownscales);
 
     chassert(threads.leased[thread_num]);
     threads.leased.reset(thread_num);
@@ -350,7 +353,7 @@ void CPULeaseAllocation::downscale(size_t thread_num, bool shutdown_)
 
 void CPULeaseAllocation::setPreempted(size_t thread_num)
 {
-    ProfileEvents::increment(ProfileEvents::ConcurrencyControlPreemptions);
+    ProfileEvents::incrementNonAllocating(ProfileEvents::ConcurrencyControlPreemptions);
 
     // Mark the thread as preempted
     chassert(threads.leased[thread_num]);

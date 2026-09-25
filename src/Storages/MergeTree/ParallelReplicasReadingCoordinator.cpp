@@ -1550,7 +1550,7 @@ ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t re
 ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator()
 {
     // the profile event is not in constructor to check that coordinator is destroyed
-    ProfileEvents::increment(ProfileEvents::ParallelReplicasQueryCount);
+    ProfileEvents::incrementNonAllocating(ProfileEvents::ParallelReplicasQueryCount);
 
     /// The span itself is emitted by the member's destructor.
     if (summary_span.isTraceEnabled())

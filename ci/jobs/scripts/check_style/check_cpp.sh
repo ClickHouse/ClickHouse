@@ -83,6 +83,9 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Counters
     ProfileEvents::end
     ProfileEvents::increment
+    ProfileEvents::incrementNonAllocating
+    ProfileEvents::nonAllocatingEvent
+    ProfileEvents::preallocate
     ProfileEvents::incrementNoTrace
     ProfileEvents::incrementSignalSafe
     ProfileEvents::incrementForLogMessage

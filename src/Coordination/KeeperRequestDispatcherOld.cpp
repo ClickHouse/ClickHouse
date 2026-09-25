@@ -111,6 +111,8 @@ KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_, K
     if (!special_response_router)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcherOld requires a special response router");
 
+    /// Raft callbacks can publish this server metric from arbitrary threads during shutdown.
+    ProfileEvents::global_counters.preallocate(ProfileEvents::KeeperCommitsFailed);
     requests_queue = std::make_unique<RequestsQueue>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_size]);
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
@@ -121,7 +123,7 @@ void KeeperRequestDispatcherOld::onResponse(KeeperResponseForSession response) n
     int64_t session_id = response.session_id;
     if (!responses_queue.push(std::move(response)))
     {
-        ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
+        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperCommitsFailed);
         LOG_WARNING(log,
             "Failed to push response with session id {} to the queue, probably because of shutdown",
             session_id);
