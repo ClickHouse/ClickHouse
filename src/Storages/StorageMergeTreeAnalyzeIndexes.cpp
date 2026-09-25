@@ -21,7 +21,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Access/Common/AccessFlags.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -34,7 +33,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -354,15 +352,7 @@ void StorageMergeTreeAnalyzeIndexes::readImpl(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    auto source_storage_id = source_table->getStorageID();
-    context->checkAccess(AccessType::SELECT, source_storage_id);
-
-    /// We cannot apply a row policy to mark ranges, but the surviving ranges reveal the structure of the rows it hides
-    if (getEffectiveRowPolicyFilter(*source_table, context))
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Cannot read from `mergeTreeAnalyzeIndexes` because a row policy is applied on table {}. "
-            "Reading the surviving mark ranges could violate the row policy",
-            source_storage_id.getNameForLogs());
+    context->checkAccess(AccessType::SELECT, source_table->getStorageID());
 
     auto sample = storage_snapshot->metadata->getSampleBlock();
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample, column_names);
