@@ -43,6 +43,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"enable_join_runtime_filters_index_analysis", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."},
+            {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
+            {"reader_executor_plan_look_ahead", 16777216, 16777216, "New experimental ReaderExecutor setting: how far ahead cache residency is resolved into the held read plan."},
             {"text_index_like_max_postings_rows_to_read", std::numeric_limits<UInt64>::max(), 1000000, "New setting bounding the total posting rows read by the text index LIKE dictionary scan; previous_value is unlimited so `compatibility` below 26.10 restores the old no-budget scan."},
             {"use_text_index_like_pattern_bypass", false, true, "New setting to skip reading posting lists for a LIKE pattern whose matched tokens cover every row; previous_value=false so `compatibility` below 26.10 keeps reading them."},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
@@ -55,7 +58,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_optimize_join_order_conflict_detector", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."},
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
+            {"text_index_postings_intersection_algorithm", "auto", "auto", "New setting superseding `text_index_lazy_intersection_density_threshold`: selects the posting list intersection algorithm in lazy posting list apply mode. `auto` keeps the previous default behavior, so `compatibility` must not change it."},
+            {"validate_mutation_query", true, true, "Obsolete setting: mutation queries are always validated before being accepted. The recorded value does not change, because validation was already enabled by default and `compatibility` must not turn it back off."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
+            {"parallel_replicas_for_queries_with_multiple_tables", true, true, "New setting to control whether parallel replicas are used for queries joining multiple tables (queries with JOIN). It does not affect a UNION query without a JOIN, nor ARRAY JOIN."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
