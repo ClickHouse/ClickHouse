@@ -100,7 +100,7 @@ DistributedQueryTaskStatus deserialize(const String & bytes)
 {
     ReadBufferFromString rb(bytes);
     DistributedQueryTaskStatus out;
-    out.read(rb);
+    out.read(rb, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
     EXPECT_TRUE(rb.eof()) << "reader left bytes unread";
     return out;
 }
@@ -219,8 +219,8 @@ TEST(TaskStatusSerialization, UnknownTagIsSkipped)
 
     WriteBufferFromOwnString wb;
     writeFixedBodyAsOldWorker(in, wb);
-    writeTaskStatusPayloadFrame(wb, /*tag=*/ 77, [](WriteBuffer & payload) { writeString("junk!", payload); });
-    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, [&](WriteBuffer & payload) { writeTaskLogsPayload(*in.logs, payload); });
+    writeTaskStatusPayloadFrame(wb, /*tag=*/ 77, "junk!");
+    writeTaskLogsPayloadFrame(wb, *in.logs);
     writeVarUInt(TASK_STATUS_PAYLOAD_END, wb);
     wb.finalize();
 
@@ -236,11 +236,11 @@ TEST(TaskStatusSerialization, MetaBlockWithExtraColumnIsRead)
     auto in = makeStatus();
     WriteBufferFromOwnString wb;
     writeFixedBodyAsOldWorker(in, wb);
-    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, [](WriteBuffer & payload)
-    {
-        writeNative(payload, makeMetaBlock({{"begin_offset", 11}, {"dropped_total", 5}, {"bytes_dropped", 9999}}));
-        writeNative(payload, makeLogRows(1));
-    });
+    WriteBufferFromOwnString payload;
+    writeNative(payload, makeMetaBlock({{"begin_offset", 11}, {"dropped_total", 5}, {"bytes_dropped", 9999}}));
+    writeNative(payload, makeLogRows(1));
+    payload.finalize();
+    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, payload.stringView());
     writeVarUInt(TASK_STATUS_PAYLOAD_END, wb);
     wb.finalize();
 
@@ -251,17 +251,17 @@ TEST(TaskStatusSerialization, MetaBlockWithExtraColumnIsRead)
     EXPECT_EQ(out.logs->rows.rows(), 1u);
 }
 
-/// An older worker may lack columns this reader knows. They read as their defaults.
+/// Example of worker which may lack columns this reader knows. They read as their defaults.
 TEST(TaskStatusSerialization, MetaBlockWithMissingColumnDefaults)
 {
     auto in = makeStatus();
     WriteBufferFromOwnString wb;
     writeFixedBodyAsOldWorker(in, wb);
-    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, [](WriteBuffer & payload)
-    {
-        writeNative(payload, makeMetaBlock({{"begin_offset", 11}}));
-        writeNative(payload, makeLogRows(0));
-    });
+    WriteBufferFromOwnString payload;
+    writeNative(payload, makeMetaBlock({{"begin_offset", 11}}));
+    writeNative(payload, makeLogRows(0));
+    payload.finalize();
+    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, payload.stringView());
     writeVarUInt(TASK_STATUS_PAYLOAD_END, wb);
     wb.finalize();
 
@@ -278,12 +278,12 @@ TEST(TaskStatusSerialization, TrailingBytesInsidePayloadAreSkipped)
     auto in = makeStatus();
     WriteBufferFromOwnString wb;
     writeFixedBodyAsOldWorker(in, wb);
-    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, [](WriteBuffer & payload)
-    {
-        writeNative(payload, makeMetaBlock({{"begin_offset", 1}, {"dropped_total", 2}}));
-        writeNative(payload, makeLogRows(1));
-        writeString("future third block", payload);
-    });
+    WriteBufferFromOwnString payload;
+    writeNative(payload, makeMetaBlock({{"begin_offset", 1}, {"dropped_total", 2}}));
+    writeNative(payload, makeLogRows(1));
+    writeString("future third block", payload);
+    payload.finalize();
+    writeTaskStatusPayloadFrame(wb, TASK_STATUS_PAYLOAD_LOGS, payload.stringView());
     writeVarUInt(TASK_STATUS_PAYLOAD_END, wb);
     wb.finalize();
 

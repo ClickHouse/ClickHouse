@@ -56,22 +56,10 @@ void InternalTextLogsQueue::pushBlock(Block && log_block)
 {
     static Block sample_block = getSampleBlock();
 
-    /// Project by column name onto the sample layout, so a block from a sender of a different age
-    /// (extra columns) still lands; a missing or retyped column is a different structure and is dropped.
-    MutableColumns columns;
-    columns.reserve(sample_block.columns());
-    for (const auto & sample : sample_block)
-    {
-        const auto * found = log_block.findByName(sample.name);
-        if (!found || !found->type->equals(*sample.type))
-        {
-            LOG_WARNING(getLogger("InternalTextLogsQueue"), "Log block have different structure");
-            return;
-        }
-        columns.push_back(IColumn::mutate(found->column));
-    }
-
-    (void)(emplace(std::move(columns)));
+    if (blocksHaveEqualStructure(sample_block, log_block))
+        (void)(emplace(log_block.mutateColumns()));
+    else
+        LOG_WARNING(getLogger("InternalTextLogsQueue"), "Log block have different structure");
 }
 
 void InternalTextLogsQueue::pushMessage(int priority, std::string_view source, const String & query_id, const String & text)

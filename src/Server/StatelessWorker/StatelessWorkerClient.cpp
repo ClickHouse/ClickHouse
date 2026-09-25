@@ -137,7 +137,7 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
         .create(creds);
 
     DistributedQueryTaskStatus result;
-    result.read(*in);
+    result.read(*in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
     /// Extensibility lives inside the payload list (unknown tags are skipped by length), so any
     /// bytes after the end tag are a protocol violation, not a newer worker.
     if (!in->eof())
