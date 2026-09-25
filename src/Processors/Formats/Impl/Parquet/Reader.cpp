@@ -1049,6 +1049,8 @@ void Reader::prepareBloomFilterCondition()
         const PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
         if (!column_info.used_by_key_condition)
             continue;
+        if (!column_info.decoder.allow_hash_filters)
+            continue;
 
         /// We hash query constants for any column that has either a bloom filter or a usable
         /// dictionary page in at least one surviving row group, so that the same hashes can later be

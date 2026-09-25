@@ -180,6 +180,9 @@ struct PageDecoderInfo
     /// So we have a small allowlist of type conversions (dispatched in SchemaConverter).
     bool allow_stats = false;
 
+    /// True if we can use the bloom filter and the dictionary page to skip row groups.
+    bool allow_hash_filters = false;
+
     /// If true, we need to call tryConvertFieldToType on the output of
     /// FixedSizeConverter/StringConverter's convertField.
     /// The conversion is from type PrimitiveColumnInfo::decoded_type to the column's type in the
