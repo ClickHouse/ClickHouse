@@ -42,6 +42,12 @@ public:
             ///   - additional information about shared data serialization version that goes after list of dynamic paths.
             ///   - additional bool flag before statistics that indicates if there are any statistics serialized.
             V3 = 4,
+            /// V4 serialization: the same as V3, with one list after the dynamic paths:
+            ///   - number and sorted names of eligible typed paths using `Sparse` encoding.
+            /// The list is always present (empty means no typed paths are sparse).
+            /// Dynamic paths retain their compact `Variant` encoding without an outer `Sparse` wrapper.
+            /// Encoding is selected before creating streams and remains fixed within a part.
+            V4 = 5,
 
             /// Serializations used only in Native format:
             /// String serialization:
@@ -118,12 +124,18 @@ public:
 
     static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
 
+    /// Sparse typed paths are materialized at the `Object` boundary; their read state is retained across calls.
+    static void deserializeSparsePath(
+        const SerializationPtr & serialization, IColumn & column, size_t limit,
+        DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsCache * cache);
+
     const SerializationPtr & getDynamicPathSerialization() const { return dynamic_serialization; }
     const std::unordered_map<String, SerializationPtr> & getTypedPathsSerializations() const { return typed_paths_serializations; }
 
     static void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings);
 
 private:
+    friend class SerializationObjectTypedPath;
     friend SerializationObjectDynamicPath;
     friend SerializationSubObject;
     friend SerializationObjectDistinctPaths;
@@ -132,6 +144,7 @@ private:
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
         SerializationVersion serialization_version;
+        std::unordered_set<String> sparse_typed_paths;
         std::shared_ptr<VectorWithMemoryTracking<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
         std::unordered_set<std::string_view> dynamic_paths;
         SerializationObjectSharedData::SerializationVersion shared_data_serialization_version;
@@ -182,6 +195,7 @@ protected:
 
 private:
     std::vector<String> sorted_typed_paths;
+    std::unordered_set<String> chooseSparseTypedPaths(const ColumnObject & column, double threshold) const;
 };
 
 }

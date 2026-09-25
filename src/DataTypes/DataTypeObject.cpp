@@ -1816,6 +1816,22 @@ See section ["introspection functions"](/reference/data-types/newjson#introspect
 In memory, shared data structure is just a sub-column with type `Map(String, String)` that stores mapping from a flattened JSON path to a binary encoded value.
 To extract a path subcolumn from it, we just iterate over all rows in this `Map` column and try to find the requested path and its values.
 
+### Sparse path encoding in MergeTree parts {#sparse-path-encoding-in-merge-tree-parts}
+
+Setting `object_serialization_version = 'v4'` enables automatic sparse encoding of eligible typed paths only.
+The default remains `v3`, which does not use per-path sparse encoding.
+
+For each eligible typed path, the writer compares the default-value ratio with `ratio_of_defaults_for_sparse_serialization`.
+A ratio above the threshold selects sparse encoding. Setting the threshold to `1` disables it; `0` permits it for any eligible typed path with defaults.
+Typed paths use their type's default (for example, zero for integers and `NULL` for `Nullable` types).
+Dynamic paths already store compact `Variant` values and do not receive an outer sparse wrapper; present numeric zero values remain stored.
+
+The choice uses retained statistics from the first output block and remains fixed within a part, even if subsequent blocks have a different default-value ratio.
+The V4 `Object` structure records one sorted list of sparse typed paths, which is empty for a purely dynamic `JSON` column.
+Reads use this metadata, not the table's current settings.
+Changing the settings does not rewrite existing parts; inserts, merges and mutations that rewrite the `JSON` column use the selected format.
+Upgrade all readers before enabling V4. Changing the setting back to V3 does not make existing V4 parts readable by older binaries.
+
 ### Shared data structure in MergeTree parts {#shared-data-structure-in-merge-tree-parts}
 
 In [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables we store data in data parts that stores everything on disk (local or remote). And data on disk can be stored in a different way compared to memory.
@@ -1828,7 +1844,7 @@ and [object_shared_data_serialization_version_for_zero_level_parts](/reference/s
 (zero level part is the part created during inserting data into the table, during merges parts have higher level).
 
 Note: changing shared data structure serialization is supported only
-for `v3` [object serialization version](/reference/settings/merge-tree-settings/other#object_serialization_version)
+for `v3` and `v4` [object serialization versions](/reference/settings/merge-tree-settings/other#object_serialization_version)
 
 #### Map {#shared-data-map}
 
