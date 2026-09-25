@@ -135,6 +135,9 @@ struct FunctionConvertSettings
     const bool cast_keep_nullable;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
+    /// `format_settings` has too many members to hash one by one; this hashes the session settings it
+    /// was derived from instead (see `getFormatSettingsHash`).
+    const UInt64 format_settings_hash;
 
     /// Note: context may be nullptr (i.e. via castColumn())
     explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_)
@@ -151,7 +154,33 @@ struct FunctionConvertSettings
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
+        , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
     {
+    }
+
+    /** The settings a conversion captured decide the values it produces, while its name and the
+      * types it was resolved for do not mention them, so whatever keys an expression by a hash has
+      * to see them: without this, two sessions that differ only in `precise_float_parsing` build the
+      * same key and one serves the other its granule-skip verdicts.
+      *
+      * Every member is hashed: the captured settings one by one, and `format_settings` through the hash
+      * of the session settings it was derived from, which covers each member the text (de)serialization
+      * of a converted value can read. A setting added to this struct has to be added here too.
+      */
+    void updateHash(SipHash & hash) const
+    {
+        hash.update(date_time_overflow_behavior);
+        hash.update(precise_float_parsing);
+        hash.update(cast_ipv4_ipv6_default_on_conversion_error);
+        hash.update(cast_string_to_variant_use_inference);
+        hash.update(cast_string_to_dynamic_use_inference);
+        hash.update(input_format_ipv4_default_on_conversion_error);
+        hash.update(input_format_ipv6_default_on_conversion_error);
+        hash.update(check_conversion_from_numbers_to_enum);
+        hash.update(date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
+        hash.update(cast_keep_nullable);
+        hash.update(cast_string_to_date_time_mode);
+        hash.update(format_settings_hash);
     }
 };
 
@@ -3410,6 +3439,8 @@ public:
         return name;
     }
 
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
@@ -4024,6 +4055,8 @@ public:
     {
         return name;
     }
+
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -5323,6 +5356,8 @@ public:
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override;
 
     String getName() const override { return cast_name; }
+
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

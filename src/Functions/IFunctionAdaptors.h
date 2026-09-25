@@ -49,6 +49,8 @@ public:
 
     String getName() const override { return function->getName(); }
 
+    void updateHash(SipHash & hash) const override { function->updateHash(hash); }
+
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }
 

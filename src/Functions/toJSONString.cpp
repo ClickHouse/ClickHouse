@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -16,9 +17,16 @@ namespace
         static constexpr auto name = "toJSONString";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToJSONString>(context); }
 
-        explicit FunctionToJSONString(ContextPtr context) : format_settings(getFormatSettings(context)) {}
+        explicit FunctionToJSONString(ContextPtr context)
+            : format_settings(getFormatSettings(context))
+            , format_settings_hash(getFormatSettingsHash(context->getSettingsRef()))
+        {
+        }
 
         String getName() const override { return name; }
+
+        /// The captured settings decide the text produced for the same value, see `IFunctionBase::updateHash`.
+        void updateHash(SipHash & hash) const override { hash.update(format_settings_hash); }
 
         size_t getNumberOfArguments() const override { return 1; }
 
@@ -56,6 +64,8 @@ namespace
     private:
         /// Affects only subset of part of settings related to json.
         const FormatSettings format_settings;
+        /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
+        const UInt64 format_settings_hash;
     };
 }
 

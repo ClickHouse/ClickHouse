@@ -20,7 +20,9 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/MemoryTracker.h>
+#include <Common/SipHash.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
@@ -29,6 +31,8 @@
 #include <Core/Settings.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -465,6 +469,39 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     }
 
     return format_settings;
+}
+
+UInt64 getFormatSettingsHash(const Settings & settings)
+{
+    /// The settings `getFormatSettings` reads: every one of `FORMAT_FACTORY_SETTINGS`, so that a setting
+    /// added there is covered without anyone remembering this place, plus the core settings it reads
+    /// besides. Keep the latter list in step with the function above.
+    static const std::unordered_set<std::string_view> read_by_get_format_settings = []
+    {
+        std::unordered_set<std::string_view> names;
+#define ADD_FORMAT_SETTING_NAME(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) names.emplace(#NAME);
+        /// No format setting has an alias, so the alias macro is never expanded (an alias entry would not
+        /// compile here; `Settings::changes` reports canonical names, so only these are needed).
+        FORMAT_FACTORY_SETTINGS(ADD_FORMAT_SETTING_NAME, ADD_FORMAT_SETTING_NAME)
+#undef ADD_FORMAT_SETTING_NAME
+        names.emplace("aggregate_function_input_format");
+        names.emplace("allow_experimental_nullable_tuple_type");
+        names.emplace("allow_special_serialization_kinds_in_output_formats");
+        names.emplace("max_parser_depth");
+        return names;
+    }();
+
+    /// Only the changed settings are hashed, in declaration order, so the hash does not depend on the
+    /// order the session set them in, and sessions at the defaults all share the empty hash.
+    SipHash hash;
+    for (const auto & change : settings.changes())
+    {
+        if (!read_by_get_format_settings.contains(change.name))
+            continue;
+        hash.update(change.name);
+        applyVisitor(FieldVisitorHash(hash), change.value);
+    }
+    return hash.get64();
 }
 
 FileBucketInfoPtr FormatFactory::getFileBucketInfo(const String & format)
