@@ -836,6 +836,7 @@ namespace
         std::atomic<bool> check_query_info_contains_cancel_only = false;
         BoolState sending_result{false};
         std::atomic<bool> failed_to_send_result = false;
+        QueryStatusPtr transport_query_status;
 
         ThreadFromGlobalPool call_thread;
     };
@@ -1120,6 +1121,7 @@ namespace
         }
         String query(begin, query_end);
         io = ::DB::executeQuery(query, query_context).second;
+        std::atomic_store(&transport_query_status, query_context->getProcessListElementSafe());
     }
 
     void Call::processInput()
@@ -1567,6 +1569,7 @@ namespace
         io.process_list_entries.clear();
         if (query_context)
             query_context->setProcessListElement(nullptr);
+        std::atomic_store(&transport_query_status, QueryStatusPtr{});
         if (session)
             session->releaseSessionID();
     }
@@ -1696,11 +1699,8 @@ namespace
 
     void Call::cancelQueryOnTransportFailure(std::exception_ptr exception)
     {
-        if (query_context)
-        {
-            if (auto process_list_element = query_context->getProcessListElementSafe())
-                process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::move(exception));
-        }
+        if (auto process_list_element = std::atomic_load(&transport_query_status))
+            process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::move(exception));
     }
 
     void Call::addQueryDetailsToResult()
