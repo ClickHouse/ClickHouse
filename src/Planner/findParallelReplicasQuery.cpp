@@ -31,6 +31,7 @@ namespace Setting
 {
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
@@ -59,7 +60,7 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
     return true;
 }
 
-static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
+bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     auto storage = table_node.getStorage();
@@ -73,7 +74,9 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
             if (!underlying_storage)
                 return false;
 
-            return true;
+            /// The eligibility of the inner table node is checked while unwrapping, but the modifiers of
+            /// the outer node - a FINAL on the view itself - are only visible here.
+            return isTableNodeEligibleForParallelReplicas(table_node, underlying_storage, context);
         }
     }
 
@@ -100,6 +103,8 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
 /// Additional checks are required, so we return many candidates. The innermost subquery is on top.
 static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
+    const auto & settings = context->getSettingsRef();
+
     std::vector<const QueryNode *> res;
 
     while (query_tree_node)
@@ -151,6 +156,9 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
             }
             case QueryTreeNodeType::JOIN:
             {
+                if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
+                    return {};
+
                 const auto & join_node = query_tree_node->as<JoinNode &>();
                 const auto join_kind = join_node.getKind();
                 const auto join_strictness = join_node.getStrictness();
@@ -162,7 +170,9 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
                     query_tree_node = join_node.getLeftTableExpressionNode().get();
                 else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny
                     && supported_table_expression_types.contains(join_node.getLeftTableExpressionNode()->getNodeType()))
-                    query_tree_node = join_node.getLeftTableExpressionNode().get();
+                    /// For RIGHT JOIN the left side is materialized into a temporary table by
+                    /// buildQueryTreeForShard, so only the right side survives to be read with replicas.
+                    query_tree_node = join_node.getRightTableExpressionNode().get();
                 else
                     return {};
 
@@ -412,6 +422,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
 
 static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
+    const auto & settings = context->getSettingsRef();
     std::stack<const IQueryTreeNode *> join_nodes;
     while (query_tree_node || !join_nodes.empty())
     {
@@ -469,6 +480,9 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             }
             case QueryTreeNodeType::JOIN:
             {
+                if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
+                    return nullptr;
+
                 const auto & join_node = query_tree_node->as<JoinNode &>();
                 const auto join_kind = join_node.getKind();
                 const auto join_strictness = join_node.getStrictness();

@@ -70,7 +70,8 @@ private:
     /// the raw 16/32 bytes are reinterpreted rather than text-parsed by the subsequent cast. A decoded
     /// `Variant` is rebuilt too, re-declaring its elements under the alternatives the request names, which
     /// the subsequent cast cannot do because a `Variant` -> `Variant` cast only ever appends alternatives.
-    void reinterpretRawByteColumns(ColumnWithTypeAndName & column, const DataTypePtr & to_type) const;
+    void reinterpretRawByteColumns(
+        ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field) const;
     /// Parses the WKB/WKT binary values of a decoded (possibly Nullable) String column into a geo column.
     static ColumnPtr decodeGeoColumn(const ColumnPtr & source, const GeoColumnMetadata & geo_metadata, bool precise_float_parsing);
     bool readStreamBatch();
