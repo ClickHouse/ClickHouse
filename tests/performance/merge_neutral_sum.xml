@@ -1,0 +1,27 @@
+<test>
+    <!-- Compare this file across revisions as well as the explicit on/off pairs.
+         The disabled case measures overhead in ordinary Merge planning. -->
+    <settings><max_threads>2</max_threads><max_insert_threads>1</max_insert_threads></settings>
+    <create_query>CREATE TABLE perf_neutral_values (k UInt64, pnl Nullable(Float64)) ENGINE=MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE perf_neutral_keys (k UInt64, d Float64, PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE perf_neutral_high (k UInt64, d Float64, PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE perf_neutral_merge AS perf_neutral_values ENGINE=Merge(currentDatabase(), '^perf_neutral_(values|keys)$')</create_query>
+    <create_query>CREATE TABLE perf_neutral_high_merge AS perf_neutral_values ENGINE=Merge(currentDatabase(), '^perf_neutral_(values|high)$')</create_query>
+    <create_query>CREATE VIEW perf_neutral_view AS SELECT intDiv(k,10) AS k,pnl FROM perf_neutral_merge</create_query>
+    <fill_query>INSERT INTO perf_neutral_values SELECT number%1000,toFloat64(number%100) FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO perf_neutral_keys SELECT number%1000,1 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO perf_neutral_high SELECT number,1 FROM numbers(1000000)</fill_query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_merge WHERE k BETWEEN 100 AND 900 GROUP BY k SETTINGS optimize_merge_neutral_sum_children=0 FORMAT Null</query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_merge WHERE k BETWEEN 100 AND 900 GROUP BY k SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_view WHERE k BETWEEN 10 AND 90 GROUP BY k ORDER BY k SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_view WHERE k BETWEEN 10 AND 90 GROUP BY k ORDER BY k SETTINGS optimize_merge_neutral_sum_children=0 FORMAT Null</query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_merge GROUP BY k SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_max_rows=1 FORMAT Null</query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_high_merge GROUP BY k SETTINGS optimize_merge_neutral_sum_children=0 FORMAT Null</query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_high_merge GROUP BY k SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
+    <drop_query>DROP VIEW IF EXISTS perf_neutral_view</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_neutral_high_merge</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_neutral_merge</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_neutral_high</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_neutral_keys</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_neutral_values</drop_query>
+</test>

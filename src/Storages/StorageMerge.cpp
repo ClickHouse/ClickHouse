@@ -163,108 +163,11 @@ extern const int INCOMPATIBLE_COLUMNS;
 namespace
 {
 
-/// A deliberately narrow proof that row multiplicity is unobservable for a child
-/// which fills the only measure with NULL. Do not infer this from required columns:
-/// an expression containing another aggregate could need the original multiplicity.
-struct NeutralSumKeys
-{
-    String measure;
-    Names keys;
-};
-
-std::optional<NeutralSumKeys> getNeutralSumKeys(const SelectQueryInfo & info)
-{
-    const auto * query = info.query_tree ? info.query_tree->as<QueryNode>() : nullptr;
-    if (!query || !info.table_expression || query->getJoinTreeNode().get() != info.table_expression.get()
-        || info.isFinal() || info.isStream() || !query->hasGroupBy()
-        || query->hasHaving() || query->hasWindow()
-        || query->hasQualify() || query->hasWith() || query->hasOrderBy() || query->hasLimit()
-        || query->hasOffset() || query->hasLimitBy() || query->hasLimitAfter() || query->hasLimitUntil()
-        || query->isDistinct() || query->isGroupByWithTotals() || query->isGroupByWithRollup()
-        || query->isGroupByWithCube() || query->isGroupByWithGroupingSets()
-        || info.additional_filter_ast || info.row_level_filter)
-        return {};
-
-    auto direct_column = [&](const QueryTreeNodePtr & node) -> const ColumnNode *
-    {
-        const auto * column = node->as<ColumnNode>();
-        if (!column || column->hasExpression() || column->getColumnSource().get() != info.table_expression.get())
-            return nullptr;
-        return column;
-    };
-
-    NeutralSumKeys result;
-    for (const auto & key : query->getGroupBy().getNodes())
-    {
-        const auto * column = direct_column(key);
-        if (!column)
-            return {};
-        result.keys.push_back(column->getColumnName());
-    }
-
-    for (const auto & expression : query->getProjection().getNodes())
-    {
-        if (const auto * column = direct_column(expression))
-        {
-            if (!std::ranges::contains(result.keys, column->getColumnName()))
-                return {};
-            continue;
-        }
-        const auto * function = expression->as<FunctionNode>();
-        if (!function || !function->isAggregateFunction() || function->getFunctionName() != "sum"
-            || !result.measure.empty() || function->getArguments().getNodes().size() != 1
-            || !function->getParameters().getNodes().empty())
-            return {};
-        const auto * argument = direct_column(function->getArguments().getNodes().front());
-        if (!argument || !argument->getColumnType()->isNullable())
-            return {};
-        result.measure = argument->getColumnName();
-    }
-    if (result.measure.empty() || std::ranges::contains(result.keys, result.measure))
-        return {};
-
-    /// Only deterministic predicates on grouping keys commute with this reduction.
-    /// Row-level predicates require a separate projection-coverage proof, not just
-    /// the presence of an aggregate over the predicate's input column.
-    for (const auto & predicate : {query->getWhere(), query->getPrewhere()})
-    {
-        if (!predicate)
-            continue;
-        bool supported = true;
-        traverseQueryTree(predicate, [&](const auto &, const auto &) { return supported; }, [&](const QueryTreeNodePtr & node)
-        {
-            if (node->as<ColumnNode>())
-            {
-                const auto * column = direct_column(node);
-                supported &= column && std::ranges::contains(result.keys, column->getColumnName());
-            }
-            else if (const auto * function = node->as<FunctionNode>())
-            {
-                const auto base = function->getFunction();
-                supported &= base && base->isDeterministic() && !base->isStateful();
-            }
-            else if (!node->as<ConstantNode>() && !node->as<ListNode>())
-                supported = false;
-        });
-        if (!supported)
-            return {};
-    }
-    return result;
-}
+using QueryPlanOptimizations::NeutralSumProof;
+using QueryPlanOptimizations::canCrossNeutralReduction;
 
 /// A deterministic, row-preserving expression on an unchanged header commutes
 /// with duplicate removal. Inspect every node, including non-output side effects.
-bool canCrossNeutralReduction(const ActionsDAG & actions)
-{
-    if (actions.hasNonDeterministicOrStatefulFunctions())
-        return false;
-    for (const auto & node : actions.getNodes())
-        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN || node.type == ActionsDAG::ActionType::PLACEHOLDER
-            || !node.isDeterministic() || (node.function_base && node.function_base->isStateful()))
-            return false;
-    return true;
-}
-
 /// Accept only a unary chain of row-preserving expressions/filters over one read.
 ReadFromMergeTree * findMergeTreeRead(QueryPlan::Node * node)
 {
@@ -288,7 +191,7 @@ ReadFromMergeTree * findMergeTreeRead(QueryPlan::Node * node)
 /// Rejected candidates leave the original read and its analyzed ranges untouched.
 
 bool tryReduceNeutralSumChild(
-    QueryPlan & plan, const NeutralSumKeys & info, ContextPtr context,
+    QueryPlan & plan, const NeutralSumProof & info, ContextPtr context,
     std::unique_ptr<QueryPlan> & unreduced_plan, std::optional<std::pair<StorageID, String>> & used_projection)
 {
     auto * original_reading = findMergeTreeRead(plan.getRootNode());
@@ -308,14 +211,9 @@ bool tryReduceNeutralSumChild(
         || (read_info.filter_actions_dag && !canCrossNeutralReduction(*read_info.filter_actions_dag)))
         return false;
 
-    UInt64 base_rows = 0;
     for (const auto & part : original_reading->getParts())
-    {
-        if (part.data_part->hasLightweightDelete()
-            || part.data_part->rows_count > std::numeric_limits<UInt64>::max() - base_rows)
+        if (part.data_part->hasLightweightDelete())
             return false;
-        base_rows += part.data_part->rows_count;
-    }
 
     /// Clone before projection analysis. Projection optimization mutates the read's
     /// analyzed ranges; a rejected candidate must not damage the original child plan.
@@ -351,12 +249,17 @@ bool tryReduceNeutralSumChild(
         return false;
 
     UInt64 projection_rows = 0;
+    UInt64 base_rows = 0;
+    /// Compare physical rows of the same selected parent/projection pairs. Parts
+    /// eliminated by candidate pruning must not inflate the ratio denominator.
     for (const auto & part : analyzed->parts_with_ranges)
     {
         if (!part.data_part->isProjectionPart()
-            || part.data_part->rows_count > std::numeric_limits<UInt64>::max() - projection_rows)
+            || part.data_part->rows_count > std::numeric_limits<UInt64>::max() - projection_rows
+            || part.data_part->getParentPart()->rows_count > std::numeric_limits<UInt64>::max() - base_rows)
             return false;
         projection_rows += part.data_part->rows_count;
+        base_rows += part.data_part->getParentPart()->rows_count;
     }
     const auto & settings = context->getSettingsRef();
     if (projection_rows > settings[Setting::optimize_merge_neutral_sum_children_max_rows]
@@ -1058,10 +961,8 @@ static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
 
 void ReadFromMerge::setNeutralSumProof(String measure, Names keys)
 {
-    if (!context->getSettingsRef()[Setting::optimize_merge_neutral_sum_children] || keys.empty())
-        return;
-    if (const auto * query = query_info.query_tree ? query_info.query_tree->as<QueryNode>() : nullptr;
-        query && query->hasGroupBy())
+    if (!context->getSettingsRef()[Setting::optimize_merge_neutral_sum_children] || keys.empty()
+        || neutral_children_exposed || neutral_proof_conflict)
         return;
     auto physical_name = [&](String & column_name)
     {
@@ -1083,168 +984,56 @@ void ReadFromMerge::setNeutralSumProof(String measure, Names keys)
         return;
     for (const auto & filter : pushed_down_filters)
     {
-        std::vector<const ActionsDAG::Node *> predicate_nodes{&filter.actions.findInOutputs(filter.column_name)};
-        std::unordered_set<const ActionsDAG::Node *> visited;
-        while (!predicate_nodes.empty())
-        {
-            const auto * node = predicate_nodes.back();
-            predicate_nodes.pop_back();
-            if (!visited.insert(node).second)
-                continue;
-            if (node->type == ActionsDAG::ActionType::INPUT)
-            {
-                String column_name = node->result_name;
-                if (!physical_name(column_name) || !std::ranges::contains(keys, column_name))
-                    return;
-            }
-            predicate_nodes.insert(predicate_nodes.end(), node->children.begin(), node->children.end());
-        }
+        for (auto column_name : QueryPlanOptimizations::neutralSumInputs(filter.actions.findInOutputs(filter.column_name)))
+            if (!physical_name(column_name) || !std::ranges::contains(keys, column_name))
+                return;
     }
     /// View subplans may already have prepared their children while the outer
     /// aggregation was still being planned. Rebuild before execution, but never
     /// invalidate an ordering contract already promised to another step.
     if (order_info)
         return;
-    if (neutral_sum_proof && neutral_sum_proof->first == measure && neutral_sum_proof->second == keys)
+    if (neutral_sum_proof)
+    {
+        if (neutral_sum_proof->measure == measure && neutral_sum_proof->keys == keys)
+            return;
+        /// A read cannot carry proofs for different consumers. Restore ordinary
+        /// planning before any child pointers escape and permanently decline.
+        neutral_proof_conflict = true;
+        neutral_sum_proof.reset();
+        child_plans.reset();
+        expandable_reads.reset();
         return;
-    neutral_sum_proof.emplace(std::move(measure), std::move(keys));
-    LOG_TRACE(getLogger("StorageMerge"), "Propagated neutral SUM proof for {}", neutral_sum_proof->first);
+    }
+    neutral_sum_proof = NeutralSumProof{std::move(measure), std::move(keys)};
+    LOG_TRACE(getLogger("StorageMerge"), "Propagated neutral SUM proof for {}", neutral_sum_proof->measure);
     child_plans.reset();
     expandable_reads.reset();
 }
 
-void ReadFromMerge::collectNeutralSumProofs(QueryPlan::Node & root)
-{
-    std::vector<QueryPlan::Node *> pending{&root};
-    while (!pending.empty())
-    {
-        auto * node = pending.back();
-        pending.pop_back();
-        pending.insert(pending.end(), node->children.begin(), node->children.end());
-        const auto * aggregate = typeid_cast<AggregatingStep *>(node->step.get());
-        if (!aggregate || aggregate->isGroupingSets() || node->children.size() != 1)
-            continue;
-        const auto params = aggregate->getAggregatorParameters();
-        if (params.aggregates.size() != 1 || params.keys.empty() || params.only_merge)
-            continue;
-        const auto & description = params.aggregates.front();
-        if (description.function->getName() != "sum" || description.argument_names.size() != 1)
-            continue;
-        Names required = params.keys;
-        required.push_back(description.argument_names.front());
-        auto * source = node->children.front();
-        bool supported = true;
-        while (source && supported)
-        {
-            if (auto * merge = typeid_cast<ReadFromMerge *>(source->step.get()))
-            {
-                const auto & header = source->step->getOutputHeader();
-                if (header->has(required.back()) && header->getByName(required.back()).type->isNullable())
-                {
-                    auto measure = required.back();
-                    required.pop_back();
-                    merge->setNeutralSumProof(std::move(measure), std::move(required));
-                }
-                break;
-            }
-            const ActionsDAG * actions = nullptr;
-            if (const auto * expression = typeid_cast<ExpressionStep *>(source->step.get()))
-                actions = &expression->getExpression();
-            else if (const auto * filter = typeid_cast<FilterStep *>(source->step.get()))
-                actions = &filter->getExpression();
-            if (!actions || source->children.size() != 1 || !canCrossNeutralReduction(*actions))
-                break;
-            if (const auto * filter = typeid_cast<FilterStep *>(source->step.get()))
-            {
-                std::vector<const ActionsDAG::Node *> predicate_nodes{&actions->findInOutputs(filter->getFilterColumnName())};
-                std::unordered_set<const ActionsDAG::Node *> visited;
-                while (!predicate_nodes.empty())
-                {
-                    const auto * predicate_node = predicate_nodes.back();
-                    predicate_nodes.pop_back();
-                    if (!visited.insert(predicate_node).second)
-                        continue;
-                    if (predicate_node->type == ActionsDAG::ActionType::INPUT && predicate_node->result_name == required.back())
-                        supported = false;
-                    predicate_nodes.insert(predicate_nodes.end(), predicate_node->children.begin(), predicate_node->children.end());
-                }
-                if (!supported)
-                    break;
-            }
-            Names mapped_keys;
-            for (size_t index = 0; index < required.size(); ++index)
-            {
-                const auto & outputs = actions->getOutputs();
-                const auto it = std::ranges::find_if(outputs, [&](const auto * output) { return output->result_name == required[index]; });
-                if (it == outputs.end())
-                {
-                    supported = false;
-                    break;
-                }
-                const auto * output = *it;
-                while (output->type == ActionsDAG::ActionType::ALIAS)
-                    output = output->children.front();
-                if (index + 1 == required.size())
-                {
-                    /// Only a direct nullable input proves a neutral measure.
-                    if (output->type != ActionsDAG::ActionType::INPUT)
-                        supported = false;
-                    else
-                        mapped_keys.push_back(output->result_name);
-                    break;
-                }
-                /// Deterministic grouping expressions may collapse several base
-                /// keys. Keeping the finer base grouping still preserves NULL sums.
-                std::vector<const ActionsDAG::Node *> inputs{output};
-                std::unordered_set<const ActionsDAG::Node *> visited;
-                while (!inputs.empty())
-                {
-                    const auto * input = inputs.back();
-                    inputs.pop_back();
-                    if (!visited.insert(input).second)
-                        continue;
-                    if (input->type == ActionsDAG::ActionType::INPUT)
-                    {
-                        if (!std::ranges::contains(mapped_keys, input->result_name))
-                            mapped_keys.push_back(input->result_name);
-                    }
-                    else
-                        inputs.insert(inputs.end(), input->children.begin(), input->children.end());
-                }
-            }
-            required = std::move(mapped_keys);
-            source = source->children.front();
-        }
-    }
-}
-
 void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
-    bool can_keep_reduction = canCrossNeutralReduction(filter.actions);
+    /// Do not traverse expressions on the default-off path.
+    const bool has_reduction = child_plans && std::ranges::any_of(*child_plans,
+        [](const auto & child) { return child.unreduced_plan != nullptr; });
+    bool can_keep_reduction = true;
+    if (neutral_sum_proof || has_reduction)
+        can_keep_reduction = canCrossNeutralReduction(filter.actions);
     if (neutral_sum_proof)
     {
-        std::vector<const ActionsDAG::Node *> pending{&filter.actions.findInOutputs(filter.column_name)};
-        std::unordered_set<const ActionsDAG::Node *> visited;
-        while (!pending.empty())
+        for (auto column_name : QueryPlanOptimizations::neutralSumInputs(filter.actions.findInOutputs(filter.column_name)))
         {
-            const auto * node = pending.back();
-            pending.pop_back();
-            if (!visited.insert(node).second)
-                continue;
-            if (node->type == ActionsDAG::ActionType::INPUT)
-            {
-                String column_name = node->result_name;
-                if (query_info.planner_context && query_info.table_expression)
-                    if (const auto * physical = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression)
-                        .getColumnNameOrNull(column_name))
-                        column_name = *physical;
-                can_keep_reduction &= std::ranges::contains(neutral_sum_proof->second, column_name);
-            }
-            pending.insert(pending.end(), node->children.begin(), node->children.end());
+            if (query_info.planner_context && query_info.table_expression)
+                if (const auto * physical = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression)
+                    .getColumnNameOrNull(column_name))
+                    column_name = *physical;
+            can_keep_reduction &= std::ranges::contains(neutral_sum_proof->keys, column_name);
         }
         if (!can_keep_reduction)
             neutral_sum_proof.reset();
     }
+    if (!can_keep_reduction)
+        neutral_proof_conflict = true;
     output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
             *output_header,
             &filter.actions,
@@ -1328,6 +1117,7 @@ static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<Quer
 
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    neutral_children_exposed = true;
     filterTablesAndCreateChildrenPlans();
 
     /// Exercise restoration after reduction with a stateful filter. With one
@@ -1345,7 +1135,16 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
             const auto & predicate = actions.addFunction(
                 FunctionFactory::instance().get("greater", context), {&row_number, &zero}, "__neutral_late_filter");
             actions.getOutputs().push_back(&predicate);
+            /// A safe filter first exercises mirroring onto the retained plan.
+            ActionsDAG safe_actions(output_header->getNamesAndTypesList());
+            const auto & keep = safe_actions.addColumn(
+                std::make_shared<DataTypeUInt8>()->createColumnConst(1, UInt64(1)),
+                std::make_shared<DataTypeUInt8>(), "__neutral_keep");
+            safe_actions.getOutputs().push_back(&keep);
+            addFilter(FilterDAGInfo{safe_actions.clone(), "__neutral_keep", true});
             addFilter(FilterDAGInfo{std::move(actions), "__neutral_late_filter", true});
+            /// A subsequent filter must use the restored header/plan normally.
+            addFilter(FilterDAGInfo{std::move(safe_actions), "__neutral_keep", true});
         }
     });
 
@@ -1563,8 +1362,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         && settings[Setting::query_plan_enable_optimizations]
         && settings[Setting::optimize_use_projections] && !settings[Setting::make_distributed_plan]
         && !settings[Setting::allow_experimental_parallel_reading_from_replicas] && !queryHasSubquerySets(query_info)
-        ? (neutral_sum_proof ? std::optional<NeutralSumKeys>{{neutral_sum_proof->first, neutral_sum_proof->second}}
-                             : getNeutralSumKeys(query_info_)) : std::nullopt;
+        ? neutral_sum_proof : std::nullopt;
     const bool keep_parallel_replicas_for_children = settings[Setting::parallel_replicas_plan_based]
         && settings[Setting::parallel_replicas_allow_merge_tables] && !InterpreterSelectQuery::isQueryWithFinal(query_info);
 
@@ -2855,6 +2653,7 @@ void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 
 QueryPlanRawPtrs ReadFromMerge::getChildPlans()
 {
+    neutral_children_exposed = true;
     filterTablesAndCreateChildrenPlans();
 
     QueryPlanRawPtrs plans;
@@ -2867,6 +2666,7 @@ QueryPlanRawPtrs ReadFromMerge::getChildPlans()
 
 std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
 {
+    neutral_children_exposed = true;
     filterTablesAndCreateChildrenPlans();
 
     std::vector<QueryPlan *> plans;
@@ -2891,6 +2691,7 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
     if (expandable_reads)
         return *expandable_reads;
 
+    neutral_children_exposed = true;
     filterTablesAndCreateChildrenPlans();
 
     if (selected_tables.empty() || child_plans->empty())

@@ -2247,7 +2247,7 @@ Requires a suitable materialized aggregate projection and both projection-row co
 Maximum physical rows across the selected projection parts for `optimize_merge_neutral_sum_children`. This is a conservative part-row estimate, not post-filter cardinality. Zero rejects nonempty candidates.
 )", SettingsTierType::EXPERIMENTAL) \
     DECLARE(Float, optimize_merge_neutral_sum_children_max_rows_ratio, 0.1f, R"(
-Maximum ratio of selected projection-part rows to rows in the original child read's parts for `optimize_merge_neutral_sum_children`. This is physical part-row accounting, not a selectivity-aware estimate of rows surviving a filter.
+Maximum ratio of selected projection-part rows to rows in their corresponding parent parts for `optimize_merge_neutral_sum_children`. Parts pruned from the candidate are excluded from both sides. This is physical part-row accounting, not a selectivity-aware estimate of rows surviving a filter.
 )", SettingsTierType::EXPERIMENTAL) \
     DECLARE(Float, max_streams_multiplier_for_merge_tables, 5, R"(
 Ask more streams when reading from Merge table. Streams will be spread across tables that Merge table will use. This allows more even distribution of work across threads and is especially helpful when merged tables differ in size.

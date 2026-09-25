@@ -2,6 +2,7 @@
 
 #include <functional>
 
+#include <Processors/QueryPlan/Optimizations/mergeNeutralSum.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
@@ -225,10 +226,13 @@ public:
 
     /// Supply the aggregate's column dependencies after view expansion into the plan.
     void setNeutralSumProof(String measure, Names keys);
-    static void collectNeutralSumProofs(QueryPlan::Node & root);
 
 private:
-    std::optional<std::pair<String, Names>> neutral_sum_proof;
+    std::optional<QueryPlanOptimizations::NeutralSumProof> neutral_sum_proof;
+    /// Once child pointers escape, or pipeline construction begins, proofs cannot
+    /// destroy/rebuild the plans. A conflicting consumer disables further proofs.
+    bool neutral_children_exposed = false;
+    bool neutral_proof_conflict = false;
     const size_t required_max_block_size;
     const size_t requested_num_streams;
     SharedHeader common_header;

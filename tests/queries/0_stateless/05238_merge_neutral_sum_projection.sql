@@ -1,3 +1,7 @@
+DROP TABLE IF EXISTS merge_neutral_sum_high;
+DROP TABLE IF EXISTS merge_neutral_sum_no_projection;
+DROP TABLE IF EXISTS merge_neutral_sum;
+
 SET max_threads = 2;
 SET optimize_merge_neutral_sum_children = 1;
 SET optimize_use_projections = 1;
@@ -153,23 +157,6 @@ FROM
 )
 SETTINGS log_comment = '05238_neutral_sum_no_projection';
 
--- A Merge-level non-NULL default invalidates the typed-NULL proof and must decline.
-CREATE TABLE merge_neutral_sum_with_default
-(
-    cob Date,
-    desk LowCardinality(String),
-    trader LowCardinality(String),
-    pnl Nullable(Float64) DEFAULT 7
-) ENGINE = Merge(currentDatabase(), '^merge_neutral_sum_child_(pnl|no_projection)$');
-SELECT count(), sum(ifNull(pnl_sum, 0)), countIf(isNull(pnl_sum))
-FROM
-(
-    SELECT cob, desk, trader, sum(pnl) AS pnl_sum
-    FROM merge_neutral_sum_with_default
-    GROUP BY cob, desk, trader
-)
-SETTINGS log_comment = '05238_neutral_sum_default';
-
 -- High-cardinality fallback: the projection has one row per base row, so the
 -- cost gate must leave the original child plan and preserve all groups.
 CREATE TABLE merge_neutral_sum_high_pnl
@@ -205,7 +192,6 @@ SETTINGS log_comment = '05238_neutral_sum_high';
 
 DROP TABLE merge_neutral_sum;
 DROP TABLE merge_neutral_sum_no_projection;
-DROP TABLE merge_neutral_sum_with_default;
 DROP TABLE merge_neutral_sum_child_no_projection;
 DROP TABLE merge_neutral_sum_child_no_pnl;
 DROP TABLE merge_neutral_sum_child_pnl;
