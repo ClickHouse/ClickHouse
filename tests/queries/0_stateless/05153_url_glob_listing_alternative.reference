@@ -1,0 +1,6 @@
+Use 's3' (or another object storage table function) if
+Use 'S3' (or another object storage table engine) if
+Use 's3Cluster' (or another object storage cluster table function) if
+too many result addresses: 4002, while at most 1000 are allowed
+too many result addresses: 4002, while at most 1000 are allowed
+0

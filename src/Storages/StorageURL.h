@@ -13,6 +13,7 @@
 #include <Storages/StorageConfiguration.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Common/parseRemoteDescription.h>
 #include <Poco/URI.h>
 
 #include <string_view>
@@ -31,6 +32,30 @@ struct StorageID;
 class PullingPipelineExecutor;
 
 bool urlPathHasListableGlobs(std::string_view uri);
+
+/// Names of the `url` family surfaces, as they appear in the glob expansion error messages.
+inline constexpr auto TABLE_FUNCTION_URL_CALLER = "Table function 'url'";
+inline constexpr auto TABLE_ENGINE_URL_CALLER = "Table engine 'URL'";
+inline constexpr auto TABLE_FUNCTION_URL_CLUSTER_CALLER = "Table function 'urlCluster'";
+
+/// None of the `url` family surfaces can list the existing files, so their error messages recommend
+/// an object storage surface instead. The recommendation has to be of the same kind as the surface
+/// that was invoked: a table engine cannot be replaced by a table function, and `urlCluster` needs a
+/// clustered replacement.
+inline RemoteDescriptionCaller tableFunctionURLCaller()
+{
+    return urlCaller(TABLE_FUNCTION_URL_CALLER, "'s3' (or another object storage table function)");
+}
+
+inline RemoteDescriptionCaller tableEngineURLCaller()
+{
+    return urlCaller(TABLE_ENGINE_URL_CALLER, "'S3' (or another object storage table engine)");
+}
+
+inline RemoteDescriptionCaller tableFunctionURLClusterCaller()
+{
+    return urlCaller(TABLE_FUNCTION_URL_CLUSTER_CALLER, "'s3Cluster' (or another object storage cluster table function)");
+}
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
@@ -66,14 +91,16 @@ public:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const RemoteDescriptionCaller & caller = tableFunctionURLCaller());
 
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const RemoteDescriptionCaller & caller = tableFunctionURLCaller());
 
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
@@ -100,7 +127,8 @@ protected:
         const HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by = nullptr,
-        bool distributed_processing_ = false);
+        bool distributed_processing_ = false,
+        const RemoteDescriptionCaller & glob_caller_ = tableFunctionURLCaller());
 
     String uri;
     CompressionMethod compression_method;
@@ -117,6 +145,9 @@ protected:
     bool supports_prewhere = false;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
+    /// How the surface the user invoked (`url`, the `URL` engine, `urlCluster`, ...) is named when a
+    /// glob in the URL generates more addresses than allowed.
+    RemoteDescriptionCaller glob_caller;
 
     virtual std::string getReadMethod() const;
 
@@ -157,14 +188,15 @@ private:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const RemoteDescriptionCaller & caller);
 
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
 
 bool urlWithGlobs(const String & uri);
 
-String getSampleURI(String uri, ContextPtr context);
+String getSampleURI(String uri, ContextPtr context, const RemoteDescriptionCaller & caller = tableFunctionURLCaller());
 
 /// The `URL` engine and the `url` table function act as a unified wrapper on top of the
 /// File and object-storage engines: they dispatch to the right backend based on the URL scheme.
@@ -208,7 +240,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, bool split_uris_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, bool split_uris_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const RemoteDescriptionCaller & caller = tableFunctionURLCaller());
 
         String next();
         size_t size();
@@ -357,7 +389,8 @@ public:
         const HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr,
-        bool distributed_processing_ = false);
+        bool distributed_processing_ = false,
+        const RemoteDescriptionCaller & glob_caller_ = tableFunctionURLCaller());
 
     String getName() const override
     {
