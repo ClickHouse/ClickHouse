@@ -351,6 +351,104 @@ TEST(SchedulerWorkloadResourceManager, Smoke)
     }
 }
 
+// Multiple root workloads (workloads created without a parent): each becomes a child of the
+// resource's implicit anonymous root workload, so several SQL roots coexist and are scheduled
+// among each other.
+TEST(SchedulerWorkloadResourceManager, MultipleRoots)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD root_a SETTINGS max_io_requests = 10");
+    t.query("CREATE WORKLOAD a_child IN root_a SETTINGS weight = 3");
+    t.query("CREATE WORKLOAD root_b SETTINGS max_io_requests = 10");
+    t.query("CREATE WORKLOAD b_child IN root_b");
+
+    ClassifierPtr c_a = t.manager->acquire("a_child");
+    ClassifierPtr c_b = t.manager->acquire("b_child");
+
+    // Both independent trees consume the shared resource.
+    for (int i = 0; i < 10; i++)
+    {
+        ResourceGuard g_a(ResourceGuard::Metrics::getIOWrite(), c_a->get("res1"), 1, ResourceGuard::Lock::Defer);
+        g_a.lock();
+        g_a.consume(1);
+        g_a.unlock();
+
+        ResourceGuard g_b(ResourceGuard::Metrics::getIOWrite(), c_b->get("res1"), 1, ResourceGuard::Lock::Defer);
+        g_b.lock();
+        g_b.consume(1);
+        g_b.unlock();
+    }
+
+    // Dropping one whole tree leaves the other working.
+    t.query("DROP WORKLOAD a_child");
+    t.query("DROP WORKLOAD root_a");
+
+    ClassifierPtr c_b2 = t.manager->acquire("b_child");
+    ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), c_b2->get("res1"), 1, ResourceGuard::Lock::Defer);
+    g.lock();
+    g.consume(1);
+    g.unlock();
+}
+
+// Changing the priority of a parentless workload via CREATE OR REPLACE re-positions it among the
+// implicit root's children: two equal-priority parentless workloads share one fair branch, and
+// giving one a distinct priority introduces a "prio" policy node under the implicit root.
+TEST(SchedulerWorkloadResourceManager, UpdateParentlessWorkloadPriorityReattaches)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res (WRITE DISK d, READ DISK d)");
+    t.query("CREATE WORKLOAD a");
+    t.query("CREATE WORKLOAD b");
+
+    auto has_priority_node = [&]
+    {
+        bool seen = false;
+        t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode *)
+        {
+            if (path.contains("/prio/"))
+                seen = true;
+        });
+        return seen;
+    };
+
+    // Equal priority: both parentless workloads sit under one fair branch, no priority node.
+    EXPECT_FALSE(has_priority_node());
+
+    // Distinct priority must re-position b under a newly created priority node.
+    t.query("CREATE OR REPLACE WORKLOAD b SETTINGS priority = 1");
+    EXPECT_TRUE(has_priority_node())
+        << "priority change on a parentless workload was not re-positioned under the implicit root";
+}
+
+// The implicit anonymous root workload is exposed by forEachNode so system.scheduler is complete:
+// it has an empty basename and renders at the root path "/".
+TEST(SchedulerWorkloadResourceManager, ImplicitRootExposedInIntrospection)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res (WRITE DISK d, READ DISK d)");
+    t.query("CREATE WORKLOAD a");
+    t.query("CREATE WORKLOAD b");
+
+    bool seen_root = false;
+    String root_type;
+    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+    {
+        if (path == "/")
+        {
+            seen_root = true;
+            root_type = String(node->getTypeName());
+        }
+    });
+    EXPECT_TRUE(seen_root)
+        << "implicit root workload was not exposed in system.scheduler introspection";
+    EXPECT_EQ(root_type, "workload")
+        << "the node exposed at \"/\" should be the implicit root workload";
+}
+
 TEST(SchedulerWorkloadResourceManager, Fairness)
 {
     // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
@@ -2480,6 +2578,38 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
         a1.waitSync();
         a2.waitSync();
         a3.waitSync();
+    }
+}
+
+// Multiple root workloads on a space-shared resource (MEMORY RESERVATION). Each parentless workload
+// becomes a child of the resource's implicit anonymous root workload (the scheduler's single child)
+// and enforces its own limit independently.
+TEST(SchedulerWorkloadResourceManager, MultipleRootsMemoryReservation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD root_a SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD root_b SETTINGS max_memory = 100");
+
+    ClassifierPtr c_a = t.manager->acquire("root_a");
+    ClassifierPtr c_b = t.manager->acquire("root_b");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link_a = c_a->get("memory");
+        ResourceLink link_b = c_b->get("memory");
+
+        // Both trees allocate and resize concurrently within their own per-root limits.
+        TestAllocation a(link_a, "A", 80);
+        TestAllocation b(link_b, "B", 80);
+        a.waitSync();
+        b.waitSync();
+
+        a.setSize(20);
+        b.setSize(60);
+        a.waitSync();
+        b.waitSync();
     }
 }
 

@@ -506,8 +506,8 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 /// `SortingStep` is switched to scatter the rows by the hash of the join keys into independent partitions
 /// and sort each partition (one sorted stream per shard), and the join is executed shard-by-shard
 /// (`JoinStep::enableJoinByLayers` -> `joinPipelinesYShapedByShards`). Because the partitioning depends only
-/// on the join-key values (and the key types match - `FullSortingMergeJoin` requires it), equal keys land
-/// in the same shard on both sides. The join output is unordered.
+/// on the join-key values (and equal values hash equally through `LowCardinality`/`Nullable` wrappers, per
+/// `IColumn::computeHashInto`), equal keys land in the same shard on both sides. The join output is unordered.
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards)
 {
     /// Need at least two shards to gain anything; with one shard this is a plain single merge join.
