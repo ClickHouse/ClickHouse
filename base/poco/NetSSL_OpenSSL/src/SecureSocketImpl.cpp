@@ -602,6 +602,12 @@ int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 		if (verifyPeer)
 			verifyPeerCertificate();
 	}
+	catch (const Poco::TimeoutException &)
+	{
+		/// `mustRetry` is shared with ordinary reads and writes, so it cannot say this itself.
+		handshakeCounter.failed();
+		throw Poco::TimeoutException("SSL handshake timed out");
+	}
 	catch (...)
 	{
 		handshakeCounter.failed();

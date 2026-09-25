@@ -92,11 +92,13 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
     {
         throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket (peer: {}, local: {})", e.displayText(), peer_address.toString(), socket.address().toString());
     }
-    catch (const Poco::TimeoutException &)
+    catch (const Poco::TimeoutException & e)
     {
-        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket (peer: {}, local: {}, {} ms)",
+        /// Carries what timed out, e.g. the TLS handshake rather than an ordinary read.
+        const std::string detail = e.message().empty() ? "" : ": " + e.message();
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket (peer: {}, local: {}, {} ms){}",
             peer_address.toString(), socket.address().toString(),
-            socket.impl()->getReceiveTimeout().totalMilliseconds());
+            socket.impl()->getReceiveTimeout().totalMilliseconds(), detail);
     }
     catch (const Poco::IOException & e)
     {
