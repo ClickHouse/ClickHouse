@@ -3389,12 +3389,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
   * A matcher does not have to be the root of a projection item: its output can be consumed by a
   * function producing a list of columns, as in `SELECT untuple((* REPLACE (-c AS c),))`, or it can
   * appear in the window definition written in place, as in
-  * `SELECT row_number() OVER (PARTITION BY max(* REPLACE (-c AS c)))`.
+  * `SELECT row_number() OVER (PARTITION BY max(* REPLACE (-c AS c)))`, or in the definition of a named
+  * window referenced by the expression.
   * Resolving a matcher registers the `REPLACE` mappings in the sibling clauses of the query, so with
   * `group_by_use_nulls`, where the projection is resolved after them, the nested matchers have to be
   * expanded in advance, exactly as the ones at the root of a projection item.
   *
-  * Only the arguments of ordinary functions and the window definitions written in place are visited:
+  * Only the arguments of ordinary functions and the window definitions are visited:
   * matchers of lambdas and of subqueries belong to a different scope.
   */
 void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
@@ -3433,15 +3434,45 @@ void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
 
     argument_nodes = std::move(expanded_argument_nodes);
 
-    if (function_node->hasWindow())
-        expandMatchersInsideWindowDefinition(function_node->getWindowNode(), scope);
+    if (!function_node->hasWindow())
+        return;
+
+    auto & window_node = function_node->getWindowNode();
+
+    /** A named window (`OVER w` or `OVER (w ORDER BY ...)`) is resolved from a copy of its definition
+      * in the `WINDOW` clause, and without `group_by_use_nulls` that happens while the projection is
+      * resolved, before WHERE, GROUP BY and HAVING. So the matchers of the referenced definition are
+      * expanded here as well, in the definition itself, which is what the copy is made from.
+      */
+    String parent_window_name;
+    if (const auto * identifier_node = window_node->as<IdentifierNode>())
+        parent_window_name = identifier_node->getIdentifier().getFullName();
+    else if (const auto * window_node_typed = window_node->as<WindowNode>())
+        parent_window_name = window_node_typed->getParentWindowName();
+
+    if (!parent_window_name.empty())
+    {
+        /// A missing or recursive window is reported by `resolveWindow`.
+        auto & window_name_to_window_node = scope.window_name_to_window_node;
+        auto parent_window_it = window_name_to_window_node.find(parent_window_name);
+        if (parent_window_it != window_name_to_window_node.end()
+            && windows_in_resolve_process.emplace(parent_window_it->second.get()).second)
+        {
+            auto parent_window_node = parent_window_it->second;
+            expandMatchersInsideWindowDefinition(parent_window_node, scope);
+            windows_in_resolve_process.erase(parent_window_node.get());
+        }
+    }
+
+    expandMatchersInsideWindowDefinition(window_node, scope);
 }
 
 /** Expand the matchers of a window definition written in place, in place.
   *
   * `PARTITION BY` and `ORDER BY` of such a definition are resolved in the scope of the query, exactly as
   * the projection expression carrying it, so their matchers have to be expanded together with it.
-  * A named window (`OVER w`) is not visited: its definition belongs to the `WINDOW` clause of the query.
+  * The definition of a named window from the `WINDOW` clause is expanded in the same way, see
+  * `expandMatchersInsideProjectionExpression`.
   */
 void QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {

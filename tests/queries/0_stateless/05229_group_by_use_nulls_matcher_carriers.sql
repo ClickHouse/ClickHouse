@@ -48,3 +48,27 @@ GROUP BY c WITH ROLLUP ORDER BY w SETTINGS group_by_use_nulls = 0;
 SELECT count() OVER (PARTITION BY max(COLUMNS('^c$') REPLACE (c % 2 AS c))) AS w
 FROM (SELECT number AS c FROM numbers(4))
 GROUP BY c WITH ROLLUP ORDER BY w SETTINGS group_by_use_nulls = 1;
+
+SELECT '-- A matcher in the definition of a named window from the WINDOW clause';
+SELECT count() OVER w AS x
+FROM (SELECT number AS c FROM numbers(3))
+GROUP BY GROUPING SETS ((c)) HAVING c > 98
+WINDOW w AS (PARTITION BY max(* REPLACE (100 - c AS c)))
+ORDER BY x SETTINGS group_by_use_nulls = 0;
+SELECT count() OVER w AS x
+FROM (SELECT number AS c FROM numbers(3))
+GROUP BY GROUPING SETS ((c)) HAVING c > 98
+WINDOW w AS (PARTITION BY max(* REPLACE (100 - c AS c)))
+ORDER BY x SETTINGS group_by_use_nulls = 1;
+
+SELECT '-- The same for a window derived from a named one';
+SELECT count() OVER (w ORDER BY max(c)) AS x
+FROM (SELECT number AS c FROM numbers(3))
+GROUP BY GROUPING SETS ((c)) HAVING c > 98
+WINDOW w AS (PARTITION BY max(* REPLACE (100 - c AS c)))
+ORDER BY x SETTINGS group_by_use_nulls = 0;
+SELECT count() OVER (w ORDER BY max(c)) AS x
+FROM (SELECT number AS c FROM numbers(3))
+GROUP BY GROUPING SETS ((c)) HAVING c > 98
+WINDOW w AS (PARTITION BY max(* REPLACE (100 - c AS c)))
+ORDER BY x SETTINGS group_by_use_nulls = 1;
