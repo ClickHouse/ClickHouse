@@ -13,6 +13,23 @@ min low cardinality	0
 min low cardinality	0
 min date	1970-01-01
 min date	1970-01-01
+avg plus	nan
+avg plus	nan
+one guard covers a chain of constants, and each query guards its own aggregates
+chain	0
+chain	0
+nonempty chain	-9
+nonempty chain	-9
+kept multiply inside a guard	0
+kept multiply inside a guard	0
+declined multiply inside a guard	0
+declined multiply inside a guard	0
+two guarded aggregates	0	0
+two guarded aggregates	0	0
+keyed subquery before the aggregate	1	0
+keyed subquery before the aggregate	1	0
+keyless subquery inside a guarded aggregate	2
+keyless subquery inside a guarded aggregate	2
 emptied by a filter rather than by an empty table
 min plus filtered	0
 min plus filtered	0
@@ -31,6 +48,8 @@ min multiply by nan	0
 min multiply by nan	0
 min decimal divide by zero	0
 min decimal divide by zero	0
+min divide by infinity	0
+min divide by infinity	0
 a negative constant produces a negative zero, which the reciprocal tells apart
 multiply reciprocal	inf
 multiply reciprocal	inf
@@ -38,11 +57,54 @@ divide reciprocal	inf
 divide reciprocal	inf
 multiply left reciprocal	inf
 multiply left reciprocal	inf
+integer literal float operand reciprocal	inf
+integer literal float operand reciprocal	inf
+integer literal float32 operand reciprocal	inf
+integer literal float32 operand reciprocal	inf
+low cardinality float operand reciprocal	inf
+low cardinality float operand reciprocal	inf
+integer divide reciprocal	inf
+integer divide reciprocal	inf
+signed integer divide reciprocal	inf
+signed integer divide reciprocal	inf
+shapes the optimization must keep: outside floating point zero carries no sign
+integer multiply	0
+integer multiply	0
+integer multiply reciprocal	inf
+integer multiply reciprocal	inf
+integer multiply max	0
+integer multiply max	0
+integer multiply on the left	0
+integer multiply on the left	0
+integer multiply sum	0
+integer multiply sum	0
+wide integer multiply	0
+wide integer multiply	0
+low cardinality integer multiply	0
+low cardinality integer multiply	0
+decimal multiply	0
+decimal multiply	0
+decimal divide	0
+decimal divide	0
+decimal divide nonempty	-1.33
+decimal divide nonempty	-1.33
+decimal constant	0
+decimal constant	0
+decimal constant nonempty	-12
+decimal constant nonempty	-12
+integer multiply nonempty	-12
+integer multiply nonempty	-12
 grouping shapes that still emit a row over empty input
 
 with totals	0
 
 with totals	0
+keyless with totals	0
+
+keyless with totals	0
+keyless with totals	0
+
+keyless with totals	0
 grouping sets with a keyless member	0
 grouping sets with a keyless member	0
 grouping sets all keyless	0
@@ -53,6 +115,30 @@ constant key literal	0
 constant key literal	0
 constant key folded	0
 constant key folded	0
+checked date arithmetic can overflow from the empty state
+datetime minus time	1970-01-01 00:00:00
+datetime minus time	1970-01-01 00:00:00
+datetime minus time nonempty	1970-01-01 01:00:00
+datetime minus time nonempty	1970-01-01 01:00:00
+datetime minus time at default	1970-01-01 00:00:00
+datetime minus time at default	1970-01-01 00:00:00
+empty_result_for_aggregation_by_empty_set suppresses the keyless row but not the grand total
+
+totals at empty result for empty set	0
+
+totals at empty result for empty set	0
+
+totals date at empty result for empty set	1970-01-01
+
+totals date at empty result for empty set	1970-01-01
+keyless rows at empty result for empty set	0
+keyless rows at empty result for empty set	0
+keyless nonempty at empty result for empty set	1
+keyless nonempty at empty result for empty set	1
+constant key rows at empty result for empty set	0
+constant key rows at empty result for empty set	0
+constant key nonempty at empty result for empty set	1
+constant key nonempty at empty result for empty set	1
 the aggregate belongs to its own query, not to an enclosing one
 keyless outside a grouped subquery	0
 keyless outside a grouped subquery	0
@@ -92,6 +178,8 @@ sum negative constant on the left reciprocal	inf
 sum negative constant on the left reciprocal	inf
 nonempty sum plus infinity	inf
 nonempty sum plus infinity	inf
+sum plus	0
+sum plus	0
 avg preserves a date-like argument type, so its empty state is the epoch and not nan
 avg date	1970-01-01
 avg date	1970-01-01
@@ -111,14 +199,8 @@ min multiply float reciprocal	inf
 min multiply float reciprocal	inf
 min multiply decimal	0
 min multiply decimal	0
-min divide by infinity	0
-min divide by infinity	0
 sum multiply	0
 sum multiply	0
-avg plus	nan
-avg plus	nan
-sum plus	0
-sum plus	0
 
 totals with multiply	0
 
@@ -191,18 +273,7 @@ nonempty grouping sets	2
 nonempty grouping sets	3
 nonempty multiply	0
 nonempty multiply	0
-the aggregate argument in the plan tells a kept hoist from a declined one
-declined: keyless plus	1
-declined: with totals	1
-declined: grouping sets with a keyless member	1
-declined: constant key with empty result off	1
-declined: negative constant	1
-declined: divide by zero	1
-declined: sum divide by zero	1
-declined: avg plus	1
-declined: variant constant	1
-declined: nullable constant multiply	1
-declined: sum plus infinity	1
+the plan tells a kept hoist from one guarded by count() and from a declined one
 kept: keyless multiply	1
 kept: keyless nullable plus	1
 kept: group by key	1
@@ -213,5 +284,37 @@ kept: constant key rollup	1
 kept: constant key cube	1
 kept: constant key at default	1
 kept: constant key literal at default	1
+kept: keyless at empty result for empty set	1
+kept: constant key at empty result for empty set	1
+kept: negative constant integer multiply	1
+kept: negative constant integer multiply on the left	1
+kept: negative constant sum multiply	1
+kept: negative constant low cardinality multiply	1
+kept: negative constant decimal multiply	1
+kept: negative constant decimal divide	1
+kept: negative decimal constant	1
+guarded: keyless plus	1
+guarded: keyless minus	1
+guarded: constant on the left	1
+guarded: avg plus	1
+guarded: keyless with totals	1
+guarded: grouping sets all keyless	1
+guarded: datetime minus time at default	1
+guarded: constant key with empty result off	1
+guarded once: chain	1
+declined: keyed with totals	1
+declined: grouping sets with a keyless member	1
+declined: keyed totals at empty result for empty set	1
+declined: grouping sets at empty result for empty set	1
+declined: datetime minus time when overflow throws	1
+declined: negative constant	1
+declined: negative constant float result	1
+declined: negative constant low cardinality float result	1
+declined: negative constant integer divide	1
+declined: divide by zero	1
+declined: sum divide by zero	1
+declined: variant constant	1
+declined: nullable constant multiply	1
+declined: sum plus infinity	1
 kept: sum plus finite	1
 off: nothing is hoisted	0

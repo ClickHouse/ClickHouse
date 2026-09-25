@@ -12,15 +12,21 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Common/AlignedBuffer.h>
+#include <Common/Arena.h>
 #include <Common/NaNUtils.h>
 
 #include <Core/Settings.h>
+
+#include <base/scope_guard.h>
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
+    extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
 }
 
@@ -55,30 +61,33 @@ Field zeroField(const Field & value)
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
-/// A keyless aggregation, and the WITH TOTALS grand total, emit a row even over empty input; a key set with a
-/// non-constant key cannot. A plain all-constant key set is eliminated whole, so the planner suppresses that row
-/// unless `empty_result_for_constant_keys` is off; a grouping set is only suppressed when NO set contributes a key.
-bool aggregationMayBeEmpty(const QueryNode & query_node, bool empty_result_for_constant_keys)
+bool hasNonConstantKey(const QueryTreeNodes & keys)
 {
-    if (query_node.isGroupByWithTotals() || !query_node.hasGroupBy())
+    for (const auto & key : keys)
+    {
+        if (!key->as<ConstantNode>())
+            return true;
+    }
+    return false;
+}
+
+/// A keyless aggregation and the WITH TOTALS grand total emit a row even over empty input; a key set with a
+/// non-constant key cannot. The empty-result settings suppress the keyless and all-constant-key rows, but never
+/// the grand total, nor a keyless grouping set while another set has a key.
+bool aggregationMayBeEmpty(const QueryNode & query_node, bool empty_result_for_empty_set, bool empty_result_for_constant_keys)
+{
+    if (query_node.isGroupByWithTotals())
         return true;
 
-    auto has_non_constant_key = [](const QueryTreeNodes & keys)
-    {
-        for (const auto & key : keys)
-        {
-            if (!key->as<ConstantNode>())
-                return true;
-        }
-        return false;
-    };
+    if (!query_node.hasGroupBy())
+        return !empty_result_for_empty_set;
 
     if (query_node.isGroupByWithGroupingSets())
     {
         for (const auto & grouping_set : query_node.getGroupBy().getNodes())
         {
             const auto * grouping_set_keys = grouping_set->as<ListNode>();
-            if (!grouping_set_keys || !has_non_constant_key(grouping_set_keys->getNodes()))
+            if (!grouping_set_keys || !hasNonConstantKey(grouping_set_keys->getNodes()))
                 return true;
         }
 
@@ -89,13 +98,30 @@ bool aggregationMayBeEmpty(const QueryNode & query_node, bool empty_result_for_c
     if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube())
         return false;
 
-    if (has_non_constant_key(query_node.getGroupBy().getNodes()))
+    if (hasNonConstantKey(query_node.getGroupBy().getNodes()))
         return false;
 
-    return !empty_result_for_constant_keys;
+    return !(empty_result_for_empty_set || empty_result_for_constant_keys);
 }
 
-bool isPositiveFiniteConstant(const Field & value)
+bool hasNonConstantGroupingKey(const QueryNode & query_node)
+{
+    if (!query_node.hasGroupBy())
+        return false;
+
+    if (!query_node.isGroupByWithGroupingSets())
+        return hasNonConstantKey(query_node.getGroupBy().getNodes());
+
+    for (const auto & grouping_set : query_node.getGroupBy().getNodes())
+    {
+        const auto * grouping_set_keys = grouping_set->as<ListNode>();
+        if (grouping_set_keys && hasNonConstantKey(grouping_set_keys->getNodes()))
+            return true;
+    }
+    return false;
+}
+
+bool constantKeepsZeroAtZero(const Field & value, bool zero_has_no_sign)
 {
     switch (value.getType())
     {
@@ -118,28 +144,61 @@ bool isPositiveFiniteConstant(const Field & value)
             return false;
     }
 
-    return zeroField(value) < value;
+    const Field zero = zeroField(value);
+    return zero < value || (zero_has_no_sign && value < zero);
 }
 
-bool hoistPreservesEmptyAggregationResult(
+enum class EmptyStateHoist
+{
+    Keep,
+    Guard,
+    Decline,
+};
+
+EmptyStateHoist hoistOverEmptyState(
     const String & arithmetic_function_name,
     const Field & constant_value,
+    const IDataType & aggregate_result_type,
     bool aggregated_argument_is_nullable,
-    bool aggregate_result_is_nullable)
+    bool aggregation_has_one_state,
+    bool date_time_overflow_throws)
 {
     /// An aggregate over a Nullable operand has NULL as its empty state, and NULL survives the operation.
     if (aggregated_argument_is_nullable)
-        return true;
+        return EmptyStateHoist::Keep;
 
     /// Nullability can come from the other operand: then only the unrewritten aggregate is NULL over empty input.
-    if (aggregate_result_is_nullable)
-        return false;
+    /// It can also come from a `Variant` operand, which `min` and `max` do not accept, so this is not guarded.
+    if (aggregate_result_type.isNullable())
+        return EmptyStateHoist::Decline;
 
-    if (arithmetic_function_name != "multiply" && arithmetic_function_name != "divide")
-        return false;
+    if (arithmetic_function_name == "plus" || arithmetic_function_name == "minus")
+    {
+        /// The guard adds a count() state to every group, and its hoisted expression is still computed from the empty
+        /// state, where checked date arithmetic can overflow.
+        if (!aggregation_has_one_state
+            || (date_time_overflow_throws && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(aggregate_result_type)))
+            return EmptyStateHoist::Decline;
+        return EmptyStateHoist::Guard;
+    }
 
-    /// A negative constant maps zero to a negative zero, which `1 / x` tells apart from zero.
-    return isPositiveFiniteConstant(constant_value);
+    /// In floating point a negative constant maps zero to a negative zero, which `1 / x` tells apart from zero.
+    if (constantKeepsZeroAtZero(constant_value, WhichDataType(aggregate_result_type).isIntegerOrDecimal()))
+        return EmptyStateHoist::Keep;
+
+    return EmptyStateHoist::Decline;
+}
+
+Field emptyStateResult(const IAggregateFunction & function)
+{
+    Arena arena;
+    AlignedBuffer place(function.sizeOfData(), function.alignOfData());
+    function.create(place.data());
+    SCOPE_EXIT(function.destroy(place.data()));
+
+    auto column = function.getResultType()->createColumn();
+    function.insertResultInto(place.data(), *column, &arena);
+    return (*column)[0];
 }
 
 /** Rewrites:   sum([multiply|divide]) -> [multiply|divide](sum)
@@ -157,8 +216,12 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (const auto * query_node = node->as<QueryNode>())
-            aggregation_may_be_empty_stack.push_back(aggregationMayBeEmpty(
-                *query_node, getSettings()[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]));
+            query_aggregations.push_back(
+                {aggregationMayBeEmpty(
+                     *query_node,
+                     getSettings()[Setting::empty_result_for_aggregation_by_empty_set],
+                     getSettings()[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]),
+                 !hasNonConstantGroupingKey(*query_node)});
 
         if (!getSettings()[Setting::optimize_arithmetic_operations_in_aggregate_functions])
             return;
@@ -203,16 +266,20 @@ public:
         if (!left_argument_constant_node && !right_argument_constant_node)
             return;
 
-        const bool may_be_empty = aggregation_may_be_empty_stack.empty() || aggregation_may_be_empty_stack.back();
+        const auto query_aggregation = query_aggregations.empty() ? QueryAggregation{} : query_aggregations.back();
         const auto * hoisted_constant_node = right_argument_constant_node ? right_argument_constant_node : left_argument_constant_node;
         const auto & aggregated_argument_node
             = right_argument_constant_node ? arithmetic_function_arguments_nodes[0] : arithmetic_function_arguments_nodes[1];
-        if (may_be_empty
-            && !hoistPreservesEmptyAggregationResult(
-                arithmetic_function_name,
-                hoisted_constant_node->getValue(),
-                aggregated_argument_node->getResultType()->isNullable(),
-                aggregate_function_node->getResultType()->isNullable()))
+        const auto empty_state_hoist = query_aggregation.may_be_empty
+            ? hoistOverEmptyState(
+                  arithmetic_function_name,
+                  hoisted_constant_node->getValue(),
+                  *aggregate_function_node->getResultType(),
+                  aggregated_argument_node->getResultType()->isNullable(),
+                  query_aggregation.has_one_state,
+                  getSettings()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Throw)
+            : EmptyStateHoist::Keep;
+        if (empty_state_hoist == EmptyStateHoist::Decline)
             return;
 
         /** Need reverse max <-> min for:
@@ -264,18 +331,58 @@ public:
             arithmetic_function_argument_index,
             node,
             lower_aggregate_function_name);
-        if (optimized_function_node->getResultType()->equals(*node->getResultType()))
-            node = std::move(optimized_function_node);
+        if (!optimized_function_node->getResultType()->equals(*node->getResultType()))
+            return;
+
+        /// Within a guard's hoisted expression the aggregation is non-empty wherever its value is used.
+        const bool inside_guard = !open_guards.empty() && open_guards.back().second == query_aggregations.size();
+        if (empty_state_hoist == EmptyStateHoist::Guard && !inside_guard)
+        {
+            optimized_function_node = guardEmptyState(std::move(optimized_function_node), *aggregate_function_node);
+            open_guards.emplace_back(&node, query_aggregations.size());
+        }
+
+        node = std::move(optimized_function_node);
     }
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (!open_guards.empty() && open_guards.back().first == &node)
+            open_guards.pop_back();
+
         if (node->as<QueryNode>())
-            aggregation_may_be_empty_stack.pop_back();
+            query_aggregations.pop_back();
     }
 
 private:
-    std::vector<bool> aggregation_may_be_empty_stack;
+    struct QueryAggregation
+    {
+        bool may_be_empty = true;
+        bool has_one_state = false;
+    };
+
+    std::vector<QueryAggregation> query_aggregations;
+    std::vector<std::pair<const QueryTreeNodePtr *, size_t>> open_guards;
+
+    /// if(count() = 0, <result of the unrewritten aggregate over an empty state>, hoisted)
+    QueryTreeNodePtr guardEmptyState(QueryTreeNodePtr hoisted_node, const FunctionNode & aggregate_function_node)
+    {
+        auto count_node = std::make_shared<FunctionNode>("count");
+        resolveAggregateFunctionNodeByName(*count_node, count_node->getFunctionName());
+
+        auto is_empty_node = std::make_shared<FunctionNode>("equals");
+        is_empty_node->markAsOperator();
+        is_empty_node->getArguments().getNodes() = {std::move(count_node), std::make_shared<ConstantNode>(static_cast<UInt64>(0))};
+        resolveOrdinaryFunctionNodeByName(*is_empty_node, is_empty_node->getFunctionName(), getContext());
+
+        auto empty_state_result_node = std::make_shared<ConstantNode>(
+            emptyStateResult(*aggregate_function_node.getAggregateFunction()), aggregate_function_node.getResultType());
+
+        auto guard_node = std::make_shared<FunctionNode>("if");
+        guard_node->getArguments().getNodes() = {std::move(is_empty_node), std::move(empty_state_result_node), std::move(hoisted_node)};
+        resolveOrdinaryFunctionNodeByName(*guard_node, guard_node->getFunctionName(), getContext());
+        return guard_node;
+    }
 
     QueryTreeNodePtr cloneArithmeticFunctionAndWrapArgumentIntoAggregateFunction(
         const QueryTreeNodePtr & arithmetic_function,

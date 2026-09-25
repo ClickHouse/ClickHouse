@@ -68,10 +68,7 @@ SELECT 'not applied: there is a filter';
 SELECT min(date), max(date) FROM t_min_max_from_stats WHERE key < 1000;
 SELECT count() FROM (EXPLAIN SELECT min(date), max(date) FROM t_min_max_from_stats WHERE key < 1000) WHERE explain LIKE '%_statistics_min_max_projection%';
 
--- Hoisting the constant out of the aggregate is what made this shape eligible, and it is declined
--- for an aggregation without a grouping key: such an aggregation emits a row even over empty input,
--- where min(date) + 1 is 1970-01-02 rather than the default of the result type.
-SELECT 'not applied: monotonic arithmetic is not rewritten over a keyless aggregation';
+SELECT 'applied: monotonic arithmetic is rewritten to be applied over the aggregation';
 SELECT min(date + 1), max(date + 1) FROM t_min_max_from_stats;
 SELECT count() FROM (EXPLAIN SELECT min(date + 1), max(date + 1) FROM t_min_max_from_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
 

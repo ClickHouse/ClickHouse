@@ -21,9 +21,9 @@ not applied: no statistics for String columns
 not applied: there is a filter
 2020-01-01	2020-12-30
 0
-not applied: monotonic arithmetic is not rewritten over a keyless aggregation
+applied: monotonic arithmetic is rewritten to be applied over the aggregation
 2019-05-06	2021-05-06
-0
+1
 not applied: aggregation over an expression
 0	6
 0
