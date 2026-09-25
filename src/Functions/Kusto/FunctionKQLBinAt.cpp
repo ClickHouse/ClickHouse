@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -200,6 +201,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
@@ -224,10 +226,11 @@ private:
         return std::move(plan).finish(name, arguments);
     }
 
+    /// `LowCardinality(Nullable(T))` reports itself as not nullable, so strip the wrapper first.
     static DataTypePtr retypedAsTicks(const DataTypePtr & original)
     {
         const DataTypePtr ticks = std::make_shared<DataTypeInt64>();
-        return original->isNullable() ? makeNullable(ticks) : ticks;
+        return removeLowCardinality(original)->isNullable() ? makeNullable(ticks) : ticks;
     }
 
     FunctionBasePtr delegate(const ColumnsWithTypeAndName & arguments) const
@@ -235,9 +238,9 @@ private:
         if (arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires exactly 3 arguments", getName());
 
-        const DataTypePtr value_type = removeNullable(arguments[0].type);
-        const DataTypePtr bin_type = removeNullable(arguments[1].type);
-        const DataTypePtr fixed_type = removeNullable(arguments[2].type);
+        const DataTypePtr value_type = removeLowCardinalityAndNullable(arguments[0].type);
+        const DataTypePtr bin_type = removeLowCardinalityAndNullable(arguments[1].type);
+        const DataTypePtr fixed_type = removeLowCardinalityAndNullable(arguments[2].type);
 
         /// A NULL literal argument makes the whole result a NULL literal; the numeric chain
         /// below short-circuits it, so it must get the query regardless of the other types.
