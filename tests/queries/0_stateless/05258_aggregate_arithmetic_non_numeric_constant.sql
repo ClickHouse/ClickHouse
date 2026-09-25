@@ -21,10 +21,13 @@ SELECT 'null_multiply_avg_off', avg(number * CAST(NULL AS Nullable(UInt64))) FRO
 
 -- A tuple constant: multiplying two tuples is a dot product, so moving the constant out of the
 -- aggregate function does not preserve the order of the rows and would return a different value.
+-- Both operand orders are checked: this is the only constant whose value changes if it is moved out.
 SELECT 'tuple_max_on', max(v * (0.5, 0.5)) FROM (SELECT arrayJoin([(0., 10.), (1., 0.), (3., 3.)]) AS v) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
 SELECT 'tuple_max_off', max(v * (0.5, 0.5)) FROM (SELECT arrayJoin([(0., 10.), (1., 0.), (3., 3.)]) AS v) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'tuple_min_on', min(v * (0.5, 0.5)) FROM (SELECT arrayJoin([(0., 10.), (1., 0.), (3., 3.)]) AS v) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
 SELECT 'tuple_min_off', min(v * (0.5, 0.5)) FROM (SELECT arrayJoin([(0., 10.), (1., 0.), (3., 3.)]) AS v) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
+SELECT 'tuple_left_max_on', max((0.5, 0.5) * v) FROM (SELECT arrayJoin([(0., 10.), (1., 0.), (3., 3.)]) AS v) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
+SELECT 'tuple_left_max_off', max((0.5, 0.5) * v) FROM (SELECT arrayJoin([(0., 10.), (1., 0.), (3., 3.)]) AS v) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 
 -- An IP address constant.
 SELECT 'ipv4_min_on', min((number + 1) * toIPv4('0.0.0.2')) FROM numbers(3) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;

@@ -12,6 +12,8 @@ tuple_max_on	5
 tuple_max_off	5
 tuple_min_on	0.5
 tuple_min_off	0.5
+tuple_left_max_on	5
+tuple_left_max_off	5
 ipv4_min_on	2
 ipv4_min_off	2
 ast_null_declined	0

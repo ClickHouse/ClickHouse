@@ -23,7 +23,7 @@ namespace Setting
 namespace
 {
 
-/// An empty result means the value is not a number, so it has no zero to be compared against.
+/// An empty result means there is no zero of this value's type to compare the value against.
 std::optional<Field> zeroField(const Field & value)
 {
     switch (value.getType())
