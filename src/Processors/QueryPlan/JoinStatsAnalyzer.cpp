@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/JoinEstimation.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
+#include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/IJoin.h>
@@ -273,6 +274,20 @@ void inlineGroupIntoStage(AnalyzedStepData & step_data, MetricGroupKey group_key
 
 AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisReport report)
 {
+    /// The block nested loop join is a plan step of its own rather than an `IJoin`. It never swaps its
+    /// inputs and reports no per-stage metrics, so the derived per-side numbers and the spill group
+    /// are all there is to shape.
+    if (const auto * block_nested_loop_step = typeid_cast<const BlockNestedLoopJoinStep *>(context.step))
+    {
+        enrichJoinSides(
+            report, context.io.output_rows, block_nested_loop_step->getKind(), block_nested_loop_step->getStrictness());
+
+        if (auto * spill_group = findGroup(report, MetricGroupKey::Spill))
+            reshapeSpillGroup(*spill_group);
+
+        return buildAnalyzedStepData(context, std::move(report));
+    }
+
     const auto * join_step = typeid_cast<const JoinStep *>(context.step);
     const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(context.step);
     if (!join_step && !filled_join_step)
