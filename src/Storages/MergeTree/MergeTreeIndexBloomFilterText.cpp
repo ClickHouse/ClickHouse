@@ -984,6 +984,14 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         key_tuple_mapping.emplace_back(0, *key);
         data_types.push_back(index_data_types[*key]);
     }
+    else if (auto left_argument_without_cast = left_argument.getLowCardinalityRemovingCastArgument())
+    {
+        if (const auto key_without_cast = getKeyIndex(left_argument_without_cast->getColumnName()))
+        {
+            key_tuple_mapping.emplace_back(0, *key_without_cast);
+            data_types.push_back(index_data_types[*key_without_cast]);
+        }
+    }
 
     if (key_tuple_mapping.empty())
         return false;

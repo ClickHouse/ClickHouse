@@ -631,6 +631,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return true;
     }
 
+    if (auto key_node_without_cast = key_node.getLowCardinalityRemovingCastArgument())
+    {
+        if (traverseTreeIn(function_name, *key_node_without_cast, prepared_set, type, column, out))
+            return true;
+    }
+
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn IN filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.

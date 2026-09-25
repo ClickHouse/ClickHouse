@@ -517,6 +517,29 @@ std::optional<RPNBuilderTreeNode> RPNBuilderTreeNode::getArrayJoinArgument() con
     return {};
 }
 
+std::optional<RPNBuilderTreeNode> RPNBuilderTreeNode::getLowCardinalityRemovingCastArgument() const
+{
+    /// The AST path (the old analyzer) carries no DAG, so such a cast is not matched there.
+    if (!dag_node)
+        return {};
+
+    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    if (node_without_alias->type != ActionsDAG::ActionType::FUNCTION || node_without_alias->children.size() != 2)
+        return {};
+
+    const auto & function_name = node_without_alias->function_base->getName();
+    if (function_name != "_CAST" && function_name != "CAST")
+        return {};
+
+    /// Any conversion beyond removing `LowCardinality` changes the bytes an index hashed.
+    const auto & argument_type = node_without_alias->children[0]->result_type;
+    if (!argument_type->lowCardinality()
+        || !removeLowCardinality(argument_type)->equals(*node_without_alias->result_type))
+        return {};
+
+    return RPNBuilderTreeNode(node_without_alias->children[0], tree_context);
+}
+
 std::string RPNBuilderFunctionTreeNode::getFunctionName() const
 {
     if (ast_node)

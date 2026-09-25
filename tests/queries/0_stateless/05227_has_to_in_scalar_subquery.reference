@@ -1,0 +1,177 @@
+string	5
+string plan	1
+uint64	5
+uint64 plan	1
+int64 negative	5
+int64 negative plan	1
+fixedstring	5
+fixedstring plan	1
+date	5
+date plan	1
+decimal	5
+decimal plan	1
+uuid	5
+uuid plan	1
+ipv4	5
+ipv4 plan	1
+enum	14
+enum plan	1
+lowcardinality literal	3
+lowcardinality literal plan	1
+lowcardinality literal type	UInt8
+lowcardinality literal not	17
+lowcardinality scalar	5
+lowcardinality scalar plan	1
+lowcardinality array scalar	2
+lowcardinality array scalar plan	1
+lowcardinality array literal	2
+lowcardinality array literal plan	1
+nothas	15
+nothas plan	1
+transform_null_in 1	5
+transform_null_in 1 plan	1
+validate_enum_literals 1	14
+remote	10
+remote lowcardinality	10
+set key per needle type	0	1
+set key per needle type reversed	1	0
+set key per needle type disjoint	1	1
+set key per needle type disjoint reversed	1	1
+scalar shape getscalar	1
+scalar shape in	1
+scalar shape getscalar folded	0
+scalar shape in folded	1
+lowcardinality scalar shape getscalar	1
+lowcardinality scalar shape in	1
+lowcardinality scalar shape getscalar folded	0
+lowcardinality scalar shape in folded	1
+empty scalar array	0
+empty scalar array kept as has	1
+null element scalar array	3
+null element scalar array plan	0
+nullable element scalar array	5
+nullable element scalar array plan	0
+float scalar array	5
+float scalar array plan	0
+float minus zero	1
+nullable needle	5
+nullable needle plan	0
+mismatched types	0
+mismatched types plan	0
+nested array scalar	5
+nested array scalar plan	0
+off string	5
+off uint64	5
+off int64 negative	5
+off fixedstring	5
+off date	5
+off decimal	5
+off uuid	5
+off ipv4	5
+off enum	14
+off lowcardinality literal	3
+off lowcardinality literal type	UInt8
+off lowcardinality literal not	17
+off lowcardinality scalar	5
+off nothas	15
+off remote	10
+off remote lowcardinality	10
+off empty scalar array	0
+off null element scalar array	3
+off nullable element scalar array	5
+off float scalar array	5
+off float minus zero	1
+off nullable needle	5
+off mismatched types	0
+off nested array scalar	5
+off set key per needle type	0	1
+off set key per needle type reversed	1	0
+off set key per needle type disjoint	1	1
+off set key per needle type disjoint reversed	1	1
+off plan	0
+pk granules literal	Granules: 4/125
+pk granules scalar	Granules: 4/125
+pk result literal	3
+pk result scalar	4
+pk granules literal off	Granules: 4/125
+pk granules scalar off	Granules: 4/125
+pk result literal off	3
+pk result scalar off	4
+skip index plan	1
+skip index result	100
+skip index result off	100
+selective skip index	Granules: 10/10
+selective skip index	Name: idx_uid
+selective skip index	Granules: 2/10
+selective skip index off	Granules: 10/10
+selective skip index off	Name: idx_uid
+selective skip index off	Granules: 2/10
+selective result	128
+selective result off	128
+selective result no skip index	128
+bloom granules	Granules: 10/10
+bloom granules	Name: idx_uid
+bloom granules	Granules: 2/10
+bloom granules off	Granules: 10/10
+bloom granules off	Name: idx_uid
+bloom granules off	Granules: 2/10
+bloom granules scalar	Granules: 10/10
+bloom granules scalar	Name: idx_uid
+bloom granules scalar	Granules: 2/10
+bloom granules scalar off	Granules: 10/10
+bloom granules scalar off	Name: idx_uid
+bloom granules scalar off	Granules: 2/10
+bloom forced	128
+bloom forced off	128
+bloom result	128
+bloom result off	128
+bloom result no skip index	128
+bloom result scalar	128
+bloom result scalar off	128
+bloom result scalar no skip index	128
+tokenbf granules	Granules: 10/10
+tokenbf granules	Name: idx_uid
+tokenbf granules	Granules: 2/10
+tokenbf granules off	Granules: 10/10
+tokenbf granules off	Name: idx_uid
+tokenbf granules off	Granules: 2/10
+tokenbf granules scalar	Granules: 10/10
+tokenbf granules scalar	Name: idx_uid
+tokenbf granules scalar	Granules: 2/10
+tokenbf granules scalar off	Granules: 10/10
+tokenbf granules scalar off	Name: idx_uid
+tokenbf granules scalar off	Granules: 2/10
+tokenbf forced	128
+tokenbf forced off	128
+tokenbf result	128
+tokenbf result off	128
+tokenbf result no skip index	128
+tokenbf result scalar	128
+tokenbf result scalar off	128
+tokenbf result scalar no skip index	128
+ngrambf granules	Granules: 10/10
+ngrambf granules	Name: idx_uid
+ngrambf granules	Granules: 10/10
+ngrambf granules off	Granules: 10/10
+ngrambf granules off	Name: idx_uid
+ngrambf granules off	Granules: 10/10
+ngrambf granules scalar	Granules: 10/10
+ngrambf granules scalar	Name: idx_uid
+ngrambf granules scalar	Granules: 10/10
+ngrambf granules scalar off	Granules: 10/10
+ngrambf granules scalar off	Name: idx_uid
+ngrambf granules scalar off	Granules: 10/10
+ngrambf forced	128
+ngrambf forced off	128
+ngrambf result	128
+ngrambf result off	128
+ngrambf result no skip index	128
+ngrambf result scalar	128
+ngrambf result scalar off	128
+ngrambf result scalar no skip index	128
+narrow cast removing lowcardinality	Granules: 10/10
+narrow cast removing lowcardinality	Name: idx_uid
+narrow cast removing lowcardinality	Granules: 2/10
+narrow cast to fixedstring	Granules: 10/10
+narrow cast keeping lowcardinality	Granules: 10/10
+narrow tostring	Granules: 10/10

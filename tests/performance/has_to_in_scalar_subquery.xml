@@ -1,0 +1,31 @@
+<test>
+    <settings><enable_scalar_subquery_optimization>1</enable_scalar_subquery_optimization></settings>
+
+    <!-- has() over a constant array is a linear Field scan per row, so these queries are only fast
+         when RewriteHasToInPass turns them into a Set membership test. An Array-typed scalar
+         subquery and a LowCardinality needle are the two shapes it used to refuse.
+
+         Row counts are chosen so that the slow path stays a few seconds: the runner caps every
+         measured query at max_execution_time (15 s by default) on both servers, and the reference
+         one has no patch, so it is the slow path that has to fit. -->
+
+    <query>WITH (SELECT groupUniqArray(toString(number)) FROM numbers(10000)) AS a SELECT count() FROM numbers(50000) WHERE has(a, toString(number % 20000))</query>
+    <query>WITH (SELECT groupUniqArray(toString(number)) FROM numbers(10000)) AS a SELECT count() FROM numbers(50000) WHERE has(a, toLowCardinality(toString(number % 20000)))</query>
+    <query>WITH (SELECT groupUniqArray(toString(number)) FROM numbers(10000)) AS a SELECT count() FROM numbers(50000) WHERE notHas(a, toString(number % 20000))</query>
+    <query>WITH (SELECT groupUniqArray(number) FROM numbers(10000)) AS a SELECT count() FROM numbers(50000) WHERE has(a, number % 20000)</query>
+
+    <!-- The reported query: a set skip index over a LowCardinality column, whose index analysis
+         evaluates the predicate once per index entry. GRANULARITY 1 over 1000 distinct values keeps
+         the index unable to prune a single granule, which is what made the reported query slower
+         with the index than without it. -->
+    <create_query>DROP TABLE IF EXISTS perf_has_to_in_set_index</create_query>
+    <create_query>
+        CREATE TABLE perf_has_to_in_set_index (type UInt32, uid LowCardinality(String), INDEX idx_uid uid TYPE set(1000) GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY type SETTINGS index_granularity = 1024
+    </create_query>
+    <fill_query>INSERT INTO perf_has_to_in_set_index SELECT 100500, toString(number % 1000) FROM numbers(500000)</fill_query>
+
+    <query>WITH (SELECT groupUniqArray(uid) FROM perf_has_to_in_set_index) AS uniqs SELECT count(DISTINCT uid) FROM perf_has_to_in_set_index WHERE type = 100500 AND uid IN (uniqs)</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_has_to_in_set_index</drop_query>
+</test>

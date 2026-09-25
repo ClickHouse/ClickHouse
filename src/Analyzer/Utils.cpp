@@ -448,6 +448,37 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
+ColumnPtr tryGetScalarSubqueryColumn(const QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    const auto * function_node = node ? node->as<FunctionNode>() : nullptr;
+    if (!function_node || function_node->getFunctionName() != "__getScalar")
+        return nullptr;
+
+    const auto & arguments = function_node->getArguments().getNodes();
+    if (arguments.size() != 1)
+        return nullptr;
+
+    const auto * scalar_name_node = arguments.front()->as<ConstantNode>();
+    if (!scalar_name_node || !isString(scalar_name_node->getResultType()) || !context->hasQueryContext())
+        return nullptr;
+
+    /// `Context::getScalar` throws for an unknown name, and a remote shard has only the scalars it was sent.
+    auto query_context = context->getQueryContext();
+    auto scalar_name = scalar_name_node->getValue().safeGet<String>();
+    if (!query_context->hasScalar(scalar_name))
+        return nullptr;
+
+    const auto & scalar_block = query_context->getScalar(scalar_name);
+    if (scalar_block.columns() != 1)
+        return nullptr;
+
+    const auto & scalar_column = scalar_block.getByPosition(0).column;
+    if (!scalar_column || scalar_column->size() != 1)
+        return nullptr;
+
+    return scalar_column;
+}
+
 const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
 {
     static const Names no_aliases;
