@@ -112,8 +112,8 @@ public:
     /// Make the auto-spill wrapper participate in memory-reservation recovery. During collection
     /// explicit reservation pressure may force the normal HashJoin -> GraceHashJoin transition;
     /// after the switch the request is delegated to the active GraceHashJoin.
-    bool spillForMemoryReservation();
-    bool hasPendingMemoryReservationSpill() const;
+    bool trySpillForMemoryPressure();
+    bool hasPendingMemoryPressureSpill() const;
     /// Arm the active GraceHashJoin to spill from ordinary processor work.
     bool forceSpill();
 

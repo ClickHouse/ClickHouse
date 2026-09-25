@@ -393,12 +393,23 @@ public:
     /// implementations with shared spill state must also synchronize with its completion.
     virtual bool hasPendingSpill() const { return false; }
 
-    /// Execute a complete spill attempt without consuming input or producing output. This may be
-    /// called from another query thread while the processor is idle or executing; implementations
-    /// must serialize access to their spillable state. Return false when no spill is possible.
-    virtual bool spillForMemoryReservation() { return false; }
+    enum class MemoryPressureSpillResult : UInt8
+    {
+        Progress,
+        Pending,
+        NotSpillable,
+    };
+
+    /// Execute one synchronized memory-pressure spill attempt without consuming input or producing
+    /// output. Implementations own synchronization and any algorithm transition required for the
+    /// attempt, so the recovery scheduler never interprets processor-specific state.
+    virtual MemoryPressureSpillResult spillForMemoryPressure()
+    {
+        return MemoryPressureSpillResult::NotSpillable;
+    }
+
     /// Processors sharing spillable state must return the same stable identity for that state.
-    virtual const void * getMemoryReservationSpillTarget() const { return this; }
+    virtual const void * getMemoryPressureSpillTarget() const { return this; }
 
 protected:
     /// May be called in parallel with work().

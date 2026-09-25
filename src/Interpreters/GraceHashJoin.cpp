@@ -386,7 +386,7 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     return false;
 }
 
-bool GraceHashJoin::spillForMemoryReservation()
+bool GraceHashJoin::trySpillForMemoryPressure()
 {
     /// Delayed bucket loading publishes `current_bucket` under `current_bucket_mutex` and then
     /// updates the active hash table under `hash_join_mutex`. Use the same lock order here so a

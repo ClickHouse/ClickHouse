@@ -308,7 +308,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 }
 
-bool SpillingHashJoin::spillForMemoryReservation()
+bool SpillingHashJoin::trySpillForMemoryPressure()
 {
     State current_state = state.load(std::memory_order_acquire);
     if (current_state == State::IN_MEMORY_JOIN)
@@ -329,10 +329,10 @@ bool SpillingHashJoin::spillForMemoryReservation()
     /// bucket; otherwise conversion could immediately refill memory that the forced spill released.
     if (concurrent_join)
         tryConvertSlots();
-    return active_grace_join->spillForMemoryReservation();
+    return active_grace_join->trySpillForMemoryPressure();
 }
 
-bool SpillingHashJoin::hasPendingMemoryReservationSpill() const
+bool SpillingHashJoin::hasPendingMemoryPressureSpill() const
 {
     std::shared_lock lock(switch_mutex);
     auto active_grace_join = grace_join;

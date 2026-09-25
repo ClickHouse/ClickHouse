@@ -120,7 +120,7 @@ public:
     void requestSpill() override { force_spill = true; }
     void forceSpill() { requestSpill(); }
     bool hasPendingSpill() const;
-    bool spillForMemoryReservation();
+    bool trySpillForMemoryPressure();
 
 private:
     void initBuckets();
