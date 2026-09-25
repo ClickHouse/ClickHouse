@@ -3907,7 +3907,7 @@ TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
     fs::create_directories(key_path.parent_path());
     std::ofstream(key_path) << "x";
 
-    auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/16, {}, 0, user);
+    auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
     ASSERT_EQ(holder->size(), 1u);
     auto seg = *holder->begin();
     ASSERT_EQ(seg->getOrSetDownloader(), FileSegment::getCallerId());
@@ -3918,11 +3918,12 @@ TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
     ASSERT_EQ(seg->getReservedSize(), 0u);
     ASSERT_EQ(cache->getUsedCacheSize(), 0u);
 
-    FileSegment::complete(FileSegmentPtr(seg), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
-
-    /// Once the directory can be created, the key caches normally.
+    /// The failed segment is `PARTIALLY_DOWNLOADED_NO_CONTINUATION`; releasing its last holder removes it,
+    /// so the same offset gets a new segment, which caches normally once the directory can be created.
+    seg.reset();
+    holder.reset();
     fs::remove(key_path);
-    auto next_holder = cache->getOrSet(key, 8, 8, /*file_size=*/16, {}, 0, user);
+    auto next_holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
     ASSERT_EQ(next_holder->size(), 1u);
     download(*next_holder->begin());
     ASSERT_EQ(cache->getUsedCacheSize(), 8u);
