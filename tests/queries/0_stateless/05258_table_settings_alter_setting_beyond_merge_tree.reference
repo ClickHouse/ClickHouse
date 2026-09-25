@@ -1,0 +1,14 @@
+-- a queue engine reports a setting it keeps in Keeper as the shared metadata's
+loading_retries	42	shared_metadata
+-- and an ALTER writes the new value there, so it stays the shared metadata's
+loading_retries	7	shared_metadata
+-- the statement reads the same table, so it says the same
+loading_retries	7	1	shared_metadata
+-- a Memory table keeps its own settings, so one it does not state is the compiled-in default
+max_bytes_to_keep	0	default
+-- and an ALTER makes it the definition's, as it does for MergeTree
+max_bytes_to_keep	4096	definition
+-- which is what the stored query says too
+1
+-- an engine that reads a named collection refuses MODIFY SETTING, so no source can change that way
+NOT_IMPLEMENTED
