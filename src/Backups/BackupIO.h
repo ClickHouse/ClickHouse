@@ -69,6 +69,13 @@ public:
     /// Object-storage writers override this to create a file atomically without replacing an existing one.
     virtual std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name);
 
+    /// Whether `writeFileIfNotExists` is a real conditional create: it either creates the file or fails,
+    /// and it never replaces a file somebody else created. The default implementation falls back to
+    /// `writeFile`, which overwrites, so only writers that override both may answer `true`. Callers that
+    /// take the destination with a lock file rely on this: with an overwriting writer, finding one's own
+    /// contents in the lock proves nothing, because the write could have destroyed a foreign lock.
+    virtual bool supportsAtomicCreateIfNotExists() const { return false; }
+
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
     virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;
 
