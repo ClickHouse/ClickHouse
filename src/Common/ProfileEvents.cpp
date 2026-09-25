@@ -163,6 +163,7 @@
     M(TextIndexLazySegmentsBuilt, "Number of segments actually read and decoded (cache misses) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBruteForceIntersections, "Number of brute-force intersections performed in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyLeapfrogIntersections, "Number of leapfrog intersections performed in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBruteForceEarlyExits, "Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.", ValueType::Number) \
     M(TextIndexLazySegmentsSkippedDense, "Number of fully-dense segments padded as a whole (memset for OR, increment for AND) instead of decoding blocks, in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
@@ -289,6 +290,9 @@
     M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
     M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
     M(ReaderExecutorLongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
+    M(ReaderExecutorConcurrentDownloadWaits, "Number of times the ReaderExecutor waited for a concurrent downloader to commit a cache segment range.", ValueType::Number) \
+    M(ReaderExecutorConcurrentDownloadWaitTimeouts, "Number of those waits that came back short of the requested overlap. A short but non-empty return means the query advanced at the concurrent downloader's pace; an empty one falls back to reading from source.", ValueType::Number) \
+    M(ReaderExecutorConcurrentDownloadWaitMicroseconds, "Total time the ReaderExecutor spent blocked on concurrent downloaders of cache segments.", ValueType::Microseconds) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryLocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth' throttler.", ValueType::Bytes) \
@@ -866,6 +870,7 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryCredits, "The approximate time integral of memory usage, measured in byte-microseconds: the amount of memory held by a query multiplied by the time it was held, summed over the whole execution. It distinguishes a query with a high but brief memory peak from a query that holds less memory for much longer. It is a query-scoped value: it is accumulated only at the top-level memory tracker of a query (or of a background operation such as a merge), so it does not decompose into the per-thread rows of `system.query_thread_log`, and nested scopes that get their own rows - materialized views in `system.query_views_log`, asynchronous insert flushes running inside another query - do not report it separately; their memory is integrated into the enclosing query instead. The value is approximate: the interval elapsed since the previous update is charged with the amount of memory observed at the end of it, so concurrent allocations in several threads of the same query shift a part of the integral between adjacent intervals.", ValueType::Number) \
+    M(MemoryLargeAllocationTraced, "Number of times a stack trace was captured for a single charge to the global memory tracker at or above `min_allocation_size_to_log_stack_trace`.", ValueType::Number) \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.", ValueType::Number) \
     M(AzureUpload, "Number of Azure blob storage API Upload calls", ValueType::Number) \
@@ -876,6 +881,7 @@ The server successfully detected this situation and will download merged part fr
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.", ValueType::Number) \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.", ValueType::Number) \
     M(AzureCreateContainer, "Number of Azure blob storage API CreateContainer calls.", ValueType::Number) \
+    M(AzureClients, "Number of created Azure blob storage container clients.", ValueType::Number) \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.", ValueType::Number) \
     M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls", ValueType::Number) \
