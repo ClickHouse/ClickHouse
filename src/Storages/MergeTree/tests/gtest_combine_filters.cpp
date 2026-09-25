@@ -225,3 +225,63 @@ TEST(MergeTree, AndFilters)
     EXPECT_TRUE(testAndFilters(65537));
     EXPECT_TRUE(testAndFilters(200000));
 }
+
+TEST(MergeTree, EmptyUniformFilter)
+{
+    EXPECT_FALSE(FilterWithCachedCount().tryGetUniformValue().has_value());
+
+    const auto column = ColumnUInt8::create();
+    const FilterWithCachedCount filter(column->getPtr());
+    EXPECT_FALSE(filter.tryGetUniformValue().has_value());
+    EXPECT_EQ(filter.countBytesInFilter(), 0);
+    EXPECT_FALSE(filter.tryGetUniformValue().has_value());
+}
+
+TEST(MergeTree, UniformFilterValue)
+{
+    for (size_t size : {1, 2, 63, 64, 65, 1023, 1024, 1025, 65536})
+    {
+        SCOPED_TRACE(size);
+        for (UInt8 value : {UInt8(0), UInt8(1), UInt8(2), UInt8(128), UInt8(255)})
+        {
+            SCOPED_TRACE(value);
+            const auto column = ColumnUInt8::create(size, value);
+            const FilterWithCachedCount filter(column->getPtr());
+            const auto uniform_value = filter.tryGetUniformValue();
+            ASSERT_TRUE(uniform_value.has_value());
+            EXPECT_EQ(*uniform_value, value != 0);
+            EXPECT_EQ(filter.countBytesInFilter(), value ? size : 0);
+            EXPECT_EQ(filter.tryGetUniformValue(), uniform_value);
+        }
+
+        /// Different non-zero bytes still form an all-passing filter.
+        auto column = ColumnUInt8::create(size);
+        for (size_t i = 0; i < size; ++i)
+            column->getData()[i] = static_cast<UInt8>(1 + i % 255);
+        const FilterWithCachedCount filter(column->getPtr());
+        EXPECT_EQ(filter.tryGetUniformValue(), std::optional<bool>(true));
+        EXPECT_EQ(filter.countBytesInFilter(), size);
+    }
+}
+
+TEST(MergeTree, MixedUniformFilterValue)
+{
+    for (size_t size : {2, 63, 64, 65, 1023, 1024, 1025, 65536})
+    {
+        SCOPED_TRACE(size);
+        for (size_t position : {size_t(0), size / 2, size - 1})
+        {
+            SCOPED_TRACE(position);
+            for (UInt8 value : {UInt8(0), UInt8(255)})
+            {
+                SCOPED_TRACE(value);
+                auto column = ColumnUInt8::create(size, value);
+                column->getData()[position] = value ? 0 : 128;
+                const FilterWithCachedCount filter(column->getPtr());
+                EXPECT_FALSE(filter.tryGetUniformValue().has_value());
+                EXPECT_EQ(filter.countBytesInFilter(), value ? size - 1 : 1);
+                EXPECT_FALSE(filter.tryGetUniformValue().has_value());
+            }
+        }
+    }
+}

@@ -87,10 +87,11 @@ static bool filterSampleHasValue(const IColumn::Filter & filter, bool value)
     constexpr size_t max_probe_points = 1024;
     const size_t probe_stride = (size - 1) / max_probe_points + 1;
 
-    /// Do not turn a bounded probe into a full scan for small filters. The regular path
-    /// will inspect the filter anyway, so scanning every byte here only duplicates work.
+    /// Small filters go straight to the cached exact count in tryGetUniformValue().
+    /// Returning false here would hide uniform filters after earlier PREWHERE steps;
+    /// a byte-by-byte probe would duplicate the counting pass.
     if (probe_stride == 1)
-        return false;
+        return true;
 
     /// Probe a bounded number of evenly spaced bytes from both directions. This keeps mixed
     /// filters with an interior or near-tail outlier on the regular path in the common case
@@ -876,7 +877,7 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             auto new_filter = ColumnUInt8::create(filter.size() - total_zero_rows_in_tails);
             IColumn::Filter & new_data = new_filter->getData();
 
-            /// Shorten the filter by removing zeros from granule tails
+            /// Shorten the filter by removing zeros in granule tails
             collapseZeroTails(filter.getData(), rows_per_granule_previous, new_data);
             if (total_rows_per_granule != new_filter->size())
                 throw Exception(
