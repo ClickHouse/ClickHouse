@@ -68,6 +68,16 @@ bool isPassthroughWrapper(const IQueryPlanStep & step)
         || typeid_cast<const CreatingSetsStep *>(&step);
 }
 
+/// Does this branch of the `Union` end in a read from the other replicas? Only the destination matters,
+/// so every step with a single child is walked through regardless of what it computes.
+bool branchReadsFromOtherReplicas(const QueryPlan::Node * node)
+{
+    while (!isReadFromOtherReplicas(*node->step) && node->children.size() == 1)
+        node = node->children.front();
+
+    return isReadFromOtherReplicas(*node->step);
+}
+
 /// Find the top node of the parallel replicas plan. E.g.:
 ///
 /// Expression ((Project names + Projection))
@@ -103,41 +113,44 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
 
             for (const auto & child : frame.node->children)
             {
-                auto * node = child;
-                /// Look through the wrappers that can sit between the `Union` and the node the two
-                /// plans have in common. They stack in any order and any depth, so peel them in a loop
-                /// rather than one of each kind - `Expression -> CreatingSets -> Expression` used to
-                /// leave the search stranded on the second `Expression`.
+                /// Classify this child first: is it the branch that reads from the other replicas? That
+                /// branch is never instrumented, it only has to be recognized so that the `Union` is
+                /// identified as the parallel-replicas pattern at all, so walk down to it through
+                /// anything with a single child and do not ask what those steps do. Requiring them to be
+                /// pass-through wrappers would make a branch we cannot see through look like a second
+                /// node to instrument, and the whole query would be skipped with "Top node for parallel
+                /// replicas plan is already found". `readingFromParallelReplicas` in
+                /// `optimizeReadInOrder` walks the same chain for the same reason.
+                if (branchReadsFromOtherReplicas(child))
+                {
+                    found_read_from_parallel_replicas = true;
+                    continue;
+                }
+
+                /// This is the branch the initiator runs, and one of its nodes is what gets
+                /// instrumented. Look through the wrappers that can sit between the `Union` and the node
+                /// the two plans have in common. They stack in any order and any depth, so peel them in
+                /// a loop rather than one of each kind - `Expression -> CreatingSets -> Expression` used
+                /// to leave the search stranded on the second `Expression`.
                 ///
                 /// Stop above the reading step: it records only input bytes, so landing on it leaves
                 /// no estimate of what the replicas would send and the optimization is skipped
                 /// altogether. The last wrapper above it does record output bytes.
-                ///
-                /// That guard is about what we instrument, and the branch reading from the other
-                /// replicas is never instrumented - it only has to be recognized, so that the `Union`
-                /// below is identified as the parallel-replicas pattern at all. So the guard lets the
-                /// loop step onto a `ReadFromParallelRemoteReplicas`, and only onto that.
+                auto * node = child;
                 while (node->children.size() == 1 && isPassthroughWrapper(*node->step)
-                       && (!node->children.front()->children.empty()
-                           || isReadFromOtherReplicas(*node->children.front()->step)))
+                       && !node->children.front()->children.empty())
                 {
                     node = node->children.front();
                 }
-                if (!isReadFromOtherReplicas(*node->step))
-                {
-                    if (replicas_plan_top_node)
-                    {
-                        // TODO(nickitat): support multiple read steps with parallel replicas
-                        LOG_DEBUG(getLogger("optimizeTree"), "Top node for parallel replicas plan is already found");
-                        return nullptr;
-                    }
 
-                    replicas_plan_top_node = node;
-                }
-                else
+                if (replicas_plan_top_node)
                 {
-                    found_read_from_parallel_replicas = true;
+                    // TODO(nickitat): support multiple read steps with parallel replicas
+                    LOG_DEBUG(getLogger("optimizeTree"), "Top node for parallel replicas plan is already found");
+                    return nullptr;
                 }
+
+                replicas_plan_top_node = node;
             }
 
             /// We found pattern

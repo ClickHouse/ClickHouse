@@ -140,9 +140,16 @@ namespace QueryPlanOptimizations
 {
 
 /// Does this expression hand every one of its inputs onward, renamed or reordered but otherwise
-/// untouched? Each output must trace back to an `INPUT` through `ALIAS` links alone, and no two outputs
-/// may land on the same one. Together with the equal column count that `sameByteLayout` demands, that
-/// makes the outputs a permutation of the inputs.
+/// untouched? Each output must trace back to an `INPUT` through `ALIAS` links alone, no two outputs may
+/// land on the same one, and there must be as many outputs as inputs. That makes the mapping a
+/// bijection: nothing is dropped, added, duplicated or computed, so the columns that leave are the
+/// columns that came in and the bytes are the same however they are ordered.
+///
+/// The mapping is what decides this, not a comparison of the two headers position by position. An
+/// `ALIAS` carries its child's type, so following each output to its input compares like with like, and
+/// a reorder of unlike types - `SELECT b, a` over `(a UInt64, b String)`, which the planner really does
+/// emit as a `Project names` or `Projection` of its own - is recognised for what it is. Reading the
+/// headers off by position would call that a change of layout and refuse to look through the step.
 ///
 /// Both halves matter. A `FUNCTION` or a constant `COLUMN` means the step puts something in the column
 /// that was never read: `SELECT concat(s, s) AS s` keeps the arity, the position and the type name, and
@@ -157,8 +164,13 @@ namespace QueryPlanOptimizations
 /// which is the case to reject.
 static bool outputsAreRenamedInputs(const ActionsDAG & actions)
 {
+    const auto & inputs = actions.getInputs();
+    const auto & outputs = actions.getOutputs();
+    if (outputs.size() != inputs.size())
+        return false;
+
     UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> forwarded;
-    for (const auto * output : actions.getOutputs())
+    for (const auto * output : outputs)
     {
         const auto * node = output;
         while (node->type == ActionsDAG::ActionType::ALIAS)
@@ -182,7 +194,9 @@ static bool outputsAreRenamedInputs(const ActionsDAG & actions)
 bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step)
 {
     const auto * expression = typeid_cast<const ExpressionStep *>(&step);
-    return expression && isByteTransparentTransform(*expression) && outputsAreRenamedInputs(expression->getExpression());
+    return expression && expression->getTransformTraits().preserves_number_of_rows
+        && !expression->getInputHeaders().empty()
+        && outputsAreRenamedInputs(expression->getExpression());
 }
 
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
