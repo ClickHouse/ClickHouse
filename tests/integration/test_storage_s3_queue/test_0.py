@@ -1529,6 +1529,81 @@ def test_move_takes_the_ingested_version_after_same_byte_reupload(started_cluste
     assert head["Metadata"]["clickhouse_move_source_version_id"] == ingested
 
 
+def test_move_takes_the_ingested_version_after_source_deleted(started_cluster):
+    """A source deleted after the read has no current version, so the move looks up the version that
+    was read. A re-upload of the same bytes right after that lookup must not be moved in its place."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"move_deleted_before_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    data = b"1,2,3\n"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    ingested = client.put_object(
+        Bucket=bucket, Key=source_key, Body=data, ContentType="text/csv"
+    )["VersionId"]
+
+    def source_versions():
+        return {
+            version["VersionId"]
+            for version in client.list_object_versions(
+                Bucket=bucket, Prefix=source_key
+            ).get("Versions", [])
+        }
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        bucket=bucket,
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        # The rows are read and inserted; a delete marker now hides the version that was read.
+        client.delete_object(Bucket=bucket, Key=source_key)
+        node.query(
+            f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT}"
+        )
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    try:
+        wait_failpoint_paused(node, PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT)
+        # The move has found the version that was read; the same bytes come back before the copy.
+        reuploaded = client.put_object(
+            Bucket=bucket, Key=source_key, Body=data, ContentType="text/plain"
+        )["VersionId"]
+        assert reuploaded != ingested
+    finally:
+        node.query(
+            f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT}"
+        )
+
+    wait_until(lambda: source_versions() == {reuploaded})
+    head = client.head_object(Bucket=bucket, Key=destination_key)
+    assert head["ContentType"] == "text/csv"
+    assert head["Metadata"]["clickhouse_move_source_version_id"] == ingested
+    # The newer version is still the object, not hidden behind a delete marker.
+    assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
+
+
 def test_unguarded_external_move_deletes_only_the_copied_version(started_cluster):
     """A move to another bucket that preserves the path needs no destination guard, but its delete
     must still take only the version the copy consumed: a re-upload of the same bytes carries the

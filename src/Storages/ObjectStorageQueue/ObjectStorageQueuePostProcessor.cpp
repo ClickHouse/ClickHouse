@@ -543,29 +543,33 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                             auto write_settings = move_write_settings;
                             /// A preserved path needs no destination guard, but the move still acts on the
                             /// generation that was ingested, so the source is looked up whatever the guard is.
-                            if (auto source_metadata
-                                = object_storage->tryGetObjectMetadata(source_object.remote_path, /*with_tags=*/false))
+                            auto source_metadata
+                                = object_storage->tryGetObjectMetadata(source_object.remote_path, /*with_tags=*/false);
+                            /// Only the generation the rows were read from may be moved. Rethrown once the
+                            /// batch is done, so the file is not committed and the newer generation is ingested.
+                            if (source_metadata && !isSameGeneration(type, source_metadata->etag, source_object.etag))
+                                throw Exception(
+                                    type == ObjectStorageType::Azure ? ErrorCodes::FILE_CHANGED_DURING_READ
+                                                                     : ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                                    "Object {} was not moved: it changed after it was ingested "
+                                    "(its `ETag` is {} instead of {})",
+                                    source_object.remote_path, source_metadata->etag, source_object.etag);
+                            /// On a versioned bucket the key may hold a same-byte re-upload or nothing at all,
+                            /// so everything below takes the version that was read, not whatever the key holds.
+                            if (!source_object.version_id.empty()
+                                && (!source_metadata || source_metadata->version_id != source_object.version_id))
                             {
-                                /// Only the generation the rows were read from may be moved. Rethrown once the
-                                /// batch is done, so the file is not committed and the newer generation is ingested.
-                                if (!isSameGeneration(type, source_metadata->etag, source_object.etag))
+                                /// Only a key that holds another version has a newer generation left to ingest.
+                                const bool key_holds_another_version = source_metadata.has_value();
+                                source_metadata = tryGetIngestedVersionMetadata(*object_storage, source_object);
+                                if (!source_metadata)
                                     throw Exception(
-                                        type == ObjectStorageType::Azure ? ErrorCodes::FILE_CHANGED_DURING_READ
-                                                                         : ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
-                                        "Object {} was not moved: it changed after it was ingested "
-                                        "(its `ETag` is {} instead of {})",
-                                        source_object.remote_path, source_metadata->etag, source_object.etag);
-                                /// A same-byte re-upload keeps the `ETag`, so on a versioned bucket everything below
-                                /// takes the version that was read, not the one the key points at now.
-                                if (!source_object.version_id.empty() && source_metadata->version_id != source_object.version_id)
-                                {
-                                    source_metadata = tryGetIngestedVersionMetadata(*object_storage, source_object);
-                                    if (!source_metadata)
-                                        throw Exception(
-                                            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
-                                            "Object {} was not moved: its version {} that was ingested is gone",
-                                            source_object.remote_path, source_object.version_id);
-                                }
+                                        key_holds_another_version ? ErrorCodes::S3_OBJECT_CHANGED_DURING_READ : ErrorCodes::S3_ERROR,
+                                        "Object {} was not moved: its version {} that was ingested is gone",
+                                        source_object.remote_path, source_object.version_id);
+                            }
+                            if (source_metadata)
+                            {
                                 consumed.version_id = source_metadata->version_id;
                                 /// Only a guarded move re-uploads the object, so only it stamps provenance for a
                                 /// later attempt to recognise its own copy by.
