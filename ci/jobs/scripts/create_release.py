@@ -973,10 +973,11 @@ if __name__ == "__main__":
         print(json.dumps(dataclasses.asdict(release_info), indent=2))
         # ci_buddy needs PyGithub and unidiff; importing here keeps the other steps free of them
         from ci_buddy import CIBuddy
+        from slack_ids import LESHIKUS
 
         if args.failed:
             CIBuddy(dry_run=args.dry_run).post_critical(
-                f"Failed: {title}, cc @Alexei Fedotov",
+                f"<@{LESHIKUS}> Failed: {title}",
                 dataclasses.asdict(release_info),
                 channels=[CIBuddy.Channels.ALERTS, CIBuddy.Channels.INFO],
             )
