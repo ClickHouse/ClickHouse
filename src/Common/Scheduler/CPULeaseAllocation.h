@@ -120,10 +120,19 @@ private:
 
     /// Represents a resource request for a cpu slot.
     /// Request is send to the scheduler every time lease requires to be renewed.
-    /// Only one request may be enqueued at a time.
-    /// Multiple requests may be in consumption state.
+    /// Multiple requests may be in flight or in consumption state.
     class Request;
     friend class Request; // for failed() and grant()
+
+    enum class RequestState : uint8_t
+    {
+        FREE,        /// Not currently in use
+        INFLIGHT,    /// Enqueued to the scheduler queue, waiting for callback
+        GRANTED,     /// Granted by scheduler (or noncompeting), waiting for in-order processing
+        FAILED,      /// Failed by scheduler, waiting to be skipped in-order
+        CONSUMING,   /// Granted and currently in consumption
+    };
+
     class Request final : public ResourceRequest
     {
     public:
@@ -134,20 +143,24 @@ private:
         void execute() override
         {
             chassert(lease);
-            lease->grant();
+            lease->grant(this);
         }
 
         /// Callback to trigger an error in case if resource is unavailable.
         void failed(const std::exception_ptr & ptr) override
         {
             chassert(lease);
-            lease->failed(ptr);
+            lease->failed(ptr, this);
         }
 
         CPULeaseAllocation * lease = nullptr;
         ResourceCost max_consumed = 0; /// Maximum consumption value for this request before it should be finished
         bool is_master_slot = false; /// (true) master or (false) worker slot
         bool is_noncompeting = false; /// Noncompeting slot has `ResourceLink::queue == nullptr` and is granted immediately w/o scheduling
+        RequestState state = RequestState::FREE;
+        UInt64 enqueue_time_ns = 0;
+        UInt64 grant_time_ns = 0;
+        size_t request_seq = 0;
     };
 
 public:
@@ -203,10 +216,10 @@ private:
     void resetPreempted(size_t thread_num);
 
     /// Resource request failed.
-    void failed(const std::exception_ptr & ptr);
+    void failed(const std::exception_ptr & ptr, Request * request);
 
     /// Grant a slot and enqueue another resource request if necessary.
-    void grant();
+    void grant(Request * request);
     void grantImpl(std::unique_lock<std::mutex> & lock);
 
     /// Report real CPU consumption by a thread.
@@ -273,6 +286,7 @@ private:
     std::atomic_bool acquirable{false}; // Tracks `(granted > 0 || exception) && !shutdown` value that could be read w/o locking mutex
     SlotCount allocated = 0; /// Current number of allocated (granted and acquired) slots
     Int64 granted = 0; /// Allocated but not acquired slots (might be negative if acquired more than allocated)
+    SlotCount noncompeting_granted = 0; /// Granted noncompeting slots waiting to be acquired
     ResourceCost consumed_ns = 0; /// Real consumption accumulated from renew() calls
     ResourceCost requested_ns = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
 
@@ -302,27 +316,50 @@ private:
     class RequestChain
     {
     public:
+        static constexpr size_t max_inflight_requests = 4;
+
         RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_);
         void finish();
-        void granted();
         bool enqueue(ResourceCost cost, ResourceCost requested_ns_);
         void cancel(std::unique_lock<std::mutex> & lock);
-        void scheduled();
-        ResourceCost getMaxConsumed() const { return tail->max_consumed; }
-        bool hasEnqueued() const { return enqueued; }
+        void markGranted(Request * request);
+        void markFailed(Request * request);
+        bool hasGrantReady() const { return next_grant->state == RequestState::GRANTED || next_grant->state == RequestState::FAILED; }
+        Request & peekNextGrant() { return *next_grant; }
+        void advanceGrant(bool was_granted)
+        {
+            next_grant->state = was_granted ? RequestState::CONSUMING : RequestState::FREE;
+            next_grant = next(next_grant);
+        }
+        ResourceCost getMaxConsumed() const;
+        bool hasEnqueued() const { return enqueued_count > 0; }
+        bool canEnqueue() const { return enqueued_count < max_inflight_requests; }
+        size_t getEnqueuedCount() const { return enqueued_count; }
 
     private:
+        using Requests = std::vector<Request>;
+        template <typename It>
+        It next(It it) const
+        {
+            ++it;
+            if (it == requests.end())
+                it = requests.begin();
+            return it;
+        }
+
+        CPULeaseAllocation * lease_ptr = nullptr;
         // Configuration
         const ResourceLink master_link; /// Resource link to use for master thread resource requests
         const ResourceLink worker_link; /// Resource link to use for worker threads resource requests
 
         // Current state
-        using Requests = std::vector<Request>;
         Requests requests; /// Circular buffer of requests per every slot
-        Requests::iterator head; /// Next request to be enqueued
+        Requests::iterator next_enqueue; /// Next request to be enqueued
+        Requests::iterator next_grant; /// Next request to be granted
         Requests::iterator tail; /// Next request to be finished
-        bool enqueued = false; /// True if the next request is already enqueued to the scheduler
+        size_t enqueued_count = 0; /// Number of requests currently enqueued to the scheduler
         bool request_master_slot = true; /// The next request should use (true) master_link or (false) worker_link
+        size_t request_seq_counter = 0;
 
         // Cancellation of enqueued request
         std::condition_variable cancel_cv;
