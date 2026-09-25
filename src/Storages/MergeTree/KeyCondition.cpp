@@ -4468,6 +4468,39 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+namespace
+{
+
+/// A real NULL or a NaN. A `Null` field also carries the `-inf`/`+inf` stand-ins of a key range,
+/// which neither a constant nor a key value ever is, so ask for a real NULL.
+bool isRealNullOrNaN(const Field & field)
+{
+    const bool is_real_null = field.isNull() && !field.isPositiveInfinity() && !field.isNegativeInfinity();
+    return is_real_null || field.isNaN();
+}
+
+/// Whether a `NULL` or a `NaN` sits anywhere inside `field`. `Field::isNull` and `Field::isNaN` only
+/// look at the top level, while a whole-tuple comparison carries its `NULL`s and `NaN`s inside a
+/// `Tuple`.
+///
+/// In a constant either makes the comparison against it "not true" for every row - `NULL` for a `NULL`
+/// element and false for a `NaN` one - whatever the key values are. In key order both have a definite
+/// position instead, so the range built from such a constant covers granules whose rows the predicate
+/// rejects.
+///
+/// In a key bound it is the mirror case: a granule whose bound holds one cannot be proven wholly inside
+/// a comparison range, because the row-level comparison of such a value is false (for a `NaN`) or
+/// `NULL` (for a `NULL`), and `WHERE` rejects both, while key order gives the value a definite position.
+///
+/// A bound comes from stored key data, so the walk is `anyFieldSatisfies`, whose explicit worklist keeps
+/// the nesting depth of the value off the native stack.
+bool hasNullOrNaNInside(const Field & field)
+{
+    return anyFieldSatisfies(field, isRealNullOrNaN);
+}
+
+}
+
 /// A `Variant`/`Dynamic` constant holds exactly one value, hence exactly one active member type, while its
 /// declared type is only the wrapper and `tryGetConstant` hands out the nested value.
 /// Returns that member type, or nullptr when it cannot be determined.
@@ -4818,6 +4851,17 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 /// For other comparison operators, skip building the atom
                 return false;
             }
+
+            /// The two checks above only look at the top level of the constant. A `NULL` or a `NaN`
+            /// nested in a `Tuple` - what a whole-tuple comparison carries - slips past them, and it
+            /// makes an atom built from that constant unsound: at row level the comparison is `NULL`
+            /// or false for every row, while in key order the constant has a definite position, so the
+            /// range covers granules whose rows the predicate rejects. Nothing is pruned by such a
+            /// range anyway, and the exact-count optimization would count those rows without ever
+            /// evaluating the filter. The same holds once a key transform maps the constant into key
+            /// space, which is where the nested value stops being visible at all.
+            if (hasNullOrNaNInside(const_value))
+                return false;
 
             bool condition_is_relaxed = false;
             bool constant_chain_is_positive = true;
@@ -6543,12 +6587,33 @@ static void tupleRangeToBoundingBox(const Range & tuple_range, Float64 & x_min, 
 namespace
 {
 
+/// Whether a value of a composite key type - a `Tuple`, an `Array`, a `Map` - may carry a `NULL` or a
+/// `NaN` below its top level. Such a value compares as `NULL` or false at row level, while key order
+/// gives it a definite position, and nothing in a key range reveals it: a granule of
+/// `Tuple(Int32, Nullable(Int32))` values `(2, 1), (2, NULL), (3, 0)` has the ordinary bounds
+/// `[(2, 1), (3, 0)]`. The top level itself is analysed from the range, see below.
+bool keyTypeMayHoldNestedNullOrNaN(const DataTypePtr & key_type)
+{
+    bool result = false;
+    removeNullable(removeLowCardinality(key_type))->forEachChild([&](const IDataType & child)
+    {
+        if (child.isNullable() || WhichDataType(child).isFloat())
+            result = true;
+    });
+    return result;
+}
+
 /// Whether the analysed range of a key column may hold a NULL value. A NULL key value is analysed as
-/// the `+inf` stand-in of the `NULLS LAST` order, so every range that reaches `+inf` may hold one.
+/// the `+inf` stand-in of the `NULLS LAST` order, so every range that reaches `+inf` may hold one. A
+/// `NULL` or a `NaN` nested in a composite key value may sit anywhere inside the range.
 bool rangeOfKeyColumnMayHoldNull(const Range & key_range, const DataTypes & key_types, size_t key_position)
 {
-    return key_range.right.isPositiveInfinity() && key_position < key_types.size() && key_types[key_position]
-        && isNullableOrLowCardinalityNullable(key_types[key_position]);
+    if (key_position >= key_types.size() || !key_types[key_position])
+        return false;
+
+    const auto & key_type = key_types[key_position];
+    return (key_range.right.isPositiveInfinity() && isNullableOrLowCardinalityNullable(key_type))
+        || keyTypeMayHoldNestedNullOrNaN(key_type);
 }
 
 /// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
@@ -6584,7 +6649,8 @@ bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
 /// reports a granule of NULLs as wholly matching a negated comparison - and the exact-count
 /// optimization then counts the very rows the `WHERE` throws away. So the exactness of the whole
 /// analysis is gone as soon as one such atom reads a `Nullable` key column whose range may hold a
-/// NULL. `IS NULL` and `IS NOT NULL` are excluded: they answer true or false for a NULL as well, so
+/// NULL, or a composite key column whose values may carry a nested `NULL` or `NaN`, which is the same
+/// "neither true nor false" at row level. `IS NULL` and `IS NOT NULL` are excluded: they answer true or false for a NULL as well, so
 /// the algebra describes them exactly. Only `can_be_false` is affected; `can_be_true`, and with it
 /// every pruning decision, is left alone.
 bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const
@@ -6702,12 +6768,20 @@ BoolMask KeyCondition::checkInHyperrectangle(
             ///   so no comparison condition can be true.
             /// - If only right bound is NaN: the range extends into NaN territory,
             ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+            /// - A NaN or a NULL nested in a Tuple bound - the bound of a whole-tuple key comparison - is
+            ///   invisible to `Field::isNaN` and `Field::isNull`, and key order does not reproduce the
+            ///   row-level comparison for it either, so the containment claim is dropped.
+            ///   `intersects` is left alone: keeping the granule is the safe direction.
             if (unlikely(key_range.left.isNaN()))
             {
                 intersects = false;
                 contains = false;
             }
             else if (unlikely(key_range.right.isNaN()))
+            {
+                contains = false;
+            }
+            else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
             {
                 contains = false;
             }
@@ -7140,12 +7214,18 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     ///   so no comparison condition can be true.
                     /// - If only right bound is NaN: the range extends into NaN territory,
                     ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+                    /// - A NaN or a NULL nested in a Tuple bound is invisible to `Field::isNaN` and
+                    ///   `Field::isNull`, so only the containment claim is dropped.
                     if (unlikely(key_range.left.isNaN()))
                     {
                         intersects = false;
                         contains = false;
                     }
                     else if (unlikely(key_range.right.isNaN()))
+                    {
+                        contains = false;
+                    }
+                    else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
                     {
                         contains = false;
                     }
