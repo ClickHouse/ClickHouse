@@ -125,7 +125,12 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                     if (replicas_plan_top_node)
                     {
                         // TODO(nickitat): support multiple read steps with parallel replicas
-                        LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node for parallel replicas plan is already found");
+                        LOG_TRACE(
+                            getLogger("AutoParallelReplicas"),
+                            "The plan built with parallel replicas has more than one local branch ({} and {}), only one is supported. "
+                            "Skipping optimization",
+                            replicas_plan_top_node->step->getName(),
+                            node->step->getName());
                         return nullptr;
                     }
 
@@ -157,6 +162,10 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
         stack.pop_back();
     }
 
+    if (!replicas_plan_top_node)
+        LOG_TRACE(
+            getLogger("AutoParallelReplicas"),
+            "The plan built with parallel replicas contains no read from the other replicas. Skipping optimization");
     return replicas_plan_top_node;
 }
 
@@ -748,10 +757,8 @@ void considerEnablingParallelReplicas(
     const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)
     {
+        /// `findTopNodeOfReplicasPlan` has logged why.
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
-        LOG_TRACE(
-            getLogger("AutoParallelReplicas"),
-            "The plan built with parallel replicas contains no read from the other replicas. Skipping optimization");
         return;
     }
     LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
