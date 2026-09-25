@@ -1,0 +1,29 @@
+-- the protected table is reachable from the new body, so every shape must be denied
+top level        ACCESS_DENIED
+from subquery    ACCESS_DENIED
+cte              ACCESS_DENIED
+join right side  ACCESS_DENIED
+union leg        ACCESS_DENIED
+-- only tables the user can read, so this must stay accepted
+own subquery     accepted
+-- a column grant must not be rejected just because the read sits inside a subquery
+granted column   accepted
+ungranted column ACCESS_DENIED
+-- rewriting the body of a view owned by another definer needs SET DEFINER on that definer
+foreign definer  ACCESS_DENIED
+after the grant  accepted
+-- a SQL SECURITY NONE body runs unchecked, so rewriting it needs ALLOW SQL SECURITY NONE
+security none    ACCESS_DENIED
+after the grant  accepted
+-- a MODIFY SQL SECURITY in the same statement decides what the body runs as, so the old one
+-- must not be what gets authorized
+take over       accepted
+hand to other   ACCESS_DENIED
+still no read   ACCESS_DENIED
+-- ON CLUSTER must not become a way around the checks above
+cluster top level ACCESS_DENIED
+cluster subquery  ACCESS_DENIED
+cluster no view   UNKNOWN_TABLE on the initiator
+-- no data leaked: none of the denied bodies was stored, so the view still reads only src
+back to src      accepted
+rows, leaked    1	0

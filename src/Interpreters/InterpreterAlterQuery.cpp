@@ -3,6 +3,7 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -17,6 +18,7 @@
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
@@ -28,6 +30,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
@@ -492,6 +495,28 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             visitor.substituteDatabaseInTableFunctions(*alter.command_list);
         }
 
+        /// The hosts that apply this statement run the DDL entry without the initiator's user, unless
+        /// `distributed_ddl_use_initial_user_and_roles` is on, so the initiator is the only place the new
+        /// body can be authorized against the user who wrote it.
+        /// Every host resolves an unqualified name in the body against the database of the altered view, so
+        /// the check has to use that database as well. The session database applies only when the statement
+        /// named no database at all, which is also how each host will read it.
+        if (modify_query)
+        {
+            /// The body is authorized here against the view's stored SQL security as well as the tables it reads,
+            /// so the initiator must have the view, just as it must have those tables.
+            if (!table)
+                throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                    "Table {}.{} does not exist on this host. `ALTER TABLE ... ON CLUSTER ... MODIFY QUERY` is authorized "
+                    "on the initiator, so it must be run from a host that has the view",
+                    backQuoteIfNeed(alter.getDatabase()), backQuoteIfNeed(alter.getTable()));
+
+            String body_default_database = alter.getDatabase();
+            if (body_default_database.empty())
+                body_default_database = getContext()->getCurrentDatabase();
+            checkAccessForModifyQueryOnCluster(*modify_query, body_default_database);
+        }
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -657,14 +682,83 @@ bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr 
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
 }
 
+/** `MODIFY QUERY` replaces the body a view executes, and for `SQL SECURITY DEFINER` or `NONE` that body does
+  * not run with the caller's privileges. Writing it is the same act of impersonation that `CREATE` and
+  * `MODIFY SQL SECURITY` gate behind `SET DEFINER` and `ALLOW SQL SECURITY NONE` in
+  * `processSQLSecurityOption`, so it takes the same grants.
+  */
+void InterpreterAlterQuery::addRequiredAccessForModifyQuerySQLSecurity(
+    AccessRightsElements & required_access, const StoragePtr & storage) const
+{
+    /// Without the view there is no body to replace: the local path fails on the missing table, and an
+    /// `ON CLUSTER` statement refuses to dispatch a `MODIFY QUERY` for a view this host does not have.
+    if (!storage)
+        return;
+
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+    if (!metadata_snapshot->sql_security_type)
+        return;
+
+    if (*metadata_snapshot->sql_security_type == SQLSecurityType::NONE)
+    {
+        required_access.emplace_back(AccessType::ALLOW_SQL_SECURITY_NONE);
+        return;
+    }
+
+    if (*metadata_snapshot->sql_security_type != SQLSecurityType::DEFINER || !metadata_snapshot->definer)
+        return;
+
+    /// An ephemeral definer is stored as `<user>:definer` (see `processSQLSecurityOption`), but the grant is
+    /// held on the user it was cloned from, so authorise against that base name.
+    std::string_view definer_name = *metadata_snapshot->definer;
+    static constexpr std::string_view ephemeral_suffix = ":definer";
+    if (definer_name.ends_with(ephemeral_suffix))
+        definer_name.remove_suffix(ephemeral_suffix.size());
+
+    if (definer_name != getContext()->getUserName())
+        required_access.emplace_back(AccessType::SET_DEFINER, definer_name);
+}
+
+/** Authorize the tables a new `MODIFY QUERY` body reads, on the initiator of an `ON CLUSTER` statement.
+  * Locally that authorization is a side effect of the analysis `AlterCommand::apply` performs, which the
+  * `ON CLUSTER` path never reaches. Analysing a clone here reproduces it without altering what is dispatched.
+  * The body is prepared exactly as the local path prepares it, so the check resolves the same table names
+  * the hosts will.
+  */
+void InterpreterAlterQuery::checkAccessForModifyQueryOnCluster(
+    const ASTSelectWithUnionQuery & modify_query, const String & default_database) const
+{
+    auto select = modify_query.clone();
+    ApplyWithSubqueryVisitor::visit(select->as<ASTSelectWithUnionQuery &>());
+    AddDefaultDatabaseVisitor visitor(getContext(), default_database);
+    visitor.visit(select);
+
+    /// Called for the access check the planner performs while analysing, not for the header it returns.
+    InterpreterSelectQueryAnalyzer::getSampleBlock(
+        select, getContext(), SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
+}
+
 AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
+    /// A `MODIFY SQL SECURITY` in the same statement decides what the new body will execute as, and
+    /// `processSQLSecurityOption` has already authorized exactly that. The stored security then says
+    /// nothing about the body being written, so it must not add a requirement of its own.
+    const bool sql_security_is_being_replaced = std::ranges::any_of(
+        alter.command_list->children,
+        [](const auto & child) { return child->template as<ASTAlterCommand &>().sql_security != nullptr; });
+
     for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<ASTAlterCommand &>();
         required_access.append_range(
-            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+            getRequiredAccessForCommand(command, alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+
+        if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
+            addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
+    }
 
     return required_access;
 }

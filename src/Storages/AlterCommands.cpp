@@ -1270,7 +1270,12 @@ void AlterCommand::apply(
             return;
 #endif
 
-        SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
+        /// `MODIFY QUERY` rewrites the body the view executes, so the invoking user must be able to read every
+        /// table the new body references - the same requirement `CREATE MATERIALIZED VIEW` already enforces.
+        /// `getSampleBlock` analyses without planning, and an unplanned subquery never reaches the per-table
+        /// check in the planner, so `checkSubqueryTableAccess` has to ask for that check explicitly.
+        SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(
+            select->clone(), context, SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
 
         metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
     }
