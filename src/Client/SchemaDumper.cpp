@@ -1991,7 +1991,7 @@ std::vector<TableInfo> fetchTables(
                     if (!host.empty())
                         cached->insert(std::move(host));
             }
-            catch (...)
+            catch (...) // NOLINT(bugprone-empty-catch)
             {
                 /// Ok: server may restrict system tables access; fallback to loopback checks.
             }
