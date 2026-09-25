@@ -113,7 +113,8 @@ public:
         const SizeLimits & set_size_limits_,
         bool skip_null_keys_ = false);
 
-    /// Returns the representation chosen from the materialized input columns. Requires an initialized set.
+    /// Returns fingerprints for generic set methods and for key types whose distinct values comparison
+    /// can merge. Other set methods retain their original key columns. Requires an initialized set.
     DistinctKeyRepresentation getKeyRepresentation() const;
 
     const ColumnNumbers & getKeyColumnsPositions() const { return key_columns_pos; }

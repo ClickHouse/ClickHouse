@@ -12,6 +12,8 @@
 #include <Processors/Transforms/SortingTransform.h>
 #include <Common/assert_cast.h>
 
+#include <set>
+
 using namespace DB;
 
 TEST(DistinctSpillLayout, KeepsEmittedFlagConstantThroughSorting)
@@ -113,4 +115,36 @@ TEST(DistinctSpillLayout, SuppressionContainsOnlyRetainedKeys)
                     || retained_keys.compareAt(row, 1, ordinary_keys, 1) == 0);
         }
     }
+}
+
+TEST(DistinctSpillLayout, FloatSuppressionUsesInputFingerprints)
+{
+    const auto input_header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeFloat64>(), "key")});
+    auto key_column = ColumnFloat64::create();
+    key_column->insertValue(0.);
+    key_column->insertValue(-0.);
+    Columns input_columns;
+    input_columns.emplace_back(std::move(key_column));
+    auto input = Chunk(std::move(input_columns), 2);
+
+    DistinctSetFilter filter(*input_header, {}, SizeLimits{});
+    filter.prepareForInsert(input);
+    ASSERT_EQ(filter.getKeyRepresentation(), DistinctKeyRepresentation::Hash128);
+
+    const DistinctSpillLayout layout(input_header, {0}, DistinctKeyRepresentation::Hash128, false);
+    auto ordinary = layout.prepareInputChunk(input.clone(), /*first_arrival_number=*/ 0);
+    auto emitted = filter.filter(std::move(input));
+    ASSERT_EQ(emitted.getNumRows(), 2);
+    auto extractor = std::move(filter).extractKeys();
+    auto suppression = layout.prepareSuppressionChunk(extractor->next(2, 0));
+
+    const auto & key_name = layout.getKeySortDescription().front().column_name;
+    const auto & ordinary_keys = assert_cast<const ColumnUInt128 &>(
+        *ordinary.getColumns()[layout.getInputRunHeader()->getPositionByName(key_name)]).getData();
+    const auto & suppression_keys = assert_cast<const ColumnUInt128 &>(
+        *suppression.getColumns()[layout.getSuppressionRunHeader()->getPositionByName(key_name)]).getData();
+    EXPECT_EQ(
+        std::set<UInt128>(ordinary_keys.begin(), ordinary_keys.end()),
+        std::set<UInt128>(suppression_keys.begin(), suppression_keys.end()));
 }
