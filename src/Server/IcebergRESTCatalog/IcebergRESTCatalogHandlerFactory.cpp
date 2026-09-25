@@ -12,19 +12,17 @@
 namespace DB
 {
 
-IcebergRESTCatalogHandlerFactory::IcebergRESTCatalogHandlerFactory(IServer & server_, String warehouse_, String base_location_, KeeperIcebergRESTCatalogStorePtr store_)
+IcebergRESTCatalogHandlerFactory::IcebergRESTCatalogHandlerFactory(IServer & server_, IcebergRESTCatalogWarehousesPtr warehouses_)
     : log(getLogger(name))
     , server(server_)
-    , warehouse(std::move(warehouse_))
-    , base_location(std::move(base_location_))
-    , store(std::move(store_))
+    , warehouses(std::move(warehouses_))
 {
 }
 
 std::unique_ptr<HTTPRequestHandler> IcebergRESTCatalogHandlerFactory::createRequestHandler(const HTTPServerRequest & request)
 {
     LOG_TRACE(log, "HTTP request for {}. {}", name, request.toStringForLogging());
-    return std::make_unique<IcebergRESTCatalogHandler>(server, warehouse, base_location, store);
+    return std::make_unique<IcebergRESTCatalogHandler>(server, warehouses);
 }
 
 HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & server, String warehouse, String base_location, const String & zookeeper_path)
@@ -32,7 +30,17 @@ HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & se
     auto root_path = std::filesystem::path(zookeeper_path) / escapeForFileName(warehouse);
     auto store = std::make_shared<KeeperIcebergRESTCatalogStore>(
         [context = server.context()] { return context->getZooKeeper(); }, root_path.string());
-    return std::make_shared<IcebergRESTCatalogHandlerFactory>(server, std::move(warehouse), std::move(base_location), std::move(store));
+
+    IcebergRESTCatalogWarehouses::Map warehouses;
+    warehouses.emplace(
+        warehouse,
+        std::make_shared<const IcebergRESTCatalogWarehouse>(IcebergRESTCatalogWarehouse{
+            .name = warehouse,
+            .base_location = std::move(base_location),
+            .store = std::move(store),
+        }));
+    return std::make_shared<IcebergRESTCatalogHandlerFactory>(
+        server, std::make_shared<const IcebergRESTCatalogWarehouses>(std::move(warehouses)));
 }
 
 }

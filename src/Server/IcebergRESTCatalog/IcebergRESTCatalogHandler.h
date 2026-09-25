@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogRouter.h>
 #include <Common/logger_useful.h>
 
@@ -23,7 +23,7 @@ class Session;
 class IcebergRESTCatalogHandler : public HTTPRequestHandler
 {
 public:
-    IcebergRESTCatalogHandler(IServer & server_, String warehouse_, String base_location_, KeeperIcebergRESTCatalogStorePtr store_);
+    IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehousesPtr warehouses_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -32,9 +32,9 @@ private:
     ContextMutablePtr authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response, Session & session) const;
 
     void handleGetConfig(const Poco::URI & uri, HTTPServerResponse & response) const;
-    void handleListNamespaces(const Poco::URI & uri, HTTPServerResponse & response) const;
-    void handleCreateNamespace(HTTPServerRequest & request, HTTPServerResponse & response) const;
-    void handleNamespaceExists(const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
+    void handleListNamespaces(const IcebergRESTCatalogWarehouse & warehouse, const Poco::URI & uri, HTTPServerResponse & response) const;
+    void handleCreateNamespace(const IcebergRESTCatalogWarehouse & warehouse, HTTPServerRequest & request, HTTPServerResponse & response) const;
+    void handleNamespaceExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
 
     /// Reads the whole request body. Returns nullopt after answering 413 if the body exceeds max_size.
     static std::optional<String> readRequestBody(HTTPServerRequest & request, HTTPServerResponse & response, size_t max_size);
@@ -45,10 +45,7 @@ private:
 
     LoggerPtr log;
     IServer & server;
-    const String warehouse;
-    /// Storage prefix for tables created without an explicit location.
-    const String base_location;
-    KeeperIcebergRESTCatalogStorePtr store;
+    IcebergRESTCatalogWarehousesPtr warehouses;
 };
 
 }
