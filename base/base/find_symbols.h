@@ -328,69 +328,46 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
 }
 
 #if defined(__AVX2__)
-template <bool positive, char... symbols>
-inline const char * find_first_symbols_sse2_block(const char * pos)
-{
-    __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-    __m128i eq = mm_is_in<symbols...>(bytes);
-    uint16_t bit_mask = maybe_negate<positive>(static_cast<uint16_t>(_mm_movemask_epi8(eq)));
-    return bit_mask ? pos + __builtin_ctz(bit_mask) : nullptr;
-}
-
-template <bool positive, char... symbols>
-inline const char * find_first_symbols_avx2_blocks_64(const char * pos)
-{
-    __m256i bytes0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
-    __m256i bytes1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 32));
-
-    __m256i eq0 = mm256_is_in<symbols...>(bytes0);
-    __m256i eq1 = mm256_is_in<symbols...>(bytes1);
-
-    __m256i combined;
-    if constexpr (positive)
-        combined = _mm256_or_si256(eq0, eq1);
-    else
-        combined = _mm256_and_si256(eq0, eq1);
-
-    const uint32_t combined_mask = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(combined)));
-    if (!combined_mask)
-        return nullptr;
-
-    const uint32_t mask0 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq0)));
-    if (mask0)
-        return pos + __builtin_ctz(mask0);
-
-    const uint32_t mask1 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq1)));
-    return pos + 32 + __builtin_ctz(mask1);
-}
-
-template <bool positive, char... symbols>
-inline const char * find_first_symbols_avx2_blocks_128(const char * pos)
-{
-    if (const char * found = find_first_symbols_avx2_blocks_64<positive, symbols...>(pos))
-        return found;
-
-    return find_first_symbols_avx2_blocks_64<positive, symbols...>(pos + 64);
-}
-
 template <bool positive, ReturnMode return_mode, char... symbols>
 [[gnu::noinline]] const char * find_first_symbols_avx2(const char * const begin, const char * const end)
 {
     const char * pos = begin;
 
-    if constexpr (sizeof...(symbols) <= 2)
+    /// Check two 64-byte groups per iteration, but stop at the first matching
+    /// group. Combining each pair saves a movemask on the common no-match path.
+    for (; end - pos >= 128; pos += 128)
     {
-        for (; end - pos >= 128; pos += 128)
+        for (size_t offset = 0; offset < 128; offset += 64)
         {
-            if (const char * found = find_first_symbols_avx2_blocks_128<positive, symbols...>(pos))
-                return found;
+            __m256i bytes0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + offset));
+            __m256i bytes1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + offset + 32));
+            __m256i eq0 = mm256_is_in<symbols...>(bytes0);
+            __m256i eq1 = mm256_is_in<symbols...>(bytes1);
+            __m256i combined;
+            if constexpr (positive)
+                combined = _mm256_or_si256(eq0, eq1);
+            else
+                combined = _mm256_and_si256(eq0, eq1);
+            if (maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(combined))))
+            {
+                /// The combined mask loses the group order; inspect the first
+                /// vector before the second to return the earliest match.
+                const uint32_t mask0 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq0)));
+                if (mask0)
+                    return pos + offset + __builtin_ctz(mask0);
+                const uint32_t mask1 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq1)));
+                return pos + offset + 32 + __builtin_ctz(mask1);
+            }
         }
     }
 
-    for (; end - pos >= 64; pos += 64)
+    for (; end - pos >= 32; pos += 32)
     {
-        if (const char * found = find_first_symbols_avx2_blocks_64<positive, symbols...>(pos))
-            return found;
+        __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
+        __m256i eq = mm256_is_in<symbols...>(bytes);
+        uint32_t mask = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq)));
+        if (mask)
+            return pos + __builtin_ctz(mask);
     }
 
     return find_first_symbols_sse2<positive, return_mode, symbols...>(pos, end);
@@ -737,8 +714,11 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
 #endif
             for (const char * pos = begin; pos != prefix_end; pos += 16)
             {
-                if (const char * found = find_first_symbols_sse2_block<positive, symbols...>(pos))
-                    return found;
+                __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+                __m128i eq = mm_is_in<symbols...>(bytes);
+                uint16_t mask = maybe_negate<positive>(static_cast<uint16_t>(_mm_movemask_epi8(eq)));
+                if (mask)
+                    return pos + __builtin_ctz(mask);
             }
 
             return find_first_symbols_avx2<positive, return_mode, symbols...>(prefix_end, end);
@@ -755,6 +735,9 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
 template <bool positive, ReturnMode return_mode>
 inline const char * find_first_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
 {
+    if (haystack.empty()) [[unlikely]]
+        return return_mode == ReturnMode::End ? haystack.data() : nullptr;
+
     /// Empty needle: no byte is in the (empty) symbol set. For positive search
     /// nothing is found; for the negative variant every byte qualifies and we
     /// return the first one. Bypassing the SIMD body here keeps `mm_is_in_prepare`
@@ -778,12 +761,18 @@ template <bool positive, ReturnMode return_mode, char... symbols>
 inline const char * find_last_symbols_dispatch(const char * begin, const char * end)
     requires(0 <= sizeof...(symbols) && sizeof...(symbols) <= 16)
 {
+    if (begin >= end) [[unlikely]]
+        return return_mode == ReturnMode::End ? end : nullptr;
+
     return find_last_symbols_sse2<positive, return_mode, symbols...>(begin, end);
 }
 
 template <bool positive, ReturnMode return_mode>
 inline const char * find_last_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
 {
+    if (haystack.empty()) [[unlikely]]
+        return return_mode == ReturnMode::End ? haystack.data() : nullptr;
+
     /// See the forward dispatcher above.
     if (symbols.str.empty())
     {

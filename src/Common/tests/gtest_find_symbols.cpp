@@ -31,7 +31,7 @@ static void test_compile_time_boundaries()
     while (std::find(needles.begin(), needles.end(), non_needle) != needles.end())
         ++non_needle;
     const bool contains_null = std::find(needles.begin(), needles.end(), '\0') != needles.end();
-    const std::array<size_t, 39> sizes {
+    const std::array<size_t, 45> sizes {
         0, 1,
         15, 16, 17,
         31, 32, 33,
@@ -45,9 +45,14 @@ static void test_compile_time_boundaries()
         1039, 1040, 1041,
         1055, 1056, 1057,
         1087, 1088, 1089,
+        1119, 1120, 1121,
+        1151, 1152, 1153,
         1536, 1537,
     };
-    const std::array<size_t, 21> positions {0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 127, 128, 255, 256, 511, 512, 767, 1023};
+    const std::array<size_t, 31> positions {
+        0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 127, 128, 255, 256,
+        511, 512, 543, 544, 575, 576, 607, 608, 639, 640, 767, 1023, 1119, 1120,
+    };
 
     for (const size_t size : sizes)
     {
@@ -142,7 +147,7 @@ template <char... symbols>
 static void test_compile_time_randomized()
 {
     const std::array<char, sizeof...(symbols)> needles {symbols...};
-    constexpr std::array<size_t, 41> sizes {
+    constexpr std::array<size_t, 47> sizes {
         0, 1,
         15, 16, 17,
         31, 32, 33,
@@ -157,6 +162,8 @@ static void test_compile_time_randomized()
         1039, 1040, 1041,
         1055, 1056, 1057,
         1087, 1088, 1089,
+        1119, 1120, 1121,
+        1151, 1152, 1153,
         1536, 1537,
     };
     std::uint32_t state = 0x12345678;
@@ -216,6 +223,79 @@ TEST(FindSymbols, CompileTimeRandomized)
     test_compile_time_randomized<'\0', '\n'>();
 }
 
+template <char... symbols>
+static void test_compile_time_match_order()
+{
+    const std::array<char, sizeof...(symbols)> needles {symbols...};
+    for (size_t alignment = 0; alignment < 32; ++alignment)
+    {
+        for (bool positive : {false, true})
+        {
+            const char fill = positive ? 'x' : needles[0];
+            std::string haystack(1153 + alignment, fill);
+            char * begin = haystack.data() + alignment;
+            const char * end = begin + 1153;
+
+            /// Exercise every lane after the SSE prefix, with a second match
+            /// in a later vector. The combined mask must not reorder matches.
+            for (size_t position = 512; position < 640; ++position)
+            {
+                const char match = positive ? needles[position % needles.size()] : 'x';
+                begin[position] = match;
+                begin[position + 32] = match;
+                if (positive)
+                {
+                    ASSERT_EQ(find_first_symbols<symbols...>(begin, end), begin + position);
+                    ASSERT_EQ(find_first_symbols_or_null<symbols...>(begin, end), begin + position);
+                }
+                else
+                {
+                    ASSERT_EQ(find_first_not_symbols<symbols...>(begin, end), begin + position);
+                    ASSERT_EQ(find_first_not_symbols_or_null<symbols...>(begin, end), begin + position);
+                }
+                begin[position] = fill;
+                begin[position + 32] = fill;
+            }
+        }
+    }
+}
+
+TEST(FindSymbols, CompileTimeMatchOrder)
+{
+    test_compile_time_match_order<'\n'>();
+    test_compile_time_match_order<'\n', '\r'>();
+    test_compile_time_match_order<'\n', '\r', '\\'>();
+    test_compile_time_match_order<'\n', '\r', '\\', '"'>();
+    test_compile_time_match_order<'\0'>();
+    test_compile_time_match_order<'\0', '\n', '\x80', '\xff'>();
+}
+
+TEST(FindSymbols, EmptyRange)
+{
+    const std::string storage = "a";
+    for (const auto haystack : {std::string_view{}, std::string_view(storage.data(), 0)})
+    {
+        const char * begin = haystack.data();
+        EXPECT_EQ(find_first_symbols<'a'>(begin, begin), begin);
+        EXPECT_EQ(find_first_not_symbols<'a'>(begin, begin), begin);
+        EXPECT_EQ(find_first_symbols_or_null<'a'>(begin, begin), nullptr);
+        EXPECT_EQ(find_first_not_symbols_or_null<'a'>(begin, begin), nullptr);
+        EXPECT_EQ(find_last_symbols_or_null<'a'>(begin, begin), nullptr);
+        EXPECT_EQ(find_last_not_symbols_or_null<'a'>(begin, begin), nullptr);
+
+        for (const auto & needle : {std::string{}, std::string("a"), std::string("abcde")})
+        {
+            const SearchSymbols symbols(needle);
+            EXPECT_EQ(find_first_symbols(haystack, symbols), begin);
+            EXPECT_EQ(find_first_not_symbols(haystack, symbols), begin);
+            EXPECT_EQ(find_first_symbols_or_null(haystack, symbols), nullptr);
+            EXPECT_EQ(find_first_not_symbols_or_null(haystack, symbols), nullptr);
+            EXPECT_EQ(find_last_symbols_or_null(haystack, symbols), nullptr);
+            EXPECT_EQ(find_last_not_symbols_or_null(haystack, symbols), nullptr);
+        }
+    }
+}
+
 TEST(FindSymbols, ReversedRange)
 {
     const std::array<char, 1> haystack {'a'};
@@ -226,6 +306,8 @@ TEST(FindSymbols, ReversedRange)
     ASSERT_EQ(find_first_symbols_or_null<'a'>(begin, end), nullptr);
     ASSERT_EQ(find_first_not_symbols<'a'>(begin, end), end);
     ASSERT_EQ(find_first_not_symbols_or_null<'a'>(begin, end), nullptr);
+    ASSERT_EQ(find_last_symbols_or_null<'a'>(begin, end), nullptr);
+    ASSERT_EQ(find_last_not_symbols_or_null<'a'>(begin, end), nullptr);
 }
 
 
