@@ -15,7 +15,7 @@ namespace DB
 template <typename ValueType>
 ValueType timeseriesMaxValueForDuplicateTimestamp(ValueType lhs, ValueType rhs)
 {
-    /// Of two NaNs the greater bit pattern wins, so an ordinary NaN beats the Prometheus stale marker 0x7ff0000000000002.
+    /// Of two NaNs the greater bit pattern wins, so a quiet NaN beats the Prometheus stale marker 0x7ff0000000000002.
     if (isNaN(lhs))
         return (isNaN(rhs) && bit_cast<UInt64>(lhs) > bit_cast<UInt64>(rhs)) ? lhs : rhs;
     if (isNaN(rhs))
