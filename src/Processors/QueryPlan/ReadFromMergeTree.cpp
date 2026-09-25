@@ -4078,16 +4078,12 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 
     updateSortDescription();
 
-    /// The memoized analysis already applied the cache verdict for the WHERE condition; probing it
-    /// again would repeat every lookup and count a second hit or miss for one consultation.
+    /// `analyzed_result_ptr` already carries the cache verdict of the conditions it was analyzed with: probe only the new PREWHERE.
     SelectQueryInfo probe_query_info = query_info;
     probe_query_info.filter_actions_dag = nullptr;
 
-    /// The memoized analysis carries the cache verdict for the condition it ran with and nothing probes the
-    /// cache again, so apply the new PREWHERE's verdict to the ranges it selected. This needs the memo,
-    /// `applyFilters` to have run, a cache-eligible read outside parallel replicas and a probe that can narrow.
-    /// A unique key and a non-deterministic virtual in the filter are excluded here: the key (table, part,
-    /// condition) cannot express the rows a unique key hides, or a value that changes while the key stays the same.
+    /// The cache key (table, part, condition) cannot express the rows a unique key hides, nor the value of
+    /// a non-deterministic virtual column, which can change while the key stays the same.
     if (analyzed_result_ptr && indexes.has_value() && allow_query_condition_cache
         && !is_parallel_reading_from_replicas
         && !storage_snapshot->metadata->hasUniqueKey()
