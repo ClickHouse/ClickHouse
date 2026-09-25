@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/validateGroupByKeyType.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Functions/FunctionsExternalDictionaries.h>
@@ -1827,8 +1828,7 @@ void SelectQueryExpressionAnalyzer::validateOrderByKeyType(const DataTypePtr & k
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable", type.getName());
     };
 
-    check(*key_type);
-    key_type->forEachChild(check);
+    forEachInTypeTree(*key_type, check);
 }
 
 bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)
