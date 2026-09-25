@@ -1460,6 +1460,7 @@ static std::optional<size_t> estimateReadBytes(
 
     const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
     const auto & virtuals = storage_snapshot->metadata->virtuals;
+    const auto & table_columns = storage_snapshot->metadata->getColumns();
 
     /// A metadata-only `ALTER TABLE ... RENAME COLUMN` does not rewrite the part: until the mutation
     /// is applied the part still holds the old name, and the reader resolves the new name through
@@ -1494,7 +1495,7 @@ static std::optional<size_t> estimateReadBytes(
         /// The name of a requested column as it is stored in this particular part.
         auto try_get_column_in_part = [&](const String & col_name) -> std::optional<NameAndTypePair>
         {
-            auto col = data_part.tryGetColumn(col_name);
+            auto col = data_part.tryGetColumnForTable(col_name, table_columns);
 
             if (!alter_conversions)
                 return col;
@@ -1507,9 +1508,9 @@ static std::optional<size_t> estimateReadBytes(
             if (!col && alter_conversions->isColumnRenamed(name_in_part))
             {
                 name_in_part = alter_conversions->getColumnOldName(name_in_part);
-                col = data_part.tryGetColumn(col_in_storage->isSubcolumn()
-                    ? Nested::concatenateName(name_in_part, col_in_storage->getSubcolumnName())
-                    : name_in_part);
+                col = col_in_storage->isSubcolumn()
+                    ? data_part.tryGetColumn(Nested::concatenateName(name_in_part, col_in_storage->getSubcolumnName()))
+                    : data_part.getColumnsDescription().tryGetPhysical(name_in_part);
             }
 
             /// A pending `DROP COLUMN` leaves the data in the part, but it is stale: the reader treats
@@ -6238,12 +6239,13 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
     if (parts.size() == parts_before_pruning)
         return data.getColumnSizes(columns, calculate_subcolumn_sizes);
 
+    const auto & table_columns = getStorageMetadata()->getColumns();
     IStorage::ColumnSizeByName result;
     for (const auto & part : parts)
     {
         for (const auto & column_name : columns)
         {
-            const auto column = part.data_part->tryGetColumn(column_name);
+            const auto column = part.data_part->tryGetColumnForTable(column_name, table_columns);
             if (!column)
                 continue;
 
