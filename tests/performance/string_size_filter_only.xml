@@ -62,9 +62,9 @@
     <drop_query>DROP TABLE IF EXISTS string_size_filter_only_perf</drop_query>
 
     <!--
-         Compare both multi-step PREWHERE orders on a legacy String layout. The optimized plan
-         must co-read the parent and size in one reader instead of traversing the regular stream
-         again in a later reader.
+         Compare the legacy fallback and both textual predicate orders with multi-step PREWHERE.
+         The optimizer may reorder predicates; textual order does not establish the read order.
+         The optimized plan should avoid traversing the legacy String stream more than once.
     -->
     <create_query>
         CREATE TABLE string_size_filter_only_legacy_perf
@@ -83,20 +83,44 @@
             min_rows_for_wide_part = 0
     </create_query>
 
+    <!-- Nonempty rows stay 1 KiB long; one in ten has a guaranteed LIKE match. -->
     <fill_query>
         INSERT INTO string_size_filter_only_legacy_perf
         SELECT
             number AS id,
-            if(number &lt; 5000, '', randomString(1024)) AS s
+            if(number &lt; 5000, '', concat(if(number % 10 = 0, 'foo', 'bar'), randomString(1021))) AS s
         FROM numbers_mt(500000)
     </fill_query>
     <fill_query>OPTIMIZE TABLE string_size_filter_only_legacy_perf FINAL SETTINGS mutations_sync = 1</fill_query>
 
-    <!-- Target: legacy String parent and size are needed in different PREWHERE steps. -->
+    <!-- Legacy empty(s) needs the full stream even when the size subcolumn rewrite is enabled. -->
+    <query tag='Legacy String size filter-only optimization'>
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE empty(s)
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <query tag='Legacy String size filter-only control'>
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE empty(s)
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 0,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <!-- Multi-predicate legacy workload with the size predicate written first. -->
     <query tag='Legacy String size-first filter-only optimization'>
         SELECT s
         FROM string_size_filter_only_legacy_perf
-        PREWHERE empty(s) AND id > 0 AND like(s, '%foo%')
+        PREWHERE notEmpty(s) AND id > 0 AND like(s, '%foo%')
         FORMAT Null
         SETTINGS
             max_threads = 1,
@@ -105,11 +129,11 @@
             optimize_move_to_prewhere = 0
     </query>
 
-    <!-- Control: the original plan reads the full String in the first PREWHERE step. -->
+    <!-- Control: evaluate the same predicates without the subcolumn rewrite. -->
     <query tag='Legacy String size-first filter-only control'>
         SELECT s
         FROM string_size_filter_only_legacy_perf
-        PREWHERE empty(s) AND id > 0 AND like(s, '%foo%')
+        PREWHERE notEmpty(s) AND id > 0 AND like(s, '%foo%')
         FORMAT Null
         SETTINGS
             max_threads = 1,
@@ -118,11 +142,11 @@
             optimize_move_to_prewhere = 0
     </query>
 
-    <!-- Target: the reverse order must use the same single physical legacy String read. -->
+    <!-- The same satisfiable workload with the full-String predicate written first. -->
     <query tag='Legacy String full-first filter-only optimization'>
         SELECT s
         FROM string_size_filter_only_legacy_perf
-        PREWHERE like(s, '%foo%') AND id > 0 AND empty(s)
+        PREWHERE like(s, '%foo%') AND id > 0 AND notEmpty(s)
         FORMAT Null
         SETTINGS
             max_threads = 1,
@@ -135,7 +159,7 @@
     <query tag='Legacy String full-first filter-only control'>
         SELECT s
         FROM string_size_filter_only_legacy_perf
-        PREWHERE like(s, '%foo%') AND id > 0 AND empty(s)
+        PREWHERE like(s, '%foo%') AND id > 0 AND notEmpty(s)
         FORMAT Null
         SETTINGS
             max_threads = 1,
