@@ -30,7 +30,7 @@ using CTEToLevelMap = std::unordered_map<MaterializedCTEPtr, MaterializedCteWith
 
 /// The deepest level wins: that is the level whose gate dominates every shallower reader. A null
 /// `subquery` is upgraded by any occurrence carrying a body, since only a body can build a writer.
-bool registerMaterializedCTE(
+void registerMaterializedCTE(
     CTEToLevelMap & materialized_ctes,
     const MaterializedCTEPtr & cte,
     const QueryTreeNodePtr & subquery,
@@ -38,16 +38,63 @@ bool registerMaterializedCTE(
 {
     auto [it, inserted] = materialized_ctes.emplace(cte, MaterializedCteWithLevel{subquery, level});
     if (inserted)
-        return true;
+        return;
 
-    if (!it->second.subquery && subquery)
+    if (!it->second.subquery)
         it->second.subquery = subquery;
+    it->second.level = std::max(it->second.level, level);
+}
 
-    if (it->second.level >= level)
-        return false;
+/// Places every CTE below all the CTEs that read it, including the ones reachable only through
+/// `dependencies`: a by-name reference carries no body for the tree walk to visit. Topological order
+/// (Kahn's algorithm), readers first, so a CTE's level is final before it is passed to its dependencies.
+void assignLevelsInTopologicalOrder(CTEToLevelMap & materialized_ctes)
+{
+    std::unordered_map<MaterializedCTEPtr, size_t> readers_count;
+    std::vector<MaterializedCTEPtr> to_visit;
+    for (const auto & [cte, _] : materialized_ctes)
+    {
+        readers_count.emplace(cte, 0);
+        to_visit.push_back(cte);
+    }
 
-    it->second.level = level;
-    return true;
+    while (!to_visit.empty())
+    {
+        auto cte = std::move(to_visit.back());
+        to_visit.pop_back();
+        for (const auto & dependency : cte->dependencies)
+        {
+            auto [it, inserted] = readers_count.emplace(dependency, 0);
+            ++it->second;
+            if (inserted)
+                to_visit.push_back(dependency);
+        }
+    }
+
+    std::vector<MaterializedCTEPtr> ready;
+    for (const auto & [cte, count] : readers_count)
+        if (count == 0)
+            ready.push_back(cte);
+
+    size_t ordered = 0;
+    while (!ready.empty())
+    {
+        auto cte = std::move(ready.back());
+        ready.pop_back();
+        ++ordered;
+
+        const size_t level = materialized_ctes.at(cte).level;
+        for (const auto & dependency : cte->dependencies)
+        {
+            registerMaterializedCTE(materialized_ctes, dependency, nullptr, level + 1);
+            if (--readers_count.at(dependency) == 0)
+                ready.push_back(dependency);
+        }
+    }
+
+    if (ordered != readers_count.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Dependencies of materialized CTEs form a cycle, their materialization cannot be ordered");
 }
 
 }
@@ -93,27 +140,7 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
     if (materialized_ctes.empty())
         return ctes_by_level;
 
-    /// A by-name reference carries no body, so the CTEs that body reads are invisible to the walk above.
-    for (size_t iteration = 0;; ++iteration)
-    {
-        std::vector<std::pair<MaterializedCTEPtr, size_t>> known;
-        known.reserve(materialized_ctes.size());
-        for (const auto & [cte, entry] : materialized_ctes)
-            known.emplace_back(cte, entry.level);
-
-        bool level_changed = false;
-        for (const auto & [cte, cte_level] : known)
-            for (const auto & dependency : cte->dependencies)
-                level_changed |= registerMaterializedCTE(materialized_ctes, dependency, nullptr, cte_level + 1);
-
-        if (!level_changed)
-            break;
-
-        /// A level rising past one round per CTE implies a dependency cycle, which no ordering satisfies.
-        if (iteration >= materialized_ctes.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Dependencies of materialized CTEs form a cycle, their materialization cannot be ordered");
-    }
+    assignLevelsInTopologicalOrder(materialized_ctes);
 
     size_t max_level = 0;
     for (const auto & [_, entry] : materialized_ctes)

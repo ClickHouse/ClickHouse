@@ -82,6 +82,15 @@ SELECT count() FROM remote('127.0.0.1', currentDatabase(), 't_05238') WHERE v IN
          d AS MATERIALIZED (SELECT x + 200 AS y FROM c LIMIT 173)
     SELECT d1.y FROM d AS d1, d AS d2, e AS e1, e AS e2);
 
+-- A diamond on a longer chain: `f` reads `e` and `d`, `e` reads `d`, `d` reads `c`. `d` is reached both
+-- directly and through `e`, and `c` must still be materialized before `d` reads it. The set is {200..202}.
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), 't_05238') WHERE v IN (
+    WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)),
+         d AS MATERIALIZED (SELECT x + 200 AS y FROM c),
+         e AS MATERIALIZED (SELECT y FROM d),
+         f AS MATERIALIZED (SELECT e.y AS z FROM e, d WHERE e.y = d.y)
+    SELECT a.z FROM f AS a, f AS b);
+
 -- The runtime route: with the in-place build disabled the set is built by DelayedCreatingSetsStep, which
 -- strips the set plan's own gate and relies on the outer plan carrying one.
 SELECT count() FROM remote('127.0.0.1', currentDatabase(), 't_05238') WHERE v IN (
