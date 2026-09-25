@@ -66,7 +66,8 @@ StorageFileCluster::StorageFileCluster(
     else
     {
         if (format_name == "auto")
-            format_name = StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context).second;
+            format_name = StorageFile::getTableStructureAndFormatFromFile(
+                paths, compression_method, std::nullopt, context, std::nullopt, /*structure_is_required=*/false).second;
         storage_metadata.setColumns(columns_);
     }
 

@@ -1271,7 +1271,8 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     const String & compression_method,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
-    const std::optional<ArchiveInfo> & archive_info)
+    const std::optional<ArchiveInfo> & archive_info,
+    bool structure_is_required)
 {
     if (format == "Distributed")
     {
@@ -1303,14 +1304,14 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
         if (format)
             return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
 
-        return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
+        return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context, structure_is_required);
     }
 
     ReadBufferFromFileIterator read_buffer_iterator(paths, format, compression_method, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
 
-    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
+    return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context, structure_is_required);
 }
 
 ColumnsDescription StorageFile::getTableStructureFromFile(
@@ -1329,9 +1330,11 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     const DB::String & compression_method,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
-    const std::optional<ArchiveInfo> & archive_info)
+    const std::optional<ArchiveInfo> & archive_info,
+    bool structure_is_required)
 {
-    return getTableStructureAndFormatFromFileImpl(std::nullopt, paths, compression_method, format_settings, context, archive_info);
+    return getTableStructureAndFormatFromFileImpl(
+        std::nullopt, paths, compression_method, format_settings, context, archive_info, structure_is_required);
 }
 
 bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -1487,7 +1490,8 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     else
     {
         if (format_name == "auto")
-            format_name = getTableStructureAndFormatFromFile(paths, compression_method, format_settings, args.getContext(), archive_info).second;
+            format_name = getTableStructureAndFormatFromFile(
+                paths, compression_method, format_settings, args.getContext(), archive_info, /*structure_is_required=*/false).second;
         /// We don't allow special columns in File storage.
         if (!args.columns.hasOnlyOrdinary())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine File doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");

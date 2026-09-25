@@ -1050,7 +1050,7 @@ std::string StorageObjectStorage::resolveFormatFromData(
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    auto format_and_schema = detectFormatAndReadSchema(format_settings, *iterator, context).second;
+    auto format_and_schema = detectFormatAndReadSchema(format_settings, *iterator, context, /*structure_is_required=*/false).second;
     sample_path = iterator->getLastFilePath();
     return format_and_schema;
 }
