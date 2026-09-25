@@ -20,7 +20,7 @@ node = cluster.add_instance(
     with_remote_database_disk=False,
 )
 
-UK_SETTINGS = {"allow_experimental_unique_key": "1"}
+UK_SETTINGS = {"enable_unique_key": "1"}
 
 EXPECTED_ROWS = "10\ta\n20\tb\n30\tc\n"
 

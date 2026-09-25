@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/PostingListSegment.h>
+#include <Core/SettingsEnums.h>
 #include <memory>
 #include <vector>
 
@@ -18,6 +19,29 @@ class MergeTreeReaderStream;
 
 /// Operation type for padding the column with the posting list.
 enum class PadOp { Or, And };
+
+/// Window of rows written by a linear scan (`linearOr` / `linearAnd`): a half-open range [begin, end) of absolute
+/// row ids that covers every byte the scan wrote. Empty when the posting list has no rows in the scanned window.
+struct PostingsApplyWindow
+{
+    size_t begin = 0;
+    size_t end = 0;
+
+    bool empty() const { return begin >= end; }
+
+    /// Extend the window to cover [row_begin, row_end). The scans write in ascending order, so a new range
+    /// starts past the current end: only `end` moves once the window is not empty.
+    void extend(size_t row_begin, size_t row_end)
+    {
+        chassert(row_begin < row_end);
+        chassert(empty() || row_begin >= end);
+
+        if (empty())
+            begin = row_begin;
+
+        end = row_end;
+    }
+};
 
 /// Lazy cursor over a compressed posting list (sorted row IDs for a token).
 ///
@@ -53,11 +77,13 @@ public:
     /// Flushes batched ProfileEvents counters to the global counters.
     ~PostingListCursor();
 
-    /// Set bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
-    void linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
+    /// Sets bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
+    /// Returns the range of rows for which bytes were set.
+    PostingsApplyWindow linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
 
-    /// Increment counters in `data` for all doc_ids in [row_offset, row_offset + num_rows).
-    void linearAnd(UInt8 * data, size_t row_offset, size_t num_rows);
+    /// Increments counters in `data` for all doc_ids in [row_offset, row_offset + num_rows).
+    /// Returns the range of rows for which counters were incremented.
+    PostingsApplyWindow linearAnd(UInt8 * data, size_t row_offset, size_t num_rows);
 
     /// Move to the next doc_id.
     void next();
@@ -97,13 +123,15 @@ private:
     void decodeBlock(size_t block_idx);
 
     /// Linear scan over an embedded (fully materialized) posting list.
+    /// Returns the range of rows written.
     template <PadOp op>
-    void linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows);
+    PostingsApplyWindow linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows);
 
     /// Linear scan over a compressed posting list: iterates segments and packed blocks, with
     /// segment- and block-level skips for regions already resolved by `op` (see `canSkipRegion`).
+    /// Returns the range of rows written.
     template <PadOp op>
-    void linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
+    PostingsApplyWindow linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
 
     MergeTreeReaderStream * stream = nullptr;
     const TokenPostingsInfo * info = nullptr;
@@ -145,7 +173,6 @@ private:
 
     /// Segment iteration state.
     size_t current_segment_idx = 0;
-    bool has_prepared_first_segment = false;
     bool is_valid = true;
 
     /// ProfileEvents are batched into these local counters and flushed in the destructor
@@ -184,19 +211,17 @@ void lazyUnionPostingLists(
 /// The caller is responsible for preparing the cursor vector (resolving search tokens
 /// to cursors and deduplicating if necessary).
 ///
-/// Adaptive algorithm selection based on posting list density:
-///   - n == 1:  direct linear scan (degenerate case, same as union).
-///   - Dense (min density >= threshold):
-///     Brute-force bitmap counting — first cursor sets bits, remaining cursors increment counters,
-///     then a final pass keeps only rows where count == n.
-///   - Sparse:  leapfrog intersection — cursors sorted by ascending cardinality, the sparsest
-///     cursor leads and others advance forward.
+/// The two algorithms, selected by `algorithm`.
+///   - Brute-force bitmap counting — the sparsest cursor sets bits,
+//      the remaining ones increment counters,
+///     then a final pass keeps only the rows where the count is n.
+///   - Leapfrog — the sparsest cursor leads and the others advance forward, skipping whole blocks.
 void lazyIntersectPostingLists(
     IColumn & column,
     const std::vector<PostingListCursorPtr> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,
-    float density_threshold);
+    TextIndexPostingsIntersectionAlgorithm algorithm);
 
 }
