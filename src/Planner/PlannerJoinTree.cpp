@@ -1653,6 +1653,8 @@ static void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
     });
 }
 
+}
+
 void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context)
 {
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
@@ -1691,6 +1693,9 @@ void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePt
         if (const auto & set_query_tree = set_subquery->getQueryTree())
             disableParallelReplicasForSubqueries(set_query_tree);
 }
+
+namespace
+{
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
