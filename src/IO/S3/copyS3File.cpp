@@ -849,17 +849,6 @@ namespace
         const ReadSettings read_settings;
         std::function<void()> fallback_method;
 
-        /// What `CopyObject` and `UploadPartCopy` name as the source: `bucket/key`, with the version
-        /// appended as `?versionId=...` when one is selected, which is the form the SDK documents for
-        /// `SetCopySource`. Without the version, a copy of a source that the caller reads by version
-        /// would copy the latest version of the key instead.
-        String copySource() const
-        {
-            if (copy_settings.source_version_id.empty())
-                return src_bucket + "/" + src_key;
-            return src_bucket + "/" + src_key + "?versionId=" + copy_settings.source_version_id;
-        }
-
         /// Whether the endpoint refused the copy because the source is not the generation the copy is
         /// pinned to. The SDK has no typed model error for `PreconditionFailed`, so the raw code is kept
         /// in the exception name; the HTTP status is checked as well, for a marshaller that keeps it.
@@ -886,7 +875,8 @@ namespace
 
         void fillCopyRequest(S3::CopyObjectRequest & request)
         {
-            request.SetCopySource(copySource());
+            request.SetCopySource(src_bucket + "/" + src_key);
+            request.setCopySourceVersionId(copy_settings.source_version_id);
             if (!copy_settings.source_if_match.empty())
                 request.SetCopySourceIfMatch(copy_settings.source_if_match);
             request.SetBucket(dest_bucket);
@@ -1011,7 +1001,8 @@ namespace
             auto request = std::make_unique<S3::UploadPartCopyRequest>();
 
             /// Make a copy request to copy a part.
-            request->SetCopySource(copySource());
+            request->SetCopySource(src_bucket + "/" + src_key);
+            request->setCopySourceVersionId(copy_settings.source_version_id);
             /// Every part is pinned to the same generation, so a source replaced in place between two
             /// parts cannot make the destination a splice of two generations.
             if (!copy_settings.source_if_match.empty())
