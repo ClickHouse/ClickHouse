@@ -44,16 +44,14 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 }
 
 
-void checkStorageSettingNames(const StorageFactory::Arguments & args)
+/// Whether the definition is replayed rather than stated by the user now. Each term marks a definition
+/// this server did not judge: `attach` outranks `secondary` in `LoadingStrictnessLevel`, Keeper recovery
+/// carries no metadata transaction, and Shared Catalog secondaries re-execute the initiator's DDL. A
+/// secondary refusing one retries its queue entry forever, and a definition already on disk that is
+/// refused takes down the load of everything stored next to it rather than only itself.
+static bool isReplayedTableDefinition(
+    LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
 {
-    if (!args.storage_def || !args.storage_def->settings)
-        return;
-
-    const auto local_context = args.getLocalContext();
-
-    /// Each term marks a definition this server did not judge: `attach` outranks `secondary` in
-    /// `LoadingStrictnessLevel`, Keeper recovery carries no metadata transaction, and Shared Catalog
-    /// secondaries re-execute the initiator's DDL. A secondary refusing one retries its queue entry forever.
     const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
     const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
 #if CLICKHOUSE_CLOUD
@@ -62,8 +60,19 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
 #else
     const bool is_shared_catalog_replay = false;
 #endif
-    if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_ddl_replay
-        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay)
+    return !isFreshTableDefinition(mode, query.attach_short_syntax) || is_ddl_replay
+        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay;
+}
+
+
+void checkStorageSettingNames(const StorageFactory::Arguments & args)
+{
+    if (!args.storage_def || !args.storage_def->settings)
+        return;
+
+    const auto local_context = args.getLocalContext();
+
+    if (isReplayedTableDefinition(args.mode, args.query, local_context))
         return;
 
     /// A name that is neither a setting of this engine nor a query setting of this context is no setting at
@@ -233,7 +242,21 @@ StoragePtr StorageFactory::get(
                     "UNIQUE KEY clause",
                     [](StorageFeatures features) { return features.supports_unique_key; });
 
-            if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
+            if (storage_def->ttl_table)
+                check_feature(
+                    "TTL clause",
+                    [](StorageFeatures features) { return features.supports_ttl; });
+
+            /// A column `TTL` is the one part of a definition that an engine can be left holding without
+            /// anyone having written it there: a definition without a column list takes the source table's
+            /// columns whole, and a server that still copied the source column's `TTL` wrote it back out on
+            /// the next `ALTER`. Those definitions are on disk now, and refusing one while the metadata is
+            /// read fails the load of everything stored beside it rather than that one table - with
+            /// `async_load_databases = 0` the server does not start, leaving hand-editing the metadata file
+            /// as the only way out. Such an engine holds the `TTL` without acting on it, so a replayed
+            /// definition is loaded and the `TTL` ignored. A table `TTL` is never inherited, so it stays
+            /// refused wherever it appears.
+            if (!columns.getColumnTTLs().empty() && !isReplayedTableDefinition(mode, query, local_context))
                 check_feature(
                     "TTL clause",
                     [](StorageFeatures features) { return features.supports_ttl; });

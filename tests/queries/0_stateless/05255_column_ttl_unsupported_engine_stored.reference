@@ -1,0 +1,10 @@
+--- a full-definition ATTACH states its columns, so a column TTL is refused ---
+BAD_ARGUMENTS
+--- a table TTL is refused wherever it is stated, since it is never inherited ---
+BAD_ARGUMENTS
+--- a stored definition carrying an inherited column TTL loads ---
+1
+7	2000-01-01
+2
+--- the stored TTL stays in the definition, so the load is repeatable ---
+TTL dt + toIntervalDay(1)
