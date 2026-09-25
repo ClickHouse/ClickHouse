@@ -304,3 +304,15 @@ def test_a_switched_profile_cannot_supply_the_keyword_and_then_leave_readonly_mo
             ).strip()
             == "0"
         ), node.name
+
+
+def test_a_request_raised_by_its_method_can_tighten_readonly(started_cluster):
+    # The hook raises `readonly` from 0 to 2 before the query string's own settings are checked, so
+    # on such a request `readonly = 1` is a tightening. This is a different provenance from `ro2`,
+    # whose profile supplies the 2 directly.
+    output, error = http(node_on, "SELECT getSetting('readonly')", "default", {"readonly": 1})
+    assert error is None, error
+    assert output.strip() == "1"
+
+    output, error = http(node_off, "SELECT getSetting('readonly')", "default", {"readonly": 1})
+    assert error is not None and REFUSAL in error

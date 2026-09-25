@@ -902,8 +902,9 @@
              restriction) < 2 (no writes, any setting but 'readonly') < 1 (no writes, no setting changes).
              At 'readonly' 1 a settings profile marking 'readonly' as 'changeable_in_readonly' still lets
              a session leave readonly mode over POST and the native protocol; this setting stops that
-             constraint from covering 'readonly' on an HTTP request whose method implies a read-only
-             query. By default this setting is false. -->
+             constraint from covering 'readonly' on an HTTP request whose method implies a read-only query.
+             A profile whose own values set 'readonly' to 0 is applied to the session rather than
+             checked against the request, so it is not covered either. By default this setting is false. -->
         <readonly_can_only_be_tightened>false</readonly_can_only_be_tightened>
 
         <!-- Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). -->
