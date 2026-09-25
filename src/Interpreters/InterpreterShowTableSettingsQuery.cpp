@@ -51,6 +51,11 @@ String InterpreterShowTableSettingsQuery::getRewrittenQuery(const String & datab
         ///
         /// Every row of a setting carries the same value, source and `changed` - only `alias_for` tells them apart
         /// - so grouping them under the declared name and taking any of them answers in one reading of the table.
+        /// It rests on one assumption: that no setting of an engine is declared under a name that is another
+        /// setting's alias. Such a pair would fold into one row here, and `any` would pick between two different
+        /// values. Nothing in this statement can check that, and an engine whose struct had such a pair would
+        /// already resolve the name ambiguously everywhere else, so it is left as an assumption rather than
+        /// defended here - a `DISTINCT` would only hide the collision behind an arbitrary row.
         /// A second `SELECT` over it would read the table twice, which for a `S3Queue` table means fetching its
         /// settings from Keeper twice.
         const std::string_view like = query.case_insensitive_like ? "ILIKE " : "LIKE ";

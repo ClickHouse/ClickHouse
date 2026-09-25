@@ -39,6 +39,9 @@ enum class SettingOrigin : uint8_t
     /// The engine does not report an origin for this setting - including a value it adjusts while it runs and
     /// does not write back. A value for that belongs before this one, in the order above. Enumeration also sets
     /// this for every setting that is merely changed, before a storage's override refines it.
+    ///
+    /// Staying last is what lets `SettingsWithRecordedOrigin` check the whole enum by checking this one: it
+    /// stores an origin in four bits, so there is room for sixteen values in all.
     Other,
 };
 
