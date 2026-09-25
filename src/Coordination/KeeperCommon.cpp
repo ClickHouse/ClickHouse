@@ -38,7 +38,7 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
     extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
-    extern const CoordinationSettingsBool disk_move_verify_destination_read_back;
+    extern const CoordinationSettingsBool disk_move_verify_destination_digest;
 }
 
 namespace
@@ -288,9 +288,9 @@ KeeperMoveResult moveFileBetweenDisks(
         /// an unnecessary read-back, but cannot skip the mandatory verification for an adopted object.
         const bool adopted_existing_object
             = ProfileEvents::global_counters[ProfileEvents::S3CompleteMultipartUploadAdoptedExistingObject] > adopted_existing_object_before;
-        const bool verify_read_back
-            = coordination_settings[CoordinationSetting::disk_move_verify_destination_read_back].value || adopted_existing_object;
-        if (verify_read_back && computeKeeperFileDigest(disk_to, path_to) != *source_digest)
+        const bool verify_digest
+            = coordination_settings[CoordinationSetting::disk_move_verify_destination_digest].value || adopted_existing_object;
+        if (verify_digest && computeKeeperFileDigest(disk_to, path_to) != *source_digest)
         {
             LOG_ERROR(logger, "Copied destination {} on disk {} has an unexpected digest", path_to, disk_to->getName());
             return std::unexpected(KeeperMoveError::CopyCompletedDestinationValidationFailed);

@@ -19,7 +19,7 @@
 
 namespace DB::CoordinationSetting
 {
-    extern const CoordinationSettingsBool disk_move_verify_destination_read_back;
+    extern const CoordinationSettingsBool disk_move_verify_destination_digest;
     extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
     extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
 }
@@ -366,10 +366,10 @@ TEST(KeeperFileMove, LocalMoveAndCallbackOutcomes)
     EXPECT_TRUE(source->existsFile("exception"));
 }
 
-TEST(KeeperFileMove, DestinationReadBackIsDisabledByDefaultAndCacheBypassingWhenEnabled)
+TEST(KeeperFileMove, DestinationDigestVerificationIsDisabledByDefaultAndCacheBypassingWhenEnabled)
 {
     fs::create_directories("./tmp");
-    ChangelogDirTest root("./tmp/gtest_keeper_file_move_read_back");
+    ChangelogDirTest root("./tmp/gtest_keeper_file_move_verify_digest");
     fs::create_directories(root.path + "/source");
     fs::create_directories(root.path + "/destination");
     auto source = std::make_shared<DB::DiskLocal>("source", root.path + "/source");
@@ -382,7 +382,7 @@ TEST(KeeperFileMove, DestinationReadBackIsDisabledByDefaultAndCacheBypassingWhen
     EXPECT_EQ(destination->destination_reads, 0);
 
     auto settings = std::make_shared<DB::CoordinationSettings>();
-    (*settings)[DB::CoordinationSetting::disk_move_verify_destination_read_back] = true;
+    (*settings)[DB::CoordinationSetting::disk_move_verify_destination_digest] = true;
     auto verifying_context = makeKeeperContext(false, settings);
     writeFile(source, "second", "second-data");
     EXPECT_TRUE(DB::moveFileBetweenDisks(
