@@ -73,6 +73,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/Utils.h>
 
 
 namespace ProfileEvents
@@ -176,17 +177,12 @@ namespace
             if (TableFunctionFactory::instance().isTableFunctionName(func->name))
                 return;
 
-            String database_name = query_context->getCurrentDatabase();
-            String table_name = func->name;
-            if (func->isCompoundName())
-            {
-                std::vector<std::string> parts;
-                splitInto<'.'>(parts, func->name);
-                if (parts.size() != 2)
-                    return;
-                database_name = parts[0];
-                table_name = parts[1];
-            }
+            /// Split the name the way `QueryAnalyzer::resolveTableFunction` does, rather than on
+            /// `isCompoundName`: that bit says whether the parser saw the dot outside backticks and
+            /// does not survive an AST round-trip, which reduces `db.view` to one quoted token.
+            auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(func->name, query_context);
+            if (table_name.empty())
+                return;
 
             auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
             if (!storage)
