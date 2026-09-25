@@ -24,8 +24,8 @@ ${CLICKHOUSE_LOCAL} --path "${test_dir}" --query "SELECT * FROM system.settings"
 # Everything after the failed population must rethrow the remembered error instead of serving what got attached
 # before the failure: `system.numbers` from the failed populator, `system.one` attached eagerly at startup, the
 # implicit `system.one` of a `FROM`-less query, and `EXISTS`, which goes through `isTableExist`. `--ignore-error`
-# keeps the session going after each error but swallows the error text, so the queries that must fail are the
-# queries that must print nothing.
+# keeps the session going after each error and reports it on stderr, which is discarded here, so the queries
+# that must fail are the queries that must print nothing on stdout.
 ${CLICKHOUSE_LOCAL} --path "${test_dir}" --multiquery --ignore-error --query "
     SELECT 'before the failure';
     SELECT * FROM system.settings;
@@ -34,6 +34,6 @@ ${CLICKHOUSE_LOCAL} --path "${test_dir}" --multiquery --ignore-error --query "
     SELECT 'implicit system.one served';
     EXISTS TABLE system.numbers;
     SHOW TABLES FROM system;
-"
+" 2>/dev/null
 
 rm -rf "${test_dir}"
