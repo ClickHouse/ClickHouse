@@ -73,9 +73,8 @@ print('previews are cut to the limit' if ok else 'previews exceed the limit')
 "
 
 echo '--- DISTINCT deduplicates each preview standalone'
-# The final `DISTINCT` that can spill to disk is `ExternalDistinctTransform`, which does not support
-# previews, and the fail-close activation then keeps the whole chain dormant. Its thresholds are
-# pinned off here, so the step exercises the in-memory `DistinctTransform` it is about.
+# The external `DISTINCT` thresholds are pinned off, so the step exercises the in-memory
+# `DistinctTransform`; `ExternalDistinctTransform` is covered by `05257_query_result_previews_external_distinct`.
 NO_EXTERNAL_DISTINCT="&max_bytes_before_external_distinct=0&max_bytes_ratio_before_external_distinct=0"
 DISTINCT_QUERY="SELECT DISTINCT c FROM (SELECT intDiv(number, 250000) AS k, count() AS c FROM numbers(1000000) GROUP BY k) ORDER BY c FORMAT JSONCompactEachRow"
 DISTINCT_RESPONSE=$(${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}${PREVIEWS}${NO_EXTERNAL_DISTINCT}&framing_output_format=JSONEachPacketString" -d "${DISTINCT_QUERY}")
