@@ -113,6 +113,29 @@ SELECT 'a non-default FixedString constant still prunes';
 SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = toFixedString('abc', 3);
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = toFixedString('abc', 3)) WHERE explain LIKE '%Granules: 0/%';
 
+SELECT 'absent map key against a set of another type';
+-- `Set::execute` casts the missing key's `UInt8` default `0` to the set's `String` type, where it
+-- matches `'0'`, so the guard has to probe the set with the default of the map value type.
+DROP TABLE IF EXISTS t_bf_map_uint8_keys;
+CREATE TABLE t_bf_map_uint8_keys (m Map(String, UInt8), INDEX bf mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_uint8_keys VALUES (map('k', 1)), (map('other', 2)), (map());
+OPTIMIZE TABLE t_bf_map_uint8_keys FINAL;
+
+DROP TABLE IF EXISTS t_bf_map_uint8_set_source;
+CREATE TABLE t_bf_map_uint8_set_source (s String) ENGINE = Memory;
+INSERT INTO t_bf_map_uint8_set_source VALUES ('0');
+
+SELECT count() FROM t_bf_map_uint8_keys WHERE m['absent'] IN (SELECT '0');
+SELECT count() FROM t_bf_map_uint8_keys WHERE m['absent'] IN (SELECT '0') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_uint8_keys WHERE m['absent'] IN (SELECT s FROM t_bf_map_uint8_set_source);
+SELECT count() FROM t_bf_map_uint8_keys WHERE m['absent'] IN (SELECT s FROM t_bf_map_uint8_set_source) SETTINGS use_skip_indexes = 0;
+-- A set without the default still prunes.
+SELECT count() FROM t_bf_map_uint8_keys WHERE m['absent'] IN (SELECT '5');
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_map_uint8_keys WHERE m['absent'] IN (SELECT '5')) WHERE explain LIKE '%Granules: 0/%';
+
+DROP TABLE t_bf_map_uint8_keys;
+DROP TABLE t_bf_map_uint8_set_source;
 DROP TABLE t_bf_set;
 DROP TABLE t_bf_map;
 DROP TABLE t_bf_map_str;

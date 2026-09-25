@@ -766,13 +766,19 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (!prepared_set)
             return false;
 
-        auto default_column_to_check = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-        ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, type, ""};
-        ColumnsWithTypeAndName default_columns_with_type_to_check = {default_column_with_type_to_check};
-        auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
-        const auto & set_contains_default_value_predicate_column_typed = assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column);
-        bool set_contain_default_value = set_contains_default_value_predicate_column_typed.getData()[0];
-        if (set_contain_default_value)
+        /// A missing key yields the default of the map value type, and `Set::execute` casts it to the
+        /// set's element type before the membership check, exactly as at runtime. So probe the set
+        /// with that default (e.g. `0` of `UInt8` matches the `String` set element `'0'`), and keep
+        /// the probe with the set's own default so nothing that declined before starts using the index.
+        auto set_contains_default_of = [&](const DataTypePtr & default_type)
+        {
+            auto default_column_to_check = default_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+            ColumnsWithTypeAndName default_columns_with_type_to_check = {{default_column_to_check, default_type, ""}};
+            auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
+            return assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column).getData()[0] != 0;
+        };
+
+        if (set_contains_default_of(type) || set_contains_default_of(key_node.getDAGNode()->result_type))
             return false;
 
         if (map_info->has_keys_index)
