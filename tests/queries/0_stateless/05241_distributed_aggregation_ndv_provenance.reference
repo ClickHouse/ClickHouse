@@ -1,0 +1,4 @@
+-- filtered NDV is ignored: partial aggregation
+1	0
+-- exact NDV remains eligible: shuffle aggregation
+0	1

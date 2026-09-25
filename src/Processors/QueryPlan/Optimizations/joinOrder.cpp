@@ -64,7 +64,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
-    /// Merge column stats from both children, then update NDVs for equi-join key columns.
+    /// Merge column stats from both children, then update distinct-value counts for equi-join key columns.
     column_stats = left->column_stats;
     column_stats.insert(right->column_stats.begin(), right->column_stats.end());
 
@@ -84,19 +84,31 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         auto left_it = column_stats.find(left_col);
         auto right_it = column_stats.find(right_col);
 
-        if (left_it != column_stats.end() && right_it != column_stats.end())
+        if (left_it != column_stats.end()
+            && right_it != column_stats.end()
+            && QueryPlanOptimizations::isDistinctCountUpperBound(left_it->second.ndv_provenance)
+            && QueryPlanOptimizations::isDistinctCountUpperBound(right_it->second.ndv_provenance))
         {
-            UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
-            left_it->second.num_distinct_values = min_ndv;
-            right_it->second.num_distinct_values = min_ndv;
+            QueryPlanOptimizations::updateJoinKeyDistinctCounts(
+                left_it->second,
+                right_it->second,
+                join_operator.kind,
+                join_operator.strictness);
         }
     }
 
-    /// Cap all NDVs at the estimated output rows.
+    /// Cap all distinct-value counts at the estimated output rows. The estimate is not a proven row-count
+    /// upper bound, so an NDV reduced by it is no longer a proven upper bound either.
     if (cardinality_)
     {
         for (auto & [_, stats] : column_stats)
-            stats.num_distinct_values = std::min(stats.num_distinct_values, *cardinality_);
+        {
+            if (stats.num_distinct_values > *cardinality_)
+            {
+                stats.num_distinct_values = *cardinality_;
+                stats.ndv_provenance.add(EstimatedRowCountClamp);
+            }
+        }
     }
 }
 

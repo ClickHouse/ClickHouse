@@ -11,6 +11,8 @@ namespace DB
 using PlanMemo = std::unordered_map<BitSet, DPJoinEntryPtr>;
 using SelectivityCache = std::unordered_map<JoinActionRef, double>;
 
+/// Return a column NDV only while its provenance retains the upper-bound contract expected by
+/// join cardinality estimation; otherwise use the relation's row estimate as the existing fallback.
 inline size_t getColumnStats(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
@@ -25,7 +27,8 @@ inline size_t getColumnStats(
         if (auto it = dp_table.find(rels); it != dp_table.end())
         {
             auto col_it = it->second->column_stats.find(column_name);
-            if (col_it != it->second->column_stats.end())
+            if (col_it != it->second->column_stats.end()
+                && QueryPlanOptimizations::isDistinctCountUpperBound(col_it->second.ndv_provenance))
                 return col_it->second.num_distinct_values;
             return it->second->estimated_rows.value_or(0);
         }
@@ -34,7 +37,8 @@ inline size_t getColumnStats(
 
     const auto & relation_stat = relation_stats.at(rel_id.value());
     const auto & col_stats = relation_stat.column_stats;
-    if (auto it = col_stats.find(column_name); it != col_stats.end())
+    if (auto it = col_stats.find(column_name);
+        it != col_stats.end() && QueryPlanOptimizations::isDistinctCountUpperBound(it->second.ndv_provenance))
         return it->second.num_distinct_values;
     return relation_stat.estimated_rows.value_or(0);
 }
