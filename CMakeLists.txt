@@ -160,6 +160,12 @@ if (C_COMPILER_SUPPORTS_GZ_ZLIB AND CXX_COMPILER_SUPPORTS_GZ_ZLIB)
     set (COMPILER_SUPPORTS_GZ_ZLIB ON)
 endif ()
 
+# Has to precede block_build_time_checks.cmake. `enable_language(CUDA)` runs CMake's own
+# compiler test through `try_compile`, and `FindCUDAToolkit` reaches `find_package(Threads)`,
+# which probes with `check_c_source_compiles`. Both are blocked below, so CUDA gets enabled
+# here for the same reason `project()` enables C/CXX/ASM before the guard is installed.
+include (cmake/cuda.cmake)
+
 # Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
 # toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
 # version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
@@ -368,6 +374,23 @@ if (ARCH_AMD64)
     # which makes benchmark results more stable.
     set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+endif()
+
+# Puts a canary between the locals and the return address and checks it before returning, so that an
+# overflow of a local buffer aborts instead of returning to an address the attacker wrote. 'strong'
+# instruments only the functions that can be overflowed - a local array, an address-taken local, an
+# alloca - which keeps the cost low enough to always enable.
+# It goes into COMPILER_FLAGS rather than CMAKE_C_FLAGS/CMAKE_CXX_FLAGS so that it is in place before
+# cmake/linux/default_libs.cmake adds libc++, libc++abi, libunwind, base/glibc-compatibility and
+# base/harmful: a subdirectory sees the flags as they were when it was added.
+# Three things stay out. contrib/compiler-rt-cmake resets the inherited flags to an allowlist. On x86-64
+# the memcpy/memmove/memset entry points of contrib/libllvmlibc-cmake carry an explicit
+# no_stack_protector so that their CPU dispatch stays a plain tail call. And `clickhouse_fuzzer` links
+# every `src/` library plus the libFuzzer and Address Sanitizer runtimes into one image already just
+# under the 2 GiB reach of `R_X86_64_PC32`, which the extra prologues push over; the fuzzers are never
+# shipped, and Address Sanitizer reports stack buffer overflows earlier and in more detail than an abort.
+if (NOT ENABLE_FUZZING)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
 endif()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
@@ -607,22 +630,26 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-# We enable position independent encoding for all build types except build with -flto=thin:
+# Position independent code is enabled on every amd64 and aarch64 build:
 # 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
 # multiple sophisticated problems like linking with sanitizers or linking of rust.
-# 2. Position independent binaries and libraries are a little bit slower, than position dependent. We consider
-# build with -flto=thin as trully "production" build where each % of performance is important.
-# 3. For some unknow reason -flto=thin lead to some other way of linkage. For example for rust libraries build
+# 2. -flto=thin leads to some other way of linkage. For example for rust libraries build
 # we don't see any relocation-related errors without -fPIC, but with enabled -flto=thin. While without
 # -flto=thin we have relocation errors like:
 # rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
 #
-# NOTE: -fno-pie disables -fPIC, so that is why we check ENABLE_THINLTO in the branch bellow
-#
 # For some sophisticated platforms we have different issues with fPIC:
 # For example riscv toolchain itself compiled without fPIC
-if (NOT ENABLE_THINLTO AND (ARCH_AMD64 OR ARCH_AARCH64))
+if (ARCH_AMD64 OR ARCH_AARCH64)
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
+
+    # -fPIC only makes the code relocatable; whether the executable itself is position independent is
+    # the compiler driver's default unless the linker is asked explicitly, so ask it.
+    # musl links statically, and -static-pie needs an rcrt1.o that contrib/musl-cmake does not build.
+    # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
+    if (OS_LINUX AND NOT USE_MUSL)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
+    endif()
 endif()
 
 if (ENABLE_POSITION_INDEPENDENT_BINARY)
@@ -640,6 +667,15 @@ if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENAB
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
+endif ()
+
+# Full RELRO (relocation read-only): '-z now' resolves all dynamic relocations at startup and '-z relro'
+# then maps the global offset table read-only, so an arbitrary write cannot redirect a call through it.
+# Resolving everything at startup costs nothing here because we link dynamically only against libc
+# and we forbid dlopen (see programs/main.cpp).
+# Not on Darwin: ld64 does not accept '-z' options.
+if (NOT OS_DARWIN)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
 endif ()
 
 if (ENABLE_TESTS)
@@ -769,6 +805,24 @@ add_subdirectory (programs)
 add_subdirectory (utils)
 
 if (FUZZER)
+    # The .options files reference all.dict. OSS-Fuzz builds fuzzer targets
+    # individually and copies tests/fuzz/*.dict, so the `fuzzers` POST_BUILD
+    # step below never runs for it: generate the source-derived fallback here,
+    # before any target is built. The nightly libFuzzer job overwrites it with
+    # the authoritative binary-derived one (tests/fuzz/update_dict.sh).
+    execute_process(
+        COMMAND "${CMAKE_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh" "${CMAKE_SOURCE_DIR}" "${CMAKE_SOURCE_DIR}/tests/fuzz/all.dict"
+        RESULT_VARIABLE FUZZER_SOURCE_DICT_RESULT
+        OUTPUT_VARIABLE FUZZER_SOURCE_DICT_OUTPUT
+        ERROR_VARIABLE FUZZER_SOURCE_DICT_OUTPUT)
+    string (STRIP "${FUZZER_SOURCE_DICT_OUTPUT}" FUZZER_SOURCE_DICT_OUTPUT)
+    # Fail loudly: a missing dictionary makes a consumer's `cp tests/fuzz/*.dict`
+    # abort on an unmatched glob far from here.
+    if (NOT FUZZER_SOURCE_DICT_RESULT EQUAL 0)
+        message (FATAL_ERROR "Failed to generate tests/fuzz/all.dict: ${FUZZER_SOURCE_DICT_OUTPUT}")
+    endif()
+    message (STATUS "${FUZZER_SOURCE_DICT_OUTPUT}")
+
     # Bundle fuzzers target
     add_custom_target(fuzzers)
     # Instrument all targets fuzzer and link with libfuzzer
@@ -778,7 +832,16 @@ if (FUZZER)
         if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main" OR target MATCHES ".*isal.*"))
             get_target_property(target_type ${target} TYPE)
             if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
-                target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                # Targets compiled with -fno-sanitize=all must never be instrumented:
+                # a later -fsanitize=fuzzer-no-link overrides it and re-enables
+                # SanitizerCoverage. That is fatal for the in-tree libc and sanitizer
+                # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
+                # runs before any coverage runtime exists, so every executable would
+                # crash at startup.
+                get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
+                if (NOT target_compile_options MATCHES "-fno-sanitize=all")
+                    target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")

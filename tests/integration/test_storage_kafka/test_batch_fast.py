@@ -1259,6 +1259,8 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
         consumer_group=f"{topic_name}-group",
     )
 
+    # A streaming loop keeps the materialized views it started with, so one that began before the
+    # second view existed commits without it; detaching and re-attaching joins it before producing.
     instance.query(f"""
         DROP TABLE IF EXISTS test.{kafka_table}_view1;
         DROP TABLE IF EXISTS test.{kafka_table}_view2;
@@ -1275,11 +1277,10 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
             SELECT * FROM test.{kafka_table};
         CREATE MATERIALIZED VIEW test.{kafka_table}_consumer2 TO test.{kafka_table}_view2 AS
             SELECT * FROM test.{kafka_table};
-    """)
 
-    # we have to wait > kafka_poll_timeout_ms before producing data,
-    #  otherwise it is expected that data might go via the first MV only
-    time.sleep(3)
+        DETACH TABLE test.{kafka_table} SYNC;
+        ATTACH TABLE test.{kafka_table};
+    """)
 
     messages = []
     for i in range(50):
@@ -1310,8 +1311,8 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
             DROP TABLE test.{kafka_table}_view2;
         """)
 
-        k.kafka_check_result(result1, True)
-        k.kafka_check_result(result2, True)
+        assert k.kafka_check_result(result1), f"view1 got: {result1!r}"
+        assert k.kafka_check_result(result2), f"view2 got: {result2!r}"
 
 @pytest.mark.parametrize(
     "create_query_generator",
@@ -2876,7 +2877,7 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
                _error AS error
                FROM test.{kafka_table} WHERE length(_error) > 0;
 
-        DETACH TABLE test.{kafka_table};
+        DETACH TABLE test.{kafka_table} SYNC;
         ATTACH TABLE test.{kafka_table};
         """
     )
@@ -2964,7 +2965,7 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
                _error AS error
                FROM test.{kafka_table} WHERE length(_error) > 0;
 
-        DETACH TABLE test.{kafka_table};
+        DETACH TABLE test.{kafka_table} SYNC;
         ATTACH TABLE test.{kafka_table};
     """)
 
@@ -4133,7 +4134,7 @@ def test_disable_insertion_and_mutation_disables_message_queue_insertion(
                 SELECT * FROM test.{kafka_table};
             """,
             settings=(
-                {"allow_experimental_kafka_offsets_storage_in_keeper": 1}
+                {"allow_kafka_offsets_storage_in_keeper": 1}
                 if keeper
                 else {}
             ),
@@ -4380,6 +4381,53 @@ def test_kafka2_dead_letter_queue_commit_on_select(kafka_cluster):
     assert dlq_count_after == 1
 
     instance.query(f"DROP TABLE test.{kafka_table} SYNC")
+
+
+def test_kafka_consumers_with_assignment_after_rebalance(kafka_cluster):
+    suffix = k.random_string(6)
+    topic_name = f"consumers_with_assignment_{suffix}"
+    k.kafka_create_topic(k.get_admin_client(kafka_cluster), topic_name, num_partitions=2)
+
+    metric_query = (
+        "SELECT value FROM system.metrics WHERE metric = 'KafkaConsumersWithAssignment'"
+    )
+    before = int(instance.query(metric_query))
+
+    def create(table):
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{topic_name}',
+                         kafka_format = 'JSONEachRow';
+            CREATE MATERIALIZED VIEW test.{table}_mv ENGINE = Memory AS SELECT * FROM test.{table};
+            """
+        )
+
+    # The first consumer takes both partitions.
+    create(f"kafka_a_{suffix}")
+    assert_eq_with_retry(instance, metric_query, str(before + 1))
+
+    # The second member joining the group revokes and reassigns the live assignment.
+    create(f"kafka_b_{suffix}")
+    assert_eq_with_retry(
+        instance,
+        f"""
+        SELECT num_rebalance_assignments
+        FROM system.kafka_consumers
+        WHERE database = 'test' AND table = 'kafka_b_{suffix}'
+        """,
+        "1",
+    )
+
+    for table in (f"kafka_a_{suffix}", f"kafka_b_{suffix}"):
+        instance.query(f"DROP TABLE test.{table}_mv SYNC")
+        instance.query(f"DROP TABLE test.{table} SYNC")
+
+    # Without the fix the revocation is counted twice, so the gauge ends one below where it started.
+    assert_eq_with_retry(instance, metric_query, str(before))
 
 
 if __name__ == "__main__":

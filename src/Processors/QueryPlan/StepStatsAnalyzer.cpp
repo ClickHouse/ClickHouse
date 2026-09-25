@@ -1,9 +1,14 @@
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/StepStatsModel.h>
+#include <base/types.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
+#include <optional>
+#include <variant>
 
 namespace DB
 {
@@ -20,6 +25,57 @@ MetricGroup makeIOGroup(const StepIOStats & io)
     metrics.emplace_back(MetricKey::OutputBytes, io.output_bytes);
     return {MetricGroupKey::IO, std::move(metrics)};
 }
+
+MetricGroup makeTimingReport(const StepStatsContext & context)
+{
+    MetricList metrics;
+    const auto * data = context.time_and_conc_stats;
+    if (!data)
+    {
+        metrics.emplace_back(MetricKey::Time, std::monostate{});
+        metrics.emplace_back(MetricKey::Time, std::monostate{});
+        return {MetricGroupKey::Time, std::move(metrics)};
+    }
+
+    const UInt64 query_execution_time = context.execution_query_time_ns;
+
+    auto compute_time_share = [](UInt64 time_of_part, UInt64 time_of_total) -> MetricValue
+    {
+        if (time_of_total == 0)
+            return std::monostate{};
+        return 100 * static_cast<double>(time_of_part) / static_cast<double>(time_of_total);
+    };
+
+    metrics.emplace_back(MetricKey::Time, data->step_time_ns);
+    metrics.emplace_back(MetricKey::TimeShare, compute_time_share(data->step_time_ns, query_execution_time));
+    metrics.emplace_back(MetricKey::Time, data->branch_time_ns);
+    metrics.emplace_back(MetricKey::TimeShare, compute_time_share(data->branch_time_ns, query_execution_time));
+    return {MetricGroupKey::Time, std::move(metrics)};
+}
+
+MetricGroup makeConcurrencyReport(const StepStatsContext & context)
+{
+    MetricList metrics;
+    const auto * data = context.time_and_conc_stats;
+    /// Work intervals were not collected: the group stays empty and is not printed.
+    if (!data)
+        return {MetricGroupKey::Concurrency, std::move(metrics)};
+
+    const auto max_parallelism = static_cast<double>(context.max_num_threads_per_query);
+
+    /// A step that did no work has no concurrency; the empty value is printed as unknown.
+    const auto to_value = [&](const std::optional<double> & concurrency) -> MetricValue
+    {
+        if (!concurrency)
+            return std::monostate{};
+        return Fraction{*concurrency, max_parallelism};
+    };
+
+    metrics.emplace_back(MetricKey::Concurrency, to_value(data->step_concurrency));
+    metrics.emplace_back(MetricKey::Concurrency, to_value(data->branch_concurrency));
+    return {MetricGroupKey::Concurrency, std::move(metrics)};
+}
+
 
 }
 
@@ -53,6 +109,7 @@ AnalyzedStages buildAnalyzedStages(const StepStatsContext & context)
 
         stages.push_back(std::move(stage));
     }
+
     return stages;
 }
 
@@ -62,6 +119,8 @@ AnalyzedStepData buildAnalyzedStepData(const StepStatsContext & context, StepAna
     result.stage_reports = buildAnalyzedStages(context);
     result.step_metric_groups = std::move(report);
     result.step_metric_groups.push_back(makeIOGroup(context.io));
+    result.step_metric_groups.push_back(makeTimingReport(context));
+    result.step_metric_groups.push_back(makeConcurrencyReport(context));
 
     result.label_stages = result.stage_reports.size() > 1
         || (!result.stage_reports.empty() && !result.stage_reports.front().name.empty());

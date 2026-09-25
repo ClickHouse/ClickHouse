@@ -1,12 +1,19 @@
 #include <iterator>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <variant>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinBranchCosts.h>
+#include <Processors/QueryPlan/JoinStatsAnalyzer.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/TableJoin.h>
+#include <Common/typeid_cast.h>
 #include <Processors/StepWallClock.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <base/defines.h>
@@ -18,10 +25,16 @@ namespace DB
 namespace
 {
 
+/// Printed in place of a parallelism or concurrency value when there was no work to measure it on.
+constexpr std::string_view unknown_value_text = "Unknown";
+
 String formatStepMetricValue(const StepMetric & metric)
 {
     if (std::holds_alternative<std::monostate>(metric.value))
-        return "not collected";
+        return String(missingValueText(metric.key));
+
+    if (const auto * fraction = std::get_if<Fraction>(&metric.value))
+        return fmt::format("{:.2f}/{:.0f}", fraction->numerator, fraction->denominator);
 
     const MetricFormat format = formatOf(metric.key);
 
@@ -31,10 +44,10 @@ String formatStepMetricValue(const StepMetric & metric)
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<T, std::string>)
                 return value;
-            else if constexpr (std::is_same_v<T, std::monostate>)
-                return {};
-            else
+            else if constexpr (std::is_arithmetic_v<T>)
                 return fmt::format("{}", value);
+            else
+                return {};
         }, metric.value);
 
     const double numeric = std::visit([](const auto & value) -> double
@@ -58,6 +71,9 @@ String formatStepMetricValue(const StepMetric & metric)
             return fmt::format("{:.2f}%", numeric);
         case MetricFormat::Ratio:
             return fmt::format("{:.2f}", numeric);
+        case MetricFormat::Selectivity:
+            return fmt::format("{:.4g}", numeric);
+        case MetricFormat::Fraction:
         case MetricFormat::Raw:
             return {};
     }
@@ -121,6 +137,59 @@ void printIOGroup(const MetricGroup & io_group, WriteBuffer & out, const std::st
     out << "\n";
 }
 
+/// A group of placeholders means the work intervals were not collected; such a group is not printed.
+bool hasCollectedMetrics(const MetricGroup & group)
+{
+    for (const auto & metric : group.metrics)
+        if (!std::holds_alternative<std::monostate>(metric.value))
+            return true;
+    return false;
+}
+
+/// The group is built by `makeTimingReport`: a (time, share) pair for the step, then one for its branch.
+void printTimeGroup(const MetricGroup & time_group, WriteBuffer & out, const std::string & prefix)
+{
+    if (!hasCollectedMetrics(time_group))
+        return;
+
+    chassert(time_group.metrics.size() == 4, "unexpected layout of the Time group");
+
+    auto print_part = [&](std::string_view name, const StepMetric & time, const StepMetric & share)
+    {
+        out << name << " " << formatStepMetricValue(time);
+        if (!std::holds_alternative<std::monostate>(share.value))
+            out << " (" << formatStepMetricValue(share) << ")";
+    };
+
+    out << prefix << toString(time_group.key) << ": ";
+    print_part("step", time_group.metrics[0], time_group.metrics[1]);
+    out << " · ";
+    print_part("branch", time_group.metrics[2], time_group.metrics[3]);
+    out << "\n";
+}
+
+/// The group is built by `makeConcurrencyReport`: the step value, then the branch value.
+void printConcurrencyGroup(const MetricGroup & concurrency_group, WriteBuffer & out, const std::string & prefix)
+{
+    /// Empty when work intervals were not collected, see `makeConcurrencyReport`.
+    if (concurrency_group.metrics.empty())
+        return;
+
+    chassert(concurrency_group.metrics.size() == 2, "unexpected layout of the Concurrency group");
+
+    /// An empty value means the step (or its subtree) did no work, so there is no concurrency to report.
+    const auto format_part = [](const StepMetric & metric) -> String
+    {
+        if (std::holds_alternative<std::monostate>(metric.value))
+            return String(unknown_value_text);
+        return formatStepMetricValue(metric);
+    };
+
+    out << prefix << toString(concurrency_group.key) << ": "
+        << "step " << format_part(concurrency_group.metrics[0]) << " · "
+        << "branch " << format_part(concurrency_group.metrics[1]) << "\n";
+}
+
 void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & out, const std::string & prefix, bool processors_info)
 {
     out << prefix << "  ";
@@ -132,8 +201,8 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
         out << ": ";
     }
     out << "time " << formatReadableTime(static_cast<double>(stage.wall_clock_time_ns))
-        << fmt::format(" ({:.1f}%)", stage.share_of_query_time) << " · parallelism "
-        << (stage.wall_clock_time_ns ? fmt::format("{:.2f}/{}", stage.parallelism, stage.max_parallelism) : "Unknown");
+        << " (" << formatStepMetricValue({MetricKey::TimeShare, stage.share_of_query_time}) << ")" << " · parallelism "
+        << (stage.wall_clock_time_ns ? fmt::format("{:.2f}/{}", stage.parallelism, stage.max_parallelism) : String(unknown_value_text));
 
     for (const auto & metric : stage.inline_metrics)
         out << " · " << toString(metric.key) << " " << formatStepMetricValue(metric);
@@ -157,7 +226,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
 
 }
 
-AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_)
+AnalyzeStepsStats::AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
@@ -166,6 +235,18 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
     collectIOStats(processors);
     const auto elapsed_per_step_group = collectTimingStats(pipeline, processors);
     computeDistribution(elapsed_per_step_group);
+    computeJoinBranchCosts(plan);
+
+    /// Work intervals are collected only when EXPLAIN ANALYZE requests the `time` setting.
+    if (const auto work_intervals = pipeline.takeWorkIntervals(); !work_intervals.empty())
+        interval_timings.emplace(work_intervals, plan);
+}
+
+std::optional<ExecutionTimeBreakdown> AnalyzeStepsStats::executionTimeBreakdown() const
+{
+    if (!interval_timings)
+        return std::nullopt;
+    return interval_timings->executionTimeBreakdown(execution_query_time_ns);
 }
 
 void AnalyzeStepsStats::collectIOStats(const Processors & processors)
@@ -268,6 +349,34 @@ void AnalyzeStepsStats::computeDistribution(const ElapsedTimesPerStepGroup & ela
     }
 }
 
+void AnalyzeStepsStats::computeJoinBranchCosts(const QueryPlan & plan)
+{
+    CardinalityByJoinStep cardinality_by_join_step;
+    for (const auto & [step, io_stats] : stats_by_step)
+    {
+        const auto * join_step = typeid_cast<const JoinStep *>(step);
+        if (!join_step || !join_step->getJoin())
+            continue;
+
+        StepProcessors step_processors = processors_by_step.at(step);
+
+        auto report = step->getAnalysisReport(step_processors);
+        const auto & table_join = join_step->getJoin()->getTableJoin();
+        cardinality_by_join_step[join_step] = joinMatchedOutputRows(report, io_stats.output_rows, table_join.kind(), table_join.strictness());
+
+        join_raw_reports.emplace(step, std::move(report));
+    }
+
+    const JoinBranchCosts join_branch_costs(plan, cardinality_by_join_step);
+    for (auto & [step, report] : join_raw_reports)
+    {
+        const auto * join_step = typeid_cast<const JoinStep *>(step);
+        MetricGroup cost_group{MetricGroupKey::Cost, {}};
+        cost_group.metrics.emplace_back(MetricKey::Actual, optionalQuantity(join_branch_costs.getBranchCost(join_step)));
+        report.push_back(std::move(cost_group));
+    }
+}
+
 StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) const
 {
     StepStatsContext context;
@@ -282,16 +391,27 @@ StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) con
         if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step, group)); group_stats_it != stats_by_step_group.end())
             context.group_stats[group] = group_stats_it->second;
 
+    if (interval_timings)
+        context.time_and_conc_stats = interval_timings->findTiming(step);
+
     return context;
 }
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
-    StepProcessors step_processors;
-    if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
-        step_processors = processors_it->second;
+    StepAnalysisReport raw_report;
+    if (const auto report_it = join_raw_reports.find(step); report_it != join_raw_reports.end())
+    {
+        raw_report = report_it->second;
+    }
+    else
+    {
+        StepProcessors step_processors;
+        if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
+            step_processors = processors_it->second;
 
-    StepAnalysisReport raw_report = step->getAnalysisReport(step_processors);
+        raw_report = step->getAnalysisReport(step_processors);
+    }
 
     auto context_for_step = makeContext(step);
     StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step);
@@ -299,7 +419,9 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) con
     /// Use the service of a generator, which takes the context (e.g. i/o, total time)
     /// some internal raw metrics, which are specific for each step,  that
     /// with the knowledge of the step will pre-process the metrics before printing
-    return step_stats_generator(context_for_step, std::move(raw_report));
+    AnalyzedStepData result = step_stats_generator(context_for_step, std::move(raw_report));
+
+    return result;
 }
 
 void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const
@@ -309,6 +431,18 @@ void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuff
         if (group.key == MetricGroupKey::IO)
         {
             printIOGroup(group, out, prefix);
+            continue;
+        }
+
+        if (group.key == MetricGroupKey::Time)
+        {
+            printTimeGroup(group, out, prefix);
+            continue;
+        }
+
+        if (group.key == MetricGroupKey::Concurrency)
+        {
+            printConcurrencyGroup(group, out, prefix);
             continue;
         }
 

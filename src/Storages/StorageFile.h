@@ -248,10 +248,11 @@ public:
             const Strings & files_,
             std::optional<StorageFile::ArchiveInfo> archive_info_,
             const ActionsDAG::Node * predicate,
-            const NamesAndTypesList & virtual_columns,
-            const NamesAndTypesList & hive_columns,
+            const NamesAndTypesList & virtual_columns_,
+            const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
-            bool distributed_processing_ = false);
+            bool distributed_processing_ = false,
+            String archive_member_path_ = {});
 
         String next();
 
@@ -279,6 +280,16 @@ private:
         std::atomic<size_t> index = 0;
 
         bool distributed_processing;
+
+        /// A `_path` / `_file` filter that could not be applied while the iterator was created,
+        /// because a set in it was not ready yet. It is applied in `next`, when the pipeline runs,
+        /// before a file is opened.
+        ExpressionActionsPtr deferred_filter_actions;
+        NamesAndTypesList virtual_columns;
+        NamesAndTypesList hive_columns;
+        /// A known archive member is part of the user-visible `_path` / `_file` value, although
+        /// this iterator must open the outer archive file.
+        const String archive_member_path;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
@@ -380,6 +391,11 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
+    /// TopN dynamic filtering: only the Parquet reader consumes `FormatFilterInfo::top_k_filter`,
+    /// and only for a sort column it physically reads from the file.
+    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
+    void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+
     ReadFromFile(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -419,6 +435,7 @@ private:
     const size_t max_num_streams;
 
     std::shared_ptr<StorageFileSource::FilesIterator> files_iterator;
+    std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyFileRegistryPtr lazy_row_index_registry;
