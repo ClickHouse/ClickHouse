@@ -305,26 +305,8 @@ void StorageObjectStorageCluster::prepareForDrop(ContextPtr query_context)
 
 void StorageObjectStorageCluster::drop()
 {
-    const std::optional<bool> captured_delete_data = delete_data_on_drop.load();
-    const bool delete_data = captured_delete_data.value_or(false);
-
-    if (!captured_delete_data
-        && Context::getGlobalContextInstance()->getSettingsRef()[Setting::data_lake_delete_data_on_drop])
-    {
-        LOG_WARNING(
-            getLogger("StorageObjectStorageCluster"),
-            "Keeping the data of table {} although `data_lake_delete_data_on_drop` is enabled server-wide: the value for this drop "
-            "could not be captured, which happens when the table was never loaded, and data is never deleted on a fallback path. "
-            "Access the table before dropping it, so that the settings of the `DROP TABLE` query reach the table.",
-            getStorageID().getNameForLogs());
-    }
-
-    if (catalog)
-    {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(getStorageID().getTableName());
-        catalog->dropTable(namespace_name, table_name, delete_data, /* if_exists */ false);
-    }
-    configuration->drop(delete_data);
+    StorageObjectStorage::dropImpl(
+        delete_data_on_drop.load(), catalog, configuration, getStorageID(), getLogger("StorageObjectStorageCluster"));
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const

@@ -59,7 +59,6 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTSetQuery.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Storages/ColumnDefault.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -1194,21 +1193,6 @@ void DatabaseDataLake::createTable(
             if (!col_decl || !col_decl->getType())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid column declaration in CREATE TABLE");
 
-            if (col_decl->default_specifier != ColumnDefaultSpecifier::Empty)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Column '{}': {} is not yet supported by DataLakeCatalog table creation",
-                    col_decl->name,
-                    toString(col_decl->default_specifier));
-
-            if (col_decl->getComment() || col_decl->getCodec() || col_decl->getTTL()
-                || col_decl->getStatisticsDesc() || col_decl->getSettings()
-                || col_decl->primary_key_specifier)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Column '{}': COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY are not supported by DataLakeCatalog table creation",
-                    col_decl->name);
-
             columns.add(ColumnDescription(col_decl->name, DataTypeFactory::instance().get(col_decl->getType())));
         }
     }
@@ -1216,26 +1200,10 @@ void DatabaseDataLake::createTable(
     if (columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table without columns");
 
-    if (create.columns_list
-        && ((create.columns_list->indices && !create.columns_list->indices->children.empty())
-            || (create.columns_list->constraints && !create.columns_list->constraints->children.empty())
-            || (create.columns_list->projections && !create.columns_list->projections->children.empty())
-            || create.columns_list->primary_key
-            || create.columns_list->primary_key_from_columns))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "DataLakeCatalog CREATE TABLE does not support PRIMARY KEY, indices, constraints, or projections");
-
     ASTPtr partition_by;
     ASTPtr order_by;
     if (create.storage)
     {
-        if (create.storage->primary_key || create.storage->sample_by
-            || create.storage->ttl_table || create.storage->unique_key
-            || create.storage->settings)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "DataLakeCatalog CREATE TABLE supports only PARTITION BY and ORDER BY; "
-                "PRIMARY KEY, SAMPLE BY, TTL, UNIQUE KEY, and engine SETTINGS are not supported");
-
         if (create.storage->partition_by)
             partition_by = create.storage->partition_by->clone();
         if (create.storage->order_by)
@@ -1707,15 +1675,6 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     }
 
     auto create_table_query = make_intrusive<ASTCreateQuery>();
-    auto table_storage_define = table_engine_definition->clone();
-
-    auto * storage = table_storage_define->as<ASTStorage>();
-    storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
-    storage->engine->name = String(catalog->getTableEngineName(table_metadata));
-
-    storage->settings = {};
-
-    create_table_query->set(create_table_query->storage, table_storage_define);
 
     auto columns_declare_list = make_intrusive<ASTColumns>();
     auto columns_expression_list = make_intrusive<ASTExpressionList>();
@@ -1734,6 +1693,21 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
         column_declaration->setType(makeASTDataType(column_type_and_name.type->getName()));
         columns_expression_list->children.emplace_back(column_declaration);
     }
+
+    /// The catalog rejects an explicit `ENGINE` in `CREATE TABLE` when it assigns table locations itself,
+    /// so the `ENGINE` clause is omitted to keep the query replayable.
+    if (catalog->managesTableLocation())
+        return create_table_query;
+
+    auto table_storage_define = table_engine_definition->clone();
+
+    auto * storage = table_storage_define->as<ASTStorage>();
+    storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
+    storage->engine->name = String(catalog->getTableEngineName(table_metadata));
+
+    storage->settings = {};
+
+    create_table_query->set(create_table_query->storage, table_storage_define);
 
     auto storage_engine_arguments = storage->engine->arguments;
     if (table_metadata.isDefaultReadableTable())
@@ -2146,11 +2120,10 @@ Other expressions (e.g. `toYYYYMM`, `intDiv`) are rejected at `CREATE TABLE`.
 
 Only the column names and types, `PARTITION BY`, and `ORDER BY` are persisted into the
 table metadata. Anything else — the storage clauses `PRIMARY KEY`, `SAMPLE BY`, `TTL`, and
-`UNIQUE KEY`; indices, constraints, and projections; and the column modifiers `DEFAULT`,
-`MATERIALIZED`, `ALIAS`, `EPHEMERAL`, `COMMENT`, `CODEC`, `TTL`, `STATISTICS`, and `SETTINGS` —
+`UNIQUE KEY`; engine `SETTINGS`; indices, constraints, and projections; and the column modifiers
+`DEFAULT`, `MATERIALIZED`, `ALIAS`, `EPHEMERAL`, `COMMENT`, `CODEC`, `TTL`, `STATISTICS`, and `SETTINGS` —
 is rejected rather than silently dropped. This applies both with and without an explicit
-`ENGINE` clause. Engine `SETTINGS` are accepted only together with an explicit table engine,
-where they are the engine's storage settings (e.g. `iceberg_format_version`).
+`ENGINE` clause.
 
 An explicit `ENGINE` clause selects the location of the new table; every other engine argument must
 repeat the arguments of the database engine, and the location must be under `storage_endpoint` when it

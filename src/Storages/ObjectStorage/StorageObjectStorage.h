@@ -96,6 +96,15 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context);
 
+    /// Shared `drop` implementation: removes the table from `catalog` (if any) and drops `configuration`,
+    /// deleting the data only if `delete_data_on_drop` was captured as `true` by `prepareForDrop`.
+    static void dropImpl(
+        const std::optional<bool> & delete_data_on_drop,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const StorageID & storage_id,
+        const LoggerPtr & log);
+
     void truncate(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,

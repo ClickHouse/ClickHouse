@@ -997,10 +997,19 @@ void StorageObjectStorage::prepareForDrop(ContextPtr query_context)
 
 void StorageObjectStorage::drop()
 {
-    const std::optional<bool> captured_delete_data = delete_data_on_drop.load();
-    const bool delete_data = captured_delete_data.value_or(false);
+    dropImpl(delete_data_on_drop.load(), catalog, configuration, storage_id, log);
+}
 
-    if (!captured_delete_data
+void StorageObjectStorage::dropImpl(
+    const std::optional<bool> & delete_data_on_drop,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageID & storage_id,
+    const LoggerPtr & log)
+{
+    const bool delete_data = delete_data_on_drop.value_or(false);
+
+    if (!delete_data_on_drop
         && Context::getGlobalContextInstance()->getSettingsRef()[Setting::data_lake_delete_data_on_drop])
     {
         LOG_WARNING(

@@ -956,17 +956,6 @@ def test_create_table_engine_backend_mismatch_rejected(started_cluster):
         ), error
         assert "stores tables on S3" in error, error
 
-    error = node.query_and_get_error(
-        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{test_ref}_generic` (x String) "
-        f"ENGINE = Iceberg('http://minio1:9001/warehouse-glue/{test_ref}_generic/', "
-        f"'{minio_access_key}', '{minio_secret_key}')",
-        settings={
-            "allow_experimental_database_glue_catalog": 1,
-            "write_full_path_in_iceberg_metadata": 1,
-        },
-    )
-    assert "generic 'Iceberg' engine is not supported" in error, error
-
 
 def test_schema_evolution(started_cluster):
     node = started_cluster.instances["node1"]

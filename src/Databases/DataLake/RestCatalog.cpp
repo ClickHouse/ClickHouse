@@ -1815,17 +1815,11 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 bool RestCatalog::createTable(
     const String & namespace_name,
     const String & table_name,
-    const String & new_metadata_path,
+    const String & /*new_metadata_path*/,
     Poco::JSON::Object::Ptr metadata_content,
     DB::CompressionMethod /*metadata_compression_method*/,
     bool if_not_exists) const
 {
-    if (managesTableLocation() && !new_metadata_path.empty())
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "This DataLakeCatalog assigns table locations itself, so an explicit table `ENGINE` with a "
-            "user-provided location is not supported; omit the `ENGINE` clause");
-
     const String location = metadata_content->getValue<String>("location");
 
     const auto state_snapshot = state.get();

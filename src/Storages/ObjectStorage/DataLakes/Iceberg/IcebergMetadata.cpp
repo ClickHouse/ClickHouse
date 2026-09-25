@@ -904,6 +904,16 @@ void IcebergMetadata::createInitial(
     if (catalog)
         std::tie(namespace_name, table_name) = DataLake::parseTableName(table_id_.getTableName());
 
+    auto throw_leftover_metadata = [&]
+    {
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+            "The catalog has no table {}.{} registered, but Iceberg metadata files are already present at {}, "
+            "so creating the table there would clash with them. This is usually left behind by a previous "
+            "`DROP TABLE` without `data_lake_delete_data_on_drop`, which keeps the data and metadata in "
+            "place: remove the leftover files, or create the table at a different location",
+            namespace_name, table_name, configuration_ptr->getPathForRead().path);
+    };
+
     if (catalog_manages_location)
     {
         DataLake::TableMetadata existing_table;
@@ -923,12 +933,7 @@ void IcebergMetadata::createInitial(
                 throw Exception(
                     ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
             }
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                "The catalog has no table {}.{} registered, but Iceberg metadata files are already present at {}, "
-                "so creating the table there would clash with them. This is usually left behind by a previous "
-                "`DROP TABLE` without `data_lake_delete_data_on_drop`, which keeps the data and metadata in "
-                "place: remove the leftover files, or create the table at a different location",
-                namespace_name, table_name, configuration_ptr->getPathForRead().path);
+            throw_leftover_metadata();
         }
     }
 
@@ -950,7 +955,7 @@ void IcebergMetadata::createInitial(
         compression_suffix = "." + compression_suffix;
 
     auto table_uuid = metadata_content_object->getValue<String>(Iceberg::f_table_uuid);
-    auto metadata_file_name = (catalog && catalog->isTransactional())
+    auto metadata_file_name = catalog_writes_metadata_file
         ? fmt::format("v1-{}{}.metadata.json", table_uuid, compression_suffix)
         : fmt::format("v1{}.metadata.json", compression_suffix);
     auto filename = fmt::format("{}metadata/{}", configuration_ptr->getRawPath().path, metadata_file_name);
@@ -993,12 +998,7 @@ void IcebergMetadata::createInitial(
             {
                 if (!catalog)
                     return;
-                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                    "The catalog has no table {}.{} registered, but Iceberg metadata files are already present at {}, "
-                    "so creating the table there would clash with them. This is usually left behind by a previous "
-                    "`DROP TABLE` without `data_lake_delete_data_on_drop`, which keeps the data and metadata in "
-                    "place: remove the leftover files, or create the table at a different location",
-                    namespace_name, table_name, configuration_ptr->getPathForRead().path);
+                throw_leftover_metadata();
             }
             throw;
         }

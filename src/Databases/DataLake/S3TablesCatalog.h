@@ -38,7 +38,6 @@ public:
 
     CatalogTables getTables() const override;
 
-    /// S3 table buckets are always in S3.
     std::optional<StorageType> getStorageType() const override { return StorageType::S3; }
 
     bool managesTableLocation() const override { return true; }
