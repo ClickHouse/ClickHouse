@@ -62,6 +62,92 @@ def skip_identifier(text, pos):
     return pos if pos > start else start
 
 
+def skip_qualified_name(text, pos):
+    """Advance `pos` past a possibly qualified `[db.]name`, where each part is
+    an identifier (see `skip_identifier`); `db . name` is valid too."""
+    length = len(text)
+    pos = skip_identifier(text, pos)
+    j = skip_whitespace_and_comments(text, pos)
+    while j < length and text[j] == ".":
+        j = skip_whitespace_and_comments(text, j + 1)
+        pos = skip_identifier(text, j)
+        j = skip_whitespace_and_comments(text, pos)
+    return pos
+
+
+def skip_string_literal(text, pos):
+    """Advance `pos` past a single-quoted string literal starting at `pos`.
+    Return `pos` unchanged when there is no string literal at `pos`."""
+    length = len(text)
+    if pos >= length or text[pos] != "'":
+        return pos
+    pos += 1
+    while pos < length:
+        if text[pos] == "\\" and pos + 1 < length:
+            pos += 2
+            continue
+        if text[pos] == "'":
+            if pos + 1 < length and text[pos + 1] == "'":
+                pos += 2
+                continue
+            return pos + 1
+        pos += 1
+    return pos
+
+
+def skip_create_table_head(text):
+    """Return the position just past the head of a `CREATE TABLE` statement,
+    or 0 when `text` is not one.
+
+    The head is `CREATE [OR REPLACE] [TEMPORARY] TABLE [IF NOT EXISTS]
+    [db.]name [UUID '...'] [ON CLUSTER cluster]` (also with `ATTACH` or
+    `REPLACE` instead of `CREATE`), as parsed by `ParserCreateTableQuery`.
+    The table, database, and cluster names are identifiers, not syntax, so
+    the clause scans must start after them: otherwise a valid
+    `CREATE TABLE settings (...) ENGINE = MergeTree ... SETTINGS ...` or
+    `CREATE TABLE engine (...) ENGINE = MergeTree ...` would take the table
+    name for a clause keyword.
+    """
+    length = len(text)
+    pos = skip_whitespace_and_comments(text, 0)
+    if not any(is_word_at(text, pos, kw) for kw in ("CREATE", "ATTACH", "REPLACE")):
+        return 0
+    saw_table = False
+    while not saw_table:
+        for kw in ("CREATE", "ATTACH", "REPLACE", "OR", "TEMPORARY", "TABLE"):
+            if is_word_at(text, pos, kw):
+                pos = skip_whitespace_and_comments(text, pos + len(kw))
+                saw_table = kw == "TABLE"
+                break
+        else:
+            # Not a `CREATE TABLE` (e.g. `CREATE VIEW`): nothing to skip.
+            return 0
+    # `IF NOT EXISTS` is only the clause when all three words are present;
+    # otherwise `if` is the table name.
+    j = pos
+    for kw in ("IF", "NOT", "EXISTS"):
+        if not is_word_at(text, j, kw):
+            break
+        j = skip_whitespace_and_comments(text, j + len(kw))
+    else:
+        pos = j
+    pos = skip_qualified_name(text, pos)
+    j = skip_whitespace_and_comments(text, pos)
+    if is_word_at(text, j, "UUID"):
+        k = skip_whitespace_and_comments(text, j + len("UUID"))
+        after_literal = skip_string_literal(text, k)
+        if after_literal > k:
+            pos = after_literal
+            j = skip_whitespace_and_comments(text, pos)
+    if is_word_at(text, j, "ON"):
+        k = skip_whitespace_and_comments(text, j + len("ON"))
+        if is_word_at(text, k, "CLUSTER"):
+            k = skip_whitespace_and_comments(text, k + len("CLUSTER"))
+            after_literal = skip_string_literal(text, k)
+            pos = after_literal if after_literal > k else skip_identifier(text, k)
+    return pos
+
+
 def skip_table_carrier(text, pos):
     """Advance `pos` past a `[db.]table` name or a `table_function(...)` call.
 
@@ -73,13 +159,8 @@ def skip_table_carrier(text, pos):
     `SETTINGS` clause.
     """
     length = len(text)
-    pos = skip_identifier(text, pos)
-    # An optional `db.` qualifier -- and `db . tbl` is valid too.
+    pos = skip_qualified_name(text, pos)
     j = skip_whitespace_and_comments(text, pos)
-    while j < length and text[j] == ".":
-        j = skip_whitespace_and_comments(text, j + 1)
-        pos = skip_identifier(text, j)
-        j = skip_whitespace_and_comments(text, pos)
     # A table function carries an argument list; skip it as a balanced group,
     # because it may contain anything, including the word `SETTINGS`.
     if j < length and text[j] == "(":
@@ -208,8 +289,12 @@ def create_query_engine(query):
     query, after which no table-level `ENGINE` can follow, so the scan stops
     and the caller sees no engine (fail fast) rather than a keyword picked out
     of the select body.
+
+    The scan starts after the statement head (see `skip_create_table_head`),
+    so a table named `engine` is not taken for the keyword either, and the
+    engine name may be quoted (`ENGINE = "MergeTree"`).
     """
-    i = 0
+    i = skip_create_table_head(query)
     n = len(query)
     quote = None
     depth = 0
@@ -249,11 +334,14 @@ def create_query_engine(query):
             if j < n and query[j] == "=":
                 j = skip_whitespace_and_comments(query, j + 1)
             start = j
-            while j < n and (query[j].isalnum() or query[j] == "_"):
-                j += 1
-            if j > start:
-                return query[start:j]
-            return None
+            j = skip_identifier(query, start)
+            if j == start:
+                return None
+            name = query[start:j]
+            if name[0] in "`\"":
+                # A quoted engine name (`ENGINE = "MergeTree"`).
+                name = name[1:-1]
+            return name or None
         if depth == 0 and is_word_at(query, i, "AS"):
             j = skip_whitespace_and_comments(query, i + len("AS"))
             if j >= n or query[j] == "(" or is_word_at(query, j, "SELECT") or is_word_at(query, j, "WITH"):
@@ -361,8 +449,9 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
         `CLONE` markers are scanned over: the grammar requires an `AS` after
         them, and it is that `AS` which decides. Bracket depth is tracked so a
         column-level `COMMENT` inside the schema parens does not confuse the
-        scan."""
-        i = 0
+        scan. The scan starts after the statement head (see
+        `skip_create_table_head`), whose table name is not a keyword."""
+        i = skip_create_table_head(text)
         n = len(text)
         quote = None
         depth = 0

@@ -844,3 +844,60 @@ def test_source_table_named_engine_is_still_a_strippable_mergetree():
         strip_setting_from_query(query, SETTING, {"0", "false"})
         == "CREATE TABLE dst AS engine ENGINE = MergeTree ORDER BY tuple()"
     )
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        # The table name is an identifier, not syntax, even when it reads like
+        # the keyword -- bare, quoted, or as either part of a qualified name.
+        ("CREATE TABLE engine (a UInt64) ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        ("CREATE TABLE `engine` (a UInt64) ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        ("CREATE TABLE engine.t (a UInt64) ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        ("CREATE TABLE db . engine (a UInt64) ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        # The full statement head: `OR REPLACE`, `TEMPORARY`, `IF NOT EXISTS`,
+        # `UUID '...'`, and `ON CLUSTER` with a keyword-like cluster name.
+        (
+            "CREATE OR REPLACE TABLE IF NOT EXISTS engine UUID '00000000-0000-0000-0000-000000000000' "
+            "ON CLUSTER engine (a UInt64) ENGINE = MergeTree ORDER BY tuple()",
+            "MergeTree",
+        ),
+        ("CREATE TEMPORARY TABLE engine (a UInt64) ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        ("ATTACH TABLE engine (a UInt64) ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        ("CREATE TABLE t ON CLUSTER 'engine' (a UInt64) ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        # Without all of `IF NOT EXISTS`, `if` is the table name.
+        ("CREATE TABLE if (a UInt64) ENGINE = MergeTree ORDER BY tuple()", "MergeTree"),
+        # A quoted engine name.
+        ("CREATE TABLE t (a UInt64) ENGINE = `MergeTree` ORDER BY tuple()", "MergeTree"),
+        ('CREATE TABLE t (a UInt64) ENGINE = "ReplicatedMergeTree" ORDER BY tuple()', "ReplicatedMergeTree"),
+    ],
+)
+def test_engine_detection_skips_the_statement_head(query, expected):
+    assert create_query_engine(query) == expected
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["settings", "`settings`", "comment", "comment.t", "db.settings", "as", "engine"],
+)
+def test_table_named_like_a_clause_keyword_is_stripped(name):
+    query = f"CREATE TABLE {name} (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0"
+    assert is_mergetree_create_query(query)
+    assert (
+        strip_setting_from_query(query, SETTING, {"0", "false"})
+        == f"CREATE TABLE {name} (a UInt64) ENGINE = MergeTree ORDER BY tuple()"
+    )
+
+
+def test_cluster_named_settings_is_not_a_clause_keyword():
+    query = f"CREATE TABLE t ON CLUSTER settings (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0"
+    assert (
+        strip_setting_from_query(query, SETTING, {"0", "false"})
+        == "CREATE TABLE t ON CLUSTER settings (a UInt64) ENGINE = MergeTree ORDER BY tuple()"
+    )
+
+
+def test_non_create_table_statement_is_scanned_from_the_start():
+    # `CREATE VIEW` has no table head to skip; engine detection is unchanged.
+    assert create_query_engine("CREATE VIEW v AS SELECT 1") is None
+    assert create_query_engine("CREATE MATERIALIZED VIEW v ENGINE = MergeTree ORDER BY tuple() AS SELECT 1") == "MergeTree"
