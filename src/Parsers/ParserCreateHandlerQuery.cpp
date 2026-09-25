@@ -251,7 +251,7 @@ With Keeper storage, handlers are kept in sync across all replicas automatically
 ## ALTER HANDLER {#alter-handler}
 
 ```sql
-ALTER HANDLER name
+ALTER HANDLER name [ON CLUSTER cluster]
 [PROTOCOL protocol_name|ANY]
 [URL [PREFIX|REGEXP] '/path']
 [METHODS (GET, POST)]
@@ -264,7 +264,7 @@ Replaces the handler with a new one. The `ALTER` query can include only a subset
 ## DROP HANDLER {#drop-handler}
 
 ```sql
-DROP HANDLER [IF EXISTS] name
+DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
 ```
 
 Drops the handler with the specified name.

@@ -367,7 +367,7 @@ Deletes a SQL-defined HTTP handler created by [CREATE HANDLER](/reference/statem
 **Syntax**
 
 ```sql
-DROP HANDLER [IF EXISTS] name
+DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
 ```
 
 **Example**
@@ -390,7 +390,7 @@ DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storag
 DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]
 DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
-DROP HANDLER [IF EXISTS] name
+DROP HANDLER [IF EXISTS] name [ON CLUSTER cluster]
 )",
         .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},
     });
