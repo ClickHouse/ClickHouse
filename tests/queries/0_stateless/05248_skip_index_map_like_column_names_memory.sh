@@ -44,10 +44,23 @@ for kind in val key; do
         SELECT count() FROM t_$kind WHERE $PREDICATE" > /dev/null
 done
 
+# The memory ratio only separates while all $INDEXES conditions are retained at once, and nothing above
+# asserts that. Pin it: an index appears in `EXPLAIN indexes = 1` only when it survived
+# `alwaysUnknownOrTrue` and reached `skip_indexes.useful_indices`.
+$CLICKHOUSE_CLIENT -q "
+    SELECT
+        (SELECT countIf(trim(explain) ILIKE 'Name: i%')
+         FROM (EXPLAIN indexes = 1 SELECT count() FROM t_val WHERE $PREDICATE)) = $INDEXES,
+        (SELECT countIf(trim(explain) ILIKE 'Name: i%')
+         FROM (EXPLAIN indexes = 1 SELECT count() FROM t_key WHERE $PREDICATE)) = $INDEXES
+    SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0"
+
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 $CLICKHOUSE_CLIENT -q "
-    SELECT maxIf(memory_usage, query_id = '${CLICKHOUSE_DATABASE}_key')
+    SELECT countIf(query_id = '${CLICKHOUSE_DATABASE}_val') >= 1
+       AND countIf(query_id = '${CLICKHOUSE_DATABASE}_key') >= 1
+       AND maxIf(memory_usage, query_id = '${CLICKHOUSE_DATABASE}_key')
          < maxIf(memory_usage, query_id = '${CLICKHOUSE_DATABASE}_val') * 2
     FROM system.query_log
     WHERE current_database = currentDatabase()
