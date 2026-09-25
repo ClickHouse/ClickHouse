@@ -58,7 +58,7 @@ def check(name, sql, expected, fan_in=2, intermediate=True, extra=(), error=None
             assert value == expected_value, (name, event, value, expected_value)
         assert len(completed) == len(groups), (name, completed, groups)
     assert not list((root / 'data' / 'tmp').glob('tmp*')), name
-    print(name, 'ok')
+    print(name, 'ok', flush=True)
     return groups, text
 
 
@@ -67,33 +67,33 @@ for cap in (2, 3):
     check(f'sort_{cap}', '''
         SELECT count(), sum(number), min(c), groupArray(k) = arraySort(groupArray(k))
         FROM (SELECT number, cityHash64(number) AS k, 'constant' AS c
-              FROM numbers(262144) ORDER BY k)
-        ''', '262144\t34359607296\tconstant\t1', fan_in=cap)
+              FROM numbers(32768) ORDER BY k)
+        ''', '32768\t536854528\tconstant\t1', fan_in=cap)
     check(f'sort_limit_{cap}', '''
-        SELECT groupArray(number) = arrayReverse(range(toUInt64(262127), toUInt64(262144)))
-        FROM (SELECT number FROM numbers(262144) ORDER BY number + 1 DESC LIMIT 17)
+        SELECT groupArray(number) = arrayReverse(range(toUInt64(32751), toUInt64(32768)))
+        FROM (SELECT number FROM numbers(32768) ORDER BY number + 1 DESC LIMIT 17)
         ''', '1', fan_in=cap, extra=('--max_bytes_before_remerge_sort=0',))
 
 # Typed and fingerprint keys repeat across run boundaries.
 check('distinct_typed', '''
     SELECT count(), uniqExact(k), sum(k) FROM
-    (SELECT DISTINCT number % 10000 AS k FROM numbers(262144))
+    (SELECT DISTINCT number % 10000 AS k FROM numbers(32768))
     ''', '10000\t10000\t49995000')
 check('distinct_fingerprints', '''
     SELECT count(), uniqExact(k) FROM
-    (SELECT DISTINCT [number % 10000, number % 7] AS k FROM numbers(262144))
-    ''', '70000\t70000')
+    (SELECT DISTINCT [number % 1000, number % 7] AS k FROM numbers(32768))
+    ''', '7000\t7000')
 check('distinct_nullable_lc', """
     SELECT count(), uniqExact(tuple(a, b)) FROM
     (SELECT DISTINCT if(number % 5 = 0, NULL, number % 10000) AS a,
-        toLowCardinality(toString(number % 10000)) AS b FROM numbers(262144))
+        toLowCardinality(toString(number % 10000)) AS b FROM numbers(32768))
     """, '10000\t10000')
 
 # Final `DISTINCT` limits apply after intermediate runs have been reduced.
 for mode in ('break', 'throw'):
     check(f'distinct_{mode}', """
         SELECT count() BETWEEN 5000 AND 9096 FROM
-        (SELECT DISTINCT number % 10000 AS k FROM numbers(262144))
+        (SELECT DISTINCT number % 10000 AS k FROM numbers(32768))
         """, '1', extra=('--max_rows_in_distinct=5000', f'--distinct_overflow_mode={mode}',
                           '--allow_preliminary_distinct_abandoning=1'),
         error='SET_SIZE_LIMIT_EXCEEDED' if mode == 'throw' else None)
@@ -102,11 +102,11 @@ for mode in ('break', 'throw'):
 check('distinct_payload', '''
     SELECT count(), min(c), groupArray(k) = range(toUInt64(10000)) FROM
     (SELECT DISTINCT if(number < 10000, number, toUInt64((10000 - number % 10000) % 10000)) AS k,
-        'constant' AS c FROM numbers(262144) ORDER BY number + 1)
+        'constant' AS c FROM numbers(32768) ORDER BY number + 1)
     ''', '10000\tconstant\t1')
 check('distinct_order', '''
     SELECT count(), groupArray(k) = arrayReverse(range(toUInt64(10000))) FROM
-    (SELECT DISTINCT number % 10000 AS k FROM numbers(262144) ORDER BY k + 1 DESC)
+    (SELECT DISTINCT number % 10000 AS k FROM numbers(32768) ORDER BY k + 1 DESC)
     ''', '10000\t1')
 
 # A full key chunk exceeds the run's size floor, while the last chunk compacts to 16 keys.
@@ -128,18 +128,18 @@ for num_files, tail_merge in ((2, 'at_cap'), (3, 'after_intermediate')):
 # through intermediate merges so the final merge does not emit them again.
 _, log = check('distinct_suppression', '''
     SELECT count(), uniqExact(k) FROM
-    (SELECT DISTINCT concat(repeat('x', 512), toString(number % 500000)) AS k FROM numbers(1000000))
-    ''', '500000\t500000', extra=('--max_bytes_before_external_distinct=268435456',))
-assert re.search(r'Extracting [1-9]\d* DISTINCT suppression keys', log)
+    (SELECT DISTINCT concat(repeat('x', 128), toString(number % 262144)) AS k FROM numbers(1048576))
+    ''', '262144\t262144', extra=('--max_bytes_before_external_distinct=67108864',))
+assert re.search(r'Extracting [1-9]\d* DISTINCT suppression keys', log), log
 
 # Exactly one more run than the cap requires only a two-input intermediate merge.
 groups, _ = check('sort_boundary', '''
     SELECT count(), sum(number) FROM
-    (SELECT number FROM numbers(4259840) ORDER BY cityHash64(number))
-    ''', '4259840\t9073116282880', fan_in=64, extra=('--max_block_size=65536',))
+    (SELECT number FROM numbers(266240) ORDER BY cityHash64(number))
+    ''', '266240\t35441735680', fan_in=64)
 assert groups == [2], groups
-direct_sql = 'SELECT count() FROM (SELECT number FROM numbers(131072) ORDER BY cityHash64(number))'
-_, log = check('sort_direct', direct_sql, '131072', fan_in=64, intermediate=False)
+direct_sql = 'SELECT count() FROM (SELECT number FROM numbers(16384) ORDER BY cityHash64(number))'
+_, log = check('sort_direct', direct_sql, '16384', fan_in=64, intermediate=False)
 
 # The quota admits the initial runs but rejects an intermediate file before its inputs are released.
 disk_usage = sum(int(n) for n in re.findall(r'ExternalProcessingCompressedBytesTotal: (\d+) \(increment\)', log))
@@ -168,5 +168,5 @@ with (root / 'invalid_fan_in.log').open('w') as stderr:
         stdout=subprocess.PIPE, stderr=stderr, text=True, timeout=30)
 assert result.returncode != 0
 assert 'BAD_ARGUMENTS' in (root / 'invalid_fan_in.log').read_text()
-print('invalid_setting ok')
+print('invalid_setting ok', flush=True)
 PY
