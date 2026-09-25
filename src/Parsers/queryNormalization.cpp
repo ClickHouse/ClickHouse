@@ -7,39 +7,9 @@
 namespace DB
 {
 
-namespace
+UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names)
 {
-
-/// looks generated: has whitespace, more than two digits, or is 36+ bytes long
-bool isComplexIdentifier(const char * begin, const char * end)
-{
-    if (end - begin >= 36)
-        return true;
-
-    size_t num_digits = 0;
-    for (const char * pos = begin; pos != end; ++pos)
-    {
-        if (isWhitespaceASCII(*pos))
-            return true;
-
-        if (isNumericASCII(*pos))
-        {
-            ++num_digits;
-            if (num_digits > 2)
-                return true;
-        }
-    }
-
-    return false;
-}
-
-/// a literal is erased to this byte, passed by address because "\x00" through a template trips clang-tidy
-constexpr char literal_placeholder = '\0';
-
-/// passes to emit the units normalizedQueryHash hashes, in the order of the query
-template <typename Emit>
-void forEachNormalizedUnit(const char * begin, const char * end, bool keep_names, bool stop_at_error, Emit && emit)
-{
+    SipHash hash;
     Lexer lexer(begin, end);
 
     /// Coalesce a list of comma separated literals.
@@ -57,7 +27,7 @@ void forEachNormalizedUnit(const char * begin, const char * end, bool keep_names
         if (token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
         {
             if (0 == num_literals_in_sequence)
-                emit(&literal_placeholder, 1);
+                hash.update("\x00", 1);
             ++num_literals_in_sequence;
             prev_comma = false;
             continue;
@@ -73,10 +43,10 @@ void forEachNormalizedUnit(const char * begin, const char * end, bool keep_names
         else
         {
             if (num_literals_in_sequence > 1)
-                emit(&literal_placeholder, 1);
+                hash.update("\x00", 1);
 
             if (prev_comma)
-                emit(",", 1);
+                hash.update(",", 1);
 
             num_literals_in_sequence = 0;
             prev_comma = false;
@@ -89,43 +59,145 @@ void forEachNormalizedUnit(const char * begin, const char * end, bool keep_names
             || (token.type == TokenType::BareWord && (token.end == end || *token.end != '(')))
         {
             /// Explicitly ask to keep identifier names
-            if (keep_names || !isComplexIdentifier(token.begin, token.end))
-                emit(token.begin, token.size());
+            if (keep_names)
+            {
+                hash.update(token.begin, token.size());
+            }
             else
-                emit("\x01", 1);
+            {
+                /// Identifier is complex if it contains whitespace or more than two digits
+                /// or it's at least 36 bytes long (UUID for example).
+                size_t num_digits = 0;
+
+                const char * pos = token.begin;
+                if (token.size() < 36)
+                {
+                    for (; pos != token.end; ++pos)
+                    {
+                        if (isWhitespaceASCII(*pos))
+                            break;
+
+                        if (isNumericASCII(*pos))
+                        {
+                            ++num_digits;
+                            if (num_digits > 2)
+                                break;
+                        }
+                    }
+                }
+
+                if (pos == token.end)
+                    hash.update(token.begin, token.size());
+                else
+                    hash.update("\x01", 1);
+            }
 
             continue;
         }
 
-        if (token.isEnd() || (stop_at_error && token.isError()))
+        if (token.isEnd() || token.isError())
             break;
 
-        emit(token.begin, token.size());
+        hash.update(token.begin, token.size());
     }
-}
 
-}
-
-
-UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names)
-{
-    SipHash hash;
-    forEachNormalizedUnit(begin, end, keep_names, /*stop_at_error=*/ true, [&](const char * data, size_t size) { hash.update(data, size); });
     return hash.get64();
-}
-
-UInt64 normalizedQueryHashUnordered(const char * begin, const char * end)
-{
-    /// a sum does not depend on the order, and unlike xor a repeated token does not cancel out
-    UInt64 sum = 0;
-    forEachNormalizedUnit(begin, end, /*keep_names=*/ false, /*stop_at_error=*/ false,
-        [&](const char * data, size_t size) { sum += sipHash64(data, size); });
-    return sum;
 }
 
 UInt64 normalizedQueryHash(const String & query, bool keep_names)
 {
     return normalizedQueryHash(query.data(), query.data() + query.size(), keep_names);
+}
+
+/// same token rules as normalizedQueryHash, but the token hashes are summed, so their order does not matter;
+/// a sum rather than xor, so that a repeated token does not cancel out
+UInt64 normalizedQueryHashUnordered(const char * begin, const char * end)
+{
+    UInt64 sum = 0;
+    Lexer lexer(begin, end);
+
+    /// Coalesce a list of comma separated literals.
+    size_t num_literals_in_sequence = 0;
+    bool prev_comma = false;
+
+    while (true)
+    {
+        Token token = lexer.nextToken();
+
+        if (!token.isSignificant())
+            continue;
+
+        /// Literals.
+        if (token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
+        {
+            if (0 == num_literals_in_sequence)
+                sum += sipHash64("\x00", 1);
+            ++num_literals_in_sequence;
+            prev_comma = false;
+            continue;
+        }
+        if (token.type == TokenType::Comma)
+        {
+            if (num_literals_in_sequence)
+            {
+                prev_comma = true;
+                continue;
+            }
+        }
+        else
+        {
+            if (num_literals_in_sequence > 1)
+                sum += sipHash64("\x00", 1);
+
+            if (prev_comma)
+                sum += sipHash64(",", 1);
+
+            num_literals_in_sequence = 0;
+            prev_comma = false;
+        }
+
+        /// Slightly normalize something that look like aliases - if they are complex, replace them to `?` placeholders.
+        if (token.type == TokenType::QuotedIdentifier
+            /// Differentiate identifier from function (example: SHA224(x)).
+            || (token.type == TokenType::BareWord && (token.end == end || *token.end != '(')))
+        {
+            /// Identifier is complex if it contains whitespace or more than two digits
+            /// or it's at least 36 bytes long (UUID for example).
+            size_t num_digits = 0;
+
+            const char * pos = token.begin;
+            if (token.size() < 36)
+            {
+                for (; pos != token.end; ++pos)
+                {
+                    if (isWhitespaceASCII(*pos))
+                        break;
+
+                    if (isNumericASCII(*pos))
+                    {
+                        ++num_digits;
+                        if (num_digits > 2)
+                            break;
+                    }
+                }
+            }
+
+            if (pos == token.end)
+                sum += sipHash64(token.begin, token.size());
+            else
+                sum += sipHash64("\x01", 1);
+
+            continue;
+        }
+
+        /// unlike normalizedQueryHash, an error token is hashed as well, and the lexer moves on past it
+        if (token.isEnd())
+            break;
+
+        sum += sipHash64(token.begin, token.size());
+    }
+
+    return sum;
 }
 
 
@@ -214,15 +286,43 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
             || (token.type == TokenType::BareWord && (token.end == end || *token.end != '(')))
         {
             /// Explicitly ask to normalize with identifier names
-            if (keep_names || !isComplexIdentifier(token.begin, token.end))
+            if (keep_names)
             {
                 res_data.insert(token.begin, token.end);
             }
             else
             {
-                res_data.push_back('`');
-                res_data.push_back('?');
-                res_data.push_back('`');
+                /// Identifier is complex if it contains whitespace or more than two digits
+                /// or it's at least 36 bytes long (UUID for example).
+                size_t num_digits = 0;
+
+                const char * pos = token.begin;
+                if (token.size() < 36)
+                {
+                    for (; pos != token.end; ++pos)
+                    {
+                        if (isWhitespaceASCII(*pos))
+                            break;
+
+                        if (isNumericASCII(*pos))
+                        {
+                            ++num_digits;
+                            if (num_digits > 2)
+                                break;
+                        }
+                    }
+                }
+
+                if (pos == token.end)
+                {
+                    res_data.insert(token.begin, token.end);
+                }
+                else
+                {
+                    res_data.push_back('`');
+                    res_data.push_back('?');
+                    res_data.push_back('`');
+                }
             }
 
             continue;
