@@ -18,11 +18,11 @@ INSERT INTO t_fs VALUES (1, map('other', 'abcdef')), (2, map('k', 'hello'));
 
 -- S1: row 1 has no key `k`, so `m['k']` is six NUL bytes and matches. Both spellings of the map
 -- element are admitted by index analysis, so both are pinned.
-SELECT 'S1 oracle', count() FROM t_fs WHERE m['k'] LIKE concat(char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
-SELECT 'S1 subcolumn', count() FROM t_fs WHERE m['k'] LIKE concat(char(0), char(0), char(0), '%');
-SELECT 'S1 arrayElement', count() FROM t_fs WHERE m['k'] LIKE concat(char(0), char(0), char(0), '%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'S1 oracle', count() FROM t_fs WHERE m['k'] LIKE concat('%', char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
+SELECT 'S1 subcolumn', count() FROM t_fs WHERE m['k'] LIKE concat('%', char(0), char(0), char(0), '%');
+SELECT 'S1 arrayElement', count() FROM t_fs WHERE m['k'] LIKE concat('%', char(0), char(0), char(0), '%') SETTINGS optimize_functions_to_subcolumns = 0;
 
--- S2: a pattern the default cannot match must still prune, otherwise the fix costs every ordinary query.
+-- S2: a pattern the default cannot match still prunes.
 SELECT 'S2 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_fs WHERE m['k'] LIKE '%zzz%') WHERE explain LIKE '%Granules: 0/2%';
 SELECT 'S2 rows', count() FROM t_fs WHERE m['k'] LIKE '%zzz%';
 SELECT 'S2 present rows', count() FROM t_fs WHERE m['k'] LIKE '%hel%';
@@ -35,9 +35,9 @@ INSERT INTO t_str VALUES (1, map('other', 'abcdef')), (2, map('k', 'hello'));
 
 -- S3: a variable-width value type defaults to the empty string, which no such pattern matches, so
 -- nothing changes for it.
-SELECT 'S3 oracle', count() FROM t_str WHERE m['k'] LIKE concat(char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
-SELECT 'S3 rows', count() FROM t_str WHERE m['k'] LIKE concat(char(0), char(0), char(0), '%');
-SELECT 'S3 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_str WHERE m['k'] LIKE concat(char(0), char(0), char(0), '%')) WHERE explain LIKE '%Granules: 0/2%';
+SELECT 'S3 oracle', count() FROM t_str WHERE m['k'] LIKE concat('%', char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
+SELECT 'S3 rows', count() FROM t_str WHERE m['k'] LIKE concat('%', char(0), char(0), char(0), '%');
+SELECT 'S3 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_str WHERE m['k'] LIKE concat('%', char(0), char(0), char(0), '%')) WHERE explain LIKE '%Granules: 0/2%';
 
 DROP TABLE IF EXISTS t_null;
 CREATE TABLE t_null (id UInt32, m Map(String, Nullable(FixedString(6))),
@@ -47,9 +47,9 @@ INSERT INTO t_null VALUES (1, map('other', 'abcdef')), (2, map('k', 'hello'));
 
 -- S4: a Nullable value type defaults to NULL, for which the pattern is NULL and not true, so the
 -- index stays usable.
-SELECT 'S4 oracle', count() FROM t_null WHERE m['k'] LIKE concat(char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
-SELECT 'S4 rows', count() FROM t_null WHERE m['k'] LIKE concat(char(0), char(0), char(0), '%');
-SELECT 'S4 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_null WHERE m['k'] LIKE concat(char(0), char(0), char(0), '%')) WHERE explain LIKE '%Granules: 0/2%';
+SELECT 'S4 oracle', count() FROM t_null WHERE m['k'] LIKE concat('%', char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
+SELECT 'S4 rows', count() FROM t_null WHERE m['k'] LIKE concat('%', char(0), char(0), char(0), '%');
+SELECT 'S4 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_null WHERE m['k'] LIKE concat('%', char(0), char(0), char(0), '%')) WHERE explain LIKE '%Granules: 0/2%';
 
 DROP TABLE IF EXISTS t_dyn;
 CREATE TABLE t_dyn (id UInt32, k String, nk Nullable(String), m Map(String, FixedString(6)),
@@ -60,14 +60,19 @@ INSERT INTO t_dyn VALUES (1, 'k', 'k', map('other', 'abcdef')), (2, 'k', 'k', ma
 -- S5: a non-constant map key is admitted too. The absent-key row must be returned, and a pattern the
 -- default cannot match must still prune - a fix that declined for every non-constant key would pass
 -- the first assertion and fail the second.
-SELECT 'S5 oracle', count() FROM t_dyn WHERE m[k] LIKE concat(char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
-SELECT 'S5 rows', count() FROM t_dyn WHERE m[k] LIKE concat(char(0), char(0), char(0), '%');
+SELECT 'S5 oracle', count() FROM t_dyn WHERE m[k] LIKE concat('%', char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
+SELECT 'S5 rows', count() FROM t_dyn WHERE m[k] LIKE concat('%', char(0), char(0), char(0), '%');
 SELECT 'S5 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_dyn WHERE m[k] LIKE '%zzz%') WHERE explain LIKE '%Granules: 0/2%';
 
 -- S6: a Nullable key makes the map element Nullable(FixedString(6)) while an absent key still reads
 -- six NUL bytes, so the value to test has to come from the map value type and not from that type.
-SELECT 'S6 oracle', count() FROM t_dyn WHERE m[nk] LIKE concat(char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
-SELECT 'S6 rows', count() FROM t_dyn WHERE m[nk] LIKE concat(char(0), char(0), char(0), '%');
+SELECT 'S6 oracle', count() FROM t_dyn WHERE m[nk] LIKE concat('%', char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
+SELECT 'S6 rows', count() FROM t_dyn WHERE m[nk] LIKE concat('%', char(0), char(0), char(0), '%');
+
+-- S7: as S1, for a regular expression that the six NUL bytes match.
+SELECT 'S7 oracle', count() FROM t_fs WHERE match(m['k'], concat(char(0), char(0), char(0), '.*')) SETTINGS use_skip_indexes = 0;
+SELECT 'S7 subcolumn', count() FROM t_fs WHERE match(m['k'], concat(char(0), char(0), char(0), '.*'));
+SELECT 'S7 arrayElement', count() FROM t_fs WHERE match(m['k'], concat(char(0), char(0), char(0), '.*')) SETTINGS optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_fs;
 DROP TABLE t_str;
