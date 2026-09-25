@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A column whose type stores a sequenceNextNode state may only be declared when
+# A column whose type stores a sequenceNextNode state may only be declared or restored when
 # enable_funnel_functions is enabled for the server, and such a column is readable on a later run.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -60,6 +60,8 @@ $CLICKHOUSE_LOCAL --path "$path" --query "SELECT count() FROM t" 2>&1 \
 refused "column" "" "CREATE TABLE t (c $state) ENGINE = Memory"
 refused "add column" "CREATE TABLE m (x UInt64) ENGINE = MergeTree ORDER BY tuple()" "ALTER TABLE m ADD COLUMN c $state"
 refused "modify column" "CREATE TABLE m (x String) ENGINE = MergeTree ORDER BY tuple()" "ALTER TABLE m MODIFY COLUMN x $state"
+# A Memory database forgets its tables between runs, so the alias is created in the run that alters through it.
+refused "alter through an alias" "CREATE DATABASE mem ENGINE = Memory; CREATE TABLE m (x UInt64) ENGINE = MergeTree ORDER BY tuple()" "CREATE TABLE mem.a ENGINE = Alias(default, m); ALTER TABLE mem.a ADD COLUMN c $state"
 refused "inferred column" "" "CREATE TABLE u ENGINE = Memory AS $select_state"
 refused "view" "" "CREATE VIEW v AS $select_state"
 refused "materialized view query" "CREATE TABLE q (c UInt64) ENGINE = MergeTree ORDER BY tuple(); CREATE MATERIALIZED VIEW mv TO q AS SELECT 1::UInt64 AS c" "ALTER TABLE mv MODIFY QUERY $select_state"
@@ -68,12 +70,12 @@ refused "array element" "" "CREATE TABLE a (c Array($state)) ENGINE = Memory"
 refused "tuple element" "" "CREATE TABLE p (c AggregateFunction(sequenceNextNodeTuple('forward', 'head'), Tuple(DateTime, DateTime), Tuple(Nullable(String), Nullable(String)), Tuple(UInt8, UInt8))) ENGINE = Memory"
 refused "schema read by the engine" "" "CREATE TABLE f ENGINE = File(Native, '$native')"
 refused "attach with a full definition" "" "ATTACH TABLE t UUID 'c0ffee00-0526-4100-8000-000000000001' (c $state) ENGINE = Memory"
+refused "attach through a table function" "" "ATTACH TABLE g UUID 'c0ffee00-0526-4100-8000-000000000002' (c $state) AS file('$native', Native)"
 
 allowed "temporary table" "" "CREATE TEMPORARY TABLE tt (c $state) ENGINE = Memory; SELECT count() FROM tt"
 allowed "table in a Memory database" "CREATE DATABASE mem ENGINE = Memory" "CREATE TABLE mem.t (c $state) ENGINE = Memory; SELECT count() FROM mem.t"
 
-# Restoring a backup brings back a definition that was already accepted, so the value set only for
-# the session is enough.
+# A restored table is rebuilt on this server, so restoring one needs the value set for the server.
 mkdir -p "$root/backups"
 config="$root/config.xml"
 cat > "$config" <<EOF
@@ -88,10 +90,15 @@ $CLICKHOUSE_LOCAL --config-file "$config" --path "$path" --enable_funnel_functio
     CREATE TABLE t (c $state) ENGINE = MergeTree ORDER BY tuple();
     BACKUP TABLE t TO File('$root/backups/b1') FORMAT Null"
 new_path
-$CLICKHOUSE_LOCAL --config-file "$config" --path "$path" --query "
-    SET enable_funnel_functions = 1;
+$CLICKHOUSE_LOCAL --config-file "$config" --path "$path" --enable_funnel_functions=1 --query "
     RESTORE TABLE default.t FROM File('$root/backups/b1') FORMAT Null"
 echo -n "restore from a backup: "
 $CLICKHOUSE_LOCAL --config-file "$config" --path "$path" --enable_funnel_functions=1 --query "SELECT count() FROM t"
+new_path
+echo -n "restore from a backup: "
+$CLICKHOUSE_LOCAL --config-file "$config" --path "$path" --query "
+    SET enable_funnel_functions = 1;
+    RESTORE TABLE default.t FROM File('$root/backups/b1') FORMAT Null" 2>&1 \
+    | grep -om1 'setting for the server to enable it'
 
 rm -rf "${root:?}"

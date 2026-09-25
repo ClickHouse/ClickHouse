@@ -6,6 +6,8 @@ add column: accepted for the server
 add column: setting for the server to enable it
 modify column: accepted for the server
 modify column: setting for the server to enable it
+alter through an alias: accepted for the server
+alter through an alias: setting for the server to enable it
 inferred column: accepted for the server
 inferred column: setting for the server to enable it
 view: accepted for the server
@@ -22,6 +24,9 @@ schema read by the engine: accepted for the server
 schema read by the engine: setting for the server to enable it
 attach with a full definition: accepted for the server
 attach with a full definition: setting for the server to enable it
+attach through a table function: accepted for the server
+attach through a table function: setting for the server to enable it
 temporary table: 0
 table in a Memory database: 0
 restore from a backup: 0
+restore from a backup: setting for the server to enable it
