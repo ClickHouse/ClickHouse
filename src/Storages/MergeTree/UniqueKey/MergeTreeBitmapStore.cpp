@@ -279,7 +279,7 @@ MergeTreeBitmapStore::resolveOwnVersion(const DataPartPtr & holder)
 {
     /// TODO(unique-key): support REPEATABLE_READ, currently we ignore the COMMITTING
     const CSN csn = holder->version->getInfo().creation_csn;
-    if (!Tx::isCommittedCSN(csn))
+    if (!isSettledCSN(csn))
         return {};
     return Version{csn, holder, /*carried=*/false};
 }
@@ -490,7 +490,7 @@ bool MergeTreeBitmapStore::hasPublishedInwardLink(
     for (const auto & candidate : carriers)
     {
         const auto carrier = data.getPartIfExistsUnlocked(candidate.holder, RESOLVABLE_STATES, lock);
-        if (carrier && Tx::isCommittedCSN(carrier->version->getInfo().creation_csn))
+        if (carrier && isSettledCSN(carrier->version->getInfo().creation_csn))
             return true;
     }
 

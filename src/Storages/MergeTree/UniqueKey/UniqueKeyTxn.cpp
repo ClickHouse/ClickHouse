@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -54,7 +54,7 @@ namespace
 void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
 {
     if (txn && txn->getState() == MergeTreeTransaction::RUNNING)
-        TransactionLog::instance().rollbackTransaction(txn);
+        TransactionManager::instance().rollbackTransaction(txn);
 }
 
 }
@@ -74,7 +74,7 @@ std::mutex & UniqueKeyTxnManager::partitionLock(const String & partition_id)
 
 size_t UniqueKeyTxnManager::runGCRound(const std::vector<MergeTreePartInfo> & parts)
 {
-    const CSN oldest_snapshot = TransactionLog::instance().getOldestSnapshot();
+    const CSN oldest_snapshot = TransactionManager::instance().getOldestSnapshot();
 
     size_t reclaimed = 0;
     for (const auto & part : parts)
@@ -96,7 +96,7 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(const MergeTreeTransactionP
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "{} on a UNIQUE KEY table is not supported inside an explicit transaction", operation);
 
-    return MergeTreeTransactionHolder(TransactionLog::instance().beginTransaction(), /*autocommit=*/false);
+    return MergeTreeTransactionHolder(TransactionManager::instance().beginTransaction(), /*autocommit=*/false);
 }
 
 MergeTreeTransactionHolder beginUniqueKeyTransaction(const ContextPtr & context, std::string_view operation)
@@ -149,7 +149,7 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
         registered_holder = holder.info;
 
         /// Commit point
-        csn = TransactionLog::instance().commitTransaction(txn, /*throw_on_unknown_status=*/true);
+        csn = TransactionManager::instance().commitTransaction(txn, /*throw_on_unknown_status=*/true);
 
         LOG_TRACE(log, "UNIQUE KEY {} (partition {}): committed part {} at csn {}",
             kind, partition_id, holder.name, csn);
@@ -168,7 +168,7 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
 
     /// Read-your-own-writes: `latest_snapshot` only advances on the updating thread, so a
     /// SELECT issued right after this would otherwise bind a snapshot below `csn`.
-    TransactionLog::instance().waitForCSNLoaded(csn);
+    TransactionManager::instance().waitForCSNLoaded(csn);
 
     return csn;
 }

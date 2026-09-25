@@ -7,48 +7,39 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <Functions/FunctionsMiscellaneous.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Storages/System/StorageSystemOne.h>
-
-#include <Processors/QueryPlan/LogicalExchangeStep.h>
-#include <Processors/QueryPlan/ShuffleExchangeStep.h>
-#include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/Transforms/JoiningTransform.h>
 
 #include <algorithm>
-#include <limits>
 #include <memory>
 #include <optional>
+#include <ranges>
+#include <stack>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <ranges>
 #include <base/types.h>
 
 namespace ProfileEvents
@@ -66,58 +57,13 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
-    extern const SettingsBool use_statistics;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
-
-RelationStats parseTableStatsHint(ContextPtr context, const String & table_name);
-RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);
-RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
 namespace QueryPlanOptimizations
 {
 
 static String dumpStatsForLogs(const RelationStats & stats);
-
-/// If we have stats for storage column names, find the corresponding `ActionsDAG` outputs.
-/// Both identity and weaker NDV-bound lineage are valid for this existing statistics use.
-void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
-{
-    /// Column statistics are usually absent; do not pay for a full lineage walk of the
-    /// `ActionsDAG` when there is nothing to remap.
-    if (mapped.empty())
-        return;
-
-    std::unordered_map<String, ColumnStats> original;
-    original.swap(mapped);
-
-    const auto lineage = traceActionsDAGLineage(actions);
-    const auto & inputs = actions.getInputs();
-    const auto & outputs = actions.getOutputs();
-    for (const auto & output_lineage : lineage)
-    {
-        if (!output_lineage.input)
-            continue;
-
-        const auto stats_it = original.find(inputs[output_lineage.input->input_position]->result_name);
-        if (stats_it == original.end())
-            continue;
-
-        ColumnStats stats = stats_it->second;
-        /// Add the offset, guarding against overflow when the source NDV is near the maximum.
-        if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
-            stats.num_distinct_values += output_lineage.input->ndv_delta;
-        /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
-        /// width to unknown.
-        if (!output_lineage.input->preserves_width)
-            stats.avg_bytes = 0;
-        mapped[outputs[output_lineage.output_position]->result_name] = stats;
-    }
-}
 
 struct RuntimeHashStatisticsContext
 {
@@ -240,248 +186,6 @@ struct RuntimeHashStatisticsContext
         return {right_key, output_hash.get64()};
     }
 };
-
-static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
-{
-    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
-    std::optional<Float64> total_number_of_distinct_values = 1;
-    RelationStats aggregation_stats;
-    /// Carry imprecision and source from the input, or the annotation is lost for aggregation subqueries.
-    aggregation_stats.imprecise_estimate = input_stats.imprecise_estimate;
-    aggregation_stats.source = input_stats.source;
-    for (const auto & key : aggregator_params.keys)
-    {
-        auto key_stats = input_stats.column_stats.find(key);
-        if (key_stats == input_stats.column_stats.end())
-        {
-            /// Cannot calculate total number of groups if we don't know NDV of any of the aggregation columns.
-            /// The estimate then falls back to the input row count (an over-count of groups), so it is no longer
-            /// precise. Flag it and surface a missing-statistics source so the EXPLAIN label and the
-            /// join-reordering diagnostic reflect that the fallback was caused by missing column statistics.
-            total_number_of_distinct_values.reset();
-            aggregation_stats.imprecise_estimate = true;
-            if (aggregation_stats.source == RowEstimateSource::Statistics || aggregation_stats.source == RowEstimateSource::NoSource)
-                aggregation_stats.source = RowEstimateSource::NoStatistics;
-            continue;
-        }
-
-        UInt64 key_number_of_distinct_values = key_stats->second.num_distinct_values;
-
-        if (input_stats.estimated_rows)
-            key_number_of_distinct_values = std::min(key_number_of_distinct_values, *input_stats.estimated_rows);
-
-        aggregation_stats.column_stats[key].num_distinct_values = key_number_of_distinct_values;
-
-        /// For now assume that aggregation columns are independent, so multiply their NDVs
-        if (total_number_of_distinct_values)
-            *total_number_of_distinct_values *= static_cast<Float64>(key_number_of_distinct_values);
-    }
-
-    if (total_number_of_distinct_values && input_stats.estimated_rows)
-        total_number_of_distinct_values = std::min(*total_number_of_distinct_values, Float64(*input_stats.estimated_rows));
-    else
-        total_number_of_distinct_values = input_stats.estimated_rows;
-
-    aggregation_stats.estimated_rows = total_number_of_distinct_values;
-
-    return aggregation_stats;
-}
-
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
-{
-    IQueryPlanStep * step = node.step.get();
-    if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
-    {
-        String table_display_name = reading->getStorageID().getTableName();
-
-        /// Analyze partition and primary-key ranges before estimating the relation so column
-        /// statistics come only from parts that can satisfy the query. Reuse the result for
-        /// the index-based fallback below.
-        ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
-        if (!analyzed_result)
-        {
-            const auto & settings = reading->getContext()->getSettingsRef();
-            const bool has_throwing_row_limit
-                = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-                || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
-
-            /// Range analysis normally enforces throwing read limits and memoizes its result.
-            /// At this stage, however, later planning may make the executed read exempt from those
-            /// limits. In that case use an estimation-only analysis; execution will analyze again
-            /// after its final read mode is known.
-            analyzed_result = has_throwing_row_limit
-                ? reading->selectRangesToReadForEstimation()
-                : reading->selectRangesToRead();
-        }
-
-        /// An exact empty range selection proves that the relation is empty. Other empty
-        /// analysis results can be placeholders for deferred work, so only propagate zero
-        /// when `has_exact_ranges` is set.
-        if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
-            return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
-
-        /// `STREAM` defers range analysis until execution. Its placeholder result has zero
-        /// selected rows but does not mean that the relation is empty.
-        if (reading->getQueryInfo().isStream() && analyzed_result && analyzed_result->selected_rows == 0)
-        {
-            return RelationStats{
-                .estimated_rows = {},
-                .table_name = table_display_name,
-                .imprecise_estimate = true,
-                .source = RowEstimateSource::NoStatistics};
-        }
-
-        const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
-        if (use_statistics)
-        {
-            if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
-            {
-                auto prewhere_info = reading->getPrewhereInfo();
-                const ActionsDAG::Node * prewhere_node = prewhere_info
-                    ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
-                    : nullptr;
-                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
-                RelationStats stats {
-                    .estimated_rows = relation_profile.rows,
-                    .column_stats = relation_profile.column_stats,
-                    .table_name = table_display_name,
-                    .source = RowEstimateSource::Statistics};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
-                return stats;
-            }
-        }
-        if (auto stats_hint = parseTableStatsHint(reading->getContext(), table_display_name); !stats_hint.table_name.empty())
-            return stats_hint;
-
-        if (!analyzed_result)
-            return RelationStats{.estimated_rows = {}, .table_name = table_display_name, .imprecise_estimate = true, .source = RowEstimateSource::NoStatistics};
-
-        bool is_filtered_by_index = false;
-        UInt64 total_parts = 0;
-        UInt64 total_granules = 0;
-        for (const auto & idx_stat : analyzed_result->index_stats)
-        {
-            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
-            /// Further index_stats are used to estimate amount of filtered data after applying the index.
-            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
-            {
-                total_parts = idx_stat.num_parts_after;
-                total_granules = idx_stat.num_granules_after;
-                continue;
-            }
-
-            is_filtered_by_index = is_filtered_by_index
-                || (total_parts && idx_stat.num_parts_after < total_parts)
-                || (total_granules && idx_stat.num_granules_after < total_granules);
-
-            if (is_filtered_by_index)
-                break;
-        }
-        bool has_filter = filter || reading->getPrewhereInfo();
-
-        /// If any conditions are pushed down to storage but not used in the index,
-        /// we cannot precisely estimate the row count
-        if (has_filter && !is_filtered_by_index)
-            return RelationStats{.estimated_rows = {}, .table_name = table_display_name, .imprecise_estimate = true, .source = RowEstimateSource::NoStatistics};
-
-        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name, .imprecise_estimate = true, .source = RowEstimateSource::PrimaryIndex};
-    }
-
-    if (typeid_cast<const ReadFromObjectStorageStep *>(step))
-        return RelationStats{};
-
-    if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
-    {
-        UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
-        String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
-    }
-
-    /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)
-    /// since this is defined in clickhouse_storages_system module,
-    /// which is not linked to current module
-    if (step->getName() == "ReadFromSystemOne")
-    {
-        /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
-        return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
-    }
-
-    if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
-    {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
-    }
-
-    if (node.children.size() != 1)
-        return {};
-
-    if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
-    {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
-        auto limit = limit_step->getLimit();
-        if (!estimated.estimated_rows || estimated.estimated_rows > limit)
-            estimated.estimated_rows = limit;
-        return estimated;
-    }
-
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step); expression_step && !expression_step->getExpression().hasArrayJoin())
-    {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        remapColumnStats(stats.column_stats, expression_step->getExpression());
-        return stats;
-    }
-
-    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
-    {
-        const auto & dag = filter_step->getExpression();
-        const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
-        remapColumnStats(stats.column_stats, filter_step->getExpression());
-        return stats;
-    }
-
-    if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
-    {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
-        return aggregation_stats;
-    }
-
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
-    {
-        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
-        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
-        return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = join_step->getResultColumnStats(),
-            .table_name = join_step->getReadableRelationName(),
-            .imprecise_estimate = join_step->hasImpreciseEstimate()};
-    }
-
-    if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
-    {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        if (sorting_step->getLimit())
-        {
-            if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
-                stats.estimated_rows = sorting_step->getLimit();
-        }
-        return stats;
-    }
-
-    /// Estimates must see through exchanges: they do not change row counts, and an
-    /// already-distributed subtree would otherwise report unknown cardinality, degrading
-    /// broadcast-vs-shuffle and join order decisions.
-    if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter);
-
-    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
-        transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
-
-    return {};
-}
-
 
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
 {
@@ -707,8 +411,7 @@ constexpr bool isInnerOrCross(JoinKind kind)
 static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings & optimization_settings)
 {
     const auto & algorithms = optimization_settings.query_plan_optimize_join_order_algorithm;
-    return (optimization_settings.query_plan_optimize_join_order_use_conflict_detector_a
-            || optimization_settings.query_plan_optimize_join_order_use_conflict_detector_c)
+    return optimization_settings.query_plan_optimize_join_order_conflict_detector != JoinOrderConflictDetector::NONE
         && algorithms.size() == 1
         && algorithms.front() == JoinOrderAlgorithm::DPSUB;
 }
@@ -732,11 +435,43 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
     return false;
 }
 
+/// Merging puts the expression into the join graph, where reordering can leave it computed twice from the
+/// raw inputs - once for the join key that decides matching and once for the output column - and can also
+/// evaluate it on rows the original join order would have discarded. An expression whose result or whose
+/// side effects depend on how many times and on which rows it runs is therefore not safe to merge: a
+/// non-deterministic function draws independently in the two places, so the returned rows can violate the
+/// query's own `JOIN ON` condition, a stateful function (`aiEmbed`, `timeSeriesStoreTags`, ...) makes
+/// extra external calls or mutates per-query state, and a function with observable side effects (`sleep`)
+/// spends a different amount of time and accounts different profile events. A lambda without captures is
+/// constant-folded into a `COLUMN` node holding a `ColumnFunction`, which hides the functions of its body
+/// from a plain scan over the function nodes, so the check descends into it with `allNodeFunctions`.
+static bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
+{
+    auto is_insensitive = [](const IFunctionBase & function)
+    {
+        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
+    };
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (!allNodeFunctions(node, is_insensitive))
+            return true;
+    }
+
+    return false;
+}
+
 /// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
 /// allows it and the expression cannot be applied twice by the name-based merge.
 static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
 {
-    return merge_expression_into_join && !hasOutputShadowingInputName(dag);
+    if (!merge_expression_into_join)
+        return false;
+
+    if (isSensitiveToEvaluationCount(dag))
+        return false;
+
+    return !hasOutputShadowingInputName(dag);
 }
 
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
@@ -847,17 +582,32 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 /// The set is intentionally small and conservative -- an unknown function is treated as opaque
 /// (contributes nothing), which can only make CD-A miss a valid reordering, never admit an invalid
 /// one. It excludes NULL-blocking functions on purpose (`coalesce`, `ifNull`, `assumeNotNull`, ...).
-static bool isNullPropagatingFunction(const String & name)
+static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
 {
     static const std::unordered_set<std::string_view> names = {
         /// comparisons (the atoms of equi/theta-join predicates)
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
         /// arithmetic that may wrap a column inside a comparison, e.g. `a.x + 1 = b.y`
         "plus", "minus", "multiply", "divide", "modulo", "negate",
-        /// a CAST of NULL is NULL
         "CAST", "_CAST",
     };
-    return names.contains(name);
+    const auto & name = node.function_base->getName();
+    if (!names.contains(name))
+        return false;
+    /// A cast to a non-`Nullable` type raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` rather than
+    /// returning `NULL`; a cast to `Variant`/`Dynamic` returns `NULL` but a join on such a key
+    /// matches `NULL` to `NULL`. Neither shape rejects a null-extended row, so neither counts.
+    if (name == "CAST" || name == "_CAST")
+        return isNullableOrLowCardinalityNullable(node.result_type);
+    return true;
+}
+
+/// An outer join pads an unmatched row with a top-level NULL only for a type its nullability
+/// conversion can wrap. `Array`/`Map` are padded with the type default (`[]`, `map()`) instead, and
+/// `Variant`/`Dynamic` with an internal NULL: both match another such key rather than rejecting it.
+static bool nullExtensionIsNull(const DataTypePtr & type)
+{
+    return isNullableOrLowCardinalityNullable(type) || JoinCommon::canBecomeNullable(type);
 }
 
 /// Relations R such that `node` evaluates to NULL when all of R's columns are NULL ("strict" on R).
@@ -868,13 +618,15 @@ static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpress
     {
         case ActionsDAG::ActionType::INPUT:
         case ActionsDAG::ActionType::PLACEHOLDER:
+            if (!nullExtensionIsNull(node->result_type))
+                return {};
             /// A leaf column reference is null exactly on its own relation.
             return JoinActionRef(node, actions).getSourceRelations();
         case ActionsDAG::ActionType::ALIAS:
             return node->children.empty() ? BitSet{} : strictOnRelations(node->children.front(), actions);
         case ActionsDAG::ActionType::FUNCTION:
         {
-            if (!node->function_base || !isNullPropagatingFunction(node->function_base->getName()))
+            if (!node->function_base || !isNullPropagatingFunction(*node))
                 return {};
             BitSet result;
             for (const auto * child : node->children)
@@ -1230,6 +982,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global expression actions DAG is not set");
 
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
+    const UInt64 cluster_id = ++optimization_settings.join_reorder_next_cluster_id;
 
     auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
     auto sequence = getJoinTreePostOrderSequence(optimized);
@@ -1272,7 +1025,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         }
     }
 
-    std::stack<QueryPlan::Node *> nodeStack;
+    std::stack<QueryPlan::Node *> node_stack;
     auto & input_nodes = query_graph_builder.inputs;
 
     if (!query_graph_builder.context)
@@ -1326,15 +1079,15 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             size_t relation_id = safe_cast<size_t>(entry->relation_id);
             if (relation_id >= input_nodes.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid relation id: {}, input nodes size: {}", relation_id, input_nodes.size());
-            nodeStack.push(input_nodes[relation_id]);
+            node_stack.push(input_nodes[relation_id]);
         }
         else
         {
             /// Combine two nodes from the stack into a single join operation
-            auto * left_child_node = nodeStack.top();
-            nodeStack.pop();
-            auto * right_child_node = nodeStack.top();
-            nodeStack.pop();
+            auto * left_child_node = node_stack.top();
+            node_stack.pop();
+            auto * right_child_node = node_stack.top();
+            node_stack.pop();
 
             auto join_operator = std::move(entry->join_operator);
             /// See `graph_has_mixed_strictness` above: keep each entry's own strictness in a mixed
@@ -1557,7 +1310,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate);
+            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 
             auto & new_node = nodes.emplace_back();
 
@@ -1570,11 +1323,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
-            nodeStack.push(&new_node);
+            node_stack.push(&new_node);
         }
     }
 
-    if (nodeStack.size() != 1 || nodeStack.top() != &nodes.back())
+    if (node_stack.size() != 1 || node_stack.top() != &nodes.back())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal join sequence produced: [{}]",
             fmt::join(sequence | std::views::transform([](const auto * e) { return e ? e->dump() : "null"; }), ", "));
 

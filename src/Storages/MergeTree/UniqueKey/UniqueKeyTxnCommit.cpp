@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
@@ -167,7 +167,7 @@ protected:
     /// cannot be undone. See `IBitmapStore::readLatestBitmap`.
     static void rejectUndeterminedTransactions(std::string_view what)
     {
-        if (!TransactionLog::instance().hasUnknownStateTransactions())
+        if (!TransactionManager::instance().hasUnknownStateTransactions())
             return;
 
         throw Exception(

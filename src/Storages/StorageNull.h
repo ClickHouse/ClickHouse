@@ -52,6 +52,8 @@ public:
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
+    bool supportsTruncate() const override { return false; }
+
     SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override
     {
         return std::make_shared<NullSinkToStorage>(std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
@@ -59,7 +61,7 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     std::optional<UInt64> totalRows(ContextPtr) const override
     {

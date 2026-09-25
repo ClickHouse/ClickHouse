@@ -19,6 +19,15 @@
 namespace DB
 {
 
+/// A part's version is settled once it can no longer change: either its transaction committed, or
+/// it was never written in one. `Tx::isCommittedCSN` answers only the first -- it requires
+/// `csn > MaxReservedCSN`, and `NonTransactionalCSN` is 1 -- so a bitmap held by an attached or
+/// non-transactional part would never resolve.
+inline bool isSettledCSN(CSN csn)
+{
+    return Tx::isCommittedCSN(csn) || csn == Tx::NonTransactionalCSN;
+}
+
 class IDataPartStorage;
 class IMergeTreeDataPart;
 class DataPartsAnyLock;
