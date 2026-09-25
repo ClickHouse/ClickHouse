@@ -202,3 +202,53 @@ def test_distinct_partial_cancellation_drains_suppression(start_cluster):
     assert written > settings["max_block_size"]
     assert read == written
     assert tail > 0
+
+
+@pytest.mark.parametrize("operation", ["sort", "distinct"])
+@pytest.mark.parametrize("fan_in", [0, 2])
+def test_external_merge_removed_processor_profiles(start_cluster, operation, fan_in):
+    query_id = str(uuid.uuid4())
+    source = (
+        "SELECT number AS k FROM numbers(8192) ORDER BY cityHash64(k)"
+        if operation == "sort"
+        else "SELECT DISTINCT number AS k FROM numbers(8192)"
+    )
+    settings = {
+        "max_threads": 1,
+        "max_block_size": 1024,
+        "max_untracked_memory": 0,
+        "max_bytes_before_external_sort": 1,
+        "max_bytes_ratio_before_external_sort": 0,
+        "max_bytes_before_external_distinct": 1,
+        "max_bytes_ratio_before_external_distinct": 0,
+        "max_external_merge_fan_in": fan_in,
+        "allow_preliminary_distinct_abandoning": 0,
+        "optimize_distinct_in_order": 0,
+        "query_plan_remove_redundant_sorting": 0,
+        "log_processors_profiles": 1,
+    }
+    assert (
+        node_distinct.query(
+            f"SELECT count(), sum(k) FROM ({source})", query_id=query_id, settings=settings
+        )
+        == "8192\t33550336\n"
+    )
+    node_distinct.query("SYSTEM FLUSH LOGS processors_profile_log")
+
+    # Every file is read completely. Initial writers and intermediate merge processors are removed
+    # during execution, but their final row counts must remain in `system.processors_profile_log`.
+    written, read, profiles, unique_profiles = map(
+        int,
+        node_distinct.query(
+            "SELECT sumIf(input_rows, name = 'BufferingToFileSink'), "
+            "sumIf(output_rows, name = 'BufferingFromFileSource'), "
+            "count(), uniqExact(processor_uniq_id) "
+            f"FROM system.processors_profile_log WHERE query_id = '{query_id}'"
+        ).split(),
+    )
+    assert written == read
+    assert profiles == unique_profiles
+    if fan_in:
+        assert written > 8192
+    else:
+        assert written == 8192

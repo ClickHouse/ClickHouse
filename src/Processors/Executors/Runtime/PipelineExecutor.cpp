@@ -20,6 +20,7 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
@@ -376,7 +377,14 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 bool updated = false;
                 try
                 {
-                    updated = graph->updateNode(*context.getTask(), queue, async_queue) == ExecutingGraph::UpdateNodeStatus::Done;
+                    Processors removed;
+                    const auto update_status = graph->updateNode(*context.getTask(), queue, async_queue, removed);
+
+                    /// Completed processors no longer appear in the pipeline's final profile. Log
+                    /// them before releasing their buffers, outside the graph's preparation locks.
+                    if (profile_processors && !removed.empty())
+                        logProcessorProfile(process_list_element->getContext(), removed);
+                    updated = update_status == ExecutingGraph::UpdateNodeStatus::Done;
                 }
                 catch (...)
                 {
@@ -613,7 +621,12 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
     Queue queue;
     Queue async_queue;
-    graph->initializeExecution(queue, async_queue);
+    {
+        Processors removed;
+        graph->initializeExecution(queue, async_queue, removed);
+        if (profile_processors && !removed.empty())
+            logProcessorProfile(process_list_element->getContext(), removed);
+    }
 
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will

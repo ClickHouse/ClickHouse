@@ -293,7 +293,7 @@ void ExecutingGraph::accountFinishedProcessorInGroup(const ProcessorPtr & proces
     group_it->second->not_finished.fetch_sub(1);
 }
 
-void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
+void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue, Processors & removed)
 {
     std::stack<Node *> stack;
 
@@ -313,13 +313,13 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
         Node * node = stack.top();
         stack.pop();
 
-        updateNode(*node->processor(), queue, async_queue);
+        updateNode(*node->processor(), queue, async_queue, removed);
     }
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue)
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(
+    IProcessor & initial, Queue & queue, Queue & async_queue, Processors & removed)
 {
-    Processors delayed_destruction;
     boost::container::devector<Edge *> updated_edges;
     boost::container::devector<Node *> updated_processors;
     std::vector<Node *> pending_expansion;
@@ -495,13 +495,13 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
                     if (update_status != UpdateNodeStatus::Done)
                     {
                         /// updatePipeline has already queued its removals, but this thread is leaving the graph forever.
-                        removeReadyGroups(delayed_destruction);
+                        removeReadyGroups(removed);
                         return update_status;
                     }
                 }
                 pending_expansion.clear();
 
-                removeReadyGroups(delayed_destruction);
+                removeReadyGroups(removed);
             }
             read_lock.lock();
         }
