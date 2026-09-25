@@ -3930,11 +3930,11 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
             database->checkDetachedTableNotInUse(create.uuid);
     }
 
-    /// When converting to replicated, remove all transaction metadata files
+    /// When converting to replicated, refuse if any part is not committed data
     if (to_replicated && !engine_name.starts_with("Replicated"))
     {
         String table_data_path = database->getTableDataPath(create);
-        clearTransactionMetadata(table_data_path, getContext());
+        checkAndClearTransactionMetadata(table_data_path, getContext());
     }
 
     /// Set new engine
@@ -3953,52 +3953,45 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 }
 
-void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_path, ContextPtr local_context)
+void InterpreterCreateQuery::checkAndClearTransactionMetadata(const String & table_data_path, ContextPtr local_context)
 {
-    LOG_INFO(getLogger("InterpreterCreateQuery"), "Clearing transaction metadata for table, relative path: {} when ATTACH AS REPLICATED.", table_data_path);
-
-    /// Use disk API to remove transaction metadata files from all disks
     auto disks = local_context->getDisksMap();
-    size_t total_removed = 0;
 
+    /// `txn_version.txt` is the only record that a part is not committed data: without it the loader
+    /// reads the part as committed, and either cannot resolve the intersection it then has with a
+    /// real committed part (`Part A intersects previous part B`) or makes rolled back rows visible
+    /// again. Refuse before anything is removed, so a refused conversion changes nothing on disk.
+    for (const auto & [disk_name, disk] : disks)
+    {
+        if (!disk->existsDirectory(table_data_path))
+            continue;
+
+        for (auto it = disk->iterateDirectory(table_data_path); it->isValid(); it->next())
+        {
+            String part_path = fs::path(table_data_path) / it->name();
+            if (disk->existsFile(fs::path(part_path) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot ATTACH AS REPLICATED: transactions were used on this table, part {} on disk {} has {}",
+                    it->name(), disk_name, VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        }
+    }
+
+    /// A part left with only `txn_version.txt.tmp` carries no transaction state: both loader sites
+    /// read it as a rolled back transaction and discard the part, which loses committed data when the
+    /// file is just a merge/mutation hardlink artifact. Keep removing it, as before.
     for (const auto & [disk_name, disk] : disks)
     {
         try
         {
-            /// Skip if the table data path doesn't exist on this disk
             if (!disk->existsDirectory(table_data_path))
                 continue;
 
-            /// Iterate through all parts in the table data directory
             for (auto it = disk->iterateDirectory(table_data_path); it->isValid(); it->next())
             {
-                String part_name = it->name();
-                String part_path = fs::path(table_data_path) / part_name;
-
-                /// Check if it's a directory (part directory)
-                if (!disk->existsDirectory(part_path))
-                    continue;
-
-                /// Remove the committed metadata file (`txn_version.txt`) and any leftover
-                /// temporary file (`txn_version.txt.tmp`). A `.tmp` file can legitimately linger
-                /// on a part (for example, hardlinked onto a mutated part from its source during
-                /// a merge/mutation race on object storage). If it is left behind here, the part
-                /// is later misread as a rolled-back transaction (see
-                /// `VersionMetadataOnDisk::loadMetadata`) and wrongly discarded as `Outdated`,
-                /// which resurrects pre-mutation data after `ATTACH AS REPLICATED`.
-                /// Remove the temporary file first so the cleanup is fail-closed: if removing the
-                /// main file then throws, the part is left with a valid `txn_version.txt` (still a
-                /// committed part) rather than the dangerous tmp-only state described above.
-                for (const auto * file_name : {VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME,
-                                               VersionMetadata::TXN_VERSION_METADATA_FILE_NAME})
-                {
-                    String txn_file = fs::path(part_path) / file_name;
-                    if (disk->existsFile(txn_file))
-                    {
-                        disk->removeFile(txn_file);
-                        total_removed++;
-                    }
-                }
+                String tmp_file
+                    = fs::path(table_data_path) / it->name() / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME;
+                if (disk->existsFile(tmp_file))
+                    disk->removeFile(tmp_file);
             }
         }
         catch (...)
@@ -4008,8 +4001,6 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                            disk_name, getCurrentExceptionMessage(false));
         }
     }
-
-    LOG_INFO(getLogger("InterpreterCreateQuery"), "Removed {} transaction metadata files for table, relative path: {}.", total_removed, table_data_path);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory);

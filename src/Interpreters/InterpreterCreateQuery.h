@@ -190,8 +190,8 @@ private:
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
 
-    /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
-    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
+    /// Throw if any part of a table has txn_version.txt, otherwise remove leftover txn_version.txt.tmp files.
+    static void checkAndClearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
 
     void throwIfTooManyEntities(ASTCreateQuery & create) const;
 #if CLICKHOUSE_CLOUD

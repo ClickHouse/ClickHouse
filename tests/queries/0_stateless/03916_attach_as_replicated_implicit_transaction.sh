@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-replicated-database, no-ordinary-database, no-shared-merge-tree
 
-# Regression test: ATTACH TABLE AS REPLICATED with implicit_transaction caused
-# assertHasValidVersionMetadata() LOGICAL_ERROR in debug/sanitizer builds.
-# The implicit transaction creates parts with txn_version.txt on disk.
-# clearTransactionMetadata deleted those files before the old detached table
-# was destroyed, so the old parts' destructors failed the version metadata check.
+# Regression test: ATTACH TABLE AS REPLICATED used to remove the txn_version.txt files that an
+# implicit transaction writes on its parts, which failed assertHasValidVersionMetadata() in the old
+# detached table's destructor in debug and sanitizer builds. The conversion refuses instead.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,14 +18,13 @@ ${CLICKHOUSE_CLIENT} -n -q "
 ${CLICKHOUSE_CLIENT} --implicit_transaction=1 --async_insert=0 -q "INSERT INTO t_implicit_txn VALUES (1)"
 ${CLICKHOUSE_CLIENT} --implicit_transaction=1 --async_insert=0 -q "INSERT INTO t_implicit_txn VALUES (2)"
 
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE t_implicit_txn"
+${CLICKHOUSE_CLIENT} --server_logs_file=/dev/null -q "ATTACH TABLE t_implicit_txn AS REPLICATED" 2>&1 |
+    grep -c 'transactions were used on this table'
 ${CLICKHOUSE_CLIENT} -n -q "
-    DETACH TABLE t_implicit_txn;
-    ATTACH TABLE t_implicit_txn AS REPLICATED;
+    ATTACH TABLE t_implicit_txn;
 
     SELECT x FROM t_implicit_txn ORDER BY x;
-
-    DETACH TABLE t_implicit_txn;
-    ATTACH TABLE t_implicit_txn AS NOT REPLICATED;
 
     DROP TABLE t_implicit_txn;
 "
