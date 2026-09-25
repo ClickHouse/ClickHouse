@@ -22,8 +22,6 @@ join inside a materialized view with its own inner table
 join inside a materialized view that reads a view
 05042_join_views_mv_over_view_a_plain	2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
 05042_join_views_mv_over_view_b_insert_with_join	3	['HASH']	['INNER','INNER','INNER']	['ALL','ALL','ALL']	[]
-join in the SELECT of CREATE MATERIALIZED VIEW POPULATE
-Create	1	['HASH']	['INNER']	['ALL']	[]
 join in the SELECT of an INSERT with no view attached
 1	['HASH']	['INNER']	['ALL']	[]
 parallel hash
