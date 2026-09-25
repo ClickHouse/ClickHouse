@@ -2096,9 +2096,9 @@ TEST(SchedulerSpaceShared, DedicatedSpillVisitsSharedTargetOnce)
     scheduler.registerProcessor(&first);
     scheduler.registerProcessor(&second);
     const auto request = scheduler.requestForcedSpill();
-    scheduler.executeForcedSpill(request.epoch);
+    scheduler.executeForcedSpill(request);
     EXPECT_EQ(first.spillCallCount() + second.spillCallCount(), 1u);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
 }
 
@@ -2110,14 +2110,14 @@ TEST(SchedulerSpaceShared, ForcedSpillVisitsIdleProcessorsWithoutWork)
     scheduler.registerProcessor(&first);
     scheduler.registerProcessor(&second);
     const auto request = scheduler.requestForcedSpill();
-    scheduler.executeForcedSpill(request.epoch);
+    scheduler.executeForcedSpill(request);
     EXPECT_EQ(first.completedSpillCount(), 1u);
     EXPECT_EQ(second.completedSpillCount(), 1u);
     EXPECT_EQ(first.workCallCount(), 0u);
     EXPECT_EQ(second.workCallCount(), 0u);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
-    scheduler.executeForcedSpill(request.epoch);
+    scheduler.executeForcedSpill(request);
     EXPECT_EQ(first.spillCallCount(), 1u);
     EXPECT_EQ(second.spillCallCount(), 1u);
 }
@@ -2128,10 +2128,10 @@ TEST(SchedulerSpaceShared, DedicatedSpillReportsNoProgress)
     ManualSpillProcessor processor(4096, false);
     scheduler.registerProcessor(&processor);
     const auto request = scheduler.requestForcedSpill();
-    scheduler.executeForcedSpill(request.epoch);
+    scheduler.executeForcedSpill(request);
     EXPECT_EQ(processor.spillCallCount(), 1u);
     EXPECT_EQ(processor.workCallCount(), 0u);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
 }
 
@@ -2142,8 +2142,8 @@ TEST(SchedulerSpaceShared, DedicatedSpillSkipsExpiredProcessors)
     scheduler.registerProcessor(processor);
     const auto request = scheduler.requestForcedSpill();
     processor.reset();
-    scheduler.executeForcedSpill(request.epoch);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    scheduler.executeForcedSpill(request);
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
 }
 
@@ -2163,7 +2163,7 @@ TEST(SchedulerSpaceShared, DedicatedSpillRetainsProcessorDuringRemoval)
     });
     scheduler.registerProcessor(processor);
     const auto request = scheduler.requestForcedSpill();
-    auto spill = std::async(std::launch::async, [&] { scheduler.executeForcedSpill(request.epoch); });
+    auto spill = std::async(std::launch::async, [&] { scheduler.executeForcedSpill(request); });
     EXPECT_EQ(started_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
     scheduler.remove(processor.get());
     processor.reset();
@@ -2181,10 +2181,10 @@ TEST(SchedulerSpaceShared, DedicatedSpillIncludesProcessorsAddedDuringPass)
     first->runOnDedicatedSpill([&] { scheduler.registerProcessor(added); });
     scheduler.registerProcessor(first);
     const auto request = scheduler.requestForcedSpill();
-    scheduler.executeForcedSpill(request.epoch);
+    scheduler.executeForcedSpill(request);
     EXPECT_EQ(first->completedSpillCount(), 1u);
     EXPECT_EQ(added->completedSpillCount(), 1u);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
 }
 
@@ -2201,13 +2201,13 @@ TEST(SchedulerSpaceShared, ForcedSpillWaitsForProcessorWork)
     scheduler.checkAndSpill(&processor);
     ASSERT_EQ(processor.spillCallCount(), 1u);
     ASSERT_EQ(processor.completedSpillCount(), 0u);
-    ASSERT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    ASSERT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     processor.work();
     scheduler.finishSpill(&processor);
     EXPECT_EQ(processor.completedSpillCount(), 1u);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
 }
 
@@ -2223,7 +2223,7 @@ TEST(SchedulerSpaceShared, ForcedSpillWaitsUntilDeferredSpillFinishes)
     processor.work();
     scheduler.finishSpill(&processor);
     EXPECT_EQ(processor.completedSpillCount(), 0u);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     processor.setSpillBlocked(false);
@@ -2232,7 +2232,7 @@ TEST(SchedulerSpaceShared, ForcedSpillWaitsUntilDeferredSpillFinishes)
     scheduler.finishSpill(&processor);
     EXPECT_EQ(processor.spillCallCount(), 1u);
     EXPECT_EQ(processor.completedSpillCount(), 1u);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
 }
 
@@ -2250,12 +2250,12 @@ TEST(SchedulerSpaceShared, ForcedSpillWaitsForEveryProcessorWork)
     first.work();
     scheduler.finishSpill(&first);
     scheduler.finishSpill(&first);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     second.work();
     scheduler.finishSpill(&second);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
 }
 
@@ -2267,19 +2267,19 @@ TEST(SchedulerSpaceShared, OldSpillWorkCannotCompleteNewEpoch)
 
     const auto old_request = scheduler.requestForcedSpill();
     scheduler.checkAndSpill(&processor);
-    scheduler.finishMemoryPressure();
+    scheduler.finishMemoryPressure(old_request);
     const auto new_request = scheduler.requestForcedSpill();
-    ASSERT_GT(new_request.epoch, old_request.epoch);
+    ASSERT_GT(new_request->id, old_request->id);
 
     processor.work();
     scheduler.finishSpill(&processor);
-    EXPECT_EQ(scheduler.getForcedSpillResult(new_request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(new_request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     scheduler.checkAndSpill(&processor);
     processor.work();
     scheduler.finishSpill(&processor);
-    EXPECT_EQ(scheduler.getForcedSpillResult(new_request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(new_request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
 }
 
@@ -2291,12 +2291,12 @@ TEST(SchedulerSpaceShared, RejectedSpillCompletesAfterProcessorWork)
 
     const auto request = scheduler.requestForcedSpill();
     scheduler.checkAndSpill(&processor);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     processor.work();
     scheduler.finishSpill(&processor);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
 }
 
@@ -2515,28 +2515,28 @@ TEST(SchedulerSpaceShared, QueueEntryOwnsOneForcedSpillEpoch)
     scheduler.registerProcessor(&processor);
 
     const auto first_request = scheduler.requestForcedSpill();
-    ASSERT_GT(first_request.epoch, 0u);
-    EXPECT_EQ(scheduler.getForcedSpillResult(first_request.epoch).outcome,
+    ASSERT_GT(first_request->id, 0u);
+    EXPECT_EQ(scheduler.getForcedSpillResult(first_request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     /// Re-observing the same queue entry must not start another spill pass.
     const auto repeated_request = scheduler.requestForcedSpill();
-    EXPECT_EQ(repeated_request.epoch, first_request.epoch);
+    EXPECT_EQ(repeated_request, first_request);
 
     scheduler.checkAndSpill(&processor);
     processor.work();
     scheduler.finishSpill(&processor);
     EXPECT_EQ(processor.spillCallCount(), 1u);
     EXPECT_EQ(processor.lastSpillSize(), 4096u);
-    EXPECT_EQ(scheduler.getForcedSpillResult(first_request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(first_request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
 
     const auto same_entry = scheduler.requestForcedSpill();
-    EXPECT_EQ(same_entry.epoch, first_request.epoch);
+    EXPECT_EQ(same_entry, first_request);
 
-    scheduler.finishMemoryPressure();
+    scheduler.finishMemoryPressure(first_request);
     const auto next_entry = scheduler.requestForcedSpill();
-    EXPECT_GT(next_entry.epoch, first_request.epoch);
+    EXPECT_GT(next_entry->id, first_request->id);
 }
 
 
@@ -2558,9 +2558,9 @@ TEST(SchedulerSpaceShared, RunnableProcessorClaimsForcedSpillEpoch)
     scheduler.checkAndSpill(&runnable);
     runnable.work();
     scheduler.finishSpill(&runnable);
-    ASSERT_NE(scheduler.getForcedSpillResult(first.epoch).outcome,
+    ASSERT_NE(scheduler.getForcedSpillResult(first).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
-    scheduler.finishMemoryPressure();
+    scheduler.finishMemoryPressure(first);
 
     const auto second = scheduler.requestForcedSpill();
     scheduler.checkAndSpill(&previously_selected);
@@ -2573,7 +2573,7 @@ TEST(SchedulerSpaceShared, RunnableProcessorClaimsForcedSpillEpoch)
     EXPECT_EQ(runnable.spillCallCount(), 2u)
         << "The runnable processor did not participate in every queue-entry spill pass";
     EXPECT_NE(
-        scheduler.getForcedSpillResult(second.epoch).outcome,
+        scheduler.getForcedSpillResult(second).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending)
         << "The epoch remained pinned to a processor that did not run";
 }
@@ -2587,11 +2587,11 @@ TEST(SchedulerSpaceShared, NoSpillCandidateReachesSuctionBackstop)
     MemorySpillScheduler scheduler(/*enable_=*/ false);
 
     const auto spill_request = scheduler.requestForcedSpill();
-    EXPECT_EQ(scheduler.getForcedSpillResult(spill_request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(spill_request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
 
     const auto same_entry = scheduler.requestForcedSpill();
-    EXPECT_EQ(same_entry.epoch, spill_request.epoch);
+    EXPECT_EQ(same_entry, spill_request);
 }
 
 
@@ -3931,14 +3931,14 @@ TEST(SchedulerSpaceShared, ForcedSpillWaitsForAllRegisteredProcessorStats)
     scheduler.checkAndSpill(&empty);
     empty.work();
     scheduler.finishSpill(&empty);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     scheduler.checkAndSpill(&spillable);
     spillable.work();
     scheduler.finishSpill(&spillable);
     EXPECT_EQ(spillable.spillCallCount(), 1u);
-    EXPECT_NE(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_NE(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 }
 
@@ -3956,11 +3956,11 @@ TEST(SchedulerSpaceShared, ForcedSpillRemovalCompletesEpoch)
     scheduler.checkAndSpill(&completed);
     completed.work();
     scheduler.finishSpill(&completed);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     scheduler.remove(&removed);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::NoProgress);
 }
 
@@ -3978,14 +3978,14 @@ TEST(SchedulerSpaceShared, ForcedSpillIncludesProcessorRegisteredDuringEpoch)
     scheduler.checkAndSpill(&first);
     first.work();
     scheduler.finishSpill(&first);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Pending);
 
     scheduler.checkAndSpill(&late);
     late.work();
     scheduler.finishSpill(&late);
     EXPECT_EQ(late.spillCallCount(), 1u);
-    EXPECT_EQ(scheduler.getForcedSpillResult(request.epoch).outcome,
+    EXPECT_EQ(scheduler.getForcedSpillResult(request).outcome,
         MemorySpillScheduler::ForcedSpillOutcome::Progress);
 }
 
