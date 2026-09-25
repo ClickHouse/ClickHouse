@@ -122,7 +122,7 @@ private:
     void processQuery();
 
     bool processPrepareStatement(const String & query);
-    bool processExecute(const String & query, ContextMutablePtr query_context);
+    bool processExecute(const String & query);
     bool processDeallocate(const String & query);
     bool processCopyQuery(const String & query);
 
@@ -148,7 +148,7 @@ private:
     static bool isEmptyQuery(const String & query);
     static Int32 parseNumberColumns(const std::vector<char> & output);
 
-    void initializeSystemTables(ContextMutablePtr query_context);
+    void initializeSystemTables(ContextMutablePtr session_context);
     bool should_init_system_tables = true;
 };
 

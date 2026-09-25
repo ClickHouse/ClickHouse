@@ -3,6 +3,7 @@
 #if USE_ARROWFLIGHT
 
 #include <Common/ThreadStatus.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Core/Settings.h>
 #include <Core/Block.h>
 #include <Common/logger_useful.h>
@@ -59,7 +60,14 @@ PollSession::PollSession(
     }
 }
 
-PollSession::~PollSession() = default;
+PollSession::~PollSession()
+{
+    /// Polling and cancellation can release the context on a different request or worker thread.
+    MemoryTrackerSwitcher query_memory_scope(&thread_group->memory_tracker);
+    executor.reset();
+    block_io = {};
+    query_context.reset();
+}
 
 ContextPtr PollSession::queryContext() { return query_context; }
 
@@ -80,7 +88,12 @@ void PollSession::onFinish() { block_io.onFinish(); }
 
 void PollSession::onException() { block_io.onException(); }
 
-void PollSession::onCancelOrConnectionLoss() { block_io.onCancelOrConnectionLoss(); }
+void PollSession::onCancelOrConnectionLoss()
+{
+    /// Cancellation can tear down the pipeline before the session destructor runs.
+    MemoryTrackerSwitcher query_memory_scope(&thread_group->memory_tracker);
+    block_io.onCancelOrConnectionLoss();
+}
 
 }
 }

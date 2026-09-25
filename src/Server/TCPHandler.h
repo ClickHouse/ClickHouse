@@ -45,6 +45,7 @@ namespace DB
 class ICompressionCodec;
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 class Session;
+class QueryScope;
 struct Settings;
 struct QueryPlanAndSets;
 class ColumnsDescription;
@@ -296,7 +297,7 @@ private:
     void receiveHello();
     bool receiveQueryPlan(QueryState & state);
     void receiveAddendum();
-    bool receivePacketsExpectQuery(std::shared_ptr<QueryState> & state);
+    bool receivePacketsExpectQuery(std::shared_ptr<QueryState> & state, QueryScope & query_scope);
     bool receivePacketsExpectData(QueryState & state) TSA_REQUIRES(callback_mutex);
     bool receivePacketsExpectDataConcurrentWithExecutor(QueryState & state);
     /// `force` skips the interactive-delay rate limit, for callers that must know right now.

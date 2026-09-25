@@ -18,8 +18,12 @@
 
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/Stopwatch.h>
 #include <IO/SnappyBasicReadBuffer.h>
 #include <IO/SnappyBasicWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
@@ -27,6 +31,7 @@
 #include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/Session.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
@@ -44,6 +49,11 @@
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char pause_after_manual_query_id_release[];
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 http_response_buffer_size;
@@ -54,6 +64,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int INCOMPATIBLE_SCHEMA;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int SNAPPY_UNCOMPRESS_FAILED;
@@ -69,8 +80,10 @@ public:
     virtual ~Impl() = default;
     virtual void beforeHandlingRequest(HTTPServerRequest & /* request */) {}
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
-    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
+    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, QueryScope & query_scope) = 0;
     virtual void onException() {}
+
+    ProcessList::EntryPtr process_list_entry;
 
 protected:
     PrometheusRequestHandler & parent() { return parent_ref; }
@@ -97,7 +110,7 @@ public:
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Metrics);
     }
 
-    void handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response) override
+    void handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response, QueryScope & /* query_scope */) override
     {
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
         auto & out = getOutputStream(response);
@@ -139,11 +152,12 @@ public:
     virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
 
 protected:
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, QueryScope & query_scope) override
     {
         SCOPE_EXIT({
-            request_credentials.reset();
             context.reset();
+            MemoryTrackerSwitcher session_memory_scope(&total_memory_tracker);
+            request_credentials.reset();
             session.reset();
             params.reset();
         });
@@ -156,7 +170,7 @@ protected:
             params = std::make_unique<HTMLForm>(default_settings, request);
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
-        if (!authenticateUserAndMakeContext(request, response))
+        if (!authenticateUserAndMakeContext(request, response, query_scope))
             return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
                     /// and `request_credentials` must be preserved until the next request or until any exception.
 
@@ -167,20 +181,19 @@ protected:
         parent().http_response_buffer_size = buffer_size;
 
         /// Initialize query scope.
-        QueryScope query_scope;
-        if (context)
-            query_scope = QueryScope::create(context);
+        query_scope.attachToQueryContext(context);
 
         handlingRequestWithContext(request, response);
     }
 
-    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response)
+    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response, QueryScope & query_scope)
     {
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
 
         if (!authenticateUser(request, response))
             return false;
 
+        query_scope = QueryScope::createForQueryContext();
         makeContext(request);
         return true;
     }
@@ -188,6 +201,23 @@ protected:
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
     {
         return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
+    }
+
+    void admitRequest(const String & description)
+    {
+        auto & entry = parent().impl->process_list_entry;
+        if (entry)
+            return;
+        if (auto query_status = context->getProcessListElementSafe())
+        {
+            entry = query_status->getProcessListEntry();
+            if (entry)
+                return;
+        }
+
+        /// Some protocol operations do not pass through `executeQuery`.
+        entry = context->getProcessList().insert(description, 0, nullptr, context, Stopwatch{}.getStart(), false);
+        context->setProcessListElement(entry->getQueryStatus());
     }
 
     bool isSettingLikeParameter(const String & name) override
@@ -347,10 +377,15 @@ public:
             }
         }
 
-        protocol.write(write_request.timeseries(), write_request.metadata());
-
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
         response.setChunkedTransferEncoding(false);
+        /// Include the response allocation in admission, before an insert can reset the user tracker.
+        getOutputStream(response);
+
+        if (write_request.timeseries().empty() && write_request.metadata().empty())
+            admitRequest("Prometheus empty remote write");
+
+        protocol.write(write_request.timeseries(), write_request.metadata());
 
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote write protocol is disabled");
@@ -374,6 +409,9 @@ public:
     void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
     {
 #if USE_PROMETHEUS_PROTOBUFS
+        /// Remote reads build their pipeline directly, without admission through `executeQuery`.
+        admitRequest("Prometheus remote read");
+
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
@@ -510,6 +548,7 @@ public:
             {
                 /// The format_query endpoint only parses and reformats the given PromQL expression,
                 /// so it doesn't need the TimeSeries table.
+                admitRequest("Prometheus format query");
                 formatQuery(getOutputStream(response), params->get("query", ""));
                 return;
             }
@@ -610,6 +649,7 @@ public:
             }
             else
             {
+                admitRequest("Prometheus unknown API request");
                 LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
                 writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
@@ -620,8 +660,12 @@ public:
             /// Once the response header has been sent we can no longer produce
             /// a well-formed Prometheus error response. So we let the outer handler
             /// abort the chunked stream via cancelWithException() instead.
-            if (response.sent())
+            /// Memory-limit failures also use its bounded error response without retrying the allocation.
+            if (response.sent() || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                 throw;
+
+            /// Parsing and dispatch can fail before `executeQuery` admits the request.
+            admitRequest("Prometheus API error response");
 
             /// Drop any partial success body still sitting in the output buffer
             /// before writing the error response.
@@ -725,12 +769,12 @@ public:
         current_impl->beforeHandlingRequest(request);
     }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, QueryScope & query_scope) override
     {
         /// `current_impl` was selected in beforeHandlingRequest().
         /// Forward the whole request to it so its own authentication, context setup,
         /// and endpoint dispatch run exactly as for a dedicated single-protocol handler.
-        current_impl->handleRequest(request, response);
+        current_impl->handleRequest(request, response, query_scope);
     }
 
     void onException() override
@@ -821,6 +865,16 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     DB::setThreadName(ThreadName::PROMETHEUS_HANDLER);
     applyHTTPResponseHeaders(response, response_headers);
 
+    QueryScope query_scope;
+    /// Release request allocations before the last entry resets the user tracker.
+    SCOPE_EXIT({
+        write_buffer_from_response.reset();
+        CurrentThread::flushUntrackedMemory();
+        impl->process_list_entry.reset();
+        if (FailPointInjection::hasAnyFailPointBeenRegistered())
+            FailPointInjection::pauseFailPoint(FailPoints::pause_after_manual_query_id_release);
+    });
+
     try
     {
         write_event = write_event_;
@@ -834,12 +888,22 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         setResponseDefaultHeaders(response);
 
         impl->beforeHandlingRequest(request);
-        impl->handleRequest(request, response);
+        impl->handleRequest(request, response, query_scope);
 
         getOutputStream(response).finalize();
     }
     catch (...)
     {
+        /// Preserve the original exception while accounting for the error response.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        /// A rejected response-buffer allocation must not be retried at the requested size.
+        http_response_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+        /// A remote-write response uses plain framing, so an error body must end with the connection.
+        if (!response.getChunkedTransferEncoding() && !response.hasContentLength())
+        {
+            MemoryTrackerSwitcher response_memory_scope(&total_memory_tracker);
+            response.setKeepAlive(false);
+        }
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);

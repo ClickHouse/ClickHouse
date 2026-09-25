@@ -882,6 +882,69 @@ bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
     return ((max_size == 0 || size <= max_size) && size >= min_size);
 }
 
+void MemoryTracker::checkQueryLimit() const
+{
+    chassert(level == VariableContext::Process);
+    const Int64 size = get();
+    const Int64 limit = getHardLimit();
+    if (!limit || size <= limit || !memoryTrackerCanThrow(level, false))
+        return;
+
+    MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+    ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+    throw DB::Exception(
+        DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+        "Query memory limit exceeded during query setup: would use {}, maximum: {}",
+        formatReadableSizeWithBinarySuffix(size),
+        formatReadableSizeWithBinarySuffix(limit));
+}
+
+std::optional<MemoryTracker::ParentLimitExceeded> MemoryTracker::tryInsertParent(MemoryTracker * new_parent) noexcept
+{
+    auto * old_parent = getParent();
+    if (new_parent == old_parent)
+        return {};
+    chassert(new_parent && new_parent != this);
+    chassert(level == VariableContext::Process && new_parent->level == VariableContext::User);
+    chassert(new_parent->getParent() == old_parent);
+
+    /// Transfer existing bytes without allocating or recharging ancestors under the process-list mutex.
+    const Int64 size = get();
+    const Int64 limit = new_parent->hard_limit.load(std::memory_order_relaxed);
+    const bool enforce_limit = memoryTrackerCanThrow(new_parent->level, false);
+    auto old_amount = new_parent->amount.load(std::memory_order_relaxed);
+    Int64 will_be = 0;
+    do
+    {
+        will_be = old_amount + size;
+        if (limit && will_be > limit && enforce_limit)
+            return ParentLimitExceeded{size, will_be, limit};
+    }
+    while (!new_parent->amount.compare_exchange_weak(old_amount, will_be, std::memory_order_relaxed));
+
+    auto old_peak = new_parent->peak.load(std::memory_order_relaxed);
+    while (old_peak < will_be && !new_parent->peak.compare_exchange_weak(old_peak, will_be, std::memory_order_relaxed))
+    {
+    }
+    auto metric_loaded = new_parent->metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end())
+        CurrentMetrics::add(metric_loaded, size);
+    parent.store(new_parent, std::memory_order_release);
+    return {};
+}
+
+void MemoryTracker::ParentLimitExceeded::throwException() const
+{
+    MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+    ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+    throw DB::Exception(
+        DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+        "User memory limit exceeded during query setup: would use {} (query has already allocated {}), maximum: {}",
+        formatReadableSizeWithBinarySuffix(would_use),
+        formatReadableSizeWithBinarySuffix(size),
+        formatReadableSizeWithBinarySuffix(limit));
+}
+
 void MemoryTracker::setParent(MemoryTracker * elem)
 {
     /// Untracked memory shouldn't be accounted to a query or a user if it was allocated before the thread was attached

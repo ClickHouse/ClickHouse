@@ -1,0 +1,32 @@
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+    <postgresql_port>9005</postgresql_port>
+    <grpc_port>9100</grpc_port>
+    <arrowflight_port>8888</arrowflight_port>
+    <prometheus>
+        <port>9093</port>
+        <handlers>
+            <query>
+                <url>regex:/api/v1/.*</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.context_memory_prometheus</table>
+                </handler>
+            </query>
+            <read>
+                <url>/read</url>
+                <handler>
+                    <type>read</type>
+                    <table>default.context_memory_prometheus</table>
+                </handler>
+            </read>
+            <write>
+                <url>/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.context_memory_prometheus</table>
+                </handler>
+            </write>
+        </handlers>
+    </prometheus>
+</clickhouse>

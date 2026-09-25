@@ -3,6 +3,7 @@
 #include <Common/OSThreadNiceValue.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
+#include <Common/MemoryTrackerSwitcher.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -106,29 +107,47 @@ void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker 
     memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
 }
 
-ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)
+ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
-    , query_context(query_context_)
-    , global_context(query_context_->getGlobalContext())
-    , fatal_error_callback(fatal_error_callback_)
-    , os_threads_nice_value(os_threads_nice_value_)
-    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]))
 {
-    shared_data.query_is_canceled_predicate = [this] () -> bool {
-            if (auto context_locked = query_context.lock())
-            {
-                return context_locked->isCurrentQueryKilled();
-            }
-            return false;
-    };
-    shared_data.throw_if_query_canceled_predicate = [this] ()
+}
+
+ThreadGroup::~ThreadGroup()
+{
+    MemoryTrackerSwitcher query_memory_scope(&memory_tracker, 0);
+    String{}.swap(shared_data.query_for_logs);
+}
+
+void ThreadGroup::initializeQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_)
+{
+    std::lock_guard lock(mutex);
+    chassert(query_context.expired());
+    chassert(active_thread_count == 0);
+    query_context = query_context_;
+    global_context = query_context_->getGlobalContext();
+    fatal_error_callback = std::move(fatal_error_callback_);
+    os_threads_nice_value = query_context_->getSettingsRef()[Setting::os_threads_nice_value_query];
+    memory_spill_scheduler = std::make_shared<MemorySpillScheduler>(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]);
+    memory_tracker.setDescription("Query");
+    shared_data.query_is_canceled_predicate = [this]()
     {
         if (auto context_locked = query_context.lock())
-        {
+            return context_locked->isCurrentQueryKilled();
+        return false;
+    };
+    shared_data.throw_if_query_canceled_predicate = [this]()
+    {
+        if (auto context_locked = query_context.lock())
             if (auto elem = context_locked->getProcessListElementSafe())
                 elem->throwIfKilled();
-        }
     };
+}
+
+ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)
+    : ThreadGroup()
+{
+    initializeQuery(query_context_, std::move(fatal_error_callback_));
+    os_threads_nice_value = os_threads_nice_value_;
 }
 
 ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
@@ -389,6 +408,8 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 
     if (boundToOSThread())
         thread_group_->linkThread(thread_id);
+    local_data.plan_step_index.reset();
+    local_data.pipeline_processor_index.reset();
     thread_group = thread_group_;
     try
     {
@@ -443,6 +464,13 @@ void ThreadStatus::detachFromGroup()
         finalizePerformanceCounters();
     }
 
+    clearQueryId();
+    String{}.swap(local_data.query_for_logs);
+    local_data.query_is_canceled_predicate = {};
+    local_data.throw_if_query_canceled_predicate = {};
+    fatal_error_callback = {};
+    flushUntrackedMemory();
+
     performance_counters.setParent(&ProfileEvents::global_counters);
 
     memory_tracker.reset();
@@ -475,13 +503,8 @@ void ThreadStatus::detachFromGroup()
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
 
-    clearQueryId();
     query_context.reset();
-
     local_data = {};
-
-    fatal_error_callback = {};
-
 }
 
 void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached)
