@@ -10,6 +10,7 @@
 #include <Poco/URI.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/MessageHeader.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPServer.h>
@@ -17,6 +18,7 @@
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/ServerSocket.h>
+#include <Poco/Net/SocketImpl.h>
 #include <Poco/Net/SocketAddress.h>
 
 #if USE_SSL
@@ -1156,6 +1158,39 @@ TEST_F(ConnectionPoolTest, ServerOverwriteMaxRequests)
 
     ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+namespace
+{
+
+template <typename ExpectedException>
+void expectSocketErrorNamesAddress(int code)
+{
+    const std::string address = "10.255.255.1:9000";
+    try
+    {
+        Poco::Net::SocketImpl::error(code, address);
+        FAIL() << "No exception for error code " << code;
+    }
+    catch (const ExpectedException & e)
+    {
+        ASSERT_TRUE(e.displayText().contains(address)) << e.displayText();
+        ASSERT_EQ(code, e.code());
+    }
+    catch (const Poco::Exception & e)
+    {
+        FAIL() << "Unexpected " << e.className() << " for error code " << code << ": " << e.displayText();
+    }
+}
+
+}
+
+TEST(SocketImplError, ResetAbortedAndTimeoutNameTheAddress)
+{
+    /// A deferred connect error reaches these rows with the dialled address; it must not be dropped.
+    expectSocketErrorNamesAddress<Poco::Net::ConnectionResetException>(POCO_ECONNRESET);
+    expectSocketErrorNamesAddress<Poco::Net::ConnectionAbortedException>(POCO_ECONNABORTED);
+    expectSocketErrorNamesAddress<Poco::TimeoutException>(POCO_ETIMEDOUT);
 }
 
 #if USE_SSL
