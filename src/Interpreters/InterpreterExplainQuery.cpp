@@ -501,7 +501,8 @@ struct QueryAnalyzeSettings
     {.actions = true,
     .indexes = true,
     .compact = true,
-    .pretty = true};
+    .pretty = true,
+    .time = true};
 
     constexpr static char name[] = "ANALYZE";
 
@@ -519,6 +520,7 @@ struct QueryAnalyzeSettings
         {"column_structure", query_plan_options.column_structure},
         {"processors", query_plan_options.processors_profile},
         {"matches", query_plan_options.matches},
+        {"time", query_plan_options.time},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -741,6 +743,7 @@ static void formatHeaderExplainAnalyze(
         UInt64 total_time_ns,
         UInt64 planning_ns,
         UInt64 execute_ns,
+        const std::optional<ExecutionTimeBreakdown> & execution_breakdown,
         UInt64 read_rows,
         UInt64 read_bytes,
         Int64 peak_memory,
@@ -752,6 +755,26 @@ static void formatHeaderExplainAnalyze(
     out << "  Time:        " << formatReadableTime(static_cast<double>(total_time_ns))
         << " (planning " << formatReadableTime(static_cast<double>(planning_ns))
         << " · execution " << formatReadableTime(static_cast<double>(execute_ns)) << ")\n";
+
+    /// Execution time, split by what the threads were doing. The shares use the same denominator as the
+    /// per-step shares, so the `in steps` share is the `branch` share of the root step.
+    if (execution_breakdown)
+    {
+        const auto print_part = [&](std::string_view name, UInt64 part_ns)
+        {
+            out << name << " " << formatReadableTime(static_cast<double>(part_ns));
+            if (execute_ns)
+                out << fmt::format(" ({:.2f}%)", 100.0 * static_cast<double>(part_ns) / static_cast<double>(execute_ns));
+        };
+
+        out << "  Execution:   ";
+        print_part("in steps", execution_breakdown->in_steps_ns);
+        out << " · ";
+        print_part("outside steps", execution_breakdown->outside_steps_ns);
+        out << " · ";
+        print_part("idle", execution_breakdown->idle_ns);
+        out << "\n";
+    }
 
     /// Rows/bytes read from tables, with throughput relative to the execution time.
     out << "  Read:        " << formatReadableQuantity(static_cast<double>(read_rows)) << " rows, "
@@ -779,6 +802,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
     bool ignore_limits = false;
     UInt64 planning_ns = 0;
     ExplainPlanOptions query_plan_options;
+    bool time = false;
 };
 
 InterpreterExplainQuery::InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_, const SelectQueryOptions & options_)
@@ -824,7 +848,9 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     auto result = std::make_unique<AnalyzedInnerQuery>();
 
-    result->query_plan_options = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings()).query_plan_options;
+    const auto analyze_settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
+    result->query_plan_options = analyze_settings.query_plan_options;
+    result->time = analyze_settings.query_plan_options.time;
 
     /// This is the only place that turns join statistics on, and it must happen before any interpreter
     /// is built. Every join of the query reads the mode from the context, so joins in nested plans get it as well.
@@ -1248,6 +1274,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             step_wall_clock_registry->populateFromPlan(plan);
             pipeline.setStepWallClockRegistry(std::move(step_wall_clock_registry));
 
+            pipeline.setCollectWorkIntervals(analyzed.time);
+
             CompletedPipelineExecutor executor(pipeline);
 
             /// Runtime metrics from `EXPLAIN ANALYZE` are meaningful only after the inner query completes.
@@ -1278,7 +1306,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             AnalyzeStepsStats steps_to_stats(pipeline, plan, execute_ns);
 
-            formatHeaderExplainAnalyze(total_time_ns, planning_ns, execute_ns, read_rows, read_bytes, peak_memory, buf);
+            formatHeaderExplainAnalyze(
+                total_time_ns, planning_ns, execute_ns, steps_to_stats.executionTimeBreakdown(), read_rows, read_bytes, peak_memory, buf);
 
             plan.explainPlan(buf,
             analyzed.query_plan_options,

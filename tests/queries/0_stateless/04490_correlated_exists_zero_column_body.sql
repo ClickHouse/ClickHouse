@@ -6,7 +6,7 @@
 
 -- Correlated subqueries require the analyzer; force it so the test also runs under the old-analyzer CI config.
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 DROP TABLE IF EXISTS users_04490;
 CREATE TABLE users_04490 (uid Int32, name String, age Int32) ENGINE = Memory;
