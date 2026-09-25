@@ -13317,6 +13317,11 @@ function nextDefaultTitle() {
     }
 }
 
+/// Whether `title` has the shape produced by `nextDefaultTitle`, i.e. the tab was never renamed.
+function isDefaultTabTitle(title) {
+    return /^Query [A-Z]+$/.test(title);
+}
+
 /// Tab titles double as the URL `tab=` key and the startup-reconciliation lookup key, so
 /// they must stay unique: two tabs sharing a title would let a shared/reloaded URL match —
 /// and overwrite — the wrong tab. If `desired` collides with another tab (ignoring the tab
@@ -14788,7 +14793,11 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
         /// session legitimately carries no marker yet must keep the policy.
         runnableUrl: !!tab.runnableUrl,
     };
-    const title = "ClickHouse Query: " + (titleForDoc || recorded_query);
+    /// A tab the user has renamed names the window exactly; a tab still carrying its default
+    /// title (see `nextDefaultTitle`) keeps the generic prefix followed by the query text.
+    const title = isDefaultTabTitle(tab.title)
+        ? "ClickHouse Query: " + (titleForDoc || recorded_query)
+        : tab.title;
     /// Once the tab has materialized, its live `colorModes` / `pinnedColumns` / `sortColumns` objects
     /// are the authoritative per-column state: URL reconciliation and the header controls mutate them
     /// in place, and a rerun nulls `tab.result` entirely, so the snapshot's `color_modes` /
