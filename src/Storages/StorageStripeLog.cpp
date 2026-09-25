@@ -1121,9 +1121,9 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
                 ++current_column;
             }
 
-            for (const auto & [block_end, column_count] : restored_schema_history)
+            for (const auto & boundary : restored_schema_history)
             {
-                if (column_count > restored_current_column_count)
+                if (boundary.second > restored_current_column_count)
                     throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "StripeLog schema history is newer than the backup schema");
             }
 
