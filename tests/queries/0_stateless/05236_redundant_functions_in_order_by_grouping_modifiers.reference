@@ -1,0 +1,114 @@
+CUBE
+-3	0
+-3	3
+-2	0
+-2	2
+-1	0
+-1	1
+0	0
+0	0
+0	0
+0	0
+0	1
+0	2
+0	3
+1	0
+1	1
+2	0
+2	2
+3	0
+3	3
+ROLLUP
+-3	0
+-3	3
+-2	0
+-2	2
+-1	0
+-1	1
+0	0
+0	0
+0	0
+1	0
+1	1
+2	0
+2	2
+3	0
+3	3
+GROUPING SETS
+-3	3
+-2	2
+-1	1
+0	0
+0	0
+0	1
+0	2
+0	3
+1	1
+2	2
+3	3
+CUBE, LIMIT 1
+-3	0
+ordered: CUBE	1
+ordered: ROLLUP	1
+ordered: GROUPING SETS	1
+ordered: CUBE, toString	1
+ordered: CUBE, Nullable key	1
+ordered: CUBE, alias and positional ORDER BY	1
+ordered: CUBE, three keys	1
+ordered: plain GROUP BY	1
+ordered: WITH TOTALS	1
+ordered: CUBE, function first	1
+ordered: CUBE, group_by_use_nulls	1
+query tree: CUBE
+SELECT
+    __table1.a AS a,
+    abs(__table1.a) AS `abs(a)`
+FROM default.t_order_by_modifiers AS __table1
+GROUP BY
+    __table1.a,
+    abs(__table1.a)
+    WITH CUBE
+ORDER BY
+    __table1.a ASC,
+    abs(__table1.a) ASC
+query tree: ROLLUP
+SELECT
+    __table1.a AS a,
+    abs(__table1.a) AS `abs(a)`
+FROM default.t_order_by_modifiers AS __table1
+GROUP BY
+    __table1.a,
+    abs(__table1.a)
+    WITH ROLLUP
+ORDER BY
+    __table1.a ASC,
+    abs(__table1.a) ASC
+query tree: GROUPING SETS
+SELECT
+    __table1.a AS a,
+    abs(__table1.a) AS `abs(a)`
+FROM default.t_order_by_modifiers AS __table1
+GROUP BY
+    GROUPING SETS (
+        (__table1.a, abs(__table1.a)),
+        (abs(__table1.a)))
+ORDER BY
+    __table1.a ASC,
+    abs(__table1.a) ASC
+query tree: plain GROUP BY
+SELECT
+    __table1.a AS a,
+    abs(__table1.a) AS `abs(a)`
+FROM default.t_order_by_modifiers AS __table1
+GROUP BY __table1.a
+ORDER BY __table1.a ASC
+query tree: WITH TOTALS
+SELECT
+    __table1.a AS a,
+    abs(__table1.a) AS `abs(a)`
+FROM default.t_order_by_modifiers AS __table1
+GROUP BY
+    __table1.a,
+    abs(__table1.a)
+    WITH TOTALS
+ORDER BY __table1.a ASC
