@@ -4516,12 +4516,27 @@ Possible values:
 - 1 — Reading in reverse order with `FINAL` is enabled.
 )", 0) \
     DECLARE(Bool, read_in_order_use_virtual_row, true, R"(
-Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel.
+Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read, plus a bounded read-ahead window of parts that keeps reads parallel (see `read_in_order_virtual_row_prefetch_window`).
 )", 0) \
     DECLARE(Bool, read_in_order_use_virtual_row_per_block, false, R"(
-When enabled together with `read_in_order_use_virtual_row`, emit a virtual row after each block read (not only at the beginning of each part).
-This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
-Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
+When enabled together with `read_in_order_use_virtual_row`, a part reports its current position in the primary key to the merge not only at its start but also while it is being read, after every `read_in_order_virtual_row_block_interval` blocks.
+This lets the merge move on from a part whose rows are being discarded by a `WHERE`, `PREWHERE` or `JOIN` filter, which helps `ORDER BY pk LIMIT n` queries with selective filters over data distributed unevenly across parts.
+Between two reports a part is read only when the merge needs it, so queries where most rows survive the filter run slower in this mode.
+The preliminary merge (`read_in_order_two_level_merge_threshold`) is disabled in this mode.
+)", 0) \
+    DECLARE(UInt64, read_in_order_virtual_row_block_interval, 8, R"(
+With `read_in_order_use_virtual_row_per_block`, the number of blocks a part reads before it reports its position to the merge again.
+A larger interval means fewer reports and less merge overhead on queries that scan a lot of data; a smaller interval lets the merge move on from filtered-out parts sooner.
+Set to 1 to report after every block. Values below 1 are treated as 1.
+)", 0) \
+    DECLARE(Int64, read_in_order_virtual_row_prefetch_window, -1, R"(
+The number of parts that are read ahead in parallel while a read-in-order merge (`read_in_order_use_virtual_row`) has not reached them yet. It bounds the number of simultaneously open readers and the data read for nothing when a `LIMIT` is satisfied before the merge reaches those parts.
+
+Possible values:
+
+- `-1` — one fewer than the number of threads of the query (the default): one thread serves the merge and the part it is consuming, the others read ahead.
+- `0` — no read-ahead; parts are read strictly in the order the merge needs them, one at a time.
+- `N > 0` — at most `N` parts read ahead.
 )", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.

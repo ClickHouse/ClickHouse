@@ -29,7 +29,7 @@ WITH A AS
     SELECT * FROM t_in_order WHERE timestamp = 60
 )
 SELECT timestamp, id FROM A ORDER BY timestamp DESC LIMIT 10
-SETTINGS read_in_order_use_virtual_row_per_block = 1;
+SETTINGS read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 
 SELECT '-- union of in-order branches with negative boundary, ASC';
 WITH A AS
@@ -48,7 +48,7 @@ WITH A AS
     SELECT * FROM t_in_order_neg WHERE timestamp = -60
 )
 SELECT timestamp, id FROM A ORDER BY timestamp ASC LIMIT 10
-SETTINGS read_in_order_use_virtual_row_per_block = 1;
+SETTINGS read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 
 SELECT '-- union with a branch sorted additionally, DESC';
 WITH A AS

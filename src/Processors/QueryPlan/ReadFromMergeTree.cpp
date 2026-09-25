@@ -359,6 +359,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
+    extern const SettingsUInt64 read_in_order_virtual_row_block_interval;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_indexes_refiner_in_read_pools;
@@ -1043,7 +1044,11 @@ Pipe ReadFromMergeTree::readInOrder(
             pk_header = Block(std::move(pk_header_columns));
 
             if (use_virtual_row_per_block)
-                processor->setVirtualRowConversions(virtual_row_conversion, pk_header, read_type == ReadType::InReverseOrder);
+                processor->setVirtualRowConversions(
+                    virtual_row_conversion,
+                    pk_header,
+                    read_type == ReadType::InReverseOrder,
+                    context->getSettingsRef()[Setting::read_in_order_virtual_row_block_interval]);
         }
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
@@ -1995,7 +2000,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
 
-    /// Preliminary MergingSortedTransform consumes virtual row, so it won't reach downstream sorting and optimization won't work.
+    /// A preliminary merge consumes the virtual rows of its members, so the per-block
+    /// announcements would never reach the final merge and the sources could not be parked
+    /// behind them. Merge the parts in one level instead.
     if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
         need_preliminary_merge = false;
 

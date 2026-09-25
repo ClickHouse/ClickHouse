@@ -356,11 +356,12 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 }
 
 void MergeTreeSelectProcessor::setVirtualRowConversions(
-    ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_)
+    ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_, size_t block_interval_)
 {
     virtual_row_conversions = std::move(virtual_row_conversions_);
     pk_block_header = std::move(pk_block_header_);
     read_in_reverse_order = read_in_reverse_order_;
+    virtual_row_block_interval = std::max<size_t>(1, block_interval_);
 }
 
 ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
@@ -402,8 +403,7 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     Columns empty_columns;
     empty_columns.reserve(result_header.columns());
     for (size_t i = 0; i < result_header.columns(); ++i)
-        empty_columns.push_back(result_header.getByPosition(i).type->createColumn()->cloneEmpty());
-
+        empty_columns.push_back(result_header.getByPosition(i).type->createColumn());
     Chunk chunk(std::move(empty_columns), 0);
     auto part_level = data_part_info->getPartInfo().level;
     chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));
@@ -491,12 +491,13 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
         auto result = readCurrentTask(*task, *algorithm);
 
-        /// Emit a virtual row update after each block, carrying the next mark's PK boundary.
+        /// Emit a virtual row update after every `virtual_row_block_interval`-th block, carrying the next mark's PK boundary.
         /// This allows MergingSortedTransform to reprioritize sources when:
         /// - PREWHERE filters all rows (merge gets updated position without actual data)
         /// - A downstream filter (WHERE, JOIN) removes all rows (virtual row passes through filters)
-        if (virtual_row_conversions && !result.is_finished)
+        if (virtual_row_conversions && !result.is_finished && ++blocks_since_virtual_row >= virtual_row_block_interval)
         {
+            blocks_since_virtual_row = 0;
             auto vrow = buildVirtualRowFromIndex(*task, result.read_mark_ranges);
             if (vrow.chunk)
                 pending_virtual_row.emplace(std::move(vrow));

@@ -16,7 +16,7 @@ INSERT INTO t_vrow_reverse VALUES ('2024-01-01 00:00:00', 'alice', 1, 2, 3);
 INSERT INTO t_vrow_reverse VALUES ('2024-01-02 00:00:00', 'bob', 2, 3, 4);
 INSERT INTO t_vrow_reverse VALUES ('2024-01-03 00:00:00', 'charlie', 3, 4, 5);
 
-SET read_in_order_two_level_merge_threshold = DEFAULT, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1;
+SET read_in_order_two_level_merge_threshold = DEFAULT, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 
 SELECT value FROM t_vrow_reverse ORDER BY toUnixTimestamp(ts) ASC LIMIT 10;
 SELECT value FROM t_vrow_reverse ORDER BY toUnixTimestamp(ts) DESC LIMIT 10;
