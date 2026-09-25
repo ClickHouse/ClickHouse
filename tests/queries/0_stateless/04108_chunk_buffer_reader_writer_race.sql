@@ -49,43 +49,43 @@ INSERT INTO chunk_buffer_race_input SELECT number +   70000, ['a','b','c'] FROM 
 -- won the scheduling lottery and missed it, but a handful of attempts reliably lost it.
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1
 SETTINGS max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1
 SETTINGS max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1
 SETTINGS max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1
 SETTINGS max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1
 SETTINGS max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1
 SETTINGS max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1
 SETTINGS max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1
 SETTINGS max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1
 SETTINGS max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 SELECT DISTINCT (SELECT arr WHERE 7) FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1
 SETTINGS max_bytes_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-    allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
+    allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1
 FORMAT `Null`;
 
 -- A successful completion here is the assertion: the server must not throw an exception.
@@ -104,7 +104,7 @@ SELECT
     SELECT count(*) || '_' || sum(sub)
     FROM (SELECT key, (SELECT key WHERE 7) AS sub FROM chunk_buffer_race_input PREWHERE 38 QUALIFY -1)
     SETTINGS max_rows_in_join = 1, join_overflow_mode = 'break', join_algorithm = 'hash',
-        allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1, max_threads = 8
+        allow_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 1, max_threads = 8
 ) = (SELECT count(*) || '_' || sum(key) FROM chunk_buffer_race_input) AS correlated_matches_plain_scan;
 
 DROP TABLE chunk_buffer_race_input;

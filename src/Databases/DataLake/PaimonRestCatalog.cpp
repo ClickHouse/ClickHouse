@@ -12,6 +12,7 @@
 #include <optional>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <Core/Names.h>
 #include <Databases/DataLake/Common.h>
@@ -39,6 +40,7 @@
 #include <Poco/String.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/logger_useful.h>
@@ -50,10 +52,48 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace DB::FailPoints
+{
+    extern const char datalake_paimon_list_page_size_one[];
+}
+
 
 namespace DataLake
 {
 using namespace DataLake::Paimon;
+
+/// Page size requested from the listing endpoints. A catalog with fewer items than one page still
+/// exercises the paginated walk under the failpoint, which is how the tests reach the code path that
+/// follows a cursor without needing a catalog holding more than `LIST_MAX_RESULTS` items.
+static UInt64 getListMaxResults()
+{
+    UInt64 max_results = LIST_MAX_RESULTS;
+    fiu_do_on(DB::FailPoints::datalake_paimon_list_page_size_one, { max_results = 1; });
+    return max_results;
+}
+
+/// Extracts the pagination cursor from a listing response. The Paimon REST pagination contract says
+/// the last page carries no `nextPageToken` (or a JSON `null` one), so an absent token must yield an
+/// empty string: keeping the previous page's token would make the caller re-request that page forever.
+static String extractNextPageToken(const Poco::JSON::Object::Ptr & json_ptr)
+{
+    if (json_ptr->has("nextPageToken") && !json_ptr->isNull("nextPageToken"))
+        return json_ptr->getValue<String>("nextPageToken");
+    return {};
+}
+
+/// Reads the array of listed items out of a listing response. A response without the expected key is
+/// a malformed catalog answer, not an empty page - report it instead of dereferencing a null pointer.
+static Poco::JSON::Array::Ptr getListingArray(const Poco::JSON::Object::Ptr & json_ptr, const String & key)
+{
+    auto array = json_ptr->getArray(key);
+    if (!array)
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Paimon REST catalog returned a listing response without the `{}` array.",
+            key);
+    return array;
+}
 
 static String md5(const String & input)
 {
@@ -313,19 +353,18 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
 void PaimonRestCatalog::forEachDatabase(DB::Strings & databases, StopCondition stop_condition, ExecuteFunc execute_func) const
 {
     auto json_ptr = requestRest(
-        std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT, "GET", {{"maxResults", fmt::to_string(LIST_MAX_RESULTS)}});
-    auto databases_array = json_ptr->getArray("databases");
-    String next_page_token;
-    if (json_ptr->has("nextPageToken") && !json_ptr->isNull("nextPageToken"))
-    {
-        next_page_token = json_ptr->getValue<String>("nextPageToken");
-    }
-    bool first_iteration = true;
+        std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT, "GET", {{"maxResults", fmt::to_string(getListMaxResults())}});
+    auto databases_array = getListingArray(json_ptr, "databases");
+    String next_page_token = extractNextPageToken(json_ptr);
+    /// Cycle-detection guard: tracks every non-empty `nextPageToken` we have seen on this request so
+    /// we can refuse to loop when a malformed catalog repeats a token. Covers both the immediate-repeat
+    /// case (`A -> A`) and longer cycles (`A -> B -> A -> ...`), since any revisit triggers a duplicate
+    /// `insert`.
+    std::unordered_set<String> seen_tokens;
     bool stop = false;
 
-    while (first_iteration || !next_page_token.empty())
+    while (true)
     {
-        first_iteration = false;
         for (unsigned int i = 0; i < databases_array->size(); ++i)
         {
             const String & database_name = databases_array->getElement<String>(i);
@@ -341,23 +380,27 @@ void PaimonRestCatalog::forEachDatabase(DB::Strings & databases, StopCondition s
                 break;
             }
         }
-        if (stop)
+        /// The cursor is examined only after the current page has been consumed, otherwise the last
+        /// page - the one that carries no `nextPageToken` - would be fetched and then dropped.
+        if (stop || next_page_token.empty())
         {
             break;
         }
+        if (!seen_tokens.insert(next_page_token).second)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Paimon REST catalog returned a `nextPageToken` (`{}`) already seen on this request "
+                "while listing databases - refusing to loop.",
+                next_page_token);
+        }
         Poco::URI::QueryParameters params = {
-            {"maxResults", fmt::to_string(LIST_MAX_RESULTS)},
+            {"maxResults", fmt::to_string(getListMaxResults())},
+            {"pageToken", next_page_token},
         };
-        if (!next_page_token.empty())
-        {
-            params.emplace_back("pageToken", next_page_token);
-        }
         json_ptr = requestRest(std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT, "GET", params);
-        databases_array = json_ptr->getArray("databases");
-        if (json_ptr->has("nextPageToken") && !json_ptr->isNull("nextPageToken"))
-        {
-            next_page_token = json_ptr->getValue<String>("nextPageToken");
-        }
+        databases_array = getListingArray(json_ptr, "databases");
+        next_page_token = extractNextPageToken(json_ptr);
     }
 }
 
@@ -367,19 +410,15 @@ void PaimonRestCatalog::forEachTables(
     auto json_ptr = requestRest(
         std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database / TABLES_ENDPOINT,
         "GET",
-        {{"maxResults", fmt::to_string(LIST_MAX_RESULTS)}});
-    auto tables_array = json_ptr->getArray("tables");
-    String next_page_token;
-    if (json_ptr->has("nextPageToken") && !json_ptr->isNull("nextPageToken"))
-    {
-        next_page_token = json_ptr->getValue<String>("nextPageToken");
-    }
-    bool first_iteration = true;
+        {{"maxResults", fmt::to_string(getListMaxResults())}});
+    auto tables_array = getListingArray(json_ptr, "tables");
+    String next_page_token = extractNextPageToken(json_ptr);
+    /// See the cycle-detection comment in `forEachDatabase`.
+    std::unordered_set<String> seen_tokens;
     bool stop = false;
 
-    while (first_iteration || !next_page_token.empty())
+    while (true)
     {
-        first_iteration = false;
         for (unsigned int i = 0; i < tables_array->size(); ++i)
         {
             String table_name = tables_array->getElement<String>(i);
@@ -395,24 +434,28 @@ void PaimonRestCatalog::forEachTables(
                 break;
             }
         }
-        if (stop)
+        /// See the comment in `forEachDatabase` on why the cursor is examined here and not in the
+        /// loop condition.
+        if (stop || next_page_token.empty())
         {
             break;
         }
-        Poco::URI::QueryParameters params = {
-            {"maxResults", fmt::to_string(LIST_MAX_RESULTS)},
-        };
-        if (!next_page_token.empty())
+        if (!seen_tokens.insert(next_page_token).second)
         {
-            params.emplace_back("pageToken", next_page_token);
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Paimon REST catalog returned a `nextPageToken` (`{}`) already seen on this request "
+                "while listing tables of database `{}` - refusing to loop.",
+                next_page_token, database);
         }
+        Poco::URI::QueryParameters params = {
+            {"maxResults", fmt::to_string(getListMaxResults())},
+            {"pageToken", next_page_token},
+        };
         json_ptr
             = requestRest(std::filesystem::path(API_VERSION) / prefix / DATABASES_ENDPOINT / database / TABLES_ENDPOINT, "GET", params);
-        tables_array = json_ptr->getArray("tables");
-        if (json_ptr->has("nextPageToken") && !json_ptr->isNull("nextPageToken"))
-        {
-            next_page_token = json_ptr->getValue<String>("nextPageToken");
-        }
+        tables_array = getListingArray(json_ptr, "tables");
+        next_page_token = extractNextPageToken(json_ptr);
     }
 }
 

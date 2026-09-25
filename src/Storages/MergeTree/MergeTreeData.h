@@ -150,8 +150,14 @@ public:
     DataPartsAnyLock(const DataPartsAnyLock &) = delete;
     DataPartsAnyLock(DataPartsAnyLock &&) = delete;
 
-    DataPartsAnyLock(const DataPartsLock &) noexcept {} // NOLINT(google-explicit-constructor)
-    DataPartsAnyLock(const DataPartsSharedLock &) noexcept {} // NOLINT(google-explicit-constructor)
+    DataPartsAnyLock(const DataPartsLock & lock [[clang::lifetimebound]]) noexcept // NOLINT(google-explicit-constructor)
+        : held_lock(&lock) {}
+    DataPartsAnyLock(const DataPartsSharedLock & lock [[clang::lifetimebound]]) noexcept // NOLINT(google-explicit-constructor)
+        : held_lock(&lock) {}
+
+private:
+    /// The lock this token was built from, never dereferenced: it is what makes the annotations above verifiable.
+    [[maybe_unused]] const void * held_lock;
 };
 
 /// Data structure for *MergeTree engines.
@@ -551,12 +557,6 @@ public:
         const RangesInDataParts & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
-
-    QueryProcessingStage::Enum getQueryProcessingStage(
-        ContextPtr query_context,
-        QueryProcessingStage::Enum to_stage,
-        const StorageSnapshotPtr &,
-        SelectQueryInfo & info) const override;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
@@ -2303,6 +2303,25 @@ private:
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const;
 
     virtual void startBackgroundMovesIfNeeded() = 0;
+
+    /// Whether the started background workers may modify the table. `StorageMergeTree` keeps it unset
+    /// while the table is read-only, including while a settings `ALTER` of a read-only table is between
+    /// making `table_readonly = 0` visible in memory and committing it durably: the asynchronous
+    /// outdated and unexpected part loaders check it before touching the disk and between parts, and
+    /// the waits for them return at once while it is unset, exactly as for a read-only table, because
+    /// nothing is loading.
+    virtual bool areBackgroundWorkersEnabled() const { return true; }
+
+    /// Whether the table is still durably read-only. `StorageMergeTree` keeps it set while a settings
+    /// `ALTER` of a read-only table is between making `table_readonly = 0` visible in memory and
+    /// committing it durably. Foreground queries that modify data must keep seeing the table as
+    /// read-only in that window: a rolled-back commit restores `table_readonly = 1`, and an `INSERT`,
+    /// mutation, `TRUNCATE` or partition command that slipped through would have written to a table
+    /// that is durably read-only.
+    virtual bool isReadonlyCommitInFlight() const { return false; }
+
+    /// Re-arm period of an asynchronous part loader that woke up while the workers are disabled.
+    static constexpr size_t DISABLED_PARTS_LOADING_RETRY_MS = 1000;
 
     bool allow_nullable_key = false;
 
