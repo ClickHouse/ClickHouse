@@ -1364,7 +1364,7 @@ ALTER TABLE visits MODIFY COLUMN browser LowCardinality(String), ADD COLUMN page
 ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUMN region_id UInt32;
 ```
 
-When a client waits for an `ALTER` to finish, one combined statement means one wait instead of one wait per action. See [Synchronicity of ALTER Queries](#synchronicity-of-alter-queries) for what that wait covers, and [Combining `MATERIALIZE INDEX` clauses](#combining-materialize-index-clauses) for the restriction that applies when one statement mixes actions of different kinds on a `Replicated` database.
+When a client waits for an `ALTER` to finish, which setting governs that wait depends on the action rather than on the statement: an action on the mutation execution path, such as `MATERIALIZE INDEX`, is covered by [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) while the metadata actions are covered by [`alter_sync`](/reference/settings/session-settings/alter#alter_sync), so combining the two does not bring them under one setting. See [Synchronicity of ALTER Queries](#synchronicity-of-alter-queries) for which actions each setting covers, and [Combining `MATERIALIZE INDEX` clauses](#combining-materialize-index-clauses) for the restriction that such a mixed statement meets on a `Replicated` database.
 
 ## Mutations {#mutations}
 
