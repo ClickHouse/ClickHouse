@@ -702,6 +702,16 @@ void JoinStepLogical::addPassThroughColumn(const ColumnWithTypeAndName & column,
     expression_actions.getActionsDAG()->getOutputs().push_back(input);
 }
 
+void JoinStepLogical::addInputToOutputs(const ActionsDAG::Node * input)
+{
+    if (input->type != ActionsDAG::ActionType::INPUT
+        || std::ranges::find(expression_actions.getActionsDAG()->getInputs(), input) == expression_actions.getActionsDAG()->getInputs().end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not an input of the join", input->result_name);
+
+    actions_after_join.push_back(input);
+    expression_actions.getActionsDAG()->getOutputs().push_back(input);
+}
+
 void JoinStepLogical::updateOutputHeader()
 {
     auto actions_dag = expression_actions.getActionsDAG();

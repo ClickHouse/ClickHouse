@@ -211,6 +211,10 @@ public:
     /// input headers once it has passed what it needs.
     void addPassThroughColumn(const ColumnWithTypeAndName & column, JoinTableSide side);
 
+    /// Makes an input the join already reads one of its outputs as well, last, the way
+    /// `addPassThroughColumn` passes a new one. `input` must be an input of `getActionsDAG`.
+    void addInputToOutputs(const ActionsDAG::Node * input);
+
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
