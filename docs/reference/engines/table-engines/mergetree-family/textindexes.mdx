@@ -186,7 +186,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)). For compatibility with other systems, `keyword` is available as an alias of `array`.
-- `keyValuePairs` combines the key-value pairs of a `Map` column to a single token. This helps to perform combined key-value lookups such as `WHERE map['key'] = 'value'` (see [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs)).
+- `keyValuePairs` combines the key-value pairs of a `Map` column to a single token. This helps to perform combined key-value lookups such as `WHERE map['key'] = 'value'` or `WHERE mapContainsKeyValue(map, 'key', 'value')` (see [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs)).
 
 All available tokenizers are listed in [system.tokenizers](/reference/system-tables/tokenizers).
 
@@ -1000,6 +1000,9 @@ ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
 
 -- Finds all error logs:
 SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
+
+-- The same, but considering every entry of a repeated key:
+SELECT * FROM logs WHERE mapContainsKeyValue(attributes, 'level', 'error');
 ```
 
 The tokenizer combines each `(key, value)` pair of a row into a single token, so the index knows which value belongs to which key.
@@ -1015,11 +1018,14 @@ The following restrictions apply:
   `FixedString` is rejected because the column stores the padding bytes while the searched constant does not, which would silently miss rows.
   `Nullable` is rejected because the encoding cannot distinguish an empty value from `NULL`.
 - The arguments `preprocessor`, `postprocessor` and `support_phrase_search` are rejected at table creation.
-- Only `=` on a map element is answered from the index so far.
+- Only `=` on a map element and `mapContainsKeyValue` are answered from the index so far.
   Other map searches, such as `mapContainsKey`, `mapContainsValue`, their `*Like` variants and `IN`, fall back to a brute-force scan.
+  So does a needle of type `FixedString`, whose padding bytes the index does not store.
 - `map['key']` returns the default value of the value type when the key is missing, so `map['key'] = ''` is also true for rows that do not contain the key and therefore have no token.
   Such a predicate falls back to a brute-force scan.
+  `mapContainsKeyValue(map, 'key', '')` is answered from the index, because it is true only for a row that holds an entry with an empty value.
 - If a row contains the same key more than once, `map['key']` is the value of its first occurrence, and the index matches that occurrence.
+  `mapContainsKeyValue` considers every entry instead, so `mapContainsKeyValue(map('k', 'v1', 'k', 'v2'), 'k', 'v2')` is true while `map('k', 'v1', 'k', 'v2')['k'] = 'v2'` is not.
 
 #### Key and value search with `mapKeys` and `mapValues` {#text-index-map-keys-and-values}
 
@@ -1392,7 +1398,7 @@ Direct read is controlled by two settings:
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
 If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
-If the text index is defined with a `keyValuePairs` tokenizer, direct read is supported for `equals` on a map element (`map['key'] = 'value'`).
+If the text index is defined with a `keyValuePairs` tokenizer, direct read is supported for `equals` on a map element (`map['key'] = 'value'`) and for `mapContainsKeyValue`.
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.
 The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 

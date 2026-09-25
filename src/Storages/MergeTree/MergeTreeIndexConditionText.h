@@ -238,7 +238,7 @@ private:
     /// index's column.
     std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
 
-    /// Everything a `keyValuePairs` index supports; currently only `m['key'] = 'value'`.
+    /// A `keyValuePairs` index in the (column, constant) shape; currently only `m['key'] = 'value'`.
     bool traverseMapElementKeyValueNode(
         const String & function_name,
         const RPNBuilderTreeNode & index_column_node,
@@ -246,6 +246,9 @@ private:
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out) const;
+
+    /// `mapContainsKeyValue(m, 'key', 'value')`: both pair tokens, searched as one `Any` query.
+    bool traverseMapContainsKeyValueNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
     VectorWithMemoryTracking<String> stringToTokens(std::string_view raw) const;

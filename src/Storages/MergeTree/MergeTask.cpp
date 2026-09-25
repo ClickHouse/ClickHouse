@@ -489,8 +489,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         for (const auto & column : projection->getRequiredColumns())
             key_columns.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
 
-    /// For vertical merge with TTL delete optimization, include columns needed by
-    /// TTL expressions in the horizontal phase so the TTL filter can be evaluated.
+    /// The TTL step runs over the merged stream, so every TTL expression it evaluates must read
+    /// from a merged column - a gathered one is missing from the block and the expression throws.
+    /// Place the inputs of every TTL the step builds an algorithm for, not just the deleting ones.
     if (ctx->need_remove_expired_values && canVerticalTTLDelete(*global_ctx))
     {
         auto add_ttl_expression_columns = [&](const TTLDescription & ttl_descr)
@@ -506,6 +507,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
         for (const auto & where_ttl : global_ctx->metadata_snapshot->getRowsWhereTTLs())
             add_ttl_expression_columns(where_ttl);
+
+        for (const auto & move_ttl : global_ctx->metadata_snapshot->getMoveTTLs())
+            add_ttl_expression_columns(move_ttl);
+
+        for (const auto & recompression_ttl : global_ctx->metadata_snapshot->getRecompressionTTLs())
+            add_ttl_expression_columns(recompression_ttl);
     }
 
     for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)
@@ -1383,8 +1390,19 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
 
 bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
 {
-    if (global_ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-        return false;
+    switch (global_ctx.merging_params.mode)
+    {
+        case MergeTreeData::MergingParams::Ordinary:
+        case MergeTreeData::MergingParams::Replacing:
+        case MergeTreeData::MergingParams::Collapsing:
+        case MergeTreeData::MergingParams::VersionedCollapsing:
+            break;
+        case MergeTreeData::MergingParams::Summing:
+        case MergeTreeData::MergingParams::Aggregating:
+        case MergeTreeData::MergingParams::Coalescing:
+        case MergeTreeData::MergingParams::Graphite:
+            return false;
+    }
 
     if (!(*global_ctx.data_settings)[MergeTreeSetting::vertical_merge_optimize_ttl_delete])
         return false;
@@ -2919,7 +2937,8 @@ public:
             case MergeTreeData::MergingParams::Collapsing:
                 merged_transform = std::make_shared<CollapsingSortedTransform>(
                     header, input_streams_count, sort_description, merging_params.sign_column, false,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, blocks_are_granules_size);
+                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf,
+                    blocks_are_granules_size);
                 break;
 
             case MergeTreeData::MergingParams::Summing:
@@ -2934,8 +2953,8 @@ public:
             case MergeTreeData::MergingParams::Replacing:
                 merged_transform = std::make_shared<ReplacingSortedTransform>(
                     header, input_streams_count, sort_description, merging_params.is_deleted_column, merging_params.version_column,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, blocks_are_granules_size,
-                    cleanup);
+                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf,
+                    blocks_are_granules_size, cleanup);
                 break;
 
             case MergeTreeData::MergingParams::Coalescing:
@@ -2952,7 +2971,8 @@ public:
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 merged_transform = std::make_shared<VersionedCollapsingTransform>(
                     header, input_streams_count, sort_description, merging_params.sign_column,
-                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf, blocks_are_granules_size);
+                    merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, rows_sources_write_buf,
+                    blocks_are_granules_size);
                 break;
         }
 
@@ -3024,7 +3044,7 @@ private:
     const time_t time_of_merge{0};
 };
 
-/// Evaluates TTL delete expressions and adds a UInt8 filter column to the block.
+/// Evaluates TTL delete expressions and attaches the resulting mask to each chunk.
 /// Used in vertical merge to pass the TTL filter to the merging algorithm.
 class TTLDeleteFilterStep : public ITransformingStep
 {
@@ -3036,7 +3056,7 @@ public:
         const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
         time_t current_time_,
         bool force_)
-        : ITransformingStep(input_header_, TTLDeleteFilterTransform::transformHeader(input_header_), getTraits())
+        : ITransformingStep(input_header_, input_header_, getTraits())
     {
         /// Build TTL expressions once and share them across all per-stream
         /// transform instances created by `addSimpleTransform`. This ensures the
@@ -3066,7 +3086,7 @@ public:
 
     void updateOutputHeader() override
     {
-        output_header = TTLDeleteFilterTransform::transformHeader(input_headers.front());
+        output_header = input_headers.front();
     }
 
 private:
@@ -3099,11 +3119,13 @@ public:
         const MergeTreeData::MutableDataPartPtr & data_part_,
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
-        bool force_)
+        bool force_,
+        bool ttl_delete_applied_by_merge_)
         : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
         transform = std::make_shared<TTLTransform>(
-            context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_);
+            context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_,
+            ttl_delete_applied_by_merge_);
 
         /// Build sets eagerly here rather than via addCreatingSetsStep.
         /// If they were built inside the merge pipeline, the subquery progress (rows read)
@@ -3485,14 +3507,23 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         merge_parts_query_plan.addStep(std::move(calculate_sorting_key_expression_step));
     }
 
-    /// For vertical merge with TTL delete, add a step that evaluates TTL expressions
-    /// and produces a filter column. This must be before the merge step so each input
-    /// stream has the filter column available for the merging algorithm.
+    /// For vertical merge with TTL delete, add a step that evaluates TTL expressions and attaches
+    /// the resulting mask to every chunk. This must be before the merge step, so that the merging
+    /// algorithm sees the mask of each input stream.
+    ContextPtr ttl_context = global_ctx->context;
     if (global_ctx->vertical_ttl_delete)
     {
+        /// The TTLDeleteFilterStep below and `TTLStep` after the merge both evaluate the TTL expressions. They
+        /// share one fresh sets cache, so `WHERE x IN (SELECT ...)` is built once, not twice; a merge context
+        /// never carries a cache of its own.
+        chassert(!global_ctx->context->getPreparedSetsCache());
+        auto context_with_sets_cache = Context::createCopy(global_ctx->context);
+        context_with_sets_cache->setPreparedSetsCache(std::make_shared<PreparedSetsCache>());
+        ttl_context = std::move(context_with_sets_cache);
+
         auto ttl_filter_step = std::make_unique<TTLDeleteFilterStep>(
             merge_parts_query_plan.getCurrentHeader(),
-            global_ctx->context,
+            ttl_context,
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part->ttl_infos,
             global_ctx->time_of_merge,
@@ -3530,11 +3561,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         bool cleanup = global_ctx->cleanup && global_ctx->future_part->final;
+        /// Lightweight delete filters on a stored column; a TTL merge's mask rides on the chunks.
         std::optional<String> filter_column_name;
         if (global_ctx->vertical_lightweight_delete)
             filter_column_name = RowExistsColumn::name;
-        else if (global_ctx->vertical_ttl_delete)
-            filter_column_name = TTLDeleteFilterTransform::TTL_FILTER_COLUMN_NAME;
 
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
@@ -3603,13 +3633,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     {
         auto ttl_step = std::make_unique<TTLStep>(
             merge_parts_query_plan.getCurrentHeader(),
-            global_ctx->context,
+            ttl_context,
             *global_ctx->data,
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part,
             global_ctx->merging_columns_expired_by_ttl,
             global_ctx->time_of_merge,
-            ctx->force_ttl);
+            ctx->force_ttl,
+            global_ctx->vertical_ttl_delete);
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
@@ -3666,6 +3697,10 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         return MergeAlgorithm::Horizontal;
     if (ctx->need_remove_expired_values)
     {
+        /// `TTLTransform` stops reading after the first block when the rows TTL has expired for the whole part,
+        /// while a vertical merge reads every key row to write `rows_sources`.
+        if (global_ctx->future_part->merge_type == MergeType::TTLDrop && global_ctx->metadata_snapshot->hasRowsTTL())
+            return MergeAlgorithm::Horizontal;
         if (!canVerticalTTLDelete(*global_ctx))
             return MergeAlgorithm::Horizontal;
     }
