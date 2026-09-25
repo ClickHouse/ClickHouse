@@ -179,8 +179,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
 
 /// First global query-plan version that writes `max_external_merge_fan_in` in the step settings.
-/// It selects version 1 of `Sorting` and `Join`, and version 2 of `Distinct` and `PreDistinct`.
-/// Readers that do not support these step versions reject them before reading the new setting.
+/// Zero omits the setting and preserves unlimited merging. Nonzero values require a reader that
+/// knows the setting; older readers reject the unknown name before reading its value.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN = 20;
 
 /// Version 1 added the initiator's settings changes to the task.

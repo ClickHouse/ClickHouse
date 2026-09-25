@@ -189,7 +189,7 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagRoundTripsAtTheCurrentVersion)
     {
         const auto step = makeStep(header, /*preserve_input_order=*/ true, preliminary);
         const auto step_version = registry.versionToWrite(step.getSerializationName(), current_version);
-        EXPECT_EQ(step_version, 2);
+        EXPECT_EQ(step_version, 1);
         EXPECT_TRUE(inputOrderFlagAfterRoundTrip(step, header, current_version, step_version));
     }
 }

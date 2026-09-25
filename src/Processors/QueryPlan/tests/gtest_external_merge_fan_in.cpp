@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -22,6 +23,11 @@ namespace DB
 void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerJoinStep(QueryPlanStepRegistry & registry);
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_external_merge_fan_in;
+}
 
 namespace QueryPlanSerializationSetting
 {
@@ -52,15 +58,18 @@ protected:
         registerJoinStep(registry);
     }
 
-    QueryPlanStepPtr makeStep(size_t fan_in) const
+    QueryPlanStepPtr makeStep(size_t fan_in, bool preserve_input_order = false) const
     {
         auto header = makeHeader("k");
         if (GetParam() == "Distinct" || GetParam() == "PreDistinct")
         {
             DistinctStep::Settings settings;
             settings.max_external_merge_fan_in = fan_in;
-            return std::make_unique<DistinctStep>(
+            auto step = std::make_unique<DistinctStep>(
                 header, settings, /*limit_hint_=*/ 0, Names{"k"}, GetParam() == "PreDistinct");
+            if (preserve_input_order)
+                step->preserveInputOrder();
+            return step;
         }
 
         QueryPlanSerializationSettings plan_settings;
@@ -128,8 +137,8 @@ TEST_P(ExternalMergeFanIn, CurrentStepVersionPreservesTheSetting)
 {
     const auto version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
     const auto step_version = registry.versionToWrite(GetParam(), version);
-    EXPECT_EQ(step_version, GetParam() == "Distinct" || GetParam() == "PreDistinct" ? 2 : 1);
-    for (const size_t fan_in : {0, 2, 64, 128})
+    EXPECT_EQ(step_version, GetParam() == "Distinct" || GetParam() == "PreDistinct" ? 1 : 0);
+    for (const size_t fan_in : {2, 64, 128})
     {
         SCOPED_TRACE(fan_in);
         const auto step = makeStep(fan_in);
@@ -140,18 +149,39 @@ TEST_P(ExternalMergeFanIn, CurrentStepVersionPreservesTheSetting)
     }
 }
 
-TEST_P(ExternalMergeFanIn, OlderReceiverRejectsTheNewStepVersion)
+TEST_P(ExternalMergeFanIn, UnlimitedMergingUsesThePreviousStepFormat)
 {
+    const auto version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+    const bool distinct = GetParam() == "Distinct" || GetParam() == "PreDistinct";
     QueryPlanStepRegistry older_registry;
     QueryPlanStepRegistry::StepVersions versions{{0, 0}};
-    if (GetParam() == "Distinct" || GetParam() == "PreDistinct")
+    if (distinct)
         versions.push_back({1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT});
     older_registry.registerStep(GetParam(), {}, std::move(versions));
 
-    /// A peer can share the global version without knowing the setting. Its step-version check
-    /// rejects the format before the settings reader encounters an unknown name.
-    const auto step_version = registry.versionToWrite(GetParam(), DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    EXPECT_THROW(older_registry.checkVersionReadable(GetParam(), step_version), Exception);
+    for (const bool use_compatibility : {false, true})
+    {
+        SCOPED_TRACE(use_compatibility);
+        Settings query_settings;
+        if (use_compatibility)
+            query_settings.set("compatibility", "26.9");
+        else
+            query_settings[Setting::max_external_merge_fan_in] = 0;
+        ASSERT_EQ(query_settings[Setting::max_external_merge_fan_in], 0);
+
+        const auto step = makeStep(query_settings[Setting::max_external_merge_fan_in], /*preserve_input_order=*/ true);
+        const auto step_version = registry.versionToWrite(GetParam(), version);
+        EXPECT_EQ(step_version, distinct ? 1 : 0);
+        EXPECT_NO_THROW(older_registry.checkVersionReadable(GetParam(), step_version));
+        const auto bytes = serializeStep(*step, version, step_version);
+        EXPECT_EQ(bytes.find("max_external_merge_fan_in"), String::npos);
+        const auto restored = deserializeStep(bytes, *step, version, step_version);
+        EXPECT_EQ(restoredFanIn(*restored), 0);
+
+        /// Disabling bounded merging must still carry the order requirement for external `DISTINCT`.
+        if (distinct)
+            EXPECT_TRUE(static_cast<const DistinctStep &>(*restored).preservesInputOrder());
+    }
 }
 
 TEST_P(ExternalMergeFanIn, OlderPlanVersionsSelectOlderStepFormats)

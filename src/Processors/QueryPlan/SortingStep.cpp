@@ -208,7 +208,8 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::max_bytes_before_external_sort] = max_bytes_in_block_before_external_sort;
     settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort] = max_bytes_ratio_before_external_sort;
 
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN)
+    /// Unlimited merging uses the reader's default without introducing a new setting name.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN && max_external_merge_fan_in != 0)
         settings[QueryPlanSerializationSetting::max_external_merge_fan_in] = max_external_merge_fan_in;
 
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
@@ -912,10 +913,7 @@ void SortingStep::describePipeline(FormatSettings & settings) const
 void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry)
 {
-
-    /// Version 1 adds `max_external_merge_fan_in` to the step settings at global plan version 20.
-    registry.registerStep(
-        "Sorting", SortingStep::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN}});
+    registry.registerStep("Sorting", SortingStep::deserialize);
 }
 
 }

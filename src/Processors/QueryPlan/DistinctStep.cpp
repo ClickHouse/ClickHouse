@@ -160,7 +160,8 @@ void DistinctStep::Settings::updatePlanSettings(QueryPlanSerializationSettings &
         plan_settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_distinct] = max_bytes_ratio_before_external_distinct;
     }
 
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN)
+    /// Unlimited merging uses the reader's default without introducing a new setting name.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN && max_external_merge_fan_in != 0)
         plan_settings[QueryPlanSerializationSetting::max_external_merge_fan_in] = max_external_merge_fan_in;
 
     plan_settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
@@ -404,11 +405,8 @@ void registerDistinctStep(QueryPlanStepRegistry & registry)
     /// Preliminary distinct probably can be a query plan optimization.
     /// It's easier to serialize it using different names, so that pre-distinct can be potentially removed later.
 
-    /// Version 2 adds `max_external_merge_fan_in` to both forms of `DISTINCT` at global plan version 20.
     const QueryPlanStepRegistry::StepVersions versions{
-        {0, 0},
-        {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT},
-        {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN}};
+        {0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT}};
     registry.registerStep("Distinct", DistinctStep::deserializeNormal, versions);
     registry.registerStep("PreDistinct", DistinctStep::deserializePre, versions);
 }
