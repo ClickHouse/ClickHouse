@@ -1,5 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 
+#include <Common/ProfileEvents.h>
+#include <base/scope_guard.h>
+#include <Common/Stopwatch.h>
 #include <Core/Joins.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
@@ -20,6 +23,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -31,6 +35,22 @@
 #include <unordered_set>
 
 using namespace DB::QueryPlanOptimizations;
+
+namespace ProfileEvents
+{
+extern const Event AutoParallelReplicasPlanBuildAttempts;
+extern const Event AutoParallelReplicasMicroseconds;
+extern const Event AutoParallelReplicasSkippedDueToSettings;
+extern const Event AutoParallelReplicasPlanShapeNotSupported;
+extern const Event AutoParallelReplicasPlanNotSuitable;
+extern const Event AutoParallelReplicasNoStatistics;
+extern const Event AutoParallelReplicasStatisticsDrifted;
+extern const Event AutoParallelReplicasCostModelEvaluated;
+extern const Event AutoParallelReplicasApplied;
+extern const Event AutoParallelReplicasSkippedEarly;
+extern const Event AutoParallelReplicasRejectedByThreshold;
+extern const Event AutoParallelReplicasBytesPerReplica;
+}
 
 namespace DB
 {
@@ -129,7 +149,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                     if (replicas_plan_top_node)
                     {
                         // TODO(nickitat): support multiple read steps with parallel replicas
-                        LOG_DEBUG(getLogger("optimizeTree"), "Top node for parallel replicas plan is already found");
+                        LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node for parallel replicas plan is already found");
                         return nullptr;
                     }
 
@@ -164,6 +184,31 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
     return replicas_plan_top_node;
 }
 
+/// `calculateHashTableCacheKeys` keys by plan node; `ExplainPlanOptions` keys by step, so that it
+/// does not have to know about `QueryPlan::Node`. One node owns one step, so this is a rekeying.
+std::unordered_map<const IQueryPlanStep *, UInt64> hashesByStep(const std::unordered_map<const QueryPlan::Node *, UInt64> & by_node)
+{
+    std::unordered_map<const IQueryPlanStep *, UInt64> by_step;
+    by_step.reserve(by_node.size());
+    for (const auto & [node, hash] : by_node)
+        by_step.emplace(node->step.get(), hash);
+    return by_step;
+}
+
+/// The plan as `EXPLAIN` prints it, with each step's hash alongside. The hashes are bottom-up, so
+/// when two plans that should match do not, the deepest level at which the two dumps stop agreeing
+/// is where they actually diverge - the one thing a failed match needs that a single line cannot
+/// carry, which is why this sits at the test level and the summary stays at trace.
+String explainWithHashes(const QueryPlan & plan, const std::unordered_map<const QueryPlan::Node *, UInt64> & hashes)
+{
+    const auto by_step = hashesByStep(hashes);
+    ExplainPlanOptions options;
+    options.step_hashes = &by_step;
+    WriteBufferFromOwnString buffer;
+    plan.explainPlan(buffer, options);
+    return buffer.str();
+}
+
 /// Now when we found the top node of replicas plan, we need to find the corresponding node in the single node plan.
 /// The working principle behind automatic parallel replicas is that we use statistics collected during execution of single-node plan
 /// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
@@ -171,13 +216,13 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
 /// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
 std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     const QueryPlan::Node & final_node_in_replica_plan,
-    QueryPlan::Node & parallel_replicas_plan_root,
-    QueryPlan::Node & single_replica_plan_root)
+    const QueryPlan & parallel_replicas_plan,
+    const QueryPlan & single_replica_plan)
 {
-    auto pr_node_hashes = calculateHashTableCacheKeys(parallel_replicas_plan_root);
+    auto pr_node_hashes = calculateHashTableCacheKeys(*parallel_replicas_plan.getRootNode());
     if (auto it = pr_node_hashes.find(&final_node_in_replica_plan); it != pr_node_hashes.end())
     {
-        auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
+        auto nopr_node_hashes = calculateHashTableCacheKeys(*single_replica_plan.getRootNode());
 
         /// A step that contributes nothing to the key adopts its child's key (see
         /// `calculateHashTableCacheKeys`), so a whole chain of them answers to one hash. Find any member
@@ -196,7 +241,7 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
         };
         traverseQueryPlan(
             traversal_stack,
-            single_replica_plan_root,
+            *single_replica_plan.getRootNode(),
             [&](auto & frame_node)
             {
                 if (!matched_node && key_of(frame_node) == it->second)
@@ -222,20 +267,39 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
 
         if (!matched_node)
         {
-            LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
+            /// Both plans in full, each step tagged with its hash. `LOG_IMPL` leaves before it touches
+            /// its arguments when the level is off, so neither plan is walked unless someone asked for
+            /// this.
+            LOG_TEST(
+                getLogger("AutoParallelReplicas"),
+                "No match for hash {}. Plan with parallel replicas:\n{}\nSingle-node plan:\n{}",
+                it->second,
+                explainWithHashes(parallel_replicas_plan, pr_node_hashes),
+                explainWithHashes(single_replica_plan, nopr_node_hashes));
+
+            /// Say what was looked for. Without the hash and the step there is nothing to act on: this
+            /// is by far the most common reason the optimization gives up.
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
+                "Cannot find step with matching hash {} in single-node plan for {} ({})",
+                it->second,
+                final_node_in_replica_plan.step->getName(),
+                final_node_in_replica_plan.step->getUniqID());
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
             return std::make_pair(nullptr, 0);
         }
 
         if (!matched_node->step->supportsDataflowStatisticsCollection())
         {
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
                 "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
                 matched_node->step->getName());
             return std::make_pair(nullptr, 0);
         }
 
-        LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", matched_node->step->getName());
+        LOG_TRACE(getLogger("AutoParallelReplicas"), "Found matching node in original plan: {}", matched_node->step->getName());
         return std::make_pair(matched_node, it->second);
     }
     else
@@ -314,11 +378,11 @@ ReadFromMergeTree * findReadingStep(
         {
             // `swap_streams` swaps the physical pipelines at execution without reordering the plan
             // children, so the kind-based side selection below would then descend into the wrong
-            // child. In the analyzer path that AutoPR requires this is never set: joins are built as
+            // child. In the analyzer path that AutoParallelReplicas requires this is never set: joins are built as
             // `JoinStepLogical` and the logical->physical conversion applies any swap by reordering
             // the children and flipping the kind together (only the dead `optimizeJoinLegacy` path
             // sets `swap_streams`). Guard against it explicitly so that if a future change ever revives
-            // it, AutoPR fails closed (skips) instead of instrumenting/parallelizing the wrong side.
+            // it, AutoParallelReplicas fails closed (skips) instead of instrumenting/parallelizing the wrong side.
             if (join_step->swap_streams)
                 return nullptr;
             // Descending exactly one side is only a valid decomposition for join kinds that can be
@@ -355,8 +419,8 @@ ReadFromMergeTree * findReadingStep(
         return read_from_merge_tree;
     }
 
-    LOG_DEBUG(
-        getLogger("optimizeTree"),
+    LOG_TRACE(
+        getLogger("AutoParallelReplicas"),
         "Cannot find ReadFromMergeTree step in single-replica plan (found {}). Skipping optimization",
         reading_step->step->getName());
     return nullptr;
@@ -567,9 +631,29 @@ void considerEnablingParallelReplicas(
     if (!optimization_settings.automatic_parallel_replicas_mode || !optimization_settings.query_plan_with_parallel_replicas_builder)
         return;
 
-    // Cannot guarantee projection usage with parallel replicas
-    if (optimization_settings.force_use_projection)
+    /// Everything from here on is paid whether or not the plan with parallel replicas is adopted,
+    /// and this counter is the only way to see that cost from `system.query_log`.
+    Stopwatch watch;
+    SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::AutoParallelReplicasMicroseconds, watch.elapsedMicroseconds()); });
+
+    /// Cannot guarantee projection usage with parallel replicas. `buildQueryPlanForAutomaticParallelReplicas`
+    /// builds the candidate with projections off entirely - it clears `optimize_projection`,
+    /// `force_use_projection` and `force_projection_name` - while `optimizeTree` has already enforced
+    /// both forcing settings against the single-node plan by the time this runs. Adopting the candidate
+    /// would therefore answer a query that demanded a projection with a plan that uses none.
+    ///
+    /// Today node matching would reject such a candidate anyway, because a plan reading a projection
+    /// hashes differently from one reading the table. That is an accident of how the hashes are built,
+    /// not a guarantee, so state the requirement here instead of relying on it.
+    if (optimization_settings.force_use_projection || !optimization_settings.force_projection_name.empty())
+    {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedDueToSettings);
+        LOG_TRACE(
+            getLogger("AutoParallelReplicas"),
+            "force_optimize_projection or force_optimize_projection_name is set, cannot guarantee projection usage. "
+            "Skipping optimization");
         return;
+    }
 
     /// A plan that builds a set is rooted in the `CreatingSetStep` that fills it, and that root is what
     /// gives the plan the empty header `addPlansForSets` attaches to a `CreatingSetsStep`. Switching to
@@ -586,7 +670,7 @@ void considerEnablingParallelReplicas(
     /// runs, and considering the set-building plan adds one.
     if (typeid_cast<const CreatingSetStep *>(root.step.get()))
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "The plan builds a set, its root must be preserved. Skipping optimization");
+        LOG_TRACE(getLogger("AutoParallelReplicas"), "The plan builds a set, its root must be preserved. Skipping optimization");
         return;
     }
 
@@ -615,8 +699,9 @@ void considerEnablingParallelReplicas(
         });
     if (!plan_is_simple_enough)
     {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanShapeNotSupported);
+        LOG_TRACE(
+            getLogger("AutoParallelReplicas"),
             "Some steps in the plan don't support dataflow statistics collection. Skipping optimization. Unsupported steps: {}",
             unsupported_steps);
         return;
@@ -690,8 +775,17 @@ void considerEnablingParallelReplicas(
 
         if (!found_read_worth_parallelizing)
         {
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
+            /// These queries never reach the cost model, so this is their only chance to contribute
+            /// to the distribution, and this gate is the one that turns most queries away. Only the
+            /// rejected side can be recorded here: when a read does qualify the loop above stops
+            /// early, deliberately, because measuring one runs index analysis - so on that path
+            /// `max_bytes_to_read` is not the largest read and the cost model records the better
+            /// number anyway.
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasSkippedEarly);
+            ProfileEvents::increment(
+                ProfileEvents::AutoParallelReplicasBytesPerReplica, max_bytes_to_read / num_replicas);
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
                 "Not building the parallel replicas plan because the largest read in the plan gives at most {} bytes per replica, "
                 "less than automatic_parallel_replicas_min_bytes_per_replica {}",
                 max_bytes_to_read / num_replicas,
@@ -699,6 +793,10 @@ void considerEnablingParallelReplicas(
             return;
         }
     }
+
+    /// Counted before the call, not after: the attempt is what costs, and it is paid in full even
+    /// when the builder comes back empty because the query cannot use parallel replicas at all.
+    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanBuildAttempts);
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
@@ -712,22 +810,24 @@ void considerEnablingParallelReplicas(
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        LOG_TRACE(getLogger("AutoParallelReplicas"), "Cannot build a plan with parallel replicas. Skipping optimization");
         return;
     }
 
     const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)
     {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        LOG_TRACE(
+            getLogger("AutoParallelReplicas"),
             "The plan built with parallel replicas contains no read from the other replicas. Skipping optimization");
         return;
     }
-    LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
+    LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
 
     const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
-        = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
+        = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas, query_plan);
     if (!corresponding_node_in_single_replica_plan)
         return;
 
@@ -735,7 +835,10 @@ void considerEnablingParallelReplicas(
     LazilyReadFromMergeTree * lazy_reading_step = nullptr;
     ReadFromMergeTree * source_reading_step = findReadingStep(*corresponding_node_in_single_replica_plan, &lazy_reading_step);
     if (!source_reading_step)
+    {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
         return;
+    }
 
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
@@ -746,8 +849,9 @@ void considerEnablingParallelReplicas(
     /// parallel replicas for plans that are cheaper to execute locally. Skip the optimization instead.
     if (corresponding_node_in_single_replica_plan->step.get() == source_reading_step)
     {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        LOG_TRACE(
+            getLogger("AutoParallelReplicas"),
             "The matched node is the reading step itself, cannot estimate the amount of data sent to the initiator. "
             "Skipping optimization");
         return;
@@ -757,7 +861,8 @@ void considerEnablingParallelReplicas(
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        LOG_TRACE(getLogger("AutoParallelReplicas"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
         return;
     }
     /// A read served from a projection measures the projection's parts, not the table's, and the two
@@ -771,13 +876,15 @@ void considerEnablingParallelReplicas(
     /// the parallel-replicas plan cannot be relied on to reproduce.
     if (analysis->readFromProjection())
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "The read is served from a projection. Skipping optimization");
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        LOG_TRACE(getLogger("AutoParallelReplicas"), "The read is served from a projection. Skipping optimization");
         return;
     }
     const auto rows_to_read = analysis->selected_rows;
     if (!rows_to_read)
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "Index analysis result doesn't contain selected rows. Skipping optimization");
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        LOG_TRACE(getLogger("AutoParallelReplicas"), "Index analysis result doesn't contain selected rows. Skipping optimization");
         return;
     }
 
@@ -789,9 +896,13 @@ void considerEnablingParallelReplicas(
         bool apply_plan_with_parallel_replicas = optimization_settings.automatic_parallel_replicas_mode != 2;
         if (std::max<size_t>(stats->total_rows_to_read, rows_to_read) > std::min<size_t>(stats->total_rows_to_read, rows_to_read) * 2)
         {
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
-                "Significant difference in total rows from storage detected (previously {}, now {}). Recollecting statistics",
+            /// With the hash: without it there is no way to tell genuine drift on one plan from two
+            /// different plans sharing a cache entry, and the two look identical in the log.
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasStatisticsDrifted);
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
+                "Significant difference in total rows from storage detected for hash {} (previously {}, now {}). Recollecting statistics",
+                single_replica_plan_node_hash,
                 stats->total_rows_to_read,
                 rows_to_read);
             apply_plan_with_parallel_replicas = false;
@@ -799,6 +910,11 @@ void considerEnablingParallelReplicas(
         else
         {
             table_data_drifted_significantly = false;
+            /// No counter here when mode 2 leaves `apply_plan_with_parallel_replicas` false. Every
+            /// other way of reaching this point ends in one of the events above, so in modes 0 and 1
+            /// the attempts balance against the outcomes. Mode 2 only ever collects statistics and
+            /// never decides, so it sits outside that accounting by construction, and it is not a
+            /// mode production runs in - a dedicated event for it would only be noise there.
         }
 
         if (apply_plan_with_parallel_replicas)
@@ -824,8 +940,15 @@ void considerEnablingParallelReplicas(
             const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
             const auto replicas_plan_cost_estimation
                 = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / output_replicas_divisor;
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasCostModelEvaluated);
+            /// Unconditionally, before the decision. Recording it only when the threshold turns a
+            /// query away would show only which queries a lower threshold would let through, never
+            /// what a higher one would cost - and the queries it would start turning away are exactly
+            /// the ones being applied here.
+            ProfileEvents::increment(
+                ProfileEvents::AutoParallelReplicasBytesPerReplica, stats->input_bytes / num_replicas);
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
                 "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
                 stats->input_bytes,
                 std::min<size_t>(max_threads, effective_max_reading_threads),
@@ -840,9 +963,14 @@ void considerEnablingParallelReplicas(
                 if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
                     && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
                 {
-                    LOG_DEBUG(
-                        getLogger("optimizeTree"),
-                        "Not enabling parallel replicas reading because {} < automatic_parallel_replicas_min_bytes_per_replica {}",
+                    /// The size is already recorded above, for every query that reaches the cost
+                    /// model rather than only the ones turned away here.
+                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByThreshold);
+                    LOG_TRACE(
+                        getLogger("AutoParallelReplicas"),
+                        "Not enabling parallel replicas reading because the read of {} bytes gives {} per replica, "
+                        "less than automatic_parallel_replicas_min_bytes_per_replica {}",
+                        stats->input_bytes,
                         stats->input_bytes / num_replicas,
                         optimization_settings.automatic_parallel_replicas_min_bytes_per_replica);
                     return;
@@ -851,7 +979,13 @@ void considerEnablingParallelReplicas(
                 /// Every read of the candidate has to be given its analysis. One that is not would read
                 /// every mark, so the candidate is worse than the plan it replaces; decline rather than run it.
                 if (!transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode()))
+                {
+                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+                    LOG_TRACE(
+                        getLogger("AutoParallelReplicas"),
+                        "Cannot give every read of the plan with parallel replicas its index analysis. Skipping optimization");
                     return;
+                }
                 /// The candidate's reads have their filter actions only now, so the pass that tags a filter
                 /// step for the query condition cache - which runs early in this same optimization and gives
                 /// up when a read has none - saw nothing to tag, and the cache would never be populated by a
@@ -912,14 +1046,24 @@ void considerEnablingParallelReplicas(
                 /// would then be carrying ranges selected for another read's predicates.
                 chassert(local_replica_plan_reading_step->getAnalyzedResult() == analysis);
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
+                LOG_TRACE(
+                    getLogger("AutoParallelReplicas"),
+                    "Replacing the plan with the parallel replicas one for hash {}",
+                    single_replica_plan_node_hash);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
+                /// The one event that says the optimization changed this query. `ParallelReplicasQueryCount`
+                /// does not: building the plan above increments it even when the plan is thrown away. Counted
+                /// after the swap, not before: both calls above can throw, and a query that failed on the way
+                /// there did not get the optimization applied to it.
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasApplied);
                 return;
             }
         }
     }
     else
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "No stats found for hash {}", single_replica_plan_node_hash);
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasNoStatistics);
+        LOG_TRACE(getLogger("AutoParallelReplicas"), "No stats found for hash {}", single_replica_plan_node_hash);
     }
 
     if (table_data_drifted_significantly
