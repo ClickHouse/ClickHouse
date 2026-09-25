@@ -89,17 +89,27 @@ const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCa
     return index.expression->getRequiredColumnsWithTypes();
 }
 
-NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
+std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
+    const String & column_name, const ColumnsDescription & columns)
 {
-    NameSet result;
-    /// Subcolumn names are flat, so a Tuple element or a typed JSON path can claim `<map>.key_<k>`
-    /// just as a top-level column can, and a predicate on that name reads the claimant. A genuine Map
-    /// key subcolumn is generated per key on demand, so it is absent here and stays parseable.
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-    for (const auto & column : metadata_snapshot->getColumns().get(options))
-        if (looksLikeMapSubcolumnName(column.name))
-            result.insert(column.name);
-    return result;
+    auto parsed = tryParseMapSubcolumnNameShape(column_name);
+    if (!parsed)
+        return std::nullopt;
+
+    auto resolved = columns.tryGetColumn(
+        GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_name);
+    if (!resolved)
+        return parsed;
+    if (!resolved->isSubcolumn())
+        return std::nullopt;
+
+    /// EPHEMERAL columns have no data and no expression, so their subcolumns are not readable and do
+    /// not claim the name.
+    auto parent = columns.tryGetColumnDescription(
+        GetColumnsOptions(GetColumnsOptions::All), resolved->getNameInStorage());
+    if (parent && parent->default_desc.kind == ColumnDefaultKind::Ephemeral)
+        return parsed;
+    return std::nullopt;
 }
 
 namespace
