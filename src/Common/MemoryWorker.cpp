@@ -546,6 +546,17 @@ MemoryWorker::~MemoryWorker()
 #endif
 }
 
+#if USE_JEMALLOC
+Int64 MemoryWorker::getJemallocAllocated()
+{
+    /// jemalloc statistics are snapshots taken when the epoch is advanced, so refresh it here unconditionally:
+    /// `getMemoryUsage` advances it only when jemalloc is the memory usage source, and with the cgroup-backed source
+    /// (the default on Linux) a stale snapshot could predate the frees that drove the tracker negative.
+    epoch_mib.setValue(0);
+    return static_cast<Int64>(allocated_mib.getValue());
+}
+#endif
+
 MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
 {
     MemoryUsage usage;
@@ -1002,13 +1013,25 @@ void MemoryWorker::updateResidentMemoryThread()
             }
 #endif
 
-            /// update MemoryTracker with `allocated` (sanitizer allocator bytes, otherwise resident,
-            /// which may be much larger than what was actually allocated) when:
+            /// Re-baseline the global memory tracker from the amount of live allocations (jemalloc's `stats.allocated`,
+            /// sanitizer allocator bytes in sanitizer builds, otherwise `resident`) when:
             ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
-            ///  - MemoryTracker stores a negative value
-            ///  - `correct_tracker` is set to true
+            ///  - MemoryTracker stores a negative value (memory allocated before its initialization was freed later)
+            /// These are one-shot corrections: the tracker keeps accumulating allocations and frees on top of the
+            /// corrected value and nothing lowers it afterwards, so the value must be the amount of live allocations,
+            /// which is what the tracker counts. It must not be `resident`: right after a large query finishes,
+            /// `resident` stays close to the query's peak until jemalloc purges the freed pages, so correcting to it
+            /// would pin the tracker at that peak and every allocation would fail with `MEMORY_LIMIT_EXCEEDED`
+            /// until the hard limit rises above it (https://github.com/ClickHouse/ClickHouse/issues/117681).
+            /// `correct_tracker` is different: it re-applies `memory_usage.allocated` on every tick, so it cannot get stuck.
             if (first_run || total_memory_tracker.get() < 0) [[unlikely]]
+            {
+#if USE_JEMALLOC
+                MemoryTracker::updateAllocated(getJemallocAllocated(), /*log_change=*/true);
+#else
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/true);
+#endif
+            }
             else if (correct_tracker)
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/false);
 
