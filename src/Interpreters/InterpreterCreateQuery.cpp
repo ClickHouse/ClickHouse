@@ -45,6 +45,8 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/QueryParameterVisitor.h>
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MaterializedView/RefreshSet.h>
@@ -111,6 +113,7 @@
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 
 
 namespace CurrentMetrics
@@ -1076,7 +1079,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
+        {
+            validateTableStructure(create, properties);
             return properties;
+        }
 
         if (create.aliases_list)
         {
@@ -1243,13 +1249,33 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
     const auto & settings = getContext()->getSettingsRef();
 
-    /// A view stores no data of its own, so the gates on types chosen for storage do not apply to it;
-    /// a materialized view's inner table is created by its own statement and validated there.
-    if (!create.attach && !create.isView())
+    /// Storage validation also applies to internal `CREATE`, including materialized-view inner tables.
+    const bool validate_storage_types = !create.attach && !create.isView();
+    /// User-supplied `CREATE` and full `ATTACH` definitions validate feature availability.
+    /// Short `ATTACH` and internal metadata loading remain available for recovery.
+    const bool validate_feature_availability = !internal && !create.attach_short_syntax;
+    if (validate_storage_types || validate_feature_availability)
     {
-        DataTypeValidationSettings validation_settings(settings);
+        /// Views store no data themselves; storage-specific suspicious-type gates do not apply to them.
+        DataTypeValidationSettings validation_settings
+            = validate_storage_types
+            ? DataTypeValidationSettings(settings)
+            : DataTypeValidationSettings::forNonStorageDefinition(settings);
+        if (!validate_feature_availability)
+            validation_settings.allow_experimental_time_decay_aggregate_functions = true;
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
+
+        if (create.isParameterizedView())
+        {
+            for (const auto & [name, type_name] : analyzeReceiveQueryParamsWithType(create.select))
+            {
+                /// Identifier is a query-parameter kind, not a data type.
+                if (type_name == "Identifier")
+                    continue;
+                validateDataType(DataTypeFactory::instance().get(type_name), validation_settings);
+            }
+        }
     }
 }
 

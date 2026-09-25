@@ -19,6 +19,10 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnExponentialTimeDecaying.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <IO/WriteHelpers.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
@@ -146,7 +150,12 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
         index_serializations.reserve(primary_key_types.size());
 
         for (const auto & type : primary_key_types)
-            index_serializations.push_back(type->getDefaultSerialization());
+        {
+            if (isExponentialTimeDecayingFloat64(type))
+                index_serializations.push_back(nullptr);
+            else
+                index_serializations.push_back(type->getDefaultSerialization());
+        }
     }
 }
 
@@ -244,11 +253,29 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndexRow(const B
 
     for (size_t i = 0; i < index_block.columns(); ++i)
     {
-        const auto & column = index_block.getByPosition(i).column;
-        index_serializations[i]->serializeBinary(*column, row, index_stream, {});
+        const auto & value = index_block.getByPosition(i);
+        const auto & column = value.column;
 
-        if (settings.save_primary_index_in_memory)
-            index_columns[i]->insertFrom(*column, row);
+        if (isExponentialTimeDecayingFloat64(value.type))
+        {
+            const auto full_column = column->convertToFullColumnIfConst();
+            const auto & decaying
+                = assert_cast<const ColumnExponentialTimeDecaying &>(*full_column);
+            const auto & prefix
+                = assert_cast<const ColumnUInt64 &>(decaying.getOrderingKeyColumn());
+            const UInt64 key = prefix.getData()[row];
+            writeBinaryLittleEndian(key, index_stream);
+
+            if (settings.save_primary_index_in_memory)
+                assert_cast<ColumnUInt64 &>(*index_columns[i]).insertValue(key);
+        }
+        else
+        {
+            index_serializations[i]->serializeBinary(*column, row, index_stream, {});
+
+            if (settings.save_primary_index_in_memory)
+                index_columns[i]->insertFrom(*column, row);
+        }
     }
 }
 
@@ -272,7 +299,15 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
         if (settings.save_primary_index_in_memory && index_columns.empty())
         {
-            index_columns = primary_index_block.cloneEmptyColumns();
+            index_columns.reserve(primary_index_block.columns());
+            for (size_t i = 0; i < primary_index_block.columns(); ++i)
+            {
+                const auto & value = primary_index_block.getByPosition(i);
+                if (isExponentialTimeDecayingFloat64(value.type))
+                    index_columns.push_back(ColumnUInt64::create());
+                else
+                    index_columns.push_back(value.column->cloneEmpty());
+            }
         }
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.

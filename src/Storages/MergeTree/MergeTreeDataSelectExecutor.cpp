@@ -48,6 +48,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -170,6 +171,9 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
     for (size_t i = 0; i < primary_key.column_names.size(); ++i)
     {
+        if (i < primary_key.data_types.size() && containsExponentialTimeDecayingFloat64(primary_key.data_types[i]))
+            continue;
+
         /// `forAnyHyperrectangle` uses these bounds as the column universe, so a bound that can hide a
         /// NaN is not usable here: `containsRange` would be true where the NaN falsifies it. Such a
         /// column falls back to the whole universe.
@@ -1139,7 +1143,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     /// Perform top-K optimization during index analysis itself?
     const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
-    const bool top_k_handle_ties = perform_top_k_optimization && (top_k_filter_info->num_sort_columns > 1 || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1);
+    const bool top_k_uses_lossy_decay_key
+        = perform_top_k_optimization
+        && std::ranges::any_of(
+            skip_indexes.skip_index_for_top_k_filtering->index.data_types,
+            [](const DataTypePtr & type)
+            {
+                return containsExponentialTimeDecayingFloat64(type);
+            });
+    const bool top_k_handle_ties
+        = perform_top_k_optimization
+        && (top_k_filter_info->num_sort_columns > 1
+            || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1
+            || top_k_uses_lossy_decay_key);
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
     if (settings[Setting::max_threads_for_indexes])
@@ -2300,8 +2316,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
-            chassert((*index_columns)[column].column);
-            (*index_columns)[column].column->get(row, field);
+            const auto & value = (*index_columns)[column];
+            chassert(value.column);
+
+            if (containsExponentialTimeDecayingFloat64(value.type))
+                field = {index_columns.get(), row, column};
+            else
+                value.column->get(row, field);
+
             // NULL_LAST
             if (field.isNull())
                 field = POSITIVE_INFINITY;

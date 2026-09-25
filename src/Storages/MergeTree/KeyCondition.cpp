@@ -6,6 +6,7 @@
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTime64.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -3345,6 +3346,17 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     if (indexes_mapping.empty())
         return false;
 
+    /// The sparse primary index stores the same UInt64 ordering key used by the
+    /// column comparator. Set indexes are not projected into that key domain yet,
+    /// so leave IN/NOT IN to the row-level predicate for now.
+    if (std::ranges::any_of(
+            data_types,
+            [](const DataTypePtr & type)
+            {
+                return isExponentialTimeDecayingFloat64(removeNullable(type));
+            }))
+        return false;
+
     const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
     auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
@@ -5053,6 +5065,26 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return false;
         }
 
+        /// The sparse primary index stores the same UInt64 ordering key used by the
+        /// column comparator. Keep the row predicate active because sparse index marks
+        /// still describe ranges of rows rather than complete values.
+        const auto key_type_for_index = removeNullable(key_expr_type);
+        if (isExponentialTimeDecayingFloat64(key_type_for_index))
+        {
+            if (!chain.empty())
+                return false;
+
+            if (func_name == "notEquals")
+                return false;
+
+            if (func_name == "less")
+                func_name = "lessOrEquals";
+            else if (func_name == "greater")
+                func_name = "greaterOrEquals";
+
+            out.relaxed = true;
+        }
+
         /// After every conversion above, this is the value that becomes a range endpoint. The `Field`
         /// total order puts a `NaN` after all finite values, which SQL comparison does not follow.
         if (anyFieldSatisfies(const_value, isNaNField))
@@ -6137,6 +6169,169 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 // Returns whether the condition is one continuous range of the primary key,
 // where every field is matched by range or a single element set.
 // This allows to use a more efficient lookup with no extra reads.
+
+namespace
+{
+
+std::optional<UInt64> getProjectedExponentialTimeDecayingKey(
+    const Field & field,
+    const DataTypePtr & type)
+{
+    DataTypePtr nested_type = type;
+    while (nested_type)
+    {
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+        {
+            nested_type = low_cardinality->getDictionaryType();
+            continue;
+        }
+
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(nested_type.get()))
+        {
+            nested_type = nullable->getNestedType();
+            continue;
+        }
+
+        break;
+    }
+
+    const auto * decay_type
+        = typeid_cast<const DataTypeExponentialTimeDecayingFloat64 *>(nested_type.get());
+    if (!decay_type)
+        return std::nullopt;
+
+    if (field.isNull() || field.isNegativeInfinity() || field.isPositiveInfinity())
+        return std::nullopt;
+
+    if (field.getType() != Field::Types::Tuple)
+        return std::nullopt;
+
+    const auto & tuple = field.safeGet<Tuple>();
+    if (tuple.size() == 2)
+    {
+        const Float64 value = tuple[0].safeGet<Float64>();
+        const Float64 time = tuple[1].safeGet<Float64>();
+        if (!std::isfinite(value) || !std::isfinite(time))
+            return std::nullopt;
+        return getExponentialTimeDecayingOrderingKey(
+            value, time, decay_type->getDecayLength());
+    }
+
+    /// SQL/text presentation uses sign, signed unit timestamp, and decay length.
+    /// It is not the physical row representation.
+    if (tuple.size() == 3)
+    {
+        const Float64 sign = tuple[0].safeGet<Float64>();
+        const Float64 signed_unit_time = tuple[1].safeGet<Float64>();
+        const Float64 decay_length = tuple[2].safeGet<Float64>();
+        if (decay_length != decay_type->getDecayLength())
+            return std::nullopt;
+        if (sign == 0)
+            return shiftOneBitAndSign(0, 0);
+        if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
+            return std::nullopt;
+        return shiftOneBitAndSign(sign * signed_unit_time, sign);
+    }
+
+    return std::nullopt;
+}
+
+bool projectExponentialTimeDecayingRange(
+    Range & range,
+    const DataTypePtr & type)
+{
+    auto project_endpoint = [&](FieldRef & endpoint) -> bool
+    {
+        if (endpoint.isNegativeInfinity() || endpoint.isPositiveInfinity() || endpoint.isNull())
+            return true;
+
+        const auto key = getProjectedExponentialTimeDecayingKey(endpoint, type);
+        if (!key)
+            return false;
+
+        endpoint = FieldRef(*key);
+        return true;
+    };
+
+    return project_endpoint(range.left) && project_endpoint(range.right);
+}
+
+}
+
+void KeyCondition::projectExponentialTimeDecayingIndexKeys(const DataTypes & key_types)
+{
+    for (auto & element : rpn)
+    {
+        if (element.key_columns.size() != 1)
+            continue;
+
+        const size_t key_column = element.key_columns.front();
+        if (key_column >= key_types.size())
+            continue;
+
+        DataTypePtr nested_type = key_types[key_column];
+        while (nested_type)
+        {
+            if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+            {
+                nested_type = low_cardinality->getDictionaryType();
+                continue;
+            }
+
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(nested_type.get()))
+            {
+                nested_type = nullable->getNestedType();
+                continue;
+            }
+
+            break;
+        }
+
+        if (!isExponentialTimeDecayingFloat64(nested_type))
+            continue;
+
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_IN_RANGE:
+            {
+                if (!projectExponentialTimeDecayingRange(element.range, key_types[key_column]))
+                {
+                    element.function = RPNElement::FUNCTION_UNKNOWN;
+                    element.range = Range::createWholeUniverse();
+                    element.relaxed = true;
+                    break;
+                }
+
+                /// Keep boundary buckets inclusive and the atom relaxed so the row
+                /// predicate remains authoritative after sparse-index pruning.
+                element.range.left_included = true;
+                element.range.right_included = true;
+                element.relaxed = true;
+                break;
+            }
+            case RPNElement::FUNCTION_IS_NULL:
+            case RPNElement::FUNCTION_IS_NOT_NULL:
+                /// Nullability is preserved by the projected index type.
+                break;
+            case RPNElement::ALWAYS_FALSE:
+            case RPNElement::ALWAYS_TRUE:
+            case RPNElement::FUNCTION_AND:
+            case RPNElement::FUNCTION_OR:
+            case RPNElement::FUNCTION_NOT:
+            case RPNElement::FUNCTION_UNKNOWN:
+                break;
+            default:
+                /// Sets and special predicates need their own projection into the
+                /// UInt64 ordering-key domain before they can prune safely.
+                element.function = RPNElement::FUNCTION_UNKNOWN;
+                element.range = Range::createWholeUniverse();
+                element.set_index.reset();
+                element.relaxed = true;
+                break;
+        }
+    }
+}
+
 bool KeyCondition::matchesExactContinuousRange() const
 {
     const Field field{};

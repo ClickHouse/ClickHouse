@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 
 namespace DB
 {
@@ -22,10 +23,22 @@ PartitionPruner::PartitionPruner(
           require_ready_sets)
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
 {
+    if (!useless)
+    {
+        useless = std::ranges::any_of(
+            partition_key.data_types,
+            [](const DataTypePtr & type)
+            {
+                return containsExponentialTimeDecayingFloat64(type);
+            });
+    }
 }
 
 bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
 {
+    if (useless)
+        return false;
+
     if (part.isEmpty())
         return true;
 

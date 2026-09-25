@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/KeyOrder.h>
 
 #include <Common/FieldAccurateComparison.h>
+#include <Core/Range.h>
 
 namespace DB
 {
@@ -9,6 +10,15 @@ int KeyOrder::compareTuples(const FieldRef * left, const FieldRef * right, size_
 {
     for (size_t i = 0; i < size; ++i)
     {
+        if (Range::hasColumnComparator(left[i], right[i]))
+        {
+            if (Range::less(left[i], right[i]))
+                return isReversed(i) ? 1 : -1;
+            if (Range::less(right[i], left[i]))
+                return isReversed(i) ? -1 : 1;
+            continue;
+        }
+
         /// Field comparison of non-scalar values can diverge from the columnar sort order (composite
         /// values compare NULL or NaN elements by type index), so nothing can be concluded about
         /// such coordinates.

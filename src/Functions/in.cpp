@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -113,6 +114,9 @@ public:
         if (!isImmutableEmptySet(*future_set))
             return nullptr;
 
+        auto set = future_set->get();
+        chassert(set);
+        validateDecayingEmptySetTypes(arguments[0], *set);
         return result_type->createColumnConst(1, static_cast<UInt8>(negative));
     }
 
@@ -155,10 +159,16 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
         }
 
+        const auto set_types = set->getDataTypes();
+
         /// Empty set: return a constant result, checked before input_rows_count == 0 so that header
         /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`.
+        /// Non-empty probes check compatibility in `Set::execute`; this early return must do the same.
         if (set->getTotalRowCount() == 0 && canReportEmptySetAsConstant(*future_set))
+        {
+            validateDecayingEmptySetTypes(arguments[0], *set);
             return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
+        }
 
         /// Unwrap ColumnConst for the first argument if needed.
         ColumnWithTypeAndName left_arg = arguments[0];
@@ -173,7 +183,6 @@ public:
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
 
         ColumnsWithTypeAndName columns_of_key_columns;
-        auto set_types = set->getDataTypes();
 
         if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())
         {
@@ -198,6 +207,28 @@ public:
     }
 
 private:
+    /// `Set::execute` checks normal probes. Empty-set constant folding bypasses it, so keep
+    /// the same recursive type-compatibility check on that early-return path.
+    static void validateDecayingEmptySetTypes(const ColumnWithTypeAndName & probe, const Set & set)
+    {
+        const auto & set_types = set.getDataTypes();
+        if (set_types.empty())
+            return;
+
+        DataTypes left_types = {probe.type};
+        const auto left_type_without_wrappers = removeLowCardinalityAndNullable(probe.type);
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_type_without_wrappers.get());
+
+        if (left_tuple_type && set_types.size() != 1 && set_types.size() == left_tuple_type->getElements().size())
+            left_types = left_tuple_type->getElements();
+
+        if (left_types.size() != set_types.size())
+            return;
+
+        for (size_t i = 0; i < left_types.size(); ++i)
+            assertExponentialTimeDecayingFloat64SetKeyTypesCompatible(left_types[i], set_types[i]);
+    }
+
     /// The set argument arrives either bare or wrapped in a ColumnConst.
     static const ColumnSet * tryGetColumnSet(const ColumnPtr & column)
     {

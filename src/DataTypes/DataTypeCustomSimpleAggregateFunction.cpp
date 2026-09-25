@@ -40,6 +40,7 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         "max",
         "sum",
         "sumWithOverflow",
+        "exponentialTimeDecayedSum",
         "groupBitAnd",
         "groupBitOr",
         "groupBitXor",
@@ -151,7 +152,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     AggregateFunctionProperties properties;
     /// NullsAction is not part of the type definition, instead it will have transformed the function into a different one
     auto action = NullsAction::EMPTY;
-    function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
+    function = AggregateFunctionFactory::instance().getForDataType(function_name, action, argument_types, params_row, properties);
 
     DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(function);
 
@@ -232,6 +233,7 @@ The following aggregate functions are supported:
 - [`max`](/reference/functions/aggregate-functions/max)
 - [`sum`](/reference/functions/aggregate-functions/sum)
 - [`sumWithOverflow`](/reference/functions/aggregate-functions/sumWithOverflow)
+- `exponentialTimeDecayedSum` for `ExponentialTimeDecaying(decay_length)`
 - [`groupBitAnd`](/reference/functions/aggregate-functions/groupBitAnd)
 - [`groupBitOr`](/reference/functions/aggregate-functions/groupBitOr)
 - [`groupBitXor`](/reference/functions/aggregate-functions/groupBitXor)

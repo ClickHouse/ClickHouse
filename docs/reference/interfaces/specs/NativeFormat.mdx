@@ -1071,6 +1071,31 @@ Two related types are **not** aliases. They are valid `Native` column types — 
 - `QBit(T, N[, stride])` stores a vector with its bit planes transposed for vector-search workloads; its on-wire stream layout (group-major `FixedString` bit-plane streams, `element_size * (N / stride)` of them with an explicit `stride`) and its binary type encoding (tag `0x36`, or `0x37` `QBitWithStride` when `stride != N`) are documented on the [`QBit` data type page](/reference/data-types/qbit) and in the [binary type encoding](/reference/data-types/data-types-binary-encoding) reference, so a `Native` reader does not have to recover them from the C++ source.
 </Note>
 
+### ExponentialTimeDecaying(decay_length) {#exponential-time-decaying}
+
+`ExponentialTimeDecaying(decay_length)` is a custom logical type for one exponentially time-decaying curve. The positive `decay_length` parameter is part of the type string and is **not** repeated in each row.
+
+The Native payload is the authoritative direct representation, encoded as two ordinary `Float64` streams:
+
+```text
+[value_at_anchor × num_rows]   Float64 LE
+[anchor_time     × num_rows]   Float64 LE
+```
+
+For row `i`, the value at a target time `t` is:
+
+`value_at_anchor[i] * exp((anchor_time[i] - t) / decay_length)`.
+
+A zero curve is canonically stored as `(0, 0)`. Non-zero values and anchor times must be finite.
+
+The server derives one 8-byte `UInt64` ordering key with `shiftOneBitAndSign(unit_timestamp)`, where `unit_timestamp = anchor_time + decay_length * ln(abs(value_at_anchor))`. The sign divides the key space around zero and one low-order bit of the sortable `Float64` timestamp is discarded. Neighboring curves can therefore map to the same ordering key; when they do, the type treats them as equal for ordering and hashing. The key is reconstructed from the two direct streams and is **not present in the Native payload or MergeTree column data**.
+
+For a direct `ExponentialTimeDecaying` primary-key column, the sparse MergeTree `primary.idx` stores this same `UInt64` ordering key for each mark. Explicit `minmax` indexes use the same key for their extrema. The authoritative table column remains the two-`Float64` direct payload above.
+
+The type has no state/version prefix of its own. Its two Float64 streams participate in the normal composite prefix/data traversal, so when the type is nested in `Array`, `Tuple`, `Nullable`, or another container there are still only the container's ordinary structural streams plus these two Float64 streams.
+
+When binary type encoding is enabled, the type is encoded through the existing `Custom type` tag (`0x2C`) followed by its complete type name, for example `ExponentialTimeDecaying(60)`.
+
 ### Versioned types {#versioned-types}
 
 Versioned types carry an on-wire serialization-version prefix that declares which variant of the encoding follows. They may also use multiple streams (like the composites). On the `Native` wire the prefix and any dictionary are per block — these types maintain no cross-block state (see [the per-block prefix note](#serialization-version-concept) below); cross-block serialization state exists only in the MergeTree on-disk stream.

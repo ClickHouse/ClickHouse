@@ -1,0 +1,76 @@
+<test>
+    <!--
+        End-to-end coverage for the regular mergeable exponentialTimeDecayedSum path.
+        The plain SQL query is a reference workload with the same 1/e decay formula.
+        The state query models independent 4096-row batches followed by a final merge.
+    -->
+
+    <create_query>
+        CREATE TABLE exponential_time_decay_perf
+        (
+            value Float64,
+            time Float64
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO exponential_time_decay_perf
+        SELECT
+            toFloat64(number % 101 + 1),
+            toFloat64(number)
+        FROM numbers_mt(30000000)
+        SETTINGS max_threads = 4
+    </fill_query>
+
+    <!-- Reference formula: evaluate every contribution at the greatest timestamp. -->
+    <query>
+        SELECT sum(value * exp((time - 29999999.) / 60.))
+        FROM exponential_time_decay_perf
+        FORMAT Null
+        SETTINGS max_threads = 1
+    </query>
+
+    <!-- Regular aggregate, predominantly exercising unequal-time row additions. -->
+    <query>
+        SELECT exponentialTimeDecayingValueAt(
+            exponentialTimeDecayedSum(60)(value, time),
+            toFloat64(29999999))
+        FROM exponential_time_decay_perf
+        FORMAT Null
+        SETTINGS
+            allow_experimental_time_decay_aggregate_functions = 1,
+            max_threads = 1
+    </query>
+
+    <!-- Equal-anchor rows exercise the no-decay fast path in add(). -->
+    <query>
+        SELECT exponentialTimeDecayingValueAt(
+            exponentialTimeDecayedSum(60)(value, toFloat64(0)),
+            toFloat64(0))
+        FROM exponential_time_decay_perf
+        FORMAT Null
+        SETTINGS
+            allow_experimental_time_decay_aggregate_functions = 1,
+            max_threads = 1
+    </query>
+
+    <!-- Build independent batch states and merge them, matching incremental aggregation. -->
+    <query>
+        SELECT exponentialTimeDecayingValueAt(
+            exponentialTimeDecayedSumMerge(60)(state),
+            toFloat64(29999999))
+        FROM
+        (
+            SELECT exponentialTimeDecayedSumState(60)(value, time) AS state
+            FROM exponential_time_decay_perf
+            GROUP BY intDiv(toUInt64(time), 4096)
+        )
+        FORMAT Null
+        SETTINGS
+            allow_experimental_time_decay_aggregate_functions = 1,
+            max_threads = 1
+    </query>
+
+    <drop_query>DROP TABLE exponential_time_decay_perf</drop_query>
+</test>

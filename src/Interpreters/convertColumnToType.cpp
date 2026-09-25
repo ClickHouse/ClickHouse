@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -152,6 +153,13 @@ DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePt
     return from;
 }
 
+void validateConvertedColumn(const IColumn & column, const DataTypePtr & type)
+{
+    if (containsExponentialTimeDecayingFloat64(type))
+        validateExponentialTimeDecayingFloat64Column(
+            column, type, "conversion to ExponentialTimeDecayingFloat64");
+}
+
 }
 
 ColumnPtr convertColumnToTypeOrNull(
@@ -180,6 +188,8 @@ ColumnPtr convertColumnToTypeOrNull(
     /// `get` keeps neither the `Bool` tag nor the active `Variant`/`Dynamic` alternative; restore both so
     /// the delegated `convertFieldToType` behaves as it would for a genuine value of the constant.
     const DataTypePtr source = resolveActiveAlternativeType(unwrapped, from);
+    if (strict)
+        assertExponentialTimeDecayingFloat64ConversionTypesCompatible(source, to, "strict conversion");
     retagBoolInField(field, source);
 
     const Field converted = convertFieldToType(field, *to, source.get(), format_settings, strict, convert_inexact_floats);
@@ -194,6 +204,7 @@ ColumnPtr convertColumnToTypeOrNull(
         {
             auto null_column = to->createColumn();
             null_column->insert(Field());
+            validateConvertedColumn(*null_column, to);
             return null_column;
         }
         return {};
@@ -201,6 +212,7 @@ ColumnPtr convertColumnToTypeOrNull(
 
     auto column = to->createColumn();
     column->insert(converted);
+    validateConvertedColumn(*column, to);
     return column;
 }
 

@@ -5,6 +5,8 @@
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
@@ -1780,7 +1782,11 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 
     for (size_t i = 0; i < key_size; ++i)
     {
-        loaded_index[i] = primary_key.data_types[i]->createColumn();
+        if (isExponentialTimeDecayingFloat64(primary_key.data_types[i]))
+            loaded_index[i] = ColumnUInt64::create();
+        else
+            loaded_index[i] = primary_key.data_types[i]->createColumn();
+
         loaded_index[i]->reserve(index_granularity->getMarksCount());
     }
 
@@ -1791,13 +1797,30 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 
     Serializations key_serializations(key_size);
     for (size_t j = 0; j < key_size; ++j)
-        key_serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
+    {
+        if (!isExponentialTimeDecayingFloat64(primary_key.data_types[j]))
+            key_serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
+    }
 
     FormatSettings format_settings;
     for (size_t i = 0; i < marks_count; ++i)
     {
         for (size_t j = 0; j < key_size; ++j)
-            key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, format_settings);
+        {
+            if (isExponentialTimeDecayingFloat64(primary_key.data_types[j]))
+            {
+                UInt64 key = 0;
+                readBinaryLittleEndian(key, *index_file);
+                assert_cast<ColumnUInt64 &>(*loaded_index[j]).insertValue(key);
+            }
+            else
+            {
+                key_serializations[j]->deserializeBinary(
+                    *loaded_index[j],
+                    *index_file,
+                    format_settings);
+            }
+        }
     }
 
     optimizeIndexColumns(marks_count, loaded_index);

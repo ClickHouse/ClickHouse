@@ -1,4 +1,7 @@
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnExponentialTimeDecaying.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <Core/Range.h>
 #include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
@@ -9,6 +12,158 @@
 
 namespace DB
 {
+
+namespace
+{
+
+bool typeContainsExponentialTimeDecaying(const IDataType & type)
+{
+    if (type.getTypeId() == TypeIndex::ExponentialTimeDecayingFloat64)
+        return true;
+
+    bool found = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (!found)
+            found = typeContainsExponentialTimeDecaying(child);
+    });
+    return found;
+}
+
+const ColumnWithTypeAndName * getColumnBackedValue(const FieldRef & field)
+{
+    if (field.isExplicit() || !field.columns || field.column_idx >= field.columns->size())
+        return nullptr;
+
+    return &(*field.columns)[field.column_idx];
+}
+
+std::optional<UInt64> getExponentialTimeDecayingPrefixFromField(
+    const FieldRef & field,
+    const DataTypeExponentialTimeDecayingFloat64 & type)
+{
+    if (field.isNull() || field.isNegativeInfinity() || field.isPositiveInfinity())
+        return std::nullopt;
+
+    if (field.getType() == Field::Types::UInt64)
+        return field.safeGet<UInt64>();
+
+    if (field.getType() != Field::Types::Tuple)
+        return std::nullopt;
+
+    const auto & tuple = field.safeGet<Tuple>();
+    if (tuple.size() == 2)
+    {
+        const Float64 value = tuple[0].safeGet<Float64>();
+        const Float64 time = tuple[1].safeGet<Float64>();
+        return getExponentialTimeDecayingOrderingKey(
+            value,
+            time,
+            type.getDecayLength());
+    }
+
+    if (tuple.size() == 3)
+    {
+        const Float64 sign = tuple[0].safeGet<Float64>();
+        const Float64 signed_unit_time = tuple[1].safeGet<Float64>();
+        const Float64 decay_length = tuple[2].safeGet<Float64>();
+        if (decay_length != type.getDecayLength())
+            return std::nullopt;
+        if (sign == 0)
+            return shiftOneBitAndSign(0, 0);
+        if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
+            return std::nullopt;
+        return shiftOneBitAndSign(sign * signed_unit_time, sign);
+    }
+
+    return std::nullopt;
+}
+
+std::optional<UInt64> getExponentialTimeDecayingPrefixFromColumn(
+    const ColumnWithTypeAndName & value,
+    size_t row)
+{
+    if (const auto * compact = typeid_cast<const ColumnUInt64 *>(value.column.get()))
+        return compact->getData()[row];
+
+    if (const auto * decaying = typeid_cast<const ColumnExponentialTimeDecaying *>(value.column.get()))
+    {
+        const auto & prefix
+            = assert_cast<const ColumnUInt64 &>(decaying->getOrderingKeyColumn());
+        return prefix.getData()[row];
+    }
+
+    return std::nullopt;
+}
+
+std::optional<int> compareFieldRefsByColumn(const FieldRef & lhs, const FieldRef & rhs)
+{
+    const auto * lhs_value = getColumnBackedValue(lhs);
+    const auto * rhs_value = getColumnBackedValue(rhs);
+
+    const auto * typed_value = lhs_value ? lhs_value : rhs_value;
+    if (!typed_value || !typed_value->type || !typeContainsExponentialTimeDecaying(*typed_value->type))
+        return std::nullopt;
+
+    const auto * direct_type
+        = typeid_cast<const DataTypeExponentialTimeDecayingFloat64 *>(typed_value->type.get());
+
+    if (direct_type)
+    {
+        std::optional<UInt64> lhs_prefix;
+        std::optional<UInt64> rhs_prefix;
+
+        if (lhs_value)
+            lhs_prefix = getExponentialTimeDecayingPrefixFromColumn(*lhs_value, lhs.row_idx);
+        else
+            lhs_prefix = getExponentialTimeDecayingPrefixFromField(lhs, *direct_type);
+
+        if (rhs_value)
+            rhs_prefix = getExponentialTimeDecayingPrefixFromColumn(*rhs_value, rhs.row_idx);
+        else
+            rhs_prefix = getExponentialTimeDecayingPrefixFromField(rhs, *direct_type);
+
+        /// A compact primary-index boundary intentionally has only the UInt64 bucket.
+        /// Equal prefixes therefore compare equal even if the underlying direct values
+        /// would differ. This can only make pruning more conservative.
+        if (lhs_prefix && rhs_prefix
+            && ((lhs_value && typeid_cast<const ColumnUInt64 *>(lhs_value->column.get()))
+                || (rhs_value && typeid_cast<const ColumnUInt64 *>(rhs_value->column.get()))))
+        {
+            if (*lhs_prefix < *rhs_prefix)
+                return -1;
+            if (*lhs_prefix > *rhs_prefix)
+                return 1;
+            return 0;
+        }
+    }
+
+    if (lhs_value && rhs_value)
+    {
+        if (!lhs_value->type || !rhs_value->type || !lhs_value->type->equals(*rhs_value->type))
+            return std::nullopt;
+
+        return lhs_value->column->compareAt(
+            lhs.row_idx,
+            rhs.row_idx,
+            *rhs_value->column,
+            1);
+    }
+
+    const FieldRef & explicit_value = lhs_value ? rhs : lhs;
+    if (explicit_value.isNull() || explicit_value.isNegativeInfinity() || explicit_value.isPositiveInfinity())
+        return std::nullopt;
+
+    auto materialized = typed_value->type->createColumn();
+    materialized->insert(static_cast<const Field &>(explicit_value));
+
+    if (lhs_value)
+        return lhs_value->column->compareAt(lhs.row_idx, 0, *materialized, 1);
+
+    return materialized->compareAt(0, rhs.row_idx, *rhs_value->column, 1);
+}
+
+}
 
 FieldRef::FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
     : Field((*(*columns_)[column_idx_].column)[row_idx_]), columns(columns_), row_idx(row_idx_), column_idx(column_idx_)
@@ -119,6 +274,27 @@ bool Range::equals(const Field & lhs, const Field & rhs)
 bool Range::less(const Field & lhs, const Field & rhs)
 {
     return accurateLess(lhs, rhs);
+}
+
+bool Range::hasColumnComparator(const FieldRef & lhs, const FieldRef & rhs)
+{
+    return compareFieldRefsByColumn(lhs, rhs).has_value();
+}
+
+bool Range::equals(const FieldRef & lhs, const FieldRef & rhs)
+{
+    if (const auto comparison = compareFieldRefsByColumn(lhs, rhs))
+        return *comparison == 0;
+
+    return equals(static_cast<const Field &>(lhs), static_cast<const Field &>(rhs));
+}
+
+bool Range::less(const FieldRef & lhs, const FieldRef & rhs)
+{
+    if (const auto comparison = compareFieldRefsByColumn(lhs, rhs))
+        return *comparison < 0;
+
+    return less(static_cast<const Field &>(lhs), static_cast<const Field &>(rhs));
 }
 
 bool Range::empty() const
