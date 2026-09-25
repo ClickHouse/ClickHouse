@@ -1,4 +1,1 @@
-skip regexp	Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))	[1]	['{"a":1,"b":2,"s":"q","x":3}']
-typed path	Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))	[1]	['{"a":1,"b":2,"s":"q","x":3}']
-skip path	Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))	[1]	['{"a":1,"b":2,"s":"q","x":3}']
 shared regexp	Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))	[1]	['{"a":1,"b":2,"s":"q","x":3}']	['arr']
