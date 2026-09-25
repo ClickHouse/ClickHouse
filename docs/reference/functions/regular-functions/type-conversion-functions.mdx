@@ -3241,6 +3241,8 @@ If `expr` is a number, it is interpreted as the number of seconds since the begi
 If `expr` is a [String](/reference/data-types/string), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.
 Thus, parsing of short numbers' string representations (up to 4 digits) is explicitly disabled due to ambiguity, e.g. a string `'1999'` may be both a year (an incomplete string representation of Date / DateTime) or a unix timestamp. Longer numeric strings are allowed.
 </Note>
+
+If `expr` is a [Time](/reference/data-types/time) or [Time64](/reference/data-types/time64) value, it is interpreted as the number of seconds since the beginning of the Unix Epoch: the fractional part of a `Time64` is floored towards negative infinity, and values outside of the `DateTime` range follow the `date_time_overflow_behavior` setting.
     
 
 **Syntax**
@@ -3251,7 +3253,7 @@ toDateTime(expr[, time_zone])
 
 **Arguments**
 
-- `expr` — The value. [`String`](/reference/data-types/string) or [`Int`](/reference/data-types/int-uint) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime)
+- `expr` — The value. [`String`](/reference/data-types/string) or [`Int`](/reference/data-types/int-uint) or [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`Time`](/reference/data-types/time) or [`Time64`](/reference/data-types/time64) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
 - `time_zone` — Time zone. [`String`](/reference/data-types/string)
 
 **Returned value**
@@ -3279,10 +3281,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 Introduced in: v20.9.0
 
 Converts an input value to type `DateTime`.
-Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception; a value of the `Time` type wraps around instead of saturating.
+Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `Time64`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). `Decimal` values are not supported and result in an exception.
 `DateTime32` is an alias of `DateTime` and supports dates from `1970-01-01 00:00:00` to `2106-02-07 06:28:15`.
 When converting from a string or from one of the saturating numeric types listed above, values outside of this range are saturated to the range boundaries. Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
-Conversions from other date and time types such as `Date32` or `DateTime64` follow the `date_time_overflow_behavior` setting: the default `ignore` mode may produce wrapped-around values, `saturate` clamps them to the range boundaries, and `throw` throws an exception.
+Conversions from other date and time types such as `Date32`, `DateTime64`, `Time`, or `Time64` follow the `date_time_overflow_behavior` setting: the default `ignore` mode may produce wrapped-around values, `saturate` clamps them to the range boundaries, and `throw` throws an exception. `Time64` values are floored towards negative infinity to whole seconds first.
     
 
 **Syntax**
@@ -3293,7 +3295,7 @@ toDateTime32(x[, timezone])
 
 **Arguments**
 
-- `x` — Input value to convert. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`BFloat16`](/reference/data-types/float) or [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`Time`](/reference/data-types/time) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
+- `x` — Input value to convert. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`BFloat16`](/reference/data-types/float) or [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`Time`](/reference/data-types/time) or [`Time64`](/reference/data-types/time64) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
 - `timezone` — Optional. Timezone for the returned `DateTime` value. [`String`](/reference/data-types/string)
 
 **Returned value**
@@ -6956,8 +6958,9 @@ SELECT
 Introduced in: v25.5.0
 
 Converts an input value to type [Time](/reference/data-types/time).
-Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
+Supports conversion from String, FixedString, DateTime, DateTime64, Time64, or numeric types representing seconds since midnight.
 Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
+`Time64` values are floored towards negative infinity to whole seconds and saturated to the same range.
 
 <Note title="Legacy `toTime`">
 Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
@@ -6978,7 +6981,7 @@ toTime(x)
 
 **Arguments**
 
-- `x` — Input value to convert. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) or [`(U)Int*`](/reference/data-types/int-uint) or [`BFloat16`](/reference/data-types/float) or [`Float*`](/reference/data-types/float)
+- `x` — Input value to convert. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) or [`Time64`](/reference/data-types/time64) or [`(U)Int*`](/reference/data-types/int-uint) or [`BFloat16`](/reference/data-types/float) or [`Float*`](/reference/data-types/float)
 
 **Returned value**
 
