@@ -83,8 +83,8 @@ SELECT length(data_paths) = 1
     FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc09';
 
 -- A never resolved proxy reports an unknown row count. `DROP TABLE ... IF EMPTY` does not take an
--- unknown count for zero: it reads the table, which resolves the proxy, finds the rows of `mem`
--- behind it and refuses. Those rows are untouched either way.
+-- unknown count for zero and refuses without reading the table. The rows of `mem` behind the proxy
+-- are untouched either way.
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc10 (x UInt64) AS merge(currentDatabase(), '^mem$');
 -- ignore_drop_queries_probability = 0: the stress runner sets it, and because this table stores no
 -- data on disk a rewritten DROP becomes a TRUNCATE that resolves the table function.

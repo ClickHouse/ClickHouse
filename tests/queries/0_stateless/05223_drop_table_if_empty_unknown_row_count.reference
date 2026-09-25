@@ -1,4 +1,6 @@
-t_if_empty_empty	\N
 t_if_empty_full	\N
+t_if_empty_no_rows	\N
+t_if_empty_view	\N
 t_if_empty_full
+t_if_empty_no_rows
 3
