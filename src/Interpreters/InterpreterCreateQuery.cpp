@@ -2324,11 +2324,7 @@ void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode,
     /// does not see inferred columns, and ATTACH/RESTORE, temporary tables and views/dictionaries are
     /// not subject to this check on load.
     if (mode <= LoadingStrictnessLevel::CREATE && !is_temporary && !storage.isView() && !storage.isDictionary())
-    {
         checkAllTypesAreAllowedInTable(metadata_snapshot->getColumns().getAll());
-        checkAggregateFunctionStatesCanBeStored(
-            metadata_snapshot->getColumns().getAll(), storage.getStorageID().database_name, context);
-    }
 
     if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {
@@ -2627,6 +2623,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             properties.constraints,
             mode,
             is_restore_from_backup);
+
+        /// Columns an engine infers are known only once it is built.
+        if (properties.columns.empty() && (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup))
+        {
+            auto metadata_snapshot = res->getInMemoryMetadataPtr(getContext(), false);
+            checkAggregateFunctionStatesCanBeStored(metadata_snapshot->getColumns().getAll(), create.getDatabase(), getContext());
+        }
 
         /// If schema was inferred while storage creation, add columns description to create query.
         auto & create_query = query_ptr->as<ASTCreateQuery &>();
