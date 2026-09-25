@@ -352,6 +352,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         connected = true;
         setDescription();
 
+        server_revision = 0;
         sendHello();
         receiveHello();
 
@@ -1750,7 +1751,8 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException() const
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
+    return std::make_unique<Exception>(readException(
+        *in, "Received from " + getDescription(), true /* remote */, server_revision >= DBMS_MIN_REVISION_WITH_EXCEPTION_QUERY_INFO));
 }
 
 
