@@ -359,7 +359,7 @@ all the files in the directory are selected.
 
 - `*` — Represents arbitrarily many characters except `/` but including the empty string.
 - `?` — Represents an arbitrary single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
 - `{N..M}` — Represents any number `>= N` and `<= M`.
 - `**` - Represents all files inside a folder recursively.
 

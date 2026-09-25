@@ -1,0 +1,46 @@
+jsonl lake:
+1	1
+json lake:
+7	3
+json lake as JSONStringsEachRow:
+20	13
+json lake as JSONCompactEachRowWithNames:
+21	14
+json lake as JSONObjectEachRow:
+22	15
+json lake as JSONColumns:
+23	16
+csv lake:
+42	2
+tsv lake:
+8	5
+jsonl lake as JSONLines:
+1	1
+tsv lake as TSVRaw:
+8	5
+jsonlines lake as JSONEachRow:
+9	6
+tsvwithnames lake as TabSeparatedWithNames:
+10	7
+gzipped jsonl lake:
+11	8
+gzipped jsonl lake with an explicit compression method:
+11	8
+12	9
+gzipped jsonl lake with autodetection:
+11	8
+gzipped csv lake with an explicit compression method and a CSVWithNames sibling:
+13	10
+gzipped jsonl lake with compression_method = none:
+0
+jsonl lake after insert:
+1	1
+3	4
+gzipped jsonl lake with an explicit compression method after insert:
+11	8
+12	9
+15	12
+invalid compression method:
+1
+invalid compression method on ATTACH:
+1

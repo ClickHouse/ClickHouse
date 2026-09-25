@@ -29,8 +29,10 @@ struct Regexps
     /// regexp for {M..N}, where M and N - non-negative integers
     re2::RE2 range_regex{R"({([\d]+\.\.[\d]+)})"};
 
-    /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
-    re2::RE2 enum_regex{R"({([^{}*,]+[^{}*]*[^{}*,])})"};
+    /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}" and ",". An expr may contain
+    /// the "*" and "?" wildcards, which keep their meaning inside the alternation: {csv,csv.*} matches
+    /// both `.csv` and `.csv.gz`, which no single wildcard can spell (`.csv*` also matches `.csvwithnames`).
+    re2::RE2 enum_regex{R"({([^{},]+[^{}]*[^{},])})"};
 };
 
 /// Bounds on what a path pattern is allowed to expand to. A `{a,b,c}` selector glob is enumerated

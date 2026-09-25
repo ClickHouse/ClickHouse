@@ -635,7 +635,7 @@ For more information about virtual columns see [here](/reference/engines/table-e
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `**` — Substitutes any number of any characters include `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.

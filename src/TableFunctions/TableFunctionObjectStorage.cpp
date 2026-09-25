@@ -1318,7 +1318,7 @@ Paths may use globbing. Files must match the whole path pattern, not only the su
 - `*` — Represents arbitrarily many characters except `/` but including the empty string.
 - `**` — Represents all files inside a folder recursively.
 - `?` — Represents an arbitrary single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
 - `{N..M}` — Represents any number `>= N` and `<= M`.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) and [file](/reference/functions/table-functions/file) table functions.
