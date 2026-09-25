@@ -222,7 +222,6 @@ public:
 
     /// Matcher of paths that are always stored in shared data (SHARED REGEXP in the type).
     const std::shared_ptr<const re2::RE2> & getSharedDataPathMatcher() const { return shared_data_path_matcher; }
-    void setSharedDataPathMatcher(std::shared_ptr<const re2::RE2> matcher) { shared_data_path_matcher = std::move(matcher); }
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }

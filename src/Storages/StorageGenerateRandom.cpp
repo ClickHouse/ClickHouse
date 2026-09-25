@@ -1811,7 +1811,9 @@ ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const
                 max_dynamic_paths,
                 max_dynamic_paths,
                 max_dynamic_paths,
-                object_type.getMaxDynamicTypes());
+                object_type.getMaxDynamicTypes(),
+                /*statistics_=*/{},
+                object_type.getSharedDataPathMatcher());
 
             /// Takes the leading `max_dynamic_paths` leaves as dynamic paths of the column and
             /// serialises the rest into the shared data, sorted by path, one offset per row.
