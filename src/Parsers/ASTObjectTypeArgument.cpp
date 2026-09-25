@@ -25,9 +25,8 @@ ASTPtr ASTObjectTypedPathArgument::clone() const
 void ASTObjectTypedPathArgument::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    /// We must quote paths `SKIP` and `SHARED` to avoid confusion with the `SKIP`/`SHARED` keywords
-    /// in `Object` arguments.
-    if (equalsCaseInsensitive(path, "SKIP") || equalsCaseInsensitive(path, "SHARED"))
+    /// We must quote path "SKIP" to avoid its confusion with SKIP keyword in Object arguments.
+    if (equalsCaseInsensitive(path, "SKIP"))
         ostr << backQuote(path) << ' ';
     else
         ostr << backQuoteIfNeed(path) << ' ';
@@ -94,12 +93,11 @@ void ASTObjectTypeArgument::formatImpl(WriteBuffer & ostr, const FormatSettings 
     else if (shared_path_regexp)
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        ostr << indent_str << "SHARED REGEXP";
-        if (shared_path_regexp_full_match)
-            ostr << " FULL";
-        ostr << ' ';
+        ostr << indent_str << "SHARED REGEXP" << ' ';
         shared_path_regexp->format(ostr, settings, state, frame);
     }
 }
 
 }
+
+

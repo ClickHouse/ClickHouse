@@ -13,7 +13,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
-#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 
 
 namespace DB
@@ -122,11 +121,6 @@ public:
 
     /// For mutation: MATERIALIZE PROJECTION.
     /// `compression_codec` is the codec chosen for the parent part; see `writeProjectionPart`.
-    /// `source_parts`/`patch_parts` are the main/patch parts the projection block was calculated
-    /// from, used to preserve JSON `SHARED REGEXP` placement provenance (see writeProjectionPartImpl).
-    /// `source_part_alter_conversions` is parallel to `source_parts` (same size, same order) and
-    /// resolves a source part's pending column renames when provenance falls back to reading that
-    /// part's own columns directly, the same way the main (non-projection) provenance merge does.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
         Block block,
@@ -136,10 +130,7 @@ public:
         size_t block_num,
         bool use_selected_codec,
         bool is_explicit_recompression,
-        ContextPtr context,
-        const MergeTreeData::DataPartsVector & source_parts,
-        const PatchPartsForReader & patch_parts,
-        const std::vector<AlterConversionsPtr> & source_part_alter_conversions);
+        ContextPtr context);
 
     static Block mergeBlock(
         Block && block,
@@ -169,10 +160,7 @@ private:
         MergeTreeIndices indices,
         bool merge_is_needed,
         bool try_adaptive_codec,
-        bool use_selected_codec,
-        const MergeTreeData::DataPartsVector & source_parts,
-        const PatchPartsForReader & patch_parts,
-        const std::vector<AlterConversionsPtr> & source_part_alter_conversions);
+        bool use_selected_codec = false);
 
     MergeTreeData & data;
     LoggerPtr log;

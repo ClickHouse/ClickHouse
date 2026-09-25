@@ -310,12 +310,7 @@ public:
                 for (const auto & [path, type] : object_type->getTypedPaths())
                     typed_path_columns[path] = type->createColumn();
 
-                return ColumnObject::create(
-                    std::move(typed_path_columns),
-                    object_type->getMaxDynamicPaths(),
-                    object_type->getMaxDynamicTypes(),
-                    object_type->getSharedDataPathMatcher(),
-                    object_type->getSharedDataPathPrefix());
+                return ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes(), object_type->getSharedDataPathMatcher());
             }
 
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported Object attribute type.");

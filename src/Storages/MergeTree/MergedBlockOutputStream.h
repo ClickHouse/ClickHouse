@@ -28,8 +28,7 @@ public:
         bool blocks_are_granules_size,
         const WriteSettings & write_settings,
         WrittenOffsetSubstreams * written_offset_substreams,
-        bool try_adaptive_codec,
-        bool reconsider_json_shared_data_placement = false);
+        bool try_adaptive_codec);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 

@@ -1,8 +1,6 @@
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/getMostSubtype.h>
-#include <Common/assert_cast.h>
 
 #include <sstream>
 #include <gtest/gtest.h>
@@ -85,19 +83,11 @@ TEST_P(LeastSuperTypeTest, getLeastSupertype)
     }
 }
 
-GTEST_TEST(LeastSuperTypeTest, JSONSharedRegexpRootPrefix)
+GTEST_TEST(LeastSuperTypeTest, JSONSharedRegexpIntersection)
 {
-    const auto outer_type = typeFromString(
-        "JSON(shared_regexp_path_prefix='outer.', SHARED REGEXP '^outer[.]forced$')");
-    const auto same_prefix = getLeastSupertype(DataTypes{outer_type, outer_type});
-    EXPECT_TRUE(outer_type->equals(*same_prefix));
-
-    const auto inner_type = typeFromString(
-        "JSON(shared_regexp_path_prefix='inner.', SHARED REGEXP '^outer[.]forced$')");
-    const auto different_prefix = getLeastSupertype(DataTypes{outer_type, inner_type});
-    const auto & different_prefix_json = assert_cast<const DataTypeObject &>(*different_prefix);
-    EXPECT_TRUE(different_prefix_json.getSharedDataPathRules().empty());
-    EXPECT_TRUE(different_prefix_json.getSharedDataPathPrefix().empty());
+    const auto type = getLeastSupertype(DataTypes{
+        typeFromString("JSON(SHARED REGEXP 'a', SHARED REGEXP 'b')"), typeFromString("JSON(SHARED REGEXP 'b')")});
+    EXPECT_EQ(type->getName(), "JSON(SHARED REGEXP 'b')");
 }
 
 class MostSubtypeTest : public TypeTest {};

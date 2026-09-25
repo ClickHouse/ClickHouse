@@ -62,8 +62,7 @@ public:
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
         std::optional<size_t> max_dynamic_subcolumns_,
-        bool is_result_sparse_,
-        DataTypePtr result_type_);
+        bool is_result_sparse_);
 
     const char * getName() const override { return "ColumnGathererStream"; }
     void initialize(Inputs inputs) override;
@@ -98,7 +97,6 @@ private:
     const size_t block_preferred_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
-    const DataTypePtr result_type;
 
     Source * source_to_fully_copy = nullptr;
 
@@ -118,8 +116,7 @@ public:
         size_t block_preferred_size_rows_,
         size_t block_preferred_size_bytes_,
         std::optional<size_t> max_dynamic_subcolumns_,
-        bool is_result_sparse_,
-        DataTypePtr result_type_);
+        bool is_result_sparse_);
 
     String getName() const override { return "ColumnGathererTransform"; }
 

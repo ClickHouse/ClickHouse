@@ -27,7 +27,7 @@ protected:
  *  - pair (path, data type)
  *  - path that should be skipped
  *  - path regexp for paths that should be skipped
- *  - path regexp for paths that must always be stored in shared data
+ *  - path regexp for paths that should be stored in shared data
  *  - setting in a form of `setting=N`
  */
 class ASTObjectTypeArgument : public IAST
@@ -37,10 +37,6 @@ public:
     ASTPtr skip_path;
     ASTPtr skip_path_regexp;
     ASTPtr shared_path_regexp;
-    /// `SHARED REGEXP FULL '...'` is used when a persisted part contains full-match rules.
-    /// User-facing declarations normally select this mode with
-    /// `shared_regexp_use_partial_match=0`.
-    bool shared_path_regexp_full_match = false;
     ASTPtr parameter;
 
     /** Get the text that identifies this element. */
@@ -53,3 +49,4 @@ protected:
 
 
 }
+

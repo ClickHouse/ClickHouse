@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/JSONPathRegexpMatcher.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -42,24 +41,6 @@ static void check(const DataTypePtr & type)
     ASSERT_TRUE(istr.eof());
     ASSERT_EQ(type->getName(), decoded_type->getName());
     ASSERT_TRUE(type->equals(*decoded_type));
-}
-
-static void writeJSONV1Header(WriteBuffer & out, size_t rules_size)
-{
-    writeBinary(static_cast<UInt8>(BinaryTypeIndex::JSON), out);
-    writeBinary(UInt8(1), out);
-    writeVarUInt(1024, out);
-    writeBinary(UInt8(DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES), out);
-    writeVarUInt(0, out); /// typed paths
-    writeVarUInt(0, out); /// skipped paths
-    writeVarUInt(0, out); /// skipped regexps
-    writeVarUInt(rules_size, out);
-}
-
-static void expectJSONTypeDecodeFailure(const String & encoded)
-{
-    ReadBufferFromString in(encoded);
-    EXPECT_ANY_THROW(decodeDataType(in));
 }
 
 GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
@@ -151,9 +132,6 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10)"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, SKIP a.c, b.g String, SKIP l.d.f)"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, SHARED REGEXP '^a', SHARED REGEXP 'z')"));
-    check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, shared_regexp_use_partial_match=0, SHARED REGEXP '^a$')"));
-    check(DataTypeFactory::instance().get("JSON(SHARED REGEXP '^partial', SHARED REGEXP FULL '^full$')"));
-    check(DataTypeFactory::instance().get("JSON(shared_regexp_path_prefix='outer.', SHARED REGEXP '^outer[.]forced$')"));
     check(DataTypeFactory::instance().get("Array(Tuple(j JSON(SHARED REGEXP '^nested[.]'), n UInt64))"));
 }
 
@@ -176,32 +154,24 @@ GTEST_TEST(DataTypesBinaryEncoding, JSONSharedRegexpVersioning)
 
 GTEST_TEST(DataTypesBinaryEncoding, RejectsMalformedJSONSharedRegexpV1)
 {
+    WriteBufferFromOwnString out;
+    writeBinary(static_cast<UInt8>(BinaryTypeIndex::JSON), out);
+    writeBinary(UInt8(1), out);
+    writeVarUInt(1024, out);
+    writeBinary(UInt8(DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES), out);
+    writeVarUInt(0, out); /// typed paths
+    writeVarUInt(0, out); /// skipped paths
+    writeVarUInt(0, out); /// skipped regexps
+    writeVarUInt(1000001, out); /// shared regexps, more than MAX_ARRAY_SIZE
+
+    ReadBufferFromString in(out.str());
+    try
     {
-        WriteBufferFromOwnString out;
-        writeJSONV1Header(out, 1);
-        writeBinary(UInt8(2), out); /// invalid match mode
-        writeStringBinary("a", out);
-        writeStringBinary("", out); /// prefix
-        expectJSONTypeDecodeFailure(out.str());
+        decodeDataType(in);
+        FAIL() << "Expected an exception";
     }
+    catch (const Exception & e)
     {
-        WriteBufferFromOwnString out;
-        writeJSONV1Header(out, JSONPathRegexpMatcher::MAX_RULES + 1);
-        expectJSONTypeDecodeFailure(out.str());
-    }
-    {
-        WriteBufferFromOwnString out;
-        writeJSONV1Header(out, 1);
-        writeBinary(static_cast<UInt8>(JSONPathRegexpMatchMode::Partial), out);
-        writeVarUInt(JSONPathRegexpMatcher::MAX_PATTERN_BYTES + 1, out);
-        expectJSONTypeDecodeFailure(out.str());
-    }
-    {
-        WriteBufferFromOwnString out;
-        writeJSONV1Header(out, 1);
-        writeBinary(static_cast<UInt8>(JSONPathRegexpMatchMode::Partial), out);
-        writeStringBinary("a", out);
-        writeVarUInt(JSONPathRegexpMatcher::MAX_PATTERN_BYTES + 1, out);
-        expectJSONTypeDecodeFailure(out.str());
+        EXPECT_NE(e.message().find("Too many shared data path regexps"), std::string::npos) << e.message();
     }
 }
