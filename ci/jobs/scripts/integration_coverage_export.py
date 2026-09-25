@@ -2,11 +2,14 @@ import shlex
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
-from ci.jobs.scripts.coverage_selection import sql_string
 from ci.praktika.utils import Shell, Utils
 
 LINES_STRUCTURE = "test_name String, file String, line_start UInt32, line_end UInt32, min_depth UInt8, branch_flag UInt8"
 INDIRECT_CALLS_STRUCTURE = "test_name String, caller_name_hash UInt64, caller_func_hash UInt64, callee_offset UInt64, call_count UInt64"
+
+
+def sql_string(value):
+    return "'" + str(value).replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
 class IntegrationCoverageExporter:
