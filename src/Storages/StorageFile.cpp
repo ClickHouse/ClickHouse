@@ -1962,7 +1962,11 @@ Chunk StorageFileSource::generate()
                     if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                        {
+                            /// The file existed when the TopK key was made, so it has changed since.
+                            checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ false);
                             continue;
+                        }
 
                         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", current_path);
                     }
@@ -2004,7 +2008,11 @@ Chunk StorageFileSource::generate()
                 current_file_version_settled = isFileCacheVersionTokenSettled(file_stat);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
+                {
+                    /// A skipped file still counts: it may have been emptied after the TopK key was made.
+                    checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ true);
                     continue;
+                }
 
                 if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
@@ -2451,8 +2459,9 @@ void StorageFileSource::checkTopKQueryConditionCacheKeyHolds(bool still_holds) c
     /// The entries under the key record which row groups hold no row of the result for the files in
     /// the versions the key was made for. Once a file is read in another version, the threshold comes
     /// from other rows, and a row group another file skipped by such an entry may hold rows of the
-    /// result. The file may also have been rewritten while it was read. Only files that are opened
-    /// matter: a file the query does not read does not contribute to the threshold.
+    /// result. The file may also have been rewritten while it was read, or have disappeared or been
+    /// emptied before its turn (and then be skipped). Only files the query reaches matter: a file its
+    /// `_path` / `_file` filter excludes does not contribute to the threshold.
     const auto & tokens = top_k_query_condition_cache_key->file_version_tokens;
     auto it = tokens.find(current_path);
     bool holds = still_holds && current_file_cache_version.has_value() && current_file_version_settled
