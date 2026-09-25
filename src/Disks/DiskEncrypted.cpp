@@ -368,14 +368,14 @@ namespace
 {
     /// The encrypted root is its own subpath of the wrapped disk, so a nested mount there is not
     /// covered by the wrapped disk's own check (see #18794). Which path is a real host path depends
-    /// on the delegate: a local disk exposes one directly, while a remote one exposes only its
+    /// on the delegate: a local disk exposes one directly, while an object storage one exposes only its
     /// metadata root - and that root is local exactly when its metadata storage says so. An object
     /// storage's own `getPath` is not usable here, since it can be a bare remote key prefix.
     void warnIfEncryptedRootIsAffectedByExt4Bug(
         IDisk & delegate, const String & disk_path, const String & disk_absolute_path, const String & encrypted_name)
     {
         const auto description = fmt::format("the path of encrypted disk '{}'", encrypted_name);
-        if (!delegate.isRemote())
+        if (delegate.getDataSourceDescription().type == DataSourceType::Local)
         {
             warnIfAffectedByExt4CorruptionKernelBug(disk_absolute_path, description);
             return;
@@ -388,9 +388,8 @@ namespace
                 warnIfAffectedByExt4CorruptionKernelBug(
                     (std::filesystem::path(metadata_storage->getPath()) / disk_path).string(), description);
 
-            /// `isRemote` above is the disk's, and a `DiskObjectStorage` reports it whatever its backend
-            /// is. A local object storage resolves blob keys under its key prefix on this host, so with
-            /// plain metadata that prefix, not the metadata root, is where the encrypted data lands.
+            /// A local object storage keeps blobs under its key prefix on this host, so with plain
+            /// metadata that prefix, not the metadata root, is where the encrypted data lands.
             auto object_storage = delegate.getObjectStorage();
             if (object_storage && !object_storage->isRemote())
                 warnIfAffectedByExt4CorruptionKernelBug(
