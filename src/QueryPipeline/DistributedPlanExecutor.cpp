@@ -981,10 +981,9 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
 
     /// A query's log row reports the profile counters of its process-list entry's thread group.
-    Stopwatch task_watch(CLOCK_MONOTONIC);
     auto process_list_entry = task_context->getProcessList().insert(
         task.task.task_id, sipHash64(task.serialized_query_plan), /*ast=*/ nullptr, task_context,
-        task_watch.getStart(), /*is_internal=*/ true);
+        clock_gettime_ns(CLOCK_MONOTONIC), /*is_internal=*/ true);
     task_context->setProcessListElement(process_list_entry->getQueryStatus());
 
     /// Only DistributedQueryPlanExecutorLocal reaches here, so the task always runs in-process.
