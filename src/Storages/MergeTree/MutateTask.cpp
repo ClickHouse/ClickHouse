@@ -17,6 +17,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -738,28 +739,6 @@ static void addRenamedColumnToColumnsSubstreams(
         new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
 }
 
-static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet & storage_columns_set)
-{
-    if (storage_columns_set.contains(RowExistsColumn::name))
-        return false;
-
-    if (command.type == MutationCommand::READ_COLUMN)
-        return command.read_for_patch && command.column_name == RowExistsColumn::name;
-
-    if (command.type == MutationCommand::UPDATE)
-    {
-        auto alter = command.ast();
-        if (!alter || !alter->update_assignments)
-            return false;
-        return std::ranges::any_of(alter->update_assignments->children, [](const ASTPtr & child)
-        {
-            return child->as<ASTAssignment &>().column_name == RowExistsColumn::name;
-        });
-    }
-
-    return false;
-}
-
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
@@ -782,9 +761,7 @@ getColumnsForNewDataPart(
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
-    bool deleted_mask_updated = false;
     bool affects_all_columns = false;
-    bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -793,9 +770,6 @@ getColumnsForNewDataPart(
     for (const auto & command : all_commands)
     {
         affects_all_columns |= command.affectsAllColumns();
-
-        if (supports_lightweight_deletes)
-            deleted_mask_updated |= isDeletedMaskUpdated(command, storage_columns_set);
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
@@ -853,7 +827,7 @@ getColumnsForNewDataPart(
 
         bool need_column = false;
         if (name == RowExistsColumn::name)
-            need_column = deleted_mask_updated || (part_columns.has(name) && !affects_all_columns);
+            need_column = updated_header.has(name) || (part_columns.has(name) && !affects_all_columns);
         else if (name == BlockNumberColumn::name || name == BlockOffsetColumn::name)
             need_column = part_columns.has(name) || updated_header.has(name);
         else
@@ -1250,6 +1224,15 @@ static std::unordered_map<String, size_t> getStreamCounts(
             continue;
         }
 
+        /// Only a column the part physically holds has streams to count. The name of an absent
+        /// column must not be looked up in the part's serializations: a column named like a
+        /// subcolumn of another column (`a.size0` next to an `Array` column `a`) resolves to that
+        /// subcolumn's serialization, and the streams enumerated from it are the other column's.
+        /// Counting them here would mark the array's offsets as rewritten by the mutation and
+        /// skip hardlinking them, leaving the new part without them.
+        if (!data_part->getColumns().contains(column_name))
+            continue;
+
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
@@ -1382,6 +1365,21 @@ static NameToNameVector collectFilesForRenames(
     NameToNameVector rename_vector;
     NameSet collected_names;
 
+    /// The serialization of a column the source part physically holds, or nothing when the part does
+    /// not hold it. The name must not be looked up in the part's serializations in the latter case: a
+    /// column named like a subcolumn of another column (`a.size0` next to an `Array` column `a`)
+    /// resolves to that subcolumn's serialization when the column itself is not stored in the part
+    /// (it is there only as a missing-column marker), and the streams enumerated from it are the
+    /// other column's - removing or renaming them would take the array's offsets away and leave the
+    /// part unreadable.
+    const auto & source_part_columns = source_part->getColumns();
+    auto try_get_serialization_of_stored_column = [&](const String & column_name) -> SerializationPtr
+    {
+        if (!source_part_columns.contains(column_name))
+            return nullptr;
+        return source_part->tryGetSerialization(column_name);
+    };
+
     auto add_rename = [&rename_vector, &collected_names] (const std::string & file_rename_from, const std::string & file_rename_to)
     {
         if (collected_names.emplace(file_rename_from).second)
@@ -1484,7 +1482,7 @@ static NameToNameVector collectFilesForRenames(
                     }
                 };
 
-                if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
                     serialization->enumerateStreams(callback);
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
@@ -1547,7 +1545,7 @@ static NameToNameVector collectFilesForRenames(
                         }
                     };
 
-                    if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                    if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
                         serialization->enumerateStreams(callback);
                 }
             }
@@ -1584,6 +1582,7 @@ static void processStatisticsChanges(
     const ColumnsStatistics & stats_to_recalc,
     const MutationCommands & commands_for_renames,
     const IMergeTreeDataPart & source_part,
+    const NamesAndTypesList & new_part_columns,
     StorageMetadataPtr metadata_snapshot)
 {
     auto storage_settings = source_part.storage.getSettings();
@@ -1634,6 +1633,10 @@ static void processStatisticsChanges(
         for (const auto & [stat_name, stat] : stats_to_recalc)
             all_statistics[stat_name] = stat->cloneEmpty();
     }
+
+    /// A statistic is keyed by a column name, and both statistics loaders resolve a persisted entry
+    /// against the part's own column list, so one for a column this part does not store is unreadable.
+    std::erase_if(all_statistics, [&](const auto & entry) { return !new_part_columns.contains(entry.first); });
 
     /// Remove old statistics files.
     if (isFullPartStorage(source_part.getDataPartStorage()))
@@ -2834,9 +2837,10 @@ private:
         if (!subqueries.empty())
             builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
-        /// After the TTL, not before: the writer reuses the expression column it finds in the block, so
-        /// an index materialized ahead of the TTL describes the pre-TTL value of a column the TTL reset
-        /// or of a `MATERIALIZED` column recomputed from one, and then prunes granules that do match.
+        /// The primary key and the skip indices are calculated after the TTL transforms, because TTL rewrites the data:
+        /// `TTL ... GROUP BY ... SET` assigns new values to the columns of the aggregated rows, and a column TTL resets
+        /// the expired values to the defaults. Calculating the index expressions before that would write indices
+        /// describing the data of the source part instead of the data of the new part.
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
             auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
@@ -2890,6 +2894,7 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
+            new_part_columns,
             ctx->metadata_snapshot);
 
         /// This task rewrites every column, so all statistics objects were created empty from the
@@ -3015,6 +3020,7 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
+            ctx->new_data_part->getColumns(),
             ctx->metadata_snapshot);
 
         /// This task rewrites only some of the columns and carries the rest over from the source
