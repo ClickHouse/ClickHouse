@@ -425,6 +425,18 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 out.relaxed = true;
                 return true;
             }
+        },
+        {
+            "pointInEllipses",
+            [] (RPNElement & out, const Field &)
+            {
+                /// The atom stores the union bounding box of the ellipses as a rectangle ring
+                /// and reuses the pointInPolygon evaluation; the box over-approximates the
+                /// ellipses, so the condition is relaxed.
+                out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
+                out.relaxed = true;
+                return true;
+            }
         }
 };
 
@@ -4682,6 +4694,95 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return atom_it->second(out, const_value);
         };
 
+        auto analyze_point_in_ellipses = [&, this]() -> bool
+        {
+            /// pointInEllipses(x, y, x0_0, y0_0, a_0, b_0, ..., x0_i, y0_i, a_i, b_i):
+            /// the point coordinates followed by 4 constant parameters per ellipse
+            /// (the function itself enforces 2 + 4 * N arguments of type Float64,
+            /// with constant ellipse parameters).
+            if (num_args < 6 || (num_args - 2) % 4 != 0)
+                return false;
+
+            /// The point coordinates must be two key columns (or key expressions), as in
+            /// pointInEllipses(x, y, ...).
+            {
+                auto x_it = key_columns.find(func.getArgumentAt(0).getColumnName());
+                auto y_it = key_columns.find(func.getArgumentAt(1).getColumnName());
+                if (x_it == key_columns.end() || y_it == key_columns.end())
+                    return false;
+                out.key_columns.push_back(x_it->second);
+                out.key_columns.push_back(y_it->second);
+            }
+
+            /// The union bounding box of the ellipses, with the function's exact semantics
+            /// (see `pointInEllipses.cpp`): an ellipse with a non-positive or NaN parameter
+            /// matches no point at all, because the function's own bounding-box check
+            /// `x >= x0 - a && x <= x0 + a` (and the analogous check for `y`) never passes for it.
+            Float64 x_min = std::numeric_limits<Float64>::infinity();
+            Float64 x_max = -std::numeric_limits<Float64>::infinity();
+            Float64 y_min = std::numeric_limits<Float64>::infinity();
+            Float64 y_max = -std::numeric_limits<Float64>::infinity();
+            bool has_nonempty_ellipse = false;
+
+            for (size_t i = 2; i + 3 < num_args; i += 4)
+            {
+                Float64 ellipse[4];
+                for (size_t j = 0; j < 4; ++j)
+                {
+                    Field parameter_value;
+                    DataTypePtr parameter_type;
+                    if (!func.getArgumentAt(i + j).tryGetConstant(parameter_value, parameter_type)
+                        || parameter_value.getType() != Field::Types::Float64)
+                        return false;
+                    ellipse[j] = parameter_value.safeGet<Float64>();
+                }
+
+                Float64 x0 = ellipse[0];
+                Float64 y0 = ellipse[1];
+                Float64 a = ellipse[2];
+                Float64 b = ellipse[3];
+
+                if (std::isnan(x0) || std::isnan(y0) || std::isnan(a) || std::isnan(b) || a <= 0 || b <= 0)
+                    continue;
+
+                x_min = std::min(x_min, x0 - a);
+                x_max = std::max(x_max, x0 + a);
+                y_min = std::min(y_min, y0 - b);
+                y_max = std::max(y_max, y0 + b);
+                has_nonempty_ellipse = true;
+            }
+
+            if (!has_nonempty_ellipse)
+            {
+                /// Every ellipse is empty: the predicate is false for every point.
+                out.function = RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            /// An infinite parameter makes the box unbounded (or NaN via `inf - inf`); such a box
+            /// cannot be represented as a ring for the intersection check. Prune nothing.
+            if (!std::isfinite(x_min) || !std::isfinite(x_max) || !std::isfinite(y_min) || !std::isfinite(y_max))
+                return false;
+
+            /// Store the union box as a rectangle ring and reuse the pointInPolygon evaluation:
+            /// the granule's bounding box is intersected with this ring in `checkInHyperrectangle`.
+            /// The ellipses are subsets of the box, so this only over-approximates the condition
+            /// (the atom is relaxed and `can_be_false` always stays true).
+            out.polygon->ring.emplace_back(x_min, y_min);
+            out.polygon->ring.emplace_back(x_min, y_max);
+            out.polygon->ring.emplace_back(x_max, y_max);
+            out.polygon->ring.emplace_back(x_max, y_min);
+            boost::geometry::correct(out.polygon->ring);
+            if (!boost::geometry::is_valid(out.polygon->ring))
+                return false;
+            boost::geometry::envelope(out.polygon->ring, out.polygon->bbox);
+
+            out.point_in_polygon_function_name = func_name;
+
+            const auto atom_it = atom_map.find(func_name);
+            return atom_it->second(out, const_value);
+        };
+
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
@@ -5049,6 +5150,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 /// Case2 has holes in polygon, when checking skip index, the hole will be ignored.
                 return analyze_point_in_polygon();
             }
+
+            if (func_name == "pointInEllipses")
+                return analyze_point_in_ellipses();
 
             return false;
         }

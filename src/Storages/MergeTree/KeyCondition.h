@@ -367,6 +367,7 @@ public:
         ///  * if FUNCTION_POINT_IN_POLYGON: two elements (x, y) describing the point,
         ///    as in pointInPolygon((x, y), ...), or one element if the point is a whole
         ///    key column of type Tuple of two coordinates, as in pointInPolygon(coord, ...).
+        ///    For pointInEllipses the point is its first two arguments (x, y), two key columns.
         std::vector<size_t> key_columns;
 
         /// If a key column is a space filling curve, e.g. mortonEncode(x, y),
@@ -387,6 +388,7 @@ public:
 
         /// For FUNCTION_POINT_IN_POLYGON.
         /// Function name (e.g. 'pointInPolygon') and the polygon.
+        /// For 'pointInEllipses' the stored ring is the union bounding box of the ellipses.
         /// Additionally, `key_columns` has two elements for point coordinates (x, y),
         /// or one element if the point is a whole key column of Tuple type.
         std::optional<String> point_in_polygon_function_name;
