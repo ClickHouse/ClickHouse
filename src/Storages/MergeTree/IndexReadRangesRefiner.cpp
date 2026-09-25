@@ -29,6 +29,7 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
 
     const auto & skip_index_input = index_build_context->read_ranges.at(info.part_index_in_query);
     const auto & all_updated_columns = info.alter_conversions->getAllUpdatedColumns();
+    const auto & stale_indices = info.alter_conversions->getStaleIndices();
 
     /// Built once per part; concurrent callers wait on a shared future inside the pool.
     /// The same cached result is later reused by MergeTreeReaderIndex for granule- and row-level filtering.
@@ -38,7 +39,8 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
         skip_index_input,
         has_projection_ranges ? projection_it->second : RangesInDataParts{},
         metadata_snapshot,
-        all_updated_columns);
+        all_updated_columns,
+        stale_indices);
 
     /// The read may have been cancelled; refinement is an optimization, so just do nothing.
     if (!index_read_result || (!index_read_result->skip_index_read_result && !index_read_result->projection_index_read_result))

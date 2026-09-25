@@ -799,8 +799,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
     const MergeTreeIndexPtr & index,
     const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & all_updated_columns)
+    const NameSet & all_updated_columns,
+    const NameSet & stale_indices)
 {
+    if (stale_indices.contains(index->index.name))
+    {
+        return std::unexpected(PreformattedMessage::create(
+            "Index {} was dropped by a pending mutation not yet applied to the part, "
+            "so its files may belong to the previous index with this name", index->index.name));
+    }
+
     if (all_updated_columns.empty())
         return {};
 
@@ -940,8 +948,10 @@ static bool partHasStaleTopKIndex(
 
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
     /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    /// hasMetadataMutations() covers a pending `DROP INDEX` whose name was reused by a new index.
     if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()
+            || mutations_snapshot->hasMetadataMutations()))
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
 
@@ -954,7 +964,7 @@ static bool partHasStaleTopKIndex(
         /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
         /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
         /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns(), alter_conversions->getStaleIndices()))
             return true;
     }
 
@@ -1240,11 +1250,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 #endif
                 );
                 const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+                const auto & stale_indices = alter_conversions->getStaleIndices();
                 auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
                 {
-                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns);
+                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns, stale_indices);
                     if (!check_result)
                     {
                         return std::unexpected(PreformattedMessage::create(

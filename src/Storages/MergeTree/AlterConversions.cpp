@@ -178,7 +178,8 @@ bool AlterConversions::isSupportedAlterMutation(MutationCommand::Type type)
 bool AlterConversions::isSupportedMetadataMutation(MutationCommand::Type type)
 {
     return type == MutationCommand::RENAME_COLUMN
-        || type == MutationCommand::DROP_COLUMN;
+        || type == MutationCommand::DROP_COLUMN
+        || type == MutationCommand::DROP_INDEX;
 }
 
 void AlterConversions::addMutationCommand(const MutationCommand & command, const ContextPtr & context)
@@ -215,6 +216,10 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
         }
 
         dropped_columns.emplace(std::move(dropped_column_name));
+    }
+    else if (command.type == DROP_INDEX)
+    {
+        stale_indices.emplace(command.index_name);
     }
     else if (command.type == READ_COLUMN)
     {
