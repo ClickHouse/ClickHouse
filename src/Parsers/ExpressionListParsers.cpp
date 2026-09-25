@@ -1529,6 +1529,8 @@ public:
         /// expr AS type
         if (state == 0)
         {
+            rememberLiteralArgument(pos);
+
             std::optional<String> type_text;
 
             if (as_keyword_parser.ignore(pos, expected))
@@ -1546,7 +1548,7 @@ public:
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
+                    elements = {createFunctionCast(exactArgument(elements[0], *type_text, pos), std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1575,7 +1577,7 @@ public:
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
+                    elements = {createFunctionCast(exactArgument(elements[0], *type_text, pos), std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1604,13 +1606,56 @@ public:
                 if (elements.size() != 2)
                     return false;
 
-                elements = {makeASTFunction(toString(toStringView(Keyword::CAST)), elements[0], elements[1])};
+                ASTPtr argument = elements[0];
+
+                /// The functional form carries the type as an ordinary argument, so the type is only
+                /// known here when it is spelled out as a string.
+                if (const auto * type_literal = elements[1]->as<ASTLiteral>();
+                    type_literal && type_literal->value.getType() == Field::Types::String)
+                    argument = exactArgument(argument, type_literal->value.safeGet<String>(), pos);
+
+                elements = {makeASTFunction(toString(toStringView(Keyword::CAST)), std::move(argument), elements[1])};
                 finished = true;
                 return true;
             }
         }
 
         return true;
+    }
+
+private:
+    /// The first argument, when it is a literal, kept as text. `CAST(0.1 AS Decimal256(76))` is exact
+    /// because the `Decimal` reads those digits itself, instead of `0.1` being read as a `Float64`
+    /// and rounded on the way. Which types read the text this way is only known once the type has
+    /// been parsed, which is after the argument - hence keeping the text around.
+    std::optional<LiteralAsText> literal_argument;
+
+    /// Peeks at the first argument, without consuming it, before it is parsed as an expression. Only
+    /// a whole argument can be replaced by its text, so the literal has to be followed by the end of
+    /// the argument - the `AS` of `CAST(x AS T)` or of an alias, or the comma of `CAST(x, T)`.
+    void rememberLiteralArgument(IParser::Pos pos)
+    {
+        if (!elements.empty() || !isCurrentElementEmpty())
+            return;
+
+        LiteralAsText literal;
+        if (!parseLiteralAsText(pos, literal))
+            return;
+
+        /// An `Expected` of its own: this only looks ahead, and what it finds is not what the query
+        /// is expected to hold at that position.
+        Expected lookahead;
+        if (pos->type != TokenType::Comma && !ParserKeyword(Keyword::AS).checkWithoutMoving(pos, lookahead))
+            return;
+
+        literal_argument = std::move(literal);
+    }
+
+    /// `argument` put back as text, when it is a literal and the target type reads the text more
+    /// precisely - see `exactCastArgument`.
+    ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
+    {
+        return exactCastArgument(argument, literal_argument, type_text, pos);
     }
 };
 
@@ -1696,7 +1741,7 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
 /// aliases that `parseIntervalKind` accepts as keywords for `EXTRACT`
 /// (plurals like `years`, `SQL_TSI_*` forms, and short forms like `yy`, `mm`,
 /// `ns`). Keep in sync with `parseIntervalKind.cpp`.
-static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind::Kind & result)
+static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind & result)
 {
     if (IntervalKind::tryParseString(unit_lower, result))
         return true;
@@ -1765,12 +1810,8 @@ static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, 
 static bool tryParseExtractUnitFromString(const std::string & unit_lower, IntervalKind & interval_kind, ExtractUnit & extract_unit)
 {
     extract_unit = ExtractUnit::None;
-    IntervalKind::Kind kind{};
-    if (tryParseIntervalKindFromLowerString(unit_lower, kind))
-    {
-        interval_kind = IntervalKind{kind};
+    if (tryParseIntervalKindFromLowerString(unit_lower, interval_kind))
         return true;
-    }
 
     if (unit_lower == "epoch")
         extract_unit = ExtractUnit::Epoch;
@@ -2612,9 +2653,9 @@ static std::optional<ParsedCompoundInterval> parseCompoundIntervalString(
         return {group.begin() + from_idx, group.begin() + to_idx + 1};
     };
 
-    auto range = extract_range(year_month_group, from_kind.kind, to_kind.kind);
+    auto range = extract_range(year_month_group, from_kind, to_kind);
     if (range.empty())
-        range = extract_range(day_time_group, from_kind.kind, to_kind.kind);
+        range = extract_range(day_time_group, from_kind, to_kind);
     if (range.empty())
         return {};
 
@@ -3513,6 +3554,44 @@ static bool isArrayQuantifierPredicate(std::string_view function_name)
     return predicates.contains(function_name);
 }
 
+/// See the declaration for the ambiguity this resolves. The word is read as a column only when an
+/// operator follows it, because otherwise it is the clause keyword in front of a table expression and
+/// the subquery reading is the only one: `(FROM t)`, `(FROM numbers(10) |> LIMIT 1)`,
+/// `(FROM (SELECT 1))`. Even then the reading is taken only if the parentheses really do hold an
+/// expression, which keeps a relation named after an operator readable as one: `1 IN (FROM in)`.
+bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos)
+{
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    /// A clause keyword is always a BareWord token, so a quoted `` `from` `` never starts a FROM clause.
+    auto contents_pos = pos;
+    if (pos->type != TokenType::BareWord || !equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from"))
+        return false;
+    ++pos;
+
+    Expected expected;
+    bool operator_follows = false;
+    for (const auto & [lexeme, unused_operator] : ParserExpressionImpl::operators_table)
+    {
+        auto operator_pos = pos;
+        if (parseOperator(operator_pos, lexeme, expected))
+        {
+            operator_follows = true;
+            break;
+        }
+    }
+
+    if (!operator_follows)
+        return false;
+
+    /// The contents can also be a tuple or carry an alias, so parse them the way RoundBracketsLayer does.
+    ASTPtr contents;
+    ParserExpressionList contents_parser(/*allow_alias_without_as_keyword*/ false);
+    return contents_parser.parse(contents_pos, contents, expected) && contents_pos->type == TokenType::ClosingRoundBracket;
+}
+
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
@@ -4070,6 +4149,14 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         std::optional<String> type_text = parseDataTypeAsText(pos, expected);
         if (!type_text)
             return Action::NONE;
+
+        /// Nothing binds tighter than `::`, so its operand is complete: when it is a literal the
+        /// type reads more precisely as text - `(0.1)::Decimal256(76)`, `0xFF::UInt128` - it goes
+        /// as text, the way `ParserCastOperator` sends a literal written plainly.
+        ASTPtr argument;
+        if (!layers.back()->popOperand(argument))
+            return Action::NONE;
+        layers.back()->pushOperand(exactCastArgument(argument, std::nullopt, *type_text, pos));
 
         layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
         return Action::OPERATOR;
