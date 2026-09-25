@@ -31,6 +31,7 @@
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageJoin.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -193,6 +194,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -2086,6 +2088,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(table_expression_query_info, prewhere_info, planner_context))
                 {
+                    table_expression_data.setHasAdditionalFilter();
                     appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
                     where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
                 }
@@ -3248,12 +3251,25 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         join_node,
         planner_context);
 
-    PreparedJoinStorage prepared_join;
-    bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
+    /// A prepared storage replaces the right-side plan, and with it the `FilterStep`s applying the
+    /// table's row policy and `additional_table_filters`, so such a table is joined as a stream.
+    /// A `Join` table is a prebuilt hash table read as is, so it cannot be filtered at all.
+    const auto * right_table_expression_data = planner_context->getTableExpressionDataOrNull(join_node.getRightTableExpressionNode());
+    bool right_table_has_row_policy = !right_join_tree_query_plan.used_row_policies.empty();
+    bool right_table_has_filters = right_table_has_row_policy
+        || (right_table_expression_data && right_table_expression_data->hasAdditionalFilter());
+
+    PreparedJoinStorage prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
+    if (prepared_join.storage_join && right_table_has_row_policy)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Row policies are not supported for table {} with the Join engine",
+            prepared_join.storage_join->getStorageID().getNameForLogs());
+
+    bool allow_storage_join = !right_table_has_filters
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
-    if (allow_storage_join)
-        prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
+    if (!allow_storage_join)
+        prepared_join = {};
     if (prepared_join)
     {
         bool use_nulls = settings[Setting::join_use_nulls] && isLeftOrFull(join_node.getKind());

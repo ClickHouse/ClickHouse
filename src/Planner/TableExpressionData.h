@@ -255,6 +255,17 @@ public:
         return row_level_filter_actions;
     }
 
+    void setHasAdditionalFilter()
+    {
+        has_additional_filter = true;
+    }
+
+    /// Whether `additional_table_filters` applies to the table.
+    bool hasAdditionalFilter() const
+    {
+        return has_additional_filter;
+    }
+
     void setPrewhereFilterActions(ActionsDAG prewhere_filter_actions_value)
     {
         prewhere_filter_actions = std::move(prewhere_filter_actions_value);
@@ -331,6 +342,9 @@ private:
 
     /// Valid for table, table function
     std::optional<ActionsDAG> row_level_filter_actions;
+
+    /// Valid for table, table function
+    bool has_additional_filter = false;
 
     /// Set only when the column was synthesized because the query reads no column of this
     /// table expression, so no output can legitimately depend on it.

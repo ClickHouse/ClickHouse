@@ -11,6 +11,8 @@
 #include <Storages/TableLockHolder.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 
 namespace DB
 {
@@ -22,6 +24,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -152,7 +155,14 @@ ExecutableFunctionPtr FunctionJoinGet::prepare(const ColumnsWithTypeAndName &) c
 
     Names column_names = storage_join->getKeyNames();
     column_names.push_back(attr_name);
-    context->checkAccess(AccessType::SELECT, storage_join->getStorageID(), column_names);
+    const auto storage_id = storage_join->getStorageID();
+    context->checkAccess(AccessType::SELECT, storage_id, column_names);
+
+    /// The hash table is read as is, so a row policy on the table cannot be applied here any more than in a JOIN.
+    auto row_policy_filter = context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Row policies are not supported for table {} with the Join engine", storage_id.getNameForLogs());
 
     return std::make_unique<ExecutableFunctionJoinGet>(function_name, context, table_lock, storage_join, result_columns);
 }

@@ -1,0 +1,10 @@
+-- no row policy on a Join table
+1	a
+2	b
+3	
+-- a policy created before the table
+1	a
+1	a
+2	b
+3	
+b	\N
