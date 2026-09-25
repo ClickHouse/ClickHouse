@@ -15,6 +15,9 @@ namespace DB::QueryPlanOptimizations
 /// has to be carried through every join above it. Merged into one DAG, such a value is just a node, and
 /// a caller is free to recompute it from the source columns instead of carrying it.
 ///
+/// A step that passes its input through unchanged and only reads a column of it, such as
+/// `BuildRuntimeFilter`, is looked through: it adds nothing to the DAG but the column it reads.
+///
 /// The walk stops at any step whose expressions the DAG cannot represent - an aggregation, a window, an
 /// exchange, but also an `arrayJoin`, which changes the number of rows. Such a step becomes a source:
 /// its output header turns into the DAG's inputs and the subtree below it is left alone, so the columns
@@ -61,6 +64,11 @@ struct MergedPlanDAG
 
     /// Conditions the joins match rows on. A join computes them itself, so they are computed early too.
     ActionsDAG::NodeRawConstPtrs join_condition_nodes;
+
+    /// Values a step reads by name rather than through expressions of its own - the key a
+    /// `BuildRuntimeFilter` step builds its filter from. The step reads them where it is, so they are
+    /// computed early as well.
+    ActionsDAG::NodeRawConstPtrs step_read_nodes;
 
     /// A position in this vector is the source index reported by `getSources`, which is how the sources
     /// of a value are read off a `BitSet`, so this one has to stay indexable.

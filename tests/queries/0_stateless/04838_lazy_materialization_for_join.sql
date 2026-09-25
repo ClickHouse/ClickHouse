@@ -69,6 +69,11 @@ SELECT l.k, l.heavy, r.rheavy, r2.rheavy FROM l LEFT JOIN r ON l.k = r.k LEFT JO
 SELECT '-- a value that can throw is not computed for the rows the join left unmatched';
 SELECT l.k, l.heavy, x.rheavy, x.q FROM l LEFT JOIN (SELECT k, rheavy, intDiv(100, b) AS q FROM r WHERE b > 0) AS x ON l.k = x.k WHERE l.a > 5 ORDER BY l.a, l.k LIMIT 5;
 
+SELECT '-- the build side of a join with a runtime filter is read lazily too';
+SELECT l.k, l.heavy, r.rheavy FROM l JOIN r ON l.k = r.k WHERE l.a > 5 ORDER BY l.a, l.k LIMIT 3 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
+SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%'), countIf(explain LIKE '%BuildRuntimeFilter%') FROM (EXPLAIN compact = 0 SELECT l.k, l.heavy, r.rheavy FROM l JOIN r ON l.k = r.k WHERE l.a > 5 ORDER BY l.a, l.k LIMIT 3 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0);
+SELECT l.k, l.heavy FROM l LEFT ANTI JOIN r ON l.k = r.k AND l.a = r.b WHERE l.a > 5 ORDER BY l.a, l.k LIMIT 3 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
+
 SELECT '-- the same results without the optimization';
 SELECT l.k, l.heavy, concat(r.rheavy, '!'), r.b + 1 FROM l LEFT JOIN r ON l.k = r.k WHERE l.a > 5 ORDER BY l.a, l.k LIMIT 5 SETTINGS join_use_nulls = 1, query_plan_lazy_materialization_for_join = 0;
 SELECT l.k, l.heavy, r.rheavy, r2.rheavy FROM l LEFT JOIN r ON l.k = r.k LEFT JOIN r AS r2 ON r2.k = r.k + 3 WHERE l.a > 10 ORDER BY l.a DESC, l.k LIMIT 6 SETTINGS join_use_nulls = 1, query_plan_lazy_materialization_for_join = 0;

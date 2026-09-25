@@ -252,6 +252,7 @@ LazyFrontier chooseLazyFrontier(
 
     ActionsDAG::NodeRawConstPtrs computed_below_roots = merged.filter_nodes;
     computed_below_roots.append_range(merged.join_condition_nodes);
+    computed_below_roots.append_range(merged.step_read_nodes);
 
     ActionsDAG::NodeRawConstPtrs free_to_cross;
     for (size_t position : eager_output_positions)
