@@ -953,6 +953,12 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     return {nullptr, object_storage_path};
 }
 
+/// `initial_query_id` is shared by every fragment of a plan, and is empty when the client itself sent a secondary query.
+static String logicalQueryId(const ClientInfo & client_info)
+{
+    return client_info.initial_query_id.empty() ? client_info.current_query_id : client_info.initial_query_id;
+}
+
 static void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context, DistributedQueryCancellationPtr cancellation)
 {
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
@@ -962,8 +968,24 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     /// initiator's) gives the task its own per-query state, such as the runtime filter lookup.
     auto task_context = Context::createCopy(context);
     task_context->makeQueryContext();
+
+    {
+        ClientInfo client_info = task_context->getClientInfo();
+        client_info.initial_query_id = logicalQueryId(client_info);
+        client_info.current_query_id = toString(unique_query_id) + "::" + task.task.task_id;
+        client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        task_context->setClientInfo(client_info);
+    }
+
     auto query_scope = QueryScope::create(task_context);
     setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
+
+    /// A query's log row reports the profile counters of its process-list entry's thread group.
+    Stopwatch task_watch(CLOCK_MONOTONIC);
+    auto process_list_entry = task_context->getProcessList().insert(
+        task.task.task_id, sipHash64(task.serialized_query_plan), /*ast=*/ nullptr, task_context,
+        task_watch.getStart(), /*is_internal=*/ true);
+    task_context->setProcessListElement(process_list_entry->getQueryStatus());
 
     /// Only DistributedQueryPlanExecutorLocal reaches here, so the task always runs in-process.
     doExecuteTask(task, object_storage, object_storage_path, toString(unique_query_id), std::move(task_context),
@@ -1789,7 +1811,7 @@ protected:
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
         DistributedQueryTaskDescription task_description;
-        task_description.initial_query_id = context->getCurrentQueryId();
+        task_description.initial_query_id = logicalQueryId(context->getClientInfo());
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
