@@ -405,7 +405,8 @@ public:
         GranuleOffsets granule_offsets;
         /// Sum(rows_per_granule)
         size_t total_rows_per_granule = 0;
-        /// The number of rows was read at first step. May be zero if no read columns present in part.
+        /// The number of rows read at the first step. A step that materializes no on-disk column
+        /// contributes its granule-derived row count, so this is zero only when no granule was read.
         size_t num_read_rows = 0;
 
         /// Diagnostic counters for debugging adjustLastGranule assertions.

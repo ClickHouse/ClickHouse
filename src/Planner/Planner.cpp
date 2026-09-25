@@ -20,7 +20,6 @@
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
-#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -117,7 +116,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
-    extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
@@ -133,11 +131,9 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
-    extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
-    extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
@@ -395,6 +391,8 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     QueryPlanOptimizationSettings optimization_settings(query_context);
     optimization_settings.build_sets = false; // no need to build sets to collect filters
     optimization_settings.materialize_ctes = false; // no need to materialize CTEs to collect filters
+    /// This plan collects pushed-down filters and is never executed
+    optimization_settings.make_distributed_plan = false;
     result_query_plan.optimize(optimization_settings);
 
     FiltersForTableExpressionMap res;
@@ -447,7 +445,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
 {
     query_plan.addInterpreterContext(planner_context->getQueryContext());
-
+    query_plan.addDistributedPlanDecisionContext(planner_context->getMutableQueryContext());
     for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
     {
         if (auto * table_node = table_expression->as<TableNode>())
@@ -1208,6 +1206,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryOptions & select_query_options,
     const QueryNode & query_node,
     UsefulSets & useful_sets)
 {
@@ -1217,6 +1216,11 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
     auto & having_analysis_result = expression_analysis_result.getHaving();
     bool need_finalize = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
+
+    /// `TotalsHavingStep` evaluates `HAVING` itself, so a correlated subquery in `HAVING` has to be
+    /// decorrelated into the plan before the step, the same way `addFilterStep` does it.
+    for (const auto & correlated_subquery : having_analysis_result.correlated_subtrees.subqueries)
+        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
 
     std::optional<ActionsDAG> actions;
     if (having_analysis_result.filter_actions)
@@ -1288,6 +1292,22 @@ bool limitAlwaysReadsTillEnd(
     return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
 }
 
+/// LIMIT BY can be pushed into the sorted-stream pipeline before the final merge, so a direct
+/// WITH TOTALS query must drain its input even when it has ORDER BY. The final LIMIT has a weaker
+/// condition because sorting itself may already consume the full input before LIMIT runs.
+bool limitByAlwaysReadsTillEnd(
+    const QueryAnalysisResult & query_analysis_result, const Settings & settings, const QueryNode & query_node)
+{
+    if (settings[Setting::exact_rows_before_limit]
+        && (query_node.hasLimit() || query_node.hasLimitAfter() || query_node.hasLimitUntil()))
+        return true;
+
+    if (query_node.isGroupByWithTotals())
+        return true;
+
+    return query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree;
+}
+
 void addDistinctStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
@@ -1330,11 +1350,9 @@ void addDistinctStep(QueryPlan & query_plan,
             limit_hint_for_distinct = limit_length + limit_offset;
     }
 
-    SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
-
     auto distinct_step = std::make_unique<DistinctStep>(
         query_plan.getCurrentHeader(),
-        limits,
+        DistinctStep::Settings(settings),
         limit_hint_for_distinct,
         column_names,
         pre_distinct);
@@ -1343,6 +1361,12 @@ void addDistinctStep(QueryPlan & query_plan,
         distinct_step->setStepDescription("Preliminary DISTINCT");
     else
         distinct_step->setStepDescription("DISTINCT");
+
+    /// The `DISTINCT` that runs after the `ORDER BY` sits above the sort in the plan: the sorted order has
+    /// to survive it up to the result.
+    if (!before_order && query_node.hasOrderBy())
+        distinct_step->preserveInputOrder();
+
     query_plan.addStep(std::move(distinct_step));
 }
 
@@ -1404,7 +1428,9 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     UsefulSets & useful_sets)
 {
     NameSet order_by_column_names;
-    SortDescription fill_description;
+    /// `FillingStep` derives the columns to fill from the sort description; this only has to know whether
+    /// there is anything to fill at all, and that every such column is readable here.
+    bool has_fill = false;
 
     const auto & header = query_plan.getCurrentHeader();
 
@@ -1415,11 +1441,11 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             if (!header->findByName(description.column_name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header->dumpNames());
-            fill_description.push_back(description);
+            has_fill = true;
         }
     }
 
-    if (fill_description.empty())
+    if (!has_fill)
         return;
 
     InterpolateDescriptionPtr interpolate_description;
@@ -1502,7 +1528,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     auto filling_step = std::make_unique<FillingStep>(
         query_plan.getCurrentHeader(),
         query_analysis_result.sort_description,
-        std::move(fill_description),
         interpolate_description,
         settings[Setting::use_with_fill_by_sorting_prefix]);
     query_plan.addStep(std::move(filling_step));
@@ -1512,8 +1537,13 @@ void addLimitByStep(
     QueryPlan & query_plan,
     const LimitByAnalysisResult & limit_by_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const QueryNode & query_node,
     bool do_not_skip_offset)
 {
+    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+    const bool always_read_till_end = limitByAlwaysReadsTillEnd(query_analysis_result, settings, query_node);
+
     /// Constness of LIMIT BY limit is validated during query analysis stage
     UInt64 limit_by_length = query_analysis_result.limit_by_length;
     UInt64 limit_by_offset = query_analysis_result.limit_by_offset;
@@ -1538,7 +1568,8 @@ void addLimitByStep(
     if (!is_limit_negative && !is_offset_negative) [[likely]]
     {
         /// LIMIT N [OFFSET M] BY cols - standard positive case
-        auto step = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names);
+        auto step = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names, always_read_till_end);
         query_plan.addStep(std::move(step));
     }
     else if (is_limit_negative && is_offset_negative)
@@ -1555,7 +1586,7 @@ void addLimitByStep(
         if (limit_by_offset > 0)
         {
             auto step1 = std::make_unique<LimitByStep>(
-                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
+                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names, always_read_till_end);
             query_plan.addStep(std::move(step1));
         }
         auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
@@ -1570,7 +1601,8 @@ void addLimitByStep(
         auto step1 = std::make_unique<NegativeLimitByStep>(
             query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
         query_plan.addStep(std::move(step1));
-        auto step2 = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
+        auto step2 = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), limit_by_length, 0, column_names, always_read_till_end);
         query_plan.addStep(std::move(step2));
     }
 }
@@ -1804,15 +1836,23 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
-        addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, true /*do_not_skip_offset*/);
+        addLimitByStep(
+            query_plan,
+            limit_by_analysis_result,
+            query_analysis_result,
+            planner_context,
+            query_node,
+            true /*do_not_skip_offset*/);
     }
 
-    /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
-    /// as it may break `rows_before_limit_at_least` value during the second stage in
-    /// case it also contains LIMIT BY
+    /// Do not apply PreLimit at first stage for LIMIT BY when the full input is required,
+    /// as it may break `rows_before_limit_at_least` during the second stage or drop totals
+    /// from a subquery.
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    if (query_node.hasLimitBy() && settings[Setting::exact_rows_before_limit])
+    if (query_node.hasLimitBy()
+        && (settings[Setting::exact_rows_before_limit]
+            || query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree))
     {
         return;
     }
@@ -2143,9 +2183,9 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         /// Contexts should be copied into the root query plan, because some functions may
         /// be created using them while this subquery plan will be destroyed after
         /// FutureSetFromSubquery::buildSetInplace(). Otherwise, function execution may fail
-        /// with a "Context has expired" exception.
-        for (const auto & context : subquery_plan.getInterpretersContexts())
-            query_plan.addInterpreterContext(context);
+        /// with a "Context has expired" exception. The set source is not united into this plan,
+        /// so its decision contexts are copied the same way.
+        query_plan.takeContextsFrom(subquery_plan);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
     }
 
@@ -2162,119 +2202,6 @@ void addBuildSubqueriesForSetsStepIfNeeded(
             prepared_sets_cache);
         step->setStepDescription("DelayedCreatingSetsStep");
         query_plan.addStep(std::move(step));
-    }
-}
-
-void addBuildSubqueriesForMaterializedCTEsIfNeeded(
-    QueryPlan & query_plan,
-    const SelectQueryOptions & select_query_options,
-    const OrderedMaterializedCTEs & materialized_ctes
-)
-{
-    /// Logical plans are built for serialization to a remote node. `DelayedMaterializingCTEsStep`
-    /// is stripped on the way out (`Serialization.cpp`), and the only surviving side effect of
-    /// building it here would be to populate the shared `MaterializedCTE::plan` with a logical
-    /// (serialize-only) version that the non-logical planner pass would then reuse for local
-    /// execution and crash on. The materialization is owned by the non-logical pass; remote
-    /// nodes read from the temp storage by name.
-    if (select_query_options.build_logical_plan)
-        return;
-
-    if (materialized_ctes.empty())
-        return;
-
-    // The main idea of the algorithm is to unite plans for Materialized CTEs of the same level
-    // with the main query plan by MaterializingCTEsStep.
-    //
-    // This allows to ensure following properties:
-    // 1) All CTEs are executed before the main query.
-    // 2) If CTE A depends on CTE B, then A will be executed after B, because A will be on the next level after B.
-    // 3) CTEs on the same level are independent.
-    // 3) CTEs of the same level will be executed in the same MaterializingCTEsStep, so they will be executed in parallel.
-    // 4) Materialized CTEs are executed only once.
-    //
-    // Example of query plan structure for query with 2 levels of CTEs:
-    //
-    //                                  ┌───────────────────────┐
-    //                                  │                       │
-    //                             ┌────│ MaterializingCTEsStep │────────────────────────────┐
-    //                             │    │                       │         │                  │
-    //                             │    └───────────────────────┘         │                  │
-    //                             │                                      │                  │
-    //                             │                                      │                  │
-    //                 ┌───────────▼───────────┐                 ┌────────▼───────┐ ┌────────▼───────┐
-    //                 │                       │                 │                │ │                │
-    //        ┌────────│ MaterializingCTEsStep │─────────┐       │ CTE (level: 0) │ │ CTE (level: 0) │
-    //        │        │                       │         │       │                │ │                │
-    //        │        └───────────────────────┘         │       └────────────────┘ └────────────────┘
-    //        │                                          │
-    //        │                                          │
-    // ┌──────▼─────┐                           ┌────────▼───────┐
-    // │            │                           │                │
-    // │ Query Plan │                           │ CTE (level: 1) │
-    // │            │                           │                │
-    // └────────────┘                           └────────────────┘
-    //
-    // The CTEs are added as DelayedMaterializingCTEsStep nodes — one per level — so that
-    // resolveMaterializingCTEs can skip already-materialized CTEs. This is important when
-    // buildOrderedSetInplace runs a subquery plan that contains CTEs: by the time the main
-    // plan's resolveMaterializingCTEs fires, is_planned is already true for those CTEs
-    // so they won't be materialized a second time.
-    //
-    // The level structure is preserved: for each level we push one DelayedMaterializingCTEsStep
-    // on top of the current plan, wrapping it the same way the old eager approach did with
-    // MaterializingCTEsStep. resolveMaterializingCTEs processes nodes post-order, so the inner
-    // (lower-level) step is resolved before the outer one, guaranteeing that a CTE at level N
-    // is always materialized before the CTE at level N-1 that depends on it.
-    for (const auto & cte_level : materialized_ctes)
-    {
-        std::vector<MaterializedCTEPtr> ctes;
-        ctes.reserve(cte_level.size());
-
-        for (const auto & cte_node : cte_level)
-        {
-            auto * cte_table_node = cte_node->as<TableNode>();
-            auto materialized_cte = cte_table_node->getMaterializedCTE();
-            if (!materialized_cte->hasPlanOrBuilt())
-            {
-                auto cte_subquery = cte_table_node->getMaterializedCTESubquery();
-                /// A by-name reference carries no subquery, but a standalone pipeline still needs a
-                /// gate for it, and the handle alone is enough to build one. The writer stays with
-                /// whoever holds the subquery.
-                if (!cte_subquery && select_query_options.force_materialize_cte)
-                {
-                    ctes.push_back(materialized_cte);
-                    continue;
-                }
-                if (!cte_subquery)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "CTE '{}' does not have query tree, but was not planned yet",
-                        materialized_cte->cte_name);
-
-                auto cte_options = select_query_options.subquery();
-                Planner cte_planner(
-                    cte_subquery,
-                    cte_options,
-                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
-                cte_planner.buildQueryPlanIfNeeded();
-
-                auto cte_plan = std::move(cte_planner).extractQueryPlan();
-
-                auto step = std::make_unique<MaterializingCTEStep>(
-                    cte_plan.getCurrentHeader(),
-                    materialized_cte);
-                step->setStepDescription("Materializing CTE: " + materialized_cte->cte_name, 100);
-                cte_plan.addStep(std::move(step));
-                materialized_cte->plan = std::make_unique<QueryPlan>(std::move(cte_plan));
-            }
-
-            ctes.push_back(materialized_cte);
-        }
-
-        auto delayed_step = std::make_unique<DelayedMaterializingCTEsStep>(
-            query_plan.getCurrentHeader(),
-            std::move(ctes));
-        query_plan.addStep(std::move(delayed_step));
     }
 }
 
@@ -2341,6 +2268,37 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
     query_plan.addStep(std::move(filter_step));
+}
+
+/// Replace a header that holds nothing but row-count-only columns (or no column at all) with one
+/// canonical materialized marker, so that the row count has a column to live in.
+void addRowCountMarkerStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
+{
+    ColumnIdentifierSet row_count_only_identifiers;
+    for (const auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    {
+        if (const auto & column_identifier = table_expression_data.getRowCountOnlyColumnIdentifier())
+            row_count_only_identifiers.insert(*column_identifier);
+    }
+
+    if (row_count_only_identifiers.empty())
+        return;
+
+    const auto & header = query_plan.getCurrentHeader();
+    for (const auto & column : *header)
+    {
+        if (!row_count_only_identifiers.contains(column.name))
+            return;
+    }
+
+    ActionsDAG marker_dag(header->getNamesAndTypesList());
+    auto marker_type = std::make_shared<DataTypeUInt8>();
+    marker_dag.getOutputs()
+        = {&marker_dag.materializeNode(marker_dag.addColumn(marker_type->createColumnConst(0, 0u), marker_type, "__row_count_marker"))};
+
+    auto marker_step = std::make_unique<ExpressionStep>(header, std::move(marker_dag));
+    marker_step->setStepDescription("Row count marker for zero-column mergeable state");
+    query_plan.addStep(std::move(marker_step));
 }
 
 void addReadFromQueryResultCacheStep(
@@ -2544,7 +2502,7 @@ void Planner::buildPlanForUnionNode()
     if (is_distinct)
     {
         /// Add distinct transform
-        SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
+        DistinctStep::Settings distinct_settings(settings);
 
         /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
         /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
@@ -2555,7 +2513,7 @@ void Planner::buildPlanForUnionNode()
         {
             auto pre_distinct_step = std::make_unique<DistinctStep>(
                 query_plan.getCurrentHeader(),
-                limits,
+                distinct_settings,
                 0 /*limit hint*/,
                 query_plan.getCurrentHeader()->getNames(),
                 true /*pre distinct*/);
@@ -2565,7 +2523,7 @@ void Planner::buildPlanForUnionNode()
 
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
-            limits,
+            std::move(distinct_settings),
             0 /*limit hint*/,
             query_plan.getCurrentHeader()->getNames(),
             false /*pre distinct*/);
@@ -2721,6 +2679,12 @@ void Planner::buildPlanForQueryNode()
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
 
+    /// The kill switch for a query joining multiple tables runs first: the checks below throw when
+    /// `enable_parallel_replicas = 2`, and a query for which parallel replicas are already disabled
+    /// must be executed without them instead of failing with a parallel-replicas-only exception.
+    /// It runs after `collectSets` so that the prepared sets it has to reach are already collected.
+    disableParallelReplicasForMultipleTablesQueryIfNeeded(query_tree, planner_context);
+
     if (query_context->canUseTaskBasedParallelReplicas())
     {
         if (!settings[Setting::parallel_replicas_allow_in_with_subquery] && planner_context->getPreparedSets().hasSubqueries())
@@ -2850,17 +2814,6 @@ void Planner::buildPlanForQueryNode()
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
-    if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
-        return;
-
-    PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
-    QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
-    auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
-        query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-        planner_context,
-        query_processing_info,
-        join_tree_query_plan.source_constants);
-
     auto useful_sets = std::move(join_tree_query_plan.useful_sets);
 
     for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
@@ -2871,6 +2824,23 @@ void Planner::buildPlanForQueryNode()
         if (table_expression_data.getRowLevelFilterActions())
             appendSetsFromActionsDAG(*table_expression_data.getRowLevelFilterActions(), useful_sets);
     }
+
+    if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
+    {
+        /// The reader evaluates PREWHERE and row-level filter expressions itself, so the sets they
+        /// reference need their sources attached even though no expression step is added past here.
+        if (!select_query_options.only_analyze)
+            addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);
+        return;
+    }
+
+    PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
+    QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
+    auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
+        query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+        planner_context,
+        query_processing_info,
+        join_tree_query_plan.source_constants);
 
     if (query_processing_info.isIntermediateStage())
     {
@@ -3007,7 +2977,7 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isGroupByWithTotals())
             {
-                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, query_node, useful_sets);
+                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_options, query_node, useful_sets);
                 having_executed = true;
             }
 
@@ -3137,7 +3107,13 @@ void Planner::buildPlanForQueryNode()
                 select_query_options,
                 "Before LIMIT BY",
                 useful_sets);
-            addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, false /*do_not_skip_offset*/);
+            addLimitByStep(
+                query_plan,
+                limit_by_analysis_result,
+                query_analysis_result,
+                planner_context,
+                query_node,
+                false /*do_not_skip_offset*/);
         }
 
         /// WITH FILL / INTERPOLATE must run only on the finalizing node, over the merged stream,
@@ -3206,6 +3182,11 @@ void Planner::buildPlanForQueryNode()
         // For additional_result_filter setting
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
+
+    /// A header carrying nothing but row-count-only columns cannot express "N rows" across a
+    /// mergeable-stage boundary, and both sides must derive the same header.
+    if (!query_processing_info.isFinalizingStage() && query_plan.isInitialized())
+        addRowCountMarkerStepIfNeeded(query_plan, planner_context);
 
     const auto & client_info = query_context->getClientInfo();
 

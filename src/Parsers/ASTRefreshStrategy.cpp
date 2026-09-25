@@ -74,8 +74,10 @@ void ASTRefreshStrategy::formatImpl(
         ostr << " SETTINGS ";
         settings->format(ostr, f_settings, state, frame);
     }
-    if (append)
+    if (isAppend())
         ostr << " APPEND";
+    if (isIncremental())
+        ostr << " INCREMENTAL";
 }
 
 void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
@@ -87,8 +89,10 @@ void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
     w.writeChild("spread", spread);
     w.writeChild("settings", settings);
     w.writeChild("dependencies", dependencies);
-    if (append)
+    if (isAppend())
         w.writeBool("append", true);
+    if (isIncremental())
+        w.writeBool("incremental", true);
 }
 
 void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
@@ -98,7 +102,8 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'schedule_kind' field in `RefreshStrategy` during AST JSON deserialization");
     String schedule_kind_str = r.getString("schedule_kind");
     auto kind_opt = magic_enum::enum_cast<RefreshScheduleKind>(schedule_kind_str);
-    if (!kind_opt)
+    /// `UNKNOWN` marks an unset schedule rather than naming one; every parsed `REFRESH` clause is `AFTER` or `EVERY`.
+    if (!kind_opt || *kind_opt == RefreshScheduleKind::UNKNOWN)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown RefreshScheduleKind: '{}'", schedule_kind_str);
     schedule_kind = *kind_opt;
     /// `period`/`offset`/`spread` are `ASTTimeInterval`, `settings` an `ASTSetQuery`, and `dependencies`
@@ -126,7 +131,9 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
                     "`RefreshStrategy` 'dependencies' must contain only table identifiers during AST JSON deserialization");
         set(dependencies, dependencies_child);
     }
-    append = r.getBool("append");
+    const bool append = r.getBool("append");
+    const bool incremental = r.getBool("incremental");
+    mode = incremental ? RefreshMode::AppendIncremental : append ? RefreshMode::AppendFull : RefreshMode::Replace;
 
     /// Mirror `ParserRefreshStrategy`'s schedule-shape invariants. `REFRESH EVERY <interval>` always
     /// carries a period. `REFRESH AFTER <interval>` carries a period, but the `REFRESH DEPENDS ON ...`
