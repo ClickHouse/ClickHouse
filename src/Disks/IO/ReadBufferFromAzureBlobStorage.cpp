@@ -117,13 +117,15 @@ void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
 
     read_until_position = position;
 
-    /// The current download was opened under the previous bound, so it is closed here and the
-    /// next read opens one under the new bound. Where the new download starts depends on what is
-    /// buffered: `offset` is the end of the buffered bytes, and the download is reopened there.
-    if (!initialized)
-        return;
-
+    /// The current download was opened under the previous bound, so it is closed here, releasing
+    /// the response, and the next read opens one under the new bound. Where the new download
+    /// starts depends on what is buffered: `offset` is the end of the buffered bytes, and the
+    /// download is reopened there.
     initialized = false;
+    data_stream.reset();
+
+    /// The buffered bytes are reconciled with the new bound even when the download was already
+    /// closed by an earlier bound change: that change may have kept bytes the new bound excludes.
 
     /// The buffered bytes all lie within the new bound (or the bound was lifted): they are kept.
     if (position == 0 || static_cast<off_t>(position) >= offset)

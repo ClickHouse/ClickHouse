@@ -218,4 +218,29 @@ TEST(AzureReadUntilPositionChange, SameBoundSetTwice)
     ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0}));
 }
 
+/// Two bound changes before the next read: the first raises the bound and keeps the buffered
+/// bytes 32..63 of the response for 0..63, the second lowers it to 40 before anything else is read.
+/// The second change must still cut the buffered bytes past 40, although the download was already
+/// closed by the first one.
+TEST(AzureReadUntilPositionChange, BoundRaisedThenLoweredBeforeNextRead)
+{
+    auto endpoint = std::make_shared<BlobEndpoint>(/* served_size */ 100, /* advertised_size */ 100, /* max_response_size */ 100);
+    auto buffer = makeBuffer(endpoint);
+    buffer->setReadUntilPosition(64);
+
+    std::string head(32, '\0');
+    ASSERT_EQ(buffer->read(head.data(), head.size()), static_cast<size_t>(32));
+    assertCountsFrom(head, 0);
+
+    buffer->setReadUntilPosition(80);
+    buffer->setReadUntilPosition(40);
+
+    std::string tail;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(tail, *buffer));
+    ASSERT_EQ(tail.size(), static_cast<size_t>(8));
+    assertCountsFrom(tail, 32);
+    ASSERT_EQ(buffer->getPosition(), 40);
+    ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0}));
+}
+
 #endif
