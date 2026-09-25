@@ -16,7 +16,10 @@ T checkAndGetLiteralArgument(const ASTPtr & arg, const String & arg_name)
 {
     if (arg)
     {
-        if (const auto * func = arg->as<const ASTFunction>(); func && func->name == "_CAST")
+        /// A table function's arguments are parsed before the analyzer resolves them, as `DESCRIBE
+        /// TABLE` does, so a hand-written `_CAST` reaches this with any number of arguments.
+        if (const auto * func = arg->as<const ASTFunction>();
+            func && func->name == "_CAST" && func->arguments && !func->arguments->children.empty())
             return T(checkAndGetLiteralArgument<T>(func->arguments->children.at(0), arg_name));
 
         if (arg->as<ASTLiteral>())
