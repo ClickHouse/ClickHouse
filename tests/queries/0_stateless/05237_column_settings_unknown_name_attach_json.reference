@@ -1,10 +1,5 @@
---- a full-definition ATTACH states its settings, so they are checked ---
+UNKNOWN_SETTING
+attach_accepted	1
 UNKNOWN_SETTING
 UNKNOWN_SETTING
---- a settable name is still accepted on the same path ---
-1
---- the JSON AST dialect reaches the same check ---
-1
-1
---- and a settable name still goes through it ---
-1
+json_accepted	1
