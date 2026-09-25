@@ -1890,12 +1890,72 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
             }
         }
 
-        /// Mark the nested table as available so the wrapper becomes queryable on this replica (the
-        /// database engine only exposes a table once its nested table exists). Data arrives through
-        /// ClickHouse replication of the shared replicated tree, even on replicas that never consume.
-        if (auto nested = materialized_storage->tryGetNested(); nested && !materialized_storage->hasNested())
-            materialized_storage->set(nested);
+        /// The nested table is deliberately not marked as available here: it is still empty (or only partially
+        /// replicated) until the active worker has loaded the whole snapshot and this replica has fetched it.
+        /// `markCaughtUpNestedTablesAvailable` publishes it once that is the case.
     }
+}
+
+
+bool PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable()
+{
+    /// In coordinated mode the nested tables are created empty by `ensureNestedTablesExist` on every replica,
+    /// and the data (including the initial snapshot) arrives through ClickHouse replication of the shared tree.
+    /// The `has_nested` bit of the wrapper is what the database engine treats as "this table is fully available
+    /// locally": it exposes the wrapper to `SELECT` / `SHOW TABLES` and includes the table in `BACKUP`. So, as in
+    /// the plain mode (where `loadFromSnapshot` sets it only after the local table is populated), it must not be
+    /// set before this replica holds the complete initial snapshot. That is the case once the snapshot_completed
+    /// marker exists (the active worker publishes it only after every table's snapshot is durably inserted) and
+    /// this replica has executed every replication-log entry that was present at that moment.
+    /// Returns whether every nested table that exists is available.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable");
+
+    bool has_pending = false;
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+        if (!materialized_storage->hasNested() && materialized_storage->tryGetNested())
+            has_pending = true;
+
+    if (!has_pending)
+        return true;
+
+    if (!isInitialSnapshotCompleted())
+        return false;
+
+    /// Bound the wait per table, so the coordination task (which also supervises the consumer) is not
+    /// blocked for long; a table that has not caught up yet is retried on the next run.
+    static constexpr UInt64 catch_up_wait_ms = 1000;
+
+    bool all_available = true;
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+    {
+        if (materialized_storage->hasNested())
+            continue;
+
+        auto nested = materialized_storage->tryGetNested();
+        if (!nested)
+            continue;
+
+        /// `SharedReplacingMergeTree` keeps its parts in shared storage, so the marker alone means the data is
+        /// visible to every replica. A `ReplicatedReplacingMergeTree` replica has to fetch the parts itself:
+        /// the lightweight sync pulls the replication log (which already contains every snapshot insert, as the
+        /// marker was written after them) and waits until the fetches of the pulled entries are executed.
+        if (auto * replicated = nested->as<StorageReplicatedMergeTree>())
+        {
+            if (!replicated->waitForProcessingQueue(catch_up_wait_ms, SyncReplicaMode::LIGHTWEIGHT, {}))
+            {
+                LOG_DEBUG(log, "Nested table for `{}`.`{}` has not caught up with the initial snapshot yet",
+                          postgres_database, table_name);
+                all_available = false;
+                continue;
+            }
+        }
+
+        materialized_storage->set(nested);
+        LOG_INFO(log, "Nested table for `{}`.`{}` caught up with the initial snapshot and is now available",
+                 postgres_database, table_name);
+    }
+
+    return all_available;
 }
 
 
@@ -2013,6 +2073,24 @@ void PostgreSQLReplicationHandler::coordinationFunc()
         tryLogCurrentException(log);
         releaseLeadershipAfterFailedStartup();
         reschedule_ms = retry_poll_ms;
+    }
+
+    /// Both the active worker and the standbys publish their nested tables once they hold the complete
+    /// initial snapshot. This is separate from the leadership handling above: failing to check it (e.g. a
+    /// transient Keeper error, or a nested table that is read-only while starting up) must not release the
+    /// leadership; it is simply checked again on the next run.
+    if (!stop_synchronization)
+    {
+        try
+        {
+            if (!markCaughtUpNestedTablesAvailable())
+                reschedule_ms = std::min(reschedule_ms, retry_poll_ms);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot check whether the nested tables caught up with the initial snapshot");
+            reschedule_ms = std::min(reschedule_ms, retry_poll_ms);
+        }
     }
 
     if (!stop_synchronization)

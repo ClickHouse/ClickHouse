@@ -3963,3 +3963,56 @@ def test_coordinated_schema_drift_aborts_startup_instead_of_skipping(started_clu
         check_tables_are_synchronized(node, "drift_table")
         check_tables_are_synchronized(node, "stable_table")
         assert int(node.query("SELECT count() FROM test_database.drift_table")) == 100
+
+
+def test_standby_exposes_table_only_after_initial_snapshot(started_cluster):
+    # A standby creates its (empty) nested replica of the shared tree right away, but it must not expose
+    # the table to user queries (or to BACKUP) until the active worker has finished the initial snapshot
+    # and the standby has fetched it: otherwise a SELECT on the standby observes empty or partial data.
+    pause_line = "Pausing before marking the initial snapshot as completed"
+    standby_line = "Another replica is the active worker, staying on standby"
+    failpoint = "materialized_postgresql_pause_before_marking_snapshot_completed"
+
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    pause_baseline = count_in_all_logs(instance, pause_line)
+    standby_baseline = count_in_all_logs(instance2, standby_line)
+    try:
+        # The first replica becomes the active worker, loads the snapshot and parks before the marker.
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        wait_for_new_log_occurrence(instance, pause_line, pause_baseline, timeout=90)
+        assert wait_for_leader(instance) == "coord_instance1"
+
+        # The second replica joins as a standby: its nested table exists (the coordination task only
+        # starts after it was created), but the snapshot is not complete, so the table stays hidden.
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        wait_for_new_log_occurrence(instance2, standby_line, standby_baseline, timeout=90)
+        for _ in range(3):
+            assert "UNKNOWN_TABLE" in instance2.query_and_get_error(
+                "SELECT count() FROM test_database.test_table"
+            )
+            time.sleep(1)
+        assert not marker_znode_exists(instance)
+
+        # Once the worker publishes the marker, the standby catches up and exposes the complete table.
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        wait_for_marker(instance)
+    finally:
+        try:
+            instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 100

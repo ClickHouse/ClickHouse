@@ -209,6 +209,10 @@ private:
     /// the snapshot, and it propagates to the standbys through ClickHouse replication.
     void ensureNestedTablesExist();
 
+    /// Coordinated mode: mark the nested tables available on this replica once it holds the complete initial
+    /// snapshot (the marker exists and the local replica has caught up). Returns whether all of them are.
+    bool markCaughtUpNestedTablesAvailable();
+
     /// Clear the (already existing) nested tables before redoing the initial snapshot after a
     /// mid-snapshot failover. Only used when coordination is enabled. The nested tables are
     /// Replicated/SharedReplacingMergeTree, so the TRUNCATE propagates to every replica.
