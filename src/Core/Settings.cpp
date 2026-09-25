@@ -1784,24 +1784,35 @@ Split parts ranges into intersecting and non intersecting during FINAL optimizat
 Split intersecting parts ranges into layers during FINAL optimization
 )", 0) \
     DECLARE(Bool, apply_row_policy_after_final, true, R"(
-When enabled, row policies and PREWHERE are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
+When enabled, row policies are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
+When the policy is deferred this way, PREWHERE is deferred with it so that the policy is still applied first
+(see `apply_prewhere_after_final` for deferring PREWHERE unconditionally).
 When disabled, row policies are applied before FINAL, which can cause different results when the policy
 filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
 
-If the row policy expression depends only on columns in ORDER BY, it will still be applied before FINAL as an optimization,
-since such filtering cannot affect the deduplication result.
+If the row policy expression is deterministic and depends only on non-floating-point columns in ORDER BY, it will still be
+applied before FINAL as an optimization, since such filtering cannot affect the deduplication result. Floating-point columns
+or columns containing floating-point (such as `Tuple(Float64, ...)`, `Array(Float64)`, `Nullable(Float64)`, etc.)
+are excluded because `-0.0` and `0.0` deduplicate as one key while a policy condition can tell them apart.
 
 Possible values:
 
-- 0 — Row policy and PREWHERE are applied before FINAL (default).
-- 1 — Row policy and PREWHERE are applied after FINAL.
+- 0 — Row policy is applied before FINAL.
+- 1 — Row policy is applied after FINAL (default).
 )", 0) \
     DECLARE(Bool, apply_prewhere_after_final, false, R"(
 When enabled, PREWHERE conditions are applied after FINAL processing for ReplacingMergeTree and similar engines.
 This can be useful when PREWHERE references columns that may have different values across duplicate rows,
 and you want FINAL to select the winning row before filtering. When disabled, PREWHERE is applied during reading.
-Note: If apply_row_level_security_after_final is enabled and row policy uses non-sorting-key columns, PREWHERE will also
-be deferred to maintain correct execution order (row policy must be applied before PREWHERE).
+Note: PREWHERE is also deferred, regardless of this setting, whenever a row policy is deferred by
+`apply_row_policy_after_final`, because the row policy must be applied before PREWHERE. That happens when the
+policy expression is non-deterministic, or reads a column that is not in ORDER BY, or reads an ORDER BY column
+whose type is or contains a floating-point type.
+
+Possible values:
+
+- 0 — PREWHERE is applied before FINAL, unless a deferred row policy defers it too (default).
+- 1 — PREWHERE is applied after FINAL.
 )", 0) \
     DECLARE(Bool, defer_partition_pruning_after_final, true, R"(
 When enabled (default), partition pruning is skipped for `FINAL` queries on tables whose
