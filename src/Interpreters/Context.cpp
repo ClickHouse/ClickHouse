@@ -8879,18 +8879,28 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
-bool Context::canUseTaskBasedParallelReplicas() const
+static bool canUseTaskBasedParallelReplicasImpl(const Settings & settings_ref, bool enabled)
 {
-    const auto & settings_ref = getSettingsRef();
-
     if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
         return false;
 
-    return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+    return enabled
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && (settings_ref[Setting::max_parallel_replicas] > 1
-            || !settings_ref[Setting::parallel_replicas_prefer_local_replica])
+            || !settings_ref[Setting::parallel_replicas_prefer_local_replica]);
+}
+
+bool Context::canUseTaskBasedParallelReplicas() const
+{
+    const auto & settings_ref = getSettingsRef();
+    return canUseTaskBasedParallelReplicasImpl(settings_ref, settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
         && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
+}
+
+bool Context::canUseTaskBasedParallelReplicasForClusterEngines() const
+{
+    const auto & settings_ref = getSettingsRef();
+    return canUseTaskBasedParallelReplicasImpl(settings_ref, settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0);
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const

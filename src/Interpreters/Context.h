@@ -2036,6 +2036,10 @@ public:
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
     bool canUseTaskBasedParallelReplicas() const;
+    /// Unlike `canUseTaskBasedParallelReplicas`, ignores `automatic_parallel_replicas_mode`: the automatic mode
+    /// only decides for `MergeTree` reads, so a cluster engine (`s3`, `url`, a table of a data lake catalog, ...)
+    /// uses parallel replicas whenever they are enabled.
+    bool canUseTaskBasedParallelReplicasForClusterEngines() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
     bool canUseParallelReplicasCustomKey() const;

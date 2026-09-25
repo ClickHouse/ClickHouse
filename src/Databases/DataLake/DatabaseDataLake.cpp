@@ -909,7 +909,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
     const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && query_settings[Setting::parallel_replicas_for_cluster_engines]
-        && context_->canUseTaskBasedParallelReplicas()
+        && context_->canUseTaskBasedParallelReplicasForClusterEngines()
         && !context_->isDistributed();
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
