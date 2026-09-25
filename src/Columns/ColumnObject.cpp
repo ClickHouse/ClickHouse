@@ -2546,7 +2546,7 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
                     rewritten_chars.insert(row_begin + header_size, row_begin + row_size);
                     /// `getDataAt` hands back the value without the terminating zero `ColumnString`
                     /// stores after every row; the offsets below must still count it.
-                    rewritten_chars.push_back(0);
+                    rewritten_chars.push_back(static_cast<UInt8>(0));
                     rewritten_offsets.push_back(rewritten_chars.size());
                 }
                 shared_variant.getChars().swap(rewritten_chars);
