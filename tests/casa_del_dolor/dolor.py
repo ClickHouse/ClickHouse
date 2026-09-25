@@ -415,6 +415,38 @@ def grep_server_logs(server, substring: str) -> list[str]:
     return lines
 
 
+# A log record opens with `<date> <time> [ <tid> ] {<query-id>} <Level> <Logger>: `, and only
+# there does a level name belong to the record itself. Anywhere else it is message text.
+LOG_RECORD_RE = re.compile(
+    r"^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+ \[ *\d+ *\] (?:\{[^}]*\} )?"
+    r"<(?P<level>\w+)> (?P<message>.*)$"
+)
+
+# A record quotes the query it is about after one of these, so everything from the marker on
+# is the client's text rather than the server's. Same markers, and the same before-the-match
+# rule, as `FuzzerLogParser.QUERY_TEXT_MARKERS` in `ci/jobs/scripts/log_parser.py`.
+QUERY_TEXT_MARKERS = ("(in query:", "(query:")
+
+
+def server_log_records(server, substring: str):
+    """Yield `(level, message, line)` for the log records matching `substring`.
+
+    `grep_in_log` is a pre-filter only: it matches anywhere on the line, and a server echoes
+    the statement it is reporting on, so a fuzzed `SELECT '<Fatal>', 'Logical error: x'` lands
+    in the log verbatim. Lines that are not a record header at all (stack frames, a message's
+    own continuation) are dropped, and the quoted query is cut off the message, so callers
+    test the server's own words.
+    """
+    for line in grep_server_logs(server, substring):
+        record = LOG_RECORD_RE.match(line)
+        if record is None:
+            continue
+        message = record.group("message")
+        for marker in QUERY_TEXT_MARKERS:
+            message = message.split(marker, 1)[0]
+        yield record.group("level"), message, line
+
+
 # Attempts to stop Distributed sends before a shutdown, as the stress suite does.
 DISTRIBUTED_SENDS_STOP_ATTEMPTS = 30
 DISTRIBUTED_SENDS_STOP_TIMEOUT = 10
@@ -1029,16 +1061,23 @@ for server in servers:
             "scheduled restart earlier in the run"
         )
         good_exit = False
-    if grep_server_logs(server, "Logical error:"):
+    # The server reports one at `<Error>`, or at `<Fatal>` when it took the process down.
+    # Only its own message counts: a fuzzed literal reaches the log through the query text
+    # every record quotes, and would otherwise fail a run that never had an exception.
+    if any(
+        level in ("Error", "Fatal") and "Logical error:" in message
+        for level, message, _ in server_log_records(server, "Logical error:")
+    ):
         logging.error(f"Logical error in instance '{server.name}'")
         good_exit = False
+    # Likewise a level is only a level in the record header, never in a message body.
     # `grep_in_log` reads the rotated logs too, so the expected kill fatals from every
     # earlier forced restart are still in scope here. Filter them line by line rather than
     # dropping the whole match: a genuine fatal logged next to one must still fail the run.
     unexpected_fatals = [
         line
-        for line in grep_server_logs(server, "<Fatal>")
-        if line.strip() and EXPECTED_KILL_FATAL not in line
+        for level, message, line in server_log_records(server, "<Fatal>")
+        if level == "Fatal" and EXPECTED_KILL_FATAL not in message
     ]
     if unexpected_fatals:
         logging.error(
