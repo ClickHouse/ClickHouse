@@ -1,4 +1,4 @@
--- hasTokenPrefix
+-- hasAnyTokenPrefix
 1
 0
 0
@@ -11,7 +11,15 @@
 1
 1
 0
--- hasTokenLike
+1
+0
+1
+0
+1
+0
+1
+0
+-- hasAnyTokenLike
 1
 0
 1
@@ -26,7 +34,23 @@
 1
 0
 1
--- hasTokenMatch
+1
+0
+0
+0
+1
+-- hasAllTokenLike
+1
+1
+0
+1
+0
+1
+0
+1
+0
+0
+-- hasAnyTokenRegexp
 1
 0
 1
@@ -36,6 +60,14 @@
 0
 1
 1
+1
+0
+1
+1	0
+-- empty array
+0	0	0	0
+\N	\N	\N	\N
+0	Nullable(UInt8)
 -- types
 1	Nullable(UInt8)
 \N
@@ -47,25 +79,36 @@
 0
 1
 1
+1	Nullable(UInt8)
 -- tokenizers
 0
 1
 1
 1
 1
+1
 -- same as arrayExists over tokens
 0	0	0	800
+0	0	0	0	118
 -- many blocks and threads with a stateful tokenizer
 0	0	0	7110	7122	7122
+0	0	13880	3037
 -- arrays in a full column, the first row included
-0	1	1	1
-1	0	0	0
-2	1	0	0
-3	1	1	1
-4	0	0	0
+0	1	1	1	1
+1	0	0	0	0
+2	1	0	0	0
+3	1	1	1	1
+4	0	0	0	0
 0	1
 1	0
 2	0
 0	1
 1	0
+-- hasAllTokenLike starts every row afresh
+0	0
+1	0
+2	1
+0	0
+1	0
+2	1
 -- errors

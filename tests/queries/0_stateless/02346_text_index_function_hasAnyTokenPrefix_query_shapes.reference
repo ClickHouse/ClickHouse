@@ -9,6 +9,9 @@ prod	1
 env:dev	0
 env:prod-eu	0
 prod	1
+env:dev	0
+env:prod-eu	1
+prod	0
 -- HAVING on the grouping key: the index tokenizer only if the condition is pushed down to the table
 1
 2
@@ -16,6 +19,7 @@ prod	1
 -- ALTER TABLE DELETE: splitByNonAlpha, unless the tokenizer is explicit
 48
 56
+48
 -- lower preprocessor: the raw values in every shape
 0
 8

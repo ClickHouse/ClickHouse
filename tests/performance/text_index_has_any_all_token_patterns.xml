@@ -1,0 +1,54 @@
+<test>
+  <settings>
+    <use_query_condition_cache>0</use_query_condition_cache>
+    <max_threads>4</max_threads>
+  </settings>
+
+  <create_query>
+    CREATE TABLE tab
+    (
+        id     UInt64,
+        message String,
+        INDEX  idx(message) TYPE text(tokenizer = 'splitByNonAlpha')
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+  </create_query>
+
+  <!-- Log-like messages, one in 10000 mentions a charge. -->
+  <fill_query>
+    INSERT INTO tab
+    SELECT
+        number,
+        if(number % 10000 = 0,
+            concat('payment ', toString(number), ' charged twice for user ', toString(number % 997)),
+            concat('request ', toString(number), ' served in ', toString(number % 1000), ' ms for user ', toString(number % 997), ' status ok'))
+    FROM numbers(3000000)
+  </fill_query>
+  <fill_query>OPTIMIZE TABLE tab FINAL</fill_query>
+
+  <query>SELECT count() FROM tab WHERE hasAnyTokenPrefix(message, 'charg')</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(message))</query>
+
+  <query>SELECT count() FROM tab WHERE hasAnyTokenPrefix(message, ['charg', 'refund'])</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg') OR startsWith(t, 'refund'), tokens(message))</query>
+
+  <query>SELECT count() FROM tab WHERE hasAnyTokenLike(message, 'ch%ed')</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(message))</query>
+
+  <query>SELECT count() FROM tab WHERE hasAllTokenLike(message, ['charg%', 'twice'])</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> like(t, 'charg%'), tokens(message)) AND arrayExists(t -> like(t, 'twice'), tokens(message))</query>
+
+  <!-- Every row has 'user', so the index selects every row and the hint is dropped. -->
+  <query>SELECT count() FROM tab WHERE hasAllTokenLike(message, ['user', 'charg%'])</query>
+  <query>SELECT count() FROM tab WHERE hasAnyTokenLike(message, 'user') AND hasAnyTokenLike(message, 'charg%')</query>
+
+  <query>SELECT count() FROM tab WHERE hasAnyTokenRegexp(message, '^charg(ed|ing)$')</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message))</query>
+
+  <!-- No literal: the regular expression is checked against every token of the dictionary. -->
+  <query>SELECT count() FROM tab WHERE hasAnyTokenRegexp(message, '^[a-c][a-z]+ed$')</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^[a-c][a-z]+ed$'), tokens(message))</query>
+
+  <drop_query>DROP TABLE IF EXISTS tab</drop_query>
+</test>

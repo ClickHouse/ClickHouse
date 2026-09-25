@@ -51,12 +51,16 @@ Granules: 7/8
 16
 8
 8
+16
+16
+8
+8
 Parts: 1 | Granules: 1
 Granules: 8/8
 Granules: 1/8
-hasTokenPrefix	1	0
-hasTokenLike	1	0
-hasTokenMatch	1	0
+hasAnyTokenPrefix	1	0
+hasAnyTokenLike	1	0
+hasAnyTokenRegexp	1	0
 -- ngrams, sparseGrams, splitByString and asciiCJK: the functions use the tokenizer of the index, as arrayExists over tokens
 ngrams	32
 ngrams	32
@@ -69,6 +73,9 @@ ngrams	32
 ngrams	16
 ngrams	16
 ngrams	16
+ngrams	8
+ngrams	8
+ngrams	8
 ngrams	32	0	32	16
 Parts: 1 | Granules: 4
 Granules: 8/8
@@ -149,3 +156,10 @@ Granules: 8/8
 Name: idx_cjk
 Granules: 1/8
 direct read	1	1	1	1
+-- FixedString: the tokens keep the padding, with and without the index
+16
+16
+0
+0
+56
+56
