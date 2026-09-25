@@ -5,6 +5,7 @@
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -16,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -26,6 +28,7 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_prewhere_after_pushdown;
+    extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool vector_search_with_rescoring;
 }
 
@@ -175,6 +178,78 @@ ActionsDAG splitAndFillPrewhereInfo(
     return std::move(split_result.second);
 }
 
+/// Hash of `node` with aliases collapsed and column identifiers mapped to storage columns, as
+/// `ReadFromMergeTree::applyFilters` does, so it does not depend on the renames the node reads through.
+static std::optional<UInt64> getNormalizedHash(
+    const ActionsDAG::Node * node, const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column)
+{
+    try
+    {
+        auto dag = ActionsDAG::cloneSubDAG({node}, /*remove_aliases=*/ true);
+        for (const auto & dag_node : dag.getNodes())
+            if (dag_node.type == ActionsDAG::ActionType::ARRAY_JOIN || dag_node.type == ActionsDAG::ActionType::PLACEHOLDER)
+                return {};
+
+        auto normalized = ActionsDAG::buildFilterActionsDAG(dag.getOutputs(), node_name_to_input_node_column);
+        if (!normalized || normalized->getOutputs().size() != 1)
+            return {};
+        return normalized->getOutputs()[0]->getHash();
+    }
+    catch (const Exception &)
+    {
+        return {};
+    }
+}
+
+static void setQueryConditionCacheAttribution(
+    PrewhereInfo & prewhere_info, const ReadFromMergeTree & read_from_merge_tree_step, const Settings & settings)
+{
+    if (!settings[Setting::use_query_condition_cache] || read_from_merge_tree_step.isSelectedForTopKFilterOptimization()
+        || read_from_merge_tree_step.getVectorSearchParameters().has_value())
+        return;
+
+    const auto & query_info = read_from_merge_tree_step.getQueryInfo();
+    const auto & filter_actions_dag = query_info.filter_actions_dag;
+    if (!filter_actions_dag || query_info.isFinal()
+        || ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(read_from_merge_tree_step.getStorageMetadata()->virtuals, query_info))
+        return;
+
+    const auto & outputs = filter_actions_dag->getOutputs();
+    if (outputs.size() != 1 || !VirtualColumnUtils::isDeterministic(outputs.front()))
+        return;
+
+    const auto & condition_root = prewhere_info.prewhere_actions.findInOutputs(prewhere_info.prewhere_column_name);
+    if (condition_root.type != ActionsDAG::ActionType::FUNCTION || condition_root.function_base->getName() != "and")
+        return;
+
+    auto node_name_to_input_node_column = query_info.buildNodeNameToInputNodeColumn();
+    std::unordered_set<UInt64> filter_atom_hashes;
+    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(outputs.front()))
+        if (auto hash = getNormalizedHash(atom, node_name_to_input_node_column))
+            filter_atom_hashes.insert(*hash);
+
+    std::vector<UInt64> conjunct_hashes;
+    for (const auto * conjunct : condition_root.children)
+    {
+        if (!VirtualColumnUtils::isDeterministic(conjunct))
+            break;
+        auto hash = getNormalizedHash(conjunct, node_name_to_input_node_column);
+        if (!hash || !filter_atom_hashes.contains(*hash))
+            break;
+        conjunct_hashes.push_back(conjunct->getHash());
+    }
+
+    /// With every conjunct attributed the ordinary PREWHERE write already covers the read.
+    if (conjunct_hashes.empty() || conjunct_hashes.size() == condition_root.children.size())
+        return;
+
+    prewhere_info.query_condition_cache_attribution = PrewhereInfo::QueryConditionCacheAttribution{
+        .key = queryConditionCacheHash(outputs.front()->getHash(), queryConditionCacheSettingsSalt(settings)),
+        .condition = filter_actions_dag->getNames()[0],
+        .conjunct_hashes = std::move(conjunct_hashes),
+    };
+}
+
 void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_columns, const bool suppress_for_vector_search)
 {
     /// Assume that there are at least 2 nodes:
@@ -288,6 +363,9 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         filter_step->getFilterColumnName(),
         optimize_result.prewhere_nodes,
         optimize_result.prewhere_nodes_list);
+
+    if (!existing_prewhere_info && read_from_merge_tree_step)
+        setQueryConditionCacheAttribution(*prewhere_info, *read_from_merge_tree_step, settings);
 
     if (existing_prewhere_info)
     {

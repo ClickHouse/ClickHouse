@@ -1,0 +1,54 @@
+the runtime filter shares PREWHERE with the static condition
+1
+join with a runtime filter
+3	48
+3	48
+the same with index analysis of the runtime filter disabled
+3	48
+3	48
+control: the join without a runtime filter or PREWHERE
+3	48
+3	48
+control: the cache disabled
+3	48
+control: no join
+3	48
+3	48
+granules emptied by the runtime filter alone are not recorded
+1	16
+3
+3
+a condition widened after index analysis is not attributed
+0	0	0
+194
+194
+explicit PREWHERE extended by push-down
+2	32
+2	32
+2	32
+runtime filters of a multi-key join and of an ANTI join
+3	48
+3	48
+1	16
+1	16
+1	16
+a PREWHERE read in a single step records nothing
+3	48
+3	48
+a runtime filter ordered before the static condition
+4	64
+4	64
+4	64
+query condition cache hits and pruned reads
+qcc_no_cache	0	0
+qcc_no_join_1	0	0
+qcc_no_join_2	1	1
+qcc_no_rf_1	0	0
+qcc_no_rf_2	1	1
+qcc_rf_1	0	0
+qcc_rf_2	1	1
+qcc_rf_emptied_check	1	1
+qcc_rf_no_index_analysis_1	0	0
+qcc_rf_no_index_analysis_2	1	1
+qcc_single_step_1	0	0
+qcc_single_step_2	0	0

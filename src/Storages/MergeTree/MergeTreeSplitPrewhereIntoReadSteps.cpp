@@ -204,6 +204,19 @@ bool tryBuildPrewhereSteps(
         return false;
     auto condition_nodes = condition_root.children;
 
+    /// The leading conditions covered by the query condition cache attribution get steps of their own.
+    /// A hash mismatch means the PREWHERE actions were rewritten after the attribution was computed.
+    size_t num_attributed_conditions = 0;
+    if (const auto & attribution = prewhere_info->query_condition_cache_attribution)
+    {
+        const auto & hashes = attribution->conjunct_hashes;
+        bool matches = !hashes.empty() && hashes.size() < condition_nodes.size();
+        for (size_t i = 0; matches && i < hashes.size(); ++i)
+            matches = condition_nodes[i]->getHash() == hashes[i];
+        if (matches)
+            num_attributed_conditions = hashes.size();
+    }
+
     /// 2. Collect the set of columns that are used in the condition
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
     for (const auto & node : condition_nodes)
@@ -227,10 +240,16 @@ bool tryBuildPrewhereSteps(
     /// For the WHERE-to-PREWHERE path this is not a problem: `MergeTreeWhereOptimizer` already groups
     /// conditions by their physical storage columns, so subcolumns of the same column arrive here adjacent.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
-    for (const auto & node : condition_nodes)
+    size_t num_attributed_steps = 0;
+    for (size_t i = 0; i < condition_nodes.size(); ++i)
     {
+        const auto * node = condition_nodes[i];
         const auto & node_info = nodes_info[node];
-        if (!condition_groups.empty()
+        const bool is_first_unattributed = num_attributed_conditions != 0 && i == num_attributed_conditions;
+        if (is_first_unattributed)
+            num_attributed_steps = condition_groups.size();
+
+        if (!condition_groups.empty() && !is_first_unattributed
             && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns)
         {
             condition_groups.back().push_back(node);
@@ -338,6 +357,7 @@ bool tryBuildPrewhereSteps(
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
+                .query_condition_cache_attribution_boundary = step_index + 1 == num_attributed_steps,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));

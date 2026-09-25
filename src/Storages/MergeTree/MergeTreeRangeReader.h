@@ -51,6 +51,10 @@ struct PrewhereExprStep
 
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
+
+    /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
+    /// A flag rather than an index, so that steps prepended to the chain cannot move it.
+    bool query_condition_cache_attribution_boundary = false;
 };
 
 using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;
@@ -291,6 +295,9 @@ public:
 
         /// All read marks.
         MarkRanges read_mark_ranges;
+
+        /// Marks emptied by the steps up to the query condition cache attribution boundary.
+        MarkRanges query_condition_cache_attributable_marks;
 
         /// The number of rows were added to block as a result of reading chain.
         size_t numReadRows() const { return num_read_rows; }
