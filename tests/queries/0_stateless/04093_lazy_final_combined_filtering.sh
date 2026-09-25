@@ -26,7 +26,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 
-settings="--enable_analyzer=1 --optimize_move_to_prewhere_if_final=0"
+settings="--enable_analyzer=1"
 
 $CLICKHOUSE_CLIENT $settings -q "
     DROP TABLE IF EXISTS t_lazy_final_combined;
