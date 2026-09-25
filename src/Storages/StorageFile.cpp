@@ -1523,6 +1523,30 @@ static std::chrono::seconds getLockTimeout(const ContextPtr & context)
     return saturatedSeconds(lock_timeout);
 }
 
+/// `RWLockImpl::getLock` reads a zero timeout as "wait forever", while a zero `lock_acquire_timeout` has
+/// always meant "do not wait at all" here; it turns a negative duration into an already-expired deadline.
+static constexpr auto no_wait_timeout = std::chrono::milliseconds(-1);
+
+static std::chrono::milliseconds getLockTimeoutMs(const ContextPtr & context)
+{
+    auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(getLockTimeout(context));
+    return timeout == std::chrono::milliseconds::zero() ? no_wait_timeout : timeout;
+}
+
+RWLockImpl::LockHolder StorageFile::tryLockRwlock(RWLockImpl::Type type, const ContextPtr & context) const
+{
+    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    return rwlock->getLock(type, query_id, getLockTimeoutMs(context), /*throw_in_fast_path=*/ false);
+}
+
+RWLockImpl::LockHolder StorageFile::lockRwlock(RWLockImpl::Type type, const ContextPtr & context) const
+{
+    auto holder = tryLockRwlock(type, context);
+    if (!holder)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+    return holder;
+}
+
 using StorageFilePtr = std::shared_ptr<StorageFile>;
 
 StorageFileSource::FilesIterator::FilesIterator(
@@ -1653,9 +1677,7 @@ StorageFileSource::StorageFileSource(
 {
     if (!storage->use_table_fd)
     {
-        shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(getContext()));
-        if (!shared_lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        read_lock = storage->lockRwlock(RWLockImpl::Read, getContext());
         storage->readers_counter.fetch_add(1, std::memory_order_release);
     }
 }
@@ -1665,12 +1687,13 @@ void StorageFileSource::beforeDestroy()
     if (storage->file_renamer.isEmpty())
         return;
 
+    /// A Write acquisition takes the lock's fast path, which refuses outright while the same query holds a Read lock.
+    read_lock.reset();
     int32_t cnt = storage->readers_counter.fetch_sub(1, std::memory_order_acq_rel);
 
     if (std::uncaught_exceptions() == 0 && cnt == 1 && !storage->was_renamed)
     {
-        shared_lock.unlock();
-        auto exclusive_lock = std::unique_lock{storage->rwlock, getLockTimeout(getContext())};
+        auto exclusive_lock = storage->tryLockRwlock(RWLockImpl::Write, getContext());
 
         if (!exclusive_lock)
             return;
@@ -1709,7 +1732,14 @@ void StorageFileSource::beforeDestroy()
 
 StorageFileSource::~StorageFileSource()
 {
-    beforeDestroy();
+    try
+    {
+        beforeDestroy();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -2625,9 +2655,7 @@ public:
         , max_block_size(max_block_size_)
         , files(std::move(files_))
     {
-        shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(getContext()));
-        if (!shared_lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        read_lock = storage->lockRwlock(RWLockImpl::Read, getContext());
         parser_shared_resources = std::make_shared<FormatParserSharedResources>(getContext()->getSettingsRef(), /*num_streams_=*/ 1);
     }
 
@@ -2789,7 +2817,7 @@ private:
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
 
-    std::shared_lock<std::shared_timed_mutex> shared_lock;
+    RWLockImpl::LockHolder read_lock;
 };
 
 std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
@@ -2837,7 +2865,7 @@ public:
     StorageFileSink(
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
-        std::unique_lock<std::shared_timed_mutex> && lock_,
+        RWLockImpl::LockHolder && lock_,
         int table_fd_,
         bool use_table_fd_,
         std::string base_path_,
@@ -2976,7 +3004,7 @@ private:
     std::optional<FormatSettings> format_settings;
 
     int flags;
-    std::unique_lock<std::shared_timed_mutex> lock;
+    RWLockImpl::LockHolder lock;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -2986,7 +3014,7 @@ public:
         std::shared_ptr<IPartitionStrategy> partition_strategy_,
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
-        std::unique_lock<std::shared_timed_mutex> && lock_,
+        RWLockImpl::LockHolder && lock_,
         String base_path_,
         String path_,
         const CompressionMethod compression_method_,
@@ -3044,7 +3072,7 @@ private:
 
     ContextPtr context;
     int flags;
-    std::unique_lock<std::shared_timed_mutex> lock;
+    RWLockImpl::LockHolder lock;
 };
 
 
@@ -3088,7 +3116,7 @@ SinkToStoragePtr StorageFile::write(
             partition_strategy,
             metadata_snapshot,
             getStorageID().getNameForLogs(),
-            std::unique_lock{rwlock, getLockTimeout(context)},
+            lockRwlock(RWLockImpl::Write, context),
             base_path,
             path_for_partitioned_write,
             chooseCompressionMethod(path_for_partitioned_write, compression_method),
@@ -3142,7 +3170,7 @@ SinkToStoragePtr StorageFile::write(
     return std::make_shared<StorageFileSink>(
         metadata_snapshot,
         getStorageID().getNameForLogs(),
-        std::unique_lock{rwlock, getLockTimeout(context)},
+        lockRwlock(RWLockImpl::Write, context),
         table_fd,
         use_table_fd,
         base_path,

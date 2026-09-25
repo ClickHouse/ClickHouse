@@ -12,9 +12,9 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
 #include <Common/Logger.h>
+#include <Common/RWLock.h>
 
 #include <atomic>
-#include <shared_mutex>
 #include <sys/stat.h>
 
 namespace DB
@@ -212,7 +212,12 @@ private:
 
     bool supports_prewhere = false;
 
-    mutable std::shared_timed_mutex rwlock;
+    /// One query may read this table from several sources at once: one per stream, one for the lazy-materialization
+    /// pass, one per table expression in a self-join. A repeat Read by the query already holding it is admitted.
+    mutable RWLock rwlock = RWLockImpl::create();
+
+    RWLockImpl::LockHolder tryLockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
+    RWLockImpl::LockHolder lockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
 
     LoggerPtr log = getLogger("StorageFile");
 
@@ -379,7 +384,7 @@ private:
     /// The registry index of the file currently being read. Assigned on the first chunk.
     std::optional<UInt64> current_file_index;
 
-    std::shared_lock<std::shared_timed_mutex> shared_lock;
+    RWLockImpl::LockHolder read_lock;
 };
 
 class ReadFromFile : public SourceStepWithFilter
