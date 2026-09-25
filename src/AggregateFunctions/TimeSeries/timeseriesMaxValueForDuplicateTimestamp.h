@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <base/bit_cast.h>
 #include <Common/NaNUtils.h>
 
 
@@ -14,8 +15,9 @@ namespace DB
 template <typename ValueType>
 ValueType timeseriesMaxValueForDuplicateTimestamp(ValueType lhs, ValueType rhs)
 {
+    /// Of two NaNs the greater bit pattern wins, so an ordinary NaN beats the Prometheus stale marker 0x7ff0000000000002.
     if (isNaN(lhs))
-        return rhs;
+        return (isNaN(rhs) && bit_cast<UInt64>(lhs) > bit_cast<UInt64>(rhs)) ? lhs : rhs;
     if (isNaN(rhs))
         return lhs;
     return std::max(lhs, rhs);
