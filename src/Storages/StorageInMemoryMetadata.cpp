@@ -169,6 +169,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         return Context::createCopy(context);
 
     auto new_context = Context::createCopy(context->getGlobalContext());
+    new_context->setIsMutationQuery(context->isMutationQuery());
     if (client_info)
         new_context->setClientInfo(*client_info);
     else

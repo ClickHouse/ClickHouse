@@ -32,6 +32,7 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -86,6 +87,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool explain_syntax_single_record;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
@@ -101,10 +103,58 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
+    bool hasLimitShuffle(const ASTPtr & ast)
+    {
+        if (!ast)
+            return false;
+
+        if (const auto * select = ast->as<ASTSelectQuery>(); select && select->limit_shuffle)
+            return true;
+
+        for (const auto & child : ast->children)
+        {
+            if (hasLimitShuffle(child))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// Resolve a "table function" call that is actually a parameterized view into its storage.
+    /// Returns nullptr for a registered table function - it takes precedence over a view with the
+    /// same name, matching `QueryAnalyzer::resolveTableFunction`, so without this check a user view
+    /// shadowing a built-in table function would be resolved here while regular execution would
+    /// still resolve the built-in - and for anything that is not a parameterized view.
+    StoragePtr tryGetParameterizedViewStorage(const ASTFunction & function, const ContextPtr & context)
+    {
+        if (TableFunctionFactory::instance().isTableFunctionName(function.name))
+            return nullptr;
+
+        String database_name = context->getCurrentDatabase();
+        String table_name = function.name;
+        if (function.isCompoundName())
+        {
+            std::vector<std::string> parts;
+            splitInto<'.'>(parts, function.name);
+            if (parts.size() != 2)
+                return nullptr;
+            database_name = parts[0];
+            table_name = parts[1];
+        }
+
+        auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, context);
+        const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
+        if (!storage_view || !storage_view->isParameterizedView())
+            return nullptr;
+
+        return storage;
+    }
+
     /// Walk the AST and expand parameterized view "table function" calls into their inlined,
     /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
     ///
@@ -169,31 +219,8 @@ namespace
 
             auto query_context = data.getContext()->getQueryContext();
 
-            /// A registered table function (e.g. `numbers`) takes precedence over a view with
-            /// the same name, matching `QueryAnalyzer::resolveTableFunction`. Without this check
-            /// a user view shadowing a built-in table function would be expanded here while
-            /// regular execution would still resolve the built-in.
-            if (TableFunctionFactory::instance().isTableFunctionName(func->name))
-                return;
-
-            String database_name = query_context->getCurrentDatabase();
-            String table_name = func->name;
-            if (func->isCompoundName())
-            {
-                std::vector<std::string> parts;
-                splitInto<'.'>(parts, func->name);
-                if (parts.size() != 2)
-                    return;
-                database_name = parts[0];
-                table_name = parts[1];
-            }
-
-            auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
+            auto storage = tryGetParameterizedViewStorage(*func, query_context);
             if (!storage)
-                return;
-
-            const auto * storage_view = storage->as<StorageView>();
-            if (!storage_view || !storage_view->isParameterizedView())
                 return;
 
             auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
@@ -218,7 +245,7 @@ namespace
             /// so the rendered `EXPLAIN SYNTAX` keeps referring to the view.
             String alias = table_expr.table_function->tryGetAlias();
             if (alias.empty())
-                alias = table_name;
+                alias = storage->getStorageID().table_name;
 
             table_expr.table_function = nullptr;
             table_expr.subquery = make_intrusive<ASTSubquery>(std::move(view_query));
@@ -251,6 +278,31 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
+            /// The AST-based paths for `EXPLAIN AST optimize = 1` and `EXPLAIN SYNTAX` of a
+            /// non-`SELECT` query still use `InterpreterSelectQuery` to expand views. That
+            /// internal interpreter cannot handle `LIMIT SHUFFLE`, even though user queries
+            /// always use the analyzer. Keep the experimental-setting check, but leave the
+            /// select as is instead of passing it to that interpreter.
+            if (select.limit_shuffle)
+            {
+                if (!data.getContext()->getSettingsRef()[Setting::allow_experimental_shuffle_query])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE is disabled by setting allow_experimental_shuffle_query");
+                return;
+            }
+
+            /// `ExpandParameterizedViewsMatcher` may have inlined a parameterized view whose stored query
+            /// uses `LIMIT SHUFFLE` into a subquery of this select. `needChildVisit` stops at the enclosing
+            /// select, so the check above does not see it, while `InterpreterSelectQuery` below would reject
+            /// it. The stored query carries its own `allow_experimental_shuffle_query`, so just skip.
+            if (hasLimitShuffle(node))
+                return;
+
+            /// Stored view queries with `LIMIT SHUFFLE` are supported by the analyzer, but the
+            /// internal `InterpreterSelectQuery` still rejects the clause. Leave the table reference
+            /// intact rather than passing such a view through this AST-based syntax visitor.
+            if (selectReadsFromLimitShuffleView(select, data.getContext()))
+                return;
+
             InterpreterSelectQuery interpreter(
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
@@ -260,6 +312,44 @@ namespace
                 ASTPtr tmp;
                 StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
             }
+        }
+
+        static bool selectReadsFromLimitShuffleView(const ASTSelectQuery & select, const ContextPtr & context)
+        {
+            const auto * table_expression = getTableExpression(select, 0);
+            if (!table_expression)
+                return false;
+
+            /// A parameterized view call that `ExpandParameterizedViewsMatcher` deliberately left intact,
+            /// e.g. because it uses `FINAL` or `SAMPLE`, or because the view is not `SQL SECURITY INVOKER`.
+            /// `InterpreterSelectQuery` resolves such a call itself, so the stored query has to be checked
+            /// here as well, not only for a plain `database.table` view read.
+            if (const auto * function = table_expression->table_function ? table_expression->table_function->as<ASTFunction>() : nullptr)
+            {
+                auto storage = tryGetParameterizedViewStorage(*function, context);
+                if (!storage)
+                    return false;
+
+                auto view_metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+                return hasLimitShuffle(view_metadata_snapshot->getSelectQuery().inner_query);
+            }
+
+            if (!table_expression->database_and_table_name)
+                return false;
+
+            auto table_id = context->tryResolveStorageID(table_expression->database_and_table_name);
+            if (!table_id)
+                return false;
+
+            auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+            const auto * view = typeid_cast<const StorageView *>(table.get());
+            if (!view)
+                return false;
+
+            /// An ordinary view fills only `inner_query` of its select description
+            /// (see the `StorageView` constructor), so do not gate on `hasSelectQuery`.
+            auto metadata_snapshot = view->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            return hasLimitShuffle(metadata_snapshot->getSelectQuery().inner_query);
         }
     };
 

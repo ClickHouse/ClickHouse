@@ -9149,6 +9149,9 @@ implementation.
     DECLARE_WITH_ALIAS(Bool, enable_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL, allow_experimental_unique_key) \
+    DECLARE(Bool, allow_experimental_shuffle_query, false, R"(
+Allows using the experimental `LIMIT ... SHUFFLE` clause in `SELECT` queries.
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_alp_codec, false, R"(
 Enables the `ALP` compression codec.
 )", BETA) \

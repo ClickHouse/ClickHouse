@@ -163,6 +163,9 @@ namespace
 
 QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
+    auto mutation_context = Context::createCopy(context);
+    mutation_context->setIsMutationQuery(true);
+    context = std::move(mutation_context);
     auto ast = prepareQueryAffectedAST(commands, storage, context);
     auto query_tree = buildQueryTree(ast, context);
 
@@ -545,6 +548,7 @@ MutationsInterpreter::MutationsInterpreter(
     , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
     auto new_context = Context::createCopy(context_);
+    new_context->setIsMutationQuery(true);
 
     /// Mutation source reads build a synthetic `SELECT` without a table expression,
     /// so parallel replicas must not be used for them.
