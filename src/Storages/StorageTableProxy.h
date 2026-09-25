@@ -16,15 +16,20 @@ namespace DB
 class StorageTableProxy final : public StorageProxy
 {
 public:
-    StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns)
+    StorageTableProxy(
+        const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns, bool is_alias_)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
+        , is_alias(is_alias_)
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
         StorageInMemoryMetadata cached_metadata;
         cached_metadata.setColumns(std::move(cached_columns));
         setInMemoryMetadata(cached_metadata);
     }
+
+    /// Identify `Alias` without materializing it or accessing its target.
+    bool isAlias() const { return is_alias; }
 
     std::string getName() const override
     {
@@ -203,6 +208,7 @@ private:
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    const bool is_alias;
     LoggerPtr log;
 };
 

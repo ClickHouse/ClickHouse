@@ -41,10 +41,16 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
 {
     ActionLock action_lock = table->getActionLock(action_type);
 
+    std::lock_guard lock(mutex);
+    auto it = storage_locks.find(table.get());
+    if (it != storage_locks.end() && !it->second.belongsTo(table))
+        storage_locks.erase(it);
+
     if (!action_lock.expired())
     {
-        std::lock_guard lock(mutex);
-        storage_locks[table.get()][action_type] = std::move(action_lock);
+        auto & entry = storage_locks[table.get()];
+        entry.storage = table;
+        entry.locks[action_type] = std::move(action_lock);
     }
 }
 
@@ -57,9 +63,18 @@ void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockTy
 void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType action_type)
 {
     std::lock_guard lock(mutex);
+    auto it = storage_locks.find(table.get());
+    if (it == storage_locks.end())
+        return;
 
-    if (storage_locks.contains(table.get()))
-        storage_locks[table.get()].erase(action_type);
+    if (it->second.belongsTo(table))
+    {
+        it->second.locks.erase(action_type);
+        if (it->second.locks.empty())
+            storage_locks.erase(it);
+    }
+    else
+        storage_locks.erase(it);
 }
 
 void ActionLocksManager::cleanExpired()
@@ -68,7 +83,13 @@ void ActionLocksManager::cleanExpired()
 
     for (auto it_storage = storage_locks.begin(); it_storage != storage_locks.end();)
     {
-        auto & locks = it_storage->second;
+        if (it_storage->second.storage.expired())
+        {
+            it_storage = storage_locks.erase(it_storage);
+            continue;
+        }
+
+        auto & locks = it_storage->second.locks;
         for (auto it_lock = locks.begin(); it_lock != locks.end();)
         {
             if (it_lock->second.expired())
