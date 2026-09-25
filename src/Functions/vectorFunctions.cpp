@@ -65,6 +65,11 @@ struct PositiveModuloName { static constexpr auto name = "positiveModulo"; };
 struct IntDivName { static constexpr auto name = "intDiv"; };
 struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 
+/// intDiv, modulo and positiveModulo throw on a zero divisor, and so does divide on decimals.
+template <class FuncName>
+constexpr bool throws_on_zero_divisor = std::is_same_v<FuncName, DivideName> || std::is_same_v<FuncName, ModuloName>
+    || std::is_same_v<FuncName, PositiveModuloName> || std::is_same_v<FuncName, IntDivName>;
+
 struct L1Label { static constexpr auto name = "1"; };
 struct L2Label { static constexpr auto name = "2"; };
 struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
@@ -92,6 +97,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool canBeExecutedOnDefaultArguments() const override { return !throws_on_zero_divisor<FuncName>; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -259,6 +265,7 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+    bool canBeExecutedOnDefaultArguments() const override { return !throws_on_zero_divisor<FuncName>; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

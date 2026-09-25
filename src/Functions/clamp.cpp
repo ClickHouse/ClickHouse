@@ -24,6 +24,8 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A zero bound can put the minimum above the maximum.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionClamp>(); }
 
