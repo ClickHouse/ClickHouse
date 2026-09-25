@@ -1945,7 +1945,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(Bool, openssl_client_load_default_ca_file, true, R"(Determines whether the default CA certificates will be used. ClickHouse looks for them in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`), in the file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`), and in other well-known locations of various distributions. If no CA certificates are found on the filesystem, no explicit `caConfig` is configured, and the binary was built with embedded CA certificates (the default, controlled by the `ENABLE_EMBEDDED_CA_CERTIFICATES` build option), the embedded certificates are used instead, so TLS works even in a minimal environment without any files, e.g. in a container built "from scratch". In builds without embedded CA certificates, an error is thrown in this case.)", 0, "openSSL.client.loadDefaultCAFile") \
     DECLARE(String, openssl_client_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.client.cipherList") \
     DECLARE(Bool, openssl_client_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.cacheSessions") \
-    DECLARE(Bool, openssl_client_extended_verification, false, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
+    DECLARE(Bool, openssl_client_extended_verification, true, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
     DECLARE(Bool, openssl_client_required_tls_v1, false, R"(Require a TLSv1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1") \
     DECLARE(Bool, openssl_client_required_tls_v1_1, false, R"(Require a TLSv1.1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_1") \
     DECLARE(Bool, openssl_client_required_tls_v1_2, false, R"(Require a TLSv1.2 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_2") \
@@ -2024,18 +2024,11 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         const auto & name = setting.getName();
         String path {setting.getPath()};
         const String * path_or_name = path.empty() ? &name : &path;
-        try
-        {
-            if (config.has(*path_or_name))
-                set(name, config.getString(*path_or_name));
-            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
-                set(name, config.getString("profiles.default." + *path_or_name));
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("while parsing setting '{}' value", name);
-            throw;
-        }
+        /// `set` names the setting and the value it was given, so nothing has to be added here.
+        if (config.has(*path_or_name))
+            set(name, config.getString(*path_or_name));
+        else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
+            set(name, config.getString("profiles.default." + *path_or_name));
     }
 }
 
@@ -2327,6 +2320,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "server_uuid_from_replica_name",
         "cloud",
         "default_user_for_system_dictionaries",
+        "default_user_for_backups",
 
         /// Miscellaneous
         "core_dump",
@@ -2364,7 +2358,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "warning_supress_regexp",
         "enable_system_unfreeze",
         "disable_insertion_and_mutation",
-        "use_analyzer_for_mutations",
         "streaming_storage_shutdown_threads",
         "local_disk_check_period_ms",
         "page_cache_size",
