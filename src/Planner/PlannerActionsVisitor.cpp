@@ -966,12 +966,39 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     /// Add PLACEHOLDER only to the outermost scope (will be decorrelated later).
     /// Inner scopes (e.g. lambda scopes) get INPUT so the lambda capture mechanism
     /// can properly capture the correlated column value from the outer scope.
-    actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+    const auto * placeholder_node = actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+
+    /// Inside a lambda body, an INPUT named after one of the lambda's arguments is that argument
+    /// (see `visitColumn`), so the correlated column must not be registered under a name that a lambda
+    /// scope on the stack declares as an argument. In that case pass it through every inner scope under
+    /// a disambiguated name, which the capture loop of `visitLambda` resolves down to an alias of the
+    /// placeholder in the outermost scope.
+    bool shadowed_by_lambda = false;
+    for (size_t i = 1; i < actions_stack.size() && !shadowed_by_lambda; ++i)
+    {
+        const auto & scope = actions_stack[i].getScopeNode();
+        if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
+        {
+            const auto & arg_names = scope->as<LambdaNode &>().getArguments().getNames();
+            shadowed_by_lambda = std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end();
+        }
+    }
+
+    if (!shadowed_by_lambda)
+    {
+        for (size_t i = 1; i < actions_stack.size(); ++i)
+            actions_stack[i].addInputColumnIfNecessary(column_node_name, node->getColumnType());
+
+        return {column_node_name, Levels(0)};
+    }
+
+    String disambiguated = fmt::format("__CORRELATED.{}", column_node_name);
+    actions_stack[0].addAliasIfNecessary(disambiguated, placeholder_node);
 
     for (size_t i = 1; i < actions_stack.size(); ++i)
-        actions_stack[i].addInputColumnIfNecessary(column_node_name, node->getColumnType());
+        actions_stack[i].addInputColumnIfNecessary(disambiguated, node->getColumnType());
 
-    return {column_node_name, Levels(0)};
+    return {disambiguated, Levels(0)};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name)
