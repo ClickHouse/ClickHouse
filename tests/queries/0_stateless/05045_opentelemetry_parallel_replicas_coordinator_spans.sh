@@ -72,7 +72,8 @@ for async_socket in 1 0; do
 
     # parallel_replicas_plan_based=0: the plan-based implementation does not emit the per-replica
     # `RemoteQueryExecutor::execute` span carrying `clickhouse.replica_num`, so the fourth count
-    # below stays 0. See https://github.com/ClickHouse/ClickHouse/issues/122313.
+    # below stays 0. The other five spans are emitted on that path, several of them more often,
+    # because the coordination is structured differently.
     # automatic_parallel_replicas_mode=0: mode 2 (randomized by the test harness) only collects
     # statistics and never actually executes with parallel replicas.
     ${CLICKHOUSE_CLIENT} \
