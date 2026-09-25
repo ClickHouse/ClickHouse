@@ -1,0 +1,57 @@
+0
+0
+0
+nan
+0
+0
+0
+0
+0
+nan
+0
+0
+0
+nan
+nan
+nan
+nan
+nan
+-inf
+0.5
+1
+1.5
+-inf
+2
+Float64 key
+x / inf	0
+x * 0.	0
+x / 0	0
+x * inf	0
+x * nan	0
+x / 2	1
+UInt64 key
+x / inf	1
+x / 0	0
+0
+0
+0
+0
+inf
+inf
+inf
+nan
+inf
+inf
+inf
+nan
+4
+4
+3
+1	0
+0	100
+1	0
+1	0
+0	100
+0	100
+1	0
+prefix covers y	0
