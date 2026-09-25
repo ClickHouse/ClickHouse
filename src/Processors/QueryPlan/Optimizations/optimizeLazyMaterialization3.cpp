@@ -194,16 +194,17 @@ ActionsDAG buildAboveLimitDAG(
 }
 
 /// Whether a second, row-addressed read of this source is possible, which is what deferring a column of
-/// it comes down to. The conditions the other lazy materialization path applies to its one source, except
-/// that FINAL is not handled here yet: the FINAL merge needs more columns in the main read than the
-/// frontier knows about.
+/// it comes down to. The conditions the other lazy materialization path applies to its one source.
 bool canReadLazily(const QueryPlan::Node & source, const QueryPlanOptimizationSettings & settings)
 {
     auto * step = source.step.get();
 
     if (auto * merge_tree = typeid_cast<ReadFromMergeTree *>(step))
     {
-        if (merge_tree->isQueryWithFinal())
+        /// Which row FINAL keeps is decided by the columns it merges on, which stay in the main read, and a
+        /// lazy read then fetches the rest of the row it kept. Only ReplacingMergeTree merges that way.
+        if (merge_tree->isQueryWithFinal()
+            && merge_tree->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
             return false;
 
         if (merge_tree->isQueryWithSampling())
@@ -670,11 +671,25 @@ private:
                 continue;
 
             LazySource lazy;
+            const auto * step = merged.sources[source].plan_node->step.get();
+
+            /// The FINAL merge reads the sorting key, the version and the is_deleted columns in the main read.
+            NameSet merged_on;
+            if (const auto * merge_tree = typeid_cast<const ReadFromMergeTree *>(step); merge_tree && merge_tree->isQueryWithFinal())
+            {
+                const auto & merging_params = merge_tree->getMergeTreeData().merging_params;
+                merged_on.insert_range(merge_tree->getStorageMetadata()->getColumnsRequiredForSortingKey());
+                if (!merging_params.version_column.empty())
+                    merged_on.insert(merging_params.version_column);
+                if (!merging_params.is_deleted_column.empty())
+                    merged_on.insert(merging_params.is_deleted_column);
+            }
+
             std::vector<const ActionsDAG::Node *> candidates;
             for (const auto * input : merged.sources[source].inputs)
             {
                 const auto placed = frontier.at(input);
-                if (placed.above == Placement::Above::LazyRead && !placed.computed_below)
+                if (placed.above == Placement::Above::LazyRead && !placed.computed_below && !merged_on.contains(input->result_name))
                     candidates.push_back(input);
                 else
                 {
@@ -684,10 +699,11 @@ private:
                 }
             }
 
+            lazy.eager_names.insert(merged_on.begin(), merged_on.end());
+
             if (candidates.empty())
                 continue;
 
-            const auto * step = merged.sources[source].plan_node->step.get();
             NameSet lazily_read;
             if (const auto * merge_tree = typeid_cast<const ReadFromMergeTree *>(step))
                 lazily_read.insert_range(merge_tree->getLazilyReadColumns(lazy.eager_names));
