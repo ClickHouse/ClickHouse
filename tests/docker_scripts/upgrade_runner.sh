@@ -130,6 +130,20 @@ fi
 # Start server from previous release
 configure "${configure_opts[@]}" --previous-release
 
+# Both servers write into one data directory, and the codec is baked into a part's mark offsets
+# and statistics.packed bytes: re-drawing it makes a re-merged part fail CHECKSUM_DOESNT_MATCH.
+function read_default_compression_codec()
+{
+    sed -n 's|.*<default_compression_codec>\(.*\)</default_compression_codec>.*|\1|p' \
+        /etc/clickhouse-server/config.d/default_compression_codec.xml
+}
+
+default_compression_codec=$(read_default_compression_codec)
+if [ -z "$default_compression_codec" ]; then
+    echo -e "Cannot read the default compression codec drawn for the previous-release server$FAIL" >> /test_output/test_results.tsv
+    exit 1
+fi
+
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -270,7 +284,12 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 
 # Install and start new server
 install_packages $PACKAGES_DIR
-configure "${configure_opts[@]}"
+configure "${configure_opts[@]}" --default-compression-codec "$default_compression_codec"
+upgraded_default_compression_codec=$(read_default_compression_codec)
+if [ "$upgraded_default_compression_codec" != "$default_compression_codec" ]; then
+    echo -e "Default compression codec is stable across the upgrade$FAIL previous release: $default_compression_codec, upgraded server: $upgraded_default_compression_codec" >> /test_output/test_results.tsv
+    exit 1
+fi
 
 # Check that all new/changed setting were added in settings changes history.
 # Some settings can be different for builds with sanitizers, so we check
