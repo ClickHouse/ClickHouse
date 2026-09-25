@@ -46,6 +46,7 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/extractKeyExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
@@ -1217,17 +1218,20 @@ void AlterCommand::apply(
         auto new_projection = ProjectionDescription::getProjectionFromAST(
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
 
-        /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
+        /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change.
+        /// Compared as ASTs, not as formatted text (see `sameAST`), so that a restatement which differs only by
+        /// comparison-insensitive spelling - redundant parentheses, or `APPLY SUM` versus `APPLY sum` - is accepted.
         auto definition_without_settings = [](const IAST & definition_ast)
         {
             auto cloned = definition_ast.clone();
             auto & decl = cloned->as<ASTProjectionDeclaration &>();
             cloned->reset(decl.with_settings);
-            return cloned->formatWithSecretsOneLine();
+            FunctionNameNormalizer::visitForComparison(cloned.get());
+            return cloned;
         };
 
         const auto & old_projection = metadata.projections.get(projection_name);
-        if (definition_without_settings(*old_projection.definition_ast) != definition_without_settings(*new_projection.definition_ast))
+        if (!sameAST(definition_without_settings(*old_projection.definition_ast), definition_without_settings(*new_projection.definition_ast)))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
@@ -1235,9 +1239,23 @@ void AlterCommand::apply(
                 "Use DROP PROJECTION and ADD PROJECTION to change the query",
                 projection_name);
 
+        /// Keep the stored body exactly as it was and swap only the `WITH SETTINGS` clause.
+        /// The two bodies are equal as ASTs but may differ as text, and the serialized `projections`
+        /// field is compared byte-for-byte by replicas that do not know about the AST comparison,
+        /// so republishing the new spelling would make a replica carrying the original spelling
+        /// fail to join with `METADATA_MISMATCH`.
+        auto preserved_decl = old_projection.definition_ast->clone();
+        auto & preserved_projection_decl = preserved_decl->as<ASTProjectionDeclaration &>();
+        preserved_decl->reset(preserved_projection_decl.with_settings);
+        if (const auto * new_with_settings = new_projection.definition_ast->as<ASTProjectionDeclaration &>().with_settings)
+            preserved_decl->set(preserved_projection_decl.with_settings, new_with_settings->clone());
+
+        auto preserved_projection = ProjectionDescription::getProjectionFromAST(
+            preserved_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+
         /// Intentionally not a mutation because the new settings apply lazily
         /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
-        metadata.projections.replace(std::move(new_projection));
+        metadata.projections.replace(std::move(preserved_projection));
     }
     else if (type == DROP_PROJECTION)
     {
@@ -1697,8 +1715,9 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     {
         if (!metadata.table_ttl.definition_ast)
             return true;
-        /// If TTL had not been changed, do not require mutations
-        return metadata.table_ttl.definition_ast->formatIgnoringRedundantParentheses() != ttl->formatIgnoringRedundantParentheses();
+        /// If TTL had not been changed, do not require mutations. Compared as ASTs, so restating
+        /// the same TTL in a differently formatted form does not schedule a needless mutation.
+        return !sameAST(metadata.table_ttl.definition_ast, ttl);
     }
 
     if (!ttl || type != MODIFY_COLUMN)
@@ -1707,7 +1726,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     bool column_ttl_changed = true;
     for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
     {
-        if (name == column_name && ttl->formatIgnoringRedundantParentheses() == ttl_ast->formatIgnoringRedundantParentheses())
+        if (name == column_name && sameAST(ttl, ttl_ast))
         {
             column_ttl_changed = false;
             break;
@@ -1959,15 +1978,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
 
-    /// Used to tell whether a command restates the definition the table already has, so it must not
-    /// depend on whether the redundant parentheses were written on one side and not on the other.
-    auto ast_to_str = [](const ASTPtr & query) -> String
-    {
-        if (!query)
-            return "";
-        return query->formatIgnoringRedundantParentheses();
-    };
-
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
@@ -2100,7 +2110,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         }
         else if (command.type == AlterCommand::MODIFY_ORDER_BY)
         {
-            if (ast_to_str(command.order_by) == ast_to_str(metadata.sorting_key.definition_ast))
+            /// Compared as ASTs of the extracted key expression lists, so `MODIFY ORDER BY (a)`
+            /// and `MODIFY ORDER BY tuple(a)` are no-ops on a table with `ORDER BY a`.
+            if (sameAST(extractKeyExpressionList(command.order_by), extractKeyExpressionList(metadata.sorting_key.definition_ast)))
                 command.ignore = true;
         }
     }

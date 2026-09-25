@@ -1,0 +1,4 @@
+initial	SELECT k, sum(v) GROUP BY k
+restated	SELECT k, sum(v) GROUP BY k	{'index_granularity':'128'}
+create	1
+no settings	SELECT k, sum(v) GROUP BY k	{}
