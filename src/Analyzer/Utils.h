@@ -162,7 +162,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context);
 /// Just collect all identifiers from query tree
 NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 
-/// Wrap node into `_CAST` function; the node is returned as is when it already has the result type
+/// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
 /// Constant-fold a resolved `_CAST(<constant>, <type>)` function node, exactly as `resolveFunction` would.

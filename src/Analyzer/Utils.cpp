@@ -1060,7 +1060,8 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
         auto & arguments = function_node->getArguments().getNodes();
         auto argument_types = bindWindowFunctionArgumentTypes(name, getArgumentNodeTypes(*function_node));
         for (size_t i = 0; i < arguments.size(); ++i)
-            arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
+            if (!arguments[i]->getResultType()->equals(*argument_types[i]))
+                arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
 
         function_node->resolveAsWindowFunction(resolveWindowFunction(*function_node, name));
     }
@@ -1101,9 +1102,6 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
 
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
 {
-    if (node->getResultType()->equals(*result_type))
-        return node;
-
     auto enum_literal_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
 
     auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
