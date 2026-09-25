@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/mergedPlanDAG.h>
@@ -149,4 +150,29 @@ TEST(MergedPlanDAG, TreatsAnUnknownStepAsASource)
     const auto merged_above = buildMergedPlanDAG(expression);
     EXPECT_EQ(merged_above.sources.size(), 1u);
     EXPECT_EQ(merged_above.sources.front().plan_node, &source);
+}
+
+/// A `BuildRuntimeFilter` step passes its input through, so the read below it stays the source, and the
+/// key it builds the filter from is recorded as a value a step reads.
+TEST(MergedPlanDAG, LooksThroughARuntimeFilter)
+{
+    const Block header{column("k"), column("heavy")};
+
+    TestPlan plan;
+    auto & source = plan.addSource(header);
+    auto & runtime_filter = plan.addStep(
+        std::make_unique<BuildRuntimeFilterStep>(
+            source.step->getOutputHeader(), "k", std::make_shared<DataTypeUInt64>(), "_runtime_filter_0", "key",
+            /*exact_values_limit_=*/100, /*bloom_filter_bytes_=*/1024, /*bloom_filter_hash_functions_=*/3,
+            /*pass_ratio_threshold_for_disabling=*/0.7, /*blocks_to_skip_before_reenabling=*/30,
+            /*max_ratio_of_set_bits_in_bloom_filter=*/0.7, /*allow_to_use_not_exact_filter_=*/true, /*track_key_range_=*/false),
+        source);
+
+    const auto merged = buildMergedPlanDAG(runtime_filter);
+    ASSERT_EQ(merged.sources.size(), 1u);
+    EXPECT_EQ(merged.sources.front().plan_node, &source);
+    EXPECT_EQ(merged.getOutputs().size(), header.columns());
+
+    ASSERT_EQ(merged.step_read_nodes.size(), 1u);
+    EXPECT_EQ(merged.step_read_nodes.front(), merged.sources.front().inputs[0]);
 }

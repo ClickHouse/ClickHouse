@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/mergedPlanDAG.h>
 
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -233,6 +234,25 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
         return built;
     }
 
+    if (auto * runtime_filter_step = typeid_cast<BuildRuntimeFilterStep *>(step))
+    {
+        auto built = buildImpl(*node.children.front());
+
+        /// The step outputs what it reads, so the outputs stand as they are.
+        const auto & outputs = built.dag.getOutputs();
+        const auto & key_name = runtime_filter_step->getFilterColumnName();
+        if (std::ranges::count_if(outputs, [&](const auto * output) { return output->result_name == key_name; }) != 1)
+            return {};
+
+        built.dag.step_read_nodes.push_back(
+            *std::ranges::find_if(outputs, [&](const auto * output) { return output->result_name == key_name; }));
+
+        if (!outputsMatchHeader(outputs, *step->getOutputHeader()))
+            return {};
+
+        return built;
+    }
+
     if (auto * filter_step = typeid_cast<FilterStep *>(step))
     {
         const auto & step_dag = filter_step->getExpression();
@@ -287,6 +307,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     built.dag.sources.append_range(std::move(right.dag.sources));
     built.dag.filter_nodes.append_range(right.dag.filter_nodes);
     built.dag.join_condition_nodes.append_range(right.dag.join_condition_nodes);
+    built.dag.step_read_nodes.append_range(right.dag.step_read_nodes);
 
     /// Both of these move rather than copy: the stuffings are a list, so this is a relink, and the
     /// values map points at them, so nothing has to be renumbered.
