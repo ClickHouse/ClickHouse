@@ -31,6 +31,7 @@ sparse_grams(3, 100, 512, 2, 0)
 EOF
 
 echo "jsonbf_v1: $($CLICKHOUSE_CLIENT -q "
+    SET allow_experimental_json_bloom_filter_index = 1;
     CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (j) TYPE jsonbf_v1 GRANULARITY 1;
     EXPLAIN WHATIF SELECT count() FROM t_hypo_types WHERE j.key = 'value_42';
 " 2>&1 | grep -E '^  (status|source):' | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//')"
