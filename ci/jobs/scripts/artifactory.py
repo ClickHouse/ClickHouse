@@ -145,13 +145,10 @@ class DebianArtifactory:
 
         # CreateRelease runs are serialized, so a lock here was left by a killed run
         lockfile = Path(R2MountPoint.MOUNT_POINT) / "configs/deb/db/lockfile"
-        had_lock = lockfile.exists()
-        if had_lock:
+        if lockfile.exists():
             print(f"WARNING: removing stale reprepro lock [{lockfile}]")
             lockfile.unlink()
-        # TODO: back to `if had_lock:` after the 26.8.11.7 recovery
-        if True:
-            # The killed run registered this version without its files, so includedeb would skip it
+            # The killed run may have registered this version without its files, so includedeb would skip it
             for codename in {self.codename, RepoCodenames.STABLE}:
                 reprepro(f"removefilter {codename} 'Version (== {self.version})'")
 
