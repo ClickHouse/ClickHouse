@@ -281,6 +281,33 @@ private:
     UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
     UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
+    /// Snapshotted under `currently_processing_in_background_mutex`: deciding what a mutation owes
+    /// evaluates `IN PARTITION`, which reaches `getMutationsSnapshot` and relocks that non-recursive mutex.
+    struct UnappliedMutations
+    {
+        struct Entry
+        {
+            std::shared_ptr<const MutationCommands> commands;
+            TransactionID tid = Tx::NonTransactionalTID;
+            /// `mutation_*.txt`, which is what system.mutations and KILL MUTATION call `mutation_id`.
+            String file_name;
+        };
+
+        StorageMetadataPtr metadata_snapshot;
+        std::map<UInt64, Entry> entries_by_version;
+    };
+
+    /// The version of the first mutation in `mutations` that may still have to rewrite `part`, or 0 if none.
+    UInt64 getNextMutationVersionToRewrite(
+        const DataPartPtr & part, const UnappliedMutations & mutations, const ContextPtr & context_for_reading) const;
+
+    /// Refuses `command` while a mutation may still have to rewrite one of `parts`.
+    /// Must be called with no parts lock held.
+    void assertNoUnappliedMutationsForParts(const DataPartsVector & parts, std::string_view command) const;
+
+    /// The alter lock, which mutation publication takes too, so check and commit cannot race a new mutation.
+    AlterLockHolder lockForAlterForPartitionCommandOrThrow(std::string_view command, const ContextPtr & query_context);
+
     /// A merge writes its result with the column names of the current metadata, so it materializes
     /// every pending metadata mutation (`RENAME COLUMN`, `DROP COLUMN`) by itself. Returns the
     /// mutation version the result part has to carry so that those mutations are not applied to it a

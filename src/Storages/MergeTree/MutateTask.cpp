@@ -3655,7 +3655,7 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
     return isVariantExtension(part_column->type, command.data_type);
 }
 
-static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
+bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
     if (auto alter = command.ast(); alter && alter->partition)
     {
@@ -3693,6 +3693,21 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
         return true;
 
     return false;
+}
+
+ContextMutablePtr createContextForMutationRead(const ContextPtr & context)
+{
+    auto res = Context::createCopy(context);
+    /// Allow mutations to work when force_index_by_date or force_primary_key is on.
+    res->setSetting("force_index_by_date", false);
+    res->setSetting("force_primary_key", false);
+    res->setSetting("apply_mutations_on_fly", false);
+    /// Skip using large sets in KeyCondition
+    res->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
+    res->setSetting("use_concurrency_control", false);
+    /// disable parallel replicas for mutations
+    res->setSetting("enable_parallel_replicas", false);
+    return res;
 }
 
 namespace
@@ -3991,17 +4006,7 @@ bool MutateTask::prepare()
         , nullptr
 #endif
     );
-    auto context_for_reading = Context::createCopy(ctx->context);
-
-    /// Allow mutations to work when force_index_by_date or force_primary_key is on.
-    context_for_reading->setSetting("force_index_by_date", false);
-    context_for_reading->setSetting("force_primary_key", false);
-    context_for_reading->setSetting("apply_mutations_on_fly", false);
-    /// Skip using large sets in KeyCondition
-    context_for_reading->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
-    context_for_reading->setSetting("use_concurrency_control", false);
-    /// disable parallel replicas for mutations
-    context_for_reading->setSetting("enable_parallel_replicas", false);
+    auto context_for_reading = createContextForMutationRead(ctx->context);
 
     for (const auto & command : *ctx->commands)
     {

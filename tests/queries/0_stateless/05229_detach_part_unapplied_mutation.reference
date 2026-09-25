@@ -1,0 +1,21 @@
+armed	0	2
+armed parts	all_1_1_0
+armed parts	all_2_2_0
+after refusals	0	2
+active parts	2
+detached parts	0
+sum	602
+dst rows	0
+drop armed	0	2
+drop allowed	0
+scope armed	0
+scope p2 allowed	401
+nullable armed	0
+nullable allowed	401
+nullable stats armed	0
+rename armed	0
+migrated	1	2
+migrated sum	4602
+patch applied	110
+patch armed	1
+patch pending mutations	0
