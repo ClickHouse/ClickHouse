@@ -673,7 +673,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (containsExponentialTimeDecayingFloat64(type))
     {
         ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
-        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), context);
+        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr());
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
         return true;
     }
