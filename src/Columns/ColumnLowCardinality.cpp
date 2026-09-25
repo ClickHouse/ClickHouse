@@ -49,25 +49,18 @@ namespace
     template <typename T>
     MutableColumnPtr mapUniqueIndexImplRef(PaddedPODArray<T> & index)
     {
-        PaddedPODArray<T> copy(index.cbegin(), index.cend());
-
         HashMap<T, T> hash_map;
-        for (auto val : index)
-            hash_map.insert({val, static_cast<T>(hash_map.size())});
 
         auto res_col = ColumnVector<T>::create();
         auto & data = res_col->getData();
 
-        data.resize(hash_map.size());
-        for (const auto & val : hash_map)
-            data[val.getMapped()] = val.getKey();
-
         for (auto & ind : index)
-            ind = hash_map[ind];
-
-        for (size_t i = 0; i < index.size(); ++i)
-            if (data[index[i]] != copy[i])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {}, but got {}", toString(data[index[i]]), toString(copy[i]));
+        {
+            auto [it, inserted] = hash_map.insert({ind, static_cast<T>(hash_map.size())});
+            if (inserted)
+                data.push_back(ind);
+            ind = it->getMapped();
+        }
 
         return res_col;
     }

@@ -1,0 +1,24 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>dict</name>
+            <values>
+                <value>3</value>
+                <value>5000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Two parts interleaved in runs of 4 rows: with 5000 keys the shared dictionary is larger than a run, so runs
+         gathered by the in-order read or the vertical merge are remapped through a hash map; 3 keys is the control. -->
+    <create_query>CREATE TABLE lc_short_runs_{dict} (k UInt64, lc LowCardinality(String)) ENGINE = MergeTree ORDER BY k SETTINGS vertical_merge_algorithm_min_columns_to_activate = 1, min_bytes_for_wide_part = 0</create_query>
+
+    <fill_query>SYSTEM STOP MERGES lc_short_runs_{dict}</fill_query>
+    <fill_query>INSERT INTO lc_short_runs_{dict} SELECT intDiv(number, 4) * 8 + number % 4, toString(number % {dict}) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO lc_short_runs_{dict} SELECT intDiv(number, 4) * 8 + number % 4 + 4, toString(number % {dict}) FROM numbers(1000000)</fill_query>
+
+    <query>SELECT lc FROM lc_short_runs_{dict} ORDER BY k FORMAT Null SETTINGS optimize_read_in_order = 1, max_threads = 1</query>
+    <query>OPTIMIZE TABLE lc_short_runs_{dict} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS optimize_dry_run_check_part = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS lc_short_runs_{dict}</drop_query>
+</test>
