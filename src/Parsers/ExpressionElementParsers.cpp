@@ -2157,6 +2157,36 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (0 == strcasecmp(name.data(), *keyword))
                 return false;
 
+        /// Special case: an implicit alias literally named UNPIVOT is only ambiguous where an
+        /// UNPIVOT clause can start, so the whole head of that clause is what is looked for here:
+        /// `UNPIVOT [INCLUDE|EXCLUDE NULLS] (<name> FOR <name> IN (`. An alias followed by anything
+        /// else -- `SELECT 1 unpivot`, `FROM t unpivot, u`, and the column alias list of
+        /// `FROM t unpivot (a, b)` -- stays a perfectly good implicit alias, so that adding the
+        /// clause does not reserve a word that queries already use.
+        if (0 == strcasecmp(name.data(), "UNPIVOT"))
+        {
+            Pos peek = pos;
+            Expected peek_expected;
+            ASTPtr peek_name;
+            ParserIdentifier peek_identifier;
+
+            if (!ParserKeyword(Keyword::INCLUDE_NULLS).ignore(peek, peek_expected))
+                ParserKeyword(Keyword::EXCLUDE_NULLS).ignore(peek, peek_expected);
+
+            if (peek->type == TokenType::OpeningRoundBracket)
+            {
+                ++peek;
+                if (peek_identifier.parse(peek, peek_name, peek_expected)
+                    && ParserKeyword(Keyword::FOR).ignore(peek, peek_expected)
+                    && peek_identifier.parse(peek, peek_name, peek_expected)
+                    && ParserKeyword(Keyword::IN).ignore(peek, peek_expected)
+                    && peek->type == TokenType::OpeningRoundBracket)
+                {
+                    return false;
+                }
+            }
+        }
+
         /// Special case: an implicit alias literally named COMMENT is only ambiguous
         /// when it is immediately followed by a string literal at the very end of the
         /// query (e.g. "... FROM t COMMENT 'x'"), which is the trailing view/table

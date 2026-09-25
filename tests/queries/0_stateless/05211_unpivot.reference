@@ -1,0 +1,92 @@
+-- the listed columns become rows, the rest are kept
+1	electronics	feb	200
+1	electronics	jan	100
+1	electronics	mar	300
+2	clothes	jan	10
+2	clothes	mar	30
+-- a column can be renamed, and only the listed ones are turned into rows
+1	electronics	300	february	200
+1	electronics	300	january	100
+2	clothes	30	january	10
+-- NULL values are dropped by default and kept with INCLUDE NULLS
+1	feb	200
+1	jan	100
+2	jan	10
+1	feb	200
+1	jan	100
+2	jan	10
+1	feb	200
+1	jan	100
+2	feb	\N
+2	jan	10
+-- the name column is a String, the value column takes the common type of the listed columns
+String	Nullable(Int32)
+-- the result can be aliased and referred to by that alias
+jan	110
+mar	330
+-- a subquery, a table function and a single column all work as the source
+a	1
+b	2
+number	0
+number	1
+1	electronics	200	300	jan	100
+2	clothes	\N	30	jan	10
+-- the clause composes with joins on either side, and with ARRAY JOIN
+1	jan	1
+2	jan	1
+jan	1	jan
+jan	2	jan
+4
+jan	10	1
+jan	10	2
+jan	100	1
+jan	100	2
+-- the name of an unaliased source still qualifies the result
+jan	10
+jan	100
+mar	30
+mar	300
+1	electronics	200	300	jan	100
+2	clothes	\N	30	jan	10
+-- the name of a CTE qualifies the result too
+jan	10
+jan	100
+mar	30
+mar	300
+1	jan	100
+2	jan	10
+jan
+jan
+-- an alias on the source names the result, and an alias on the clause wins over it
+jan	10
+jan	100
+mar	30
+mar	300
+1	jan
+2	jan
+jan
+jan
+-- an enclosing WITH does not reach into the rewrite
+jan	10
+jan	100
+mar	30
+mar	300
+jan	10
+jan	100
+mar	30
+mar	300
+-- the clause survives formatting
+SELECT *\nFROM monthly_sales UNPIVOT (sales FOR month IN (jan, feb))
+SELECT *\nFROM monthly_sales UNPIVOT INCLUDE NULLS (sales FOR month IN (jan AS x, feb)) AS u
+SELECT *\nFROM monthly_sales\nFINAL\nSAMPLE 1 / 2 UNPIVOT (sales FOR month IN (jan, feb)) AS u
+SELECT *\nFROM monthly_sales\nSTREAM UNPIVOT (sales FOR month IN (jan, feb))
+-- the clause survives an AST JSON round trip
+SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (jan, feb))
+SELECT * FROM monthly_sales UNPIVOT INCLUDE NULLS (sales FOR month IN (jan AS x, feb)) AS u
+-- errors
+1	1
+1
+0
+0
+1	2
+1

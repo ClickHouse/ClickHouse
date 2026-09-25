@@ -9327,6 +9327,22 @@ SET dialect = 'clickhouse_json';
     DECLARE(String, polyglot_dialect, "", R"(
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_unpivot, false, R"(
+Enable the `UNPIVOT` clause, which turns a set of columns of a table expression into rows.
+
+```sql
+SELECT * FROM monthly UNPIVOT (temperature FOR month IN (jan, feb, mar))
+```
+
+One row of the source becomes one row per listed column: the name column holds the name of the
+column the value came from (or its alias, written as `jan AS january`), and the value column holds
+the value. The columns that were not listed are carried through unchanged.
+
+A row whose value is `NULL` is left out, since the column it came from had nothing to contribute.
+Write `UNPIVOT INCLUDE NULLS` to keep those rows instead.
+
+Requires `enable_analyzer = 1`.
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_trino_dialect, false, R"(
 Enable the `trino` value of the `dialect` setting.
 

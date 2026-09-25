@@ -127,6 +127,67 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
+    /// UNPIVOT [INCLUDE NULLS | EXCLUDE NULLS] (value FOR name IN (col [AS alias], ...)) [AS alias]
+    if (ParserKeyword(Keyword::UNPIVOT).ignore(pos, expected))
+    {
+        auto unpivot = make_intrusive<ASTUnpivot>();
+
+        if (ParserKeyword(Keyword::INCLUDE_NULLS).ignore(pos, expected))
+            unpivot->include_nulls = true;
+        else
+            ParserKeyword(Keyword::EXCLUDE_NULLS).ignore(pos, expected);
+
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+        ++pos;
+
+        ParserIdentifier name_parser;
+        if (!name_parser.parse(pos, unpivot->value_name, expected))
+            return false;
+
+        if (!ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            return false;
+
+        if (!name_parser.parse(pos, unpivot->name_name, expected))
+            return false;
+
+        if (!ParserKeyword(Keyword::IN).ignore(pos, expected))
+            return false;
+
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+        ++pos;
+
+        /// Identifiers, each of which may be renamed with `AS`. The alias, when present,
+        /// is what ends up in the name column instead of the column's own name.
+        ParserList columns_parser(
+            std::make_unique<ParserWithOptionalAlias>(std::make_unique<ParserIdentifier>(), /*allow_alias_without_as_keyword_=*/false),
+            std::make_unique<ParserToken>(TokenType::Comma),
+            /*allow_empty_=*/false);
+        if (!columns_parser.parse(pos, unpivot->columns, expected))
+            return false;
+
+        if (pos->type != TokenType::ClosingRoundBracket)
+            return false;
+        ++pos;
+
+        if (pos->type != TokenType::ClosingRoundBracket)
+            return false;
+        ++pos;
+
+        /// The alias of the result, as in `t UNPIVOT (v FOR k IN (a, b)) AS u`. It is kept on the
+        /// clause, because the source node already carries its own alias, if any.
+        ParserAlias alias_parser(allow_alias_without_as_keyword);
+        ASTPtr alias_node;
+        if (alias_parser.parse(pos, alias_node, expected))
+            unpivot->result_alias = getIdentifierName(alias_node);
+
+        unpivot->children.emplace_back(unpivot->value_name);
+        unpivot->children.emplace_back(unpivot->name_name);
+        unpivot->children.emplace_back(unpivot->columns);
+        res->unpivot = std::move(unpivot);
+    }
+
     if (res->database_and_table_name)
         res->children.emplace_back(res->database_and_table_name);
     if (res->table_function)
@@ -141,6 +202,8 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->stream_settings);
     if (res->column_aliases)
         res->children.emplace_back(res->column_aliases);
+    if (res->unpivot)
+        res->children.emplace_back(res->unpivot);
 
     chassert(res->database_and_table_name || res->table_function || res->subquery);
 
