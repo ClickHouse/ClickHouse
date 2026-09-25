@@ -21,11 +21,16 @@ public:
     struct Suggest
     {
         using Words = std::vector<std::string>;
+
+        /// Supplies additional completion candidates for the current input (e.g. the predictions of
+        /// the autocomplete model), unique and ordered by relevance, most relevant first. Candidates
+        /// matching the typed prefix are ranked above everything else, in the returned order.
         using Callback = std::function<Words(const String & prefix, size_t prefix_length)>;
 
-        /// Get vector for the matched range of words if any. `priority_words` (identifiers
-        /// present in the current input line) are ranked first, after words used earlier in
-        /// this session, so the most relevant completions come first.
+        /// Get vector for the matched range of words if any. Words supplied by the completions
+        /// callback are ranked first, then words used earlier in this session, then
+        /// `priority_words` (identifiers present in the current input line), so the most relevant
+        /// completions come first.
         replxx::Replxx::completions_t getCompletions(
             const String & prefix, size_t prefix_length, const char * word_break_characters,
             const Words & priority_words = {});
@@ -39,9 +44,10 @@ public:
         void setCompletionsCallback(Callback && callback) { custom_completions_callback = callback; }
 
     private:
-        /// Core of `getCompletions`: returns the matched words ordered by priority — words used
-        /// earlier this session, then `priority_words`, then the rest in the existing sorted
-        /// order. Sets `last_word_empty` when there is nothing to complete.
+        /// Core of `getCompletions`: returns the matched words ordered by priority — words from the
+        /// completions callback (in its relevance order), then words used earlier this session,
+        /// then `priority_words`, then the rest in the existing sorted order. Sets
+        /// `last_word_empty` when there is nothing to complete.
         Words getMatchingWords(
             const String & prefix, size_t prefix_length, const char * word_break_characters,
             const Words & priority_words, bool & last_word_empty);
