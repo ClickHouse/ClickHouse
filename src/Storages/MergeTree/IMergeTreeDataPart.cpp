@@ -2337,12 +2337,24 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
     }
 
     String calculated_partition_id;
+    bool check_partition_id = true;
     if (info.isPatch())
+    {
         calculated_partition_id = getPartitionIdForPatch(partition);
+    }
+    else if (!metadata_snaphost->hasPartitionKey() && getDataPartStorage().existsFile("partition.dat"))
+    {
+        /// After DROP PARTITION KEY the original partition expression is unavailable, so a legacy
+        /// partition ID cannot be recalculated. `partition.dat` is preserved as an opaque marker for
+        /// these parts. Ordinary unpartitioned parts never have this file and still validate to `all`.
+        check_partition_id = false;
+    }
     else
+    {
         calculated_partition_id = partition.getID(metadata_snaphost->getPartitionKey().sample_block);
+    }
 
-    if (calculated_partition_id != info.getPartitionId())
+    if (check_partition_id && calculated_partition_id != info.getPartitionId())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "While loading part {}: "
             "calculated partition ID: {} differs from partition ID in part name: {}",
             getDataPartStorage().getFullPath(), calculated_partition_id, info.getPartitionId());
