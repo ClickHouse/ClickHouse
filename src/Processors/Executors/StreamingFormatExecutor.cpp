@@ -1,3 +1,4 @@
+#include <Columns/ColumnsView.h>
 #include <Columns/IColumn.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 
@@ -76,7 +77,7 @@ void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const C
             /// prepareForSquashing is used to reserve space
             ///   for complex objects (string, array) we care about internal storages
             /// we don actually do squashing
-            result_columns[i]->prepareForSquashing({reference_columns[i]}, factor);
+            result_columns[i]->prepareForSquashing(reference_columns[i], factor);
         }
     }
 }
