@@ -1,0 +1,25 @@
+-- wrapper invariant: field types must mirror the source columns
+100	2	2020-01-01
+100	2	2020-01-01
+Nullable(String)	Date
+0
+-- FINAL with a deferred PREWHERE keeps the filter column readable
+13	19
+13	19
+9850	14755
+9850	14755
+-- a plain Row column round-trips through text formats
+(1,'x')
+(2,'yy')
+(5,'v')
+(6,'ww')
+{"r":{"a":1,"b":"x"}}
+{"r":{"a":2,"b":"yy"}}
+{"r":{"a":5,"b":"v"}}
+{"r":{"a":6,"b":"ww"}}
+Row(a UInt8, b String)
+(3,'zzz')	Row(a UInt8, b String)
+(4,'w')
+-- Row has a binary type encoding, so parallel replicas can ship the header
+100	9900
+100	9900

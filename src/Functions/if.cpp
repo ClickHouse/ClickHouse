@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -680,9 +681,15 @@ private:
         else
             return nullptr;
 
-        const DataTypeTuple & type1 = static_cast<const DataTypeTuple &>(*arg1.type);
-        const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
-        const DataTypeTuple & tuple_result = static_cast<const DataTypeTuple &>(*result_type);
+        /// The branches and the result may be typed as Row, which shares ColumnTuple with
+        /// Tuple, so lower them to the equivalent named Tuples before casting the types.
+        const DataTypePtr type1_lowered = lowerRowTypesToTuples(arg1.type);
+        const DataTypePtr type2_lowered = lowerRowTypesToTuples(arg2.type);
+        const DataTypePtr result_type_lowered = lowerRowTypesToTuples(result_type);
+
+        const DataTypeTuple & type1 = static_cast<const DataTypeTuple &>(*type1_lowered);
+        const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*type2_lowered);
+        const DataTypeTuple & tuple_result = static_cast<const DataTypeTuple &>(*result_type_lowered);
 
         ColumnsWithTypeAndName temporary_columns(3);
         temporary_columns[0] = arguments[0];
