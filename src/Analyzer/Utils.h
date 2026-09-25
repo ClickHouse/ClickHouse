@@ -39,6 +39,12 @@ bool isNameOfInFunction(const std::string & function_name);
 /// Returns true if function name is name of local IN function or its variations, false otherwise
 bool isNameOfLocalInFunction(const std::string & function_name);
 
+/** Returns true if the function drops an unqualified matcher argument (`*`) instead of expanding it
+  * into the columns of the table expression: `count`, `countState` and their combinator variations.
+  * Example: `SELECT count(*) FROM test_table` is resolved as `count()`.
+  */
+bool functionDropsUnqualifiedMatcherArgument(const std::string & function_name);
+
 /// Returns true if function name is name of global IN function or its variations, false otherwise
 bool isNameOfGlobalInFunction(const std::string & function_name);
 

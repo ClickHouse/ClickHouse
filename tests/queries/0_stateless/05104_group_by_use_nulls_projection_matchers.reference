@@ -1,0 +1,49 @@
+-- REPLACE is visible in ORDER BY, HAVING, WHERE, GROUP BY and a named WINDOW
+-3
+-2
+-1
+0
+-3
+-2
+-1
+0
+\N
+0
+1
+-3	1
+-2	2
+-1	3
+0	4
+-- Later projection items and later matchers see the earlier REPLACE
+10	11
+10	11
+1	-4	0
+\N	-4	0
+-- Positional arguments refer to the expanded columns
+0	0
+1	1
+\N	\N
+1
+-- The result of APPLY may be a GROUP BY key
+Nullable(UInt8)
+UInt8
+UInt8
+-- The argument of grouping stays a GROUP BY key
+0
+1
+0
+1
+-- Aggregates and plain functions in APPLY
+0
+0
+0	0
+1	1
+2	2
+3	\N
+-- The same column node inside and outside of an aggregate function
+(0,0)
+(1,1)
+(1,NULL)
+0	0
+1	1
+1	\N
