@@ -1847,6 +1847,16 @@ horizontal merge. Applies only in `MergeTree`, `Replacing`, `Collapsing` or `Ver
 merging mode, to a table with a rows TTL and no column or `GROUP BY` TTL, and only while no part
 in the merge has a lightweight delete. Any other TTL merge stays horizontal.
 )", 0) \
+    DECLARE(Bool, allow_experimental_vertical_merge_tuple_subcolumns, false, R"(
+When enabled, flattenable named `Tuple` leaves are merged one at a time in Vertical
+merge instead of keeping the parent tuple in memory. The number of those leaves
+(including nested flattenable tuples) counts toward
+`vertical_merge_algorithm_min_columns_to_activate`. Flatten is refused for Compact
+sources, dynamic-subcolumn leaves, skip indexes or statistics that must be rebuilt
+from the parent column, leaf-name collisions, or parts that cannot read the leaf
+as a subcolumn. The output part schema does not change: `columns.txt` still lists
+one column. Default is disabled.
+)", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 The maximum postpone time for failed mutations.
 )", 0) \

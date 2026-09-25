@@ -1,0 +1,38 @@
+=== two Tuples, 6+5 leaves activate Vertical ===
+2
+1
+t	Tuple(a0 UInt8, a1 UInt8, a2 UInt8, a3 UInt8, a4 UInt8, a5 UInt8)
+u	Tuple(b0 UInt8, b1 UInt8, b2 UInt8, b3 UInt8, b4 UInt8)
+1
+vertical_substreams
+t	t%2Ea0
+t	t%2Ea1
+t	t%2Ea2
+t	t%2Ea3
+t	t%2Ea4
+t	t%2Ea5
+u	u%2Eb0
+u	u%2Eb1
+u	u%2Eb2
+u	u%2Eb3
+u	u%2Eb4
+horizontal_substreams
+t	t%2Ea0
+t	t%2Ea1
+t	t%2Ea2
+t	t%2Ea3
+t	t%2Ea4
+t	t%2Ea5
+u	u%2Eb0
+u	u%2Eb1
+u	u%2Eb2
+u	u%2Eb3
+u	u%2Eb4
+merge_algorithm
+Vertical
+
+=== two Tuples, 5+5 leaves stay Horizontal ===
+2
+1
+merge_algorithm
+Horizontal

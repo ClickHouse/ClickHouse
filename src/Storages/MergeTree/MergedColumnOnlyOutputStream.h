@@ -32,6 +32,9 @@ public:
     void finalizeIndexGranularity();
     MergeTreeData::DataPart::Checksums fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeDataPartChecksums & all_checksums);
 
+    /// Column + standalone skip-index checksums only. Does not `setColumns` or fold parent metadata.
+    MergeTreeData::DataPart::Checksums collectChecksums(MergeTreeDataPartChecksums & all_checksums);
+
     /// Forwarded to the underlying writer; see IMergeTreeDataPartWriter::preloadPackedSkipIndicesArchive.
     void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & source, const NameSet & files)
     {
