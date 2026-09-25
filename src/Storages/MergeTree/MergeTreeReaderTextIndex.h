@@ -151,7 +151,7 @@ private:
     /// sparse-index header and confirming no virtual column carries pattern predicates.
     bool lazy_mode_requested = false;
     bool use_lazy_mode = false;
-    float lazy_intersection_density_threshold = 0.2f;
+    TextIndexPostingsIntersectionAlgorithm intersection_algorithm = TextIndexPostingsIntersectionAlgorithm::Auto;
 
     /// Cached lazy cursors, indexed by column position in `columns_to_read` and keyed by token.
     /// Cursors are forward-only and hold mutable segment/block position, so they must not be
