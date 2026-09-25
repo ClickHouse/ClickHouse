@@ -840,7 +840,7 @@ void TimeSeriesSink::onFinish()
         tags_pipeline->executor->finish();
         /// The pending rows are in the table for sure now.
         if (tags_deduplication_cache && !pending_tags.rows.empty())
-            tags_deduplication_cache->markRowsAsWritten(pending_tags);
+            tags_deduplication_cache->markRowsAsWritten(std::move(pending_tags));
     }
     if (samples_pipeline)
         samples_pipeline->executor->finish();
@@ -851,7 +851,7 @@ void TimeSeriesSink::onFinish()
         metric_families_pipeline->executor->finish();
         /// The pending rows are in the table for sure now.
         if (metric_families_deduplication_cache && !pending_metric_families.rows.empty())
-            metric_families_deduplication_cache->markRowsAsWritten(pending_metric_families);
+            metric_families_deduplication_cache->markRowsAsWritten(std::move(pending_metric_families));
     }
 }
 

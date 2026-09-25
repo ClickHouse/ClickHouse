@@ -46,14 +46,17 @@ ALTER TABLE ts MODIFY SETTING metric_families_deduplication_cache_expiration_sec
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('m', 'gauge', 'seconds', 'first');
 SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts);
 
-SELECT '--- the oldest entries are evicted when the cache is full, hits do not keep them ---';
-ALTER TABLE ts MODIFY SETTING metric_families_deduplication_cache_size_bytes = 170; -- two entries of about 80 bytes, see APPROXIMATE_ENTRY_SIZE in TimeSeriesDeduplicationCache.h
-INSERT INTO ts (metric_family, type, unit, help) VALUES ('m1', 'gauge', '', '');
-INSERT INTO ts (metric_family, type, unit, help) VALUES ('m2', 'gauge', '', '');
-INSERT INTO ts (metric_family, type, unit, help) VALUES ('m1', 'gauge', '', '');
-INSERT INTO ts (metric_family, type, unit, help) VALUES ('m3', 'gauge', '', '');
-INSERT INTO ts (metric_family, type, unit, help) VALUES ('m1', 'gauge', '', '');
-SELECT metric_family, count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts) GROUP BY metric_family ORDER BY metric_family;
+SELECT '--- the least recently used entry is evicted when the cache is full, a used entry survives ---';
+SYSTEM CLEAR TIME SERIES CACHES ts;
+ALTER TABLE ts MODIFY SETTING metric_families_deduplication_cache_size_bytes = 456; -- three entries of about 152 bytes, see APPROXIMATE_ENTRY_SIZE in TimeSeriesDeduplicationCache.h
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('e1', 'gauge', '', '');
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('e2', 'gauge', '', '');
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('e3', 'gauge', '', '');
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('e1', 'gauge', '', ''); -- a hit, e2 is the least recently used entry now
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('e4', 'gauge', '', ''); -- evicts e2
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('e2', 'gauge', '', ''); -- written again
+INSERT INTO ts (metric_family, type, unit, help) VALUES ('e1', 'gauge', '', ''); -- still a hit
+SELECT metric_family, count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_family LIKE 'e%' GROUP BY metric_family ORDER BY metric_family;
 
 SELECT '--- an entry expires after the expiration period ---';
 ALTER TABLE ts MODIFY SETTING metric_families_deduplication_cache_size_bytes = 10000, metric_families_deduplication_cache_expiration_seconds = 1;
@@ -69,7 +72,7 @@ INSERT INTO ts (metric_family, type, unit, help) VALUES ('m5', 'gauge', '', '');
 SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_family = 'm5';
 
 SELECT '--- the cache is enabled again by resetting its size, it starts empty ---';
-ALTER TABLE ts RESET SETTING metric_families_deduplication_cache_size_bytes;
+ALTER TABLE ts RESET SETTING metric_families_deduplication_cache_size_bytes, metric_families_deduplication_cache_expiration_seconds;
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('m5', 'gauge', '', '');
 INSERT INTO ts (metric_family, type, unit, help) VALUES ('m5', 'gauge', '', '');
 SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts) WHERE metric_family = 'm5';

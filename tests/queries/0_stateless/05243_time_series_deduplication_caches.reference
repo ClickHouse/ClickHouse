@@ -14,11 +14,11 @@ r3	1
 1
 --- changing the limits of a cache keeps its entries ---
 1
---- the oldest entries are evicted when the cache is full, hits do not keep them ---
-m	1
-m1	2
-m2	1
-m3	1
+--- the least recently used entry is evicted when the cache is full, a used entry survives ---
+e1	1
+e2	2
+e3	1
+e4	1
 --- an entry expires after the expiration period ---
 2
 --- the cache is disabled by setting its size to 0 ---

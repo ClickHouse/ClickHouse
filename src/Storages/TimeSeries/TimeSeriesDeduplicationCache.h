@@ -1,18 +1,16 @@
 #pragma once
 
+#include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
-#include <base/defines.h>
 #include <base/types.h>
 
+#include <atomic>
 #include <chrono>
-#include <deque>
 #include <memory>
-#include <mutex>
 #include <unordered_map>
-#include <vector>
 
 
 namespace DB
@@ -28,7 +26,8 @@ class Block;
 ///
 /// An entry expires a fixed time after the row was written, hits don't prolong it. So every row is written again at least once
 /// per expiration period, and any difference between the cache and the table disappears within that period.
-/// The oldest entries are also evicted when the cache is full. The size of the cache is estimated from the number of entries.
+/// When the cache is full, the entries used only once are evicted first, then the least recently used ones (the `SLRU` policy).
+/// The size of the cache is estimated from the number of entries.
 ///
 /// The cache is local to the server and doesn't notice direct changes to the target table.
 /// `SYSTEM DROP TIME SERIES CACHES` clears it without waiting for the expiration.
@@ -42,102 +41,79 @@ public:
     /// because a failed insert must not make the next inserts skip its rows.
     struct PendingRows
     {
-        /// The latest row of each key. Holds at most as many rows as the cache, which bounds the memory of an insert.
-        /// A row beyond that limit is written even if it repeats within the insert.
+        /// Maps the key of a pending row to the hash of its latest values. Holds at most as many rows as the cache,
+        /// which bounds the memory of an insert. A row beyond that limit is written even if it repeats within the insert.
         std::unordered_map<KeyHash, RowHash, UInt128TrivialHash> rows;
 
-        /// The generation of the cache when the first row was added. The rows aren't added to the cache if it was cleared
-        /// while the insert was running, because they may be gone from the table.
+        /// The generation of the cache when the first row was added. If the cache is cleared after that, the pending rows
+        /// may be gone from the table, so they are forgotten, and the ones already in the cache don't count.
         size_t generation = 0;
     };
 
     TimeSeriesDeduplicationCache(
         size_t max_size_bytes_,
         UInt64 expiration_seconds_,
-        CurrentMetrics::Metric entries_metric_,
-        CurrentMetrics::Metric bytes_metric_,
+        CurrentMetrics::Metric entries_metric,
+        CurrentMetrics::Metric bytes_metric,
         ProfileEvents::Event hits_event_,
         ProfileEvents::Event misses_event_);
-    ~TimeSeriesDeduplicationCache();
 
-    /// Changes the limits of the cache. The entries beyond a smaller limit are removed at once.
+    /// Changes the limits of the cache. The entries beyond a smaller size are removed at once.
     void setLimits(size_t max_size_bytes, UInt64 expiration_seconds_);
 
-    /// Forgets all the entries. The pending rows of the running inserts aren't added to the cache after that.
+    /// Forgets all the entries. The rows pending in the running inserts are forgotten too.
     void clear();
 
-    /// Returns `block` without the rows already written by earlier inserts (found in the cache) or by the same insert
-    /// (found in `pending_rows`). A row is identified by the column `key_column_index` and counts as written only if all its values
-    /// are the same. The other rows are added to `pending_rows`, pass them to `markRowsAsWritten` after they are written.
-    /// The rows filtered out by `filter` (if it's passed) are removed too, without being looked up.
+    /// Returns `block` without the rows already written by earlier inserts (found in the cache) and without the rows pending
+    /// in the same insert (found in `pending_rows`). A row is identified by the column `key_column_index` and counts as the same
+    /// only if all its values are equal. The other rows are added to `pending_rows`, pass them to `markRowsAsWritten`
+    /// after they are written.
+    /// The rows with `filter[row] == 0` (if `filter` is passed) are removed too, without being looked up.
     Block filterOutWrittenRows(const Block & block, size_t key_column_index, PendingRows & pending_rows, PaddedPODArray<UInt8> filter = {});
 
-    /// Moves the pending rows to the cache, so that `filterOutWrittenRows` skips them next time.
-    void markRowsAsWritten(const PendingRows & pending_rows);
+    /// Moves the pending rows to the cache, so that `filterOutWrittenRows` skips them next time, and leaves `pending_rows` empty.
+    /// Called after the pending rows have been written to the table.
+    void markRowsAsWritten(PendingRows && pending_rows);
 
 private:
     using TimePoint = std::chrono::steady_clock::time_point;
-    using BatchId = UInt64;
-
-    /// The keys of the rows written by one insert, they share the time of writing.
-    struct Batch
-    {
-        BatchId batch_id = 0;
-        TimePoint written_at{};
-        std::vector<KeyHash> keys;
-    };
-
-    /// The batches are ordered by the time of writing, the oldest one is at the front.
-    using Batches = std::deque<Batch>;
 
     /// The latest row written for a key.
     struct WrittenRow
     {
-        RowHash row_hash;
-
-        /// The batch holding the key. A replaced row leaves the key in its older batch, where it's skipped.
-        BatchId batch_id;
+        RowHash row_hash{};
+        size_t generation = 0;
+        TimePoint written_at{};
     };
 
-    using WrittenRows = std::unordered_map<KeyHash, WrittenRow, UInt128TrivialHash>;
+    struct WrittenRowWeight
+    {
+        size_t operator()(const WrittenRow &) const { return APPROXIMATE_ENTRY_SIZE; }
+    };
 
-    /// The approximate heap footprint of one entry: the key in its batch, and the node of the map with a bucket.
-    /// The size limit of the cache is converted to a number of entries with it.
-    static constexpr size_t APPROXIMATE_ENTRY_SIZE = sizeof(KeyHash) + sizeof(KeyHash) + sizeof(WrittenRow) + 3 * sizeof(void *);
+    using Cache = CacheBase<KeyHash, WrittenRow, UInt128TrivialHash, WrittenRowWeight>;
 
-    /// Resets `filter` for the rows of `block` already written and adds the other rows passing the filter to `pending_rows`.
+    /// The approximate heap footprint of one entry: the node of the hash map with the key and the cell of the cache policy,
+    /// the node of the recency list with the key, and the shared value with its control block.
+    static constexpr size_t APPROXIMATE_ENTRY_SIZE
+        = (sizeof(KeyHash) + 6 * sizeof(void *)) + (sizeof(KeyHash) + 2 * sizeof(void *)) + (sizeof(WrittenRow) + 3 * sizeof(void *));
+
+    /// Resets `filter` for the rows of `block` already written or pending, and adds the other rows passing the filter to `pending_rows`.
     /// Returns the number of rows passing the filter.
     size_t excludeWrittenRowsFromFilter(
         const Block & block, size_t key_column_index, PaddedPODArray<UInt8> & filter, PendingRows & pending_rows);
 
-    /// Returns the current time for a new batch or for an expiration check, must be called under the mutex.
-    TimePoint getCurrentTime() const TSA_REQUIRES(mutex);
+    /// An entry expires after the expiration period, or at once if the cache was cleared after the entry was added.
+    bool isExpired(const WrittenRow & written_row, TimePoint now) const;
 
-    /// Removes the entries written at least `expiration_seconds` before `now`, batch by batch from the front.
-    void removeExpiredEntries(TimePoint now) TSA_REQUIRES(mutex);
-
-    /// Removes the specified number of the oldest entries, batch by batch.
-    void removeOldestEntries(size_t count) TSA_REQUIRES(mutex);
-
-    size_t max_entries TSA_GUARDED_BY(mutex);
-    UInt64 expiration_seconds TSA_GUARDED_BY(mutex);
-    const CurrentMetrics::Metric entries_metric;
-    const CurrentMetrics::Metric bytes_metric;
+    Cache cache;
+    std::atomic<UInt64> expiration_seconds;
+    std::atomic<size_t> max_pending_rows;
     const ProfileEvents::Event hits_event;
     const ProfileEvents::Event misses_event;
 
-    Batches batches TSA_GUARDED_BY(mutex);
-    WrittenRows written_rows TSA_GUARDED_BY(mutex);
-
-    /// The number of keys in all the batches. The size limit applies to it, because a replaced row still takes a place in its older batch.
-    size_t num_entries TSA_GUARDED_BY(mutex) = 0;
-
-    BatchId last_batch_id TSA_GUARDED_BY(mutex) = 0;
-
-    /// Incremented by `clear`, see `PendingRows::generation`.
-    size_t current_generation TSA_GUARDED_BY(mutex) = 0;
-
-    mutable std::mutex mutex;
+    /// Incremented by `clear`.
+    std::atomic<size_t> current_generation = 0;
 };
 
 using TimeSeriesDeduplicationCachePtr = std::shared_ptr<TimeSeriesDeduplicationCache>;
