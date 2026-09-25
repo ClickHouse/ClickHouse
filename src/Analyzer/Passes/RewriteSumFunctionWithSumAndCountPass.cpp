@@ -69,10 +69,8 @@ public:
         if (!literal_type || !WhichDataType(literal_type).isNumber())
             return;
 
-        /// The rewrite adds `N * count(x)`, which must be exactly +0 when the aggregate state
-        /// consumed no rows, because the unrewritten query then yields the default of the
-        /// result type. `inf * 0` and `nan * 0` are `nan`, and a negatively signed `N` gives
-        /// `-0.0`, which `1 / x` tells apart from zero.
+        /// `N * count(x)` must be exactly +0 over an empty state: `inf * 0` and `nan * 0` are `nan`, and
+        /// a negatively signed `N` gives `-0.0`, which `1 / x` tells apart from zero.
         const auto & literal_value = literal->getValue();
         if (literal_value.getType() == Field::Types::Float64)
         {

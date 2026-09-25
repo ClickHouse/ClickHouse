@@ -54,9 +54,8 @@ Field zeroField(const Field & value)
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
-/// An aggregation without a grouping key emits a row even over empty input, and so does the WITH TOTALS
-/// grand total; a key set holding a non-constant key cannot, because a group exists only once a row has
-/// landed in it. Constant keys are eliminated during analysis, so a constant-only set counts as keyless.
+/// A keyless aggregation, and the WITH TOTALS grand total, emit a row even over empty input; a key set with
+/// a non-constant key cannot. Constant keys are eliminated during analysis, so such a set counts as keyless.
 bool aggregationMayBeEmpty(const QueryNode & query_node)
 {
     if (query_node.isGroupByWithTotals() || !query_node.hasGroupBy())
@@ -107,7 +106,6 @@ bool isPositiveFiniteConstant(const Field & value)
                 return false;
             break;
         default:
-            /// zeroField throws on every other type.
             return false;
     }
 
@@ -120,15 +118,12 @@ bool hoistPreservesEmptyAggregationResult(
     bool aggregated_argument_is_nullable,
     bool aggregate_result_is_nullable)
 {
-    /// A Nullable operand makes the surviving aggregate Nullable, so its empty state is NULL and
-    /// NULL survives the operation; the pre-hoist result type is not a proxy (arithmetic over a
-    /// Variant is Nullable while the operand is not).
+    /// An aggregate over a Nullable operand has NULL as its empty state, and NULL survives the operation.
     if (aggregated_argument_is_nullable)
         return true;
 
-    /// The operation itself can introduce the nullability, from the other operand: then the
-    /// unrewritten aggregate is over a Nullable column and its empty state is NULL, while the
-    /// surviving aggregate is over a non-Nullable operand and yields the type default instead.
+    /// Arithmetic can introduce the nullability from the other operand: then only the unrewritten aggregate
+    /// is over a Nullable column, and only it is NULL over empty input.
     if (aggregate_result_is_nullable)
         return false;
 
@@ -199,10 +194,8 @@ public:
         if (!left_argument_constant_node && !right_argument_constant_node)
             return;
 
-        /// An empty stack means the enclosing query is unknown, so decline.
         const bool may_be_empty = aggregation_may_be_empty_stack.empty() || aggregation_may_be_empty_stack.back();
         const auto * hoisted_constant_node = right_argument_constant_node ? right_argument_constant_node : left_argument_constant_node;
-        /// The aggregate that survives the hoist is the one over this operand.
         const auto & aggregated_argument_node
             = right_argument_constant_node ? arithmetic_function_arguments_nodes[0] : arithmetic_function_arguments_nodes[1];
         if (may_be_empty
