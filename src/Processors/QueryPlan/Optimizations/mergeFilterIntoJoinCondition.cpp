@@ -252,6 +252,32 @@ bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
     return false;
 }
 
+/// The conjuncts of `predicate` in the order they are written, left to right. Mirrors `getConjunctsList`
+/// (same `and` flattening, same ALIAS unwrapping) except that it does not de-duplicate shared nodes, so a
+/// node occurring more than once is reported at every position it occupies.
+ActionsDAG::NodeRawConstPtrs getConjunctsInWrittenOrder(const ActionsDAG::Node * predicate)
+{
+    ActionsDAG::NodeRawConstPtrs conjuncts;
+    std::vector<const ActionsDAG::Node *> stack{predicate};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+        {
+            /// Pushed in reverse so the atoms come back left to right.
+            for (const auto * child : node->children | std::ranges::views::reverse)
+                stack.push_back(child);
+        }
+        else if (node->type == ActionsDAG::ActionType::ALIAS)
+            stack.push_back(node->children.front());
+        else
+            conjuncts.push_back(node);
+    }
+    return conjuncts;
+}
+
 std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
@@ -348,9 +374,26 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         }
         else if (rejected_conjuncts.size() > 1)
         {
-            /// `getConjunctsList` yielded the conjuncts right to left, and this `and` is evaluated left to
-            /// right: a guard must stay ahead of the conjunct it guards.
-            std::ranges::reverse(rejected_conjuncts);
+            /// `and` is evaluated left to right, so the conjuncts left in the predicate must keep the order
+            /// they appear in it: a guard stays ahead of the conjunct it guards. `getConjunctsList`
+            /// de-duplicates shared nodes, so the order it reports cannot be turned into the written one by
+            /// reversing it, and the predicate itself is the only faithful source.
+            std::unordered_set<const ActionsDAG::Node *> rejected_set(rejected_conjuncts.begin(), rejected_conjuncts.end());
+            ActionsDAG::NodeRawConstPtrs ordered_conjuncts;
+            ordered_conjuncts.reserve(rejected_conjuncts.size());
+            for (const auto * conjunct : getConjunctsInWrittenOrder(predicate))
+                if (rejected_set.erase(conjunct) != 0)
+                    ordered_conjuncts.push_back(conjunct);
+
+            /// Every rejected conjunct is an atom of `predicate`, so the walk above reaches all of them.
+            if (ordered_conjuncts.size() != rejected_conjuncts.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Reordering the residual filter lost {} of {} conjuncts. DAG:\n{}",
+                    rejected_conjuncts.size() - ordered_conjuncts.size(),
+                    rejected_conjuncts.size(),
+                    filter_dag.dumpDAG());
+
+            rejected_conjuncts = std::move(ordered_conjuncts);
 
             /// `and` of the remaining conjuncts normalizes the values itself.
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
