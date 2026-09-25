@@ -3,6 +3,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/QueryExecutionCounters.h>
 
 namespace DB
 {
@@ -71,6 +72,9 @@ bool JoinSwitcher::switchJoin()
         success = success && join->addBlockToJoin(saved_block);
 
     switched = true;
+
+    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::PARTIAL_MERGE);
+
     return success;
 }
 
