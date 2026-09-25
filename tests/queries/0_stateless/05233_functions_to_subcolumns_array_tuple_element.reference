@@ -1,0 +1,24 @@
+-- named Array(Tuple) fields preserve values and types
+1	[10,11]	[10,11]	[100,NULL]	['alpha','beta']	Array(UInt32)	Array(Nullable(Int32))	Array(LowCardinality(String))
+2	[]	[]	[]	[]	Array(UInt32)	Array(Nullable(Int32))	Array(LowCardinality(String))
+3	[30,31,32]	[30,31,32]	[-3,4,NULL]	['gamma','gamma','delta']	Array(UInt32)	Array(Nullable(Int32))	Array(LowCardinality(String))
+-- positional Array(Tuple) fields preserve values and types
+1	[10,11]	[100,NULL]	['payload-10','payload-11']	Array(String)
+2	[]	[]	[]	Array(String)
+3	[30,31,32]	[-3,4,NULL]	['payload-30','payload-31','payload-32']	Array(String)
+-- Array(Nullable(Tuple)) remains on the function path
+1	[100,NULL]	Array(Nullable(UInt32))
+2	[]	Array(Nullable(UInt32))
+3	[300]	Array(Nullable(UInt32))
+0
+-- tupleElement reaches the selected Array subcolumn
+1
+1
+0
+-- a full-column use does not add a duplicate subcolumn read
+0
+-- physical dotted columns and case collisions are not rewritten
+0
+0
+0
+1
