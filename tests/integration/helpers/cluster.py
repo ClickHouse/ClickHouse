@@ -4366,7 +4366,9 @@ class ClickHouseCluster:
             )
             self.up_called = True
 
-            run_and_check(clickhouse_start_cmd)
+            retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                run_and_check, clickhouse_start_cmd
+            )
             logging.debug("ClickHouse instance created")
 
             if self.with_dolor:
