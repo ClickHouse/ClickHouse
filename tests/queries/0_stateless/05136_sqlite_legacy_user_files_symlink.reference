@@ -1,0 +1,9 @@
+--- the `sqlite` table function through a symlink inside user_files
+1
+2
+--- `ENGINE = SQLite` through a symlink inside user_files
+tbl
+1
+2
+--- a path escaping user_files is still rejected
+PATH_ACCESS_DENIED

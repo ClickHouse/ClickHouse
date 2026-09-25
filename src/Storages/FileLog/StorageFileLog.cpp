@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -190,7 +192,43 @@ StorageFileLog::StorageFileLog(
     storage_metadata.setVirtuals(createVirtuals((*filelog_settings)[FileLogSetting::handle_error_mode]));
     setInMemoryMetadata(storage_metadata);
 
-    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
+    /// `StorageFileLog` reads and watches data via local filesystem APIs
+    /// (`std::filesystem` in `loadFiles`, `stat` in `getInode`, and
+    /// `FileLogDirectoryWatcher`). With a non-local `user_files_policy` disk
+    /// (for example `s3_plain`), the configured user-files root resolves to a
+    /// local metadata directory rather than the disk's backing store, so
+    /// containment under that path would let `StorageFileLog` operate on
+    /// unrelated local files. Reject up front, mirroring the explicit guards
+    /// added in `InputFormatErrorsLogger`, `EmbeddedRocksDB`, the `file`
+    /// dictionary source, and `openSQLiteDB`.
+    ///
+    /// Like the path check below, only a fresh `CREATE` fails: on `ATTACH` and metadata replay
+    /// (for example after an admin enables such a policy) the table is kept, but stays inert.
+    if (auto user_files_volume = getContext()->getUserFilesVolume())
+    {
+        for (const auto & user_files_disk : user_files_volume->getDisks())
+        {
+            if (isPlainLocalDisk(*user_files_disk))
+                continue;
+
+            if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
+            {
+                LOG_ERROR(
+                    log,
+                    "Engine FileLog is not supported with non-plain-local `user_files_policy` disks "
+                    "(disk `{}` is not a plain local filesystem disk), the table will not read any data",
+                    user_files_disk->getName());
+                return;
+            }
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Engine FileLog is not supported with non-plain-local `user_files_policy` disks "
+                "(disk `{}` is not a plain local filesystem disk)",
+                user_files_disk->getName());
+        }
+    }
+
+    if (!getContext()->isUserFilesPath(path))
     {
         if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
         {
