@@ -57,6 +57,7 @@ void registerAggregateFunctionsStatisticsFourthMoment(AggregateFunctionFactory &
 void registerAggregateFunctionsStatisticsCovar(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsCorr(AggregateFunctionFactory &);
 void registerAggregateFunctionsRegr(AggregateFunctionFactory &);
+void registerAggregateFunctionProduct(AggregateFunctionFactory &);
 void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory &);
 void registerAggregateFunctionSum(AggregateFunctionFactory &);
 void registerAggregateFunctionSumCount(AggregateFunctionFactory &);
@@ -174,6 +175,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsStatisticsCovar(factory);
         registerAggregateFunctionsStatisticsCorr(factory);
         registerAggregateFunctionsRegr(factory);
+        registerAggregateFunctionProduct(factory);
         registerAggregateFunctionsVarianceMatrix(factory);
         registerAggregateFunctionSum(factory);
         registerAggregateFunctionSumCount(factory);
