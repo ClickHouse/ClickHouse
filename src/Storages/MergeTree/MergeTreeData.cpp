@@ -4584,7 +4584,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     /// Data parts are still alive (DataPartsVector holds shared_ptrs) and contain the metadata to log.
     /// Parts removed by DROP TABLE do not pass through here; dropAllData() logs them itself.
-    writePartRemovalLog(*this, parts, log);
+    writePartRemovalLog(*this, parts, log.load());
 }
 
 
@@ -5109,13 +5109,13 @@ void MergeTreeData::dropAllData()
                 removed_parts.push_back(part);
             }
         }
-        writePartRemovalLog(*this, removed_parts, log);
+        writePartRemovalLog(*this, removed_parts, log.load());
 
         throw;
     }
 
     /// The parts of a dropped table never reach removePartsFinally(), so log their removal here.
-    writePartRemovalLog(*this, all_parts, log);
+    writePartRemovalLog(*this, all_parts, log.load());
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
     clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
