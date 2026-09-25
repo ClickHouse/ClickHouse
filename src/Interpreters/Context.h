@@ -629,6 +629,10 @@ protected:
     /// Set for CREATE queries a Replicated database replays from a definition it already stored.
     /// Such a definition describes existing state, so validation that may reject a new one must not run.
     bool is_recovery_from_stored_metadata = false;
+    /// Set while a refreshable materialized view re-creates its target table from the view's own
+    /// stored definition. That definition also describes existing state, but the re-creation runs under
+    /// the view's definer later, so it licenses the storage setting-name check only, no access check.
+    bool is_storage_settings_from_stored_metadata = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
@@ -1926,6 +1930,9 @@ public:
 
     bool isRecoveryFromStoredMetadata() const { return is_recovery_from_stored_metadata; }
     void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
+
+    bool isStorageSettingsFromStoredMetadata() const { return is_storage_settings_from_stored_metadata; }
+    void setStorageSettingsFromStoredMetadata(bool value) { is_storage_settings_from_stored_metadata = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }

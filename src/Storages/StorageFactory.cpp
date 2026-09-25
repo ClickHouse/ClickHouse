@@ -63,7 +63,8 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
     const bool is_shared_catalog_replay = false;
 #endif
     if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_ddl_replay
-        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay)
+        || local_context->isRecoveryFromStoredMetadata() || local_context->isStorageSettingsFromStoredMetadata()
+        || is_shared_catalog_replay)
         return;
 
     /// A name that is neither a setting of this engine nor a query setting of this context is no setting at
@@ -72,11 +73,14 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
     const auto & features = StorageFactory::instance().getStorageFeatures(args.engine_name);
     chassert(features.has_builtin_setting_fn != nullptr);
     const Settings & query_settings = local_context->getSettingsRef();
+    auto reject = [&](std::string_view name)
+    {
+        throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", name, args.engine_name);
+    };
     auto check = [&](std::string_view name)
     {
         if (!features.has_builtin_setting_fn(name) && !query_settings.has(name))
-            throw Exception(
-                ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", name, args.engine_name);
+            reject(name);
     };
 
     for (const auto & change : args.storage_def->settings->changes)
@@ -84,9 +88,9 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
     /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and is serialized back into the stored definition.
     for (const auto & name : args.storage_def->settings->default_settings)
         check(name);
-    /// `param_x = ...` lands in `query_parameters` with the prefix stripped, and only a standalone `SET` reads that payload.
+    /// `param_x = ...` lands in `query_parameters` with the prefix stripped, and nothing hoists a name out of it.
     for (const auto & parameter : args.storage_def->settings->query_parameters)
-        check(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
+        reject(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
 }
 
 
