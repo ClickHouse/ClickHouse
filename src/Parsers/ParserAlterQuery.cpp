@@ -1343,6 +1343,29 @@ These `ALTER` statements modify entities related to role-based access control:
 | [ALTER DATABASE ... MODIFY COMMENT](/reference/statements/alter/database-comment) | Adds, modifies, or removes comments to the database, regardless if it was set before or not. |
 | [ALTER NAMED COLLECTION](/reference/statements/alter/named-collection) | Modifies [Named Collections](/concepts/features/configuration/server-config/named-collections).                   |
 
+## Combining actions in one `ALTER` {#combining-actions}
+
+One `ALTER TABLE` accepts several comma-separated actions, so work that would otherwise be submitted as a sequence of statements can go in a single one:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, DROP COLUMN referrer;
+```
+
+The actions do not have to be of the same type, and they are applied from left to right, so a later action can use what an earlier one added:
+
+```sql
+-- a new column and an index over it
+ALTER TABLE visits ADD COLUMN duration UInt32, ADD INDEX idx_duration duration TYPE minmax GRANULARITY 4;
+
+-- a type change together with a new column
+ALTER TABLE visits MODIFY COLUMN browser LowCardinality(String), ADD COLUMN page_id UInt64;
+
+-- three actions in one statement
+ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUMN region_id UInt32;
+```
+
+When a client waits for an `ALTER` to finish, which setting governs that wait depends on the action rather than on the statement: an action on the mutation execution path, such as `MATERIALIZE INDEX`, is covered by [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) while the metadata actions are covered by [`alter_sync`](/reference/settings/session-settings/alter#alter_sync), so combining the two does not bring them under one setting. See [Synchronicity of ALTER Queries](#synchronicity-of-alter-queries) for which actions each setting covers, and [Combining `MATERIALIZE INDEX` clauses](#combining-materialize-index-clauses) for the restriction that such a mixed statement meets on a `Replicated` database.
+
 ## Mutations {#mutations}
 
 `ALTER` queries that are intended to manipulate table data are implemented with a mechanism called "mutations", most notably [ALTER TABLE ... DELETE](/reference/statements/alter/delete) and [ALTER TABLE ... UPDATE](/reference/statements/alter/update). They are asynchronous background processes similar to merges in [MergeTree](/reference/engines/table-engines/mergetree-family/index) tables that to produce new "mutated" versions of parts.
@@ -1389,7 +1412,7 @@ On replicated tables, submitting several separate `ALTER` statements against the
 
 Approaches that avoid the race:
 
-- Combine independent metadata operations into a **single** multi-clause `ALTER` when the grammar allows it (for example multiple `ADD INDEX` clauses).
+- Combine independent metadata operations into a **single** multi-clause `ALTER` when the grammar allows it (for example multiple `ADD INDEX` clauses), as described in [Combining actions in one `ALTER`](#combining-actions).
 - Serialize `ALTER` statements and retry on code 517 until previous `ALTER`s have been applied on the replica.
 - For mutation-producing `ALTER`s, wait for the previous mutation to finish using a documented observable such as [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) or `is_done` in [`system.mutations`](/reference/system-tables/mutations) before submitting the next one.
 
@@ -1429,6 +1452,14 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 
 In the query, specify a list of one or more comma-separated actions.
 Each action is an operation on a column.
+
+For example, one statement can drop one column and add another:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+Whether such a query returns before its work on existing data has finished follows [`alter_sync`](/reference/settings/session-settings/alter#alter_sync), which also covers the mutation that `DROP COLUMN` or a `MODIFY COLUMN` type change creates; [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) applies to [MATERIALIZE COLUMN](#materialize-column), which runs on the mutation path. Both are described in [Synchronicity of ALTER Queries](/reference/statements/alter/index#synchronicity-of-alter-queries).
 
 The following actions are supported:
 
