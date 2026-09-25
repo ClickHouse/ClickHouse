@@ -4,12 +4,12 @@
 -- set-building one - the candidate is built without it, so `CreatingSetsStep` would be handed a plan
 -- carrying the subquery's own columns instead of the empty header it requires.
 --
--- Considering such a plan is not free even when nothing comes of it: the probe plan AutoPR builds to
--- price the switch runs index analysis. That extra round is what this test pins. A `GLOBAL IN` runs its
--- subquery as a plan of its own, so the three rounds below are the two reads of the query and the probe
--- built for the query itself; a fourth would mean a probe was built for the set-building plan too.
+-- Considering such a plan is not free even when nothing comes of it: AutoPR builds a probe plan to price
+-- the switch, and building one runs index analysis. A `GLOBAL IN` runs its subquery as a plan of its own,
+-- which makes both counts easy to read - how many queries AutoPR weighed up, and how many rounds of index
+-- analysis that took.
 --
--- Rounds, not wall time, so the count is the same under sanitizers.
+-- Counts, not wall time, so they are the same under sanitizers.
 
 DROP TABLE IF EXISTS t_autopr_set_root_hits;
 DROP TABLE IF EXISTS t_autopr_set_root_keys;
@@ -39,14 +39,35 @@ SELECT sum(length(URL)) FROM t_autopr_set_root_hits
 WHERE WatchID GLOBAL IN (SELECT a % 1000000 FROM t_autopr_set_root_keys)
 FORMAT Null SETTINGS log_comment='05218_autopr_set_root_global_in';
 
+-- And again under the plan-based implementation, which is where the refusal matters most: it is the one
+-- that finds the boundary for this shape - the query-based walk gives up with "Cannot find step with
+-- matching hash in single-node plan" - so it is also the one that goes on to consider the set-building
+-- plan. Its statistics key is its own, hence its own warm-up run.
+--
+-- The number to watch here is the consideration count, not the rounds: having matched, this
+-- implementation reaches its verdict from the statistics instead of re-analysing, so the refusal costs it
+-- no round at all and only the count moves.
+SELECT sum(length(URL)) FROM t_autopr_set_root_hits
+WHERE WatchID GLOBAL IN (SELECT a % 1000000 FROM t_autopr_set_root_keys)
+FORMAT Null SETTINGS parallel_replicas_plan_based=1;
+
+SELECT sum(length(URL)) FROM t_autopr_set_root_hits
+WHERE WatchID GLOBAL IN (SELECT a % 1000000 FROM t_autopr_set_root_keys)
+FORMAT Null SETTINGS parallel_replicas_plan_based=1, log_comment='05218_autopr_set_root_global_in_plan_based';
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT log_comment, ProfileEvents['IndexAnalysisRounds'] AS index_analysis_rounds
+-- `ParallelReplicasQueryCount` counts the queries AutoPR weighed up, the discarded probes included, so
+-- one per row is the query itself and a second would be the set-building plan behind its `GLOBAL IN`.
+SELECT log_comment,
+    ProfileEvents['ParallelReplicasQueryCount'] AS autopr_considered,
+    ProfileEvents['IndexAnalysisRounds'] AS index_analysis_rounds
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
-  AND (current_database = currentDatabase()) AND (log_comment = '05218_autopr_set_root_global_in') AND (type = 'QueryFinish')
+  AND (current_database = currentDatabase()) AND (log_comment LIKE '05218_autopr_set_root_global_in%') AND (type = 'QueryFinish')
+ORDER BY log_comment
 FORMAT TSVWithNames;
 
 DROP TABLE t_autopr_set_root_hits;

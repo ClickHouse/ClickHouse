@@ -1,2 +1,3 @@
-log_comment	index_analysis_rounds
-05218_autopr_set_root_global_in	3
+log_comment	autopr_considered	index_analysis_rounds
+05218_autopr_set_root_global_in	2	3
+05218_autopr_set_root_global_in_plan_based	1	2
