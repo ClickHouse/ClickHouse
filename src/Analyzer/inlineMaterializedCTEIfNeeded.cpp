@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <Analyzer/TableNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -122,6 +123,39 @@ MaterializedCTEUseCount mergeDuplicateMaterializedCTEs(const QueryTreeNodePtr & 
     return use_count;
 }
 
+void recordMaterializedCTEDependencies(const QueryTreeNodePtr & node, const ReusedMaterializedCTEs & reused)
+{
+    auto is_recorded = [&reused](const QueryTreeNodePtr & current_node) -> MaterializedCTEPtr
+    {
+        auto * table_node = current_node->as<TableNode>();
+        /// `isMaterializedCTE()` holds only for a definition-bearing occurrence; a by-name one has no body below it.
+        if (!table_node || !table_node->isMaterializedCTE())
+            return nullptr;
+
+        const auto & cte = table_node->getMaterializedCTE();
+        return reused.contains(cte) ? cte : nullptr;
+    };
+
+    std::vector<MaterializedCTEPtr> enclosing;
+
+    traverseQueryTree(node, Everything{},
+    [&](const QueryTreeNodePtr & current_node)
+    {
+        auto cte = is_recorded(current_node);
+        if (!cte)
+            return;
+
+        if (!enclosing.empty() && enclosing.back() != cte)
+            enclosing.back()->dependencies.insert(cte);
+        enclosing.push_back(std::move(cte));
+    },
+    [&](const QueryTreeNodePtr & current_node)
+    {
+        if (is_recorded(current_node))
+            enclosing.pop_back();
+    });
+}
+
 class InlineMaterializedCTEsVisitor : public InDepthQueryTreeVisitorWithContext<InlineMaterializedCTEsVisitor>
 {
     using Base = InDepthQueryTreeVisitorWithContext<InlineMaterializedCTEsVisitor>;
@@ -194,6 +228,9 @@ void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
     {
         reused_materialized_cte.clear();
     }
+
+    /// After the merge pass above, which redirects CTE pointers, and before the inline stage removes the bodies.
+    recordMaterializedCTEDependencies(node, reused_materialized_cte);
 
     InlineMaterializedCTEsVisitor visitor(reused_materialized_cte, std::move(context));
     visitor.visit(node);
