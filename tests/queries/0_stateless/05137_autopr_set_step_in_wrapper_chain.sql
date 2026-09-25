@@ -39,6 +39,14 @@ SELECT key IN (SELECT k FROM t_autopr_chain_set) AS flag, value
 FROM t_autopr_chain
 FORMAT Null SETTINGS log_comment='05137_autopr_set_in_chain';
 
+-- The same chain under the plan-based implementation, whose branch is rooted in a
+-- `ReadFromParallelReplicasStep` and whose wrappers are not the same ones in the same order. The walk has
+-- to arrive at the same boundary there, otherwise the shape records nothing under one of the two
+-- implementations and nothing here would say so.
+SELECT key IN (SELECT k FROM t_autopr_chain_set) AS flag, value
+FROM t_autopr_chain
+FORMAT Null SETTINGS parallel_replicas_plan_based=1, log_comment='05137_autopr_set_in_chain_plan_based';
+
 SET query_plan_merge_expressions = 1;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
@@ -49,7 +57,7 @@ SELECT log_comment,
     (ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0)
         AND (ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0) AS instrumented_above_the_read
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment = '05137_autopr_set_in_chain') AND (type = 'QueryFinish')
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE '05137_autopr_set_in_chain%') AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
 

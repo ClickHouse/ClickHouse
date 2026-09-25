@@ -32,6 +32,14 @@ SELECT key, sum(value) OVER (PARTITION BY key % 10 ORDER BY key) AS s
 FROM t
 FORMAT Null SETTINGS log_comment='04502_autopr_window_function_query';
 
+-- The same shape under the plan-based implementation, which is where the boundary is a
+-- `ReadFromParallelReplicasStep` and the wrappers above it are laid out differently. The property has to
+-- hold there too: the two implementations must agree on which step is the boundary, or one of them
+-- records nothing and the cost model is left with no numbers for the shape.
+SELECT key, sum(value) OVER (PARTITION BY key % 10 ORDER BY key) AS s
+FROM t
+FORMAT Null SETTINGS parallel_replicas_plan_based=1, log_comment='04502_autopr_window_function_query_plan_based';
+
 -- Regression guard for the output side. The window is computed on the coordinator, so the columns it
 -- appends are never sent to the initiator and must never be recorded as replica output. Here the real
 -- replica-output boundary is the Aggregating step (it ships partial aggregation states to the
@@ -76,7 +84,7 @@ SELECT log_comment,
              <= (2 * ProfileEvents['RuntimeDataflowStatisticsInputBytes']))
         AS output_measured_above_read
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment = '04502_autopr_window_function_query') AND (type = 'QueryFinish')
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE '04502_autopr_window_function_query%') AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
 

@@ -40,6 +40,16 @@ FORMAT Null SETTINGS log_comment='05136_autopr_projection_rename';
 SELECT repeat(a, 100) AS a, b FROM t_autopr_projection
 FORMAT Null SETTINGS log_comment='05136_autopr_projection_wide';
 
+-- Both halves again under the plan-based implementation. It reaches the boundary through a
+-- `ReadFromParallelReplicasStep` with its own wrapper layout, so what may be looked through has to be
+-- decided the same way there; peeling the projection in one implementation only would price this shape
+-- differently depending on a setting.
+SELECT a, b FROM t_autopr_projection
+FORMAT Null SETTINGS parallel_replicas_plan_based=1, log_comment='05136_autopr_projection_rename_plan_based';
+
+SELECT repeat(a, 100) AS a, b FROM t_autopr_projection
+FORMAT Null SETTINGS parallel_replicas_plan_based=1, log_comment='05136_autopr_projection_wide_plan_based';
+
 SET query_plan_merge_expressions = 1;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
@@ -53,7 +63,10 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     maxIf(ProfileEvents['RuntimeDataflowStatisticsOutputBytes'], log_comment = '05136_autopr_projection_wide')
         > (3 * maxIf(ProfileEvents['RuntimeDataflowStatisticsOutputBytes'], log_comment = '05136_autopr_projection_rename'))
-        AS projection_output_counted
+        AS projection_output_counted,
+    maxIf(ProfileEvents['RuntimeDataflowStatisticsOutputBytes'], log_comment = '05136_autopr_projection_wide_plan_based')
+        > (3 * maxIf(ProfileEvents['RuntimeDataflowStatisticsOutputBytes'], log_comment = '05136_autopr_projection_rename_plan_based'))
+        AS projection_output_counted_plan_based
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE '05136_autopr_projection_%') AND (type = 'QueryFinish')
 FORMAT TSVWithNames;
