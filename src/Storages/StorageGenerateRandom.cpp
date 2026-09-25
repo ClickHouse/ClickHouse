@@ -2,33 +2,49 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
+#include <Storages/GenerateRandomSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/Serializations/SerializationObjectHelpers.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -45,6 +61,10 @@
 #include <Functions/FunctionGenerateRandomStructure.h>
 
 #include <pcg_random.hpp>
+#include <Common/re2.h>
+
+#include <algorithm>
+#include <cmath>
 
 
 namespace DB
@@ -54,8 +74,16 @@ namespace Setting
     extern const SettingsUInt64 preferred_block_size_bytes;
 }
 
+namespace GenerateRandomSetting
+{
+    extern const GenerateRandomSettingsFloat null_ratio;
+    extern const GenerateRandomSettingsUInt64 max_json_depth;
+    extern const GenerateRandomSettingsUInt64 max_json_keys_per_object;
+}
+
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int PARAMETER_OUT_OF_BOUND;
@@ -63,6 +91,12 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+
+UInt32 GenerateRandomOptions::nullThreshold() const
+{
+    const Int64 threshold = std::lround(static_cast<double>(null_ratio) * 65536);
+    return static_cast<UInt32>(std::clamp<Int64>(threshold, 0, 65536));
+}
 
 namespace
 {
@@ -72,6 +106,11 @@ struct GenerateRandomState
     std::atomic<UInt64> add_total_rows = 0;
 };
 using GenerateRandomStatePtr = std::shared_ptr<GenerateRandomState>;
+
+/// `Time` and `Time64` hold a signed number of seconds (scaled by 10^scale for `Time64`) in
+/// [-999:59:59, 999:59:59]; larger values saturate to that boundary on text output,
+/// see the cap in `DateLUTImpl.h`.
+constexpr Int64 MAX_TIME_SECONDS = 3'599'999;
 
 void fillBufferWithRandomBytes(char * __restrict data, size_t size, pcg64 & rng)
 {
@@ -395,10 +434,773 @@ void appendFuzzyRandomString(ColumnString::Chars & out, size_t max_length, pcg64
 }
 
 
+/// The shape of a self-describing type - which keys a `JSON` object has, which types a `Dynamic`
+/// column mixes - is decided once per position in the type tree, not once per block, so that all
+/// blocks and all streams of one query agree on it. Such a position is identified by a seed derived
+/// from the seed of its parent. There is no two-argument `sipHash64`, hence these two helpers.
+UInt64 deriveSeed(UInt64 seed, UInt64 salt)
+{
+    SipHash hash;
+    hash.update(seed);
+    hash.update(salt);
+    return hash.get64();
+}
+
+UInt64 deriveSeed(UInt64 seed, std::string_view name)
+{
+    SipHash hash;
+    hash.update(seed);
+    hash.update(name);
+    return hash.get64();
+}
+
+/// The options used below an `Array`, a `Map` or a `JSON` key. Halving `max_array_length` makes the
+/// generated size grow subexponentially with the nesting depth.
+GenerateRandomOptions nestedOptions(const GenerateRandomOptions & options)
+{
+    GenerateRandomOptions result = options;
+    result.max_array_length /= 2;
+    return result;
+}
+
+/// Probability that a scalar member of a self-describing type is wrapped into an array.
+constexpr double ARRAY_PROBABILITY = 0.15;
+
+/// The shape of a generated `JSON` document. These are deliberately constants and not settings: the
+/// goal is one document stream that looks like a real one, not a knob for every dimension of it.
+/// Only the three settings of the storage - `null_ratio`, `max_json_depth`,
+/// `max_json_keys_per_object` - change it.
+
+/// Probability that a key at depth `d` opens a nested object, if the depth budget allows it, is
+/// `NESTED_OBJECT_PROBABILITY / d`: the deeper a level is, the less it branches.
+constexpr double NESTED_OBJECT_PROBABILITY = 0.30;
+
+/// Share of the keys that are sparse: present much more rarely than `null_ratio` alone would make them.
+constexpr double SPARSE_KEY_SHARE = 0.30;
+/// A sparse key is absent with the probability of `null_ratio` times a factor from this range.
+constexpr UInt64 SPARSE_FACTOR_MIN = 4;
+constexpr UInt64 SPARSE_FACTOR_MAX = 12;
+/// Share of the arrays that hold objects instead of scalars, if the depth budget allows it.
+constexpr double ARRAY_OF_OBJECTS_SHARE = 0.20;
+/// Share of the arrays of scalars that are heterogeneous - `Array(Dynamic)` instead of `Array(T)`.
+constexpr double MIXED_ARRAY_SHARE = 0.15;
+/// Share of the scalar keys whose values drift between two types.
+constexpr double TYPE_DRIFT_KEY_SHARE = 0.10;
+/// Share of the present rows of a key with a secondary type that hold that secondary type.
+constexpr double TYPE_DRIFT_ROW_SHARE = 0.10;
+/// Hard cap on the number of generated paths of one `JSON` column, shared by the object trees of its
+/// arrays of objects: a deep `max_json_depth` with many keys per object would otherwise let the
+/// number of drawn schemas grow exponentially with the depth.
+constexpr size_t MAX_GENERATED_JSON_PATHS = DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT;
+
+/// The names generated keys are drawn from. Real documents reuse a small vocabulary of short
+/// lowercase names, and a generated stream is much easier to read when it does the same.
+constexpr std::string_view JSON_KEY_VOCABULARY[] = {
+    "id", "name", "type", "status", "user_id", "email", "created_at", "updated_at", "timestamp", "count", "value",
+    "price", "amount", "currency", "tags", "url", "title", "description", "address", "city", "country", "zip", "lat",
+    "lon", "items", "total", "enabled", "version", "message", "level", "source", "host", "region", "session", "event",
+    "duration", "score", "rating", "comment", "parent", "children", "metadata", "attributes", "properties", "settings",
+    "payload", "data", "result", "error", "code", "label", "category", "group", "owner", "author", "avatar", "image",
+    "thumbnail", "width", "height", "size", "format", "mime", "hash", "token", "key", "secret", "phone", "first_name",
+    "last_name", "birthday", "gender", "language", "locale", "timezone", "ip", "user_agent", "referrer", "path",
+    "method", "query", "params", "headers", "body", "response", "request", "latency", "bytes", "retries", "priority",
+    "state", "active", "deleted", "verified", "visible", "public", "order_id", "product_id", "sku", "quantity",
+    "discount", "tax", "shipping", "subtotal", "notes", "reason", "role", "permissions", "scope", "expires_at",
+    "started_at", "finished_at", "started", "finished", "progress", "stage", "step", "retry_count", "attempt",
+    "cluster", "node", "shard", "replica", "table", "database", "column", "partition", "offset", "limit", "cursor",
+    "page", "per_page", "sort", "filter", "search", "text", "summary", "content", "link", "links", "mentions", "likes",
+    "shares", "views", "followers", "following",
+};
+
+/// A probability draw for schema decisions, with a resolution of 1/65536.
+bool drawChance(pcg64 & rng, double probability)
+{
+    return rng() % 65536 < static_cast<UInt64>(std::lround(probability * 65536));
+}
+
+/// The scalar types a self-describing column can take, with their weights in percent. Both the set
+/// and the proportions imitate what the JSON parser infers for real documents.
+const std::vector<std::pair<DataTypePtr, UInt32>> & scalarTypePool()
+{
+    static const std::vector<std::pair<DataTypePtr, UInt32>> pool = {
+        {std::make_shared<DataTypeString>(), 35},
+        {std::make_shared<DataTypeInt64>(), 30},
+        {std::make_shared<DataTypeFloat64>(), 10},
+        {DataTypeFactory::instance().get("Bool"), 10},
+        {std::make_shared<DataTypeDateTime>(), 5},
+        {std::make_shared<DataTypeDate>(), 5},
+        {std::make_shared<DataTypeUInt64>(), 5},
+    };
+    return pool;
+}
+
+/// Picks `count` distinct scalar types, each drawn by its weight among the types not picked yet. With
+/// `wrap_into_arrays` some of them become `Array(Nullable(T))` - the shape the parser infers for a
+/// homogeneous array. The result is distinct by type name, which is what `DataTypeVariant` deduplicates on.
+DataTypes pickScalarTypes(pcg64 & rng, size_t count, bool wrap_into_arrays)
+{
+    const auto & pool = scalarTypePool();
+    count = std::min(count, pool.size());
+
+    std::vector<bool> used(pool.size(), false);
+    UInt32 remaining_weight = 0;
+    for (const auto & [_, weight] : pool)
+        remaining_weight += weight;
+
+    DataTypes result;
+    result.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        auto draw = static_cast<UInt32>(rng() % remaining_weight);
+        std::optional<size_t> chosen;
+        for (size_t j = 0; j < pool.size() && !chosen; ++j)
+        {
+            if (used[j])
+                continue;
+            if (draw < pool[j].second)
+                chosen = j;
+            else
+                draw -= pool[j].second;
+        }
+        if (!chosen)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The weighted draw of a scalar type went out of range");
+
+        used[*chosen] = true;
+        remaining_weight -= pool[*chosen].second;
+        const auto & scalar = pool[*chosen].first;
+        result.push_back(
+            wrap_into_arrays && drawChance(rng, ARRAY_PROBABILITY) ? std::make_shared<DataTypeArray>(makeNullable(scalar))
+                                                                   : scalar);
+    }
+    return result;
+}
+
+/// The set of types one `Dynamic` column mixes, drawn once for its position in the type tree. Its
+/// width does not depend on `max_dynamic_types`: that limit only decides how many of the types get a
+/// variant of their own, the rest of them are encoded into the shared variant - the way
+/// `ColumnDynamic` itself spills the types it meets once its limit is reached.
+struct DynamicSchema
+{
+    DataTypes types;                          /// Distinct by name, at least one.
+    size_t num_dedicated = 0;                 /// `min(max_dynamic_types, types.size())`: the leading types with a variant of their own.
+    DataTypePtr variant_type;                 /// `Variant(types[0], ..., types[num_dedicated - 1], SharedVariant)`.
+    std::vector<UInt8> global_discriminator;  /// The discriminator of `types[i]` inside `variant_type`; the shared one for a shared type.
+    UInt8 shared_variant_discriminator = 0;
+    size_t max_dynamic_types = 0;
+};
+
+/// Wraps an already chosen set of types into the variant a `Dynamic` column of them is built on: the
+/// leading `max_dynamic_types` of them become variants of their own and the rest are left to the
+/// shared variant, so the number of real variants never exceeds the limit of the type.
+DynamicSchema makeDynamicSchema(DataTypes types, size_t max_dynamic_types)
+{
+    DynamicSchema schema;
+    schema.types = std::move(types);
+    schema.max_dynamic_types = max_dynamic_types;
+    schema.num_dedicated = std::min(max_dynamic_types, schema.types.size());
+
+    DataTypes variants(schema.types.begin(), schema.types.begin() + schema.num_dedicated);
+    variants.push_back(ColumnDynamic::getSharedVariantDataType());
+    schema.variant_type = std::make_shared<DataTypeVariant>(variants);
+
+    /// `DataTypeVariant` sorts its variants by name, so never rely on the order the types were
+    /// chosen in: resolve every one of them by name.
+    const auto & variant_type = typeid_cast<const DataTypeVariant &>(*schema.variant_type);
+    auto resolve = [&](const String & name)
+    {
+        auto discriminator = variant_type.tryGetVariantDiscriminator(name);
+        if (!discriminator)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type {} is missing from the variant of a generated `Dynamic` column", name);
+        return *discriminator;
+    };
+
+    schema.shared_variant_discriminator = resolve(ColumnDynamic::getSharedVariantTypeName());
+    schema.global_discriminator.reserve(schema.types.size());
+    for (size_t i = 0; i < schema.types.size(); ++i)
+        schema.global_discriminator.push_back(
+            i < schema.num_dedicated ? resolve(schema.types[i]->getName()) : schema.shared_variant_discriminator);
+
+    return schema;
+}
+
+DynamicSchema buildDynamicSchema(UInt64 seed, size_t max_dynamic_types, bool array_element)
+{
+    pcg64 schema_rng(seed);
+
+    DataTypes types;
+    if (array_element)
+    {
+        /// A heterogeneous JSON array is inferred as `Array(Dynamic)` whose elements are strings
+        /// mixed with one number type - the parser never produces a wider element set.
+        types = {
+            std::make_shared<DataTypeString>(),
+            drawChance(schema_rng, 0.5) ? DataTypePtr(std::make_shared<DataTypeInt64>())
+                                        : DataTypePtr(std::make_shared<DataTypeFloat64>())};
+    }
+    else
+    {
+        /// Between one and four types, whatever the limit of the column is: a low `max_dynamic_types`
+        /// does not narrow the set of types the values take, it sends the excess to the shared variant.
+        types = pickScalarTypes(schema_rng, 1 + schema_rng() % 4, /*wrap_into_arrays=*/true);
+    }
+
+    return makeDynamicSchema(std::move(types), max_dynamic_types);
+}
+
+/// Assembles a `ColumnVariant` out of one already filled column per alternative. `type_index[i]` is
+/// the alternative of row `i`, or `value_columns.size()` when the row holds no value at all;
+/// `global_discriminator[t]` is the discriminator of alternative `t` inside `variant_type`, whose
+/// variants are sorted by type name.
+MutableColumnPtr buildVariantColumn(
+    const IDataType & variant_type,
+    const std::vector<UInt8> & global_discriminator,
+    const std::vector<UInt8> & type_index,
+    MutableColumns && value_columns)
+{
+    const size_t num_types = value_columns.size();
+
+    auto discriminators_column = ColumnVariant::ColumnDiscriminators::create();
+    auto & discriminators = discriminators_column->getData();
+    discriminators.resize(type_index.size());
+    for (size_t i = 0; i < type_index.size(); ++i)
+        discriminators[i] = type_index[i] == num_types ? ColumnVariant::NULL_DISCRIMINATOR : global_discriminator[type_index[i]];
+
+    /// The variants go in global discriminator order; the ones no alternative maps to stay empty.
+    const auto & variants = typeid_cast<const DataTypeVariant &>(variant_type).getVariants();
+    MutableColumns columns(variants.size());
+    for (size_t i = 0; i < variants.size(); ++i)
+        columns[i] = variants[i]->createColumn();
+    for (size_t i = 0; i < num_types; ++i)
+        columns[global_discriminator[i]] = std::move(value_columns[i]);
+
+    return ColumnVariant::create(std::move(discriminators_column), std::move(columns));
+}
+
+/// Assembles a `Dynamic` column out of one already filled column per schema type. `type_index[i]` is
+/// the index in `schema.types` of the type of row `i`, or `schema.types.size()` when the row is NULL;
+/// `value_columns[t]` holds the values of the rows of type `t`, in row order. The column of a
+/// dedicated type becomes its variant as it is; the values of a shared type are encoded one by one,
+/// in row order, into the shared variant, the way `ColumnDynamic` stores the types it has no variant
+/// left for. Never silently promote a shared type to a real variant instead.
+ColumnPtr buildDynamicColumn(const DynamicSchema & schema, const std::vector<UInt8> & type_index, MutableColumns && value_columns)
+{
+    const size_t num_types = schema.types.size();
+
+    std::vector<SerializationPtr> serializations(num_types);
+    for (size_t i = schema.num_dedicated; i < num_types; ++i)
+        serializations[i] = schema.types[i]->getDefaultSerialization();
+
+    auto discriminators_column = ColumnVariant::ColumnDiscriminators::create();
+    auto & discriminators = discriminators_column->getData();
+    discriminators.resize(type_index.size());
+
+    /// `consumed[t]` is how many values of the shared type `t` are encoded already, so it is the
+    /// position of the value of the next row of that type in `value_columns[t]`.
+    std::vector<size_t> consumed(num_types, 0);
+    auto shared_variant = ColumnString::create();
+    for (size_t i = 0; i < type_index.size(); ++i)
+    {
+        const size_t chosen = type_index[i];
+        if (chosen == num_types)
+        {
+            discriminators[i] = ColumnVariant::NULL_DISCRIMINATOR;
+            continue;
+        }
+
+        discriminators[i] = schema.global_discriminator[chosen];
+        if (chosen >= schema.num_dedicated)
+        {
+            ColumnDynamic::serializeValueIntoSharedVariant(
+                *shared_variant, *value_columns[chosen], schema.types[chosen], serializations[chosen], consumed[chosen]);
+            ++consumed[chosen];
+        }
+    }
+
+    /// The variants go in global discriminator order; every slot is either a dedicated type or the
+    /// shared variant, so none of them is left empty.
+    const size_t num_variants = typeid_cast<const DataTypeVariant &>(*schema.variant_type).getVariants().size();
+    MutableColumns columns(num_variants);
+    for (size_t i = 0; i < schema.num_dedicated; ++i)
+        columns[schema.global_discriminator[i]] = std::move(value_columns[i]);
+    columns[schema.shared_variant_discriminator] = std::move(shared_variant);
+
+    MutableColumnPtr variant_column = ColumnVariant::create(std::move(discriminators_column), std::move(columns));
+    return ColumnDynamic::create(std::move(variant_column), schema.variant_type, schema.max_dynamic_types, schema.max_dynamic_types);
+}
+
+/// The JSON parser infers `UInt64` only for an integer above the `Int64` maximum - anything below it
+/// comes back as `Int64` - so generated `UInt64` values of a `JSON` column are lifted into that range.
+void raiseUInt64ValuesAboveInt64Max(IColumn & column)
+{
+    if (auto * array = typeid_cast<ColumnArray *>(&column))
+    {
+        raiseUInt64ValuesAboveInt64Max(array->getData());
+    }
+    else if (auto * nullable = typeid_cast<ColumnNullable *>(&column))
+    {
+        raiseUInt64ValuesAboveInt64Max(nullable->getNestedColumn());
+    }
+    else if (auto * numbers = typeid_cast<ColumnUInt64 *>(&column))
+    {
+        for (auto & value : numbers->getData())
+            value |= UInt64(1) << 63;
+    }
+}
+
+/// The drawn key set of one `JSON` column. A leaf is one generated path; the typed paths of the type
+/// are not part of it, they are always present and filled from their declared type.
+struct JSONSchema
+{
+    struct Leaf
+    {
+        String path;                  /// The full dotted path from the root of the object.
+        DynamicSchema types;          /// One type, or two when the key drifts between types.
+        UInt32 absent_threshold = 0;  /// Probability out of 65536 that the key is missing from a row.
+    };
+
+    /// The leading `num_dynamic_leaves` leaves become the dynamic paths of the column and the rest,
+    /// sorted by path, its shared data. `unflattenAndInsertPaths` splits them in exactly this order.
+    std::vector<Leaf> leaves;
+    size_t num_dynamic_leaves = 0;
+};
+
+/// Draws the key set of one `JSON` column: a tree of objects whose leaves are the generated paths.
+/// The result depends only on the seed of the column and on its declared type, so that every block
+/// and every stream of one query produce the same document shape.
+class JSONSchemaGenerator
+{
+public:
+    JSONSchemaGenerator(
+        const DataTypeObject & object_type_, UInt64 seed, const GenerateRandomOptions & options_, size_t & remaining_paths_)
+        : object_type(object_type_), options(options_), rng(seed), remaining_paths(remaining_paths_)
+    {
+        /// The type has already validated them.
+        for (const auto & regexp : object_type.getPathRegexpsToSkip())
+            skip_regexps.push_back(std::make_unique<re2::RE2>(regexp));
+    }
+
+    JSONSchema generate()
+    {
+        generateObject("", 1);
+
+        /// The most often present keys become the dynamic paths of the column and the rarer ones go
+        /// to the shared data, which is where inserting such documents would put them as well.
+        std::stable_sort(
+            leaves.begin(),
+            leaves.end(),
+            [](const JSONSchema::Leaf & lhs, const JSONSchema::Leaf & rhs) { return lhs.absent_threshold < rhs.absent_threshold; });
+
+        JSONSchema schema;
+        schema.num_dynamic_leaves = std::min(leaves.size(), object_type.getMaxDynamicPaths());
+        schema.leaves = std::move(leaves);
+        std::sort(
+            schema.leaves.begin() + schema.num_dynamic_leaves,
+            schema.leaves.end(),
+            [](const JSONSchema::Leaf & lhs, const JSONSchema::Leaf & rhs) { return lhs.path < rhs.path; });
+        return schema;
+    }
+
+private:
+    void generateObject(const String & prefix, size_t depth)
+    {
+        const size_t max_keys = options.max_json_keys_per_object;
+        if (max_keys == 0)
+            return;
+
+        /// The root object is at least half full, so that documents do not degenerate to one key.
+        const size_t min_keys = depth == 1 ? (max_keys + 1) / 2 : 1;
+        const size_t num_keys = min_keys + rng() % (max_keys - min_keys + 1);
+
+        std::unordered_set<String> used_names;
+        for (size_t i = 0; i < num_keys && remaining_paths > 0; ++i)
+            generateKey(prefix, depth, used_names);
+    }
+
+    void generateKey(const String & prefix, size_t depth, std::unordered_set<String> & used_names)
+    {
+        const String name = pickName(used_names);
+        const String path = prefix.empty() ? name : prefix + "." + name;
+
+        if (shouldSkipPath(path))
+            return;
+
+        const bool can_nest = depth < options.max_json_depth;
+
+        /// A key that a typed path goes through can only be the object holding that typed path.
+        if (hasTypedChildren(path))
+        {
+            if (can_nest)
+                generateObject(path, depth + 1);
+            return;
+        }
+
+        if (can_nest && drawChance(rng, NESTED_OBJECT_PROBABILITY / static_cast<double>(depth)))
+        {
+            generateObject(path, depth + 1);
+            return;
+        }
+
+        JSONSchema::Leaf leaf;
+        leaf.path = path;
+        leaf.absent_threshold = drawAbsentThreshold();
+        leaf.types = makeDynamicSchema(drawLeafTypes(can_nest), object_type.getMaxDynamicTypes());
+        leaves.push_back(std::move(leaf));
+        --remaining_paths;
+    }
+
+    /// The type of a generated key, or the two types its values drift between: a scalar, an array of
+    /// scalars, an array of objects, or a heterogeneous array. The nested objects of an array of
+    /// objects are a schema of their own, drawn when `RandomSchemas` walks the leaf type.
+    DataTypes drawLeafTypes(bool can_nest)
+    {
+        if (drawChance(rng, ARRAY_PROBABILITY))
+        {
+            if (can_nest && drawChance(rng, ARRAY_OF_OBJECTS_SHARE))
+                return {std::make_shared<DataTypeArray>(object_type.getTypeOfNestedObjects())};
+
+            /// A heterogeneous array is inferred with the default `Dynamic` as its element type,
+            /// whatever the limits of the object holding it are.
+            if (drawChance(rng, MIXED_ARRAY_SHARE))
+                return {std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>())};
+
+            return {std::make_shared<DataTypeArray>(makeNullable(pickScalarTypes(rng, 1, /*wrap_into_arrays=*/false).front()))};
+        }
+
+        /// A key drifts whatever `max_dynamic_types` of the object is: a type its path column has no
+        /// variant left for is encoded into the shared variant of that column, see `makeDynamicSchema`.
+        const bool drifts = drawChance(rng, TYPE_DRIFT_KEY_SHARE);
+        return pickScalarTypes(rng, drifts ? 2 : 1, /*wrap_into_arrays=*/false);
+    }
+
+    /// A name not used yet in the same object, drawn uniformly and then probed linearly.
+    String pickName(std::unordered_set<String> & used_names)
+    {
+        const size_t vocabulary_size = std::size(JSON_KEY_VOCABULARY);
+        if (used_names.size() < vocabulary_size)
+        {
+            const size_t start = rng() % vocabulary_size;
+            for (size_t i = 0; i < vocabulary_size; ++i)
+            {
+                String name{JSON_KEY_VOCABULARY[(start + i) % vocabulary_size]};
+                if (used_names.insert(name).second)
+                    return name;
+            }
+        }
+
+        /// The object has more keys than the vocabulary has words.
+        String name = "word_" + std::to_string(used_names.size());
+        used_names.insert(name);
+        return name;
+    }
+
+    UInt32 drawAbsentThreshold()
+    {
+        const UInt64 base = options.nullThreshold();
+        if (!drawChance(rng, SPARSE_KEY_SHARE))
+            return static_cast<UInt32>(base);
+
+        const UInt64 factor = SPARSE_FACTOR_MIN + rng() % (SPARSE_FACTOR_MAX - SPARSE_FACTOR_MIN + 1);
+
+        /// A sparse key is still a key of the document: it must not become absent in every row.
+        /// Saturating at 65536 would do exactly that for any `null_ratio` above 1/SPARSE_FACTOR_MAX,
+        /// leaving a path that is never filled, so the cap keeps a share of the presence of an
+        /// ordinary key instead.
+        const UInt64 cap = 65536 - (65536 - base) / SPARSE_FACTOR_MAX;
+        return static_cast<UInt32>(std::min(base * factor, cap));
+    }
+
+    /// Repeats `SerializationObject::shouldSkipPath`: a path that the serialization of the type would
+    /// drop must not be generated at all, otherwise its values would silently disappear on insertion.
+    bool shouldSkipPath(const String & path) const
+    {
+        if (object_type.getTypedPaths().contains(path))
+            return true;
+
+        for (const auto & skip : object_type.getPathsToSkip())
+        {
+            if (path.starts_with(skip))
+                return true;
+        }
+
+        for (const auto & regexp : skip_regexps)
+        {
+            if (re2::RE2::FullMatch(path, *regexp))
+                return true;
+        }
+
+        return false;
+    }
+
+    bool hasTypedChildren(const String & path) const
+    {
+        const String prefix = path + ".";
+        for (const auto & [typed_path, _] : object_type.getTypedPaths())
+        {
+            if (typed_path.starts_with(prefix))
+                return true;
+        }
+        return false;
+    }
+
+    const DataTypeObject & object_type;
+    const GenerateRandomOptions & options;
+    pcg64 rng;
+    size_t & remaining_paths;  /// The budget of the whole column, shared with its nested schemas.
+    std::vector<std::unique_ptr<re2::RE2>> skip_regexps;
+    std::vector<JSONSchema::Leaf> leaves;
+};
+
+/// The drawn shapes of all self-describing types of one query, keyed by the seed of their position
+/// in the type tree. Built once in `read` and shared, immutable, by all streams.
+class RandomSchemas
+{
+public:
+    static std::shared_ptr<const RandomSchemas> build(
+        const NamesAndTypesList & columns, UInt64 storage_seed, const GenerateRandomOptions & options)
+    {
+        auto schemas = std::make_shared<RandomSchemas>();
+        for (const auto & column : columns)
+            schemas->walkColumn(column.type, deriveSeed(storage_seed, column.name), options);
+        return schemas;
+    }
+
+    /// One column whose seed is already known, because its name is not observable from the outside.
+    static std::shared_ptr<const RandomSchemas> buildForColumn(
+        const DataTypePtr & type, UInt64 column_seed, const GenerateRandomOptions & options)
+    {
+        auto schemas = std::make_shared<RandomSchemas>();
+        schemas->walkColumn(type, column_seed, options);
+        return schemas;
+    }
+
+    const DynamicSchema & dynamic(UInt64 seed) const
+    {
+        auto it = dynamic_schemas.find(seed);
+        if (it == dynamic_schemas.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No `Dynamic` schema was drawn for seed {}", seed);
+        return it->second;
+    }
+
+    const JSONSchema & json(UInt64 seed) const
+    {
+        auto it = json_schemas.find(seed);
+        if (it == json_schemas.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No `JSON` schema was drawn for seed {}", seed);
+        return it->second;
+    }
+
+private:
+    /// The path budget is per column: the arrays of objects of one `JSON` column share it.
+    void walkColumn(const DataTypePtr & type, UInt64 column_seed, const GenerateRandomOptions & options)
+    {
+        remaining_json_paths = MAX_GENERATED_JSON_PATHS;
+        walk(type, column_seed, options, false);
+    }
+
+    /// Repeats the child seed derivation of `fillColumnWithRandomData` exactly, so that every
+    /// self-describing position it reaches is registered here under the very same seed.
+    /// `array_element` says whether the type is the element type of an `Array`.
+    void walk(const DataTypePtr & type, UInt64 seed, const GenerateRandomOptions & options, bool array_element)
+    {
+        switch (type->getTypeId())
+        {
+            case TypeIndex::Array:
+                walk(typeid_cast<const DataTypeArray &>(*type).getNestedType(), deriveSeed(seed, 0), options, true);
+                return;
+
+            case TypeIndex::Map:
+                walk(typeid_cast<const DataTypeMap &>(*type).getNestedType(), deriveSeed(seed, 0), options, false);
+                return;
+
+            case TypeIndex::Tuple:
+            {
+                const auto & elements = typeid_cast<const DataTypeTuple &>(*type).getElements();
+                for (size_t i = 0; i < elements.size(); ++i)
+                    walk(elements[i], deriveSeed(seed, i), options, false);
+                return;
+            }
+
+            case TypeIndex::Nullable:
+                walk(typeid_cast<const DataTypeNullable &>(*type).getNestedType(), seed, options, array_element);
+                return;
+
+            case TypeIndex::LowCardinality:
+                walk(typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), seed, options, array_element);
+                return;
+
+            case TypeIndex::Variant:
+            {
+                const auto & variants = typeid_cast<const DataTypeVariant &>(*type).getVariants();
+                for (size_t i = 0; i < variants.size(); ++i)
+                    walk(variants[i], deriveSeed(seed, i), options, false);
+                return;
+            }
+
+            case TypeIndex::Dynamic:
+            {
+                const size_t max_dynamic_types = typeid_cast<const DataTypeDynamic &>(*type).getMaxDynamicTypes();
+                const auto & schema
+                    = dynamic_schemas.emplace(seed, buildDynamicSchema(seed, max_dynamic_types, array_element)).first->second;
+                for (size_t i = 0; i < schema.types.size(); ++i)
+                    walk(schema.types[i], deriveSeed(seed, i), options, false);
+                return;
+            }
+
+            case TypeIndex::Object:
+            {
+                const auto & object_type = typeid_cast<const DataTypeObject &>(*type);
+                const GenerateRandomOptions nested_options = nestedOptions(options);
+
+                /// Sorted, because a typed path spends the shared path budget of the column: the
+                /// iteration order of an unordered map must not decide which of them gets the rest of it.
+                std::vector<String> typed_paths;
+                typed_paths.reserve(object_type.getTypedPaths().size());
+                for (const auto & [path, _] : object_type.getTypedPaths())
+                    typed_paths.push_back(path);
+                std::sort(typed_paths.begin(), typed_paths.end());
+
+                for (const auto & path : typed_paths)
+                    walk(object_type.getTypedPaths().at(path), deriveSeed(seed, path), nested_options, false);
+
+                /// The depth and the key count of the document are not halved on the way down: they
+                /// are the budget of the whole column, spent by the generator itself.
+                const auto & schema
+                    = json_schemas.emplace(seed, JSONSchemaGenerator(object_type, seed, options, remaining_json_paths).generate())
+                          .first->second;
+                for (const auto & leaf : schema.leaves)
+                {
+                    /// The root object is at depth 1, so a path with `d - 1` dots names a key at depth `d`.
+                    const size_t leaf_depth = 1 + std::count(leaf.path.begin(), leaf.path.end(), '.');
+                    if (leaf_depth > options.max_json_depth)
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "The generated `JSON` path `{}` is deeper than the allowed {} levels",
+                            leaf.path,
+                            options.max_json_depth);
+
+                    /// An array of objects at this leaf starts an object tree of its own, and the
+                    /// levels this leaf sits at are already spent.
+                    GenerateRandomOptions leaf_options = nested_options;
+                    leaf_options.max_json_depth = options.max_json_depth - leaf_depth;
+
+                    const UInt64 leaf_seed = deriveSeed(seed, leaf.path);
+                    for (size_t i = 0; i < leaf.types.types.size(); ++i)
+                        walk(leaf.types.types[i], deriveSeed(leaf_seed, i), leaf_options, false);
+                }
+                return;
+            }
+
+            default:
+                /// Every other type has a fixed shape.
+                return;
+        }
+    }
+
+    std::unordered_map<UInt64, DynamicSchema> dynamic_schemas;
+    std::unordered_map<UInt64, JSONSchema> json_schemas;
+    /// How many paths the `JSON` column being walked may still generate.
+    size_t remaining_json_paths = MAX_GENERATED_JSON_PATHS;
+};
+
+/// Everything the recursive generator needs besides the type and the number of rows.
+struct GenerateRandomContext
+{
+    GenerateRandomOptions options;
+    const RandomSchemas & schemas;   /// Immutable, shared by all streams of one query.
+    pcg64 & rng;                     /// The value generator of one stream.
+    UInt64 schema_seed = 0;          /// Identifies the position in the type tree.
+
+    GenerateRandomContext child(UInt64 salt) const
+    {
+        return GenerateRandomContext{options, schemas, rng, deriveSeed(schema_seed, salt)};
+    }
+
+    GenerateRandomContext nestedChild(UInt64 salt) const
+    {
+        return GenerateRandomContext{nestedOptions(options), schemas, rng, deriveSeed(schema_seed, salt)};
+    }
+
+    GenerateRandomContext nestedChild(std::string_view name) const
+    {
+        return GenerateRandomContext{nestedOptions(options), schemas, rng, deriveSeed(schema_seed, name)};
+    }
+};
+
+/// The threshold is `null_ratio` out of 65536. Comparing the bit-reversed low 16 bits of the draw
+/// keeps the legacy `rng() % 16 == 0` decision for the default ratio 1/16 - a reversed value below
+/// 4096 means the four lowest bits of the draw are zero - so that existing seeded output does not
+/// change, while any other ratio works with a resolution of 1/65536. Exactly one draw per row for
+/// every threshold.
+bool drawNull(pcg64 & rng, UInt32 threshold)
+{
+    return __builtin_bitreverse16(static_cast<UInt16>(rng())) < threshold;
+}
+
+/// Which of `num_types` alternatives - the variants of a `Variant`, the types of a `Dynamic`, the
+/// types of a generated `JSON` key - holds the value of each row. `type_index[i]` is that
+/// alternative, or `num_types` when the row holds no value at all: a NULL, or an absent key. There
+/// are at most 255 alternatives, so `num_types` never collides with one of them. `counts[t]` is how
+/// many values alternative `t` needs; the rows of one alternative keep their relative order, which
+/// is the order a `ColumnVariant` consumes its values in.
+struct RowTypes
+{
+    std::vector<UInt8> type_index;
+    std::vector<UInt64> counts;
+};
+
+/// `pick_type` draws the alternative of a row that holds a value, and is called once for such a row.
+template <typename PickType>
+RowTypes drawRowTypes(pcg64 & rng, UInt64 limit, UInt32 null_threshold, size_t num_types, PickType && pick_type)
+{
+    RowTypes result;
+    result.type_index.resize(limit);
+    result.counts.assign(num_types, 0);
+
+    for (UInt64 i = 0; i < limit; ++i)
+    {
+        if (drawNull(rng, null_threshold))
+        {
+            result.type_index[i] = static_cast<UInt8>(num_types);
+        }
+        else
+        {
+            const UInt8 index = pick_type();
+            result.type_index[i] = index;
+            ++result.counts[index];
+        }
+    }
+
+    return result;
+}
+
 size_t estimateValueSize(
-    const DataTypePtr type,
-    UInt64 max_array_length,
-    UInt64 max_string_length)
+    const DataTypePtr & type, const GenerateRandomOptions & options, const RandomSchemas & schemas, UInt64 schema_seed);
+
+/// The widest of the alternatives a `Dynamic`-like position can hold in a row - the types of a
+/// `Dynamic`, the variants of a `Variant`, the types of a generated `JSON` key. The `i`-th
+/// alternative is seeded with the `i`-th child seed, the way `fillColumnWithRandomData` seeds it.
+size_t estimateWidestAlternative(
+    const DataTypes & alternatives, const GenerateRandomOptions & options, const RandomSchemas & schemas, UInt64 schema_seed)
+{
+    size_t res = 0;
+    for (size_t i = 0; i < alternatives.size(); ++i)
+        res = std::max(res, estimateValueSize(alternatives[i], options, schemas, deriveSeed(schema_seed, i)));
+    return res;
+}
+
+/// What a value of a type without a variant of its own costs on top of the value itself: the offset
+/// of the encoded value inside the shared variant and the binary encoding of its type, which is never
+/// longer than the name of the type. Zero when every type of the schema has a variant of its own.
+size_t estimateSharedVariantOverhead(const DynamicSchema & schema)
+{
+    size_t res = 0;
+    for (size_t i = schema.num_dedicated; i < schema.types.size(); ++i)
+        res = std::max(res, sizeof(UInt64) + schema.types[i]->getName().size());
+    return res;
+}
+
+size_t estimateValueSize(
+    const DataTypePtr & type, const GenerateRandomOptions & options, const RandomSchemas & schemas, UInt64 schema_seed)
 {
     if (type->haveMaximumSizeOfValue())
         return type->getMaximumSizeOfValueInMemory();
@@ -409,20 +1211,20 @@ size_t estimateValueSize(
     {
         case TypeIndex::String:
         {
-            return max_string_length + sizeof(UInt64);
+            return options.max_string_length + sizeof(UInt64);
         }
 
         /// The logic in this function should reflect the logic of fillColumnWithRandomData.
         case TypeIndex::Array:
         {
             auto nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length);
+            return sizeof(size_t) + estimateValueSize(nested_type, nestedOptions(options), schemas, deriveSeed(schema_seed, 0));
         }
 
         case TypeIndex::Map:
         {
             const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length);
+            return sizeof(size_t) + estimateValueSize(nested_type, nestedOptions(options), schemas, deriveSeed(schema_seed, 0));
         }
 
         case TypeIndex::Tuple:
@@ -432,7 +1234,7 @@ size_t estimateValueSize(
             size_t res = 0;
 
             for (size_t i = 0; i < tuple_size; ++i)
-                res += estimateValueSize(elements[i], max_array_length, max_string_length);
+                res += estimateValueSize(elements[i], options, schemas, deriveSeed(schema_seed, i));
 
             return res;
         }
@@ -440,13 +1242,52 @@ size_t estimateValueSize(
         case TypeIndex::Nullable:
         {
             auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
-            return 1 + estimateValueSize(nested_type, max_array_length, max_string_length);
+            return 1 + estimateValueSize(nested_type, options, schemas, schema_seed);
         }
 
         case TypeIndex::LowCardinality:
         {
             auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length, max_string_length);
+            return sizeof(size_t) + estimateValueSize(nested_type, options, schemas, schema_seed);
+        }
+
+        case TypeIndex::Dynamic:
+        {
+            /// One discriminator byte and one offset per row on top of the widest type.
+            const auto & schema = schemas.dynamic(schema_seed);
+            return 1 + sizeof(UInt64) + estimateWidestAlternative(schema.types, options, schemas, schema_seed)
+                + estimateSharedVariantOverhead(schema);
+        }
+
+        case TypeIndex::Variant:
+        {
+            /// One discriminator byte and one offset per row on top of the widest variant.
+            const DataTypes & variants = typeid_cast<const DataTypeVariant &>(*type).getVariants();
+            return 1 + sizeof(UInt64) + estimateWidestAlternative(variants, options, schemas, schema_seed);
+        }
+
+        case TypeIndex::Object:
+        {
+            const auto & object_type = typeid_cast<const DataTypeObject &>(*type);
+            const GenerateRandomOptions nested_options = nestedOptions(options);
+
+            size_t res = 0;
+            for (const auto & [path, path_type] : object_type.getTypedPaths())
+                res += estimateValueSize(path_type, nested_options, schemas, deriveSeed(schema_seed, path));
+
+            /// A dynamic path costs a discriminator and an offset per row; a shared one stores its
+            /// name and the offsets of the name and of the value instead.
+            const auto & schema = schemas.json(schema_seed);
+            for (size_t i = 0; i < schema.leaves.size(); ++i)
+            {
+                const auto & leaf = schema.leaves[i];
+                const size_t overhead
+                    = i < schema.num_dynamic_leaves ? 1 + sizeof(UInt64) : leaf.path.size() + 2 * sizeof(UInt64);
+                res += overhead
+                    + estimateWidestAlternative(leaf.types.types, nested_options, schemas, deriveSeed(schema_seed, leaf.path))
+                    + estimateSharedVariantOverhead(leaf.types);
+            }
+            return res;
         }
 
         default:
@@ -454,16 +1295,13 @@ size_t estimateValueSize(
     }
 }
 
-}
-
-ColumnPtr fillColumnWithRandomData(
-    DataTypePtr type,
-    UInt64 limit,
-    UInt64 max_array_length,
-    UInt64 max_string_length,
-    pcg64 & rng,
-    bool fuzzy)
+ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const GenerateRandomContext & ctx)
 {
+    pcg64 & rng = ctx.rng;
+    const UInt64 max_array_length = ctx.options.max_array_length;
+    const UInt64 max_string_length = ctx.options.max_string_length;
+    const bool fuzzy = ctx.options.fuzzy;
+
     TypeIndex idx = type->getTypeId();
 
     switch (idx)
@@ -549,8 +1387,7 @@ ColumnPtr fillColumnWithRandomData(
                 offsets[i] = offset;
             }
 
-            /// This division by two makes the size growth subexponential on depth.
-            auto data_column = fillColumnWithRandomData(nested_type, offset, max_array_length / 2, max_string_length, rng, fuzzy);
+            auto data_column = fillColumnWithRandomData(nested_type, offset, ctx.nestedChild(0));
 
             return ColumnArray::create(data_column, std::move(offsets_column));
         }
@@ -558,7 +1395,7 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Map:
         {
             const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length / 2, max_string_length, rng, fuzzy);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, ctx.nestedChild(0));
             return ColumnMap::create(nested_column);
         }
 
@@ -572,7 +1409,7 @@ ColumnPtr fillColumnWithRandomData(
             Columns tuple_columns(tuple_size);
 
             for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i] = fillColumnWithRandomData(elements[i], limit, max_array_length, max_string_length, rng, fuzzy);
+                tuple_columns[i] = fillColumnWithRandomData(elements[i], limit, ctx.child(i));
 
             return ColumnTuple::create(std::move(tuple_columns));
         }
@@ -580,13 +1417,14 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Nullable:
         {
             auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, fuzzy);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, ctx);
 
+            const UInt32 null_threshold = ctx.options.nullThreshold();
             auto null_map_column = ColumnUInt8::create();
             auto & null_map = null_map_column->getData();
             null_map.resize(limit);
             for (UInt64 i = 0; i < limit; ++i)
-                null_map[i] = rng() % 16 == 0; /// No real motivation for this.
+                null_map[i] = drawNull(rng, null_threshold);
 
             return ColumnNullable::create(nested_column, std::move(null_map_column));
         }
@@ -818,7 +1656,7 @@ ColumnPtr fillColumnWithRandomData(
             /// but it's ok for testing purposes, because the LowCardinality data type supports high cardinality data as well.
 
             auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, fuzzy);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, ctx);
 
             auto column = type->createColumn();
             typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*nested_column, 0, limit);
@@ -841,9 +1679,185 @@ ColumnPtr fillColumnWithRandomData(
             return column;
         }
 
+        case TypeIndex::BFloat16:
+        {
+            auto column = ColumnBFloat16::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomNumbers<UInt16>(reinterpret_cast<char *>(column->getData().data()), limit, rng, fuzzy);
+            return column;
+        }
+
+        case TypeIndex::Time:
+        {
+            auto column = ColumnInt32::create();
+            auto & data = column->getData();
+            data.resize(limit);
+            /// Generate values from range [-3599999, 3599999]; out-of-range values would only
+            /// saturate to that boundary on text output. In `fuzzy` mode the range is ignored,
+            /// the same way it is for `Date32`.
+            fillRandomDecimals<Int32>(
+                reinterpret_cast<char *>(data.data()), limit, static_cast<Int32>(MAX_TIME_SECONDS + 1), rng, fuzzy);
+            return column;
+        }
+
+        case TypeIndex::Time64:
+        {
+            auto column = type->createColumn();
+            auto & column_concrete = typeid_cast<ColumnDecimal<Time64> &>(*column);
+            auto & data = column_concrete.getData();
+            data.resize(limit);
+            /// `Time64` is stored as `Int64` ticks: seconds scaled by 10^scale.
+            /// The largest value fits `Int64` for every legal scale (up to 9).
+            Int64 range
+                = (MAX_TIME_SECONDS + 1) * static_cast<Int64>(intExp10(typeid_cast<const DataTypeTime64 &>(*type).getScale()));
+            fillRandomDecimals<Int64>(reinterpret_cast<char *>(data.data()), limit, range, rng, fuzzy);
+            return column;
+        }
+
+        case TypeIndex::Variant:
+        {
+            const auto & variants = typeid_cast<const DataTypeVariant &>(*type).getVariants();
+            const size_t num_variants = variants.size();
+
+            /// A `Variant` has no shape to draw: every variant is equally likely, and one extra
+            /// outcome produces an untyped NULL, so that state is exercised too.
+            auto [type_index, counts] = drawRowTypes(
+                rng, limit, ctx.options.nullThreshold(), num_variants, [&] { return static_cast<UInt8>(rng() % num_variants); });
+
+            /// Each variant is filled in one call; `ColumnVariant` consumes its values in row order,
+            /// so the k-th row with discriminator `d` gets the k-th value of variant `d`.
+            MutableColumns variant_columns(num_variants);
+            for (size_t i = 0; i < num_variants; ++i)
+                variant_columns[i] = fillColumnWithRandomData(variants[i], counts[i], ctx.child(i))->assumeMutable();
+
+            /// `getVariants` is already in global discriminator order, so a variant is its own discriminator.
+            std::vector<UInt8> global_discriminator(num_variants);
+            for (size_t i = 0; i < num_variants; ++i)
+                global_discriminator[i] = static_cast<UInt8>(i);
+
+            return buildVariantColumn(*type, global_discriminator, type_index, std::move(variant_columns));
+        }
+
+        case TypeIndex::Dynamic:
+        {
+            const auto & schema = ctx.schemas.dynamic(ctx.schema_seed);
+            const size_t num_types = schema.types.size();
+
+            auto [type_index, counts] = drawRowTypes(
+                rng, limit, ctx.options.nullThreshold(), num_types, [&] { return static_cast<UInt8>(rng() % num_types); });
+
+            MutableColumns type_columns(num_types);
+            for (size_t i = 0; i < num_types; ++i)
+                type_columns[i] = fillColumnWithRandomData(schema.types[i], counts[i], ctx.child(i))->assumeMutable();
+
+            return buildDynamicColumn(schema, type_index, std::move(type_columns));
+        }
+
+        case TypeIndex::Object:
+        {
+            const auto & object_type = typeid_cast<const DataTypeObject &>(*type);
+            const auto & schema = ctx.schemas.json(ctx.schema_seed);
+
+            /// The typed paths of the type are always present. They are filled in sorted order so
+            /// that the values do not depend on the iteration order of an unordered map.
+            std::vector<String> typed_paths;
+            typed_paths.reserve(object_type.getTypedPaths().size());
+            for (const auto & [path, _] : object_type.getTypedPaths())
+                typed_paths.push_back(path);
+            std::sort(typed_paths.begin(), typed_paths.end());
+
+            UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
+            for (const auto & path : typed_paths)
+                typed_path_columns[path]
+                    = fillColumnWithRandomData(object_type.getTypedPaths().at(path), limit, ctx.nestedChild(path))->assumeMutable();
+
+            /// Every generated path becomes a `Dynamic` column of `limit` rows; a NULL there means
+            /// that the key is absent from that row.
+            std::vector<String> leaf_paths;
+            MutableColumns leaf_columns;
+            leaf_paths.reserve(schema.leaves.size());
+            leaf_columns.reserve(schema.leaves.size());
+
+            for (const auto & leaf : schema.leaves)
+            {
+                const size_t num_types = leaf.types.types.size();
+
+                /// A leaf has at most two types, and the second one - the drift - is rare.
+                auto [type_index, counts] = drawRowTypes(
+                    rng,
+                    limit,
+                    leaf.absent_threshold,
+                    num_types,
+                    [&] { return static_cast<UInt8>(num_types > 1 && drawChance(rng, TYPE_DRIFT_ROW_SHARE) ? 1 : 0); });
+
+                auto leaf_ctx = ctx.nestedChild(leaf.path);
+                MutableColumns value_columns(num_types);
+                for (size_t i = 0; i < num_types; ++i)
+                {
+                    value_columns[i] = fillColumnWithRandomData(leaf.types.types[i], counts[i], leaf_ctx.child(i))->assumeMutable();
+                    raiseUInt64ValuesAboveInt64Max(*value_columns[i]);
+                }
+
+                leaf_paths.push_back(leaf.path);
+                leaf_columns.push_back(buildDynamicColumn(leaf.types, type_index, std::move(value_columns))->assumeMutable());
+            }
+
+            /// `max_dynamic_paths`, `max_dynamic_paths_upper_bound` and `global_max_dynamic_paths` are
+            /// all the limit of the type, the way `DataTypeObject::createColumn` initialises them.
+            const size_t max_dynamic_paths = object_type.getMaxDynamicPaths();
+            UnorderedMapWithMemoryTracking<String, MutableColumnPtr> no_dynamic_paths;
+            auto object = ColumnObject::create(
+                std::move(typed_path_columns),
+                std::move(no_dynamic_paths),
+                DataTypeObject::getTypeOfSharedData()->createColumn(),
+                max_dynamic_paths,
+                max_dynamic_paths,
+                max_dynamic_paths,
+                object_type.getMaxDynamicTypes());
+
+            /// Takes the leading `max_dynamic_paths` leaves as dynamic paths of the column and
+            /// serialises the rest into the shared data, sorted by path, one offset per row.
+            unflattenAndInsertPaths(leaf_paths, std::move(leaf_columns), *object, limit);
+
+            if (object->size() != limit)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Generated a `JSON` column of {} rows instead of {}", object->size(), limit);
+            object->validateDynamicPathsSizes();
+
+            return object;
+        }
+
         default:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'GenerateRandom' is not implemented for type {}", type->getName());
     }
+}
+
+/// To support `Nested` types, we will collect them to a single `Array` of `Tuple`.
+Block prepareBlockToFill(const Block & block)
+{
+    Block res;
+    for (const auto & column : Nested::collect(block.getNamesAndTypesList()))
+        res.insert(ColumnWithTypeAndName(column.type, column.name));
+    return res;
+}
+
+}
+
+ColumnPtr fillColumnWithRandomData(
+    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, bool fuzzy)
+{
+    GenerateRandomOptions options;
+    options.max_array_length = max_array_length;
+    options.max_string_length = max_string_length;
+    options.fuzzy = fuzzy;
+
+    /// There is a single column here and its name is not observable from the outside, so any stable
+    /// name will do. Its schema is seeded from one draw of the value generator.
+    const UInt64 column_seed = deriveSeed(rng(), "x");
+    auto schemas = RandomSchemas::buildForColumn(type, column_seed, options);
+
+    GenerateRandomContext ctx{options, *schemas, rng, column_seed};
+    return fillColumnWithRandomData(type, limit, ctx);
 }
 
 namespace
@@ -854,19 +1868,19 @@ class GenerateSource final : public ISource
 public:
     GenerateSource(
         UInt64 block_size_,
-        UInt64 max_array_length_,
-        UInt64 max_string_length_,
-        UInt64 random_seed_,
-        Block block_header_,
-        ContextPtr context_,
+        const GenerateRandomOptions & options_,
+        std::shared_ptr<const RandomSchemas> schemas_,
+        UInt64 storage_seed_,
+        UInt64 stream_seed_,
+        Block block_to_fill_,
         GenerateRandomStatePtr state_)
-        : ISource(std::make_shared<const Block>(Nested::flattenNested(prepareBlockToFill(block_header_))))
+        : ISource(std::make_shared<const Block>(Nested::flattenNested(block_to_fill_)))
         , block_size(block_size_)
-        , max_array_length(max_array_length_)
-        , max_string_length(max_string_length_)
-        , block_to_fill(std::move(block_header_))
-        , rng(random_seed_)
-        , context(context_)
+        , options(options_)
+        , schemas(std::move(schemas_))
+        , storage_seed(storage_seed_)
+        , block_to_fill(std::move(block_to_fill_))
+        , rng(stream_seed_)
         , shared_state(state_)
     {
     }
@@ -879,8 +1893,12 @@ protected:
         Columns columns;
         columns.reserve(block_to_fill.columns());
 
+        GenerateRandomContext ctx{options, *schemas, rng, 0};
         for (const auto & elem : block_to_fill)
-            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng));
+        {
+            ctx.schema_seed = deriveSeed(storage_seed, elem.name);
+            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, ctx));
+        }
 
         columns = Nested::flattenNested(block_to_fill.cloneWithColumns(columns)).getColumns();
 
@@ -896,26 +1914,14 @@ protected:
 
 private:
     UInt64 block_size;
-    UInt64 max_array_length;
-    UInt64 max_string_length;
+    GenerateRandomOptions options;
+    std::shared_ptr<const RandomSchemas> schemas;
+    UInt64 storage_seed;
     Block block_to_fill;
 
     pcg64 rng;
 
-    ContextPtr context;
     GenerateRandomStatePtr shared_state;
-
-    static Block & prepareBlockToFill(Block & block)
-    {
-        /// To support Nested types, we will collect them to single Array of Tuple.
-        auto names_and_types = Nested::collect(block.getNamesAndTypesList());
-        block.clear();
-
-        for (auto & column : names_and_types)
-            block.insert(ColumnWithTypeAndName(column.type, column.name));
-
-        return block;
-    }
 };
 
 }
@@ -925,20 +1931,19 @@ StorageGenerateRandom::StorageGenerateRandom(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & comment,
-    UInt64 max_array_length_,
-    UInt64 max_string_length_,
+    const GenerateRandomOptions & options_,
     const std::optional<UInt64> & random_seed_)
-    : StorageWithCommonVirtualColumns(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
+    : StorageWithCommonVirtualColumns(table_id_), options(options_)
 {
     static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
     static constexpr size_t MAX_STRING_SIZE = 1 << 30;
 
-    if (max_array_length > MAX_ARRAY_SIZE)
+    if (options.max_array_length > MAX_ARRAY_SIZE)
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in GenerateRandom: {}, maximum: {}",
-                        max_array_length, MAX_ARRAY_SIZE);
-    if (max_string_length > MAX_STRING_SIZE)
+                        options.max_array_length, MAX_ARRAY_SIZE);
+    if (options.max_string_length > MAX_STRING_SIZE)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in GenerateRandom: {}, maximum: {}",
-                        max_string_length, MAX_STRING_SIZE);
+                        options.max_string_length, MAX_STRING_SIZE);
 
     random_seed = random_seed_ ? sipHash64(*random_seed_) : randomSeed();
     StorageInMemoryMetadata storage_metadata;
@@ -970,8 +1975,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
                             "random_seed, max_string_length, max_array_length.");
 
         std::optional<UInt64> random_seed;
-        UInt64 max_string_length = 10;
-        UInt64 max_array_length = 10;
+        GenerateRandomOptions options;
 
         if (!engine_args.empty())
         {
@@ -982,18 +1986,29 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         if (engine_args.size() >= 2)
         {
             engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+            options.max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
         }
 
         if (engine_args.size() == 3)
         {
             engine_args[2] = evaluateConstantExpressionAsLiteral(engine_args[2], args.getLocalContext());
-            max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
+            options.max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
         }
 
-        return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
+        GenerateRandomSettings settings;
+        settings.loadFromQuery(*args.storage_def);
+        settings.sanityCheck();
+
+        options.null_ratio = settings[GenerateRandomSetting::null_ratio];
+        options.max_json_depth = settings[GenerateRandomSetting::max_json_depth];
+        options.max_json_keys_per_object = settings[GenerateRandomSetting::max_json_keys_per_object];
+
+        return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, options, random_seed);
     },
-    {},
+    {
+        .supports_settings = true,
+        .has_builtin_setting_fn = GenerateRandomSettings::hasBuiltin,
+    },
     Documentation{
         .description = R"DOCS_MD(
 The GenerateRandom table engine produces random data for given table schema.
@@ -1007,14 +2022,24 @@ Usage examples:
 
 ```sql
 ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+[SETTINGS null_ratio = ..., max_json_depth = ..., max_json_keys_per_object = ...]
 ```
 
 The `max_array_length` and `max_string_length` parameters specify maximum length of all
 array or map columns and strings correspondingly in generated data.
 
+The `SETTINGS` clause controls how `Nullable`, `Variant`, `Dynamic` and `JSON` values are generated:
+`null_ratio` (default `0.0625`) is the probability that a value is `NULL` and the base probability
+that a `JSON` key is absent from a row - a minority of sparse keys are absent several times more
+often, `max_json_depth` (default `3`) bounds the nesting depth of generated `JSON` objects,
+and `max_json_keys_per_object` (default `8`) bounds the number of generated keys on one level of an
+object. The [`generateRandom`](/reference/functions/table-functions/generate) table function accepts
+the same settings.
+
 Generate table engine supports only `SELECT` queries.
 
-It supports all [DataTypes](/reference/data-types/index) that can be stored in a table except `AggregateFunction`.
+It supports all [DataTypes](/reference/data-types/index) that can be stored in a table,
+except `AggregateFunction`, `Interval`, `Nothing` and `QBit`.
 
 ## Example {#example}
 
@@ -1047,7 +2072,8 @@ SELECT * FROM generate_engine_table LIMIT 3
   - Indices
   - Replication
 )DOCS_MD",
-        .syntax = "ENGINE = GenerateRandom([random_seed[, max_string_length[, max_array_length]]])",
+        .syntax = "ENGINE = GenerateRandom([random_seed[, max_string_length[, max_array_length]]]) "
+                  "[SETTINGS null_ratio = ..., max_json_depth = ..., max_json_keys_per_object = ...]",
         .related = {"FuzzJSON", "FuzzQuery"}});
 }
 
@@ -1071,11 +2097,19 @@ Pipe StorageGenerateRandom::read(
         block_header.insert({std::move(column), name_type.type, name_type.name});
     }
 
+    /// `Nested` columns are generated as a single `Array` of `Tuple` and flattened afterwards, so
+    /// both the seeds and the size estimate below refer to the collected block.
+    Block block_to_fill = prepareBlockToFill(block_header);
+
+    auto schemas = RandomSchemas::build(block_to_fill.getNamesAndTypesList(), random_seed, options);
+
     /// Correction of block size for wide tables.
     size_t preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes];
     if (preferred_block_size_bytes)
     {
-        size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length);
+        size_t estimated_row_size_bytes = 0;
+        for (const auto & elem : block_to_fill)
+            estimated_row_size_bytes += estimateValueSize(elem.type, options, *schemas, deriveSeed(random_seed, elem.name));
 
         size_t estimated_block_size_bytes = 0;
         if (common::mulOverflow(max_block_size, estimated_row_size_bytes, estimated_block_size_bytes))
@@ -1116,7 +2150,7 @@ Pipe StorageGenerateRandom::read(
     for (UInt64 i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<GenerateSource>(
-            max_block_size, max_array_length, max_string_length, generate(), block_header, context, shared_state);
+            max_block_size, options, schemas, random_seed, generate(), block_to_fill, shared_state);
         pipes.emplace_back(std::move(source));
     }
 

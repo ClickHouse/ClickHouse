@@ -67,7 +67,6 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool parallel_replicas_filter_pushdown;
@@ -175,7 +174,7 @@ static void enforceAggregationInOrder(
     }
 }
 
-static String formattedAST(const ASTPtr & ast, bool enable_analyzer)
+static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return {};
@@ -183,8 +182,6 @@ static String formattedAST(const ASTPtr & ast, bool enable_analyzer)
     WriteBufferFromOwnString buf;
     IAST::FormatSettings ast_format_settings(
         /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-    if (!enable_analyzer)
-        ast_format_settings.collapse_identical_nodes_to_aliases = true;
     ast->format(buf, ast_format_settings);
     return buf.str();
 }
@@ -260,6 +257,46 @@ ASTPtr tryBuildAdditionalFilterAST(
     ContextMutablePtr & context)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
+
+    /** Dropping a conjunct that cannot be converted weakens an `AND`, which is only sound where the
+      * predicate is used with positive polarity. Under a `NOT` the weakened `AND` makes the whole
+      * predicate stronger - `NOT (a AND b)` becomes `NOT (a)` - and the shard then drops rows that
+      * the initiator-side filter can never bring back.
+      *
+      * So collect the chain of `AND`s hanging directly off the filter's output, which is the only
+      * place where the polarity is known to be positive. A node with more than one parent may also be
+      * reachable through some other function, so require a single parent while descending.
+      */
+    std::unordered_set<const ActionsDAG::Node *> conjuncts_safe_to_drop;
+    {
+        std::unordered_map<const ActionsDAG::Node *, size_t> num_parents;
+        for (const auto & dag_node : dag.getNodes())
+            for (const auto * child : dag_node.children)
+                ++num_parents[child];
+
+        auto is_and = [](const ActionsDAG::Node * candidate)
+        {
+            return candidate->type == ActionsDAG::ActionType::FUNCTION && candidate->function_base
+                && candidate->function_base->getName() == "and";
+        };
+
+        std::stack<const ActionsDAG::Node *> to_visit;
+        if (is_and(dag.getOutputs().front()))
+            to_visit.push(dag.getOutputs().front());
+
+        while (!to_visit.empty())
+        {
+            const auto * and_node = to_visit.top();
+            to_visit.pop();
+
+            if (!conjuncts_safe_to_drop.insert(and_node).second)
+                continue;
+
+            for (const auto * child : and_node->children)
+                if (is_and(child) && num_parents[child] == 1)
+                    to_visit.push(child);
+        }
+    }
 
     struct Frame
     {
@@ -391,9 +428,9 @@ ASTPtr tryBuildAdditionalFilterAST(
                 arguments.push_back(std::move(ast));
         }
 
-        /// Allow to skip children only for AND function.
+        /// Allow to skip children only for an AND whose polarity is known to be positive.
         auto func_name = node->function_base->getName();
-        bool is_function_and = func_name == "and";
+        bool is_function_and = func_name == "and" && conjuncts_safe_to_drop.contains(node);
         if (!has_all_args && !is_function_and)
             continue;
 
@@ -737,8 +774,7 @@ void ReadFromRemote::addLazyPipe(
         /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
         if (pushed_down_filters)
             addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
-        bool enable_analyzer = current_settings[Setting::allow_experimental_analyzer];
-        String query_string = formattedAST(query, enable_analyzer);
+        String query_string = formattedAST(query);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
         my_scalars["_shard_num"] = Block{
@@ -747,8 +783,8 @@ void ReadFromRemote::addLazyPipe(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
         remote_query_executor->setLogger(my_log);
+        remote_query_executor->setShardScope({.cluster = my_cluster_name, .shard_num = my_shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(my_stage);
-        remote_query_executor->setShardScope({my_cluster_name, my_shard.shard_info.shard_num});
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
         /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
@@ -801,8 +837,6 @@ void ReadFromRemote::addPipe(
         context->setSetting("cluster_for_parallel_replicas", cluster_name);
     }
 
-    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
-
     /// parallel replicas custom key case
     if (shard.shard_filter_generator)
     {
@@ -820,7 +854,7 @@ void ReadFromRemote::addPipe(
                 select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
             }
 
-            const String query_string = formattedAST(query, enable_analyzer);
+            const String query_string = formattedAST(query);
 
             if (!priority_func_factory.has_value())
                 priority_func_factory = GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed());
@@ -843,8 +877,8 @@ void ReadFromRemote::addPipe(
                 std::nullopt,
                 priority_func);
             remote_query_executor->setLogger(log);
+            remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
             remote_query_executor->setQueryPlanFallbackStage(stage);
-            remote_query_executor->setShardScope({cluster_name, shard.shard_info.shard_num});
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
             remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
@@ -862,7 +896,7 @@ void ReadFromRemote::addPipe(
         if (filter_actions_dag)
             addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
 
-        const String query_string = formattedAST(shard.query, enable_analyzer);
+        const String query_string = formattedAST(shard.query);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
@@ -876,8 +910,8 @@ void ReadFromRemote::addPipe(
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(stage);
-        remote_query_executor->setShardScope({cluster_name, shard.shard_info.shard_num});
         remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
@@ -891,8 +925,8 @@ void ReadFromRemote::addPipe(
         //     connect to instantiates the coordinator which manages the reading on the whole shard and
         //     returns the result of the shard, so several connections mean several coordinators;
         //   * with parallel replicas disabled, or not applicable for any other reason (e.g. by
-        //     `automatic_parallel_replicas_mode` or `parallel_replicas_only_with_analyzer`), a replica
-        //     just executes the query over all of its data.
+        //     `automatic_parallel_replicas_mode`), a replica just executes the query over all of its
+        //     data.
         if (context->canUseOffsetParallelReplicas())
             remote_query_executor->setPoolMode(PoolMode::GET_MANY);
         else
@@ -1096,8 +1130,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
         replicas.push_back(pools_to_use[i]->getAddress());
     }
 
-    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
-    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast, enable_analyzer), fmt::join(replicas, ", "));
+    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
@@ -1200,11 +1233,11 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
-    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
-
-    String query_string = formattedAST(ast, enable_analyzer);
+    String query_string = formattedAST(ast);
 
     chassert(output_header);
+
+    const size_t replica_number = replica_info.number_of_current_replica;
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
@@ -1219,6 +1252,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
         connection_pool_with_failover,
         query_plan);
 
+    remote_query_executor->setShardScope({.cluster = cluster->getName(), .replica_num = replica_number});
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
     remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));

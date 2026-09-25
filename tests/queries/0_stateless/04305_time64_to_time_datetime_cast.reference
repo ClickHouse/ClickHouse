@@ -1,0 +1,9 @@
+-- Time64 -> Time: drop sub-second, flooring towards negative infinity --
+01:02:03
+-00:00:01
+-00:00:02
+-00:00:01
+-- Time64 -> DateTime: whole seconds reinterpreted as seconds since 1970-01-01 --
+1970-01-01 01:02:03
+-- Time64 -> DateTime: negative value range handling honors date_time_overflow_behavior --
+1970-01-01 00:00:00
