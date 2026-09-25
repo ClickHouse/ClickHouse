@@ -16,6 +16,8 @@ INSERT INTO t05242_left SELECT if(number%2=0,'A','B'),1 FROM numbers(20000);
 INSERT INTO t05242_right SELECT if(number%2=0,'a','D'),1 FROM numbers(20000);
 CREATE TABLE t05242_merge AS t05242_values ENGINE=Merge(currentDatabase(), '^t05242_(values|left|right)$');
 CREATE VIEW t05242_view AS SELECT lower(k) AS k,pnl FROM t05242_merge;
+SELECT countIf(match(explain, 'AggregatingTransform × ([2-9]|[1-9][0-9]+)([^0-9]|$)')) > 0
+FROM (EXPLAIN PIPELINE SELECT k,sum(pnl) FROM t05242_merge GROUP BY k);
 SELECT k,sum(pnl) FROM t05242_merge GROUP BY k ORDER BY k
 SETTINGS log_comment='05242_direct';
 SELECT k,sum(pnl) FROM (SELECT * FROM t05242_merge) GROUP BY k ORDER BY k
