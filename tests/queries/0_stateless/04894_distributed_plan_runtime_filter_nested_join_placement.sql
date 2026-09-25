@@ -53,26 +53,14 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'rf_merg
       WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
         AND current_database = currentDatabase() AND log_comment = '04894_nested_placement');
 
--- The executor logs the planned wiring: every stage's plan (logger `DistributedQueryPlanExecutor`,
--- message `Executing stage`) and every task's exchange streams (logger `executeDistributedQuery`,
--- message `Task '...' input exchange streams: [...]`). This check reads placement from those lines.
--- A task that receives a filter lists the broadcast exchange of that filter's `rf_merge_%` root
--- among its inputs. So every task of the one stage whose plan reads `fact` must list the exchanges
--- of both merge roots.
--- This is the wiring, not the arrival: the merge -> probe broadcast is best-effort by design,
--- because a probe task cancels its receive branch once its data work is done.
+-- The executor logs every task's exchange streams (logger `executeDistributedQuery`, message
+-- `Task '...' input exchange streams: [...]`). A task that receives a filter lists the broadcast
+-- exchange of that filter's `rf_merge_%` root among its inputs. Every task that receives a filter
+-- must be in one stage, receive both filters, and have no other input exchange. A task without a
+-- data input exchange reads storage, and the only scan here that applies the filters is `fact`.
+-- The stage is not found by its read step, whose name differs between table engines.
 SELECT '-- both filters are wired to every fact-scan task';
 WITH
-    (
-        SELECT groupArray(extract(message, 'Executing stage \'([^\']+)\''))
-        FROM system.text_log
-        WHERE event_date >= yesterday() AND logger_name = 'DistributedQueryPlanExecutor'
-          AND position(message, concat('ReadFromMergeTree (', currentDatabase(), '.fact)')) > 0
-          AND query_id IN (
-              SELECT query_id FROM system.query_log
-              WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-                AND current_database = currentDatabase() AND log_comment = '04894_nested_placement')
-    ) AS fact_stages,
     (
         SELECT groupUniqArrayArray(extractAll(extract(message, 'output exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__'))
         FROM system.text_log
@@ -83,12 +71,14 @@ WITH
               WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
                 AND current_database = currentDatabase() AND log_comment = '04894_nested_placement')
     ) AS filter_exchanges
-SELECT length(fact_stages) = 1 AND length(filter_exchanges) = 2 AND count() >= 1
-   AND min(length(arrayIntersect(
-       extractAll(extract(message, 'input exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__'), filter_exchanges))) = 2
+SELECT length(filter_exchanges) = 2 AND count() >= 1
+   AND uniqExact(extract(message, '^Task \'(stage_\\d+)_')) = 1
+   AND min(arraySort(arrayDistinct(extractAll(extract(message, 'input exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__')))
+       = arraySort(filter_exchanges))
 FROM system.text_log
 WHERE event_date >= yesterday() AND logger_name = 'executeDistributedQuery'
-  AND startsWith(message, concat('Task \'', fact_stages[1], '_'))
+  AND startsWith(message, 'Task \'stage_')
+  AND hasAny(extractAll(extract(message, 'input exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__'), filter_exchanges)
   AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()

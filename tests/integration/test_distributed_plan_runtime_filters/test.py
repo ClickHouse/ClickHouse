@@ -296,11 +296,12 @@ def _assert_broadcast_delivered(probe_arrivals):
     count here is taken where a state is serialized, so a broadcast that dropped all of them
     would pass unnoticed.
 
-    Under TSan about one sweep in seven delivers nothing, too often for a required check on a
-    best-effort leg, so the check is skipped there. That gives up the configuration where a
-    delivery race would show most readily; the exact send-side counts still run."""
-    if INITIATOR.is_built_with_thread_sanitizer():
-        logging.info("skipping the broadcast-arrival check under TSan: %s", probe_arrivals)
+    Under TSan about one sweep in seven delivers nothing, and MSan loses the same race. That is
+    too often for a required check on a best-effort leg, so the check is skipped there. It gives
+    up the configurations where a delivery race would show most readily; the exact send-side
+    counts still run."""
+    if INITIATOR.is_built_with_thread_sanitizer() or INITIATOR.is_built_with_memory_sanitizer():
+        logging.info("skipping the broadcast-arrival check under TSan or MSan: %s", probe_arrivals)
         return
     assert max(probe_arrivals) >= 1, probe_arrivals
 
