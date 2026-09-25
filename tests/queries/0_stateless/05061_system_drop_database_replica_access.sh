@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel, no-fasttest, no-replicated-database
 # Tag no-parallel: the queries under test are the server-wide forms of `SYSTEM DROP REPLICA`
 # and `SYSTEM DROP DATABASE REPLICA`, which enumerate every database on the server.
 # Tag no-fasttest: creates a `Replicated` database.
+# Tag no-replicated-database: the test controls which databases are `Replicated`,
+# while with the replicated database every test database is `Replicated`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,17 +23,26 @@ replica="non_existing_replica_05061"
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${rdb}"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH no_password"
-${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${rdb} ENGINE = Replicated('/test/${CLICKHOUSE_DATABASE}/rdb_05061', 's1', 'r1')"
 
 function check()
 {
-    if ${CLICKHOUSE_CLIENT} --user "${user}" --query "$1" 2>&1 | grep -q -F 'ACCESS_DENIED'
+    local output
+    if output=$(${CLICKHOUSE_CLIENT} --user "${user}" --query "$1" 2>&1)
+    then
+        echo "ok"
+    elif grep -q -F 'ACCESS_DENIED' <<< "${output}"
     then
         echo "denied"
     else
-        echo "allowed"
+        echo "unexpected error: ${output}"
     fi
 }
+
+echo "-- no privileges and no Replicated databases: both forms are denied"
+check "SYSTEM DROP REPLICA '${replica}'"
+check "SYSTEM DROP DATABASE REPLICA '${replica}'"
+
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${rdb} ENGINE = Replicated('/test/${CLICKHOUSE_DATABASE}/rdb_05061', 's1', 'r1')"
 
 echo "-- no privileges: both forms are denied"
 check "SYSTEM DROP REPLICA '${replica}'"
@@ -48,9 +59,14 @@ check "SYSTEM DROP DATABASE REPLICA '${replica}'"
 echo "-- SYSTEM DROP REPLICA targets every database, so it is still denied"
 check "SYSTEM DROP REPLICA '${replica}'"
 
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${rdb}"
+
+echo "-- privileges on some databases but no Replicated databases: still denied"
+check "SYSTEM DROP DATABASE REPLICA '${replica}'"
+
 echo "-- global privilege: allowed"
 ${CLICKHOUSE_CLIENT} --query "GRANT SYSTEM DROP REPLICA ON *.* TO ${user}"
 check "SYSTEM DROP DATABASE REPLICA '${replica}'"
+check "SYSTEM DROP REPLICA '${replica}'"
 
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${rdb}"
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${user}"
