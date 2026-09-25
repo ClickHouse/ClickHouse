@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: the DDL worker re-parses the DDL with the session `dialect`
 # The `clickhouse_json` dialect runs a restored constraint declaration as DDL, which `formatQueryFromJSON`
 # (05226) never reaches. Without the boundary check the server does not fail these payloads, it dies on
 # them, so the closing liveness query is part of the assertion. The payloads go over HTTP rather than
