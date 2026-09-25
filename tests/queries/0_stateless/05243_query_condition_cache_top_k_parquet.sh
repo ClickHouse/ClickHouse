@@ -108,7 +108,14 @@ echo "--- a file changes after the cache was used"
 # file: the query must fail rather than return what those entries left of the result.
 # First record the entries for the current versions of the files.
 ${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 3 SETTINGS ${SETTINGS} FORMAT Null"
+# With `k >= 100000` the statistics already exclude every row group but the one of the result, so the
+# entries of the predicate alone and of the TopK exclude the same ones: the TopK entry changes nothing,
+# and the query must not fail for it.
+PRUNING_SETTINGS="input_format_parquet_filter_push_down = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_05243 WHERE k >= 100000 SETTINGS ${SETTINGS}, ${PRUNING_SETTINGS}"
+${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 WHERE k >= 100000 ORDER BY k DESC LIMIT 3 SETTINGS ${SETTINGS}, ${PRUNING_SETTINGS} FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT file_top_k_query_condition_cache_inject_file_change"
+${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 WHERE k >= 100000 ORDER BY k DESC LIMIT 3 SETTINGS ${SETTINGS}, ${PRUNING_SETTINGS}" 2>&1
 ${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 3 SETTINGS ${SETTINGS}" 2>&1 | grep -o -m1 FILE_CHANGED_DURING_READ
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT file_top_k_query_condition_cache_inject_file_change"
 ${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 3 SETTINGS ${SETTINGS}"

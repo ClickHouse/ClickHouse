@@ -2132,7 +2132,23 @@ Chunk StorageFileSource::generate()
                 {
                     auto marks = query_condition_cache->read(
                         table_uuid, cache_file_key, *top_k_condition_hash, /*increment_profile_events=*/false);
+                    /// An entry that skips no row group beyond the plain verdict changes nothing, so it is not
+                    /// used at all: a later change of a file then only invalidates the key, rather than failing
+                    /// the query for an entry that did not matter.
+                    bool skips_more = false;
                     if (marks)
+                    {
+                        if (!matching_marks)
+                            skips_more = std::find(marks->begin(), marks->end(), false) != marks->end();
+                        else if (matching_marks->size() == marks->size())
+                            for (size_t i = 0; i < marks->size() && !skips_more; ++i)
+                                skips_more = (*matching_marks)[i] && !(*marks)[i];
+                    }
+                    if (!skips_more)
+                    {
+                        marks.reset();
+                    }
+                    else
                     {
                         /// Paired with `checkTopKQueryConditionCacheKeyHolds`: the entry is used only if the key
                         /// has not been invalidated, and an invalidation after this point fails the query.
