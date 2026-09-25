@@ -25,7 +25,8 @@ codex --version && codex login status
 
 - `codex` missing: stop and tell the user to install it (`npm install -g @openai/codex`).
 - Not logged in: stop and ask the user to run `! codex login` (ChatGPT login) themselves. Do not run
-  `codex login`, set `CODEX_HOME`, or ask for `OPENAI_API_KEY`.
+  `codex login`, set `CODEX_HOME`, or ask for `OPENAI_API_KEY`. A paid ChatGPT account is required;
+  ClickHouse Inc. members can request a seat through the internal AI tools onboarding guide.
 
 ## 2. Model and effort (asked once, persisted)
 
@@ -117,8 +118,11 @@ codex exec "${MODEL_ARGS[@]}" -c "model_reasoning_effort=$EFFORT" \
 ## 5. Present the findings
 
 For each finding: what it claims, file:line, and whether it holds. **Verify every finding against the
-current code** before calling it real; model reviews produce false positives. Say which ones you
-confirmed, which you refuted (and why), and which you could not decide.
+current code** before calling it real; model reviews produce false positives. If a finding describes a
+concrete failing scenario (an input, a query, a sequence of operations), reproduce it first (run the
+query, write the failing test) and treat the finding as confirmed only if the reproduction fails; reading
+the code is not enough. Say which ones you confirmed, which you refuted (and why), and which you could not
+decide.
 
 Then stop, unless `--fix` was passed: ask the user whether to fix the confirmed findings and re-review.
 A "Block" verdict is not a mandate to fix.
