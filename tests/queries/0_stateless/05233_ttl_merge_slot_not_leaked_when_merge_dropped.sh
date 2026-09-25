@@ -32,6 +32,17 @@ function wait_until_empty()
     echo "timed out waiting for the TTL merge on $table"
 }
 
+# The fail point is server-wide, so it must not outlive this script, however the script ends.
+function cleanup()
+{
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT mt_drop_selected_ttl_merge_once;"
+    ${CLICKHOUSE_CLIENT} -q "
+        DROP TABLE IF EXISTS t_ttl_slot_dropped;
+        DROP TABLE IF EXISTS t_ttl_slot_probe;
+    "
+}
+trap cleanup EXIT
+
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_ttl_slot_dropped (d Date, x UInt64)
     ENGINE = MergeTree ORDER BY x
@@ -67,8 +78,3 @@ ${CLICKHOUSE_CLIENT} -q "
 
 wait_until_empty "t_ttl_slot_probe"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_slot_probe;"
-
-${CLICKHOUSE_CLIENT} -q "
-    DROP TABLE t_ttl_slot_dropped;
-    DROP TABLE t_ttl_slot_probe;
-"
