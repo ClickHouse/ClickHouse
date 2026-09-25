@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
+
 namespace DB
 {
 
@@ -15,20 +16,8 @@ namespace ErrorCodes
 /// It reads only streams that contain path names.
 class SerializationObjectDistinctPaths final : public SimpleTextSerialization
 {
-private:
-    explicit SerializationObjectDistinctPaths(const std::vector<String> & typed_paths_);
-
 public:
-    static UInt128 getHash(const std::vector<String> & typed_paths_);
-
-    static SerializationPtr create(const std::vector<String> & typed_paths_);
-
-    size_t allocatedBytes() const override;
-    bool supportsPooling() const override { return shared_data_paths_serialization->supportsPooling(); }
-
-    /// A JSON typed path may be spelled exactly like the special subcolumn, and then the flat name resolves
-    /// to that path (`ObjectTypedPath`) instead of to the distinct-paths substream.
-    static bool isDistinctPathsSubcolumn(const SubstreamPath & path);
+    explicit SerializationObjectDistinctPaths(const std::vector<String> & typed_paths_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -57,7 +46,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,

@@ -25,12 +25,6 @@ protected:
 public:
     static const SymbolIndex & instance();
 
-    /// The index if `instance` has already built it, `nullptr` otherwise. Never builds it and never
-    /// waits for a build in progress, so it is safe to call from the fatal signal handler: `instance`
-    /// blocks on the function-local static's guard while another thread is inside the constructor,
-    /// and a thread that crashed there would leave the handler waiting on it forever.
-    static const SymbolIndex * instanceIfInitialized();
-
     struct Symbol
     {
         /// Here addresses are relative to objects.
@@ -42,8 +36,8 @@ public:
     struct Object
     {
         /// Here addresses are absolute virtual memory addresses.
-        const void * address_begin{};
-        const void * address_end{};
+        const void * address_begin;
+        const void * address_end;
         std::string name;
         std::shared_ptr<Elf> elf;
 #if defined(OS_DARWIN)

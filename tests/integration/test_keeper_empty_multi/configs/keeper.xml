@@ -6,6 +6,10 @@
         </node>
     </zookeeper>
 
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>

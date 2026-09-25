@@ -10,18 +10,6 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
-#include <filesystem>
-
-#if USE_AZURE_BLOB_STORAGE
-#include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include <azure/storage/common/storage_credential.hpp>
-#include <azure/identity/client_secret_credential.hpp>
-#include <azure/identity/workload_identity_credential.hpp>
-#include <azure/identity/managed_identity_credential.hpp>
-#endif
-
-
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -160,8 +148,14 @@ public:
         auto secret_access_key = credentials.GetAWSSecretKey();
         auto token = credentials.GetSessionToken();
 
+        /// The delta-kernel-rs integration is currently under experimental flag,
+        /// because we wait for delta-kernel maintainers to provide ffi api
+        /// which will allow us to provide our own s3 client to delta-kernel.
+        /// For now it uses its own client, which would lake all the auth options
+        /// which our own client supports.
+
         /// Supported options
-        /// https://github.com/apache/arrow-rs-object-store/blob/main/src/aws/builder.rs#L446
+        /// https://github.com/apache/arrow-rs/blob/main/object_store/src/aws/builder.rs#L191
         if (!access_key_id.empty())
             set_option("aws_access_key_id", access_key_id);
         if (!secret_access_key.empty())
@@ -210,229 +204,6 @@ private:
     }
 };
 
-#if USE_AZURE_BLOB_STORAGE
-std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
-    const DB::AzureBlobStorage::ConnectionParams & connection_params)
-{
-    std::vector<std::pair<std::string, std::string>> options;
-    auto set_option = [&](const std::string & name, const std::string & value)
-    {
-        options.emplace_back(name, value);
-    };
-
-    const auto & endpoint = connection_params.endpoint;
-
-    /// Supported options
-    /// https://github.com/apache/arrow-rs-object-store/blob/main/src/azure/builder.rs#L390
-    set_option("azure_container_name", endpoint.container_name);
-
-    /// Extracts the storage account name from the hostname of storage_account_url.
-    /// Standard Azure Blob endpoints have the form https://<account>.blob.core.windows.net,
-    /// so the subdomain before the first '.' is the account name.
-    auto get_account_name = [&]() -> std::string
-    {
-        const auto & url = endpoint.storage_account_url;
-        auto scheme_end = url.find("://");
-        if (scheme_end == std::string::npos)
-            return {};
-
-        auto host_start = scheme_end + 3;
-        auto dot_pos = url.find('.', host_start);
-        if (dot_pos == std::string::npos)
-            return {};
-
-        return url.substr(host_start, dot_pos - host_start);
-    };
-
-    switch (connection_params.auth_method.index())
-    {
-        case 0: /// ConnectionString
-        {
-            const auto & auth = std::get<DB::AzureBlobStorage::ConnectionString>(connection_params.auth_method);
-
-            /// An empty ConnectionString is the default-constructed variant alternative used
-            /// by the vended-credentials / SAS path (e.g. a Delta table read through Unity
-            /// catalog). There is no connection string to parse: the account name lives in the
-            /// storage_account_url hostname and the SAS token is carried in endpoint.sas_auth,
-            /// which is applied after this switch. Without this branch we would parse an empty
-            /// connection string, leave azure_storage_account_name unset, and the object_store
-            /// Azure builder would fail with "Account must be specified (in builder_build)".
-            if (auth.toUnderType().empty())
-            {
-                const auto & name = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
-                if (!name.empty())
-                    set_option("azure_storage_account_name", name);
-                break;
-            }
-
-            /// delta-kernel-rs does not support azure_storage_connection_string directly.
-            /// Parse the connection string into individual components instead.
-            /// Translate Azure SDK std::logic_error subtypes (e.g. std::invalid_argument
-            /// from std::stoi for malformed ports inside the connection string's
-            /// BlobEndpoint URL) to DB::Exception so they don't trigger
-            /// abortOnFailedAssertion in debug/sanitizer builds.
-            Azure::Storage::_internal::ConnectionStringParts parsed;
-            try
-            {
-                parsed = Azure::Storage::_internal::ParseConnectionString(auth.toUnderType());
-            }
-            catch (const std::logic_error & e)
-            {
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Failed to parse Azure connection string: {}", e.what());
-            }
-
-            if (!parsed.AccountName.empty())
-                set_option("azure_storage_account_name", parsed.AccountName);
-
-            if (!parsed.AccountKey.empty())
-            {
-                set_option("azure_storage_account_key", parsed.AccountKey);
-            }
-            else
-            {
-                /// SAS-based connection string: extract the SAS token from the
-                /// blob service URL query parameters (appended by ParseConnectionString).
-                auto query_params = parsed.BlobServiceUrl.GetQueryParameters();
-                if (!query_params.empty())
-                {
-                    std::string sas;
-                    for (const auto & [k, v] : query_params)
-                    {
-                        if (!sas.empty())
-                            sas += '&';
-                        sas += k + '=' + v;
-                    }
-                    set_option("azure_storage_sas_key", sas);
-                }
-            }
-
-            /// Set the blob service endpoint URL (without SAS query parameters).
-            const auto & blob_url = parsed.BlobServiceUrl;
-            const auto & scheme = blob_url.GetScheme();
-            set_option("azure_endpoint", connection_params.getConnectionURL());
-            if (!scheme.empty() && scheme == "http")
-                set_option("azure_allow_http", "true");
-            break;
-        }
-        case 2: /// StorageSharedKeyCredential
-        case 4: /// ManagedIdentityCredential
-        {
-            const auto & name = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
-            if (!name.empty())
-                set_option("azure_storage_account_name", name);
-            if (!connection_params.endpoint.account_key.empty())
-                set_option("azure_storage_account_key", connection_params.endpoint.account_key);
-            break;
-        }
-        case 1: /// ClientSecretCredential
-        case 3: /// WorkloadIdentityCredential
-        case 5: /// StaticCredential
-        case 6: /// TokenProviderCredential
-        default:
-            /// Other variants are not supported yet
-            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
-                            "Unsupported authentication type for azure: {}", connection_params.auth_method.index());
-    }
-
-    if (!endpoint.sas_auth.empty())
-        set_option("azure_storage_sas_key", endpoint.sas_auth);
-
-    /// If the configuration carries an endpoint URL, pass it to the kernel explicitly, which
-    /// otherwise derives the public `<account>.blob.core.windows.net` host from the account
-    /// name (wrong for Azurite, sovereign clouds, private links). For ConnectionString auth
-    /// `storage_account_url` holds the raw connection string, not a URL, and the endpoint was
-    /// already set above from the parsed connection string. Plain HTTP must be allowed
-    /// explicitly, since the object-store builder is https-only by default.
-    if (endpoint.storage_account_url.starts_with("http://") || endpoint.storage_account_url.starts_with("https://"))
-    {
-        std::string azure_endpoint = endpoint.storage_account_url;
-        /// Endpoint-style disk configurations (`<endpoint>http://host:port/account/container/prefix</endpoint>`)
-        /// keep only the scheme and host in `storage_account_url` and carry the account name as a
-        /// separate path segment (`add_account_name_to_url` is true), the same way
-        /// `Endpoint::getServiceEndpoint` re-assembles the URL for the SDK client. All other
-        /// configuration forms set `add_account_name_to_url` to false or leave it unset, keeping the
-        /// account either in the URL path already or in the host name, so nothing is appended for them.
-        if (!endpoint.account_name.empty() && endpoint.add_account_name_to_url.value_or(false))
-        {
-            if (!azure_endpoint.ends_with('/'))
-                azure_endpoint += '/';
-            azure_endpoint += endpoint.account_name;
-        }
-        set_option("azure_endpoint", azure_endpoint);
-        if (endpoint.storage_account_url.starts_with("http://"))
-            set_option("azure_allow_http", "true");
-    }
-
-    return options;
-}
-
-/// A helper class to manage Azure Blob Storage.
-class AzureKernelHelper final : public IKernelHelper
-{
-public:
-    AzureKernelHelper(
-        const DB::AzureBlobStorage::ConnectionParams & connection_params_,
-        const std::string & blob_path_)
-        : connection_params(connection_params_)
-        , table_location(buildTableLocation(connection_params_, blob_path_))
-        , data_path(normalizeBlobPath(blob_path_))
-    {}
-
-    const std::string & getTableLocation() const override { return table_location; }
-
-    const std::string & getDataPath() const override { return data_path; }
-
-    ffi::EngineBuilder * createBuilder() const override
-    {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
-                KernelUtils::toDeltaString(table_location),
-                &KernelUtils::allocateError),
-            "get_engine_builder");
-        BuilderGuard guard(builder);
-
-        for (const auto & [name, value] : getAzureBuilderOptions(connection_params))
-            setBuilderOption(builder, name, value);
-
-        LOG_TRACE(
-            log,
-            "Using azure container: {}, data_path: {}",
-            connection_params.endpoint.container_name, data_path);
-
-        return guard.release();
-    }
-
-private:
-    const DB::AzureBlobStorage::ConnectionParams connection_params;
-    const std::string table_location;
-    const std::string data_path;
-    const LoggerPtr log = getLogger("AzureKernelHelper");
-
-    /// `blob_path` may carry a leading slash (e.g. from a disk-based configuration),
-    /// which Azure would keep as a part of the blob name. Strip it so that the data
-    /// path agrees with the normalized table location committed to the Delta log.
-    static std::string normalizeBlobPath(const std::string & blob_path)
-    {
-        if (!blob_path.empty() && blob_path.front() == '/')
-            return blob_path.substr(1);
-        return blob_path;
-    }
-
-    static std::string buildTableLocation(
-        const DB::AzureBlobStorage::ConnectionParams & params,
-        const std::string & blob_path)
-    {
-        auto path = normalizeBlobPath(blob_path);
-
-        const auto & prefix = params.endpoint.prefix;
-        std::string full_path = prefix.empty() ? path : (std::filesystem::path(prefix) / path).string();
-
-        return "az://" + params.endpoint.container_name + "/" + full_path;
-    }
-};
-#endif
-
 /// A helper class to manage local fs storage.
 class LocalKernelHelper final : public IKernelHelper
 {
@@ -452,12 +223,6 @@ public:
             "get_engine_builder");
 
         return builder;
-    }
-
-    /// The kernel's local `object_store` backend requires the table directory to exist before `get_engine_builder`; create it here.
-    void prepareForTableCreation() const override
-    {
-        std::filesystem::create_directories(path);
     }
 
 private:
@@ -495,14 +260,6 @@ DeltaLake::KernelHelperPtr getKernelHelper(
                 object_storage,
                 s3_conf->getAuthSettings());
         }
-#if USE_AZURE_BLOB_STORAGE
-        case DB::ObjectStorageType::Azure:
-        {
-            return std::make_shared<DeltaLake::AzureKernelHelper>(
-                *object_storage->getAzureBlobStorageConnectionParams(),
-                configuration->getRawPath().path);
-        }
-#endif
         case DB::ObjectStorageType::Local:
         {
             const auto * local_conf = dynamic_cast<const DB::StorageLocalConfiguration *>(configuration.get());

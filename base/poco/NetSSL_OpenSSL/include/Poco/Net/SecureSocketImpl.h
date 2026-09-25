@@ -26,7 +26,6 @@
 #include "Poco/Net/Session.h"
 #include "Poco/Net/SocketImpl.h"
 
-#include <memory>
 #include <mutex>
 
 namespace Poco
@@ -142,17 +141,6 @@ namespace Net
         poco_socket_t sockfd();
         /// Returns the underlying socket descriptor.
 
-        SSL * ssl() const;
-        /// Returns the underlying OpenSSL SSL object, or null if the SSL handshake
-        /// has not been performed yet.
-        ///
-        /// The object is normally guarded by the socket's mutex; a caller that uses it
-        /// directly must ensure the socket is not accessed concurrently.
-
-        void markFatalError();
-        /// Records that an external operation on the underlying `SSL` object failed fatally.
-        /// An orderly SSL shutdown must not be attempted afterwards.
-
         X509 * peerCertificate() const;
         /// Returns the peer's certificate.
 
@@ -205,28 +193,7 @@ namespace Net
         /// the socket are changed via the setBlocking method!
 
 
-        void setBioMethod(const BIO_METHOD * method);
-        /// Optionally inject a custom BIO_METHOD for the SSL transport BIO.
-        /// Has no effect once the SSL handshake has been initiated (i.e. once
-        /// any I/O has happened). If never called, `BIO_s_socket()` is used.
-
-        struct RecursiveMutex
-        {
-            virtual ~RecursiveMutex() = default;
-            virtual void lock() = 0;
-            virtual void unlock() = 0;
-        };
-
-        void setMutex(std::unique_ptr<RecursiveMutex> mutex);
-        /// Replace the lock guarding SSL operations.
-
-
     protected:
-        int completeHandshakeImpl(bool verifyPeer);
-        /// Completes the SSL handshake, and, if verifyPeer is true, validates the
-        /// peer certificate as a part of the same handshake, so that a validation
-        /// failure is accounted as a handshake failure.
-
         void acceptSSL();
         /// Assume per-object mutex is locked.
         /// Performs a server-side SSL handshake and certificate verification.
@@ -272,20 +239,7 @@ namespace Net
         SecureSocketImpl(const SecureSocketImpl &);
         SecureSocketImpl & operator=(const SecureSocketImpl &);
 
-        const BIO_METHOD * getBioMethod() const;
-        /// Returns the BIO_METHOD to use for the SSL transport BIO.
-        /// Falls back to `BIO_s_socket()` when no custom method was set via `setBioMethod`.
-
-        struct StdRecursiveMutex final : RecursiveMutex
-        {
-            void lock() override { _m.lock(); }
-            void unlock() override { _m.unlock(); }
-            std::recursive_mutex _m;
-        };
-
-        using ScopedLock = std::lock_guard<RecursiveMutex>;
-
-        mutable std::unique_ptr<RecursiveMutex> _mutex{std::make_unique<StdRecursiveMutex>()};
+        mutable std::recursive_mutex _mutex;
         SSL * _pSSL; // GUARDED_BY _mutex
         Poco::AutoPtr<SocketImpl> _pSocket;
         Context::Ptr _pContext;
@@ -293,8 +247,6 @@ namespace Net
         bool _fatalError;
         std::string _peerHostName;
         Session::Ptr _pSession;
-        const BIO_METHOD * _bioMethod = nullptr;
-        /// Contract: when set, store the `SocketImpl *` in the BIO's data.
 
         friend class SecureStreamSocketImpl;
 
@@ -309,12 +261,6 @@ namespace Net
     inline poco_socket_t SecureSocketImpl::sockfd()
     {
         return _pSocket->sockfd();
-    }
-
-
-    inline SSL * SecureSocketImpl::ssl() const
-    {
-        return _pSSL;
     }
 
 

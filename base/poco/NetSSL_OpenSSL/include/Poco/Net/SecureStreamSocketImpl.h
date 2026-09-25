@@ -179,13 +179,6 @@ namespace Net
         Context::Ptr context() const;
         /// Returns the SSL context used by this socket.
 
-        SSL * ssl() const;
-        /// Returns the underlying OpenSSL SSL object, or null if the SSL handshake
-        /// has not been performed yet.
-
-        void markFatalError();
-        /// Records that an external operation on the underlying `SSL` object failed fatally.
-
         void setLazyHandshake(bool flag = true);
         /// Enable lazy SSL handshake. If enabled, the SSL handshake
         /// will be performed the first time date is sent or
@@ -239,14 +232,6 @@ namespace Net
         /// This method will only work if the blocking modes of
         /// the socket are changed via the setBlocking method!
 
-        void setBioMethod(const BIO_METHOD * method);
-        /// Optionally inject a custom BIO_METHOD into the underlying SSL machinery.
-        /// Has no effect once the SSL handshake has been initiated (i.e. once
-        /// any I/O has happened). If never called, `BIO_s_socket()` is used.
-
-        void setMutex(std::unique_ptr<SecureSocketImpl::RecursiveMutex> mutex);
-        /// Replace the lock guarding SSL operations on the underlying impl.
-
 
     protected:
         void acceptSSL();
@@ -295,18 +280,6 @@ namespace Net
     inline Context::Ptr SecureStreamSocketImpl::context() const
     {
         return _impl.context();
-    }
-
-
-    inline SSL * SecureStreamSocketImpl::ssl() const
-    {
-        return _impl.ssl();
-    }
-
-
-    inline void SecureStreamSocketImpl::markFatalError()
-    {
-        _impl.markFatalError();
     }
 
 

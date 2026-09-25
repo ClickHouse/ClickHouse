@@ -16,7 +16,7 @@ namespace extractKV
 Configuration::Configuration(
     char key_value_delimiter_,
     char quoting_character_,
-    VectorWithMemoryTracking<char> pair_delimiters_,
+    std::vector<char> pair_delimiters_,
     UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy_)
     : key_value_delimiter(key_value_delimiter_),
     quoting_character(quoting_character_),
@@ -28,7 +28,7 @@ Configuration::Configuration(
 Configuration ConfigurationFactory::createWithoutEscaping(
     char key_value_delimiter,
     char quoting_character,
-    VectorWithMemoryTracking<char> pair_delimiters,
+    std::vector<char> pair_delimiters,
     Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy)
 {
     validate(key_value_delimiter, quoting_character, pair_delimiters);
@@ -43,7 +43,7 @@ Configuration ConfigurationFactory::createWithoutEscaping(
 Configuration ConfigurationFactory::createWithEscaping(
     char key_value_delimiter,
     char quoting_character,
-    VectorWithMemoryTracking<char> pair_delimiters,
+    std::vector<char> pair_delimiters,
     Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy)
 {
     static constexpr char ESCAPE_CHARACTER = '\\';
@@ -65,7 +65,7 @@ Configuration ConfigurationFactory::createWithEscaping(
         unexpected_quoting_character_strategy);
 }
 
-void ConfigurationFactory::validate(char key_value_delimiter, char quoting_character, VectorWithMemoryTracking<char> pair_delimiters)
+void ConfigurationFactory::validate(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
 {
     if (key_value_delimiter == quoting_character)
     {

@@ -113,20 +113,13 @@ class ApplyColumnTransformerNode final : public IColumnTransformerNode
 public:
     /** Initialize apply column transformer with expression node.
       * Expression node must be lambda or function otherwise exception is thrown.
-      * column_name_prefix is the optional result name prefix from `APPLY (expr, 'prefix')`.
       */
-    explicit ApplyColumnTransformerNode(QueryTreeNodePtr expression_node_, String column_name_prefix_ = {});
+    explicit ApplyColumnTransformerNode(QueryTreeNodePtr expression_node_);
 
     /// Get apply transformer type
     ApplyColumnTransformerType getApplyTransformerType() const
     {
         return apply_transformer_type;
-    }
-
-    /// Get the result name prefix from `APPLY (expr, 'prefix')`; empty when not set
-    const String & getColumnNamePrefix() const
-    {
-        return column_name_prefix;
     }
 
     /// Get apply transformer expression node
@@ -153,7 +146,6 @@ protected:
 
 private:
     ApplyColumnTransformerType apply_transformer_type = ApplyColumnTransformerType::LAMBDA;
-    String column_name_prefix;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;

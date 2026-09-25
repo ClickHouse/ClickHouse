@@ -1,15 +1,12 @@
 #include "config.h"
-#include <Storages/System/SystemTableSourceRegistry.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
-#include <Interpreters/Context.h>
-#include <Access/Common/AccessFlags.h>
 
 #if USE_JEMALLOC
 #    include <Core/Settings.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <Interpreters/Context.h>
 #    include <Processors/Sources/JemallocProfileSource.h>
 #    include <Common/Jemalloc.h>
 #endif
@@ -32,20 +29,11 @@ namespace ErrorCodes
 }
 
 StorageSystemJemallocProfileText::StorageSystemJemallocProfileText(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(getColumnsDescription());
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageSystemJemallocProfileText::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 ColumnsDescription StorageSystemJemallocProfileText::getColumnsDescription()
@@ -65,12 +53,10 @@ Pipe StorageSystemJemallocProfileText::read(
     [[maybe_unused]] const size_t max_block_size,
     const size_t /*num_streams*/)
 {
-    context->checkAccess(AccessType::SYSTEM_JEMALLOC);
-
 #if USE_JEMALLOC
     storage_snapshot->check(column_names);
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
 
     /// Get the last flushed profile filename
     auto last_profile = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
@@ -87,8 +73,7 @@ Pipe StorageSystemJemallocProfileText::read(
         max_block_size,
         format,
         symbolize_with_inline,
-        collapsed_use_count,
-        /* remove_file= */ true);
+        collapsed_use_count);
 
     return Pipe(std::move(source));
 #else
@@ -97,6 +82,3 @@ Pipe StorageSystemJemallocProfileText::read(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemJemallocProfileText) }

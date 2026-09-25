@@ -2,7 +2,6 @@
 
 #include <Functions/IFunction.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
@@ -15,7 +14,7 @@ namespace DB
 /** tuple(x, y, ...) is a function that allows you to group several columns.
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   */
-class FunctionTuple final : public IFunction
+class FunctionTuple : public IFunction
 {
     bool enable_named_columns;
 
