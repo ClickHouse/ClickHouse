@@ -37,29 +37,29 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
 {
     auto global_context = Context::createCopy(getContext().context);
 
-    const auto previous_max_allocation_before_suction
-        = global_context->getServerSettings().get("memory_reservation_max_allocation_before_suction_bytes");
-    const auto previous_suction_max_allocation
-        = global_context->getServerSettings().get("memory_reservation_suction_max_allocation_bytes");
-    const auto previous_suction_reserved
-        = global_context->getServerSettings().get("memory_reservation_suction_reserved_bytes");
-    const auto previous_suction_queue_policy
-        = global_context->getServerSettings().get("memory_reservation_suction_queue_policy");
+    const auto previous_max_allocation_before_retry
+        = global_context->getServerSettings().get("memory_reservation_max_allocation_before_retry_bytes");
+    const auto previous_recovery_max_allocation
+        = global_context->getServerSettings().get("memory_reservation_recovery_max_allocation_bytes");
+    const auto previous_recovery_reserved
+        = global_context->getServerSettings().get("memory_reservation_recovery_reserved_bytes");
+    const auto previous_recovery_queue_policy
+        = global_context->getServerSettings().get("memory_reservation_recovery_queue_policy");
     SCOPE_EXIT({
         global_context->setServerSetting(
-            "memory_reservation_max_allocation_before_suction_bytes", previous_max_allocation_before_suction);
+            "memory_reservation_max_allocation_before_retry_bytes", previous_max_allocation_before_retry);
         global_context->setServerSetting(
-            "memory_reservation_suction_max_allocation_bytes", previous_suction_max_allocation);
+            "memory_reservation_recovery_max_allocation_bytes", previous_recovery_max_allocation);
         global_context->setServerSetting(
-            "memory_reservation_suction_reserved_bytes", previous_suction_reserved);
+            "memory_reservation_recovery_reserved_bytes", previous_recovery_reserved);
         global_context->setServerSetting(
-            "memory_reservation_suction_queue_policy", previous_suction_queue_policy);
+            "memory_reservation_recovery_queue_policy", previous_recovery_queue_policy);
     });
 
-    global_context->setServerSetting("memory_reservation_max_allocation_before_suction_bytes", UInt64{1111});
-    global_context->setServerSetting("memory_reservation_suction_max_allocation_bytes", UInt64{2222});
-    global_context->setServerSetting("memory_reservation_suction_reserved_bytes", UInt64{3333});
-    global_context->setServerSetting("memory_reservation_suction_queue_policy", String{"largest_memory_first"});
+    global_context->setServerSetting("memory_reservation_max_allocation_before_retry_bytes", UInt64{1111});
+    global_context->setServerSetting("memory_reservation_recovery_max_allocation_bytes", UInt64{2222});
+    global_context->setServerSetting("memory_reservation_recovery_reserved_bytes", UInt64{3333});
+    global_context->setServerSetting("memory_reservation_recovery_queue_policy", String{"largest_memory_first"});
 
     auto storage = global_context->getWorkloadEntityStoragePtr();
     Settings storage_settings;

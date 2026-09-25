@@ -73,10 +73,10 @@ namespace Setting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsUInt64 memory_reservation_max_allocation_before_suction_bytes;
-    extern const ServerSettingsUInt64 memory_reservation_suction_max_allocation_bytes;
-    extern const ServerSettingsUInt64 memory_reservation_suction_reserved_bytes;
-    extern const ServerSettingsString memory_reservation_suction_queue_policy;
+    extern const ServerSettingsUInt64 memory_reservation_max_allocation_before_retry_bytes;
+    extern const ServerSettingsUInt64 memory_reservation_recovery_max_allocation_bytes;
+    extern const ServerSettingsUInt64 memory_reservation_recovery_reserved_bytes;
+    extern const ServerSettingsString memory_reservation_recovery_queue_policy;
 }
 
 namespace ErrorCodes
@@ -193,18 +193,18 @@ ProcessList::EntryPtr ProcessList::insert(
 
                 const auto & server_settings = query_context->getServerSettings();
                 reservation_settings.pressure_policy.max_allocation_before_suction_bytes
-                    = server_settings[ServerSetting::memory_reservation_max_allocation_before_suction_bytes];
+                    = server_settings[ServerSetting::memory_reservation_max_allocation_before_retry_bytes];
                 reservation_settings.pressure_policy.suction_max_allocation_bytes
-                    = server_settings[ServerSetting::memory_reservation_suction_max_allocation_bytes];
+                    = server_settings[ServerSetting::memory_reservation_recovery_max_allocation_bytes];
                 reservation_settings.pressure_policy.suction_reserved_bytes
-                    = server_settings[ServerSetting::memory_reservation_suction_reserved_bytes];
-                const String suction_queue_policy = server_settings[ServerSetting::memory_reservation_suction_queue_policy];
-                if (suction_queue_policy == "fifo")
+                    = server_settings[ServerSetting::memory_reservation_recovery_reserved_bytes];
+                const String recovery_queue_policy = server_settings[ServerSetting::memory_reservation_recovery_queue_policy];
+                if (recovery_queue_policy == "fifo")
                 {
                     reservation_settings.pressure_policy.suction_queue_policy
                         = ResourceAllocation::SuctionQueuePolicy::Fifo;
                 }
-                else if (suction_queue_policy == "largest_memory_first")
+                else if (recovery_queue_policy == "largest_memory_first")
                 {
                     reservation_settings.pressure_policy.suction_queue_policy
                         = ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst;
@@ -213,8 +213,8 @@ ProcessList::EntryPtr ProcessList::insert(
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Unknown `memory_reservation_suction_queue_policy`: '{}'. Expected `fifo` or `largest_memory_first`",
-                        suction_queue_policy);
+                        "Unknown `memory_reservation_recovery_queue_policy`: '{}'. Expected `fifo` or `largest_memory_first`",
+                        recovery_queue_policy);
                 }
 
                 memory_reservation = std::make_unique<MemoryReservation>(

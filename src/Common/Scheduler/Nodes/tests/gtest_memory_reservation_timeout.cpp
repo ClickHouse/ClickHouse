@@ -134,7 +134,7 @@ TEST(SchedulerSpaceShared, SingleReservationWorkerHonorsForcedSpillTimeout)
 
     MemoryReservation::Settings settings;
     settings.force_spill_before_eviction = true;
-    settings.suction_queue_timeout_ms = 100;
+    settings.recovery_timeout_ms = 100;
     settings.pressure_policy.max_allocation_before_suction_bytes = 1;
 
     MemoryReservation reservation(link, "requester", 0, settings);
