@@ -1111,12 +1111,26 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
     /// `ProcessListEntry`'s destructor) and `unordered_map` keeps element pointers valid across
     /// inserts, so they outlive the lock; `getInfo` reads only atomics.
     std::vector<std::pair<String, const ProcessListForUser *>> users;
+    std::vector<ThreadGroupPtr> running_thread_groups;
     {
         LockAndBlocker lock(mutex);
         users.reserve(user_to_queries.size());
         for (const auto & [user, user_queries] : user_to_queries)
+        {
             users.emplace_back(user, &user_queries);
+            if (get_profile_events)
+                for (const auto & [query_id, query_status] : user_queries.queries)
+                    if (query_status->thread_group)
+                        running_thread_groups.push_back(query_status->thread_group);
+        }
     }
+
+    /// Charge the interval during which the running queries held memory without any allocation or free,
+    /// so that `MemoryCredits` in the per-user counters is as up to date as in `system.processes`.
+    /// The query-level counters propagate to the user-level ones. The atomic exchange inside
+    /// `takeMemoryCreditsDelta` charges every elapsed interval exactly once, so this never double-counts.
+    for (const auto & thread_group : running_thread_groups)
+        thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
 
     UserInfo per_user_infos;
     per_user_infos.reserve(users.size());
