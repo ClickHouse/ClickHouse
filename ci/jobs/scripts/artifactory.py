@@ -137,16 +137,23 @@ class DebianArtifactory:
             self.pd.LOCAL_DIR + "/" + file for file in self.pd.get_deb_packages_files()
         ]
         REPREPRO_CMD_PREFIX = f"reprepro --ignore=unknownfield --basedir {R2MountPoint.MOUNT_POINT}/configs/deb --outdir {R2MountPoint.MOUNT_POINT}/deb --verbose"
-        # CreateRelease runs are serialized, so a lock here was left by a killed run
-        lockfile = Path(R2MountPoint.MOUNT_POINT) / "configs/deb/db/lockfile"
-        if lockfile.exists():
-            print(f"WARNING: removing stale reprepro lock [{lockfile}]")
-            lockfile.unlink()
 
         def reprepro(args):
             ok = Shell.check(f"{REPREPRO_CMD_PREFIX} {args} >> /tmp/reprepro.log 2>&1", verbose=True)
             Shell.check("tail -n 100 /tmp/reprepro.log", verbose=True)
             assert ok, f"reprepro failed: [{args[:100]}]"
+
+        # CreateRelease runs are serialized, so a lock here was left by a killed run
+        lockfile = Path(R2MountPoint.MOUNT_POINT) / "configs/deb/db/lockfile"
+        had_lock = lockfile.exists()
+        if had_lock:
+            print(f"WARNING: removing stale reprepro lock [{lockfile}]")
+            lockfile.unlink()
+        # TODO: back to `if had_lock:` after the 26.8.11.7 recovery
+        if True:
+            # The killed run registered this version without its files, so includedeb would skip it
+            for codename in {self.codename, RepoCodenames.STABLE}:
+                reprepro(f"removefilter {codename} 'Version (== {self.version})'")
 
         print("Running export commands:")
         reprepro(f"includedeb {self.codename} {' '.join(paths)}")
