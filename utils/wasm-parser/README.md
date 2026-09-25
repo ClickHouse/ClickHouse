@@ -4,8 +4,9 @@ An experiment: how small can `src/Parsers` get when built on its own, for a brow
 
 The motivating use case is the Web UI (`programs/server/play.html`), which today only has the
 lexer - `src/Parsers/Lexer.cpp` compiles to a 6 KB `.wasm` with no dependencies at all. A real
-parser would additionally give exact syntax errors with positions, and query pretty-printing,
-without a round trip to the server.
+parser additionally gives exact syntax errors with positions, parser-accurate syntax
+highlighting, the AST as JSON, and query pretty-printing, without a round trip to the server -
+that is the `ch_parse`/`ch_format_json` interface below.
 
 ## Building
 
@@ -35,23 +36,81 @@ The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
 | export | meaning |
 | --- | --- |
 | `ch_alloc(size)` / `ch_free(ptr)` | allocate a buffer to write the query into |
-| `ch_check(ptr, size)` | parse; 1 = ok, 0 = syntax error |
+| `ch_parse(ptr, size)` | parse; 1 = ok, 0 = error; the result is always a JSON document - see below |
 | `ch_format(ptr, size, one_line)` | parse and format; 1 = ok, 0 = parse error |
-| `ch_result_data()` / `ch_result_size()` | the formatted query, or the error message |
-| `ch_features()` | bit 0: `ch_format` is exported; bit 1: DCL parses |
+| `ch_format_json(ptr, size, one_line)` | format AST JSON back into SQL; 1 = ok, 0 = error |
+| `ch_result_data()` / `ch_result_size()` | the formatted query, the JSON document, or the error message |
+| `ch_features()` | bit 0: `ch_format` is exported; bit 1: DCL parses; bit 2: AST JSON |
 
-`-DENABLE_FORMATTING=OFF` builds a module that only answers whether a query parses; it has no
-`ch_format`. `-DENABLE_DCL=OFF` builds one that does not accept access management. Both are
-described below; `ch_features` reports which of them a given module was built with.
+`-DENABLE_FORMATTING=OFF` builds a module that cannot turn an AST back into text: it has no
+`ch_format` and no `ch_format_json`, and its `ch_parse` reports no `ast`. `-DENABLE_DCL=OFF`
+builds one that does not accept access management. Both are described below; `ch_features`
+reports which of them a given module was built with.
+
+## The JSON API
+
+A UI needs more than yes-or-no and formatted text - what to color, and where exactly an error
+is. `ch_parse` answers everything a parse can say, in one JSON document. For a query that
+parses (`SELECT 1`):
+
+```json
+{"ast": {"type": "SelectWithUnionQuery", "union_mode": "UNION_DEFAULT", "list_of_selects": {...}},
+ "highlights": [{"begin": 0, "end": 6, "type": "keyword"},
+                {"begin": 7, "end": 8, "type": "number"}]}
+```
+
+and for one that does not (`SELECT 1 +`):
+
+```json
+{"error": {"message": "Syntax error (query): failed at position 11 (end of query): . Expected one of: ...",
+           "begin": 10, "end": 10, "line": 1, "column": 11,
+           "expected": ["token", "DoubleColon", "OR", "AND", "..."]},
+ "highlights": [{"begin": 0, "end": 6, "type": "keyword"},
+                {"begin": 7, "end": 8, "type": "number"}]}
+```
+
+* `ast` is exactly what the SQL function `parseQueryToJSON` produces on a server, so it
+  round-trips: `ch_format_json` (and the server's `formatQueryFromJSON`) turns it back into SQL.
+  A query can parse and still have no faithful JSON form - access management, `INSERT` with
+  inline data - and then `ast` is `null` and `ast_error` says why. A `--no-formatting` build
+  omits the field entirely, because the strings such a build stores in the tree (`CAST` types,
+  for one) are the user's spelling rather than the canonical one. An `ast` that this module
+  reports is always one it can read back, because it is read back before it is reported: whatever
+  `ch_format_json` would refuse - a document larger than the 1 MiB the module accepts as input, or
+  a tree past its depth or element budget - is reported as a `null` `ast` with the reason instead.
+  Note that the element budget is not a count of AST nodes: the reader counts every value of a
+  structured `Field` too, and an `Array`, `Tuple` or `Map` literal of any width is a single AST
+  node, so how much of the budget a tree needs is not visible from the tree alone.
+* `highlights` is what the SQL function `highlightQuery` computes server-side: byte ranges
+  (0-based, end-exclusive) with a type out of `keyword`, `identifier`, `function`, `alias`,
+  `substitution`, `number`, `string`, `string_escape`, `string_metacharacter`. It is present on
+  errors too, covering what parsed before the failure, so an editor keeps coloring while the
+  user types. The ranges come from the parser itself (`Expected::highlights`), the same source
+  `clickhouse-client` colors its prompt from.
+* `error.begin`/`error.end` are byte offsets of the token the message points at,
+  `line`/`column` are 1-based with the column in bytes, matching the `(line N, col M)` of server
+  messages; `expected` lists what the parser would have accepted at that position. An error
+  reported by throwing (see below) carries only the message and, when known, the rightmost
+  position the parser reached.
+
+`ch_format_json` is the reverse half: it takes an `ast` document - from `ch_parse` here, or from
+`parseQueryToJSON` on a server - and formats it as SQL, one-line or multi-line. Anything wrong
+with the document (malformed JSON, an unknown node type, a field of the wrong shape, a tree past
+the depth or element limits) comes back as 0 with the message; hostile input cannot stop the
+module. Both directions exist only in a build with formatting, and `ch_features` bit 2 says so.
 
 No C++ exception ever unwinds here. `tryParseQuery` reports a syntax error by returning null
 rather than by throwing, and no code in `src/Parsers` catches anything, so the build passes
 `-fignore-exceptions`, which emits no landing pads and no unwind tables. The handful of parser
 checks that still report an invalid query by throwing - `Frame start cannot be UNBOUNDED
 FOLLOWING`, for one - reach the same place through a `setjmp` boundary in `wasm_sjlj.c` that
-`__cxa_throw` jumps to instead of aborting. Recovery covers `DB::Exception` and nothing else:
-anything else arriving there - a `std::bad_alloc` from `operator new`, say - is an object of an
-unrelated type that cannot be read, so its type name is reported and the module stops.
+`__cxa_throw` jumps to instead of aborting. Recovery covers anything deriving from
+`Poco::Exception` - `DB::Exception` is what the parser throws, and the rest of the hierarchy is
+what `Poco::JSON::Parser` and the `readJSON` overrides throw at the arbitrary document
+`ch_format_json` is handed (their `catch` blocks are dead under `-fignore-exceptions`, so the
+boundary is what converts them). Anything else arriving there - a `std::bad_alloc` from
+`operator new`, say - is an object of an unrelated type that cannot be read, so its type name is
+reported and the module stops.
 
 That boundary is the one thing here that needs an engine implementing the WebAssembly
 exception-handling proposal, because LLVM lowers `setjmp`/`longjmp` onto it. It also has to be
@@ -79,15 +138,20 @@ a shim in a browser.
 
 ## What it costs
 
-Stripped, 341 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
+Stripped, 359 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
 with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| everything | 1337627 | 397284 | 294923 | 315433 |
-| `-DENABLE_DCL=OFF` | 1134031 | 329871 | 245306 | 262425 |
-| `-DENABLE_FORMATTING=OFF` | 982314 | 316184 | 243251 | 260327 |
-| both off | 808093 | 259148 | 200848 | 215081 |
+| everything | 2052426 | 632776 | 467840 | 496186 |
+| `-DENABLE_DCL=OFF` | 1850746 | 565398 | 418495 | 443946 |
+| `-DENABLE_FORMATTING=OFF` | 985486 | 318608 | 244854 | 261874 |
+| both off | 809522 | 259966 | 201885 | 216148 |
+
+Formatting builds carry the AST JSON machinery, which is most of their weight: `writeJSON` and
+`readJSON` for every node, `Poco::JSON` and `Poco::Dynamic::Var` cost about 715 KB raw and
+172 KB brotli, against about 2 KB for the error-and-highlights half of `ch_parse`, which is why
+the latter is in every build and the former goes with `-DENABLE_FORMATTING=OFF`.
 
 Brotli is what a browser will actually get, and it is 25% better than gzip here.
 
@@ -112,15 +176,17 @@ Sorted by brotli, which is what a browser negotiates:
 | [`@clickhouse/parser`](https://github.com/ClickHouse/clickhouse-js-parser) 0.3.0 + `zod`, JS | 1128583 | 196944 | 153347 | 161974 |
 | [`libpg-query`](https://github.com/launchql/libpg-query-node) 17.7.4, wasm | 1150984 | 229158 | 168575 | 176785 |
 | — its emscripten glue, on top of that | 58903 | 16679 | 14888 | 15718 |
-| **this, both off** | 808093 | 259148 | 200848 | 215081 |
+| **this, both off** | 809522 | 259966 | 201885 | 216148 |
 | [`sql.js`](https://github.com/sql-js/sql.js) 1.14.1, wasm | 659730 | 322193 | 278641 | 289690 |
-| **this, everything** | 1337627 | 397284 | 294923 | 315433 |
 | `node-sql-parser` 5.4.0, all 20+ dialects, JS | 2609025 | 504010 | 333174 | 360819 |
+| **this, everything** | 2052426 | 632776 | 467840 | 496186 |
 | [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2, wasm | 21656938 | 4805067 | 2020675 | 2150089 |
 
 The row to measure against is **`libpg-query`**: the same idea, a production database's own parser
 compiled to WebAssembly rather than reimplemented. With its glue it is 183463 brotli against this
-build's 200848 — the same ballpark, for a grammar of comparable size.
+build's 201885 — the same ballpark, for a grammar of comparable size. The full build is not that
+comparison: none of the others ship an AST-as-JSON interface in both directions, which is what
+separates its row from the minimal one.
 
 The two JS parsers are smaller, and both are reimplementations. `@clickhouse/parser` is a Peggy
 grammar with Zod schemas for the same dialect, so it can drift from the server, where this cannot;
@@ -129,9 +195,10 @@ both, bundled and minified with esbuild, as a consumer would ship them. `node-sq
 smallest thing here per dialect, and covers much less of any of them; loading all its dialects
 costs more than this whole module.
 
-`sql.js` is a whole SQLite — engine, storage and all, not a parser — and is here only for scale.
-It is barely half the size of the full build uncompressed and yet lands next to it after brotli,
-which says more about how well a grammar compresses than about either one. `polyglot` is a
+`sql.js` is a whole SQLite — engine, storage and all, not a parser — and is here only for scale:
+a complete embedded database compresses to less than the difference between this project's two
+configurations, which says more about how poorly a grammar compresses than about either one.
+`polyglot` is a
 transpiler carrying thirty grammars and thirty generators; stripped, but built at Rust's default
 release settings rather than for size.
 
@@ -195,6 +262,15 @@ literal, `EPHEMERAL` stores the column type inside `defaultValueOfTypeName`, and
 `astText`, which formats normally and uses the query text - `textBetween` in
 `Parsers/TokenIterator.h` - when there is no formatter.
 
+AST JSON goes with formatting, in both directions. `ch_format_json` exists to turn JSON back
+into SQL, which is formatting by definition, plus `IAST::createFromJSON` and its `Poco::JSON`
+reader, which nothing else here needs. The `ast` of `ch_parse` could in principle exist without
+the formatter - `IAST::writeJSON` prints no SQL - but what it would serialize is wrong, for the
+reason the next paragraph explains: the strings the parser stores while parsing would be the
+user's spelling, and the resulting document would not round-trip to the canonical form. So
+`-DENABLE_FORMATTING=OFF` drops all three, and `ch_parse` in such a build reports errors and
+highlights only.
+
 The query text is not a general substitute. It is what the user wrote, line breaks and all, and the
 formatted spelling is the canonical one that ends up in table metadata:
 
@@ -226,7 +302,7 @@ the order of drift to expect:
 
 | left out | bytes | gzip -9 |
 | --- | ---: | ---: |
-| DCL (`-DENABLE_DCL=OFF`) | 203596 | 67413 |
+| DCL (`-DENABLE_DCL=OFF`) | 201680 | 67378 |
 | `CREATE TABLE` / `VIEW` / `DATABASE` | 56533 | 16731 |
 | functions, workloads, resources, named collections, indexes | 45644 | 13070 |
 | `ALTER` | 35978 | 7857 |

@@ -92,13 +92,13 @@ StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(co
 ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) /// NOLINT
 {
     assertInitialized();
+    check(context);
 
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
 
     return std::make_unique<AzureObjectStorage>(
         "AzureBlobStorage",
-        connection_params.auth_method,
         std::move(client),
         std::move(settings),
         connection_params,
