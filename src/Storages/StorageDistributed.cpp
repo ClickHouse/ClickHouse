@@ -717,10 +717,9 @@ public:
             if (no_replace)
                 return;
 
-            auto result_function = std::make_shared<FunctionNode>(getGlobalInFunctionNameForLocalInFunctionName(function_node->getFunctionName()));
-            result_function->getArguments().getNodes() = std::move(function_node->getArguments().getNodes());
-            resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
-            node = result_function;
+            /// A single `IN` node is reached once per referencing parent, so the rewrite must be in place.
+            resolveOrdinaryFunctionNodeByName(
+                *function_node, getGlobalInFunctionNameForLocalInFunctionName(function_node->getFunctionName()), getContext());
         }
     }
 
