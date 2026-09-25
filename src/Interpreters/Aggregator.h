@@ -89,6 +89,20 @@ inline UInt64 & getInlineCountState(AggregateDataPtr & ptr)
     return getCountState(reinterpret_cast<AggregateDataPtr>(&ptr));
 }
 
+/// What a conversion that materializes only some of the bucket's groups - the Top-K one or the HAVING
+/// pre-filter - reports to the runtime dataflow statistics about the groups it did not materialize.
+struct UntruncatedAggregationKeys
+{
+    /// What every group's key - kept or skipped - would occupy materialized.
+    UInt64 bytes = 0;
+
+    /// A bounded copy of those keys, in key order, or empty. The statistics divide the byte count by a
+    /// compression ratio, which the emitted chunk can only misrepresent: it holds the kept groups, and
+    /// a conversion that rejected every group leaves no row there at all - and without a ratio the byte
+    /// count is dropped instead of estimated.
+    Columns sample_columns;
+};
+
 /** Aggregates the source of the blocks.
   */
 class Aggregator final
@@ -163,6 +177,21 @@ public:
         size_t bucket_top_k = 0;
         bool bucket_top_k_ascending = false;
         size_t bucket_top_k_count_index = 0;
+
+        /// A bound on the aggregate at `having_prefilter_count_index`, a no-argument `count()`, whose rejected
+        /// groups may be skipped. The filter above stays authoritative, so skipping fewer is still correct.
+        enum class HavingPrefilterOp : UInt8
+        {
+            Disabled,
+            Greater,
+            GreaterOrEqual,
+            Less,
+            LessOrEqual,
+            Equal,
+        };
+        HavingPrefilterOp having_prefilter_op = HavingPrefilterOp::Disabled;
+        UInt64 having_prefilter_threshold = 0;
+        size_t having_prefilter_count_index = 0;
 
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
@@ -1032,16 +1061,50 @@ private:
     /// Used for single level merge.
     void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
 
+    bool havingPrefilterKeeps(UInt64 count) const
+    {
+        switch (params.having_prefilter_op)
+        {
+            case Params::HavingPrefilterOp::Greater: return count > params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::GreaterOrEqual: return count >= params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Less: return count < params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::LessOrEqual: return count <= params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Equal: return count == params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Disabled: return true;
+        }
+        return true;
+    }
+
+    /// `allow_having_prefilter` is sound only on a final conversion of a complete bucket; each caller establishes that.
+    /// `untruncated_keys`, when non-null, receives what every group's key - kept or skipped - would occupy
+    /// materialized, measured one key at a time on a single reused row, so the accounting stays bounded,
+    /// together with a bounded sample of those keys.
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
-    Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    Chunks convertToBlockImpl(
+        Method & method,
+        Table & data,
+        Arena * arena,
+        Arenas & aggregates_pools,
+        bool final,
+        size_t rows,
+        bool return_single_block,
+        bool allow_having_prefilter = false,
+        UntruncatedAggregationKeys * untruncated_keys = nullptr) const;
 
     /// A set method skips the inline-count and compiled-function paths; it only emits keys.
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
-    Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    Chunks convertToBlockImpl(
+        Method & method,
+        Table & data,
+        Arena * arena,
+        Arenas & aggregates_pools,
+        bool final,
+        size_t rows,
+        bool return_single_block,
+        bool allow_having_prefilter = false,
+        UntruncatedAggregationKeys * untruncated_keys = nullptr) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -1070,14 +1133,17 @@ private:
         Arena * arena,
         Arenas & aggregates_pools,
         bool use_compiled_functions,
-        bool return_single_block) const;
+        bool return_single_block,
+        bool allow_having_prefilter,
+        UntruncatedAggregationKeys * untruncated_keys) const;
 
     template <typename Method, typename Table>
     Chunks
     convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block) const;
 
-    /// `topk_full_key_bytes`, when non-null and the bucket goes through the Top-K conversion,
-    /// receives the byte size all of the bucket's keys would occupy materialized: the runtime
+    /// `untruncated_keys`, when non-null and the bucket goes through a conversion that materializes
+    /// only some of its groups (the Top-K one or the HAVING pre-filter), receives the byte size all
+    /// of the bucket's keys would occupy materialized: the runtime
     /// dataflow statistics must describe the untruncated aggregation output (it prices the
     /// shipping term of the parallel-replicas plan, where the partial aggregation materializes
     /// every group), so the chunk of a truncated conversion cannot be measured as is.
@@ -1091,7 +1157,7 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        UInt64 * topk_full_key_bytes,
+        UntruncatedAggregationKeys * untruncated_keys,
         size_t * full_group_count) const;
 
     AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
@@ -1102,14 +1168,14 @@ private:
     template <typename Method>
     requires MapAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys) const;
 
     /// `bucket_top_k` ranks groups by a lone `count()`, so it is never set for a set method, which has no
     /// aggregate functions at all. This overload exists only because the call site tests it at run time.
     template <typename Method>
     requires SetAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys) const;
 
     /// `full_group_count`, when non-null, receives the merged bucket's group count (see
     /// `convertOneBucketToChunk`).
