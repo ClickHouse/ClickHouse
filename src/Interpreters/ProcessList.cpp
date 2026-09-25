@@ -68,7 +68,7 @@ namespace Setting
     extern const SettingsMilliseconds workload_admission_timeout_ms;
     extern const SettingsBool memory_reservation_protect_from_eviction;
     extern const SettingsBool memory_reservation_force_spill_before_eviction;
-    extern const SettingsMilliseconds memory_reservation_suction_queue_timeout_ms;
+    extern const SettingsMilliseconds memory_reservation_recovery_timeout_ms;
 }
 
 namespace ServerSetting
@@ -188,8 +188,8 @@ ProcessList::EntryPtr ProcessList::insert(
                     = settings[Setting::memory_reservation_protect_from_eviction];
                 reservation_settings.force_spill_before_eviction
                     = settings[Setting::memory_reservation_force_spill_before_eviction];
-                reservation_settings.suction_queue_timeout_ms
-                    = settings[Setting::memory_reservation_suction_queue_timeout_ms].totalMilliseconds();
+                reservation_settings.recovery_timeout_ms
+                    = settings[Setting::memory_reservation_recovery_timeout_ms].totalMilliseconds();
 
                 const auto & server_settings = query_context->getServerSettings();
                 reservation_settings.pressure_policy.max_allocation_before_suction_bytes

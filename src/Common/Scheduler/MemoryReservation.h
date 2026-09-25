@@ -56,7 +56,7 @@ public:
     {
         MemoryPressurePolicy pressure_policy;
         bool force_spill_before_eviction = false;
-        UInt64 suction_queue_timeout_ms = 0;
+        UInt64 recovery_timeout_ms = 0;
     };
 
     // Blocks until the reservation is admitted iff reserved_size > 0. `admission_deadline_` is an absolute

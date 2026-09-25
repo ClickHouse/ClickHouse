@@ -4199,15 +4199,15 @@ A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
     DECLARE(Bool, memory_reservation_protect_from_eviction, false, R"(
-Allow this query to suspend a memory increase and retry it through suction before eviction. Protected queries are skipped while an unprotected victim is available, but remain the final fallback so a fully protected workload cannot deadlock. When disabled, the query follows the existing eviction path.
+Allow this query to suspend a memory increase and give it a prioritized recovery retry before eviction. Protected queries are skipped while an unprotected victim is available, but remain the final fallback so a fully protected workload cannot deadlock. When disabled, the query follows the existing eviction path.
 This setting takes effect only if a MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
     DECLARE(Bool, memory_reservation_force_spill_before_eviction, false, R"(
-Run one exhaustive query-level spill pass when this query enters the memory-reservation eviction queue. `memory_reservation_max_allocation_before_suction_bytes` may allow suction to start before the pass completes, but it does not initiate spilling.
+Run one exhaustive query-level spill pass when this query enters memory-reservation recovery. `memory_reservation_max_allocation_before_retry_bytes` may allow the final recovery retry to start before the pass completes, but it does not initiate spilling.
 This setting takes effect only if a MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
-    DECLARE(Milliseconds, memory_reservation_suction_queue_timeout_ms, 0, R"(
-Maximum time a query may spend in its forced-spill pass after entering the memory-reservation eviction queue. After the timeout, the query proceeds to suction with the spill work completed so far. A value of `0` disables the timeout.
+    DECLARE(Milliseconds, memory_reservation_recovery_timeout_ms, 0, R"(
+Maximum time a query may wait for its forced-spill pass during memory-reservation recovery. After the timeout, the query proceeds to its final prioritized retry with the spill work completed so far. An in-flight spill failure remains attached to the originating recovery episode. A value of `0` disables the timeout.
 This setting takes effect only if a MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(

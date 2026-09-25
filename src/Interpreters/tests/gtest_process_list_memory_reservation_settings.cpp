@@ -88,7 +88,7 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
     query_context->setSetting("reserve_memory", UInt64{0});
     query_context->setSetting("memory_reservation_protect_from_eviction", true);
     query_context->setSetting("memory_reservation_force_spill_before_eviction", true);
-    query_context->setSetting("memory_reservation_suction_queue_timeout_ms", UInt64{444});
+    query_context->setSetting("memory_reservation_recovery_timeout_ms", UInt64{444});
     query_context->getClientInfo().current_user = "process_list_test_user";
     query_context->getClientInfo().current_query_id = "process_list_memory_settings";
 
@@ -109,7 +109,7 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
 
         EXPECT_TRUE(settings.pressure_policy.protect_from_eviction);
         EXPECT_TRUE(settings.force_spill_before_eviction);
-        EXPECT_EQ(settings.suction_queue_timeout_ms, 444u);
+        EXPECT_EQ(settings.recovery_timeout_ms, 444u);
         EXPECT_EQ(settings.pressure_policy.max_allocation_before_suction_bytes, 1111u);
         EXPECT_EQ(settings.pressure_policy.suction_max_allocation_bytes, 2222u);
         EXPECT_EQ(settings.pressure_policy.suction_reserved_bytes, 3333u);

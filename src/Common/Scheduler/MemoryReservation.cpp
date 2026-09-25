@@ -172,9 +172,9 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
             {
                 recovery_scheduler = memory_spill_scheduler.lock();
                 observed_recovery = recovery_episode;
-                if (settings.suction_queue_timeout_ms > 0)
+                if (settings.recovery_timeout_ms > 0)
                 {
-                    recovery_deadline = recovery_started_at + std::chrono::milliseconds(settings.suction_queue_timeout_ms);
+                    recovery_deadline = recovery_started_at + std::chrono::milliseconds(settings.recovery_timeout_ms);
                     recovery_timed_out = std::chrono::steady_clock::now() >= recovery_deadline;
                 }
             }
