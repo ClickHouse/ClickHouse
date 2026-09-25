@@ -264,7 +264,7 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_experimental_database_iceberg=true;
+SET allow_database_iceberg=true;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
@@ -309,7 +309,7 @@ def test_hide_sensitive_info(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
         try:
             node.query(
-                f"""SET allow_experimental_database_iceberg=true;
+                f"""SET allow_database_iceberg=true;
 CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}"""
             )
@@ -431,7 +431,7 @@ def test_static_credentials_when_vended_credentials_disabled(started_cluster):
                 aws_access_key_id = 'minio',
                 aws_secret_access_key = '{secret_access_key}'
             """,
-            settings={"allow_experimental_database_iceberg": 1},
+            settings={"allow_database_iceberg": 1},
         )
 
     # A wrong static pair must fail the read: the catalog-vended refresh
@@ -463,7 +463,7 @@ def test_invalid_auth_header_format(started_cluster):
     with pytest.raises(Exception) as err:
         node.query(
             f"""
-            SET allow_experimental_database_iceberg = 1;
+            SET allow_database_iceberg = 1;
             CREATE DATABASE {CATALOG_NAME}
             ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
             SETTINGS
