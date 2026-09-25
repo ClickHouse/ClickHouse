@@ -124,7 +124,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 20 adds `legacy_join_size_limits_trigger_spilling` to the join step settings. A peer below
 /// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
 /// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
-/// needs the new contract is not serialized for such a peer at all.
+/// needs the new contract is not serialized for such a peer at all. Version 20 also writes the runtime
+/// filter exchange topology and `join_runtime_filter_exact_bytes_limit`
+/// (see `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES`).
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
