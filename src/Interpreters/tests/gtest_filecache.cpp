@@ -3872,9 +3872,6 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
 
 TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
 {
-    /// A reservation whose key directory cannot be created must leave the cache as it found it: no size held
-    /// in the main queue, and a segment that is `EMPTY` without a queue entry, which `complete` asserts.
-
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
@@ -3905,7 +3902,7 @@ TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
     const auto & user = FileCache::getCommonOrigin();
     auto key = DB::FileCacheKey::fromPath("reserve_key_directory_failure_key");
 
-    /// A regular file where the key directory must go makes `create_directories` fail, even as root.
+    /// A regular file at the key directory path makes `create_directories` fail, even as root.
     const fs::path key_path = cache->getKeyPath(key, user);
     fs::create_directories(key_path.parent_path());
     std::ofstream(key_path) << "x";
@@ -3923,7 +3920,7 @@ TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
 
     FileSegment::complete(FileSegmentPtr(seg), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
 
-    /// Once the directory can be created, the key caches normally: the failure did not mark it created.
+    /// Once the directory can be created, the key caches normally.
     fs::remove(key_path);
     auto next_holder = cache->getOrSet(key, 8, 8, /*file_size=*/16, {}, 0, user);
     ASSERT_EQ(next_holder->size(), 1u);
