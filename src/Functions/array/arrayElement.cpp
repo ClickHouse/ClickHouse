@@ -2138,7 +2138,7 @@ bool FunctionArrayElement<mode>::matchKeyToIndexNumber(
 
 template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeJSON(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     String key;
     if (const auto * key_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
@@ -2189,6 +2189,12 @@ ColumnPtr FunctionArrayElement<mode>::executeJSON(
 
     if (null_map_column)
         result_column = applyOuterNullMap(result_column, element_type, null_map_column);
+
+    /// The default `LowCardinality` handling rebuilds the dictionary itself and dispatches here with the
+    /// top-level wrapper already stripped from `result_type`, so a path stored as `LowCardinality(T)`
+    /// must give it up too. A wrapper nested in the path's type is part of the declared result and stays.
+    if (!result_type->lowCardinality())
+        result_column = result_column->convertToFullColumnIfLowCardinality();
 
     /// Re-wrap in ColumnConst if the input was const.
     if (is_const)
@@ -3273,7 +3279,12 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
             /// without turning the result into Nullable.
             auto nested_arguments = arguments;
             nested_arguments[1] = columnGetNested(arguments[1]);
-            auto result = executeImpl(nested_arguments, removeNullable(result_type), input_rows_count);
+            auto result = executeImpl(nested_arguments, removeNullableOrLowCardinalityNullable(result_type), input_rows_count);
+            /// `Nullable` inside `LowCardinality` lives in the dictionary, so the promotion is a dictionary
+            /// rewrite, not an added null map. The only source that declares such a result here is a JSON
+            /// path, and its key must be a constant `String`, so no NULL index row needs merging.
+            if (result_type->isLowCardinalityNullable())
+                return makeNullableOrLowCardinalityNullableSafe(result);
             return result_type->isNullable()
                 ? wrapInNullable(result, arguments, result_type, input_rows_count)
                 : result;
