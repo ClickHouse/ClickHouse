@@ -46,6 +46,7 @@ static struct InitFiu
     REGULAR(merge_tree_sink_on_start_random_sleep) \
     REGULAR(merge_tree_marks_load_sync_sleep) \
     REGULAR(merge_tree_sequential_source_sleep_before_read) \
+    REGULAR(merge_tree_skip_indices_calculation_throw) \
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \

@@ -1,0 +1,9 @@
+horizontal	2	1	1
+vertical	2	1	1
+t_skip_thread_off	['Vertical','Horizontal']
+t_skip_thread_on	['Vertical','Horizontal']
+12000	71994000	1787909892077955329
+bloom_filter	12
+set	8
+minmax	101
+json paths	1200

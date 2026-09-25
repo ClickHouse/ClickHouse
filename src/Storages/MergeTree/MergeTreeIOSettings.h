@@ -156,6 +156,9 @@ struct MergeTreeWriterSettings
     /// per-column `MergedColumnOnlyOutputStream`, which shares the horizontal
     /// `MergedBlockOutputStream`'s archive.
     PackedFilesWriter * external_packed_skip_indices_writer = nullptr;
+    /// Build skip indexes in a separate thread while the columns of the block are written, if a thread
+    /// of `MergeHelperThreads` is free. Set by merges with `merge_build_skip_indexes_in_separate_thread`.
+    bool build_skip_indexes_in_separate_thread = false;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
