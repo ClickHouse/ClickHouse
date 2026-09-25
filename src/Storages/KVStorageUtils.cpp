@@ -402,30 +402,27 @@ bool traverseDAGFilter(
                 std::vector<Field> tuple_values;
                 tuple_values.reserve(primary_keys.size());
 
-                bool all_converted = true;
                 for (size_t col = 0; col < primary_keys.size(); ++col)
                 {
                     Field field;
                     set_elements[col]->get(row, field);
 
                     /// Converted with the type of the element it comes from, and with the wrappers
-                    /// stripped: without it a date-family element is reinterpreted in the key's unit
-                    /// space, and one the key type cannot represent raises instead of being skipped.
+                    /// stripped: without it a date-family element is reinterpreted in the key's unit space.
                     DataTypePtr element_type;
                     if (col < set_element_types.size())
                         element_type = removeNullable(recursiveRemoveLowCardinality(set_element_types[col]));
 
+                    /// An element that does not convert into the key type can still equal a stored key:
+                    /// the runtime comparison converts in the other direction. Dropping it would leave the
+                    /// candidate keys a subset, so such a set is not a key filter and a full scan decides.
                     auto converted = tryConvertFieldToType(field, *primary_key_types[col], element_type.get());
                     if (converted.isNull())
-                    {
-                        all_converted = false;
-                        break;
-                    }
+                        return false;
                     tuple_values.push_back(converted);
                 }
 
-                if (all_converted)
-                    res->push_back(createTupleField(tuple_values));
+                res->push_back(createTupleField(tuple_values));
             }
 
             return !res->empty();
