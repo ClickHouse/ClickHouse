@@ -434,6 +434,12 @@ struct FormatSettings
         size_t max_dictionary_size = 1024 * 1024;
     } parquet{};
 
+    struct PCAP
+    {
+        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
+    } pcap{};
+
     struct Pretty
     {
         UInt64 max_rows = 10000;

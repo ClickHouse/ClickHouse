@@ -352,6 +352,12 @@ Average block bytes output by parquet reader
     DECLARE(Bool, input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference, false, R"(
 Skip fields with unsupported types while schema inference for format Protobuf
 )", 0) \
+    DECLARE(NonZeroUInt64, input_format_pcap_max_block_size, DEFAULT_BLOCK_SIZE, R"(
+The maximum number of packets (rows) in one block produced by the `PCAP` input format.
+)", 0) \
+    DECLARE(UInt64, input_format_pcap_prefer_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
+The `PCAP` input format stops filling a block once the captured bytes of its packets reach this amount, even if the block has fewer than `input_format_pcap_max_block_size` rows. Because the `raw` and `payload` columns hold the packet bytes, this bounds the memory of one block for captures with large packets. 0 means no byte limit.
+)", 0) \
     DECLARE(Bool, input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference, false, R"(
 Skip columns with unsupported types while schema inference for format CapnProto
 )", 0) \

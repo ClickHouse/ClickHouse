@@ -990,6 +990,22 @@ Minor tweak to how pages are read from parquet file when no page filtering is us
 
 Verify page checksums when reading parquet files.
 
+## input_format_pcap_max_block_size {#input_format_pcap_max_block_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="65409" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "65409"},{"label": "New setting: the maximum number of packets in one block produced by the `PCAP` input format."}]}]}/>
+
+The maximum number of packets (rows) in one block produced by the `PCAP` input format.
+
+## input_format_pcap_prefer_block_bytes {#input_format_pcap_prefer_block_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="16744704" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "16744704"},{"label": "New setting: the `PCAP` input format stops filling a block once the captured bytes of its packets reach this amount."}]}]}/>
+
+The `PCAP` input format stops filling a block once the captured bytes of its packets reach this amount, even if the block has fewer than `input_format_pcap_max_block_size` rows. Because the `raw` and `payload` columns hold the packet bytes, this bounds the memory of one block for captures with large packets. 0 means no byte limit.
+
 ## input_format_protobuf_flatten_google_wrappers {#input_format_protobuf_flatten_google_wrappers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
