@@ -1,2 +1,3 @@
 Newly added column ingest_time has a MATERIALIZED expression, so adding expressions that use it to the sorting key is forbidden
 Newly added column insert_time has a DEFAULT expression, so adding expressions that use it to the sorting key is forbidden
+Newly added column tp has a MATERIALIZED expression, so adding expressions that use it to the sorting key is forbidden

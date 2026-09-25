@@ -1219,10 +1219,14 @@ void MergeTreeData::checkProperties(
                                 "You can add expressions that use only the newly added columns",
                                 backQuoteIfNeed(col));
 
-            if (const auto column_default = new_metadata.columns.getDefault(col))
+            /// A subcolumn (for example, an element of a Tuple) has the default expression of its storage column.
+            const auto resolved_column = new_metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col);
+            const String name_in_storage = resolved_column ? resolved_column->getNameInStorage() : col;
+
+            if (const auto column_default = new_metadata.columns.getDefault(name_in_storage))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Newly added column {} has a {} expression, so adding expressions that use "
-                                "it to the sorting key is forbidden", backQuoteIfNeed(col), toString(column_default->kind));
+                                "it to the sorting key is forbidden", backQuoteIfNeed(name_in_storage), toString(column_default->kind));
         }
     }
 
