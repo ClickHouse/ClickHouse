@@ -2093,26 +2093,29 @@ def main():
     # release_version = CHVersion.get_release_version()
     info = Info()
 
-    if Utils.is_arm():
-        if compare_against_master:
-            link_for_ref_ch = find_prev_build(info, "build_arm_release")
-            assert link_for_ref_ch, "reference clickhouse build has not been found"
-        elif compare_against_release:
-            link_for_ref_ch = find_base_release_build(info, "build_arm_release")
-            assert link_for_ref_ch, "reference clickhouse build has not been found"
-        else:
-            assert False
-    elif Utils.is_amd():
-        if compare_against_master:
-            link_for_ref_ch = find_prev_build(info, "build_amd_release")
-            assert link_for_ref_ch, "reference clickhouse build has not been found"
-        elif compare_against_release:
-            link_for_ref_ch = find_base_release_build(info, "build_amd_release")
-            assert link_for_ref_ch, "reference clickhouse build has not been found"
-        else:
-            assert False
-    else:
-        Utils.raise_with_error("Unknown processor architecture")
+    # TODO NOTE TEMP!!!! self-ref baseline (candidate vs itself) so the synthio failpoint tests get comparison rows + dashboard pages - REVERT BEFORE MERGE
+    # if Utils.is_arm():
+    #     if compare_against_master:
+    #         link_for_ref_ch = find_prev_build(info, "build_arm_release")
+    #         assert link_for_ref_ch, "reference clickhouse build has not been found"
+    #     elif compare_against_release:
+    #         link_for_ref_ch = find_base_release_build(info, "build_arm_release")
+    #         assert link_for_ref_ch, "reference clickhouse build has not been found"
+    #     else:
+    #         assert False
+    # elif Utils.is_amd():
+    #     if compare_against_master:
+    #         link_for_ref_ch = find_prev_build(info, "build_amd_release")
+    #         assert link_for_ref_ch, "reference clickhouse build has not been found"
+    #     elif compare_against_release:
+    #         link_for_ref_ch = find_base_release_build(info, "build_amd_release")
+    #         assert link_for_ref_ch, "reference clickhouse build has not been found"
+    #     else:
+    #         assert False
+    # else:
+    #     Utils.raise_with_error("Unknown processor architecture")
+    link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/PRs/{info.pr_number}/{info.sha}/pr/build_{'arm' if Utils.is_arm() else 'amd'}_release/clickhouse"
+    assert link_for_ref_ch, "reference clickhouse build has not been found"
 
     reference_warning = (
         LOCAL_REFERENCE_FALLBACK_WARNING

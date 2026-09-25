@@ -13,6 +13,8 @@
 #include <functional>
 
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
+#include <Common/simulateObjectStorageLatency.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
@@ -89,6 +91,14 @@ namespace DB::ErrorCodes
     extern const int DNS_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::FailPoints
+{
+    extern const char s3_slow_get_response[];
+    extern const char s3_slow_head_response[];
+    extern const char s3_slow_put_response[];
+    extern const char s3_slow_delete_response[];
 }
 
 namespace HistogramMetrics
@@ -467,6 +477,43 @@ PocoHTTPClient::S3LatencyType PocoHTTPClient::getFirstByteLatencyType(size_t sdk
     return result;
 }
 
+namespace
+{
+
+/// Fixed per-verb response latencies for the `s3_slow_*_response` failpoints (slow-S3 simulation for the `iceberg_suite_s3_synthio_*` perf tests against the fast job-local endpoint).
+constexpr UInt64 simulated_get_response_latency_ms = 40;
+constexpr UInt64 simulated_head_response_latency_ms = 15;
+constexpr UInt64 simulated_put_response_latency_ms = 50;
+constexpr UInt64 simulated_delete_response_latency_ms = 15;
+
+void injectSimulatedResponseLatency(const Aws::Http::HttpRequest & request)
+{
+    switch (request.GetMethod())
+    {
+        case Aws::Http::HttpMethod::HTTP_GET:
+        case Aws::Http::HttpMethod::HTTP_TRACE:
+        case Aws::Http::HttpMethod::HTTP_OPTIONS:
+        case Aws::Http::HttpMethod::HTTP_CONNECT:
+            /// Covers `GetObject` and `ListObjectsV2` - a LIST is an HTTP GET.
+            fiu_do_on(FailPoints::s3_slow_get_response, { simulateObjectStorageLatency(simulated_get_response_latency_ms); });
+            break;
+        case Aws::Http::HttpMethod::HTTP_HEAD:
+            fiu_do_on(FailPoints::s3_slow_head_response, { simulateObjectStorageLatency(simulated_head_response_latency_ms); });
+            break;
+        case Aws::Http::HttpMethod::HTTP_PUT:
+        case Aws::Http::HttpMethod::HTTP_POST:
+        case Aws::Http::HttpMethod::HTTP_PATCH:
+            /// Covers `PutObject`, `CopyObject`, multipart uploads and the POST form of batch `DeleteObjects`.
+            fiu_do_on(FailPoints::s3_slow_put_response, { simulateObjectStorageLatency(simulated_put_response_latency_ms); });
+            break;
+        case Aws::Http::HttpMethod::HTTP_DELETE:
+            fiu_do_on(FailPoints::s3_slow_delete_response, { simulateObjectStorageLatency(simulated_delete_response_latency_ms); });
+            break;
+    }
+}
+
+}
+
 void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<PocoHTTPResponse> & response,
@@ -650,6 +697,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
             }
 
             setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+
+            /// Test-only slow-S3 simulation: park the thread between send and receive, where a real slow backend would (per attempt).
+            injectSimulatedResponseLatency(request);
 
             if (enable_s3_requests_logging)
                 LOG_TEST(log, "Receiving response...");

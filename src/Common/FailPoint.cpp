@@ -266,6 +266,15 @@ static struct InitFiu
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
     REGULAR(storage_cluster_read_sleep) \
+    REGULAR(s3_slow_get_response) \
+    REGULAR(s3_slow_head_response) \
+    REGULAR(s3_slow_put_response) \
+    REGULAR(s3_slow_delete_response) \
+    REGULAR(local_object_storage_slow_read) \
+    REGULAR(local_object_storage_slow_write) \
+    REGULAR(local_object_storage_slow_metadata) \
+    REGULAR(local_object_storage_slow_list) \
+    REGULAR(local_object_storage_slow_remove) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_from_snapshot_fail_after_batch) \
     ONCE(backup_from_snapshot_fail_after_lock_file_creation) \
