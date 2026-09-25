@@ -8739,6 +8739,8 @@ Multiply the number of fetched nearest neighbors from the vector similarity inde
 Enables a two-stage approximate vector search without index (brute force scan) over a `Quantized`-compressed column. When enabled, `ORDER BY L2Distance|cosineDistance(vec, reference) LIMIT k` against a column encoded with a `Quantized(...)` codec will
 1. scan and filter the quantized vectors (this step produces `k * vector_search_index_fetch_multiplier` results), and
 2. rescore the found vectors against original, full-precision vectors.
+
+The two-stage search reads the quantized codes in addition to the full-precision vector, so it depends on the vector being read lazily for the shortlisted rows: it needs the analyzer, setting `query_plan_optimize_lazy_materialization` and a `LIMIT` (including any `OFFSET`) no greater than `query_plan_max_limit_for_lazy_materialization` (`0` means unbounded), and it does not apply to a table with patch parts, or to a query using `SAMPLE`, `FINAL` on an engine other than `ReplacingMergeTree` or on a table whose sorting key reads the vector column, or a filter or row policy that reads the vector column. Those queries run the exact full-precision scan instead. A query that applies `arrayJoin` before the `ORDER BY`, for example in `WHERE`, is an exception: the two-stage search still runs there although the vector cannot be read lazily, so the query reads more than the exact scan.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally.

@@ -9,6 +9,10 @@
 SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 SET enable_analyzer = 1;
+-- Pin the lazy-materialization settings the test harness randomizes: the rewrite engages only when the vector column
+-- can be deferred to the shortlisted rows, which is what those two settings decide.
+SET query_plan_optimize_lazy_materialization = 1;
+SET query_plan_max_limit_for_lazy_materialization = 1000000;
 
 DROP TABLE IF EXISTS quantize_prewhere;
 CREATE TABLE quantize_prewhere

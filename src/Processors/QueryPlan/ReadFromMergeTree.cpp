@@ -4604,15 +4604,29 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     return cloned_step;
 }
 
-std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
+bool ReadFromMergeTree::canUseLazyMaterialization() const
 {
-    if (output_header == nullptr)
-        return {};
+    /// A STREAM read selects its parts and ranges during execution, so the range set captured
+    /// here is not the one that will be read.
+    if (getQueryInfo().isStream())
+        return false;
 
+    /// Allow FINAL only for ReplacingMergeTree.
+    if (isQueryWithFinal() && data.merging_params.mode != MergeTreeData::MergingParams::Replacing)
+        return false;
+
+    if (isQueryWithSampling())
+        return false;
+
+    if (mutations_snapshot->hasPatchParts())
+        return false;
+
+    return true;
+}
+
+NameSet ReadFromMergeTree::getColumnsKeptEagerlyForLazyRead() const
+{
     NameSet columns_to_keep;
-
-    for (const auto & column_name : required_outputs)
-        columns_to_keep.insert(column_name);
 
     if (query_info.row_level_filter)
     {
@@ -4620,12 +4634,35 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
             columns_to_keep.insert(input->result_name);
     }
 
-
     if (query_info.prewhere_info)
     {
         for (const auto * input : query_info.prewhere_info->prewhere_actions.getInputs())
             columns_to_keep.insert(input->result_name);
     }
+
+    /// The FINAL merge transform runs below the deferred read, so it needs its inputs in this read.
+    if (isQueryWithFinal())
+    {
+        for (const auto & column_name : getStorageMetadata()->getColumnsRequiredForSortingKey())
+            columns_to_keep.insert(column_name);
+        if (!data.merging_params.version_column.empty())
+            columns_to_keep.insert(data.merging_params.version_column);
+        if (!data.merging_params.is_deleted_column.empty())
+            columns_to_keep.insert(data.merging_params.is_deleted_column);
+    }
+
+    return columns_to_keep;
+}
+
+std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
+{
+    if (output_header == nullptr)
+        return {};
+
+    NameSet columns_to_keep = getColumnsKeptEagerlyForLazyRead();
+
+    for (const auto & column_name : required_outputs)
+        columns_to_keep.insert(column_name);
 
     const auto & virtuals = getStorageMetadata()->virtuals;
 

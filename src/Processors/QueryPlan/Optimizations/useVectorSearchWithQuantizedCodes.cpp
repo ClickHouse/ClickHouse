@@ -74,6 +74,13 @@ namespace DB::QueryPlanOptimizations
 /// (optimizeLazyMaterialization2) runs after this pass and fires on the inner LimitStep (k' <=
 /// query_plan_max_limit_for_lazy_materialization), automatically reading `vec` only for the k' shortlisted rows. The
 /// outer stage then rescores those k' rows against the full-precision vector and returns the exact top-k.
+///
+/// That deferral is a PRECONDITION of the rewrite, not an expectation: the shortlist adds the codes to the read, so if
+/// the vector is read for every row anyway the query reads strictly more than the exact scan it replaced. The ways lazy
+/// materialization can decline for the shape built here are therefore checked before rewriting (the setting, the read
+/// step, the shortlist limit, the steps in the chain and the columns the read cannot defer), and the query is left
+/// exact when any of them holds. An `arrayJoin` in the chain is the one decline deliberately left unchecked: the
+/// shortlist is spliced above the whole chain, so it only truncates rows the chain has already expanded.
 namespace
 {
 
@@ -138,6 +145,11 @@ bool optimizeVectorSearchWithQuantizedCodes(
     if (read_step->getVectorSearchParameters().has_value())
         return false;
     if (read_step->isParallelReadingFromReplicas())
+        return false;
+
+    /// Lazy materialization declines on some reads outright - a stream read, FINAL on anything but ReplacingMergeTree,
+    /// SAMPLE, a table with patch parts. The shortlist would then rank on codes read on top of the vector.
+    if (!read_step->canUseLazyMaterialization())
         return false;
 
     /// The two-stage rewrite (shortlist over quantized codes + exact rescore) is an approximate search, so it is opt-in:
@@ -233,6 +245,10 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// component `n.vec`) is matched as-is rather than conflated with a different top-level column. Only if that fails do
     /// we strip a single leading qualifier (the analyzer qualifies table columns as `table.column`) and retry. Truncating
     /// unconditionally would turn `n.vec` into `vec` and rank the shortlist by the wrong column.
+    ///
+    /// The chain DAGs keep the name the column has in the plan, which that resolution may replace with the storage name.
+    const String search_column_input_name = search_column;
+
     auto params = findQuantizeCodecParams(*read_step, search_column);
     if (!params && search_column.contains('.'))
     {
@@ -243,6 +259,56 @@ bool optimizeVectorSearchWithQuantizedCodes(
     }
     if (!params)
         return false;
+
+    /// Lazy materialization keeps the columns the read itself needs - a PREWHERE or row-policy input, and a FINAL
+    /// merge's inputs - so when the search column is one of them the vector is read for every row regardless of the
+    /// shortlist, and the codes are read on top of it.
+    if (read_step->getColumnsKeptEagerlyForLazyRead().contains(search_column))
+        return false;
+
+    auto is_search_column = [&search_column, &search_column_input_name](const String & name)
+    {
+        return name == search_column || name == search_column_input_name;
+    };
+
+    for (auto * chain_node : chain_nodes)
+    {
+        ActionsDAG * chain_dag = nullptr;
+        if (auto * chain_expression = typeid_cast<ExpressionStep *>(chain_node->step.get()))
+            chain_dag = &chain_expression->getExpression();
+        else if (auto * chain_filter = typeid_cast<FilterStep *>(chain_node->step.get()))
+            chain_dag = &chain_filter->getExpression();
+        if (!chain_dag)
+            continue;
+
+        /// A computed node carrying the same name as one of the DAG's inputs makes names ambiguous as column carriers,
+        /// which lazy materialization needs to split the step, and which the matching below relies on as well.
+        if (chain_dag->hasInputNameShadowedByComputedNode())
+            return false;
+
+        /// The chain only forwards the search column up to the rescore, which lazy materialization serves for the
+        /// shortlisted rows. Drop that forwarded output and prune: a vector still needed afterwards is consumed by the
+        /// chain itself (e.g. a `WHERE notEmpty(vec)` left out of PREWHERE) and stays in the read.
+        auto pruned = chain_dag->clone();
+        const ActionsDAG::Node * forwarded_search_column = nullptr;
+        for (const auto * output : pruned.getOutputs())
+        {
+            if (is_search_column(output->result_name)
+                || (output->type == ActionsDAG::ActionType::ALIAS && is_search_column(output->children.at(0)->result_name)))
+            {
+                forwarded_search_column = output;
+                break;
+            }
+        }
+        /// `removeUnusedResult` throws unless the name is among the outputs, hence only for one found there.
+        if (forwarded_search_column)
+            pruned.removeUnusedResult(forwarded_search_column->result_name);
+        pruned.removeUnusedActions();
+
+        for (const auto * input : pruned.getInputs())
+            if (is_search_column(input->result_name))
+                return false;
+    }
 
     /// The rewrite introduces internal columns named `__quantize_*` (the approximate-distance sort key and the constant
     /// function arguments). Blocks permit duplicate column names, so if a column with such a name already flows into the
@@ -302,7 +368,12 @@ bool optimizeVectorSearchWithQuantizedCodes(
     }
     if (max_limit_for_lazy_materialization != 0)
         k_prime = std::min(k_prime, max_limit_for_lazy_materialization);
+    /// The shortlist must hold at least the rows the final top-k returns, which overrides the clamp above.
     k_prime = std::max(k_prime, n);
+
+    /// A shortlist above the cap is not deferred, so the vector is read for every row and the codes on top of it.
+    if (max_limit_for_lazy_materialization != 0 && k_prime > max_limit_for_lazy_materialization)
+        return false;
 
     /// All checks passed - rewrite the plan.
 

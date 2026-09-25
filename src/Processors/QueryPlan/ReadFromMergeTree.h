@@ -576,6 +576,14 @@ public:
         allow_query_condition_cache = replaced_step.allow_query_condition_cache;
     }
 
+    /// Lazy materialization support (see optimizeLazyMaterialization2).
+    bool canUseLazyMaterialization() const;
+
+    /// Columns `keepOnlyRequiredColumnsAndCreateLazyReadStep` keeps in this read whether or not they are
+    /// required above it: every filter input is needed while reading, and a FINAL merge needs the sorting
+    /// key, version and is_deleted columns.
+    NameSet getColumnsKeptEagerlyForLazyRead() const;
+
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 

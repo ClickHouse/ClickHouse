@@ -705,9 +705,9 @@ void optimizeTreeSecondPass(
 
     /// Quantized-codes brute-force vector search: for tables without a vector similarity index but with a vector column
     /// carrying a `Quantize(...)` codec (which stores a quantized companion subcolumn), rewrite ORDER BY distance LIMIT
-    /// into a two-stage shortlist-then-rescore. It must run before lazy materialization so that the latter defers the
-    /// heavy vector column on the inner shortlist.
-    if (optimization_settings.try_use_vector_search)
+    /// into a two-stage shortlist-then-rescore. It reads the codes in addition to the vector, so it pays off only if
+    /// lazy materialization then defers the vector on the inner shortlist - hence the same gate as the pass below.
+    if (optimization_settings.try_use_vector_search && optimization_settings.optimize_lazy_materialization)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});
