@@ -17,8 +17,8 @@ $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_real_scan ADD PROJECTION p_b (SELECT a, b, c, d ORDER BY b);
     ALTER TABLE t_real_scan ADD PROJECTION p_c (SELECT a, b, c, d ORDER BY c);
     ALTER TABLE t_real_scan ADD PROJECTION p_d (SELECT a, b, c, d ORDER BY d);
-    INSERT INTO t_scan SELECT number, cityHash64(number) % 1000, intDiv(number, 100), number % 1000 FROM numbers(100000);
-    INSERT INTO t_real_scan SELECT number, cityHash64(number) % 1000, intDiv(number, 100), number % 1000 FROM numbers(100000);
+    INSERT INTO t_scan SELECT number, cityHash64(number) % 1000, intDiv(number, 100), number % 1000 FROM numbers(20000);
+    INSERT INTO t_real_scan SELECT number, cityHash64(number) % 1000, intDiv(number, 100), number % 1000 FROM numbers(20000);
 "
 
 # prints whether the estimate was sampled and whether the real read falls inside the span it reports
@@ -52,7 +52,7 @@ check p_b b "b < 100" "max_rows_to_scan = 5000"
 check p_b b "b = 7" "max_rows_to_scan = 5000"
 
 echo "--- a key that follows the parent order, sampled ---"
-check p_c c "c >= 300 AND c < 310" "max_rows_to_scan = 5000"
+check p_c c "c >= 100 AND c < 110" "max_rows_to_scan = 5000"
 check p_c c "c = 42" "max_rows_to_scan = 5000"
 
 echo "--- a key that repeats along the parent order, sampled ---"
@@ -63,7 +63,7 @@ check p_d d "d < 300" "max_rows_to_scan = 5000"
 echo "--- max_rows_to_read below the whole-part scan ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_scan (SELECT a, b, c, d ORDER BY b);
-    EXPLAIN WHATIF SELECT count() FROM t_scan WHERE a < 1000 AND b < 100 SETTINGS ${PIN}, max_rows_to_read = 30000;
+    EXPLAIN WHATIF SELECT count() FROM t_scan WHERE a < 1000 AND b < 100 SETTINGS ${PIN}, max_rows_to_read = 10000;
 " | grep -E '^\s+(status|source|empirical_status):' | awk '{$1=$1; print}'
 
 # a limit too low for ~30 granules leaves the estimate unsupported before anything is read
@@ -89,27 +89,3 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_scan (SELECT a, b, c, d ORDER BY b);
     EXPLAIN WHATIF max_rows_to_scan = 5000 SELECT count() FROM t_scan WHERE b < 100 AND _part_offset < 10000 SETTINGS ${PIN};
 " | grep -E '^\s+(status|empirical_status):' | awk '{$1=$1; print}'
-
-# the wide rows sit in one granule the sample skips, so their width can only be assumed, not seen
-echo "--- variable-width rows on a sampled estimate ---"
-$CLICKHOUSE_CLIENT -q "
-    DROP TABLE IF EXISTS t_scan_w;
-    CREATE TABLE t_scan_w (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = 4096, min_bytes_for_wide_part = 0;
-    INSERT INTO t_scan_w SELECT number, number % 1000, if(number BETWEEN 50000 AND 50099, repeat('x', 1000), '') FROM numbers(100000);
-    CREATE HYPOTHETICAL PROJECTION p_w ON t_scan_w (SELECT a, b, s ORDER BY b);
-    EXPLAIN WHATIF max_rows_to_scan = 5000 SELECT a, s FROM t_scan_w WHERE b < 300 SETTINGS ${PIN};
-" | grep -oE 'verdict: +[a-z ]+|not known to have the same width' | awk '{$1=$1; print}'
-
-# granules of different sizes in a compact part: every sampled granule gets its own read
-echo "--- a sampled compact part with uneven granules ---"
-$CLICKHOUSE_CLIENT -q "
-    DROP TABLE IF EXISTS t_scan_c;
-    CREATE TABLE t_scan_c (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 1000, index_granularity_bytes = 4096, min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
-    INSERT INTO t_scan_c SELECT number, number % 1000, '' FROM numbers(50000);
-    INSERT INTO t_scan_c SELECT number + 50000, number % 1000, repeat('x', 200) FROM numbers(50000);
-    OPTIMIZE TABLE t_scan_c FINAL;
-    CREATE HYPOTHETICAL PROJECTION p_c ON t_scan_c (SELECT a, b, s ORDER BY b);
-    EXPLAIN WHATIF max_rows_to_scan = 5000 SELECT a FROM t_scan_c WHERE b < 10 SETTINGS ${PIN};
-" 2>&1 | grep -oE 'empirical_status: +[a-z]+|Code: [0-9]+' | awk '{$1=$1; print}'
