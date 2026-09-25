@@ -1179,17 +1179,12 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
 DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types)
 {
     const auto function_name_lowercase = Poco::toLower(function_name);
-    const bool is_lag_or_lead = function_name_lowercase == "lag"
-                             || function_name_lowercase == "lead"
-                             || function_name_lowercase == "laginframe"
-                             || function_name_lowercase == "leadinframe";
+
+    /// For lag/lead functions the value and the default are brought to their common type, like PostgreSQL's anycompatible.
+    const bool is_lag_or_lead = function_name_lowercase == "lag" || function_name_lowercase == "laginframe"
+                             || function_name_lowercase == "lead" || function_name_lowercase == "leadinframe";
     if (is_lag_or_lead && argument_types.size() == 3)
-    {
-        /// The value and the default are brought to their common type, like PostgreSQL's anycompatible.
-        auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-        argument_types[0] = supertype;
-        argument_types[2] = std::move(supertype);
-    }
+        argument_types[0] = argument_types[2] = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
 
     return argument_types;
 }
