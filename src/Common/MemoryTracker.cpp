@@ -329,7 +329,12 @@ void MemoryTracker::traceLargeAllocation(Int64 size) noexcept
     });
 }
 
-AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker, double _sample_probability)
+AllocationTrace MemoryTracker::allocImpl(
+    Int64 size,
+    bool enforce_memory_limit,
+    MemoryTracker * query_tracker,
+    double _sample_probability,
+    bool enable_profiler)
 {
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
@@ -363,7 +368,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         if (auto * loaded_next = parent.load(std::memory_order_acquire))
         {
             MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
-            return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
+            return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability, enable_profiler);
         }
 
         return AllocationTrace(_sample_probability);
@@ -549,7 +554,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
         try
         {
-            allocation_trace = loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
+            allocation_trace = loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability, enable_profiler);
         }
         catch (...)
         {
@@ -558,7 +563,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         }
     }
 
-    commitAllocation(size, will_be, memory_limit_exceeded_ignored, enforce_memory_limit);
+    commitAllocation(size, will_be, memory_limit_exceeded_ignored, enforce_memory_limit, enable_profiler);
     return allocation_trace;
 }
 
@@ -595,11 +600,17 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size) noexcept
     return accounted_size;
 }
 
-void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept
+void MemoryTracker::commitAllocation(
+    Int64 size,
+    Int64 will_be,
+    bool memory_limit_exceeded_ignored,
+    bool enforce_memory_limit,
+    bool enable_profiler) noexcept
 {
     /// Only reached once the allocation survived every limit check, so a refused or reverted add is
-    /// never reported here.
-    if (level == VariableContext::Global)
+    /// never reported here. Speculative reservations (`enable_profiler` is false) are not
+    /// backed by an allocation, so they are not reported either.
+    if (enable_profiler && level == VariableContext::Global)
     {
         const UInt64 trace_threshold = min_allocation_size_to_log_stack_trace.load(std::memory_order_acquire);
         if (unlikely(trace_threshold && static_cast<UInt64>(size) >= trace_threshold))
@@ -608,7 +619,7 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
 
     const auto current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
     bool allocation_traced = false;
-    if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
+    if (enable_profiler && unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
         DB::TraceSender::send(DB::TraceType::Memory, StackTrace(), {
@@ -776,13 +787,17 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 
 OvercommitRatio MemoryTracker::getOvercommitRatio()
 {
-    return { amount.load(std::memory_order_relaxed), soft_limit.load(std::memory_order_relaxed) };
+    return
+    {
+        amount.load(std::memory_order_relaxed),
+        soft_limit.load(std::memory_order_relaxed)
+    };
 }
 
 
 OvercommitRatio MemoryTracker::getOvercommitRatio(Int64 limit)
 {
-    return { amount.load(std::memory_order_relaxed), limit };
+    return { amount.load(std::memory_order_relaxed) + speculative_reservations.load(std::memory_order_relaxed), limit };
 }
 
 
@@ -818,22 +833,92 @@ void MemoryTracker::reset()
 }
 
 
+std::atomic<UInt64> MemoryTracker::global_speculative_reservations_added = 0;
+std::atomic<UInt64> MemoryTracker::global_speculative_reservations_released = 0;
+
+void MemoryTracker::addSpeculativeReservationGlobal(Int64 size)
+{
+    global_speculative_reservations_added.fetch_add(static_cast<UInt64>(size), std::memory_order_seq_cst);
+}
+
+void MemoryTracker::releaseSpeculativeReservationGlobal(Int64 size)
+{
+    global_speculative_reservations_released.fetch_add(static_cast<UInt64>(size), std::memory_order_seq_cst);
+}
+
+Int64 MemoryTracker::getSpeculativeReservationsGlobal()
+{
+    UInt64 released = global_speculative_reservations_released.load(std::memory_order_seq_cst);
+    UInt64 added = global_speculative_reservations_added.load(std::memory_order_seq_cst);
+    return static_cast<Int64>(added - released);
+}
+
+/// An upper bound of the speculative reservations charged in the corrected counter at the
+/// moment `load_current` reads it, to add back to an externally measured value.
+///
+/// A reservation is added before it is charged and released after it is freed
+/// (`CurrentMemoryTracker::allocGlobal` / `freeGlobal`), so every reservation charged at
+/// the moment of the load is added before it and released after it. Both counters only
+/// grow, so reading the released one before the load and the added one after it gives at
+/// least the reservations live at the moment of the load. A single live sum cannot be
+/// used here: a reservation that is added, charged, freed and released entirely between
+/// two reads of the sum is invisible to both of them while it can still be charged in the
+/// loaded value, and the correction would then erase it.
+///
+/// The residual imprecision is a reservation that starts or ends inside the window and is
+/// counted twice until the next correction - the safe direction for an upper bound.
+template <typename LoadCurrent>
+static Int64 speculativeReservationsAround(LoadCurrent && load_current, Int64 & current)
+{
+    UInt64 released_before = MemoryTracker::global_speculative_reservations_released.load(std::memory_order_seq_cst);
+    current = load_current();
+    UInt64 added_after = MemoryTracker::global_speculative_reservations_added.load(std::memory_order_seq_cst);
+    return static_cast<Int64>(added_after - released_before);
+}
+
 void MemoryTracker::updateRSS(Int64 rss_)
 {
-    total_memory_tracker.rss.store(rss_, std::memory_order_relaxed);
+    /// Live speculative reservations are not backed by allocations, so they are not part
+    /// of the measured resident memory; add them back to keep the counter an upper bound.
+    /// Applied as a relative delta for the same reason as in `updateAllocated`: an
+    /// absolute store would erase a reservation charged concurrently with this correction,
+    /// while its paired `freeGlobal` would still subtract it.
+    Int64 current_rss = 0;
+    Int64 reservations = speculativeReservationsAround(
+        [] { return total_memory_tracker.rss.load(std::memory_order_seq_cst); }, current_rss);
+    Int64 target_rss = rss_ + reservations;
+    total_memory_tracker.rss.fetch_add(target_rss - current_rss, std::memory_order_seq_cst);
 }
 
 void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
 {
-    Int64 new_amount = allocated_;
+    /// Live speculative reservations (`CurrentMemoryTracker::allocGlobal`) are not backed
+    /// by allocations, so they are not part of the externally measured `allocated_`.
+    /// Add them back, otherwise the paired `freeGlobal` would push the corrected amount
+    /// below the actual memory usage.
+    ///
+    /// The correction is applied as a relative delta instead of overwriting `amount`.
+    /// Overwriting would erase every charge that happened after `allocated_` and the
+    /// reservations counter were read: a reservation taken in that window would be gone
+    /// from `amount` while its paired `freeGlobal` still subtracts it, leaving the
+    /// server-wide counter below the real usage. With a delta, a concurrent charge is
+    /// never lost - at worst a reservation is counted twice until the next correction,
+    /// which is the safe direction for an upper bound.
+    Int64 current_amount = 0;
+    Int64 reservations = speculativeReservationsAround(
+        [] { return total_memory_tracker.amount.load(std::memory_order_seq_cst); }, current_amount);
+    Int64 target_amount = allocated_ + reservations;
+
     if (log_change)
         LOG_INFO(
             getLogger("MemoryTracker"),
             "Correcting the value of global memory tracker from {} to {}",
-            ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
-            ReadableSize(allocated_));
+            ReadableSize(current_amount),
+            ReadableSize(target_amount));
 
-    auto current_amount = total_memory_tracker.amount.exchange(new_amount, std::memory_order_relaxed);
+    Int64 correction = target_amount - current_amount;
+    Int64 new_amount = total_memory_tracker.amount.fetch_add(correction, std::memory_order_seq_cst) + correction;
+
     total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);
     total_memory_tracker.last_corrected_amount = new_amount;
     CurrentMetrics::set(CurrentMetrics::MemoryTrackingUncorrected, total_memory_tracker.uncorrected_amount);
