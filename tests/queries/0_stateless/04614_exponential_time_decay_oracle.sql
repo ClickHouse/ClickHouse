@@ -253,10 +253,10 @@ ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 ALTER TABLE time_decay_feature_gate
     ADD COLUMN blocked ExponentialTimeDecaying(10); -- { serverError ILLEGAL_COLUMN }
 
--- Type reconstruction remains available for expression evaluation and persisted
--- metadata. The setting gates execution and fresh schema persistence.
-SELECT toTypeName(_CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying(10)'))
-    = 'ExponentialTimeDecaying(10)';
+-- Persisted metadata can still be reconstructed internally for recovery, but user
+-- expression conversion into or out of the experimental type requires opting in.
+SELECT toTypeName(CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying(10)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(_CAST(tuple(1., 0., 10.), 'ExponentialTimeDecaying(10)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- All scalar operations on the experimental value type remain gated.
 SELECT exponentialTimeDecayingValueAt(value, toFloat64(1)) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }

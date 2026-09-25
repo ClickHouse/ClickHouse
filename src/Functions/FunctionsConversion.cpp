@@ -406,6 +406,15 @@ namespace detail
 
 ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const
 {
+    if (!settings.allow_experimental_time_decay_aggregate_functions
+        && (containsExponentialTimeDecayingFloat64(getArgumentTypes()[0])
+            || containsExponentialTimeDecayingFloat64(getResultType())))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Type {} is experimental and disabled by default. Enable it with setting "
+            "allow_experimental_time_decay_aggregate_functions",
+            containsExponentialTimeDecayingFloat64(getResultType()) ? getResultType()->getName() : getArgumentTypes()[0]->getName());
+
     try
     {
         auto wrapper = prepareUnpackDictionaries(getArgumentTypes()[0], getResultType());
