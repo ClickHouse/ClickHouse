@@ -188,6 +188,7 @@ Cluster::Address::Address(
     host_name = parsed_host_port.first;
     database_shard_name = info.shard_name;
     database_replica_name = info.replica_name;
+    replica_group = info.replica_group;
     port = parsed_host_port.second;
     secure = params.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     bind_host = params.bind_host;
@@ -595,7 +596,7 @@ Cluster::Cluster(
         Addresses current;
         for (const auto & replica : shard)
             current.emplace_back(
-                DatabaseReplicaInfo{replica, "", "", {}},
+                DatabaseReplicaInfo{replica, "", "", {}, ""},
                 params,
                 current_shard_num,
                 current.size() + 1);
