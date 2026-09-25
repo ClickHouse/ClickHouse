@@ -1750,6 +1750,28 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
     )
+    # No `requires`: the wrapper downloads both binaries from S3.
+    nightly_extended_performance_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.ARM_LARGE_STORAGE,
+        command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
+        run_in_docker="clickhouse/performance-comparison",
+        timeout=8 * 3600,
+        result_name_for_cidb="Tests",
+    ).parametrize(
+        *[
+            Job.ParamSet(parameter=f"arm_release, {mode}, nightly, {batch}/4")
+            for mode in ("master_head", "release_base")
+            for batch in range(1, 5)
+        ]
+    )
+    nightly_clickbench_arm_job = (
+        clickbench_jobs[1]
+        .set_requires([], reset=True)
+        .set_runs_on(RunnerLabels.ARM_LARGE_STORAGE)
+        .set_command("python3 ./ci/jobs/nightly_extended_performance.py --clickbench")
+        .set_timeout(1 * 3600)
+    )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
