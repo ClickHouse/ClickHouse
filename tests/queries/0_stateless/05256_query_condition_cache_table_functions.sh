@@ -70,6 +70,17 @@ ${CLICKHOUSE_CLIENT} --query "
 run s3_rewritten "SELECT count() FROM ${S3} WHERE b = 3"
 events s3_1 s3_2 s3_rewritten
 
+echo "--- s3Cluster split into buckets"
+# A reader of one bucket of a file reads only some of its row groups. It must not record the others as
+# having no match: the value 850000 is in the ninth row group only, and a later read of the whole
+# file with the same predicate would skip it and return 0.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM s3Cluster('test_shard_localhost', 'http://localhost:11111/test/${DATA_DIR}/data.parquet', 'test', 'testtest', 'Parquet')
+    WHERE b = 850000 SETTINGS ${SETTINGS}, cluster_table_function_split_granularity = 'bucket'"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM s3('http://localhost:11111/test/${DATA_DIR}/data.parquet', 'test', 'testtest', 'Parquet')
+    WHERE b = 850000 SETTINGS ${SETTINGS}"
+
 echo "--- icebergLocal"
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_insert_into_iceberg = 1;

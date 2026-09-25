@@ -12,6 +12,9 @@ file_rewritten	0	1
 s3_1	0	1
 s3_2	1	0
 s3_rewritten	0	1
+--- s3Cluster split into buckets
+1
+1
 --- icebergLocal
 0
 0

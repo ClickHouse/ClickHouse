@@ -404,7 +404,18 @@ std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
     String identifier = table_uuid != UUIDHelpers::Nil
         ? object_info.getIdentifier(/*include_file_bucket_info=*/false)
         : getUniqueStoragePathIdentifier(configuration, object_info, /*include_connection_info=*/true);
-    if (configuration.isDataLakeConfiguration())
+    return makeQueryConditionCacheKey(identifier, object_info, configuration.isDataLakeConfiguration());
+}
+
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+{
+    return makeQueryConditionCacheKey(object_info.getIdentifier(/*include_file_bucket_info=*/false), object_info, is_data_lake);
+}
+
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
+    const String & identifier, const ObjectInfo & object_info, bool is_data_lake)
+{
+    if (is_data_lake)
         return identifier;
     const auto & metadata = object_info.getObjectMetadata();
     if (!metadata || !metadata->isEtagUsableAsCacheKey())
@@ -1046,7 +1057,11 @@ Chunk StorageObjectStorageSource::generate()
                             format_filter_info->filter_actions_dag->dumpNames(),
                             object_info->getFileName());
 
-                        if (!unmatched_ranges.empty() && query_condition_cache_key)
+                        /// A reader of one bucket of a split file reports the row groups of the other
+                        /// buckets as not matching, although it never read them.
+                        const bool read_whole_file
+                            = !object_info->file_bucket_info || object_info->file_bucket_info_from_query_condition_cache;
+                        if (!unmatched_ranges.empty() && query_condition_cache_key && read_whole_file)
                         {
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             query_condition_cache->write(
@@ -1214,6 +1229,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     if (!filtered)
                         continue;
                     object_info->file_bucket_info = std::move(filtered);
+                    object_info->file_bucket_info_from_query_condition_cache = true;
                 }
             }
         }

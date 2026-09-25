@@ -80,6 +80,9 @@ public:
     /// the safety-critical contract is that a weak etag (e.g. HDFS) never keys the cache.
     static std::optional<String> makeQueryConditionCacheKey(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const UUID & table_uuid);
+    /// The key for a table with a UUID, from the path of the object within its storage.
+    static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
+    static std::optional<String> makeQueryConditionCacheKey(const String & identifier, const ObjectInfo & object_info, bool is_data_lake);
 
 protected:
     StorageID storage_id;
