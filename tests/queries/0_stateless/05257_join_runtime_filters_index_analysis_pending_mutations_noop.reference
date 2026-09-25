@@ -1,0 +1,6 @@
+rf_patch apply_patch_parts = 1	128	68032	0	0
+rf_patch apply_patch_parts = 0	64	2016	1	1
+rf_onfly apply_mutations_on_fly = 1	128	68032	0	0
+rf_onfly apply_mutations_on_fly = 0	64	2016	1	1
+rf_alter apply_patch_parts = 1, apply_mutations_on_fly = 0	64	2016	0	0
+rf_alter apply_patch_parts = 0, apply_mutations_on_fly = 0	64	2016	1	1
