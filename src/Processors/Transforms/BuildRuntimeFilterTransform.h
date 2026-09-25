@@ -1,8 +1,8 @@
 #pragma once
 #include <memory>
-#include <optional>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace DB
@@ -24,11 +24,7 @@ public:
         String filter_name_,
         String filter_key_,
         size_t filters_to_merge_,
-        const RuntimeFilterGeometry & geometry_,
-        bool allow_to_use_not_exact_filter_,
-        bool track_key_range_,
-        std::optional<UInt64> distinct_keys_hint_,
-        bool distinct_keys_hint_matches_filter_key_,
+        const RuntimeFilterBuildOptions & build_options_,
         ContextPtr query_context_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }

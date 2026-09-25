@@ -35,16 +35,22 @@ using namespace DB::QueryPlanOptimizations;
 namespace
 {
 
-RuntimeFilterGeometry testGeometry()
+RuntimeFilterBuildOptions testBuildOptions()
 {
-    return RuntimeFilterGeometry{
-        .exact_values_limit = 64,
-        .exact_bytes_limit = 4096,
-        .bloom_filter_bytes = 4096,
-        .bloom_filter_hash_functions = 3,
-        .pass_ratio_threshold_for_disabling = 1.0,
-        .blocks_to_skip_before_reenabling = 0,
-        .max_ratio_of_set_bits_in_bloom_filter = 1.0,
+    return RuntimeFilterBuildOptions{
+        .geometry = RuntimeFilterGeometry{
+            .exact_values_limit = 64,
+            .exact_bytes_limit = 4096,
+            .bloom_filter_bytes = 4096,
+            .bloom_filter_hash_functions = 3,
+            .pass_ratio_threshold_for_disabling = 1.0,
+            .blocks_to_skip_before_reenabling = 0,
+            .max_ratio_of_set_bits_in_bloom_filter = 1.0,
+        },
+        .polarity = RuntimeFilterPolarity::Contains,
+        .track_key_range = false,
+        .distinct_keys_hint = std::nullopt,
+        .distinct_keys_hint_matches_filter_key = false,
     };
 }
 
@@ -133,14 +139,7 @@ void addBuildStage(DistributedQueryPlan & plan, const String & name, size_t num_
     fragment.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
     fragment.addStep(
         std::make_unique<BuildRuntimeFilterStep>(
-            dataHeader(),
-            "x",
-            std::make_shared<DataTypeUInt64>(),
-            "f",
-            filter_key,
-            testGeometry(),
-            /*allow_to_use_not_exact_filter_=*/true,
-            /*track_key_range_=*/false));
+            dataHeader(), "x", std::make_shared<DataTypeUInt64>(), "f", filter_key, testBuildOptions()));
     stage.query_plan_fragment = std::move(fragment);
     for (size_t task = 0; task < num_tasks; ++task)
         stage.tasks.push_back(makeTask(name, task));
@@ -452,15 +451,7 @@ TEST_F(RuntimeFilterExchangeWiring, ApplicationInBuildStageStaysLocal)
     QueryPlan fragment;
     fragment.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
     fragment.addStep(
-        std::make_unique<BuildRuntimeFilterStep>(
-            dataHeader(),
-            "x",
-            std::make_shared<DataTypeUInt64>(),
-            "f",
-            "key",
-            testGeometry(),
-            /*allow_to_use_not_exact_filter_=*/true,
-            /*track_key_range_=*/false));
+        std::make_unique<BuildRuntimeFilterStep>(dataHeader(), "x", std::make_shared<DataTypeUInt64>(), "f", "key", testBuildOptions()));
     auto dag = makeApplyFilterDAG("key", "f");
     const String filter_column_name = applyFilterResultName(dag);
     fragment.addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
@@ -486,15 +477,7 @@ TEST_F(RuntimeFilterExchangeWiring, MixedLocalAndRemoteSkipsProducerStageExchang
     QueryPlan both_fragment;
     both_fragment.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(dataHeader()))));
     both_fragment.addStep(
-        std::make_unique<BuildRuntimeFilterStep>(
-            dataHeader(),
-            "x",
-            std::make_shared<DataTypeUInt64>(),
-            "f",
-            "key",
-            testGeometry(),
-            /*allow_to_use_not_exact_filter_=*/true,
-            /*track_key_range_=*/false));
+        std::make_unique<BuildRuntimeFilterStep>(dataHeader(), "x", std::make_shared<DataTypeUInt64>(), "f", "key", testBuildOptions()));
     auto dag = makeApplyFilterDAG("key", "f");
     const String filter_column_name = applyFilterResultName(dag);
     both_fragment.addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
@@ -529,9 +512,7 @@ TEST_F(RuntimeFilterExchangeWiring, RestoresRendezvousKeyFromSiblingApply)
             std::make_shared<DataTypeUInt64>(),
             "f",
             /*filter_key_=*/"",
-            testGeometry(),
-            /*allow_to_use_not_exact_filter_=*/true,
-            /*track_key_range_=*/false));
+            testBuildOptions()));
     auto dag = makeApplyFilterDAG("secret", "f");
     const String filter_column_name = applyFilterResultName(dag);
     fragment.addStep(std::make_unique<FilterStep>(dataHeader(), std::move(dag), filter_column_name, /*remove_filter_column_=*/true));
@@ -555,9 +536,7 @@ TEST_F(RuntimeFilterExchangeWiring, RestoreLeavesKeyEmptyWithoutSiblingApply)
             std::make_shared<DataTypeUInt64>(),
             "f",
             /*filter_key_=*/"",
-            testGeometry(),
-            /*allow_to_use_not_exact_filter_=*/true,
-            /*track_key_range_=*/false));
+            testBuildOptions()));
 
     restoreRuntimeFilterRendezvousKeys(fragment);
     auto * build = findBuildStep(fragment);

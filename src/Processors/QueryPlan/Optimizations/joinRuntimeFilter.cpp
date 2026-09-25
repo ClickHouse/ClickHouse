@@ -172,11 +172,12 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
         common_type,
         id.name,
         id.key,
-        filter_geometry,
-        /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
-        /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
-        distinct_keys_hint,
-        distinct_keys_hint_matches_filter_key);
+        RuntimeFilterBuildOptions{
+            .geometry = filter_geometry,
+            .polarity = check_left_does_not_contain ? RuntimeFilterPolarity::NotContains : RuntimeFilterPolarity::Contains,
+            .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
+            .distinct_keys_hint = distinct_keys_hint,
+            .distinct_keys_hint_matches_filter_key = distinct_keys_hint_matches_filter_key});
     new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
     new_build_filter_node->children = {build_filter_node};
     build_filter_node = new_build_filter_node;
@@ -549,11 +550,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 tuple_type,
                 filter_name,
                 id.key,
-                filter_geometry,
-                /*allow_to_use_not_exact_filter_=*/false,
-                /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
-                distinct_keys_hint,
-                /*distinct_keys_hint_matches_filter_key_=*/true);
+                RuntimeFilterBuildOptions{
+                    .geometry = filter_geometry,
+                    .polarity = RuntimeFilterPolarity::NotContains,
+                    .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
+                    .distinct_keys_hint = distinct_keys_hint,
+                    .distinct_keys_hint_matches_filter_key = true});
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;

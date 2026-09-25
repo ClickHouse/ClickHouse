@@ -140,7 +140,7 @@ private:
 
     /// Combines the socket and the port-update wakeup into one fd that the executor polls
     /// while the sink waits in `Async`.
-    Epoll wait_events_epoll;
+    Epoll wait_events_epoll{EpollNesting::Leaf};
     /// Written by `onUpdatePorts` (possibly from another thread) to wake the waiting sink
     /// when its input port is updated; drained in `work`.
     WakeupFd port_update_wakeup;

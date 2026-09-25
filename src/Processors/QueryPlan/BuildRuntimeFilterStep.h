@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/RuntimeFilterGeometry.h>
+#include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
 
 #include <optional>
 
@@ -19,11 +19,7 @@ public:
         const DataTypePtr & filter_column_type_,
         String filter_name_,
         String filter_key_,
-        RuntimeFilterGeometry geometry_,
-        bool allow_to_use_not_exact_filter_,
-        bool track_key_range_,
-        std::optional<UInt64> distinct_keys_hint_ = std::nullopt,
-        bool distinct_keys_hint_matches_filter_key_ = false);
+        RuntimeFilterBuildOptions build_options_);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -40,9 +36,9 @@ public:
         filter_key = std::move(filter_key_);
     }
     const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
-    bool allowsNotExactFilter() const { return allow_to_use_not_exact_filter; }
-    const RuntimeFilterGeometry & getGeometry() const { return geometry; }
-    void setGeometry(const RuntimeFilterGeometry & geometry_) { geometry = geometry_; }
+    bool allowsNotExactFilter() const { return build_options.polarity == RuntimeFilterPolarity::Contains; }
+    const RuntimeFilterGeometry & getGeometry() const { return build_options.geometry; }
+    void setGeometry(const RuntimeFilterGeometry & geometry_) { build_options.geometry = geometry_; }
 
     struct FilterExchange
     {
@@ -101,14 +97,7 @@ private:
     /// sibling `__applyFilter` in the same fragment.
     String filter_key;
 
-    RuntimeFilterGeometry geometry;
-
-    bool allow_to_use_not_exact_filter;
-    /// Record the key values/range for left-side index analysis; off avoids an extra build-side scan.
-    bool track_key_range;
-
-    /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
-    std::optional<UInt64> distinct_keys_hint;
+    RuntimeFilterBuildOptions build_options;
 
     /// Both empty: local build mode (register in this task's lookup). The distributed split assigns
     /// the filter exchange(s) afterwards; then exactly one of the two is set.
@@ -118,9 +107,6 @@ private:
     /// Row estimate stamped before the plan is cut; consumed only by the initiator when sizing the
     /// exact phase. Not serialized.
     std::optional<UInt64> estimated_build_rows;
-
-    /// Whether the filter key is the whole join key, so that the hint counts this filter's distinct keys.
-    bool distinct_keys_hint_matches_filter_key;
 };
 
 }

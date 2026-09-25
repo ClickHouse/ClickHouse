@@ -598,9 +598,12 @@ BuildRuntimeFilterStep makeBuildStep(bool with_topology)
         std::make_shared<DataTypeUInt64>(),
         "f",
         "rendezvous-key",
-        makeGeometry(),
-        /*allow_to_use_not_exact_filter_=*/true,
-        /*track_key_range_=*/false);
+        RuntimeFilterBuildOptions{
+            .geometry = makeGeometry(),
+            .polarity = RuntimeFilterPolarity::Contains,
+            .track_key_range = false,
+            .distinct_keys_hint = std::nullopt,
+            .distinct_keys_hint_matches_filter_key = false});
     if (with_topology)
         step.addExchange("exchange_7", {"0", "1", "2", "3"});
     return step;

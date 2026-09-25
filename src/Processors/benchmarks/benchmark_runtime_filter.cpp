@@ -671,11 +671,12 @@ static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyUInt64(benchmark::St
                 /*filter_name_=*/"_runtime_filter_benchmark",
                 /*filter_key_=*/String{},
                 /*filters_to_merge_=*/0,
-                makeGeometry(ADAPTIVE_EXACT_VALUES_LIMIT),
-                /*allow_to_use_not_exact_filter_=*/true,
-                /*track_key_range_=*/false,
-                /*distinct_keys_hint_=*/std::nullopt,
-                /*distinct_keys_hint_matches_filter_key_=*/false,
+                RuntimeFilterBuildOptions{
+                    .geometry = makeGeometry(ADAPTIVE_EXACT_VALUES_LIMIT),
+                    .polarity = RuntimeFilterPolarity::Contains,
+                    .track_key_range = false,
+                    .distinct_keys_hint = std::nullopt,
+                    .distinct_keys_hint_matches_filter_key = false},
                 /*query_context_=*/nullptr);
             state.ResumeTiming();
 
@@ -714,11 +715,12 @@ static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyCastUInt32ToUInt64(b
                 /*filter_name_=*/"_runtime_filter_benchmark",
                 /*filter_key_=*/String{},
                 /*filters_to_merge_=*/0,
-                makeGeometry(ADAPTIVE_EXACT_VALUES_LIMIT),
-                /*allow_to_use_not_exact_filter_=*/true,
-                /*track_key_range_=*/false,
-                /*distinct_keys_hint_=*/std::nullopt,
-                /*distinct_keys_hint_matches_filter_key_=*/false,
+                RuntimeFilterBuildOptions{
+                    .geometry = makeGeometry(ADAPTIVE_EXACT_VALUES_LIMIT),
+                    .polarity = RuntimeFilterPolarity::Contains,
+                    .track_key_range = false,
+                    .distinct_keys_hint = std::nullopt,
+                    .distinct_keys_hint_matches_filter_key = false},
                 /*query_context_=*/nullptr);
             state.ResumeTiming();
 

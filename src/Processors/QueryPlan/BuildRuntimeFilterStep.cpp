@@ -259,22 +259,15 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     const DataTypePtr & filter_column_type_,
     String filter_name_,
     String filter_key_,
-    RuntimeFilterGeometry geometry_,
-    bool allow_to_use_not_exact_filter_,
-    bool track_key_range_,
-    std::optional<UInt64> distinct_keys_hint_,
-    bool distinct_keys_hint_matches_filter_key_)
+    RuntimeFilterBuildOptions build_options_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , filter_column_name(std::move(filter_column_name_))
     , filter_column_type(filter_column_type_)
     , filter_name(filter_name_)
     , filter_key(std::move(filter_key_))
-    , geometry(geometry_)
-    , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
-    , track_key_range(track_key_range_)
-    , distinct_keys_hint(distinct_keys_hint_)
-    , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
+    , build_options(std::move(build_options_))
 {
+    auto & geometry = build_options.geometry;
     const auto bloom_filter_parameters = resolveRuntimeBloomFilterDefaults(
         RuntimeBloomFilterParameters{geometry.bloom_filter_bytes, geometry.bloom_filter_hash_functions});
     geometry.bloom_filter_bytes = bloom_filter_parameters.bytes;
@@ -325,11 +318,7 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             filter_name,
             filter_key,
             /*filters_to_merge_=*/streams - 1,
-            geometry,
-            allow_to_use_not_exact_filter,
-            track_key_range,
-            distinct_keys_hint,
-            distinct_keys_hint_matches_filter_key,
+            build_options,
             query_context);
     });
 }
@@ -375,7 +364,7 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
                     filter_column_name,
                     filter_column_type,
                     destination_streams.size(),
-                    geometry,
+                    build_options.geometry,
                     filter_key,
                     filter_name,
                     CurrentThread::get().tryGetQueryContext());
@@ -430,7 +419,7 @@ void BuildRuntimeFilterStep::updateOutputHeader()
 
 void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    geometry.serializeSettings(settings, version);
+    build_options.geometry.serializeSettings(settings, version);
 }
 
 void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
@@ -438,7 +427,7 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
     writeStringBinary(filter_column_name, ctx.out);
     encodeDataType(filter_column_type, ctx.out);
     writeStringBinary(filter_name, ctx.out);
-    writeBinary(allow_to_use_not_exact_filter, ctx.out);
+    writeBinary(build_options.polarity == RuntimeFilterPolarity::Contains, ctx.out);
 
     /// Step version 1 carries the filter exchange topology. The registry picks version 0 for a peer
     /// whose release predates the transport; such a peer would run the step as a local build and the
@@ -518,9 +507,12 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         filter_column_type,
         std::move(filter_name),
         /*filter_key_=*/String{},
-        geometry,
-        allow_to_use_not_exact_filter,
-        /*track_key_range_=*/false);
+        RuntimeFilterBuildOptions{
+            .geometry = geometry,
+            .polarity = allow_to_use_not_exact_filter ? RuntimeFilterPolarity::Contains : RuntimeFilterPolarity::NotContains,
+            .track_key_range = false,
+            .distinct_keys_hint = std::nullopt,
+            .distinct_keys_hint_matches_filter_key = false});
     if (has_tree_exchange)
         step->setTreeExchange(std::move(tree_exchange_id), std::move(tree_source_buckets), tree_fan_in);
     for (size_t i = 0; i < num_exchanges; ++i)
@@ -564,7 +556,7 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
     }
     else
     {
-        format_settings.out << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
+        format_settings.out << prefix << "Allow not exact filter: " << (build_options.polarity == RuntimeFilterPolarity::Contains) << '\n';
     }
 }
 
