@@ -254,10 +254,11 @@ def test_secure_insert_sync():
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
 
 
-# INSERT without initial_user
+# INSERT via Buffer()
 #
-# Buffer() flush happens with global context, that does not have user
-# And so Context::user/ClientInfo::current_user/ClientInfo::initial_user will be empty
+# Buffer() flush happens in the background, from a context that carries the
+# identity of the user who inserted into the Buffer table (see
+# `StorageBuffer::Writer`), not from the session of a client.
 #
 # This is the regression test for the subsequent query that it
 # will not use user from the previous query.
@@ -325,19 +326,13 @@ def test_secure_insert_buffer_async():
     n1.query("OPTIMIZE TABLE dist_secure_buffer")
     n1.query("SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure dist_secure_from_buffer")
 
-    # Check user from which the INSERT on the remote node will be executed
-    #
-    # Incorrect example:
-    #
-    #    {2c55669f-71ad-48fe-98fa-7b475b80718e} <Debug> executeQuery: (from 172.16.1.1:44636, user: ro) INSERT INTO default.data_from_buffer (key) VALUES
-    #
-    # Correct example:
-    #
-    #    {2c55669f-71ad-48fe-98fa-7b475b80718e} <Debug> executeQuery: (from 0.0.0.0:0, user: ) INSERT INTO default.data_from_buffer (key) VALUES
-    #
-    assert n2.contains_in_log(
-        "executeQuery: (from 0.0.0.0:0, user: ) INSERT INTO default.data_from_buffer (key) VALUES"
-    )
+    # Check the user under which the INSERT is executed on the remote node: the
+    # flush runs with the identity of the user who inserted into the Buffer table
+    # (`default`), not with the user of the previous query on the reused connection
+    # (`ro`), and not without a user (which the remote node would execute with full
+    # access).
+    user_info = get_query_user_info(n2, "INSERT INTO default.data_from_buffer")
+    assert user_info and all(row == ["default", "default"] for row in user_info)
 
     assert int(n1.query("SELECT count() FROM dist_secure_from_buffer")) == 2
     n1.query("TRUNCATE TABLE data_from_buffer ON CLUSTER secure")

@@ -1,6 +1,7 @@
 #include <Storages/StorageBuffer.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Columns/ColumnConst.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
@@ -52,12 +53,15 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SettingsChanges.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+
+#include <algorithm>
 
 
 namespace ProfileEvents
@@ -774,6 +778,47 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 }
 
 
+StorageBuffer::Writer StorageBuffer::Writer::fromContext(const ContextPtr & context)
+{
+    Writer writer;
+    writer.user_id = context->getUserID();
+    if (!writer.user_id)
+        return writer;
+
+    writer.current_roles = context->getCurrentRoles();
+    std::sort(writer.current_roles.begin(), writer.current_roles.end());
+    writer.external_roles = context->getExternalRoles();
+    std::sort(writer.external_roles.begin(), writer.external_roles.end());
+    writer.authentication_grants = context->getAuthenticationGrants();
+    writer.authentication_valid_until = context->getAuthenticationValidUntil();
+
+    const auto & client_info = context->getClientInfo();
+    writer.current_user = client_info.current_user;
+    writer.initial_user = client_info.initial_user;
+    writer.authenticated_user = client_info.authenticated_user;
+    writer.current_address = client_info.current_address;
+    writer.initial_address = client_info.initial_address;
+    return writer;
+}
+
+bool StorageBuffer::Writer::sameIdentity(const Writer & other) const
+{
+    if (user_id != other.user_id
+        || current_roles != other.current_roles
+        || external_roles != other.external_roles
+        || authentication_valid_until != other.authentication_valid_until
+        || current_user != other.current_user
+        || initial_user != other.initial_user
+        || authenticated_user != other.authenticated_user)
+        return false;
+
+    /// Every session carries its own copy of the grants, so compare the contents.
+    if (!authentication_grants || !other.authentication_grants)
+        return !authentication_grants && !other.authentication_grants;
+    return *authentication_grants == *other.authentication_grants;
+}
+
+
 class BufferSink final : public SinkToStorage, WithContext
 {
 public:
@@ -798,6 +843,7 @@ public:
             return;
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        const auto writer = StorageBuffer::Writer::fromContext(getContext());
 
         StoragePtr destination = storage.getDestinationTable();
         if (destination)
@@ -819,7 +865,7 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
-                storage.writeBlockToDestination(block, destination);
+                storage.writeBlockToDestination(block, destination, writer);
             }
             return;
         }
@@ -830,26 +876,49 @@ public:
         /// We loop through the buffers, trying to lock mutex. No more than one lap.
         auto shard_num = start_shard_num;
 
+        /// Rows of different writers are not mixed in one buffer, so prefer a buffer that is empty or
+        /// already holds rows of this writer. Any other buffer would have to be flushed first; the
+        /// least busy of those is kept as a fallback.
         StorageBuffer::Buffer * least_busy_buffer = nullptr;
         std::unique_lock<std::mutex> least_busy_lock;
         size_t least_busy_shard_rows = 0;
 
+        StorageBuffer::Buffer * fallback_buffer = nullptr;
+        std::unique_lock<std::mutex> fallback_lock;
+        size_t fallback_shard_rows = 0;
+
         for (size_t try_no = 0; try_no < storage.num_shards; ++try_no)
         {
-            std::unique_lock lock(storage.buffers[shard_num].tryLock());
+            auto & candidate = storage.buffers[shard_num];
+            std::unique_lock lock(candidate.tryLock());
 
             if (lock.owns_lock())
             {
-                size_t num_rows = storage.buffers[shard_num].data.rows();
-                if (!least_busy_buffer || num_rows < least_busy_shard_rows)
+                size_t num_rows = candidate.data.rows();
+                bool same_writer = num_rows == 0 || candidate.writer.sameIdentity(writer);
+
+                auto & best_buffer = same_writer ? least_busy_buffer : fallback_buffer;
+                auto & best_lock = same_writer ? least_busy_lock : fallback_lock;
+                auto & best_rows = same_writer ? least_busy_shard_rows : fallback_shard_rows;
+                if (!best_buffer || num_rows < best_rows)
                 {
-                    least_busy_buffer = &storage.buffers[shard_num];
-                    least_busy_lock = std::move(lock);
-                    least_busy_shard_rows = num_rows;
+                    best_buffer = &candidate;
+                    best_lock = std::move(lock);
+                    best_rows = num_rows;
                 }
             }
 
             shard_num = (shard_num + 1) % storage.num_shards;
+        }
+
+        if (!least_busy_buffer)
+        {
+            least_busy_buffer = fallback_buffer;
+            least_busy_lock = std::move(fallback_lock);
+        }
+        else if (fallback_lock.owns_lock())
+        {
+            fallback_lock.unlock();
         }
 
         /// If you still can not lock anything at once, then we'll wait on mutex.
@@ -858,7 +927,7 @@ public:
             least_busy_buffer = &storage.buffers[start_shard_num];
             least_busy_lock = least_busy_buffer->lockForWriting();
         }
-        insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
+        insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version, writer);
         least_busy_lock.unlock();
 
         storage.reschedule(0);
@@ -867,28 +936,38 @@ private:
     StorageBuffer & storage;
     StorageMetadataPtr metadata_snapshot;
 
-    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version)
+    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version, const StorageBuffer::Writer & writer)
     {
         time_t current_time = time(nullptr);
 
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
+        /// The buffer is flushed under the identity of its writer, so rows of another writer must not
+        /// be appended to it.
+        bool other_writer = buffer.data.rows() && !buffer.writer.sameIdentity(writer);
+
         if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()) ||
-            buffer.metadata_version != metadata_version)
+            buffer.metadata_version != metadata_version || other_writer)
         {
             /** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
               * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
-            LOG_DEBUG(storage.log, "Flush buffer by threshold");
+            if (other_writer)
+                LOG_DEBUG(storage.log, "Flush buffer to switch to another writer");
+            else
+                LOG_DEBUG(storage.log, "Flush buffer by threshold");
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
             buffer.metadata_version = metadata_version;
         }
 
         if (!buffer.first_write_time)
+        {
             buffer.first_write_time = current_time;
+            buffer.writer = writer;
+        }
 
         size_t old_rows = buffer.data.rows();
         size_t old_bytes = buffer.data.allocatedBytes();
@@ -1196,7 +1275,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     Stopwatch watch;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable());
+        writeBlockToDestination(block_to_write, getDestinationTable(), buffer.writer);
     }
     catch (...)
     {
@@ -1225,7 +1304,45 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
+ContextMutablePtr StorageBuffer::createFlushContext(const Writer & writer) const
+{
+    auto insert_context = Context::createCopy(getContext());
+    insert_context->makeQueryContext();
+    /// The flush is a query in its own right. The background sender of a `Distributed` subordinate
+    /// table persists the client info only for a real query kind (`ClientInfo::write` stops right
+    /// after `NO_QUERY`), so without this the identity set below would be lost on the way to the
+    /// shard, which would then run the insert with full access.
+    insert_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+
+    if (!writer.user_id)
+        return insert_context;
+
+    /// `setUser` applies the writer's settings profiles on top of the buffer context. The buffer
+    /// profile (the `buffer_profile` server setting) is meant to configure the flush, so re-apply
+    /// the settings of the buffer context afterwards to keep them in force; the writer's profile
+    /// only fills in the rest.
+    const SettingsChanges buffer_settings = getContext()->getSettingsRef().changes();
+    insert_context->setUser(*writer.user_id, writer.external_roles, writer.authentication_grants, writer.authentication_valid_until);
+    /// The effective roles of the writer's session, which may include the external ones; those are
+    /// not granted locally, so the grant check must be skipped.
+    insert_context->setCurrentRoles(writer.current_roles, /* check_grants= */ false);
+    insert_context->applySettingsChanges(buffer_settings);
+
+    /// `setUser` sets only the access-control identity. The names and addresses are what a remote
+    /// shard of a `Distributed` subordinate table authenticates and checks, so fill them in as well.
+    insert_context->setCurrentUserName(writer.current_user);
+    insert_context->setInitialUserName(writer.initial_user);
+    insert_context->setAuthenticatedUserName(writer.authenticated_user);
+    if (writer.current_address)
+        insert_context->setCurrentAddress(*writer.current_address);
+    if (writer.initial_address)
+        insert_context->setInitialAddress(*writer.initial_address);
+
+    return insert_context;
+}
+
+
+void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const Writer & writer)
 {
     if (!destination_id || block.empty())
         return;
@@ -1280,8 +1397,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     for (const auto & column : block_to_write)
         list_of_columns->children.push_back(make_intrusive<ASTIdentifier>(column.name));
 
-    auto insert_context = Context::createCopy(getContext());
-    insert_context->makeQueryContext();
+    auto insert_context = createFlushContext(writer);
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -1651,6 +1767,8 @@ Creating a `merge.hits_buffer` table with the same structure as `merge.hits` and
 For example, if just one row has been written, after 100 seconds, it will be flushed, no matter what. But if many rows have been written, the data will be flushed sooner.
 
 When the server is stopped, with `DROP TABLE` or `DETACH TABLE`, buffered data is also flushed to the destination table.
+
+Data is flushed with the access rights of the user who inserted it into the Buffer table, both locally and on the remote shards of a `Distributed` destination table, so the flush is denied whenever that user could not insert into the destination table directly. Rows inserted by different users are never mixed in one buffer: an `INSERT` by another user first flushes the buffer it lands in. Settings for the flush still come from the `buffer_profile` server setting, with the user's own settings profile filling in the rest.
 
 You can set empty strings in single quotation marks for the database and table name. This indicates the absence of a destination table. In this case, when the data flush conditions are reached, the buffer is simply cleared. This may be useful for keeping a window of data in memory.
 
