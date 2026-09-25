@@ -201,7 +201,9 @@ The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which i
         {.description = R"DOCS_MD(
 `timeSeriesHistograms(db_name.time_series_table)` - Returns the [histograms](/reference/engines/table-engines/integrations/time-series#histograms-table) table
 used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine.
-The table stores native histogram samples and exists in tables of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( and later:
+The table stores native histogram samples and exists in tables of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later:
 
 ```sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries HISTOGRAMS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
@@ -247,7 +249,9 @@ The function returns three columns:
 - `timestamp` - Contains timestamps.
 - `value` - Contains values.
 
-For a TimeSeries table of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( and later,
+For a TimeSeries table of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later,
 which stores native histograms, the function returns the histogram samples too, with a fourth column:
 - `histogram` - An empty array for a float sample, and an array with one element for a histogram sample. The element is a tuple
   with the fields of the histogram as they are stored in the [histograms table](/reference/functions/table-functions/timeSeriesHistograms):

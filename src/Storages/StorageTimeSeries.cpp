@@ -875,7 +875,9 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
 <Note>
 The keyword `SAMPLES` has an alias `DATA`, and the keyword `METRIC FAMILIES` has an alias `METRICS`, both are kept for backwards compatibility.
 The definition of a table of a [version](#schema-versioning) before 4 is written with `METRICS`, so that an older server can read it.
-The definition of a table of version )DOCS_MD" + histograms_version + R"DOCS_MD( and later also has a generated `HISTOGRAMS` clause, which can't be customized yet
+The definition of a table of version )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later also has a generated `HISTOGRAMS` clause, which can't be customized yet
 (see [Histograms table](#histograms-table)).
 </Note>
 
@@ -900,7 +902,9 @@ Columns of a TimeSeries table are generated automatically. These are outer colum
 | `metric_name` | `String` | The name of the metric |
 | `tags` | `Map(String, String)` | Map of tags (labels) for the time series |
 | `samples` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series. The tuple's timestamp and value element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)). The column is named `time_series` in tables of [version](#schema-versioning) 2 and earlier |
-| `histograms.timestamp`, `histograms.is_float`, ..., `histograms.negative_values_float` | `Array(DateTime64(3))` by default, `Array(Bool)`, ... | The native histogram samples of a time series as the flattened form of `histograms Nested(...)`: one array per column of the [histograms](#histograms-table) table (with `timestamp` in place of `id`), element k of every array being histogram sample k. The arrays of a row must have the same length. Tables of [versions](#schema-versioning) before )DOCS_MD" + histograms_version + R"DOCS_MD( have no such columns |
+| `histograms.timestamp`, `histograms.is_float`, ..., `histograms.negative_values_float` | `Array(DateTime64(3))` by default, `Array(Bool)`, ... | The native histogram samples of a time series as the flattened form of `histograms Nested(...)`: one array per column of the [histograms](#histograms-table) table (with `timestamp` in place of `id`), element k of every array being histogram sample k. The arrays of a row must have the same length. Tables of [versions](#schema-versioning) before )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( have no such columns |
 | `metric_family` | `String` | The name of the metric family (for metrics metadata) |
 | `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
 | `unit` | `String` | The unit of the metric |
@@ -955,7 +959,9 @@ with the difference that a materialized view has one target table
 whereas a `TimeSeries` table has three mandatory target tables named [samples](#samples-table), [tags](#tags-table), and [metric families](#metric-families-table),
 an optional [recent samples](#recent-samples-table) target table which is enabled by default
 (see the [recent_samples_ttl_seconds](#settings) setting), and a [histograms](#histograms-table) target table
-in tables of [version](#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( and later.
+in tables of [version](#schema-versioning) )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later.
 
 The target tables can be either specified explicitly in the `CREATE TABLE` query
 or the `TimeSeries` table engine can generate inner target tables automatically.
@@ -1036,7 +1042,9 @@ The _metric families_ table must have columns:
 ### Histograms table {#histograms-table}
 
 The _histograms_ table contains native histogram samples, one row per sample, keyed by `id` and `timestamp` like the [samples](#samples-table) table.
-It exists in tables of [version](#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( and later and is always generated: it can't be customized yet, so
+It exists in tables of [version](#schema-versioning) )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later and is always generated: it can't be customized yet, so
 `INNER COLUMNS` or an `INNER ENGINE` differing from the generated ones, and an external histograms table, are rejected.
 Tables of earlier versions have no histograms table.
 
@@ -1075,7 +1083,9 @@ A row may carry both float samples in `samples` and histogram samples in `histog
 
 The Prometheus remote-write protocol fills the group from the native histograms of a request when the sender is configured
 with `send_native_histograms: true`: the integer bucket deltas are decoded to absolute counts, everything else is stored as sent.
-A table of a version before )DOCS_MD" + histograms_version + R"DOCS_MD( has no histograms table, so it stores the float samples of a request and drops its native
+A table of a version before )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( has no histograms table, so it stores the float samples of a request and drops its native
 histograms with a warning, counting them in the `PrometheusRemoteWriteDroppedHistograms` profile event.
 The Prometheus remote-read protocol returns the native histograms exactly as they were written.
 
@@ -1127,7 +1137,9 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = )DOCS_MD" + latest_version + R"DOCS_MD(, recent_samples_ttl_seconds = 345600
+SETTINGS version = )DOCS_MD"
+        + latest_version
+        + R"DOCS_MD(, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1479,16 +1491,24 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `histograms_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [histograms](#histograms-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. Requires `version` to be at least )DOCS_MD" + histograms_version + R"DOCS_MD( |
-| `histograms_max_buckets` | UInt64 | 0 | The maximum number of buckets (positive and negative together) a single histogram sample may have; an insert with a bigger histogram is rejected. 0 means no limit, like Prometheus without `native_histogram_bucket_limit`. Requires `version` to be at least )DOCS_MD" + histograms_version + R"DOCS_MD( |
-| `version` | UInt64 | )DOCS_MD" + latest_version + R"DOCS_MD( | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `histograms_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [histograms](#histograms-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. Requires `version` to be at least )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( |
+| `histograms_max_buckets` | UInt64 | 0 | The maximum number of buckets (positive and negative together) a single histogram sample may have; an insert with a bigger histogram is rejected. 0 means no limit, like Prometheus without `native_histogram_bucket_limit`. Requires `version` to be at least )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( |
+| `version` | UInt64 | )DOCS_MD"
+        + latest_version
+        + R"DOCS_MD( | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
 
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently )DOCS_MD" + latest_version + R"DOCS_MD() -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently )DOCS_MD"
+        + latest_version
+        + R"DOCS_MD() -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version; then the table is defined the way that version does it (see [Version history](#version-history)).
@@ -1516,7 +1536,9 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 4 | The `metrics` target table was renamed to `metric families`: the inner table is named `.inner_id.metricfamilies.<uuid>` instead of `.inner_id.metrics.<uuid>`, and the definition is written with the keyword `METRIC FAMILIES` instead of `METRICS`. The stored data didn't change |
 | 5 | New inner tags tables with a `MergeTree` family engine get a `keyValuePairs` text index on the `tags` map by default (see [Tags table](#tags-table)) |
 | 6 | The column `metric_family_name` of the [metric families](#metric-families-table) table was renamed to `metric_family`, the name of the corresponding outer column. Tables of earlier versions keep the old name of the column, and the [timeSeriesMetricFamilies](/reference/functions/table-functions/timeSeriesMetricFamilies) table function returns the column under the name the table uses. An external metric families table must name the column the way the version of the `TimeSeries` table does |
-| )DOCS_MD" + histograms_version + R"DOCS_MD( | The [histograms](#histograms-table) target table was introduced: every table of this version has a fifth target table `.inner_id.histograms.<uuid>` for native histogram samples, written with the keyword `HISTOGRAMS`. Tables of earlier versions have no histograms table |
+| )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( | The [histograms](#histograms-table) target table was introduced: every table of this version has a fifth target table `.inner_id.histograms.<uuid>` for native histogram samples, written with the keyword `HISTOGRAMS`. Tables of earlier versions have no histograms table |
 
 # Functions {#functions}
 
