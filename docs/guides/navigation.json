@@ -232,6 +232,7 @@
             "guides/use-cases/ai-ml/index",
             "guides/use-cases/ai-ml/vector-search",
             "guides/use-cases/ai-ml/ai-powered-sql-generation",
+            "guides/use-cases/ai-ml/import-langfuse-trace-data",
             {
               "group": "Data exploration",
               "pages": [
