@@ -33,6 +33,7 @@
 #include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 #include <base/unit.h>
@@ -1416,6 +1417,9 @@ namespace
 /// literal instead: `Variant`, `Dynamic`, dynamic `JSON` paths, shared data and `JSON` object names.
 Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object, bool datetime64_as_numbers, bool date_time_as_numbers)
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     if (isColumnConst(*column))
         return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers);
 
@@ -1692,6 +1696,9 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
 
 ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     /// Subtrees the default literal path already serializes exactly are left unchanged.
     if (!typeNeedsExactLiteralSerialization(*type))
         return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
