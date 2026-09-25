@@ -1,0 +1,10 @@
+rows left	990
+with the index	10
+without the index	10
+without rescoring	10
+with rescoring	10
+the index answer	[1,1,1,1,1,1,1,1,1,1]
+the bruteforce answer	[1,1,1,1,1,1,1,1,1,1]
+a deleted cluster	3
+a pending delete	10
+a delete in a patch part	10
