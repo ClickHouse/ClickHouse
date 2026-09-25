@@ -44,6 +44,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -147,6 +148,21 @@ void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChange
         if (!insertion.second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate setting name {}", backQuote(setting_name));
     }
+}
+
+void parseAddColumnSettings(const ASTSetQuery & set_query, AlterCommand & command)
+{
+    command.settings_changes = set_query.changes;
+    command.settings_names_to_check = set_query.default_settings;
+    for (const auto & parameter : set_query.query_parameters)
+        command.settings_names_to_check.push_back(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
+}
+
+void parseModifyColumnSettings(const ASTSetQuery & set_query, AlterCommand & command)
+{
+    parseSettingsChangesAndResets(set_query, command.settings_changes, command.settings_resets);
+    for (const auto & parameter : set_query.query_parameters)
+        command.settings_names_to_check.push_back(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
 }
 
 /// Rebuilds the implicit minmax indices from the `SETTINGS` clause. A setting dropped from it falls
@@ -285,7 +301,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.ttl = ast_col_decl.getTTL();
 
         if (ast_col_decl.getSettings())
-            command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
+            parseAddColumnSettings(ast_col_decl.getSettings()->as<ASTSetQuery &>(), command);
 
         if (ast_col_decl.getStatisticsDesc())
             command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
@@ -355,8 +371,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.codec = ast_col_decl.getCodec();
 
         if (ast_col_decl.getSettings())
-            parseSettingsChangesAndResets(
-                ast_col_decl.getSettings()->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
+            parseModifyColumnSettings(ast_col_decl.getSettings()->as<ASTSetQuery &>(), command);
 
         if (ast_col_decl.getStatisticsDesc())
             command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
@@ -364,8 +379,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)
         {
-            parseSettingsChangesAndResets(
-                command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
+            parseModifyColumnSettings(command_ast->settings_changes->as<ASTSetQuery &>(), command);
             command.append_column_setting = true;
         }
 
@@ -827,6 +841,10 @@ void AlterCommand::apply(
             column.settings = settings_changes;
         }
 
+        if (!isReplayOfJudgedDefinition(context))
+            for (const auto & name : settings_names_to_check)
+                MergeTreeColumnSettings::validateName(name);
+
         /// The declared statistics are transferred like in CREATE (the types are validated against the
         /// column data type by the storage in `checkAlterIsPossible`).
         if (column_statistics_decl)
@@ -929,6 +947,14 @@ void AlterCommand::apply(
                             column.settings.setSetting(change.name, change.value);
                     else
                         column.settings = settings_changes;
+                }
+
+                if (!isReplayOfJudgedDefinition(context))
+                {
+                    for (const auto & name : settings_resets)
+                        MergeTreeColumnSettings::validateName(name);
+                    for (const auto & name : settings_names_to_check)
+                        MergeTreeColumnSettings::validateName(name);
                 }
 
                 if (!settings_resets.empty())

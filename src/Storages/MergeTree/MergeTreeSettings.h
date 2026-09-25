@@ -30,6 +30,7 @@ class AbstractConfiguration;
 
 namespace DB
 {
+class ASTSetQuery;
 class ASTStorage;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
@@ -139,5 +140,9 @@ private:
 namespace MergeTreeColumnSettings
 {
     void validate(const SettingsChanges & changes);
+    /// A `SETTINGS` clause records `name = DEFAULT` in `default_settings` and `param_name = ...` in
+    /// `query_parameters`, so neither name ever reaches `changes`, the only payload `validate` sees.
+    void validateNames(const ASTSetQuery & settings);
+    void validateName(const String & name);
 }
 }

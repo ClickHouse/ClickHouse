@@ -2908,25 +2908,37 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
         CompressionCodecFactory::instance().get(codec);
 }
 
-void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
+void MergeTreeColumnSettings::validateName(const String & name)
 {
-    static const MergeTreeSettings merge_tree_settings;
     static const std::set<String> allowed_column_level_settings =
     {
         "min_compress_block_size",
         "max_compress_block_size"
     };
 
+    if (!allowed_column_level_settings.contains(name))
+        throw Exception(
+            ErrorCodes::UNKNOWN_SETTING,
+            "Setting {} is unknown or not supported at column level, supported settings: {}",
+            name,
+            fmt::join(allowed_column_level_settings, ", "));
+}
+
+void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
+{
     for (const auto & change : changes)
     {
-        if (!allowed_column_level_settings.contains(change.name))
-            throw Exception(
-                ErrorCodes::UNKNOWN_SETTING,
-                "Setting {} is unknown or not supported at column level, supported settings: {}",
-                change.name,
-                fmt::join(allowed_column_level_settings, ", "));
+        validateName(change.name);
         MergeTreeSettingsImpl::checkCanSet(change.name, change.value);
     }
+}
+
+void MergeTreeColumnSettings::validateNames(const ASTSetQuery & settings)
+{
+    for (const auto & name : settings.default_settings)
+        validateName(name);
+    for (const auto & parameter : settings.query_parameters)
+        validateName(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
 }
 
 MergeTreeSettings::MergeTreeSettings() : impl(std::make_unique<MergeTreeSettingsImpl>())
