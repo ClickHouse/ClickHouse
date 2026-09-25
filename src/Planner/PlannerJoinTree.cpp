@@ -2698,11 +2698,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 reading_node = reading_steps.front();
                         }
 
+                        /// Answering the row estimate below runs index analysis, which builds any
+                        /// `IN` set whose left argument maps to key columns and so executes its
+                        /// subquery; `input()` is a one-shot client stream, and cannot be read twice.
+                        const auto * estimate_reading_step
+                            = reading_node ? typeid_cast<const ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+                        const ActionsDAG * estimate_filter
+                            = estimate_reading_step ? estimate_reading_step->getQueryInfo().filter_actions_dag.get() : nullptr;
+                        const bool estimate_needs_unbuilt_set
+                            = estimate_filter && QueryPlanOptimizations::dagContainsNonReadySet(*estimate_filter);
+
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
                         // Note: reading_steps can have several steps in case of reading from view with UNION
                         // In such case, we avoid using parallel_replicas_min_number_of_rows_per_replica for all tables, -
                         // parallel_replicas_min_number_of_rows_per_replica will be replaced by automatic_parallel_replicas_mode
-                        if (reading_node && reading_steps.size() == 1
+                        if (reading_node && reading_steps.size() == 1 && !estimate_needs_unbuilt_set
                             && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
