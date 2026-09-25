@@ -4020,7 +4020,17 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     for (const auto & right_stream_allowed_conjunction : right_stream_allowed_conjunctions)
         rejected_conjunctions_set.erase(right_stream_allowed_conjunction);
 
-    NodeRawConstPtrs rejected_conjunctions(rejected_conjunctions_set.begin(), rejected_conjunctions_set.end());
+    /// `extractConjunctionAtoms` yields the atoms right to left, while `and` is evaluated left to right.
+    auto conjunction_atoms = extractConjunctionAtoms(predicate);
+    std::ranges::reverse(conjunction_atoms);
+
+    const size_t rejected_count = rejected_conjunctions_set.size();
+    NodeRawConstPtrs rejected_conjunctions;
+    rejected_conjunctions.reserve(rejected_count);
+    for (const auto * atom : conjunction_atoms)
+        if (rejected_conjunctions_set.erase(atom) != 0)
+            rejected_conjunctions.push_back(atom);
+    chassert(rejected_conjunctions.size() == rejected_count);
 
     auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
     auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
