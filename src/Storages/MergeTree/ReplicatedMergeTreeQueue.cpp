@@ -1861,8 +1861,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             /// A TTL drop estimates 0 bytes (all sources expired at entry.create_time) but reserves the clamp floor;
             /// size it by that floor so the check covers what it really takes.
             if (entry.merge_type == MergeType::TTLDrop)
-                sum_parts_size_in_bytes = std::min<size_t>(
-                    sum_parts_size_in_bytes, MergeTreeData::RESERVATION_MIN_ESTIMATION_SIZE);
+                sum_parts_size_in_bytes = MergeTreeData::RESERVATION_MIN_ESTIMATION_SIZE;
 
             if (isTTLMergeType(entry.merge_type))
             {
