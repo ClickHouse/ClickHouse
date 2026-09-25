@@ -11,7 +11,7 @@ user="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 atomic_db="atomic_${CLICKHOUSE_DATABASE}"
 repl_db="repl_${CLICKHOUSE_DATABASE}"
 
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "
 CREATE DATABASE ${atomic_db} ENGINE = Atomic;
 CREATE DATABASE ${repl_db} ENGINE = Replicated('/test/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/repl', '1', '1');
 CREATE DICTIONARY ${atomic_db}.d (k UInt64) PRIMARY KEY k SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
@@ -26,7 +26,7 @@ ${CLICKHOUSE_CLIENT} --user "${user}" --password "${user}" --query "CREATE OR RE
 ${CLICKHOUSE_CLIENT} --user "${user}" --password "${user}" --query "CREATE OR REPLACE VIEW ${atomic_db}.d ON CLUSTER test_shard_localhost AS SELECT 1" 2>&1 | grep -Fo ACCESS_DENIED | uniq
 
 ${CLICKHOUSE_CLIENT} --query "
-SELECT engine FROM system.tables WHERE database IN ('${atomic_db}', '${repl_db}') AND name = 'd';
+SELECT engine FROM system.tables WHERE database IN ('atomic_$CLICKHOUSE_DATABASE', 'repl_$CLICKHOUSE_DATABASE') AND name = 'd';
 DROP DATABASE ${atomic_db};
 DROP DATABASE ${repl_db};
 DROP USER ${user};
