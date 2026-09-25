@@ -108,20 +108,10 @@ Chunk getChunkFromCheckResult(const String & database, const String & table, con
 class TableCheckTask : public ChunkInfoCloneable<TableCheckTask>
 {
 public:
-    TableCheckTask(StorageID table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
-        : table(DatabaseCatalog::instance().getTable(table_id, context))
+    TableCheckTask(StoragePtr table_, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
+        : table(std::move(table_))
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
     {
-        chassert(context);
-        context->checkAccess(AccessType::CHECK, table_id);
-    }
-
-    TableCheckTask(StoragePtr table_, ContextPtr context)
-        : table(table_)
-        , check_data_tasks(table->getCheckTaskList({}, context))
-    {
-        chassert(context);
-        context->checkAccess(AccessType::CHECK, table_->getStorageID());
     }
 
     TableCheckTask(const TableCheckTask & other)
@@ -235,7 +225,8 @@ private:
             auto table = getValidTable();
             if (table)
             {
-                table_check_task = std::make_shared<TableCheckTask>(table, context);
+                context->checkAccess(AccessType::CHECK, table->getStorageID());
+                table_check_task = std::make_shared<TableCheckTask>(table, std::monostate{}, context);
                 LOG_DEBUG(log, "Checking {} parts in table '{}'", table_check_task->size(), table_check_task->getNameForLogs());
                 return table_check_task;
             }
@@ -430,7 +421,9 @@ BlockIO InterpreterCheckQuery::execute()
         /// matching the scoping precedence of `SHOW CREATE TABLE` and
         /// `DESCRIBE TABLE` introduced in #100966.
         auto table_id = context->resolveStorageID(*check_query);
-        auto table_check_task = std::make_shared<TableCheckTask>(table_id, check_query->getPartitionOrPartitionID(), context);
+        context->checkAccess(AccessType::CHECK, table_id);
+        auto table = DatabaseCatalog::instance().getTable(table_id, context);
+        auto table_check_task = std::make_shared<TableCheckTask>(table, check_query->getPartitionOrPartitionID(), context);
         worker_source = std::make_shared<TableCheckSource>(table_check_task, log);
         worker_source->addTotalRowsApprox(table_check_task->size());
     }
