@@ -836,7 +836,7 @@ WhatIfCandidateResult evaluateProjection(
     {
         if (!QueryPlanOptimizationSettings(context).read_in_order)
             sort_help = SortOrderHelp::ReadInOrderDisabled;
-        else if (QueryPlanOptimizations::wouldReadInOrderBeUseful(*slice.outer_sorting, proj_key, *slice.root))
+        else if (QueryPlanOptimizations::getInputOrderIfReadInOrderIsUseful(*slice.outer_sorting, proj_key, *slice.root))
             sort_help = SortOrderHelp::Helps;
         else
             sort_help = SortOrderHelp::NotUseful;

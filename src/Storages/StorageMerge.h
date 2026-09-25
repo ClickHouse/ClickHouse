@@ -199,6 +199,9 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
+    /// Whether `requestReadingInOrder` accepts a reverse direction: every reading step of every child plan
+    /// has to accept it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
+    bool canReadInReverseOrder();
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
@@ -221,6 +224,11 @@ public:
     /// distribute the steps above them. Only call it when `getExpandableReads` returned a value; the child
     /// plans are moved out of this step, which the caller then replaces.
     QueryPlan expandForParallelReplicas();
+
+    /// Whether the plan-based parallel replicas may expand this read (see `expandForParallelReplicas`), judged
+    /// by the settings and `FINAL` alone, without creating the child plans. `false` means this step is still in
+    /// the plan when the second optimization pass runs; `true` only means it might not be.
+    bool mayBeExpandedForParallelReplicas() const;
 
     void addFilter(FilterDAGInfo filter);
 
