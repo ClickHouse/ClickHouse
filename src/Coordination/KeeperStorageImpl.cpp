@@ -206,6 +206,14 @@ bool isRemoveNodeDelta(const KeeperDelta & delta)
         return std::holds_alternative<RemoveNodeDelta>(delta.operation);
 }
 
+bool isCreateNodeDelta(const KeeperDelta & delta)
+{
+    if (const auto * op = std::get_if<LSMTDelta>(&delta.operation))
+        return op->new_node.action == Coordination::Storage::NodeAction::Create;
+    else
+        return std::holds_alternative<CreateNodeDelta>(delta.operation);
+}
+
 bool takeNodeStatsFromUpdateDelta(std::string_view path, const KeeperStorage::DeltaRange & deltas, Coordination::Stat & out_stat)
 {
     for (auto it = deltas.end(); it != deltas.begin();)
@@ -294,12 +302,18 @@ process(const Coordination::ZooKeeperSyncRequest & zk_request, KeeperStorage & /
 
 /// CREATE Request ///
 static std::pair<KeeperResponsesForSessions, Int64> processWatches(
-    const Coordination::ZooKeeperCreateRequest & zk_request,
-    KeeperStorage::DeltaRange /*deltas*/,
+    const Coordination::ZooKeeperCreateRequest & /*zk_request*/,
+    KeeperStorage::DeltaRange deltas,
     KeeperStorage & storage,
     int64_t /*session_id*/)
 {
-    return storage.processWatchesImpl(zk_request.getPath(), Coordination::Event::CREATED);
+    for (const auto & delta : deltas)
+    {
+        if (isCreateNodeDelta(delta))
+            return storage.processWatchesImpl(delta.path, Coordination::Event::CREATED);
+    }
+
+    return {};
 }
 
 template <typename Storage>

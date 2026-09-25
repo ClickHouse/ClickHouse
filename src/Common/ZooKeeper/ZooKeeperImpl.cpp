@@ -373,6 +373,25 @@ void triggerWatchCallback(
     }
 }
 
+#if USE_SSL
+/// The host part of "<host>:<port>", split lexically at the same character Poco::Net::SocketAddress
+/// splits it at, so that a port spelled as a service name still resolves. The result is matched
+/// against a certificate, so an IPv6 literal loses its brackets; a shape naming no host is empty.
+std::string peerHostName(const std::string & host_and_port)
+{
+    if (host_and_port.starts_with('/'))
+        return {};
+
+    if (host_and_port.starts_with('['))
+    {
+        size_t closing_bracket = host_and_port.find(']');
+        return closing_bracket == std::string::npos ? std::string{} : host_and_port.substr(1, closing_bracket - 1);
+    }
+
+    return host_and_port.substr(0, host_and_port.find(':'));
+}
+#endif
+
 }
 
 template <typename T>
@@ -618,7 +637,13 @@ void ZooKeeper::connect(
                 if (node.secure)
                 {
 #if USE_SSL
-                    socket = Poco::Net::SecureStreamSocket();
+                    auto secure_socket = Poco::Net::SecureStreamSocket();
+                    /// The certificate names the configured host while the socket connects to the
+                    /// address it resolved to, so the name has to be carried explicitly. This is
+                    /// also what puts the host into the SNI extension.
+                    if (const auto peer_host_name = peerHostName(node.host); !peer_host_name.empty())
+                        secure_socket.setPeerHostName(peer_host_name);
+                    socket = secure_socket;
 #else
                     throw Poco::Exception(
                         "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
@@ -1762,14 +1787,17 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         info.request->spans.maybeInitialize(KeeperSpan::ClientRequestsQueue, info.request->tracing_context.get());
 
-        if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
+        /// A failed push kills the session (the `catch` below calls `finalize`), so be patient here.
+        const UInt64 push_timeout_ms = 3 * static_cast<UInt64>(args.session_timeout_ms);
+
+        if (!requests_queue.tryPush(std::move(info), push_timeout_ms))
         {
             if (requests_queue.isFinished())
                 throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired");
 
             throw Exception(Error::ZOPERATIONTIMEOUT,
-                "Cannot push request to queue within operation timeout of {} ms",
-                args.operation_timeout_ms);
+                "Cannot push request to queue within {} ms",
+                push_timeout_ms);
         }
     }
     catch (...)
