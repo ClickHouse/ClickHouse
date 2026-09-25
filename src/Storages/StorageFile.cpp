@@ -3159,6 +3159,28 @@ bool StorageFile::storesDataOnDisk() const
     return is_db_table;
 }
 
+bool StorageFile::hasUnreplicatedTableDataOnDisk() const
+{
+    /// A table over a file descriptor owns nothing.
+    if (use_table_fd)
+        return false;
+
+    /// Read-only variants over an explicit path are deliberately not recognized here, even though `write` rejects
+    /// them, because whether a path denotes such a variant is not decided by the `CREATE TABLE` query alone, so
+    /// the same query could be accepted on one replica and rejected on another:
+    /// - an archive: the `::` path syntax is interpreted only when `allow_archive_path_syntax` is enabled, and a
+    ///   `Replicated` database applies on other replicas only the settings changed by the initiating query, not
+    ///   each replica's own profile, so the path can denote an archive on one replica and a plain file on another;
+    /// - a glob: `is_path_with_globs` follows the number of files the pattern matches on the local filesystem
+    ///   right now, so a table accepted as read-only could also later become writable.
+    /// Rejecting such a read-only table is a false rejection, which this gate tolerates; accepting a table that
+    /// turns out to own local unreplicated data is not.
+
+    /// A table over an explicit path keeps its own data in a local file just like a table inside the database
+    /// directory does, and that data is not replicated.
+    return true;
+}
+
 Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
