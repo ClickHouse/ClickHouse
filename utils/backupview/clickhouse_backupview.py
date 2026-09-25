@@ -2,6 +2,7 @@
 
 import bisect
 import os.path
+import re
 import shutil
 import xml.etree.ElementTree as ET
 import zipfile  # For reading backups from zip archives
@@ -315,7 +316,7 @@ class Backup:
             return []
         if (part is not None) and (partition is not None):
             raise Exception(
-                "get_table_data_files: `only_part` and `only_partition` cannot be set together"
+                "get_table_data_files: `part` and `partition` cannot be set together"
             )
         files = []
         if part is not None:
@@ -425,13 +426,13 @@ class Backup:
         )
 
     # Returns the size of a file in the backup.
-    # The function raises an exception of the file doesn't exist.
+    # The function raises an exception if the file doesn't exist.
     def get_file_size(self, path):
         fi = self.get_file_info(path)
         return fi.size
 
     # Returns the information about a file in the backup.
-    # The function raises an exception of the file doesn't exist.
+    # The function raises an exception if the file doesn't exist.
     def get_file_info(self, path):
         if not path.startswith("/"):
             path = "/" + path
@@ -447,7 +448,7 @@ class Backup:
         return [self.get_file_info(path) for path in paths]
 
     # Finds the information about a file in the backup by its checksum.
-    # The function raises an exception of the file doesn't exist.
+    # The function raises an exception if the file doesn't exist.
     def get_file_info_by_checksum(self, checksum):
         fi = self.__file_infos_by_checksum.get(checksum)
         if fi is None:
@@ -511,23 +512,24 @@ class Backup:
             base_fi = self.get_base_backup().get_file_info_by_checksum(fi.base_checksum)
             base_stream = self.get_base_backup().open_file(base_fi.name)
             stream = self.__reader.open_file(fi.data_file)
-            return ConcatFileObj(base_stream, stream)
+            # Pass base_size so ConcatFileObj can flip streams without a
+            # probe-read at the exact boundary.
+            return ConcatFileObj(base_stream, stream, size1=fi.base_size)
 
     # Reads a file and returns its contents.
     def read_file(self, path):
         fi = self.get_file_info(path)
         if fi.size == 0:
             return b""
-        elif fi.base_size == 0:
+        if fi.base_size == 0:
             return self.__reader.read_file(fi.data_file)
-        elif fi.size == fi.base_size:
+        if fi.size == fi.base_size:
             base_fi = self.get_base_backup().get_file_info_by_checksum(fi.base_checksum)
             return self.get_base_backup().read_file(base_fi.name)
-        else:
-            base_fi = self.get_base_backup().get_file_info_by_checksum(fi.base_checksum)
-            return self.get_base_backup().read_file(
-                base_fi.name
-            ) + self.__reader.read_file(fi.data_file)
+        # Incremental case: stream through open_file() so we do not allocate
+        # a base-only buffer *and* a delta buffer *and* a concatenated buffer.
+        with self.open_file(path) as stream:
+            return stream.read()
 
     # Extracts a file from the backup to a specified destination.
     def extract_file(self, path, out=None, out_path="", make_dirs=True):
@@ -615,7 +617,25 @@ class Backup:
         return self.extract_dir("/", out=out, out_path=out_path)
 
     # Checks that all files in the backup exist and have the expected sizes.
-    def check_files(self):
+    #
+    # If verify_checksums=True, also recomputes each file's checksum and
+    # compares it to the value stored in the backup. A `checksum_factory`
+    # callable must then be provided; it must return an object with .update(bytes)
+    # and .hexdigest() -> str (hashlib-style). ClickHouse backups use
+    # SipHash128 for file checksums, which is not available in the Python
+    # stdlib — the caller is responsible for supplying a compatible
+    # implementation. Example:
+    #
+    #     backup.check_files(verify_checksums=True,
+    #                        checksum_factory=lambda: MySipHash128())
+    def check_files(self, verify_checksums=False, checksum_factory=None):
+        if verify_checksums and checksum_factory is None:
+            raise Exception(
+                "check_files: verify_checksums=True requires a checksum_factory callable "
+                "returning a hashlib-style object with .update(bytes) and .hexdigest() "
+                "(ClickHouse backups use SipHash128)."
+            )
+
         data_files = {}
         for fi in self.__file_infos.values():
             if fi.size > fi.base_size:
@@ -663,8 +683,39 @@ class Backup:
                     f"File {fi.data_file} has unexpected size {actual_size} != {expected_size} inside backup {self}"
                 )
 
+        if verify_checksums:
+            self.__verify_checksums(checksum_factory)
+
         if self.get_base_backup() is not None:
-            self.get_base_backup().check_files()
+            self.get_base_backup().check_files(
+                verify_checksums=verify_checksums,
+                checksum_factory=checksum_factory,
+            )
+
+    def __verify_checksums(self, checksum_factory):
+        empty_checksum = "00000000000000000000000000000000"
+        chunk_size = 4 * 1024 * 1024
+        for fi in self.__file_infos.values():
+            if fi.size == 0:
+                continue
+            # The synthetic entry for /.backup has no meaningful checksum,
+            # and any file that simply lacks one in the manifest should be
+            # skipped rather than failed.
+            if fi.name == "/.backup" or fi.checksum == empty_checksum:
+                continue
+            hasher = checksum_factory()
+            with self.open_file(fi.name) as stream:
+                while True:
+                    chunk = stream.read(chunk_size)
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+            actual = hasher.hexdigest()
+            if actual.lower() != fi.checksum.lower():
+                raise Exception(
+                    f"Checksum mismatch for file {fi.name} in backup {self}: "
+                    f"expected {fi.checksum}, got {actual}"
+                )
 
     def __parse_backup_metadata(self):
         metadata_str = self.__reader.read_file(".backup")
@@ -756,10 +807,21 @@ class Backup:
         return paths
 
     def __split_database_table(table):
+        # Accept a (db, table) tuple, a "db.table" string, or raise a clear
+        # error. A bare string without a dot is ambiguous: callers reach this
+        # helper only when `database` was not provided, so there is no way to
+        # infer the database name, and silently returning None used to cause
+        # a TypeError on tuple-unpack at the call site.
         if isinstance(table, tuple):
             return table[0], table[1]
-        elif isinstance(table, str) and (table.find(".") != -1):
-            return table.split(".", maxsplit=1)
+        if isinstance(table, str) and (table.find(".") != -1):
+            parts = table.split(".", maxsplit=1)
+            return parts[0], parts[1]
+        raise Exception(
+            f"Cannot determine database from table={table!r}: "
+            f"pass a tuple (database, table), a 'database.table' string, "
+            f"or provide the `database` argument explicitly."
+        )
 
     def __remove_prefix_path(files, prefix_path):
         for file in files:
@@ -996,16 +1058,16 @@ class Location:
                 )
             return File(desc[startpos:endpos])
 
-        closing_parenthesis = desc.find(")", opening_parenthesis)
-        if closing_parenthesis == -1:
+        closing_parenthesis = desc.rfind(")")
+        if closing_parenthesis == -1 or closing_parenthesis < opening_parenthesis:
             raise Exception(
                 f"Couldn't parse a location from '{desc}': No closing parenthesis"
             )
 
         name = desc[startpos:opening_parenthesis]
-        args = desc[opening_parenthesis + 1 : closing_parenthesis].split(",")
-        args = [Location.__unquote_argument(arg.strip()) for arg in args]
-        endpos = closing_parenthesis + 1
+        raw_args = desc[opening_parenthesis + 1 : closing_parenthesis]
+        args = Location.__split_args(raw_args)
+        args = [Location.__unquote_argument(arg) for arg in args]
 
         if name == "File":
             if len(args) == 1:
@@ -1027,13 +1089,47 @@ class Location:
             f"Couldn't parse a location from '{desc}': Unknown type {name} (only File and S3 are supported)"
         )
 
+    # Split a comma-separated argument list while respecting single- and
+    # double-quoted substrings. Commas inside quotes are preserved — this
+    # matters for things like S3 access keys or URLs with query strings that
+    # contain ','. Each returned element is stripped of surrounding
+    # whitespace but retains its quotes (which __unquote_argument then
+    # removes).
+    def __split_args(s):
+        args = []
+        current = []
+        quote = None
+        for c in s:
+            if quote is not None:
+                current.append(c)
+                if c == quote:
+                    quote = None
+            elif c in ("'", '"'):
+                quote = c
+                current.append(c)
+            elif c == ",":
+                args.append("".join(current).strip())
+                current = []
+            else:
+                current.append(c)
+        if quote is not None:
+            raise Exception(
+                f"Unterminated quoted string in argument list: {s!r}"
+            )
+        tail = "".join(current).strip()
+        # Keep tail if it is non-empty OR there are preceding args (so that
+        # trailing-comma forms behave consistently); drop only when the
+        # whole input is blank.
+        if tail or args:
+            args.append(tail)
+        return args
+
     def __unquote_argument(arg):
-        if arg.startswith("'"):
-            return arg.strip("'")
-        elif arg.startswith('"'):
-            return arg.strip('"')
-        else:
-            return arg
+        if arg.startswith("'") and arg.endswith("'") and len(arg) >= 2:
+            return arg[1:-1]
+        if arg.startswith('"') and arg.endswith('"') and len(arg) >= 2:
+            return arg[1:-1]
+        return arg
 
     def __split_filename_if_archive(path):
         is_archive = path.endswith(".zip") or path.endswith(".zipx")
@@ -1062,9 +1158,16 @@ class EmptyFileObj:
 
 # Represent a file object which concatenate data from two file objects.
 class ConcatFileObj:
-    def __init__(self, fileobj1, fileobj2):
+    # `size1` is optional; when provided it is the exact total number of bytes
+    # that `fileobj1` will yield. Knowing it lets us switch to `fileobj2` as
+    # soon as those bytes are consumed, without an empty probe-read on
+    # `fileobj1`. When it is not known, we fall back to the previous behavior
+    # (one probe-read on each exact-boundary chunked call).
+    def __init__(self, fileobj1, fileobj2, size1=None):
         self.__fileobj1 = fileobj1
         self.__fileobj2 = fileobj2
+        self.__size1 = size1
+        self.__read1 = 0
         self.__first_is_already_read = False
 
     def close(self):
@@ -1085,11 +1188,24 @@ class ConcatFileObj:
         read_data = b""
 
         if count != 0 and not self.__first_is_already_read:
-            read_data += self.__fileobj1.read(count)
-            if (count is None) or (count > len(read_data)):
+            chunk1 = self.__fileobj1.read(count)
+            self.__read1 += len(chunk1)
+            read_data += chunk1
+
+            if count is None:
+                # Caller asked for everything — fileobj1 is drained by contract.
                 self.__first_is_already_read = True
+            elif len(chunk1) < count:
+                # Short read is a definitive end-of-stream signal.
+                self.__first_is_already_read = True
+            elif (
+                self.__size1 is not None and self.__read1 >= self.__size1
+            ):
+                # Exact boundary reached with a known size — no probe needed.
+                self.__first_is_already_read = True
+
             if count is not None:
-                count -= len(read_data)
+                count -= len(chunk1)
 
         if count != 0:
             read_data += self.__fileobj2.read(count)
@@ -1176,6 +1292,8 @@ class S3Reader:
         self.__client = None
 
         try:
+            # endpoint may be None for `s3://` URIs — boto3 will then use the
+            # default AWS S3 endpoint for the configured region.
             self.__client = boto3.client(
                 "s3",
                 endpoint_url=s3_uri.endpoint,
@@ -1243,23 +1361,61 @@ class S3Reader:
 
 
 # Parses a S3 URI with detecting endpoint, bucket name, and key.
+#
+# Supported forms:
+#   1. s3://bucket/key                              (native AWS CLI form; endpoint left to boto3)
+#   2. https://bucket.s3.<region>.amazonaws.com/key (virtual-hosted)
+#      https://bucket.s3-<region>.amazonaws.com/key (legacy virtual-hosted)
+#   3. https://s3.<region>.amazonaws.com/bucket/key (path-style)
 class S3URI:
+    # Matches "<bucket>.s3<rest>" where <rest> starts with '.' or '-' or is
+    # the whole tail. This prevents `my.s3bucket.s3.amazonaws.com` from being
+    # mis-split after the first `.s3` substring, and prevents matching
+    # unrelated hostnames like `my.s3fake.com`.
+    __VHOSTED_RE = re.compile(r"^(.+?)\.(s3(?:[.-].+|$))$")
+
     def __init__(self, uri):
+        self.endpoint = None
+        self.bucket = None
+        self.key = None
         parsed_url = urlparse(uri, allow_fragments=False)
-        if not self.__parse_virtual_hosted(parsed_url) and not self.__parse_path_style(
-            parsed_url
+        if not (
+            self.__parse_s3_scheme(parsed_url)
+            or self.__parse_virtual_hosted(parsed_url)
+            or self.__parse_path_style(parsed_url)
         ):
             raise Exception(f"S3URI: Could not parse {uri}")
 
+    # s3://bucket/key
+    def __parse_s3_scheme(self, parsed_url):
+        if parsed_url.scheme != "s3":
+            return False
+        bucket = parsed_url.netloc
+        if len(bucket) < 3:
+            return False
+        self.bucket = bucket
+        # Leave endpoint as None so boto3 uses the AWS default.
+        self.endpoint = None
+        path = parsed_url.path
+        if path.startswith("/"):
+            path = path[1:]
+        if path.endswith("/"):
+            path = path[:-1]
+        self.key = path
+        return True
+
     # https://bucket-name.s3.Region.amazonaws.com/key
     def __parse_virtual_hosted(self, parsed_url):
+        if parsed_url.scheme not in ("http", "https"):
+            return False
         host = parsed_url.netloc
-        if host.find(".s3") == -1:
+        m = self.__VHOSTED_RE.match(host)
+        if not m:
             return False
-        self.bucket, new_host = host.split(".s3", maxsplit=1)
-        if len(self.bucket) < 3:
+        bucket, new_host = m.group(1), m.group(2)
+        if len(bucket) < 3:
             return False
-        new_host = "s3" + new_host
+        self.bucket = bucket
         self.endpoint = parsed_url.scheme + "://" + new_host
         path = parsed_url.path
         if path.startswith("/"):
@@ -1271,6 +1427,8 @@ class S3URI:
 
     # https://s3.Region.amazonaws.com/bucket-name/key
     def __parse_path_style(self, parsed_url):
+        if parsed_url.scheme not in ("http", "https"):
+            return False
         self.endpoint = parsed_url.scheme + "://" + parsed_url.netloc
         path = parsed_url.path
         if path.startswith("/"):
