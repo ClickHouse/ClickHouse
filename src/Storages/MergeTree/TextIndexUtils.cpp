@@ -528,7 +528,6 @@ void MergeTextIndexesTask::adjustPartOffsets(std::span<UInt32> row_ids, size_t p
     checkRowIdsInPart(row_ids, part_index);
 
     /// A merge keeps the order of the rows of a part, so the last row id is remapped to the largest row id.
-    /// Checking it once guarantees that all remapped row ids fit, and the whole array is remapped in bulk.
     adjustPartOffset(*merged_part_offsets, part_index, row_ids.back());
     merged_part_offsets->mapOffsets(part_index, row_ids);
 }

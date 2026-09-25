@@ -126,7 +126,7 @@ private:
     PODArray<UInt64> current_page_values;
     Arena arena;
     size_t num_values = 0;
-    /// Whether the values are consecutive across all pages, i.e. the i-th value is the first value plus i.
+    /// The i-th value is the first value plus i, across all pages.
     bool is_contiguous = true;
 
 public:
@@ -155,8 +155,7 @@ public:
         /// key, or a table without one - inserts consecutive runs, which span exactly size() - 1.
         if (current_page_values.back() - current_page_values.front() == current_page_values.size() - 1)
         {
-            /// Only the last page can be incomplete, so a page continues the previous ones
-            /// if it starts at the first value plus the number of values before it.
+            /// Only the last page can be incomplete, so pages.size() * PACKED_PAGE_SIZE values precede this one.
             if (!pages.empty() && current_page_values.front() != pages.front().min_val + (pages.size() * PACKED_PAGE_SIZE))
                 is_contiguous = false;
 
@@ -188,9 +187,7 @@ public:
         return pages[page_pos][page_idx];
     }
 
-    /// Replaces every offset with its value, as operator[] does. Offsets are expected in increasing order,
-    /// as the row ids of a posting list are; any other order is mapped correctly, only slower.
-    /// Every offset must be less than size(), and every value must fit into UInt32.
+    /// Replaces every offset with its value, as operator[] does. Offsets must be less than size(), values must fit into UInt32.
     void mapOffsets(std::span<UInt32> offsets) const
     {
         if (offsets.empty())
@@ -198,7 +195,6 @@ public:
 
         chassert(!pages.empty());
 
-        /// The values fit into UInt32, so wrapping arithmetic yields them exactly.
         if (is_contiguous)
         {
             const UInt32 delta = static_cast<UInt32>(pages.front().min_val);
@@ -207,8 +203,6 @@ public:
             return;
         }
 
-        /// Dense offsets are mapped in runs that share a page, which is resolved once per run.
-        /// Sparse offsets would end a run every few offsets, so they are mapped one by one instead.
         static constexpr size_t min_offsets_per_page_for_runs = 32;
         const size_t first_page = offsets.front() >> PACKED_PAGE_SIZE_DEGREE;
         const size_t last_page = offsets.back() >> PACKED_PAGE_SIZE_DEGREE;
@@ -286,7 +280,6 @@ public:
         return offset_maps[part_index][part_offset];
     }
 
-    /// Replaces the offsets of the part with their new values in the merged data, see PackedPartOffsets::mapOffsets.
     void mapOffsets(UInt64 part_index, std::span<UInt32> offsets) const
     {
         chassert(mode == MappingMode::Enabled);
