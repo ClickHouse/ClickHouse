@@ -6331,6 +6331,10 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Get the view's inner query AST.
     const auto & storage_snapshot = table_node->getStorageSnapshot();
 
+    /// Inlining would make a sealed view transparent to all optimizations.
+    if (StorageView::isSealed(*storage_snapshot->metadata, scope.context))
+        return;
+
     auto storage_id = storage->getStorageID();
 
     /// Inlining replaces the view's TableNode with the view body, so the SELECT check the planner
