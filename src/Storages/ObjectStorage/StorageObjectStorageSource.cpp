@@ -204,6 +204,7 @@ namespace
 namespace Setting
 {
     extern const SettingsUInt64 max_download_buffer_size;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
@@ -1003,7 +1004,11 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
-        else if (format_filter_info->condition_hash)
+        /// With TopN dynamic filtering the matched buckets depend on the running threshold, which comes
+        /// from the rows of all files the query reads: a row group can end up without a returned row
+        /// only because the threshold had excluded it. The key covers just the predicate, so such an
+        /// entry would make a later plain read, or one with another `LIMIT` or direction, skip rows.
+        else if (format_filter_info->condition_hash && !format_filter_info->top_k_filter)
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
@@ -1136,8 +1141,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
+    /// Entries are only written by reads without TopN dynamic filtering (see `generate`), so they apply
+    /// to a TopN read as well. It consults them only while `use_query_condition_cache_for_top_k` is on:
+    /// that setting makes TopK reads neither consult nor populate the cache.
     QueryConditionCachePtr query_condition_cache;
-    if (format_filter_info && format_filter_info->condition_hash)
+    if (format_filter_info && format_filter_info->condition_hash
+        && (!format_filter_info->top_k_filter || context_->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 
     while (true)
@@ -1332,6 +1341,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             identity_partition_columns = iceberg_info->info.identity_partition_columns;
 #endif
 
+        /// TopN dynamic filtering compares the values the reader returns against a threshold made
+        /// from the values the query sorts by, so it may only be applied to a file where the two are
+        /// the same. They are not where a data lake rewrites the file's columns after the reader:
+        /// schema evolution renames and casts them (and a column of the file may carry the name
+        /// another column has in the current schema), and an identity-partitioned column takes the
+        /// value the manifest defines for it, whatever the file stores. A file with an initial schema
+        /// but no schema transform (an Iceberg file with equality deletes in the current schema) is
+        /// read under the current names, and deletes only remove rows after the reader.
+        const bool top_k_filter_allowed = format_filter_info && format_filter_info->top_k_filter
+            && !(object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
+            && !configuration->getSchemaTransformer(context_, object_info)
+            && std::none_of(identity_partition_columns.begin(), identity_partition_columns.end(),
+                [&](const auto & column) { return column.first == format_filter_info->top_k_filter->column_name; });
+
         /// Save stripped filters if we need to apply them as fallback FilterTransforms
         /// later in the pipeline when the file format doesn't support PREWHERE.
         FilterDAGInfoPtr stripped_row_level_filter;
@@ -1426,6 +1449,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
                     /// pruning) back to a field_id.
                     result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    if (top_k_filter_allowed)
+                        result->top_k_filter = format_filter_info->top_k_filter;
                     return result;
                 }
             }
@@ -1437,12 +1462,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     format_filter_info->column_mapper,
                     nullptr, nullptr);
 
-            if (filters_substituted)
-                return std::make_shared<FormatFilterInfo>(
+            if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed))
+            {
+                auto result = std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
                     row_level_filter, prewhere_info);
+                if (top_k_filter_allowed)
+                    result->top_k_filter = format_filter_info->top_k_filter;
+                return result;
+            }
 
             return format_filter_info;
         }();
