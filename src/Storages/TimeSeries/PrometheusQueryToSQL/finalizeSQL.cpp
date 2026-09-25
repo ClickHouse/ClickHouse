@@ -11,6 +11,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -289,6 +290,15 @@ namespace
             const auto * aggregation = static_cast<const PrometheusQueryTree::AggregationOperator *>(result.node);
             if (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk")
             {
+                if (result.store_method == StoreMethod::VECTOR_GRID && (aggregation->by || aggregation->without))
+                {
+                    bool metric_name_dropped = result.metric_name_dropped;
+                    builder.order_by.push_back(transformGroupASTForAggregationOperator(
+                        aggregation,
+                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                        /*drop_metric_name=*/true,
+                        metric_name_dropped));
+                }
                 builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
                 builder.order_direction = aggregation->operator_name == "topk" ? -1 : 1;
             }
