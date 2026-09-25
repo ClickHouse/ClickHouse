@@ -1,5 +1,6 @@
 import base64
 import errno
+import glob
 import http.client
 import json
 import logging
@@ -95,35 +96,16 @@ DEFAULT_ENV_NAME = ".env"
 # the cwd, which differs between a CI job and a native pytest run.
 TEMP_ABS_DIR = p.abspath(p.join(HELPERS_DIR, "..", temp_dir))
 
-# Per-module coverage (a `WITH_COVERAGE_DEPTH` build): when this is set, every instance
-# records its coverage under the name of the running test module and dumps it here before
-# the server stops. The CI job exports the dumps into the same CIDB tables as the stateless
-# per-test coverage. The table schemas must match the ones `tests/clickhouse-test` creates.
+# Per-module coverage (a `WITH_COVERAGE_DEPTH` build). When this is set, every ClickHouse
+# process of a cluster (servers, Keeper, bridges) gets `CLICKHOUSE_COVERAGE_TEST_NAME` = the
+# running test module, arms coverage for it at startup, and appends every flush (exit, crash,
+# `SYSTEM SET COVERAGE TEST`) to `coverage/` next to its log; see `initCoverageFromEnvironment`.
+# No SQL is needed for that, so a protected `default` user, a failing startup or any kind of
+# restart does not lose coverage. The cluster moves the files here on shutdown, and the CI job
+# exports them into the same CIDB tables as the stateless per-test coverage.
 PER_TEST_COVERAGE_DIR = os.environ.get("CLICKHOUSE_TESTS_PER_TEST_COVERAGE_DIR")
 # The harness queries must not show up in `system.query_log`, which some tests count.
 COVERAGE_QUERY_SETTINGS = {"log_queries": 0}
-COVERAGE_LOG_DDL = """CREATE TABLE IF NOT EXISTS system.coverage_log
-(
-    time        DateTime,
-    test_name   LowCardinality(String),
-    file        LowCardinality(String),
-    line_start  UInt32,
-    line_end    UInt32,
-    min_depth   UInt8 DEFAULT 255,
-    branch_flag UInt8 DEFAULT 0
-)
-ENGINE = ReplacingMergeTree(time)
-ORDER BY (test_name, file, line_start, line_end)"""
-COVERAGE_INDIRECT_CALLS_DDL = """CREATE TABLE IF NOT EXISTS system.coverage_indirect_calls
-(
-    test_name LowCardinality(String),
-    callee_offset UInt64,
-    caller_name_hash UInt64,
-    caller_func_hash UInt64,
-    call_count UInt64
-)
-ENGINE = ReplacingMergeTree(call_count)
-ORDER BY (test_name, callee_offset)"""
 
 # Marker of the one docker failure mode that looks exactly like a broken server: the
 # container keeps running but has no network interface at all, so every connection to it
@@ -726,6 +708,8 @@ class ClickHouseCluster:
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r"[^a-z0-9]", "", project_name.lower())
         self.instances_dir_name = get_instances_dir(self.name)
+        # The module whose name the processes arm themselves with; see `PER_TEST_COVERAGE_DIR`.
+        self.coverage_env_test_name = None
         xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
         if xdist_worker:
             self.project_name += f"-{xdist_worker}"
@@ -3858,6 +3842,15 @@ class ClickHouseCluster:
         except Exception:
             logging.warning("Cleanup failed:{e}")
 
+        if PER_TEST_COVERAGE_DIR:
+            # The processes arm themselves with it on every start. A cluster that outlives
+            # the module is re-armed over SQL; see `arm_per_test_coverage_for_module`.
+            self.coverage_env_test_name = current_coverage_test_name()
+            coverage_env = {"CLICKHOUSE_COVERAGE_TEST_NAME": self.coverage_env_test_name or ""}
+            self.env_variables.update(coverage_env)
+            for instance in self.instances.values():
+                instance.env_variables.update(coverage_env)
+
         try:
             for instance in list(self.instances.values()):
                 logging.debug(f"Setup directory for instance: {instance.name}")
@@ -4509,6 +4502,24 @@ class ClickHouseCluster:
             self.shutdown()
             raise
 
+    def collect_per_test_coverage(self) -> None:
+        """Move the coverage files of all processes of this cluster to `PER_TEST_COVERAGE_DIR`.
+
+        They lie in `coverage/` next to the log of each process (`<instance>/logs`,
+        `keeper<N>/log`), and the next start of the cluster wipes these directories.
+        """
+        if not PER_TEST_COVERAGE_DIR:
+            return
+        os.makedirs(PER_TEST_COVERAGE_DIR, exist_ok=True)
+        for path in glob.glob(p.join(self.instances_dir, "*", "*", "coverage", "*.tsv")):
+            process_dir = p.basename(p.dirname(p.dirname(p.dirname(path))))
+            target = p.join(
+                PER_TEST_COVERAGE_DIR, f"{self.project_name}_{process_dir}_{p.basename(path)}"
+            )
+            with open(path, "rb") as source, open(target, "ab") as destination:
+                shutil.copyfileobj(source, destination)
+            os.remove(path)
+
     def save_logs(self) -> None:
         # Launch the `docker-compose logs` in background to collect all the logs
         # into the docker_logs_path file during the run
@@ -4534,9 +4545,6 @@ class ClickHouseCluster:
         failure_logs = []
 
         if self.up_called:
-            if self.is_up:
-                for instance in self.instances.values():
-                    instance.flush_per_test_coverage()
             if self in started_clusters:
                 started_clusters.remove(self)
             if kill:
@@ -4595,6 +4603,9 @@ class ClickHouseCluster:
                 logging.debug(
                     "Down + remove orphans failed during shutdown. {}".format(repr(e))
                 )
+
+            # The processes have exited, which flushed their coverage.
+            self.collect_per_test_coverage()
 
             # Finish `docker compose logs --follow` process, just in case
             # It should be already finished because of the `docker compose down`
@@ -5329,26 +5340,19 @@ class ClickHouseInstance:
     def arm_per_test_coverage(self, restarted=True):
         """Attribute the coverage of this server to the running test module.
 
-        Runs after every start of the server, which forgets the name, and with
-        `restarted=False` when the next module starts; switching the name flushes the
-        counters of the previous module into `system.coverage_log`. Arming resets the counters, so the startup of the server
-        itself is not attributed. Servers of other versions (`image=...`,
-        `with_installed_binary`) have no `WITH_COVERAGE_DEPTH` and are skipped.
+        A server arms itself on every start with the module the cluster was started in.
+        This switches it over SQL when a cluster serves several modules (`restarted=False`
+        at the start of the next one, or after a restart, which reverts to the first
+        module); the switch flushes the counters of the previous module.
         """
-        test_name = current_coverage_test_name()
-        if not PER_TEST_COVERAGE_DIR or not test_name:
+        if not PER_TEST_COVERAGE_DIR:
             return
-        if not restarted and test_name == self.coverage_test_name:
+        if restarted:
+            self.coverage_test_name = self.cluster.coverage_env_test_name
+        test_name = current_coverage_test_name()
+        if not test_name or test_name == self.coverage_test_name:
             return
         try:
-            depth = self.query(
-                "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE_DEPTH'",
-                settings=COVERAGE_QUERY_SETTINGS,
-            )
-            if depth.strip().upper() not in ("ON", "1"):
-                return
-            self.query(COVERAGE_LOG_DDL, settings=COVERAGE_QUERY_SETTINGS)
-            self.query(COVERAGE_INDIRECT_CALLS_DDL, settings=COVERAGE_QUERY_SETTINGS)
             self.query(
                 f"SYSTEM SET COVERAGE TEST {escape_sql_string(test_name)}",
                 timeout=300,
@@ -5356,45 +5360,20 @@ class ClickHouseInstance:
             )
             self.coverage_test_name = test_name
         except Exception as e:
-            logging.warning(f"Cannot arm per-module coverage on {self.name}: {e}")
+            logging.warning(f"Cannot switch per-module coverage of {self.name} to {test_name}: {e}")
 
     def flush_per_test_coverage(self):
-        """Move the coverage of a server that is about to stop into `PER_TEST_COVERAGE_DIR`.
-
-        The rows are read and truncated, so every dump holds only new flushes and none is
-        exported twice, however often the server restarts. Reading happens before the stop
-        because a test may leave the server down, and the cluster start wipes the instance
-        directory. The rows are read without `FINAL`: several flushes of one module are
-        summed by the exporter.
-        """
-        if self.coverage_test_name is None:
+        """Flush the coverage of a server that is about to be killed, which skips the flush at exit."""
+        if not PER_TEST_COVERAGE_DIR or self.coverage_test_name is None:
             return
-        self.coverage_test_name = None
         try:
-            self.query("SYSTEM SET COVERAGE TEST ''", timeout=300, settings=COVERAGE_QUERY_SETTINGS)
-            lines = self.query(
-                "SELECT test_name, file, line_start, line_end, min_depth, branch_flag "
-                "FROM system.coverage_log WHERE notEmpty(test_name) FORMAT TSV",
-                timeout=600,
+            self.query(
+                f"SYSTEM SET COVERAGE TEST {escape_sql_string(self.coverage_test_name)}",
+                timeout=300,
                 settings=COVERAGE_QUERY_SETTINGS,
             )
-            indirect_calls = self.query(
-                "SELECT test_name, caller_name_hash, caller_func_hash, callee_offset, call_count "
-                "FROM system.coverage_indirect_calls WHERE notEmpty(test_name) FORMAT TSV",
-                timeout=600,
-                settings=COVERAGE_QUERY_SETTINGS,
-            )
-            self.query("TRUNCATE TABLE system.coverage_log", settings=COVERAGE_QUERY_SETTINGS)
-            self.query("TRUNCATE TABLE system.coverage_indirect_calls", settings=COVERAGE_QUERY_SETTINGS)
         except Exception as e:
-            logging.warning(f"Cannot dump per-module coverage of {self.name}: {e}")
-            return
-        os.makedirs(PER_TEST_COVERAGE_DIR, exist_ok=True)
-        prefix = p.join(PER_TEST_COVERAGE_DIR, f"{self.cluster.project_name}_{self.name}")
-        with open(f"{prefix}.lines.tsv", "a") as f:
-            f.write(lines)
-        with open(f"{prefix}.indirect_calls.tsv", "a") as f:
-            f.write(indirect_calls)
+            logging.warning(f"Cannot flush per-module coverage of {self.name}: {e}")
 
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
@@ -5843,7 +5822,8 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return False
 
-            self.flush_per_test_coverage()
+            if kill:
+                self.flush_per_test_coverage()
 
             # Under LLVM coverage the server runs several times slower and writes its
             # .profraw only on a graceful shutdown (the libprofile atexit handler, or
