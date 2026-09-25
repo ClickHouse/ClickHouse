@@ -22,6 +22,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <array>
+#include <optional>
 #include <string_view>
 
 namespace
@@ -48,6 +49,21 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
+/// An element of another type leaves the argument malformed, which the caller reports as
+/// `BAD_ARGUMENTS` instead of letting it escape as an internal `BAD_GET` from `Field::safeGet`.
+static std::optional<Strings> tryExtractStrings(const Array & elements)
+{
+    Strings result;
+    result.reserve(elements.size());
+    for (const auto & element : elements)
+    {
+        if (element.getType() != Field::Types::String)
+            return {};
+        result.push_back(element.safeGet<String>());
+    }
+    return result;
+}
+
 /// Both `['a', 'b']` and `array('a', 'b')` are parsed as `_CAST(['a', 'b'], 'Array(String)')` with analyzer.
 /// While for non-analyzer there is no _CAST
 static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
@@ -65,20 +81,21 @@ static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
 
     if (array)
     {
-        if (const auto * literal = array->as<ASTLiteral>())
+        if (const auto * literal = array->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::Array)
         {
-            Strings result;
-            for (const auto & element : literal->value.safeGet<Array>())
-                result.push_back(element.safeGet<String>());
-            return result;
+            if (auto parts = tryExtractStrings(literal->value.safeGet<Array>()))
+                return std::move(*parts);
         }
 
         if (const auto * expr_list = array->as<ASTExpressionList>())
         {
-            Strings result;
+            Array elements;
+            elements.reserve(expr_list->children.size());
             for (const auto & element : expr_list->children)
-                result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value.safeGet<String>());
-            return result;
+                elements.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value);
+
+            if (auto parts = tryExtractStrings(elements))
+                return std::move(*parts);
         }
     }
 
