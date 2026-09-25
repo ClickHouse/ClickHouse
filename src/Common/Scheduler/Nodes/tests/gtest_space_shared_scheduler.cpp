@@ -2059,18 +2059,18 @@ public:
     size_t workCallCount() const { return work_calls; }
     void runOnDedicatedSpill(std::function<void()> callback) { on_dedicated_spill = std::move(callback); }
     void setSpillTarget(const void * target) { spill_target = target; }
-    const void * getMemoryReservationSpillTarget() const override { return spill_target ? spill_target : this; }
+    const void * getMemoryPressureSpillTarget() const override { return spill_target ? spill_target : this; }
 
-    bool spillForMemoryReservation() override
+    MemoryPressureSpillResult spillForMemoryPressure() override
     {
         ++spill_calls;
         if (on_dedicated_spill)
             on_dedicated_spill();
         if (!spill_succeeds || spill_blocked || spillable_bytes <= 0)
-            return false;
+            return MemoryPressureSpillResult::NotSpillable;
         spill_pending = false;
         ++completed_spills;
-        return true;
+        return MemoryPressureSpillResult::Progress;
     }
 
 private:

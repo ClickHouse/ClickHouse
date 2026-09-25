@@ -56,7 +56,9 @@ void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
 
         if (should_run_dedicated_spill)
         {
-            const bool spilled = processor->spillForMemoryReservation();
+            const auto pressure_result = processor->spillForMemoryPressure();
+            const bool spilled = pressure_result == IProcessor::MemoryPressureSpillResult::Progress;
+            const bool spill_pending = pressure_result == IProcessor::MemoryPressureSpillResult::Pending;
             const Int64 memory_after = getCurrentQueryMemoryUsage();
 
             std::lock_guard lock(mutex);
@@ -72,6 +74,11 @@ void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
             {
                 episode->outcome.store(ForcedSpillOutcome::Progress, std::memory_order_relaxed);
                 episode->reclaimed_bytes.fetch_add(reclaimed_bytes, std::memory_order_relaxed);
+            }
+            if (spill_pending)
+            {
+                state->second.spill_requested = true;
+                return;
             }
             completeForcedSpillProcessor(episode, state->second);
             return;
@@ -260,11 +267,23 @@ void MemorySpillScheduler::executeForcedSpill(const MemoryRecoveryEpisodePtr & e
 
             const Int64 memory_before = getCurrentQueryMemoryUsage();
             bool spilled = false;
-            if (visited_targets.insert(processor->getMemoryReservationSpillTarget()).second)
+            if (visited_targets.insert(processor->getMemoryPressureSpillTarget()).second)
             {
                 if (lifetime)
                     visited_lifetimes.push_back(lifetime);
-                spilled = processor->spillForMemoryReservation();
+                const auto pressure_result = processor->spillForMemoryPressure();
+                spilled = pressure_result == IProcessor::MemoryPressureSpillResult::Progress;
+                if (pressure_result == IProcessor::MemoryPressureSpillResult::Pending)
+                {
+                    std::lock_guard lock(mutex);
+                    auto state = processor_states.find(processor);
+                    if (state != processor_states.end())
+                    {
+                        state->second.dedicated_spill_in_progress = false;
+                        state->second.spill_requested = true;
+                    }
+                    continue;
+                }
             }
             const Int64 reclaimed_bytes = std::max<Int64>(memory_before - getCurrentQueryMemoryUsage(), 0);
 

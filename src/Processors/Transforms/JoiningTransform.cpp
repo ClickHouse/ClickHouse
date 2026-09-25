@@ -421,18 +421,30 @@ bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
     return false;
 }
 
-const void * FillingRightJoinSideTransform::getMemoryReservationSpillTarget() const
+const void * FillingRightJoinSideTransform::getMemoryPressureSpillTarget() const
 {
     return join.get();
 }
 
-bool FillingRightJoinSideTransform::spillForMemoryReservation()
+IProcessor::MemoryPressureSpillResult FillingRightJoinSideTransform::spillForMemoryPressure()
 {
     if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
-        return grace_join->spillForMemoryReservation();
+    {
+        if (grace_join->trySpillForMemoryPressure())
+            return MemoryPressureSpillResult::Progress;
+        return grace_join->hasPendingSpill()
+            ? MemoryPressureSpillResult::Pending
+            : MemoryPressureSpillResult::NotSpillable;
+    }
     if (auto * spilling_join = typeid_cast<SpillingHashJoin *>(join.get()))
-        return spilling_join->spillForMemoryReservation();
-    return false;
+    {
+        if (spilling_join->trySpillForMemoryPressure())
+            return MemoryPressureSpillResult::Progress;
+        return spilling_join->hasPendingMemoryPressureSpill()
+            ? MemoryPressureSpillResult::Pending
+            : MemoryPressureSpillResult::NotSpillable;
+    }
+    return MemoryPressureSpillResult::NotSpillable;
 }
 
 bool FillingRightJoinSideTransform::hasPendingSpill() const
@@ -440,7 +452,7 @@ bool FillingRightJoinSideTransform::hasPendingSpill() const
     if (const auto * grace_join = typeid_cast<const GraceHashJoin *>(join.get()))
         return grace_join->hasPendingSpill();
     if (const auto * spilling_join = typeid_cast<const SpillingHashJoin *>(join.get()))
-        return spilling_join->hasPendingMemoryReservationSpill();
+        return spilling_join->hasPendingMemoryPressureSpill();
     return false;
 }
 
@@ -619,18 +631,30 @@ bool DelayedJoinedBlocksTransform::spillOnSize(size_t bytes)
     return false;
 }
 
-const void * DelayedJoinedBlocksTransform::getMemoryReservationSpillTarget() const
+const void * DelayedJoinedBlocksTransform::getMemoryPressureSpillTarget() const
 {
     return join.get();
 }
 
-bool DelayedJoinedBlocksTransform::spillForMemoryReservation()
+IProcessor::MemoryPressureSpillResult DelayedJoinedBlocksTransform::spillForMemoryPressure()
 {
     if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
-        return grace_join->spillForMemoryReservation();
+    {
+        if (grace_join->trySpillForMemoryPressure())
+            return MemoryPressureSpillResult::Progress;
+        return grace_join->hasPendingSpill()
+            ? MemoryPressureSpillResult::Pending
+            : MemoryPressureSpillResult::NotSpillable;
+    }
     if (auto * spilling_join = typeid_cast<SpillingHashJoin *>(join.get()))
-        return spilling_join->spillForMemoryReservation();
-    return false;
+    {
+        if (spilling_join->trySpillForMemoryPressure())
+            return MemoryPressureSpillResult::Progress;
+        return spilling_join->hasPendingMemoryPressureSpill()
+            ? MemoryPressureSpillResult::Pending
+            : MemoryPressureSpillResult::NotSpillable;
+    }
+    return MemoryPressureSpillResult::NotSpillable;
 }
 
 bool DelayedJoinedBlocksTransform::hasPendingSpill() const
@@ -638,7 +662,7 @@ bool DelayedJoinedBlocksTransform::hasPendingSpill() const
     if (const auto * grace_join = typeid_cast<const GraceHashJoin *>(join.get()))
         return grace_join->hasPendingSpill();
     if (const auto * spilling_join = typeid_cast<const SpillingHashJoin *>(join.get()))
-        return spilling_join->hasPendingMemoryReservationSpill();
+        return spilling_join->hasPendingMemoryPressureSpill();
     return false;
 }
 
