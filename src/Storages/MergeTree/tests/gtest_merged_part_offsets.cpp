@@ -585,7 +585,7 @@ TEST(PackedPartOffsetsTest, MapOffsetsUnsortedOffsets)
     for (size_t i = 0; i < values.size(); ++i)
         to_map.push_back(static_cast<UInt32>(i));
 
-    std::mt19937 gen(42);
+    std::mt19937 gen(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
     std::shuffle(to_map.begin(), to_map.end(), gen);
 
     expectMapOffsetsMatchesLookup(offsets, to_map, "shuffled offsets");
