@@ -17,7 +17,7 @@ p	Map(String, Nullable(Tuple(z Nullable(UInt8))))
 --- the inferred type carries the struct NULL into a table, no hint anywhere
 Nullable(Tuple(`1` Nullable(Float64), `2` Nullable(Float64)))	0
 Nullable(Tuple(`1` Nullable(Float64), `2` Nullable(Float64)))	1
---- allow_experimental_nullable_tuple_type = 0: the type must stay one CREATE TABLE accepts
+--- enable_nullable_tuple_type = 0: the type must stay one CREATE TABLE accepts
 p	Tuple(\n    `1` Nullable(Float64),\n    `2` Nullable(Float64))					
 --- schema_inference_make_columns_nullable = 0
 p	Tuple(\n    `1` Float64,\n    `2` Float64)					
