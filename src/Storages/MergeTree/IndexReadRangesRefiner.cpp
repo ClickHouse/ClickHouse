@@ -28,7 +28,7 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
         return ranges;
 
     const auto & skip_index_input = index_build_context->read_ranges.at(info.part_index_in_query);
-    const auto & all_updated_columns = info.alter_conversions->getAllUpdatedColumns();
+    const auto & all_updated_columns = info.alter_conversions->getColumnsWithStaleIndexes();
 
     /// Built once per part; concurrent callers wait on a shared future inside the pool.
     /// The same cached result is later reused by MergeTreeReaderIndex for granule- and row-level filtering.

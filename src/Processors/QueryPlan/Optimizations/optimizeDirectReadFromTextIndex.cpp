@@ -225,7 +225,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
             , context->getAccess()->getEnabledMaskingPolicies()
 #endif
         );
-        const auto & part_updated_columns = alter_conversions->getAllUpdatedColumns();
+        const auto & part_updated_columns = alter_conversions->getColumnsWithStaleIndexes();
         all_updated_columns.insert(part_updated_columns.begin(), part_updated_columns.end());
         has_patched_parts |= alter_conversions->hasPatches();
     }

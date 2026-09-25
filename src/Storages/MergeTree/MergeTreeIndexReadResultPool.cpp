@@ -239,7 +239,12 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     res->index_granules = std::move(index_granules);
 
-    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
+    /// The granules of the top-k index are compared against the threshold reached by the other parts,
+    /// so an index that does not describe the values the part returns (a pending update, `MODIFY COLUMN`,
+    /// `RENAME COLUMN` or `DROP COLUMN` of the indexed column) could make a granule holding the real top
+    /// rows look outside of the threshold. Deleted rows cannot: they only narrow the real range of values.
+    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
+        && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns))
     {
         res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             part_info,
