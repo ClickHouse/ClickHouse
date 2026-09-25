@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int INTEGER_TEXT_OVERFLOW;
 }
 
 
@@ -1096,14 +1097,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             type_to_parse = holder.get();
         }
 
+        /// A composite type cannot be promoted, so its elements are parsed at their own width.
+        const bool parse_composite = which_type.isArray() || which_type.isTuple() || which_type.isMap();
+        FormatSettings parse_settings = format_settings;
+        parse_settings.check_integer_text_overflow = parse_composite;
+
         const auto col = type_to_parse->createColumn();
         ReadBufferFromString in_buffer(src.safeGet<String>());
         try
         {
-            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, format_settings);
+            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, parse_settings);
         }
         catch (Exception & e)
         {
+            if (parse_composite && e.code() == ErrorCodes::INTEGER_TEXT_OVERFLOW)
+                return {};
+
             /// A value that ends before the deserializer expected is reported as an attempt to read after eof,
             /// which says nothing about the query - it reads like a problem with the data. Comparing a numeric
             /// column with an empty string, `WHERE n <> ''`, is a common mistake and deserves the same message

@@ -710,6 +710,7 @@
     M(1018, EXCHANGE_PEER_DISCONNECTED) \
     M(1019, QUERY_SLOT_ACQUISITION_TIMEOUT) \
     M(1020, MEMORY_RESERVATION_ACQUISITION_TIMEOUT) \
+    M(1021, INTEGER_TEXT_OVERFLOW) \
     /* Error codes do not have to be contiguous, they only have to be unique - this is checked by a `static_assert` below. */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES

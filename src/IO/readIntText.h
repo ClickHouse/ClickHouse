@@ -24,6 +24,7 @@ enum class ReadIntTextCheckOverflow : uint8_t
 void assertEOF(ReadBuffer & buf);
 [[noreturn]] void throwReadAfterEOF();
 [[noreturn]] void throwNumberWithoutDigits();
+[[noreturn]] void throwIntegerTextOverflow();
 
 template <int base, typename T, typename ReturnType, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 ReturnType readIntTextInBaseImpl(T & x, ReadBuffer & buf)
@@ -376,11 +377,12 @@ bool tryParseInt(T & x, std::string_view str)
 
 
 /** More efficient variant (about 1.5 times on real dataset). Differs from `readIntText` in following:
-  * - overflow can never be checked; `readIntText` takes the overflow policy as a template parameter;
+  * - overflow is not checked by default; unlike `readIntText`, the check holds at every width when asked for;
   * - a '-' on an unsigned type is not a sign: it is left in the buffer for the caller to reject;
   * - a repeated sign is not diagnosed: '+-' reports a field without digits, '-+' stops at the second one.
   */
-template <typename T, typename ReturnType = void>
+template <typename T, typename ReturnType = void,
+          ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -421,18 +423,53 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
         return ReturnType(false);
     }
 
+    /// A per-digit threshold test, so the bound holds at every width: `common::mulOverflow`, which
+    /// `readIntTextInBaseImpl` uses, is a no-op stub for the big-int types.
+    [[maybe_unused]] bool overflow = false;
+    [[maybe_unused]] make_unsigned_t<T> bound_div_10 = 0;
+    [[maybe_unused]] make_unsigned_t<T> bound_mod_10 = 0;
+    if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+    {
+        /// The tail negates the unsigned accumulator, so a negative signed value reaches `min(T)` at `max(T) + 1`.
+        const make_unsigned_t<T> bound = static_cast<make_unsigned_t<T>>(std::numeric_limits<T>::max())
+            + static_cast<make_unsigned_t<T>>(is_signed_v<T> && negative ? 1 : 0);
+        bound_div_10 = bound / 10;
+        bound_mod_10 = bound % 10;
+    }
+
     while (!buf.eof())
     {
         unsigned char value = *buf.position() - '0';
 
         if (value < 10)
         {
+            if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+            {
+                if (overflow || res > bound_div_10
+                    || (res == bound_div_10 && static_cast<make_unsigned_t<T>>(value) > bound_mod_10))
+                {
+                    overflow = true;
+                    ++buf.position();
+                    continue;
+                }
+            }
+
             res *= 10;
             res += value;
             ++buf.position();
         }
         else
             break;
+    }
+
+    if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+    {
+        if (overflow)
+        {
+            if constexpr (throw_exception)
+                throwIntegerTextOverflow();
+            return ReturnType(false);
+        }
     }
 
     /// See note about undefined behaviour above.
