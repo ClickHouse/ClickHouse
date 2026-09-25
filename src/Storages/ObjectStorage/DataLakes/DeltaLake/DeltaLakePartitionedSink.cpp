@@ -12,6 +12,9 @@
 #include <Core/UUID.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
@@ -151,6 +154,7 @@ namespace
 DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     DeltaLake::WriteTransactionPtr delta_transaction_,
     const Names & partition_columns_,
+    const NameSet & utc_adjusted_timestamp_columns_,
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
     SharedHeader sample_block_,
@@ -175,7 +179,7 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
 {
     delta_transaction->validateSchema(getHeader());
 
-    /// Per partition column: `toString(<cast>(<column>))` casts to the Delta write-schema type (like the data columns) so an out-of-range key is rejected (accurate) or truncated (plain) instead of being committed verbatim.
+    /// Each partition value is cast to the Delta write-schema type (like the data columns) so an out-of-range key is rejected (accurate) or truncated (plain) instead of being committed verbatim.
     const auto & write_schema = delta_transaction->getWriteSchema();
     partition_value_actions.reserve(partition_columns.size());
     partition_column_nullable.reserve(partition_columns.size());
@@ -191,8 +195,37 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
             accurate_write_cast ? "accurateCast" : "_CAST",
             make_intrusive<ASTIdentifier>(column),
             make_intrusive<ASTLiteral>(schema_column->type->getName()));
-        ASTPtr to_string_ast = makeASTFunction("toString", std::move(value_ast));
-        partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(to_string_ast));
+
+        /// The Delta form of each type: `boolean` the literals (not `bool_true_representation`'s
+        /// tokens), `decimal` exactly `scale` fractional digits, a UTC-adjusted `timestamp` the
+        /// protocol's ISO8601 `Z`, and the zone-less `timestamp_ntz` the space form it can parse.
+        const auto & value_type = removeNullable(schema_column->type);
+        ASTPtr text_ast;
+        if (isBool(value_type))
+            /// `if` is not usable here: a NULL condition takes the `false` branch, committing a value.
+            text_ast = makeASTFunction(
+                "multiIf",
+                makeASTFunction("isNull", value_ast),
+                make_intrusive<ASTLiteral>(Field()),
+                value_ast,
+                make_intrusive<ASTLiteral>("true"),
+                make_intrusive<ASTLiteral>("false"));
+        else if (isDecimal(value_type))
+            text_ast = makeASTFunction(
+                "toDecimalString",
+                value_ast,
+                make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(getDecimalScale(*value_type)))));
+        else if (isDateTime64(value_type) && utc_adjusted_timestamp_columns_.contains(column))
+            text_ast = makeASTFunction(
+                "formatDateTime",
+                value_ast,
+                make_intrusive<ASTLiteral>("%Y-%m-%dT%H:%i:%S.%fZ"),
+                make_intrusive<ASTLiteral>("UTC"));
+        else if (isDateTime64(value_type))
+            text_ast = makeASTFunction("toString", value_ast, make_intrusive<ASTLiteral>("UTC"));
+        else
+            text_ast = makeASTFunction("toString", value_ast);
+        partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(text_ast));
 
         partition_column_nullable.push_back(schema_column->type->isNullable());
     }
@@ -251,7 +284,7 @@ void DeltaLakePartitionedSink::onException(std::exception_ptr)
 
 void DeltaLakePartitionedSink::consume(Chunk & chunk)
 {
-    /// Serialized (toString) value of each partition column, preserving nulls.
+    /// Serialized value of each partition column, preserving nulls.
     const Columns partition_value_columns = computePartitionValueColumns(chunk);
 
     /// Not all columns are serialized using the format writer

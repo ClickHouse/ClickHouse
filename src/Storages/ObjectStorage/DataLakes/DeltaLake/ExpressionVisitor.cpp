@@ -776,7 +776,6 @@ private:
             /// "The 128bit integer
             /// is split into the most significant 64 bits in `value_ms`, and the least significant 64
             /// bits in `value_ls`"
-            /// Also in clickhouse decimal is in little endian, so we switch the order for Decimal128.
 
             DB::Field value;
             if (precision <= DB::DecimalUtils::max_precision<DB::Decimal32>)
@@ -791,7 +790,7 @@ private:
             }
             else if (precision <= DB::DecimalUtils::max_precision<DB::Decimal128>)
             {
-                Int128 combined_value = (static_cast<DB::Int128>(value_ls) << 64) | value_ms;
+                const Int128 combined_value = (static_cast<DB::Int128>(value_ms) << 64) | static_cast<DB::Int128>(value_ls);
                 value = DB::DecimalField<DB::Decimal128>(combined_value, scale);
                 state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal128>(precision, scale));
             }

@@ -44,6 +44,10 @@ DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi:
 /// collapses. Used for catalog registration so the registered schema matches the `_delta_log` on storage.
 Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(ffi::SharedSnapshot * snapshot);
 
+/// Which of `columns` are Delta `timestamp` rather than `timestamp_ntz`: the first is adjusted to UTC, the
+/// second has no time zone, and every schema above collapses both to `DateTime64(6)`.
+DB::NameSet getUtcAdjustedTimestampColumns(ffi::SharedSnapshot * snapshot, const DB::Names & columns);
+
 /// Validate that every column type round-trips through Delta metadata (throwing otherwise) before the create-table FFI.
 void validateSchemaForDeltaCreate(const DB::NamesAndTypesList & schema);
 
