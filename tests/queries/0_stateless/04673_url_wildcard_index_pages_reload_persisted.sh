@@ -55,7 +55,7 @@ show_table_and_plan() {
 echo '--- A: explicit structure, created with the setting on, reloaded with it off'
 D="${WORKING_FOLDER}/a"; mkdir -p "$D"
 run_local "$D" "
-    SET allow_experimental_url_wildcard_from_index_pages = 1;
+    SET allow_url_wildcard_from_index_pages = 1;
     CREATE DATABASE d;
     CREATE TABLE d.t (x Int32) AS url('${GLOB_URL}', JSONEachRow, 'x Int32');
     SELECT 'created', engine FROM system.tables WHERE database = 'd' AND name = 't';"
@@ -67,7 +67,7 @@ echo '--- A2: structure inferred, same cycle'
 # would instead spend the whole schema-inference retry budget against the unreachable host.
 D="${WORKING_FOLDER}/a2"; mkdir -p "$D"
 run_local "$D" "
-    SET allow_experimental_url_wildcard_from_index_pages = 1;
+    SET allow_url_wildcard_from_index_pages = 1;
     CREATE DATABASE d;
     CREATE TABLE d.t (line String) AS url('${GLOB_URL}', LineAsString);
     SELECT 'created', engine FROM system.tables WHERE database = 'd' AND name = 't';"
@@ -77,7 +77,7 @@ run_local "$D" "SELECT count() FROM d.t;"
 echo '--- C: ENGINE = URL keeps its own behaviour'
 D="${WORKING_FOLDER}/c"; mkdir -p "$D"
 run_local "$D" "
-    SET allow_experimental_url_wildcard_from_index_pages = 1;
+    SET allow_url_wildcard_from_index_pages = 1;
     CREATE DATABASE d;
     CREATE TABLE d.u (x Int32) ENGINE = URL('${GLOB_URL}', 'TSV');
     SELECT 'created', engine FROM system.tables WHERE database = 'd' AND name = 'u';"
@@ -101,7 +101,7 @@ echo '--- E: INSERT INTO FUNCTION reaches a writable storage'
 # exit says the writable storage was selected: the read-only branch refuses a glob path outright.
 D="${WORKING_FOLDER}/e"; mkdir -p "$D"
 run_local_status "$D" "
-    SET allow_experimental_url_wildcard_from_index_pages = 1;
+    SET allow_url_wildcard_from_index_pages = 1;
     INSERT INTO FUNCTION url('${GLOB_URL}', JSONEachRow, 'x Int32') SELECT * FROM numbers(0);"
 run_local_status "$D" "INSERT INTO FUNCTION url('${GLOB_URL}', JSONEachRow, 'x Int32') SELECT * FROM numbers(0);"
 # One row still has to reach the host, which proves the arm above is not passing by short-circuit.
@@ -119,7 +119,7 @@ echo '--- G: a query against url() still requires the setting'
 D="${WORKING_FOLDER}/g"; mkdir -p "$D"
 run_local "$D" "SELECT * FROM url('${GLOB_URL}', JSONEachRow, 'x Int32');"
 run_local "$D" "
-    SET allow_experimental_url_wildcard_from_index_pages = 1;
+    SET allow_url_wildcard_from_index_pages = 1;
     SELECT * FROM url('${GLOB_URL}', JSONEachRow, 'x Int32');"
 
 rm -rf "${WORKING_FOLDER}"
