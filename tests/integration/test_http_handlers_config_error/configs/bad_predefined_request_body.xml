@@ -1,0 +1,13 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <url>/bad_predefined_request_body</url>
+            <methods>POST</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>INSERT INTO test_table SELECT id, {_request_body:String} FROM input('id UInt32')</query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

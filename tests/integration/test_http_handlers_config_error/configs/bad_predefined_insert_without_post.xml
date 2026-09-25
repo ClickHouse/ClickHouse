@@ -1,0 +1,13 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <url>/bad_predefined_insert_without_post</url>
+            <methods>PUT,DELETE</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>INSERT INTO default.t FORMAT TSV</query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

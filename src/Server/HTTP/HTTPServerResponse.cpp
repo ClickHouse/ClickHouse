@@ -143,7 +143,7 @@ void HTTPServerResponse::redirect(const std::string & uri, HTTPStatus status)
 
 void HTTPServerResponse::allowKeepAliveIFFRequestIsFullyRead()
 {
-    /// Connection can only be reused if we've fully read the previous request and all its POST data.
+    /// Connection can only be reused if we've fully read the previous request and all its body data.
     /// Otherwise we'd misinterpret the leftover data as part of the next request's header.
     /// HTTPServerRequest::canKeepAlive() checks that request stream is bounded and is fully read.
     if (!request || (request->getExpectContinue() && getStatus() != Poco::Net::HTTPResponse::HTTP_CONTINUE) || !request->canKeepAlive())

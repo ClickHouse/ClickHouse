@@ -1,0 +1,13 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <url>/bad_predefined_body</url>
+            <methods>POST</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>EXECUTE AS default INSERT INTO test_table FORMAT TSV</query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>
