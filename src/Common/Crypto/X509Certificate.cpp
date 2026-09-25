@@ -1,5 +1,6 @@
 #include <Common/Crypto/X509Certificate.h>
 
+#include <Common/StringUtils.h>
 #include <base/scope_guard.h>
 
 #include <ctime>
@@ -274,7 +275,26 @@ void X509Certificate::Subjects::insert(const String & subject_type_, String && s
 
 void X509Certificate::Subjects::insert(Type type_, String && subject)
 {
+    if (type_ == Type::SAN)
+        canonicalizeSANTypePrefix(subject);
     subjects[static_cast<size_t>(type_)].insert(std::move(subject));
+}
+
+void X509Certificate::Subjects::canonicalizeSANTypePrefix(String & subject)
+{
+    /// Subjects extracted from a certificate carry an uppercase type prefix ("DNS:", "URI:", "EMAIL:"),
+    /// and the matching in `Authentication.cpp` dispatches on that exact spelling. Configured subjects
+    /// are often copied from `openssl x509 -text`, which prints the same types in lowercase
+    /// (e.g. "email:alice@example.com"), so accept any case of a recognized type prefix and store
+    /// the canonical uppercase form. The value after the prefix is left untouched.
+    for (std::string_view prefix : {"DNS:", "URI:", "EMAIL:"})
+    {
+        if (subject.size() >= prefix.size() && equalsCaseInsensitive(std::string_view(subject).substr(0, prefix.size()), prefix))
+        {
+            subject.replace(0, prefix.size(), prefix);
+            return;
+        }
+    }
 }
 
 X509Certificate::Subjects::Type X509Certificate::Subjects::parseSubjectType(const String & type_)
@@ -332,14 +352,20 @@ X509Certificate::Subjects X509Certificate::extractAllSubjects() const
     {
         const GENERAL_NAME * name = static_cast<const GENERAL_NAME *>(OPENSSL_sk_value(reinterpret_cast<const _STACK *>(names), i));
 
-        if (name->type == GEN_DNS || name->type == GEN_URI)
+        if (name->type == GEN_DNS || name->type == GEN_URI || name->type == GEN_EMAIL)
         {
             const ASN1_IA5STRING * ia5 = name->d.ia5;
             const char * data = reinterpret_cast<const char *>(ASN1_STRING_get0_data(ia5));
             std::size_t len = ASN1_STRING_length(ia5);
             if (data && len > 0)
             {
-                std::string prefix = (name->type == GEN_DNS) ? "DNS:" : "URI:";
+                std::string prefix;
+                if (name->type == GEN_DNS)
+                    prefix = "DNS:";
+                else if (name->type == GEN_URI)
+                    prefix = "URI:";
+                else if (name->type == GEN_EMAIL)
+                    prefix = "EMAIL:";
                 subjects.insert(Subjects::Type::SAN, prefix + std::string(data, len));
             }
         }
