@@ -1255,6 +1255,11 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
           * once per entry, and not while a storage snapshot is built: a partition expression is arbitrary
           * user SQL and must not be evaluated on the read path.
           *
+          * The submitting replica already replaced every partition expression of an entry with the
+          * `ID '...'` it resolved to (`StorageReplicatedMergeTree::mutate`), so for such an entry this
+          * evaluates nothing - no user SQL runs under `update_mutations_mutex` - and every replica gets
+          * the same partitions. Only an entry created by an older version may still carry an expression.
+          *
           * The entries were accepted by the replica that submitted them, so a failure here is an anomaly
           * (a partition key that this replica reads differently, say). Leave the partition ids unresolved
           * then - such a command is applied on the fly to no partition at all, which only defers its

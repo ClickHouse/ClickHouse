@@ -124,9 +124,10 @@ struct MutationCommand
     bool has_partition = false;
 
     /// The ids of the partitions the command is scoped to, resolved from the partition expression once,
-    /// when the mutation entry is created or loaded (see `MergeTreeData::resolvePartitionIdsOfScopedCommands`).
-    /// A partition expression is arbitrary user SQL, so it must not be evaluated on the read path; it is
-    /// not persisted with the entry either and is resolved again when the entry is read back.
+    /// when the mutation entry is created (see `MergeTreeData::resolvePartitionIdsOfScopedCommands`).
+    /// A partition expression is arbitrary user SQL, so it must not be evaluated on the read path. The
+    /// resolution also rewrites the expression in `ast_text` to `ID '...'`, so the persisted entry pins
+    /// the same partitions and resolving them again when the entry is read back evaluates nothing.
     /// Stays `std::nullopt` for a command with no partition, and for a scoped command whose expression
     /// could not be resolved - a consumer that has to respect the scope then applies the command to no
     /// partition at all rather than to the ones it does not name.

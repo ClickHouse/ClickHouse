@@ -1768,9 +1768,12 @@ void StorageMergeTree::loadMutations()
                 MergeTreeMutationEntry entry(disk, relative_data_path, it->name());
                 UInt64 block_number = entry.block_number;
 
-                /** The partition ids of the scoped commands are not persisted with the entry, so resolve
-                  * them again here - once, and not while a storage snapshot is built. The entry was
-                  * accepted when it was created, so a failure here is an anomaly; leave the partition ids
+                /** Only the command text is persisted with the entry, so resolve the partition ids of the
+                  * scoped commands again here - once, and not while a storage snapshot is built. An entry
+                  * created by this version names its partitions as `ID '...'` already, so this reads back
+                  * exactly the partitions resolved at creation and evaluates nothing; an older entry may
+                  * still carry a partition expression. The entry was accepted when it was created, so a
+                  * failure here is an anomaly; leave the partition ids
                   * unresolved then - such a command is applied on the fly to no partition at all, which
                   * only defers its effect until the mutation materializes - instead of failing to load
                   * the table.

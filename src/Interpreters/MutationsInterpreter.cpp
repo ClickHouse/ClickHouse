@@ -325,12 +325,18 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     /// again would let the rows the mutation touches drift from the ones the pending on-the-fly reads
     /// have already been answering from, and the expression may even contain a subquery over the table
     /// that is being read. The expression is evaluated below only for an entry left unresolved.
-    if (resolved_partition_ids && !resolved_partition_ids->empty())
+    if (resolved_partition_ids)
     {
         /// Ordered, so that the built filter does not depend on the iteration order of the set.
         const std::set<String> partition_ids(resolved_partition_ids->begin(), resolved_partition_ids->end());
 
-        if (partition_ids.size() == 1)
+        if (partition_ids.empty())
+        {
+            /// Unreachable, as `isCommandScopedToPartitions` requires at least one partition; an engaged
+            /// but empty set matches no partition here, as it does in the other consumers of the ids.
+            partition_predicate_as_ast_func = make_intrusive<ASTLiteral>(Field(UInt8(0)));
+        }
+        else if (partition_ids.size() == 1)
         {
             partition_predicate_as_ast_func = makeASTOperator("equals",
                         make_intrusive<ASTIdentifier>("_partition_id"),

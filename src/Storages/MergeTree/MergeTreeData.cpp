@@ -801,6 +801,13 @@ void MergeTreeData::MutationsSnapshotBase::filterCommandsOutsidePartition(Mutati
 
 void MergeTreeData::resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context) const
 {
+    auto make_partition_id_ast = [](const String & partition_id)
+    {
+        auto partition = make_intrusive<ASTPartition>();
+        partition->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
+        return partition;
+    };
+
     for (auto & command : commands)
     {
         if (!command.has_partition || command.partition_ids)
@@ -810,17 +817,47 @@ void MergeTreeData::resolvePartitionIdsOfScopedCommands(MutationCommands & comma
         if (!command_ast)
             continue;
 
-        NameSet partition_ids;
+        /// Resolved before the AST is opened for editing, so that an expression which cannot be
+        /// resolved throws with the command left untouched.
+        std::vector<String> resolved;
         if (const auto * partitions = command_ast->partitions)
         {
             for (const auto & partition : partitions->children)
-                partition_ids.insert(getPartitionIDFromQuery(partition, local_context, nullptr));
+                resolved.push_back(getPartitionIDFromQuery(partition, local_context, nullptr));
         }
         else if (const auto * partition = command_ast->partition)
         {
-            partition_ids.insert(getPartitionIDFromQuery(ASTPtr(partition->clone()), local_context, nullptr));
+            resolved.push_back(getPartitionIDFromQuery(ASTPtr(partition->clone()), local_context, nullptr));
         }
 
+        /// Every partition expression is replaced with the `ID '...'` it resolves to, so the command
+        /// text that is persisted - in `mutation_*.txt` or in the `/mutations` znode - names exactly the
+        /// partitions resolved here. Whatever parses it again later (loading the entry after a restart,
+        /// another replica, the rewrites of `AlterConversions`) gets the same partitions back without
+        /// evaluating any user SQL.
+        auto handle = command.mutateAst();
+        if (auto * partitions = handle->partitions)
+        {
+            chassert(partitions->children.size() == resolved.size());
+            for (size_t i = 0; i < resolved.size(); ++i)
+                partitions->children[i] = make_partition_id_ast(resolved[i]);
+        }
+        else if (const auto * partition = handle->partition)
+        {
+            chassert(resolved.size() == 1);
+            for (auto & child : handle->children)
+            {
+                if (child.get() == partition)
+                {
+                    child = make_partition_id_ast(resolved.front());
+                    handle->partition = child.get();
+                    break;
+                }
+            }
+        }
+
+        NameSet partition_ids(resolved.begin(), resolved.end());
+        handle.commit();
         command.partition_ids = std::move(partition_ids);
     }
 }

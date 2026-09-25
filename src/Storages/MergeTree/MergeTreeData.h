@@ -1429,9 +1429,11 @@ public:
       *
       * A partition expression is arbitrary user SQL (`getPartitionIDFromQuery` ends in
       * `evaluateConstantExpression`, and the expression may even contain a subquery over the table
-      * being read), so it is resolved exactly once - when the mutation entry is created or loaded -
-      * and never while a storage snapshot is being built. Only the commands that have a partition are
-      * parsed, so an entry of the ordinary kind pays nothing here.
+      * being read), so it is resolved exactly once - when the mutation entry is created - and never
+      * while a storage snapshot is being built. The expression is also replaced in `ast_text` with the
+      * `ID '...'` it resolved to, so the persisted entry pins the partitions: loading it again after a
+      * restart or on another replica resolves the same ids and evaluates nothing. Only the commands that
+      * have a partition are parsed, so an entry of the ordinary kind pays nothing here.
       */
     void resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context) const;
 
