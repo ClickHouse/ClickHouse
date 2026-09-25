@@ -727,10 +727,8 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchanges
     EXPECT_EQ(restored->getFilterName(), "f");
     EXPECT_EQ(restored->getFilterColumnName(), "x");
     /// A stream below the filter-exchanges version omits `join_runtime_filter_exact_bytes_limit`, so
-    /// the reader takes that setting's default, 512 KiB, not the sender's limit (`BLOOM_BYTES`).
-    auto expected_geometry = makeGeometry();
-    expected_geometry.exact_bytes_limit = 512 * 1024;
-    expectGeometryMatches(restored->getGeometry(), expected_geometry);
+    /// the reader bounds the exact phase by the bloom filter size.
+    expectGeometryMatches(restored->getGeometry(), makeGeometry());
 }
 
 TEST(RuntimeFilterSerialization, MergeStepRequiresRuntimeFilterExchangesVersion)
