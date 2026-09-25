@@ -16,6 +16,12 @@ public:
     // WITH a AS (SELECT 1) SELECT * FROM a AS b; cte_name will be `a`.
     String cte_name;
 
+    /// Set when this subquery replaced a reference to an element of a `WITH RECURSIVE` list, so that the copy
+    /// still binds its own self-reference: a substituted copy reaches the query tree builder in FROM position,
+    /// where nothing else records that its list was recursive. A WITH element is marked from its own list
+    /// instead, with this flag unset. Never set without `cte_name`, which names the table binding uses.
+    bool recursive_with = false;
+
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Subquery"; }
 

@@ -1,0 +1,30 @@
+the recursive CTE is shadowed by a same-named plain CTE
+[10,20,30]	[10,20,30]
+the same view after a reload
+[10,20,30]
+the shadowing plain CTE is itself a UNION
+[10,20,30,999]	[10,20,30,999]
+the shadowing plain CTE is consumed by IN
+[10,20,30]	[10,20,30]
+the name is shadowed at two nesting levels
+[20,40,60]	[20,40,60]
+control: the inner CTE has another name, so nothing is shadowed
+[10,20,30]	[10,20,30]
+control: the recursive CTE is read directly, unqualified and qualified
+[1,2,3]	[1,2,3]
+control: a non-recursive sibling in the same WITH RECURSIVE list
+[101,102,103]	[101,102,103]
+the stored definition is self-contained: read with enable_global_with_statement = 0
+[10,20,30]	[10,20,30]
+the view is expanded into the calling query instead: analyzer_inline_views = 1
+[10,20,30]	[10,20,30]
+neither view loads a dependency
+mv_shadowed	[]
+v_shadowed	[]
+boundary: an EXCEPT body is refused live and when stored
+boundary: a UNION DISTINCT body is refused live and when stored
+boundary: the old analyzer refuses WITH RECURSIVE, live and stored
+boundary: a recursive CTE as the right argument of IN
+[1,2,3]
+boundary: IN reached from inside the shadowing CTE body
+[]	[]

@@ -19,7 +19,15 @@ class ApplyWithSubqueryVisitor
 public:
     struct Data
     {
-        std::map<String, ASTPtr> subqueries;
+        /// A CTE body together with whether its list was `WITH RECURSIVE`, kept in one entry so that
+        /// re-declaring the name in a nested list replaces both at once.
+        struct Subquery
+        {
+            ASTPtr ast;
+            bool recursive_with = false;
+        };
+
+        std::map<String, Subquery> subqueries;
         std::map<String, ASTPtr> literals;
         /// Expression aliases declared with `enable_scopes_for_with_statement` disabled. They reach every
         /// nested select, including through one that does not resolve them itself, so they are kept apart

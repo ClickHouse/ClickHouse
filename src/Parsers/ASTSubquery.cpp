@@ -19,6 +19,8 @@ void ASTSubquery::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "Subquery");
     if (!cte_name.empty())
         w.writeString("cte_name", cte_name);
+    if (recursive_with)
+        w.writeBool("recursive_with", true);
     w.writeAlias(*this);
     w.writeChildren(children);
 }
@@ -27,6 +29,7 @@ void ASTSubquery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     cte_name = r.getString("cte_name");
+    recursive_with = r.getBool("recursive_with");
     r.readAlias(*this);
 
     /// `ParserSubquery` only ever stores an `ASTSelectWithUnionQuery` here: the plain form comes from
@@ -43,6 +46,12 @@ void ASTSubquery::readJSON(const Poco::JSON::Object & json)
     /// so the invariant must hold after JSON deserialization.
     if (cte_name.empty())
     {
+        /// `recursive_with` makes the query tree builder mark this subquery as a recursive CTE, whose
+        /// self-reference is bound through a table named after `cte_name`; an empty name would name no table.
+        if (recursive_with)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTSubquery JSON must have a non-empty 'cte_name' when 'recursive_with' is set");
+
         if (children.size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTSubquery JSON must have exactly one child when 'cte_name' is empty, got {}",
@@ -50,9 +59,12 @@ void ASTSubquery::readJSON(const Poco::JSON::Object & json)
     }
     else
     {
-        if (children.size() > 1)
+        /// A `cte_name` subquery prints as a bare identifier but is still built from its body: the query tree
+        /// builder indexes `children[0]` unconditionally in both expression and table position, so a bodyless
+        /// one is an out-of-bounds read.
+        if (children.size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ASTSubquery JSON must have at most one child when 'cte_name' is set, got {}",
+                "ASTSubquery JSON must have exactly one child when 'cte_name' is set, got {}",
                 children.size());
     }
 }
@@ -105,6 +117,10 @@ void ASTSubquery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
 {
     if (!cte_name.empty())
         hash_state.update(cte_name);
+    /// Guarded: `appendColumnNameImpl` derives `__subquery_<hash>` from this hash for every unnamed subquery,
+    /// so hashing a field that is always false there would rename columns across unrelated queries.
+    if (recursive_with)
+        hash_state.update(recursive_with);
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

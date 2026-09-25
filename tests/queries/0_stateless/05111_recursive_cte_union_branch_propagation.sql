@@ -61,7 +61,7 @@ SELECT * FROM
 ORDER BY s;
 
 -- The stored definition is asserted as text rather than by reading the view back: the read-back value
--- additionally depends on ApplyWithSubqueryVisitor, which does not consult `recursive_with` at all.
+-- additionally depends on how ApplyWithSubqueryVisitor expands an enclosing same-named plain CTE.
 SELECT 'RECURSIVE survives in a stored view definition';
 DROP VIEW IF EXISTS v_05111;
 CREATE VIEW v_05111 AS

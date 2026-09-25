@@ -256,3 +256,14 @@ SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MOVE PART \'all_1_1_0
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MOVE PARTITION 1 TO TABLE u'));
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MOVE PART \'all_1_1_0\' TO DISK \'d1\''), '"move_destination_type":"DISK","move_destination_name":"d1"', '"move_destination_type":"TABLE","to_table":"u"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MOVE PARTITION 1 TO VOLUME \'v\''), '"move_destination_type":"VOLUME"', '"move_destination_type":"SHARD"')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ASTSubquery: `recursive_with` marks a copy of an element of a WITH RECURSIVE list, and the recursive CTE
+-- it becomes is bound through a table named by `cte_name`, which the same copy always carries. Without the
+-- name that table has none, so the flag alone is parser-impossible. Both fields together round-trip:
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 IN (SELECT 1)'), '"type":"Subquery"', '"type":"Subquery","cte_name":"src","recursive_with":true'));
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 IN (SELECT 1)'), '"type":"Subquery"', '"type":"Subquery","recursive_with":true')); -- { serverError BAD_ARGUMENTS }
+-- A `cte_name` subquery prints as a bare identifier, but the query tree is still built from `children[0]`, so
+-- the name is not a body-free shorthand:
+SELECT formatQueryFromJSON('{"type":"Subquery","cte_name":"src"}'); -- { serverError BAD_ARGUMENTS }
