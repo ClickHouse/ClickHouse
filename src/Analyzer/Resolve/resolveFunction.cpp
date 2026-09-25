@@ -1431,6 +1431,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
     bool is_special_function_multi_if = false;
+    /// `ifNull` is handled as the two-argument form of `coalesce`.
+    bool is_special_function_coalesce = false;
+    bool is_special_function_if_null = false;
 
     if (!lambda_expression_untyped)
     {
@@ -1465,6 +1468,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto base_function_name_lowercase = Poco::toLower(base_function_name);
         auto function_name_lowercase = Poco::toLower(function_name);
+
+        /// Both functions are registered as case-insensitive.
+        is_special_function_if_null = function_name_lowercase == "ifnull";
+        is_special_function_coalesce = is_special_function_if_null || function_name_lowercase == "coalesce";
 
         /// Only remove asterisks for exactly "count" or "countstate" (possibly with combinators),
         /// not for other functions like "countDistinct" which is a separate function
@@ -1738,6 +1745,93 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 }
                 /// All dead branches resolved cleanly: fall through to the generic path so that
                 /// `FunctionMultiIf::build` can perform common-supertype unification.
+            }
+        }
+    }
+
+    /** Handle coalesce and ifNull analogously to the `if` and `multiIf` special cases above.
+      * Both are short-circuit functions: an argument is evaluated only when all the preceding
+      * arguments are NULL. When an argument is statically known to be never NULL (a non-NULL
+      * constant or an expression whose type cannot contain NULL), and every argument before it
+      * is a constant NULL, the arguments after it are unreachable. If resolving any of them
+      * throws, replace the whole node with the live argument.
+      *
+      * SELECT coalesce(toNullable(1), intDiv(1, 0));
+      *
+      * Otherwise fall through to the generic path, so that the function performs the normal
+      * common-supertype unification of all the arguments.
+      */
+    if (is_special_function_coalesce && !function_node_ptr->getArguments().getNodes().empty())
+    {
+        auto & coalesce_args = function_node_ptr->getArguments().getNodes();
+        const size_t arg_count = coalesce_args.size();
+
+        /// If arity is malformed let the generic path report the error as usual.
+        if (!is_special_function_if_null || arg_count == 2)
+        {
+            checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
+
+            std::optional<size_t> live_index;
+            QueryTreeNodePtr live_argument;
+
+            for (size_t i = 0; i < arg_count; ++i)
+            {
+                /// Snapshot, not reference: `resolveExpressionNode` can replace the node.
+                QueryTreeNodePtr argument = coalesce_args[i];
+                resolveExpressionNode(argument,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/,
+                    allow_niladic_functions);
+
+                if (const auto * constant_node = argument->as<ConstantNode>())
+                {
+                    if (constant_node->getValue().isNull())
+                        continue;
+                }
+                else if (canContainNull(*argument->getResultType()))
+                {
+                    break;
+                }
+
+                live_index = i;
+                live_argument = std::move(argument);
+                break;
+            }
+
+            if (live_index && *live_index + 1 < arg_count)
+            {
+                /// Snapshot the dead arguments before resolving them, as in the `multiIf` special case.
+                QueryTreeNodes dead_argument_copies(coalesce_args.begin() + *live_index + 1, coalesce_args.end());
+
+                bool apply_constant_coalesce_optimization = false;
+                for (auto & dead_argument : dead_argument_copies)
+                {
+                    try
+                    {
+                        resolveExpressionNode(dead_argument,
+                            scope,
+                            false /*allow_lambda_expression*/,
+                            false /*allow_table_expression*/,
+                            allow_niladic_functions);
+                    }
+                    catch (const Exception &)
+                    {
+                        apply_constant_coalesce_optimization = true;
+                    }
+                }
+
+                if (apply_constant_coalesce_optimization)
+                {
+                    /// The live argument is already resolved, this returns its projection names.
+                    auto result_projection_names = resolveExpressionNode(live_argument,
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/,
+                        allow_niladic_functions);
+                    node = std::move(live_argument);
+                    return result_projection_names;
+                }
             }
         }
     }
