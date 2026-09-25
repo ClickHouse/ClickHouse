@@ -296,6 +296,8 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(const Con
     auto res = getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, this);
     if (res.empty())
         throw Exception{DB::ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "There are no tables satisfied provided regexp, you must specify table structure manually"};
+    /// Merge does not support TTL.
+    res.clearColumnTTLs();
     return res;
 }
 
