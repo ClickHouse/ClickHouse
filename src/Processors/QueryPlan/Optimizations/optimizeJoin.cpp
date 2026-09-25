@@ -411,8 +411,7 @@ constexpr bool isInnerOrCross(JoinKind kind)
 static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings & optimization_settings)
 {
     const auto & algorithms = optimization_settings.query_plan_optimize_join_order_algorithm;
-    return (optimization_settings.query_plan_optimize_join_order_use_conflict_detector_a
-            || optimization_settings.query_plan_optimize_join_order_use_conflict_detector_c)
+    return optimization_settings.query_plan_optimize_join_order_conflict_detector != JoinOrderConflictDetector::NONE
         && algorithms.size() == 1
         && algorithms.front() == JoinOrderAlgorithm::DPSUB;
 }
