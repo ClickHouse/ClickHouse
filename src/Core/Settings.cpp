@@ -11087,8 +11087,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
     {
         using CompatibilitySetting [[maybe_unused]] = SettingsChangesHistory::SettingChange::CompatibilitySetting;
         VersionToSettingsChangesMap result;
-#define SETTING_HISTORY_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) addSettingChangesHistory(result, #NAME, {__VA_ARGS__});
-#define SETTING_HISTORY_WITH_ALIAS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS, ...) addSettingChangesHistory(result, #NAME, {__VA_ARGS__});
+/// One non-inlined lambda per setting: the records of all settings in one frame exceed the frame size
+/// limit on targets where the stack slots of the temporary arrays are not reused (wasm64).
+#define SETTING_HISTORY_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    __VA_OPT__([&]() __attribute__((noinline)) { addSettingChangesHistory(result, #NAME, {__VA_ARGS__}); }();)
+#define SETTING_HISTORY_WITH_ALIAS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS, ...) \
+    __VA_OPT__([&]() __attribute__((noinline)) { addSettingChangesHistory(result, #NAME, {__VA_ARGS__}); }();)
         LIST_OF_SETTINGS(SETTING_HISTORY_, SETTING_HISTORY_WITH_ALIAS_)
 #undef SETTING_HISTORY_
 #undef SETTING_HISTORY_WITH_ALIAS_
