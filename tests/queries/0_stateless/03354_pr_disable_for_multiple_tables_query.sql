@@ -2,6 +2,11 @@
 -- part of a multi-table query, by looking for `ReadFromRemoteParallelReplicas` in the query plan.
 -- The probes that cannot be seen in `EXPLAIN` live in `05137_pr_disable_for_multiple_tables_execution`.
 
+-- Pinned to the query-based implementation: with `parallel_replicas_plan_based` the plan still
+-- carries a parallel-replicas step for a query this setting has switched off, even though the
+-- query then runs locally. See https://github.com/ClickHouse/ClickHouse/issues/122312.
+set parallel_replicas_plan_based=0;
+
 drop table if exists X;
 drop table if exists Y;
 

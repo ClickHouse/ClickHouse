@@ -70,6 +70,9 @@ for async_socket in 1 0; do
     trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
     query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-$async_socket"
 
+    # parallel_replicas_plan_based=0: the plan-based implementation does not emit the per-replica
+    # `RemoteQueryExecutor::execute` span carrying `clickhouse.replica_num`, so the fourth count
+    # below stays 0. See https://github.com/ClickHouse/ClickHouse/issues/122313.
     # automatic_parallel_replicas_mode=0: mode 2 (randomized by the test harness) only collects
     # statistics and never actually executes with parallel replicas.
     ${CLICKHOUSE_CLIENT} \
@@ -80,6 +83,7 @@ for async_socket in 1 0; do
         --cluster_for_parallel_replicas="$CLUSTER" \
         --parallel_replicas_for_non_replicated_merge_tree=1 \
         --parallel_replicas_local_plan=0 \
+        --parallel_replicas_plan_based=0 \
         --async_socket_for_remote="$async_socket" \
         --query_id "$query_id" \
         --query "select sum(k) from $TABLE format Null"
