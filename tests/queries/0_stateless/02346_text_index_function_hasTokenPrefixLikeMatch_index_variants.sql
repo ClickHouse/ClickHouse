@@ -69,7 +69,8 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+-- Pin the block size: a split posting list skips the index analysis read.
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
 
 INSERT INTO tab SELECT number, multiIf(number < 8, map('k', 'env-prod'), number < 16, map('k', 'production'), number < 24, map('x', 'prod'), map('k', 'dev')) FROM numbers(64);
 
@@ -98,7 +99,8 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+-- Pin the block size: a split posting list skips the index analysis read.
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
 
 INSERT INTO tab SELECT number, multiIf(number < 8, '{"k": "env-prod"}', number < 16, '{"k": "production"}', number < 24, '{"x": "prod"}', '{"k": "dev"}') FROM numbers(64);
 
