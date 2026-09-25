@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# A stored table whose column type names AggregateFunction(sequenceNextNode, ...) could be created
-# but not opened again: outside a query context the factory passes no settings, and the gate refused
-# instead of reading the server's configured value.
+# A table with an AggregateFunction(sequenceNextNode, ...) column loads when enable_funnel_functions
+# is enabled in the server configuration, and is still refused when it is not.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

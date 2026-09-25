@@ -457,8 +457,8 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
         data_type, argument_types, parameters, base, direction, min_required_args);
 }
 
-/// The factory passes null settings when the calling thread has no query context (table loading,
-/// query plan decoding), which means "no session to read the setting from", not "the gate is off".
+/// The factory passes null settings when the calling thread has no query context, which is the case
+/// for asynchronous table loading: it means "no session to read the setting from", not "the gate is off".
 bool isFunnelFunctionsEnabled(const Settings * settings)
 {
     if (settings)
