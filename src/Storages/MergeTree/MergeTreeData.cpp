@@ -12798,7 +12798,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
     dst_data_part->is_temp = true;
 
-    dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
+    /// Without `keep_metadata_version` the clone deliberately has no `metadata_version.txt` (or one written
+    /// with the table's current version above): it is at the current version by construction, so do not
+    /// treat the absent file as a part of unknown version.
+    bool clone_has_metadata_version = params.keep_metadata_version || params.metadata_version_to_write.has_value();
+    dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, /* check_consistency= */ true, clone_has_metadata_version);
     dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
     return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
 }

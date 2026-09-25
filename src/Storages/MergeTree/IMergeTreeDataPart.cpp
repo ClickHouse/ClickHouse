@@ -29,6 +29,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -2650,6 +2651,105 @@ void IMergeTreeDataPart::loadUUID()
     }
 }
 
+void IMergeTreeDataPart::assertColumnsReadableAtCurrentMetadataVersion(
+    const NamesAndTypesList & part_columns, const StorageInMemoryMetadata & current_metadata) const
+{
+    /** A part with no `metadata_version.txt` is read at the table's current metadata version, which
+      * claims its data already reflects every metadata-only `ALTER`; that is why a file that IS there
+      * is never overwritten from the table. A part detached before a `RENAME COLUMN` that then lost
+      * this file - which is not covered by the part checksums, so nothing detects its absence - would
+      * be served with the rename skipped: the renamed column reads as its default (or, when the rename
+      * reused a name, as another column's stale data) for every row, with no error anywhere. Refuse the
+      * part instead of serving that - `ATTACH` reports it, and a part found this way while loading the
+      * table is treated as broken.
+      *
+      * The first source of truth is the table itself: it remembers the mutations it has issued, done
+      * or not, until they are cleared. A mutation whose version is above the part's data version was
+      * issued after the part's data was written, so the part cannot have applied it - applying it would
+      * have rewritten the part under a higher data version. If such a mutation renames a column the
+      * part still holds, the part predates that rename and has not applied it, whatever the rename did
+      * to the set of names; this covers a rename that reuses a name freed by a `DROP COLUMN`, and a
+      * swap of two columns, which leave the set of names looking right.
+      *
+      * The part's own metadata version is not set yet here, so the replicated lookup, which filters
+      * by it, returns every metadata mutation the table still remembers; the data version does the
+      * filtering for both engines. Mutations already cleared from the table are gone for good, so the
+      * lookup is complete only while the table remembers them; at server start the mutations are
+      * loaded after the parts, so it finds nothing then.
+      */
+    NameSet part_column_names;
+    for (const auto & column : part_columns)
+        part_column_names.insert(column.name);
+
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = current_metadata.getMetadataVersion(),
+        /// The part may be at any version: consider every metadata mutation the table remembers.
+        .min_part_metadata_version = -1,
+        /// Also bypass the shortcut that returns nothing when no mutation is pending anymore:
+        /// a finished rename is exactly what this part may have missed.
+        .need_alter_mutations = true,
+    };
+
+    auto mutations_snapshot = storage.getMutationsSnapshot(params);
+    const auto part_data_version = static_cast<UInt64>(info.getDataVersion());
+
+    for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(shared_from_this()))
+    {
+        if (command.type != MutationCommand::RENAME_COLUMN)
+            continue;
+
+        if (!command.mutation_version || *command.mutation_version <= part_data_version)
+            continue;
+
+        if (part_column_names.contains(command.column_name))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Part {} has no {} and still holds column {}, which mutation {} renamed to {} after the part's data "
+                "was written (its data version is {}), so the part has not applied that rename. Reading it at the "
+                "table's current version would skip the rename and answer with wrong values. Restore the file with "
+                "the part's own metadata version, or drop the part",
+                name,
+                METADATA_VERSION_FILE_NAME,
+                command.column_name,
+                *command.mutation_version,
+                command.rename_to,
+                part_data_version);
+    }
+
+    /** Second, the names themselves: the claim is also provably false when the part holds a column the
+      * schema does not while the schema holds a column the part does not - the signature of a rename
+      * this part has not applied, even one the table no longer remembers. A part that only carries a
+      * dropped column, or only misses a column added later, still loads: reading it at the current
+      * version gives the same answer as reading it at its own. A rename that reused a name is invisible
+      * to this check once the table has forgotten the mutation; it is the price of the file being gone.
+      */
+    const auto & current_columns = current_metadata.getColumns();
+
+    Names columns_only_in_part;
+    for (const auto & column : part_columns)
+        if (!current_columns.hasPhysical(column.name))
+            columns_only_in_part.push_back(column.name);
+
+    Names columns_only_in_table;
+    for (const auto & column : current_columns.getAllPhysical())
+        if (!part_column_names.contains(column.name))
+            columns_only_in_table.push_back(column.name);
+
+    if (!columns_only_in_part.empty() && !columns_only_in_table.empty())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Part {} has no {} and its columns do not match the table's: it holds {} which the table "
+            "does not, and does not hold {} which the table does, so the schema version its data was "
+            "written at cannot be determined. Reading it at the table's current version would skip the "
+            "metadata changes it still needs and answer with default values. Restore the file with the "
+            "part's own metadata version, or drop the part",
+            name,
+            METADATA_VERSION_FILE_NAME,
+            fmt::join(columns_only_in_part, ", "),
+            fmt::join(columns_only_in_table, ", "));
+}
+
 void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 {
     String path = fs::path(getDataPartStorage().getRelativePath()) / "columns.txt";
@@ -2741,6 +2841,13 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         auto storage_metdata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
         loaded_metadata_version = storage_metdata_snapshot->getMetadataVersion();
         old_part_with_no_metadata_version_on_disk = true;
+
+        /// Reading the part at the table's current version claims its data already reflects every
+        /// metadata-only `ALTER`; refuse the part when that claim is provably false (see the helper).
+        /// A storage that keeps the version in the part attributes never writes the file, so its absence
+        /// says nothing there; projection parts follow their parent and patch parts have their own schema.
+        if (load_metadata_version && !storage.storesMetadataVersionInPartAttributes() && !parent_part && !info.isPatch())
+            assertColumnsReadableAtCurrentMetadataVersion(loaded_columns, *storage_metdata_snapshot);
     }
 
     LOG_DEBUG(storage.log, "Loaded metadata version {}", *loaded_metadata_version);
