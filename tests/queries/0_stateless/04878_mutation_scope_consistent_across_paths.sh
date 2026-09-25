@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-ordinary-database, no-shared-merge-tree, no-fasttest
+# Tags: no-replicated-database, no-ordinary-database, no-shared-merge-tree, no-fasttest, no-parallel-replicas
+# no-parallel-replicas: parallel replicas do not read through the transaction snapshot
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
