@@ -82,7 +82,6 @@ public:
             return;
         }
 
-        /// Array/Map columns restart positions per element, so a later add() can go backwards.
         if (!entries.empty() && entry.key() < entries.back().key())
             sorted = false;
 
