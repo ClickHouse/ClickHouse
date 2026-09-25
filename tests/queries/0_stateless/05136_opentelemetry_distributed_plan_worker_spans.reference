@@ -1,0 +1,5 @@
+stateless workers: dispatch, request and task spans: OK
+stateless workers: task spans descend from the initiator query span: OK
+local execution: dispatch, request and task spans: OK
+local execution: task spans descend from the initiator query span: OK
+local execution: dispatch spans: 0
