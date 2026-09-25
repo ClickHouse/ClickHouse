@@ -14,7 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int PROMQL_QUERY_EXECUTION_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -101,7 +101,7 @@ public:
             auto tags = tags_collector->getTagsByGroup(group);
 
             throw Exception(
-                ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                ErrorCodes::PROMQL_QUERY_EXECUTION_ERROR,
                 "Multiple series have the same tags {}, duplicate series in the same result set are not allowed",
                 ContextTimeSeriesTagsCollector::toString(tags));
         }
@@ -215,7 +215,7 @@ GROUP BY timeSeriesTagsToGroup(tags);
         )",
         R"(
 Received exception:
-Code: 768. DB::Exception: Multiple series have the same tags {'__name__': 'up'}, duplicate series in the same result set are not allowed. (DUPLICATE_TIME_SERIES)
+Code: 785. DB::Exception: Multiple series have the same tags {'__name__': 'up'}, duplicate series in the same result set are not allowed. (PROMQL_QUERY_EXECUTION_ERROR)
         )",
     }};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
