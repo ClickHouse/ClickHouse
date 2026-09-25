@@ -2561,6 +2561,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 
 void InterpreterSystemQuery::syncTransactionLog()
 {
+    getContext()->checkAccess(AccessType::SYSTEM_SYNC_TRANSACTION_LOG);
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
     TransactionManager::instance().sync();
 }
