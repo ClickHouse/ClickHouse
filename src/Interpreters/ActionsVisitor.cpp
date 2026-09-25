@@ -1463,7 +1463,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             for (size_t i = 0; i < parameters_size; ++i)
             {
                 ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
-                parameters[i] = literal->as<ASTLiteral>()->value;
+                parameters[i] = literal->as<ASTLiteral>()->value.resolveNumberLiteral();
             }
         }
 

@@ -64,6 +64,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
         literal_type != Field::Types::UInt256 &&
         literal_type != Field::Types::Int256 &&
         literal_type != Field::Types::Float64 &&
+        literal_type != Field::Types::Number &&
         literal_type != Field::Types::Decimal32 &&
         literal_type != Field::Types::Decimal64 &&
         literal_type != Field::Types::Decimal128 &&

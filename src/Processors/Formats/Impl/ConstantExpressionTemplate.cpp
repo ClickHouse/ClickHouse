@@ -385,6 +385,12 @@ private:
             fillLiteralInfo(nested_types, info);
             info.type = std::make_shared<DataTypeMap>(nested_types);
         }
+        else if (field_type == Field::Types::Number)
+        {
+            Field resolved = info.literal->value.resolveNumberLiteral();
+            info.type = applyVisitor(FieldToDataType(), resolved);
+            info.special_parser = SpecialParserType(resolved.getType());
+        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Unexpected literal type {}",

@@ -197,6 +197,13 @@ static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Ex
     return false;
 }
 
+/// A setting value is never compared with a column, so a deferred number literal is resolved here
+/// rather than by every consumer of `SettingsChanges`.
+static Field settingValueFromLiteral(const ASTPtr & literal)
+{
+    return literal->as<ASTLiteral &>().value.resolveNumberLiteral();
+}
+
 /// Parse `name = value`.
 bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
 {
@@ -232,7 +239,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         return false;
 
     tryGetIdentifierNameInto(name, change.name);
-    change.value = value->as<ASTLiteral &>().value;
+    change.value = settingValueFromLiteral(value);
 
     return true;
 }
@@ -330,7 +337,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     }
 
     change.name = name;
-    change.value = node->as<ASTLiteral &>().value;
+    change.value = settingValueFromLiteral(node);
     change.shorthand = !have_eq;
 
     return true;
@@ -370,7 +377,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             SettingChange change;
             change.name = "session_timezone";
-            change.value = value_node->as<ASTLiteral &>().value;
+            change.value = settingValueFromLiteral(value_node);
             query->changes.push_back(std::move(change));
 
             return true;

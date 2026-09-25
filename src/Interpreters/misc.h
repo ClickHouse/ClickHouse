@@ -26,6 +26,13 @@ inline bool functionIsInOrGlobalInOperator(const std::string & name)
     return functionIsInOperator(name) || functionIsGlobalInOperator(name);
 }
 
+inline bool functionIsComparisonOperator(const std::string & name)
+{
+    return name == "equals" || name == "notEquals"
+        || name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals"
+        || name == "isDistinctFrom" || name == "isNotDistinctFrom";
+}
+
 inline bool functionIsLikeOperator(const std::string & name)
 {
     return name == "like" || name == "ilike" || name == "notLike" || name == "notILike";

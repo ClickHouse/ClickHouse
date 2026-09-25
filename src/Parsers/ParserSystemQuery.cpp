@@ -16,6 +16,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 
 #include <base/EnumReflection.h>
@@ -1057,12 +1058,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr arg_ast;
             while (ParserLiteral{}.parse(pos, arg_ast, expected))
             {
-                const auto & value = arg_ast->as<ASTLiteral &>().value;
-                if (value.getType() == Field::Types::String)
+                const auto value = arg_ast->as<ASTLiteral &>().value.resolveNumberLiteral();
+                const auto value_type = value.getType();
+                if (value_type == Field::Types::String)
                     res->instrumentation_arguments.emplace_back(value.safeGet<String>());
-                else if (value.getType() == Field::Types::Int64)
+                else if (value_type == Field::Types::Int64)
                     res->instrumentation_arguments.emplace_back(value.safeGet<Int64>());
-                else if (value.getType() == Field::Types::UInt64)
+                else if (value_type == Field::Types::UInt64)
                 {
                     UInt64 uint_value = value.safeGet<UInt64>();
                     if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
@@ -1072,8 +1074,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     }
                     res->instrumentation_arguments.emplace_back(static_cast<Int64>(uint_value));
                 }
-                else if (value.getType() == Field::Types::Float64)
+                else if (value_type == Field::Types::Float64)
                     res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
+                else if (Field::isWideInteger(value_type))
+                    /// A Float64 argument such as `1e20` formats back as plain digits that reparse as a
+                    /// wide integer; take it as the same Float64 so the formatted query still parses.
+                    res->instrumentation_arguments.emplace_back(applyVisitor(FieldVisitorConvertToNumber<Float64>(), value));
                 else
                 {
                     expected.add(pos, "string, integer, or float literal argument");

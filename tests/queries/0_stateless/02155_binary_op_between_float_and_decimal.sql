@@ -1,14 +1,14 @@
 SELECT 1.5::Decimal32(5) + 1.5;
 SELECT 1.5::Decimal32(5) - 1.5;
-SELECT 1.5::Decimal32(5) * 1.5;
-SELECT 1.5::Decimal32(5) / 1.5;
+SELECT 1.5::Decimal32(5) * 1.5; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT 1.5::Decimal32(5) / 1.5; -- { serverError DECIMAL_OVERFLOW }
 
 SELECT 1.5 + 1.5::Decimal32(5);
 SELECT 1.5 - 1.5::Decimal32(5);
-SELECT 1.5 * 1.5::Decimal32(5);
-SELECT 1.5 / 1.5::Decimal32(5);
+SELECT 1.5 * 1.5::Decimal32(5); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT 1.5 / 1.5::Decimal32(5); -- { serverError DECIMAL_OVERFLOW }
 
-SELECT 1.0::Decimal32(5) / 0.0;
+SELECT 1.0::Decimal32(5) / 0.0; -- { serverError DECIMAL_OVERFLOW }
 
 SELECT least(1.5, 1.0::Decimal32(5));
 SELECT greatest(1.5, 1.0::Decimal32(5));
