@@ -9104,13 +9104,18 @@ QueryExecutionCountersPtr Context::getQueryExecutionCounters() const
 
 bool Context::canUseTaskBasedParallelReplicas() const
 {
+    return canUseTaskBasedParallelReplicasForClusterEngines()
+        && getSettingsRef()[Setting::automatic_parallel_replicas_mode] == 0;
+}
+
+bool Context::canUseTaskBasedParallelReplicasForClusterEngines() const
+{
     const auto & settings_ref = getSettingsRef();
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && (settings_ref[Setting::max_parallel_replicas] > 1
-            || !settings_ref[Setting::parallel_replicas_prefer_local_replica])
-        && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
+            || !settings_ref[Setting::parallel_replicas_prefer_local_replica]);
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const

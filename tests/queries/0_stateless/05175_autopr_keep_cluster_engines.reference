@@ -1,0 +1,4 @@
+settings clause, mode 1: ReadFromCluster
+settings clause, mode 2: ReadFromCluster
+session settings: ReadFromCluster
+automatic mode only: ReadFromURL

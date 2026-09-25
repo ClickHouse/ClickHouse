@@ -146,25 +146,15 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
     const auto & settings = result_context->getSettingsRef();
-    if (settings[Setting::automatic_parallel_replicas_mode] != 0)
-    {
-        // If `automatic_parallel_replicas_mode` is not zero, it means that the heuristic for automatic parallel replicas is enabled.
-        // In this case, we should disable `allow_experimental_parallel_reading_from_replicas`, since it is interpreted as an enforcement to use parallel replicas.
-        // If `allow_experimental_parallel_reading_from_replicas` was zero, then we have to skip applying the heuristic.
-        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-            && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS)
-        {
-            LOG_DEBUG(
-                getLogger("InterpreterSelectQueryAnalyzer"),
-                "Setting 'enable_parallel_replicas' is enabled but 'automatic_parallel_replicas_mode' is not zero."
-                " To enforce use of parallel replicas, please disable 'automatic_parallel_replicas_mode'.");
-            result_context->setSetting("enable_parallel_replicas", Field(0));
-        }
-        else
-        {
-            result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
-        }
-    }
+    // If `automatic_parallel_replicas_mode` is not zero, the heuristic for automatic parallel replicas decides whether
+    // `MergeTree` reads use parallel replicas: `canUseTaskBasedParallelReplicas` is false while it is set, so
+    // `enable_parallel_replicas` is not an enforcement for them. It is kept as is, because cluster engines are not
+    // covered by the heuristic and still follow it (see `canUseTaskBasedParallelReplicasForClusterEngines`).
+    // If parallel replicas are not enabled, the heuristic has nothing to switch to and is skipped.
+    if (settings[Setting::automatic_parallel_replicas_mode] != 0
+        && (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0
+            || settings[Setting::parallel_replicas_mode] != ParallelReplicasMode::READ_TASKS))
+        result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
 
     /// Injecting `ORDER BY rand()` (the setting `inject_random_order_for_select_without_order_by`) is only valid
     /// for a query processed up to the stage `Complete`: the injection wraps the query into
@@ -387,7 +377,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
+          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
           [ast = query_->clone(),
            ctx = Context::createCopy(context_),
            select_options = select_query_options_,
@@ -410,7 +400,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
+          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
           [ast = query_->clone(),
            ctx = Context::createCopy(context_),
            storage = storage_,
@@ -430,7 +420,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
-          // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
+          // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
           // `tree` is cloned because `toAST` below feeds a separate interpreter, while
           // `single_node_tree` must stay the very tree the single-node plan was built from: it is the
           // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.

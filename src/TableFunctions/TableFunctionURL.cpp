@@ -346,7 +346,7 @@ StoragePtr TableFunctionURL::getStorage(
 
     const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
-        && context->canUseTaskBasedParallelReplicas()
+        && context->canUseTaskBasedParallelReplicasForClusterEngines()
         && !context->isDistributed()
         && !is_secondary_query
         && !is_insert_query
