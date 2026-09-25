@@ -157,6 +157,12 @@ public:
         const IAST * ast);
     void makeWindowDescriptions(ActionsDAG & actions);
 
+    /** Checks if subquery is not a plain StorageSet.
+      * Because while making set we will read data from StorageSet which is not allowed.
+      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
+      */
+    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
+
 protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,

@@ -182,11 +182,9 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/log_export.py",
-            # `find_tests.py` selects which tests this job runs, and
-            # `Result.complete_job` in `result.py` builds the summary the job
-            # publishes. Both are runner inputs, so the digest must cover them.
+            # `find_tests.py` selects which tests this job runs, so the digest
+            # must cover it.
             "./ci/jobs/scripts/find_tests.py",
-            "./ci/praktika/result.py",
             # The selector modules decide which tests a targeted job runs.
             "./ci/jobs/scripts/coverage_selection.py",
             "./ci/jobs/scripts/test_selection_config.py",
