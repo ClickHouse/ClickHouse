@@ -95,6 +95,16 @@ struct NoOp
 {
 };
 
+/// Is this step a wrapper that can be skipped over? Only an `ExpressionStep` whose outputs are a
+/// permutation of its inputs - renamed or reordered, nothing computed, nothing forwarded twice.
+///
+/// Its two users have to agree on it, which is why it is shared: `calculateHashTableCacheKeys` lets such
+/// a step adopt its child's key, and `considerEnablingParallelReplicas` looks through it when locating
+/// the boundary the replicas would ship from. A step invisible to one and visible to the other would be
+/// instrumented in one plan and matched in the other. It is narrower than "contributes nothing to the
+/// key": a full `SortingStep` contributes nothing yet must remain a boundary of its own.
+bool isPassThroughExpression(const IQueryPlanStep & step);
+
 template <typename Func1, typename Func2 = NoOp>
 void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})
 {

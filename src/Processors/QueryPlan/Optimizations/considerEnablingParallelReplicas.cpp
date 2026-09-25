@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
@@ -52,6 +51,23 @@ bool isReadFromOtherReplicas(const IQueryPlanStep & step)
         || typeid_cast<const ReadFromParallelReplicasStep *>(&step);
 }
 
+/// Steps that can sit between the `Union` and the node the two plans have in common without changing
+/// what the node below computes. `FilterStep` is deliberately absent: the replicas ship what comes out
+/// of it, so looking past one instruments a node carrying more rows than they would actually send. It
+/// reports `supportsDataflowStatisticsCollection`, so it is matched on its own terms - and for a plain
+/// `SELECT ... WHERE ...` it is the only node above the read, so peeling it would leave nothing to
+/// instrument but the reading step itself.
+///
+/// `DelayedCreatingSetsStep` and `CreatingSetsStep` pass their rows through by construction.
+bool isPassThroughWrapper(const IQueryPlanStep & step)
+{
+    if (typeid_cast<const ExpressionStep *>(&step))
+        return isPassThroughExpression(step);
+
+    return typeid_cast<const DelayedCreatingSetsStep *>(&step)
+        || typeid_cast<const CreatingSetsStep *>(&step);
+}
+
 /// Find the top node of the parallel replicas plan. E.g.:
 ///
 /// Expression ((Project names + Projection))
@@ -88,16 +104,23 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
             for (const auto & child : frame.node->children)
             {
                 auto * node = child;
-                /// ExpressionStep can be placed on top of ReadFromRemoteParallelReplicas
-                if (typeid_cast<const ExpressionStep *>(node->step.get()) || typeid_cast<const FilterStep *>(node->step.get()))
+                /// Look through the wrappers that can sit between the `Union` and the node the two
+                /// plans have in common. They stack in any order and any depth, so peel them in a loop
+                /// rather than one of each kind - `Expression -> CreatingSets -> Expression` used to
+                /// leave the search stranded on the second `Expression`.
+                ///
+                /// Stop above the reading step: it records only input bytes, so landing on it leaves
+                /// no estimate of what the replicas would send and the optimization is skipped
+                /// altogether. The last wrapper above it does record output bytes.
+                ///
+                /// That guard is about what we instrument, and the branch reading from the other
+                /// replicas is never instrumented - it only has to be recognized, so that the `Union`
+                /// below is identified as the parallel-replicas pattern at all. So the guard lets the
+                /// loop step onto a `ReadFromParallelRemoteReplicas`, and only onto that.
+                while (node->children.size() == 1 && isPassThroughWrapper(*node->step)
+                       && (!node->children.front()->children.empty()
+                           || isReadFromOtherReplicas(*node->children.front()->step)))
                 {
-                    chassert(!node->children.empty());
-                    node = node->children.front();
-                }
-                if (typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())
-                    || typeid_cast<const CreatingSetsStep *>(node->step.get()))
-                {
-                    chassert(!node->children.empty());
                     node = node->children.front();
                 }
                 if (!isReadFromOtherReplicas(*node->step))
@@ -155,25 +178,64 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
     {
         auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
 
-        for (const auto & [nopr_node, nopr_hash] : nopr_node_hashes)
+        /// A step that contributes nothing to the key adopts its child's key (see
+        /// `calculateHashTableCacheKeys`), so a whole chain of them answers to one hash. Find any member
+        /// of that chain - the hash map's order is unspecified, so walk the plan for a stable answer -
+        /// and then walk down to its bottom, which is the node that actually produces the numbers the
+        /// chain shares. A wrapper above it measures something else: an `Aggregating` with a rename over
+        /// it is such a chain, and the aggregation records the partial states the replicas ship where
+        /// the rename above it already sees finalized values.
+        const QueryPlan::Node * matched_node = nullptr;
+        Stack traversal_stack;
+        const auto key_of = [&](const QueryPlan::Node & node) -> std::optional<UInt64>
         {
-            if (nopr_hash == it->second)
+            if (auto hash_it = nopr_node_hashes.find(&node); hash_it != nopr_node_hashes.end())
+                return hash_it->second;
+            return {};
+        };
+        traverseQueryPlan(
+            traversal_stack,
+            single_replica_plan_root,
+            [&](auto & frame_node)
             {
-                if (!nopr_node->step->supportsDataflowStatisticsCollection())
-                {
-                    LOG_DEBUG(
-                        getLogger("optimizeTree"),
-                        "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
-                        nopr_node->step->getName());
-                    return std::make_pair(nullptr, 0);
-                }
+                if (!matched_node && key_of(frame_node) == it->second)
+                    matched_node = &frame_node;
+            });
 
-                LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", nopr_node->step->getName());
-                return std::make_pair(nopr_node, nopr_hash);
+        if (matched_node)
+        {
+            const QueryPlan::Node * above = nullptr;
+            while (matched_node->children.size() == 1 && key_of(*matched_node->children.front()) == it->second)
+            {
+                above = matched_node;
+                matched_node = matched_node->children.front();
             }
+
+            /// The reading step records input bytes only, so where the chain bottoms out in one, take
+            /// the wrapper just above it instead - it does record output bytes. This mirrors
+            /// `findTopNodeOfReplicasPlan` stopping above the read on the other side. A read with no
+            /// wrapper above it is returned as it is, so the caller's fail-close for it stays reachable.
+            if (matched_node->children.empty() && above)
+                matched_node = above;
         }
-        LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
-        return std::make_pair(nullptr, 0);
+
+        if (!matched_node)
+        {
+            LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
+            return std::make_pair(nullptr, 0);
+        }
+
+        if (!matched_node->step->supportsDataflowStatisticsCollection())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
+                matched_node->step->getName());
+            return std::make_pair(nullptr, 0);
+        }
+
+        LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", matched_node->step->getName());
+        return std::make_pair(matched_node, it->second);
     }
     else
     {
@@ -508,6 +570,25 @@ void considerEnablingParallelReplicas(
     if (optimization_settings.force_use_projection)
         return;
 
+    /// A plan that builds a set is rooted in the `CreatingSetStep` that fills it, and that root is what
+    /// gives the plan the empty header `addPlansForSets` attaches to a `CreatingSetsStep`. Switching to
+    /// the parallel-replicas candidate replaces the root (see `replaceNodeWithPlan` below) and the
+    /// candidate is built without one, so the set plan would come back carrying the subquery's own
+    /// columns and `CreatingSetsStep` would reject it with "Creating set input must have empty header".
+    /// Leave these plans alone until the candidate can carry the set-building root over.
+    ///
+    /// Only the root matters. A `CreatingSetStep` further down belongs to a set this plan consumes
+    /// rather than builds, and the steps above it are replaced without disturbing it.
+    ///
+    /// Refusing here also saves the probe plan, which is what makes the refusal observable:
+    /// `05218_autopr_set_building_plan_is_left_alone` counts the rounds of index analysis a `GLOBAL IN`
+    /// runs, and considering the set-building plan adds one.
+    if (typeid_cast<const CreatingSetStep *>(root.step.get()))
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "The plan builds a set, its root must be preserved. Skipping optimization");
+        return;
+    }
+
     Stack stack;
     // Technically, it isn't required for all steps to support dataflow statistics collection,
     // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
@@ -525,7 +606,8 @@ void considerEnablingParallelReplicas(
             const bool step_is_supported = frame_node.step->supportsDataflowStatisticsCollection()
                 || typeid_cast<const BuildRuntimeFilterStep *>(frame_node.step.get())
                 || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
-                || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
+                || typeid_cast<const CreatingSetsStep *>(frame_node.step.get())
+                || typeid_cast<const CreatingSetStep *>(frame_node.step.get());
             if (!step_is_supported)
                 unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
             plan_is_simple_enough &= step_is_supported;
