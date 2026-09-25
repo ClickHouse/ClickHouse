@@ -253,19 +253,17 @@ struct SettingFieldTimespan final
     Int64 microseconds = 0;
     bool changed = false;
 
-    static Int64 microsecondsFromUnits(UInt64 units);
-
     explicit SettingFieldTimespan() = default;
     explicit SettingFieldTimespan(const Poco::Timespan & x) : microseconds(x.totalMicroseconds()) {}
     SettingFieldTimespan(const SettingFieldTimespan &) = default;
     SettingFieldTimespan & operator=(const SettingFieldTimespan &) = default;
 
-    explicit SettingFieldTimespan(UInt64 x) : microseconds(microsecondsFromUnits(x)) {}
+    explicit SettingFieldTimespan(UInt64 x) : microseconds(static_cast<Int64>(x * microseconds_per_unit)) {}
     explicit SettingFieldTimespan(const Field & f);
 
     SettingFieldTimespan & operator =(const Poco::Timespan & x) { microseconds = x.totalMicroseconds(); changed = true; return *this; }
 
-    SettingFieldTimespan & operator =(UInt64 x) { microseconds = microsecondsFromUnits(x); changed = true; return *this; }
+    SettingFieldTimespan & operator =(UInt64 x) { microseconds = static_cast<Int64>(x * microseconds_per_unit); changed = true; return *this; }
     SettingFieldTimespan & operator =(const Field & f);
 
     bool isChanged() const { return changed; }
@@ -386,15 +384,15 @@ struct SettingFieldURI final
     bool changed = false;
 
     explicit SettingFieldURI(const Poco::URI & uri = {}) : value(uri) {}
-    explicit SettingFieldURI(const String & str) : SettingFieldURI(parseURI(str)) {}
-    explicit SettingFieldURI(const char * str) : SettingFieldURI(parseURI(str)) {}
+    explicit SettingFieldURI(const String & str) : SettingFieldURI(Poco::URI{str}) {}
+    explicit SettingFieldURI(const char * str) : SettingFieldURI(Poco::URI{str}) {}
     explicit SettingFieldURI(const Field & f) : SettingFieldURI(f.safeGet<String>()) {}
     SettingFieldURI(const SettingFieldURI &) = default;
     SettingFieldURI & operator=(const SettingFieldURI &) = default;
 
     SettingFieldURI & operator =(const Poco::URI & x) { value = x; changed = true; return *this; }
-    SettingFieldURI & operator =(const String & str) { *this = parseURI(str); return *this; }
-    SettingFieldURI & operator =(const char * str) { *this = parseURI(str); return *this; }
+    SettingFieldURI & operator =(const String & str) { *this = Poco::URI{str}; return *this; }
+    SettingFieldURI & operator =(const char * str) { *this = Poco::URI{str}; return *this; }
     SettingFieldURI & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
     bool isChanged() const { return changed; }
@@ -409,11 +407,6 @@ struct SettingFieldURI final
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
-
-    /// `Poco::URI` reports a malformed string with a `Poco::SyntaxException`, which is not a `DB::Exception`, so
-    /// the name of the setting could not be added to it and the user would see a bare "Syntax error: ...".
-    /// Convert it here so that a rejected URI is reported like any other rejected setting value.
-    static Poco::URI parseURI(const String & str);
 };
 
 
@@ -641,7 +634,6 @@ public:
     SettingFieldNonZeroUInt64 & operator=(const Field & f);
 
     void parseFromString(const String & str);
-    void readBinary(ReadBuffer & in);
 
 private:
     void checkValueNonZero() const;

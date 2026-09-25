@@ -25,15 +25,25 @@ ClickHouse Cloud は、ARN ベースの AWS IAM 信頼関係を利用して、�
 </div>
 
 <Steps>
-  <Step title="1. ClickHouse Cloud アカウントにログインします。" id="login" />
+  <Step>
+    ### 1. ClickHouse Cloud アカウントにログインします。
+  </Step>
 
-  <Step title="2. Iceberg データをクエリする ClickHouseサービスを選択します。" id="select-service" />
+  <Step>
+    ### 2. Iceberg データをクエリする ClickHouseサービスを選択します。
+  </Step>
 
-  <Step title={<>3. <strong>Settings</strong> タブに移動します。</>} id="settings-tab" />
+  <Step>
+    ### 3. **Settings** タブに移動します。
+  </Step>
 
-  <Step title={<>4. <strong>Network security information</strong> までスクロールします。</>} id="network-security-information" />
+  <Step>
+    ### 4. **Network security information** までスクロールします。
+  </Step>
 
-  <Step title={<>5. <strong>サービスロール ID (IAM)</strong> の値をコピーします。</>} id="service-role-iam-value">
+  <Step>
+    ### 5. **サービスロール ID (IAM)** の値をコピーします。
+
     この ARN は、Iceberg データにアクセスする AWS IAM ロールの信頼ポリシーで必要になります。
 
     <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="ClickHouseサービスの IAM ロール ARN を取得する" border />
@@ -45,14 +55,20 @@ ClickHouse Cloud は、ARN ベースの AWS IAM 信頼関係を利用して、�
 </div>
 
 <Steps>
-  <Step title="1. AWS にログインし、IAM サービスに移動します。" id="aws-iam-service" />
+  <Step>
+    ### 1. AWS にログインし、IAM サービスに移動します。
+  </Step>
 
-  <Step title="2. `Roles` を選択し、次に `Create role` を選択します。" id="create-role">
+  <Step>
+    ### 2. `Roles` を選択し、次に `Create role` を選択します。
+
     `Trusted entity type` で `Custom trust policy` を選択し、ステップ 3 に基づいて値を入力します。
   </Step>
 
-  <Step title="3. 信頼ポリシーと IAM ポリシーを追加します。" id="add-trust-iam-policies">
-    `{service-role-id}` を、ClickHouse インスタンスの サービスロール ID (IAM) に置き換えてください。
+  <Step>
+    ### 3. 信頼ポリシーと IAM ポリシーを追加します。
+
+    `{service-role-id}` を、ClickHouse インスタンスの Service Role ID (IAM) に置き換えてください。
 
     ```json
     {
@@ -106,19 +122,23 @@ ClickHouse Cloud は、ARN ベースの AWS IAM 信頼関係を利用して、�
     </Note>
   </Step>
 
-  <Step title="4. ロールの作成を完了します。" id="finish-role-creation">
+  <Step>
+    ### 4. ロールの作成を完了します。
+
     a. `Next` をクリックし、権限割り当て画面でもう一度 `Next` をクリックします。
 
     b. 名前 (例: `iceberg-role-for-clickhouse`) と説明を追加します。
 
-    c. タグを追加します (任意)。
+    c. タグを追加します (任意) 。
 
     d. ポリシーを確認します。
 
     e. `Create role` を選択します。
   </Step>
 
-  <Step title={<>5. 作成後、新しい <strong>IAM Role Arn</strong> をコピーします。</>} id="copy-role-arn" />
+  <Step>
+    ### 5. 作成後、新しい **IAM Role Arn** をコピーします。
+  </Step>
 </Steps>
 
 <div id="configure-iceberg-access">

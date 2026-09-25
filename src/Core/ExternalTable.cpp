@@ -216,12 +216,11 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     const Settings & settings = getContext()->getSettingsRef();
 
-    const size_t form_data_size_limit = settings[Setting::http_max_multipart_form_data_size];
-    if (form_data_size_limit)
+    if (settings[Setting::http_max_multipart_form_data_size])
         read_buffer = std::make_unique<LimitReadBuffer>(
             stream,
             LimitReadBuffer::Settings{
-                .read_no_more = form_data_size_limit > form_data_bytes_read ? form_data_size_limit - form_data_bytes_read : 0,
+                .read_no_more = settings[Setting::http_max_multipart_form_data_size],
                 .expect_eof = true,
                 .excetion_hint = "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting",
             });
@@ -294,14 +293,6 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
-
-    /// Whatever the format left unread still belongs to the part, and `HTMLForm` would skip it
-    /// outside the limiter. Read it out through the limiter so it counts against the budget, and so
-    /// that a part running past the budget trips `expect_eof` rather than slipping by.
-    if (form_data_size_limit)
-        read_buffer->ignoreAll();
-
-    form_data_bytes_read += read_buffer->count();
 }
 
 }

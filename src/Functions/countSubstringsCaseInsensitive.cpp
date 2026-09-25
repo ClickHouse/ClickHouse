@@ -33,18 +33,18 @@ REGISTER_FUNCTION(CountSubstringsCaseInsensitive)
         "Usage example",
         "SELECT countSubstringsCaseInsensitive('AAAA', 'aa');",
         R"(
-┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
-│                                            2 │
-└──────────────────────────────────────────────┘
+┌─countSubstri⋯AAA', 'aa')─┐
+│                        2 │
+└──────────────────────────┘
         )"
     },
     {
         "With start_pos argument",
         "SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);",
         R"(
-┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
-│                                                           2 │
-└─────────────────────────────────────────────────────────────┘
+┌─countSubstri⋯, 'abc', 4)─┐
+│                        2 │
+└──────────────────────────┘
         )"
     }
     };

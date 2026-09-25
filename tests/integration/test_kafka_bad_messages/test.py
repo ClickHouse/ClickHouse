@@ -1,6 +1,7 @@
 import logging
 import time
 
+from kafka import KafkaAdminClient
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -64,7 +65,9 @@ def dead_letter_queue_test(expected_num_messages, topic_name):
 def bad_messages_parsing_mode(
     kafka_cluster, handle_error_mode, additional_dml, check_method
 ):
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     for format_name in [
         "TSV",
@@ -223,7 +226,9 @@ def test_bad_messages_parsing_dead_letter_queue(kafka_cluster):
 
 
 def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     for format_name in [
         "Avro",
@@ -282,7 +287,9 @@ Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: wh
 
 
 def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     k.kafka_create_topic(admin_client, "tomv")
 

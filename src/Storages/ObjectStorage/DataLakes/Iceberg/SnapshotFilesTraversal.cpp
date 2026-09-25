@@ -6,8 +6,6 @@
 
 #include <Poco/JSON/Object.h>
 
-#include <filesystem>
-
 #include <Common/logger_useful.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -95,8 +93,8 @@ void collectMetadataRootFiles(
 {
     out.insert(metadata_path);
 
-    /// version-hint.text is not a metadata path: it is a fixed object under the storage root.
-    out.insert(std::filesystem::path(resolver.getTableRoot()) / "metadata" / "version-hint.text");
+    auto version_hint = IcebergPathFromMetadata::deserialize(fmt::format("{}metadata/version-hint.text", resolver.getTableLocation()));
+    out.insert(resolver.resolve(version_hint));
 
     if (metadata->has(f_metadata_log))
     {
@@ -127,14 +125,10 @@ ReachableFilesResult collectReachableFiles(
     const PersistentTableComponents & persistent_table_components,
     const DataLakeStorageSettings & data_lake_settings,
     ContextPtr context,
-    LoggerPtr log,
-    const std::shared_ptr<DataLake::ICatalog> & catalog,
-    const String & table_identifier)
+    LoggerPtr log)
 {
-    auto [version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
-        catalog,
-        table_identifier,
         persistent_table_components.table_path,
         data_lake_settings,
         persistent_table_components.metadata_cache,
@@ -142,7 +136,8 @@ ReachableFilesResult collectReachableFiles(
         log.get(),
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method,
-        /* ignore_metadata_pointer_overrides */ true);
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_explicit_metadata_file_path */ true);
 
     auto metadata = getMetadataJSONObject(
         metadata_path,
@@ -164,14 +159,14 @@ ReachableFilesResult collectReachableFiles(
     if (!metadata->has(f_snapshots))
     {
         LOG_INFO(log, "No snapshots in metadata, reachable set contains only metadata-root files");
-        return {std::move(reachable), version, metadata_path};
+        return {std::move(reachable), version};
     }
 
     auto snapshots = metadata->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     if (!snapshots || snapshots->size() == 0)
     {
         LOG_INFO(log, "Empty snapshots array, reachable set contains only metadata-root files");
-        return {std::move(reachable), version, metadata_path};
+        return {std::move(reachable), version};
     }
 
     Int32 current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
@@ -187,7 +182,7 @@ ReachableFilesResult collectReachableFiles(
         reachable.insert(resolver.resolve(path));
 
     LOG_INFO(log, "Collected {} reachable files from metadata graph", reachable.size());
-    return {std::move(reachable), version, metadata_path};
+    return {std::move(reachable), version};
 }
 
 }

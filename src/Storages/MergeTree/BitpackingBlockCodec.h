@@ -18,6 +18,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static constexpr size_t BLOCK_SIZE = 128;
+
 namespace impl
 {
 
@@ -31,12 +33,10 @@ static constexpr bool has_simdcomp = true;
 template<>
 struct BitpackingBlockCodecImpl<true>
 {
-    static constexpr size_t BLOCK_SIZE = 128;
-
     static size_t bitpackingCompressedBytes(size_t count, uint32_t bits) noexcept
     {
         /// Type cast is required by simdcomp function signature (expects int).
-        /// This conversion is safe because count never exceeds BLOCK_SIZE in current usage.
+        /// This conversion is safe because count never exceeds 128 (BLOCK_SIZE) in current usage.
         return static_cast<size_t>(simdpack_compressedbytes(static_cast<int>(count), bits));
     }
     /// Returns {compressed_bytes, bits} where bits is the max bit-width required
@@ -86,9 +86,6 @@ static constexpr bool has_simdcomp = false;
 template<>
 struct BitpackingBlockCodecImpl<false>
 {
-    /// Must match simdcomp's `SIMDBlockSize`: full blocks and the tail are laid out differently.
-    static constexpr size_t BLOCK_SIZE = 128;
-
     /// Non-SSE version: equivalent to SIMDComp maxbits_length.
     /// It OR-reduces all values to compute required bit width.
     [[maybe_unused]] static uint32_t maxbitsLength(const std::span<uint32_t> & in) noexcept
@@ -290,7 +287,7 @@ struct BitpackingBlockCodecImpl<false>
     /// memcpy-ing 16 bytes from the byte stream into four uint32_t words.
     ///
     /// Behavior by Bits:
-    /// - Bits == 0  : no payload is stored/consumed, but all `groups * 4` decoded values are written as zeros.
+    /// - Bits == 0  : no payload is stored/consumed. (Caller may treat decoded values as zeros.)
     /// - Bits == 32 : values are stored as raw uint32_t; copy groups*4 words and advance by groups*16 bytes.
     /// - Bits 1..31 : use four 64-bit lane accumulators (acc0..acc3) as bit reservoirs.
     ///               Refill by reading one 16-byte chunk (4×uint32_t, 32 bits per lane)
@@ -310,13 +307,9 @@ struct BitpackingBlockCodecImpl<false>
         static_assert(Bits <= 32, "Bits must be 0..32");
         if (groups == 0) return in;
 
-        /// Bits==0: no payload in the stream, so every decoded value is zero. The zeros must still be
-        /// written: callers may decode into a reused buffer, and SIMDComp's SIMD_nullunpacker32 writes them too.
+        /// Bits==0: no payload in the stream;
         if constexpr (Bits == 0)
-        {
-            std::memset(out, 0, groups * 4 * sizeof(uint32_t));
             return in;
-        }
 
         /// Bits==32: stream stores raw uint32_t values (4 per group / per m128i).
         if constexpr (Bits == 32)
@@ -377,7 +370,7 @@ struct BitpackingBlockCodecImpl<false>
         return p;
     }
 
-    /// Pack a tail segment (0 < tail < BLOCK_SIZE) into the SIMDComp-compatible
+    /// Pack a tail segment (0 < tail < COMPRESSED_BLOCK_SIZE) into the SIMDComp-compatible
     /// horizontal 4-lane bitpacked byte stream.
     ///
     /// This is used for the final partial block when the total number of input integers is
@@ -506,7 +499,7 @@ struct BitpackingBlockCodecImpl<false>
         return p;
     }
 
-    /// Unpack (decode) a tail segment (0 < tail < BLOCK_SIZE) from a
+    /// Unpack (decode) a tail segment (0 < tail < COMPRESSED_BLOCK_SIZE) from a
     /// SIMDComp-compatible horizontal 4-lane bitpacked *byte stream*.
     ///
     /// This is the counterpart of packTail<Bits>(). It decodes the last partial block
@@ -514,7 +507,7 @@ struct BitpackingBlockCodecImpl<false>
     /// (e.g. 128 integers).
     ///
     /// Special cases:
-    /// - Bits == 0  : no payload is stored/consumed, but all `tail` decoded values are written as zeros.
+    /// - Bits == 0  : no payload is stored/consumed. (Caller may treat decoded values as zeros.)
     /// - Bits == 32 : values are stored as raw uint32_t, tightly packed (tail * 4 bytes),
     ///               with no 16-byte chunk padding.
     ///
@@ -531,13 +524,9 @@ struct BitpackingBlockCodecImpl<false>
         static_assert(Bits <= 32, "Bits must be 0..32");
         if (tail == 0) return in;
 
-        /// Bits==0: no stored bits, so every decoded value is zero. The zeros must still be written:
-        /// callers may decode into a reused buffer, and SIMDComp's simdunpack_shortlength writes them too.
+        /// Bits==0: no stored bits;
         if constexpr (Bits == 0)
-        {
-            std::memset(out, 0, tail * sizeof(uint32_t));
             return in;
-        }
 
         /// Bits==32: raw uint32_t values are stored tightly (SIMDComp's special-case behavior).
         if constexpr (Bits == 32)
