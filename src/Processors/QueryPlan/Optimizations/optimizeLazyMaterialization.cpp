@@ -66,15 +66,24 @@ static constexpr size_t POSITION_NOT_FOUND = std::numeric_limits<size_t>::max();
 /// as `nowInBlock` or `blockNumber`. Such an expression cannot be replayed after the join: the
 /// real `LimitStep` has already dropped the `offset` rows and kept only `limit` of them, and the
 /// lazy join changes block boundaries, so the function would see a different set of rows and
-/// different blocks than it does without the optimization.
+/// different blocks than it does without the optimization. The same holds for a function with
+/// observable side effects (`sleep`, ...), and for any of these functions inside a lambda body
+/// (`arrayMap(x -> rowNumberInAllBlocks(), ...)`).
 static bool canReplayAfterLimit(const ActionsDAG & dag)
 {
+    auto is_row_sensitive = [](const IFunctionBase & function)
+    {
+        return function.isStateful() || !function.isDeterministicInScopeOfQuery() || function.hasObservableSideEffects();
+    };
+
     for (const auto & node : dag.getNodes())
     {
-        if (node.type != ActionsDAG::ActionType::FUNCTION)
-            continue;
+        if (node.type == ActionsDAG::ActionType::FUNCTION && is_row_sensitive(*node.function_base))
+            return false;
 
-        if (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery())
+        /// A lambda keeps its body in an inner DAG (or, when constant-folded, in a `ColumnFunction`
+        /// of a `COLUMN` node) that `getNodes` does not reach.
+        if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, is_row_sensitive))
             return false;
     }
 

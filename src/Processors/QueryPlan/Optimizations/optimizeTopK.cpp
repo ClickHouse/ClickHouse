@@ -57,16 +57,25 @@ static std::optional<String> resolveColumnThroughDAG(const ActionsDAG & dag, con
 /// rows were skipped. Stateful functions (`rowNumberInAllBlocks`, `blockNumber`, ...) and
 /// functions that are only deterministic within one scope of a query (`nowInBlock`, ...)
 /// do observe it: they are evaluated per block over the stream that reaches them, so
-/// pruning non-top-K rows changes their visible values. Mirrors `canReplayAfterLimit` in
-/// `optimizeLazyMaterialization.cpp`.
+/// pruning non-top-K rows changes their visible values. Functions with observable side
+/// effects (`sleep`, ...) would run on a different set of rows as well. The same applies to
+/// such functions inside lambda bodies (`arrayMap(x -> rowNumberInAllBlocks(), ...)`).
+/// Mirrors `canReplayAfterLimit` in `optimizeLazyMaterialization.cpp`.
 static bool canObserveOnlyTopKRows(const ActionsDAG & dag)
 {
+    auto is_row_sensitive = [](const IFunctionBase & function)
+    {
+        return function.isStateful() || !function.isDeterministicInScopeOfQuery() || function.hasObservableSideEffects();
+    };
+
     for (const auto & node : dag.getNodes())
     {
-        if (node.type != ActionsDAG::ActionType::FUNCTION)
-            continue;
+        if (node.type == ActionsDAG::ActionType::FUNCTION && is_row_sensitive(*node.function_base))
+            return false;
 
-        if (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery())
+        /// A lambda keeps its body in an inner DAG (or, when constant-folded, in a `ColumnFunction`
+        /// of a `COLUMN` node) that `getNodes` does not reach.
+        if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, is_row_sensitive))
             return false;
     }
 
