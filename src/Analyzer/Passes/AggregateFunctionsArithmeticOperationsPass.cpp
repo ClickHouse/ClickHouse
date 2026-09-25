@@ -8,7 +8,11 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/ListNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
+
+#include <Common/NaNUtils.h>
 
 #include <Core/Settings.h>
 
@@ -50,6 +54,91 @@ Field zeroField(const Field & value)
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
+/// An aggregation without a grouping key emits a row even over empty input, and so does the WITH TOTALS
+/// grand total; a key set holding a non-constant key cannot, because a group exists only once a row has
+/// landed in it. Constant keys are eliminated during analysis, so a constant-only set counts as keyless.
+bool aggregationMayBeEmpty(const QueryNode & query_node)
+{
+    if (query_node.isGroupByWithTotals() || !query_node.hasGroupBy())
+        return true;
+
+    auto has_non_constant_key = [](const QueryTreeNodes & keys)
+    {
+        for (const auto & key : keys)
+        {
+            if (!key->as<ConstantNode>())
+                return true;
+        }
+        return false;
+    };
+
+    if (query_node.isGroupByWithGroupingSets())
+    {
+        for (const auto & grouping_set : query_node.getGroupBy().getNodes())
+        {
+            const auto * grouping_set_keys = grouping_set->as<ListNode>();
+            if (!grouping_set_keys || !has_non_constant_key(grouping_set_keys->getNodes()))
+                return true;
+        }
+
+        return false;
+    }
+
+    return !has_non_constant_key(query_node.getGroupBy().getNodes());
+}
+
+bool isPositiveFiniteConstant(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::UInt128:
+        case Field::Types::Int128:
+        case Field::Types::UInt256:
+        case Field::Types::Int256:
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+            break;
+        case Field::Types::Float64:
+            if (!isFinite(value.safeGet<Float64>()))
+                return false;
+            break;
+        default:
+            /// zeroField throws on every other type.
+            return false;
+    }
+
+    return zeroField(value) < value;
+}
+
+bool hoistPreservesEmptyAggregationResult(
+    const String & arithmetic_function_name,
+    const Field & constant_value,
+    bool aggregated_argument_is_nullable,
+    bool aggregate_result_is_nullable)
+{
+    /// A Nullable operand makes the surviving aggregate Nullable, so its empty state is NULL and
+    /// NULL survives the operation; the pre-hoist result type is not a proxy (arithmetic over a
+    /// Variant is Nullable while the operand is not).
+    if (aggregated_argument_is_nullable)
+        return true;
+
+    /// The operation itself can introduce the nullability, from the other operand: then the
+    /// unrewritten aggregate is over a Nullable column and its empty state is NULL, while the
+    /// surviving aggregate is over a non-Nullable operand and yields the type default instead.
+    if (aggregate_result_is_nullable)
+        return false;
+
+    if (arithmetic_function_name != "multiply" && arithmetic_function_name != "divide")
+        return false;
+
+    /// A negative constant maps zero to a negative zero, which `1 / x` tells apart from zero.
+    return isPositiveFiniteConstant(constant_value);
+}
+
 /** Rewrites:   sum([multiply|divide]) -> [multiply|divide](sum)
   *             [min|max|avg]([multiply|divide|plus|minus]) -> [multiply|divide|plus|minus]([min|max|avg])
   *
@@ -64,6 +153,9 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (const auto * query_node = node->as<QueryNode>())
+            aggregation_may_be_empty_stack.push_back(aggregationMayBeEmpty(*query_node));
+
         if (!getSettings()[Setting::optimize_arithmetic_operations_in_aggregate_functions])
             return;
 
@@ -105,6 +197,20 @@ public:
         const auto * right_argument_constant_node = arithmetic_function_arguments_nodes[1]->as<ConstantNode>();
 
         if (!left_argument_constant_node && !right_argument_constant_node)
+            return;
+
+        /// An empty stack means the enclosing query is unknown, so decline.
+        const bool may_be_empty = aggregation_may_be_empty_stack.empty() || aggregation_may_be_empty_stack.back();
+        const auto * hoisted_constant_node = right_argument_constant_node ? right_argument_constant_node : left_argument_constant_node;
+        /// The aggregate that survives the hoist is the one over this operand.
+        const auto & aggregated_argument_node
+            = right_argument_constant_node ? arithmetic_function_arguments_nodes[0] : arithmetic_function_arguments_nodes[1];
+        if (may_be_empty
+            && !hoistPreservesEmptyAggregationResult(
+                arithmetic_function_name,
+                hoisted_constant_node->getValue(),
+                aggregated_argument_node->getResultType()->isNullable(),
+                aggregate_function_node->getResultType()->isNullable()))
             return;
 
         /** Need reverse max <-> min for:
@@ -160,7 +266,15 @@ public:
             node = std::move(optimized_function_node);
     }
 
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (node->as<QueryNode>())
+            aggregation_may_be_empty_stack.pop_back();
+    }
+
 private:
+    std::vector<bool> aggregation_may_be_empty_stack;
+
     QueryTreeNodePtr cloneArithmeticFunctionAndWrapArgumentIntoAggregateFunction(
         const QueryTreeNodePtr & arithmetic_function,
         size_t arithmetic_function_argument_index,
