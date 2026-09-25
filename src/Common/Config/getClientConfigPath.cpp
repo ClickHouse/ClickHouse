@@ -1,19 +1,16 @@
 #include <Common/Config/getClientConfigPath.h>
+
+#include <Common/Config/getConfigPath.h>
 #include <Common/XDGBaseDirectories.h>
 
-#include <filesystem>
 #include <vector>
 
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
 
 std::optional<std::string> getClientConfigPath(const std::string & home_path)
 {
-    std::string config_path;
-
     std::vector<std::string> names;
     names.emplace_back("./clickhouse-client");
 
@@ -27,16 +24,8 @@ std::optional<std::string> getClientConfigPath(const std::string & home_path)
     names.emplace_back("/etc/clickhouse-client/config");
 
     for (const auto & name : names)
-    {
-        for (const auto & extension : {".xml", ".yaml", ".yml"})
-        {
-            config_path = name + extension;
-
-            std::error_code ec;
-            if (fs::exists(config_path, ec))
-                return config_path;
-        }
-    }
+        if (auto config_path = tryGetConfigPath(name))
+            return config_path;
 
     return std::nullopt;
 }

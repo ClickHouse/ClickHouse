@@ -41,6 +41,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/getConfigPath.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/Elf.h>
@@ -116,12 +117,24 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 void BaseDaemon::loadConfiguration()
 {
     /** If the program is not run in daemon mode and 'config-file' is not specified,
-      *  then we use config from 'config.xml' file in current directory,
+      *  then we use config from the 'config.xml', 'config.yaml' or 'config.yml' file in current directory,
       *  but will log to console (or use parameters --log-file, --errorlog-file from command line)
-      *  instead of using files specified in config.xml.
+      *  instead of using files specified in the config.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", getDefaultConfigFileName());
+    if (config().has("config-file"))
+    {
+        /// An explicitly requested configuration file is used as is: substituting a different file for it
+        /// would silently start the server with a configuration the user did not ask for.
+        config_path = config().getString("config-file");
+    }
+    else
+    {
+        /// A configuration file can be written in XML or in YAML, so the default one is looked up with
+        /// every supported extension, not only with `.xml`.
+        config_path = getConfigPathForAnySupportedFormat(getDefaultConfigFileName());
+    }
+
     ConfigProcessor config_processor(config_path, false, true);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
