@@ -370,7 +370,7 @@ public:
     /// `tryOptimizeTopK`, so it cannot know whether the `use_query_condition_cache_for_top_k` gate
     /// applies, and the read that actually executes analyzes again with the gate that matches its final
     /// shape.
-    AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
+    AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache(bool check_row_limits) const;
 
     /// How many compressed bytes this step reads off disk, based on index analysis (which is run here
     /// if it has not run yet, and memoized as usual). Where a per-column estimate cannot be made
