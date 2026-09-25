@@ -20,10 +20,9 @@ INSERT INTO projection_json_path_04839 VALUES (1, '{"arr":{"tag_a":1,"keep":2}}'
 -- Retire the rule at the table level; the part's own j type still carries it as history.
 ALTER TABLE projection_json_path_04839 MODIFY COLUMN j JSON(max_dynamic_paths=5);
 
--- Aliased: a projection cannot declare a bare subcolumn (ProjectionDescription rejects it), but the
--- provenance descent still resolves the identifier the SELECT item reads.
+-- A projection cannot store a bare subcolumn, even aliased, so the accessor is wrapped in materialize().
 ALTER TABLE projection_json_path_04839
-    ADD PROJECTION p_sub_object (SELECT id, j.^arr AS sub WHERE id > 0 ORDER BY id);
+    ADD PROJECTION p_sub_object (SELECT id, materialize(j.^arr) AS sub WHERE id > 0 ORDER BY id);
 ALTER TABLE projection_json_path_04839 MATERIALIZE PROJECTION p_sub_object SETTINGS mutations_sync=1;
 
 -- The regression: without the JSON path step in the descent this is 0, and the next rewrite of the
