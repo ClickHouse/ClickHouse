@@ -157,7 +157,12 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
         return true;
     }
 
+    const size_t num_rows = chunk.getNumRows();
     block = lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
+
+    /// A block takes its number of rows from its columns, so without them the count has to be kept aside.
+    if (block.columns() == 0)
+        block.info.num_rows_without_columns = num_rows;
 
     if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {
