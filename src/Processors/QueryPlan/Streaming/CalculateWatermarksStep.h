@@ -4,19 +4,18 @@
 
 #include <Interpreters/Context_fwd.h>
 
-#include <Core/Field.h>
 #include <Core/Streaming/Settings.h>
 
 namespace DB
 {
 
-/// Appends the watermark column.
+/// Evaluates the watermark expression, appends the time-attribute and watermark columns.
 class CalculateWatermarksStep : public ITransformingStep
 {
     void updateOutputHeader() override;
 
 public:
-    CalculateWatermarksStep(SharedHeader input_header_, WatermarkSettingsPtr watermark_settings_, Field initial_watermark_, ContextPtr context_);
+    CalculateWatermarksStep(SharedHeader input_header_, WatermarkSettingsPtr watermark_, ContextPtr context_);
 
     String getName() const override { return "CalculateWatermarks"; }
 
@@ -24,8 +23,7 @@ public:
     QueryPlanStepPtr clone() const override;
 
 private:
-    const WatermarkSettingsPtr watermark_settings;
-    const Field initial_watermark;
+    const WatermarkSettingsPtr watermark;
     const ContextPtr context;
 };
 

@@ -91,16 +91,6 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(read_from_merge_tree->getStorageMetadata()->virtuals, query_info))
         return;
 
-    /// PREWHERE runs before the tagged filter sees a row, so a granule that filter empties may still
-    /// hold rows only PREWHERE removed. Sound while the PREWHERE condition is in `filter_actions_dag`
-    /// (the hash covers it) or is `__topKFilter` (key salted with the TopK plan); a runtime filter is neither.
-    if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
-    {
-        const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-        if (!prewhere_node || !isDeterministicAllowingTopKFilter(prewhere_node))
-            return;
-    }
-
     const auto & outputs = filter_actions_dag->getOutputs();
 
     /// Restrict to the case that ActionsDAG has a single output. This isn't technically necessary but de-risks

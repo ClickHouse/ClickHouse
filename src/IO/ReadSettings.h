@@ -52,11 +52,6 @@ struct RemoteFSReadSettings
 
     /// Log every blob storage read operation to system.blob_storage_log.
     bool enable_blob_storage_log = false;
-
-    /// Abort a read of a killed query before its next buffer fill. Opt-in: a throw here
-    /// is reported as a corrupt part on reads that validate or load parts, so only readers
-    /// whose caller tolerates a cancellation exception may set it.
-    bool interruptible_reads = false;
 };
 
 /// Settings controlling reads from the local filesystem.
@@ -170,7 +165,6 @@ struct ReadSettings
         size_t block_size = DEFAULT_READER_EXECUTOR_BLOCK_SIZE;
         size_t min_bytes_for_seek = DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK;
         size_t max_tail_for_drain = DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN;
-        size_t plan_look_ahead = DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD;
     };
     ReaderExecutorSettings reader_executor;
 

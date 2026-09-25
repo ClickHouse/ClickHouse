@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -530,9 +529,7 @@ public:
         DB::readVarUInt(m_size, rb);
 
         if (m_size > UNIQUES_HASH_MAX_SIZE)
-            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Cannot read UniquesHashSet: the element count is {}, which exceeds the maximum value of {}",
-                static_cast<size_t>(m_size), static_cast<size_t>(UNIQUES_HASH_MAX_SIZE));
+            throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
 
         free();
 

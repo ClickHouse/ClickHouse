@@ -98,15 +98,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
-        # Endpoint that always replies with plain text, ignoring `response_format`, as a
-        # model/gateway that doesn't support structured output would.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_mock_no_structured_output AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions_no_structured_output', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
         instance.query(
             f"CREATE NAMED COLLECTION ai_error AS "
             f"provider = 'openai', "
@@ -763,7 +754,7 @@ def test_classify_null_input(started_cluster):
 
 
 def test_filter_basic(started_cluster):
-    """aiFilter constrains the model to a JSON-schema boolean `match` field.
+    """aiFilter asks the model for a bare true/false response.
     The mock returns true for ordinary messages."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('The package never arrived')")
@@ -818,8 +809,8 @@ def test_filter_truncated_response_graceful(started_cluster):
     assert result.strip() == ""
 
 
-def test_filter_response_format(started_cluster):
-    """aiFilter sends a JSON-schema response_format constraining the model to a boolean `match` field."""
+def test_filter_no_response_format(started_cluster):
+    """aiFilter does not send a JSON-schema response_format; it asks for bare true/false."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('hello')")
     instance.query(
@@ -831,41 +822,9 @@ def test_filter_response_format(started_cluster):
         )
     )
     body = json.loads(last["body"])
-    assert body["response_format"]["type"] == "json_schema"
-    schema = body["response_format"]["json_schema"]["schema"]
-    assert schema["properties"]["match"]["type"] == "boolean"
-    assert schema["required"] == ["match"]
+    assert "response_format" not in body
     system = next(m["content"] for m in body["messages"] if m["role"] == "system")
-    assert "boolean text filter" in system.lower()
-
-
-def test_filter_no_structured_output(started_cluster):
-    """aiFilter still sends `response_format`, but a provider that ignores it and replies with plain
-    text must still be handled correctly by the fallback in `FunctionAiFilter::postProcessResponse`:
-    a bare `true` matches, `false` doesn't, and an unrecognized reply (neither) fails closed to no
-    match rather than matching."""
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query(
-        "INSERT INTO test_input VALUES ('great product'), ('does not match'), ('gibberish reply')"
-    )
-    result = instance.query(
-        "SELECT x, aiFilter(x, 'positive feedback', map('credentials', 'ai_mock_no_structured_output')) "
-        "FROM test_input ORDER BY x",
-    )
-    lines = result.strip().split("\n")
-    assert lines == [
-        "does not match\t0",
-        "gibberish reply\t0",
-        "great product\t1",
-    ]
-
-    last = json.loads(
-        instance.exec_in_container(
-            ["curl", "-s", f"http://localhost:{MOCK_PORT}/last-request"]
-        )
-    )
-    body = json.loads(last["body"])
-    assert body["response_format"]["type"] == "json_schema"
+    assert "lowercase text true or false" in system.lower()
 
 
 def test_filter_null_input(started_cluster):
@@ -2382,8 +2341,8 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
         )
         outer_wins = int(get_profile_events(qid)["api_calls"])
 
-        # The quota is set only in the subquery; the outer query leaves it at the default (0 -
-        # no limit). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
+        # The quota is set only in the subquery; the outer query leaves it at the default (far
+        # above 64). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
         # a quota set only in a subquery has no effect.
         qid = unique_query_id("quota_levels_subquery_only")
         instance.query(

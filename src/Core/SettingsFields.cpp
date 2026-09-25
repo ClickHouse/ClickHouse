@@ -266,7 +266,7 @@ void SettingFieldNumber<T>::readBinary(ReadBuffer & in)
     {
         static_assert(std::is_floating_point_v<T>);
         String str;
-        readStringBinaryGrowing(str, in);
+        readStringBinary(str, in);
         *this = ::DB::parseFromString<T>(str);
     }
 }
@@ -480,7 +480,7 @@ void SettingFieldString::writeBinary(WriteBuffer & out) const
 void SettingFieldString::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinaryGrowing(str, in);
+    readStringBinary(str, in);
     *this = std::move(str);
 }
 
@@ -575,7 +575,7 @@ void SettingFieldChar::writeBinary(WriteBuffer & out) const
 void SettingFieldChar::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinaryGrowing(str, in);
+    readStringBinary(str, in);
     *this = stringToChar(str);
 }
 
@@ -588,20 +588,8 @@ void SettingFieldURI::writeBinary(WriteBuffer & out) const
 void SettingFieldURI::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinaryGrowing(str, in);
-    *this = parseURI(str);
-}
-
-Poco::URI SettingFieldURI::parseURI(const String & str)
-{
-    try
-    {
-        return Poco::URI{str};
-    }
-    catch (const Poco::SyntaxException & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse URI: {}", e.displayText());
-    }
+    readStringBinary(str, in);
+    *this = Poco::URI{str};
 }
 
 
@@ -613,7 +601,7 @@ void SettingFieldEnumHelpers::writeBinary(std::string_view str, WriteBuffer & ou
 String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinaryGrowing(str, in);
+    readStringBinary(str, in);
     return str;
 }
 
@@ -625,7 +613,7 @@ void SettingFieldTimezone::writeBinary(WriteBuffer & out) const
 void SettingFieldTimezone::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinaryGrowing(str, in);
+    readStringBinary(str, in);
     *this = std::move(str);
 }
 
@@ -661,7 +649,7 @@ void SettingFieldCustom::writeBinary(WriteBuffer & out) const
 void SettingFieldCustom::readBinary(ReadBuffer & in)
 {
     String str;
-    readStringBinaryGrowing(str, in);
+    readStringBinary(str, in);
     parseFromString(str);
 }
 

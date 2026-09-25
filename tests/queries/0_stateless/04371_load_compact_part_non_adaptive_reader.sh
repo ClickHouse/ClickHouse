@@ -26,7 +26,7 @@ SETTINGS table_disk = true,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = '${CLICKHOUSE_DISKS_FILES}/04371/${CLICKHOUSE_DATABASE}/')
+      path = 'disks/04371/${CLICKHOUSE_DATABASE}/')
 "
 
 # Same backing path, readonly, and non-adaptive granularity (index_granularity_bytes = 0) so that
@@ -41,7 +41,7 @@ SETTINGS table_disk = true, index_granularity_bytes = 0, min_bytes_for_wide_part
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = '${CLICKHOUSE_DISKS_FILES}/04371/${CLICKHOUSE_DATABASE}/')
+      path = 'disks/04371/${CLICKHOUSE_DATABASE}/')
 "
 
 # Same shared path and settings, but this reader picks parts up via the background
@@ -58,7 +58,7 @@ SETTINGS table_disk = true, refresh_parts_interval = 1,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = '${CLICKHOUSE_DISKS_FILES}/04371/${CLICKHOUSE_DATABASE}/')
+      path = 'disks/04371/${CLICKHOUSE_DATABASE}/')
 "
 
 # A single small insert produces a Compact part.

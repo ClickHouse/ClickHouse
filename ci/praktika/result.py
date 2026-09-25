@@ -248,9 +248,6 @@ class Result(MetaClasses.Serializable):
         or `copy_result_to_s3`) are kept up-to-date, while sub-results (tasks) never
         create their own files — avoiding `OSError: File name too long` when a result
         name is derived from a long error message.
-
-        The file may hold checkpointed test results, so it is rewritten with
-        `dump_atomically`: a job killed mid-write keeps the previous content.
         """
         try:
             exists = Path(self.file_name()).is_file()
@@ -259,7 +256,7 @@ class Result(MetaClasses.Serializable):
                 return self
             raise
         if exists:
-            self.dump_atomically()
+            self.dump()
         return self
 
     def set_status(self, status) -> "Result":
@@ -376,77 +373,20 @@ class Result(MetaClasses.Serializable):
         return self
 
     def _add_job_summary_to_info(self):
-        # A job whose direct children are test cases publishes a row per case and
-        # renders each one on its report page, so naming every failure here would
-        # repeat those payloads and grow this text with the failure count. Naming
-        # a few is enough to identify a job that died in one of its steps, which
-        # is the case that has no other carrier.
-        MAX_NAMED_STEPS = 3
         if not self.info:
             total = 0
             fail_cnt = 0
-            named = []
             for r in self.results:
                 if not r.is_ok():
                     fail_cnt += 1
-                    if r.info and len(named) < MAX_NAMED_STEPS:
-                        named.append(self._trim_step_info(f"{r.name}: {r.info}"))
                 total += 1
-            self.set_info("\n".join([f"Failures: {fail_cnt}/{total}"] + named))
+            self.set_info(f"Failures: {fail_cnt}/{total}")
 
         return self
-
-    @staticmethod
-    def _trim_step_info(line):
-        """Bounds one failed-step line, keeping both of its ends.
-
-        A step payload carries its cause either near the front (the
-        marker-centered excerpt of ``from_commands_run``) or at the very tail
-        (its plain last-N excerpt), so trimming one end alone can drop the
-        cause. The head also carries the step name, which is the only
-        identifying text a job-level row has.
-
-        The bound sits above the widest shape ``from_commands_run`` produces
-        (300 retained lines, about 26 KB), so an ordinary step log is named
-        whole and only a step with pathologically long single lines is cut.
-        Such a step can carry its marker anywhere, including inside the span
-        that would otherwise be dropped, so the kept tail is anchored on the
-        first ``: error:`` or ``: warning:``, the two markers
-        ``from_commands_run`` centers its own excerpt on. The anchor search
-        starts ``MARKER_CONTEXT`` characters before the head boundary rather
-        than at it, because a marker that close to the boundary is cut in two
-        by it, or introduces a message that is.
-        """
-        MAX_STEP_INFO_LEN = 32768
-        MARKER_CONTEXT = 200
-        if len(line) <= MAX_STEP_INFO_LEN:
-            return line
-        half = MAX_STEP_INFO_LEN // 2
-        head, tail = line[:half], line[-half:]
-        found = [line.find(m, half - MARKER_CONTEXT) for m in (": error:", ": warning:")]
-        marker = min((p for p in found if p != -1), default=-1)
-        if marker != -1 and marker < len(line) - half:
-            start = max(min(marker, half), marker - MARKER_CONTEXT)
-            head, tail = line[: min(half, start)], line[start : marker + half]
-        dropped = len(line) - len(head) - len(tail)
-        return head + f"\n~~~~~ trimmed {dropped} characters, see log ~~~~~\n" + tail
 
     @classmethod
     def file_name_static(cls, name):
         return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
-
-    def dump_atomically(self):
-        """Like `dump`, but publishes by rename, so a reader never sees a truncated file.
-
-        `dump` truncates in place, and a job killed mid-write would leave an unparseable
-        result file for the runner. With a rename the previous content stands instead.
-        """
-        path = Path(self.file_name())
-        tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-        with open(tmp_path, "w", encoding="utf8") as f:
-            json.dump(self.to_dict(self), f, indent=4)
-        os.replace(tmp_path, path)
-        return self
 
     def to_markdown(self, max_rows: int = 50, report_url: str = "") -> str:
         """Render this Result as a Markdown document suitable for posting
@@ -980,6 +920,7 @@ class Result(MetaClasses.Serializable):
         command_kwargs=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
+        retry_deadline=None,
         env=None,
     ):
         """
@@ -996,6 +937,11 @@ class Result(MetaClasses.Serializable):
         :param command_kwargs: Keyword arguments for the callable command.
         :param retries: The number of times to retry the command if it fails.
         :param retry_errors: The errors to retry on. Support for shell command(s) only.
+        :param retry_deadline: Seconds after the first retryable failure past which no further
+            attempt is started. An attempt already running is not interrupted, so the ladder can
+            outlast this by one attempt's own bound. Bounds a class whose per-attempt cost varies,
+            which an attempt count cannot. Shell command(s) only. `None` keeps the count as the
+            only bound.
         :param env: Optional environment dict for shell commands (e.g. the job
             python env so PYTHONPATH carries the checkout root for `ci.*` imports).
         :return: Result object with status and optional log file.
@@ -1059,6 +1005,7 @@ class Result(MetaClasses.Serializable):
                         log_file=log_file,
                         retries=retries,
                         retry_errors=retry_errors,
+                        retry_deadline=retry_deadline,
                         env=env,
                     )
                     if with_info or (with_info_on_failure and exit_code != 0):
@@ -1142,9 +1089,7 @@ class Result(MetaClasses.Serializable):
                 self.files.sort(key=lambda f: Path(str(f)).name.lower())
             except Exception as e:
                 print(f"WARNING: Failed to sort attached files: {e}")
-        # The job may be killed by its timeout during this final publish, and the
-        # result file may already hold the rows checkpointed by the job itself.
-        self.dump_atomically()
+        self.dump()
         print(self.to_stdout_formatted())
         if not self.is_ok():
             sys.exit(1)

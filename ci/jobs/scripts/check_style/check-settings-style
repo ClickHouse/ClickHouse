@@ -31,7 +31,6 @@ ALL_DECLARATION_FILES=(
     "$ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp"
     "$ROOT_PATH/src/Storages/ExecutableSettings.cpp"
     "$ROOT_PATH/src/Storages/FileLog/FileLogSettings.cpp"
-    "$ROOT_PATH/src/Storages/GenerateRandomSettings.cpp"
     "$ROOT_PATH/src/Storages/Hive/HiveSettings.cpp"
     "$ROOT_PATH/src/Storages/Kafka/KafkaSettings.cpp"
     "$ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp"
