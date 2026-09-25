@@ -8269,7 +8269,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
         /// document, so a framing carried by the connection URL or by the HTTP session behind it
         /// would turn it into a packet stream that no panel query can read.
         'add_http_cors_header=1&framing_output_format=None&default_format=JSON' + url_params;
-    if (user) url += '&user=' + encodeURIComponent(user);
+    url += userUrlParam(server_address, user);
     if (password) url += '&password=' + encodeURIComponent(password);
 
     /// Whether this request still belongs to the active connection. Re-evaluated after the
@@ -8312,7 +8312,7 @@ async function getServerStatus(server_address, user, password) {
         /// Framing is pinned off for the same reason as in `auxiliaryQuery`: the response is
         /// parsed as JSON, not as a packet stream.
         'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
-    if (user) url += '&user=' + encodeURIComponent(user);
+    url += userUrlParam(server_address, user);
     if (password) url += '&password=' + encodeURIComponent(password);
     try {
         let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: { 'Authorization': 'never' } });
@@ -10894,7 +10894,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         /// Ask server to allow cross-domain requests.
         'add_http_cors_header=1';
-    if (user) url += '&user=' + encodeURIComponent(user);
+    url += userUrlParam(server_address, user);
     if (password) url += '&password=' + encodeURIComponent(password);
     url += '&enable_http_compression=1';
     /// We will put the result in the query cache, so it can be used when download is initiated later.
@@ -14635,15 +14635,36 @@ function sameServerAddress(a, b) {
 /// `http://alice@host:8123/` and `http://bob@host:8123/` look like the same server there and must be
 /// separated by their user. The field takes precedence over the userinfo, mirroring how the request
 /// is built. The userinfo may be percent-encoded, so decode it (falling back to the raw value on a
-/// malformed escape) before comparing.
+/// malformed escape) before comparing. With neither a field user nor a userinfo the connection
+/// authenticates as the server's `default` user (the HTTP interface substitutes `default` when no
+/// `user` is given), so that is the effective user then - never an empty string: a `default` typed (or
+/// autofilled by the password manager, see `storeCredentials`) into the field is the same connection
+/// as an empty field, and must compare equal to it.
 function effectiveConnectionUser(serverAddress, fieldUser) {
     if (fieldUser) return fieldUser;
+    let implicit = '';
     try {
         const raw = new URL(serverAddress, location.href).username;
-        try { return decodeURIComponent(raw); } catch (e) { return raw; }
+        try { implicit = decodeURIComponent(raw); } catch (e) { implicit = raw; }
     } catch (e) {
-        return '';
+        implicit = '';
     }
+    return implicit || 'default';
+}
+
+/// The `user` URL parameter of a request to `server_address` for the given `user` field value, or an
+/// empty string when no parameter is needed. The parameter is sent only when the field names a
+/// DIFFERENT user than the one an empty field already authenticates as (`effectiveConnectionUser`
+/// with an empty field): `default` on a plain server URL, or the user embedded in the server URL's
+/// userinfo. So a field holding `default` (or the userinfo user) builds exactly the request an
+/// empty field builds, which is what makes the login remembered by the password manager under that
+/// name (`storeCredentials`) round-trip: when the manager refills it into the field on the next visit,
+/// the request is still the implicit-auth request it was saved from, not a forced `user=default`
+/// that would override the URL userinfo. A field naming another user still takes precedence, as
+/// before. Every request URL of this page goes through here so the rule cannot drift between them.
+function userUrlParam(server_address, user) {
+    if (!user || user === effectiveConnectionUser(server_address, '')) return '';
+    return '&user=' + encodeURIComponent(user);
 }
 
 /// Has the live target moved away from the connection/selection the query that produced this run
@@ -15659,15 +15680,25 @@ async function cancel()
     progressEl.clear();
 }
 
+/// Offer the connection's login to the browser's password manager, so it can be autofilled on the next
+/// visit. `PasswordCredential` rejects an empty `id` (as it rejects an empty password) with a
+/// `TypeError`, and the browser may not implement it at all (Firefox has no `PasswordCredential`), so
+/// both cases are checked up front instead of throwing out of every Run. An empty `user` field
+/// authenticates as the server's default user (the HTTP interface uses `default` when no `user` is
+/// given), or as the user embedded in the server URL's userinfo (`http://alice@host:8123/`), so the
+/// login is saved under that effective name (`effectiveConnectionUser`, never empty). The name must
+/// round-trip: when the password manager refills it into the `user` field later, the connection must
+/// stay the implicit-auth connection it was saved from. That is guaranteed by `userUrlParam`, which
+/// omits the `user` parameter for a field equal to the implicit user (so the request is the same as
+/// with an empty field), and by `effectiveConnectionUser` treating both spellings as one identity.
 function storeCredentials() {
-    if (password_elem.value) {
-        const cred = new PasswordCredential({
-            id: user_elem.value,
-            password: password_elem.value,
-            name: url_elem.value,
-        });
-        navigator.credentials.store(cred);
-    }
+    if (!password_elem.value || typeof PasswordCredential !== 'function') return;
+    const cred = new PasswordCredential({
+        id: effectiveConnectionUser(url_elem.value, user_elem.value),
+        password: password_elem.value,
+        name: url_elem.value,
+    });
+    navigator.credentials.store(cred);
 }
 
 /// The "Run" / "Run one" button submits the form; handle it here.
@@ -17903,7 +17934,7 @@ function buildCompletionUrl() {
     const password = password_elem.value;
     const server_address = url_elem.value;
     let url = server_address + (server_address.indexOf('?') >= 0 ? '&' : '?') + 'add_http_cors_header=1';
-    if (user) url += '&user=' + encodeURIComponent(user);
+    url += userUrlParam(server_address, user);
     if (password) url += '&password=' + encodeURIComponent(password);
     /// Framing is pinned off (not merely unset): the completion response is read as plain
     /// `TSVRaw` text, so a framing carried by the connection URL or by the HTTP session would
@@ -19896,7 +19927,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&framing_output_format=None' +
         '&default_format=' + encodeURIComponent(format) +
         '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
-    if (user) url += '&user=' + encodeURIComponent(user);
+    url += userUrlParam(server_address, user);
     if (password) url += '&password=' + encodeURIComponent(password);
     if (last_database_for_download) url += '&database=' + encodeURIComponent(last_database_for_download);
     url += last_shape_for_download;
