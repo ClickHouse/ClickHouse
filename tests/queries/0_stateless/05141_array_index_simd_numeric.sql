@@ -72,6 +72,12 @@ SELECT 'Exact numeric conversion',
     has(materialize(range(64)::Array(Int32)), nan),
     indexOf(materialize(range(64)::Array(Int32)), nan);
 
+SELECT 'NaN needle',
+    has(materialize([toFloat32(nan)]), toFloat32(nan)),
+    indexOf(materialize([toFloat32(nan)]), toFloat32(nan)),
+    has(materialize([toFloat64(nan)]), toFloat64(nan)),
+    indexOf(materialize([toFloat64(nan)]), toFloat64(nan));
+
 SELECT 'Bare UInt32 max',
     has(materialize(arrayMap(x -> if(x = 12, toUInt32(4294967295), toUInt32(x)), range(32))), 4294967295),
     indexOf(materialize(arrayMap(x -> if(x = 12, toUInt32(4294967295), toUInt32(x)), range(32))), 4294967295);

@@ -109,8 +109,8 @@ private:
 
     static ALWAYS_INLINE ResultType findInBlocks(const T * data, size_t size, T value, size_t offset)
     {
-        constexpr size_t block_size = 64 / sizeof(T);
-        if (size < block_size)
+        constexpr size_t elements_per_block = 64 / sizeof(T);
+        if (size < elements_per_block)
             return findScalar(data, size, value, offset);
 
         if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
@@ -123,10 +123,10 @@ private:
         }
 
         size_t i = 0;
-        for (; size - i >= block_size; i += block_size)
+        for (; size - i >= elements_per_block; i += elements_per_block)
         {
             unsigned found = 0;
-            for (size_t j = 0; j < block_size; ++j)
+            for (size_t j = 0; j < elements_per_block; ++j)
                 found |= static_cast<unsigned>(data[i + j] == value);
 
             if (found)
@@ -134,7 +134,7 @@ private:
                 if constexpr (std::is_same_v<ConcreteAction, HasAction>)
                     return 1;
                 else
-                    return findScalar(data + i, block_size, value, offset + i);
+                    return findScalar(data + i, elements_per_block, value, offset + i);
             }
         }
 
@@ -256,7 +256,7 @@ public:
             high = compare_result ? middle : high;
             low = compare_result ? low : middle + 1;
         }
-        if (low < array_size && compare(data, target, low + current_offset, 0))
+        if (low < array_size && compare(data, target, current_offset + low, 0))
         {
             ConcreteAction::apply(current, low);
         }
@@ -274,7 +274,6 @@ public:
         ArrOffset current_offset)
     {
         ResultType current = 0;
-
         for (size_t j = 0; j < array_size; ++j)
         {
             if constexpr (Case == 2) /// Right arg is Nullable
@@ -816,7 +815,6 @@ private:
             arg.type = static_cast<const DataTypeNullable &>(*arguments[1].type).getNestedType();
 
             auto & null_map = source_columns[3];
-
             null_map.column = arg_nullable->getNullMapColumnPtr();
             null_map.type = std::make_shared<DataTypeUInt8>();
         }
@@ -941,17 +939,8 @@ private:
                 if (!data.null_maps.first && !data.null_maps.second)
                 {
                     const auto needle = item_arg_const->template getValue<Resulting>();
-                    if constexpr (std::is_floating_point_v<Resulting> && std::is_integral_v<Initial>)
-                    {
-                        if (isNaN(needle))
-                        {
-                            result.getData().resize_fill(data.offsets.size());
-                            return true;
-                        }
-                    }
-
                     Initial converted_needle{};
-                    if (!accurate::convertNumeric<Resulting, Initial>(needle, converted_needle))
+                    if (isNaN(needle) || !accurate::convertNumeric<Resulting, Initial>(needle, converted_needle))
                     {
                         result.getData().resize_fill(data.offsets.size());
                         return true;
