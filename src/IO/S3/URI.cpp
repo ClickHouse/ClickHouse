@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
+#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -32,6 +33,22 @@ namespace ErrorCodes
 
 namespace S3
 {
+
+namespace
+{
+
+/// `Poco::URI::toString` renders the userinfo (`user:password@`) and the query parameters of a presigned
+/// URL verbatim. Exception messages reach `system.query_log` and the server log, which, unlike the query
+/// text, are not masked, so a URI must not be put into them as is.
+String maskedURIString(const Poco::URI & uri)
+{
+    String result = uri.toString();
+    maskURIUserinfo(result);
+    maskPresignedURLParameters(result);
+    return result;
+}
+
+}
 
 URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
 {
@@ -143,13 +160,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     case S3UriStyle::VIRTUAL_HOSTED:
     {
         if (!tryInitVirtualHostedStyle(is_using_aws_private_link_interface, false))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 virtual-hosted-style uri: {}", !uri.empty() ? uri.toString() : "");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 virtual-hosted-style uri: {}", !uri.empty() ? maskedURIString(uri) : "");
         break;
     }
     case S3UriStyle::PATH:
     {
         if (!tryInitPathStyle())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 path-style uri: {}", !uri.empty() ? uri.toString() : "");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 path-style uri: {}", !uri.empty() ? maskedURIString(uri) : "");
         break;
     }
     }
@@ -230,7 +247,7 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
             ErrorCodes::BAD_ARGUMENTS,
             "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
             quoteString(bucket),
-            !uri.empty() ? " (" + uri.toString() + ")" : "");
+            !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
 }
 
 void URI::validateKey(const String & key, const Poco::URI & uri)
@@ -241,7 +258,7 @@ void URI::validateKey(const String & key, const Poco::URI & uri)
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid S3 key: {}{}",
             quoteString(key),
-            !uri.empty() ? " (" + uri.toString() + ")" : "");
+            !uri.empty() ? " (" + maskedURIString(uri) + ")" : "");
     };
 
 
