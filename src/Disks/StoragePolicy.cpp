@@ -2,6 +2,7 @@
 #include <base/sort.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/createVolume.h>
 
 #include <Interpreters/Context.h>
@@ -14,6 +15,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <filesystem>
 #include <ranges>
 #include <set>
 
@@ -117,6 +119,7 @@ StoragePolicy::StoragePolicy(
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
                         move_factor, backQuote(name));
 
+    validateDisksHaveDistinctStorageNamespaces();
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
@@ -136,6 +139,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
                         move_factor, backQuote(name));
 
+    validateDisksHaveDistinctStorageNamespaces();
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
@@ -170,6 +174,8 @@ StoragePolicy::StoragePolicy(StoragePolicyPtr storage_policy,
             }
         }
     }
+
+    validateDisksHaveDistinctStorageNamespaces();
 }
 
 
@@ -466,6 +472,61 @@ void StoragePolicy::buildVolumeIndices()
                                 "is duplicated)" , backQuote(name), backQuote(disk_name));
 
             volume_index_by_disk_name[disk_name] = index;
+        }
+    }
+}
+
+void StoragePolicy::validateDisksHaveDistinctStorageNamespaces() const
+{
+    struct StorageNamespace
+    {
+        DataSourceType type;
+        ObjectStorageType object_storage_type;
+        String description;
+        String objects_namespace;
+        String zookeeper_name;
+        String path;
+
+        auto operator<=>(const StorageNamespace &) const = default;
+    };
+
+    std::map<StorageNamespace, String> disk_by_namespace;
+    for (const auto & volume : volumes)
+    {
+        for (const auto & disk : volume->getDisks())
+        {
+            const auto data_source = disk->getDataSourceDescription();
+
+            /// Separate in-memory disks do not share a persistent namespace even though their paths are empty.
+            if (data_source.type == DataSourceType::RAM)
+                continue;
+
+            auto path = std::filesystem::path(disk->getPath()).lexically_normal();
+            if (data_source.type == DataSourceType::Local)
+                path = std::filesystem::weakly_canonical(path);
+
+            String objects_namespace;
+            if (data_source.type == DataSourceType::ObjectStorage)
+                objects_namespace = disk->getObjectStorage()->getObjectsNamespace();
+
+            StorageNamespace storage_namespace{
+                .type = data_source.type,
+                .object_storage_type = data_source.object_storage_type,
+                .description = data_source.type == DataSourceType::ObjectStorage ? data_source.description : String{},
+                .objects_namespace = std::move(objects_namespace),
+                .zookeeper_name = data_source.type == DataSourceType::ObjectStorage ? data_source.zookeeper_name : String{},
+                .path = path.string(),
+            };
+
+            auto [it, inserted] = disk_by_namespace.emplace(storage_namespace, disk->getName());
+            if (!inserted && it->second != disk->getName())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Disks {} and {} in storage policy {} resolve to the same storage namespace ({})",
+                    backQuote(it->second),
+                    backQuote(disk->getName()),
+                    backQuote(name),
+                    quoteString(storage_namespace.path));
         }
     }
 }
