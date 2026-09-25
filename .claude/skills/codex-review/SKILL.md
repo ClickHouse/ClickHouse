@@ -93,15 +93,21 @@ Keep the prompt as close to CI's as possible and **general**. Do NOT add invaria
 X", focus files, a description of the fix, or anything that steers toward the solution you have in mind.
 Steering is exactly what makes the review miss things.
 
+Local binaries are the one addition: if you built the branch in this session (or the user told you where a
+build of it is), tell codex the absolute path of the binary so it can reproduce scenarios instead of
+reasoning about them. Say only where it is and that it may be older than HEAD; do not say what to run.
+Leave `BINARY_NOTE` empty if you do not know of a build of this branch; do not search for one.
+
 ```bash
 mkdir -p tmp
 N=$(( $(ls tmp/codex_review_*.log 2>/dev/null | wc -l) + 1 ))
+BINARY_NOTE=""   # e.g. "A ClickHouse binary built from this branch is at /abs/build/programs/clickhouse (may be older than HEAD)."
 PROMPT="Follow the Review Instructions in .claude/skills/review/SKILL.md.
 Repo is checked out at the branch to review.
 
 Review the changes on the current branch. Get the diff with 'git diff ${BASE}...HEAD' and read the
 current code, not only the diff.
-
+${BINARY_NOTE}
 Write the review to stdout using the REQUESTED OUTPUT FORMAT from .claude/skills/review/SKILL.md.
 Do not use gh and do not post anything."
 
