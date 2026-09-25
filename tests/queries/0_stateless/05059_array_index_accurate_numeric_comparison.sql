@@ -71,6 +71,30 @@ SELECT 'LowCardinality strings keep their padding semantics';
 SELECT has(materialize(CAST(['ab'], 'Array(LowCardinality(FixedString(3)))')), 'ab');
 SELECT has(materialize(CAST(['ab'], 'Array(LowCardinality(String))')), 'ab');
 SELECT has(materialize(CAST(['o'], 'Array(LowCardinality(FixedString(3)))')), CAST('o', 'Enum8(\'\' = 0, \'o\' = 1)'));
+-- A needle whose own tail is a zero byte is padded to the element's width by the comparison, so it has
+-- to be found, and the padding the cast to the dictionary type added is not a loss either.
+-- The oracle is `arrayFilter` over the same LowCardinality haystack rather than `has` over a plain
+-- array, because that plain spelling is itself wrong for these needles. The last row is the control: a
+-- needle whose tail is not a zero byte is a different value and is still found nowhere.
+SELECT has(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')), unhex('6100')) AS lc, length(arrayFilter(x -> x = unhex('6100'), materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')))) AS oracle;
+SELECT indexOf(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')), unhex('6100')) AS lc, length(arrayFilter(x -> x = unhex('6100'), materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')))) AS oracle;
+SELECT countEqual(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')), unhex('6100')) AS lc, length(arrayFilter(x -> x = unhex('6100'), materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')))) AS oracle;
+SELECT notHas(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')), unhex('6100')) AS lc, length(arrayFilter(x -> x = unhex('6100'), materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')))) = 0 AS oracle;
+SELECT has(materialize(CAST([''], 'Array(LowCardinality(FixedString(4)))')), unhex('00')) AS lc, length(arrayFilter(x -> x = unhex('00'), materialize(CAST([''], 'Array(LowCardinality(FixedString(4)))')))) AS oracle;
+SELECT has(materialize(CAST(['a'], 'Array(LowCardinality(Nullable(FixedString(4))))')), unhex('6100')) AS lc, length(arrayFilter(x -> x = unhex('6100'), materialize(CAST(['a'], 'Array(LowCardinality(Nullable(FixedString(4))))')))) AS oracle;
+-- A constant needle's own LowCardinality and Nullable wrappers are peeled before its type is read, so a
+-- wrapped needle resolves to the same dictionary entry as a bare one.
+SELECT has(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')), CAST(unhex('6100'), 'Nullable(String)')) AS lc, length(arrayFilter(x -> x = CAST(unhex('6100'), 'Nullable(String)'), materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')))) AS oracle;
+SELECT has(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')), CAST(unhex('6100'), 'LowCardinality(String)')) AS lc, length(arrayFilter(x -> x = CAST(unhex('6100'), 'LowCardinality(String)'), materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')))) AS oracle;
+-- A needle wider than the element is a different value. A cast to a nullable dictionary type reports
+-- that by returning NULL instead of throwing, and the value under that NULL is the element type's
+-- default, so the needle has to be found nowhere.
+SELECT has(materialize(CAST([''], 'Array(LowCardinality(Nullable(FixedString(4))))')), 'abcde') AS lc, length(arrayFilter(x -> x = 'abcde', materialize(CAST([''], 'Array(LowCardinality(Nullable(FixedString(4))))')))) AS oracle;
+SELECT has(materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')), unhex('6162')) AS lc, length(arrayFilter(x -> x = unhex('6162'), materialize(CAST(['a'], 'Array(LowCardinality(FixedString(4)))')))) AS oracle;
+-- mapContainsKey and mapContainsValue read the key and value arrays with their dictionaries intact,
+-- so they resolve the needle the same way; has(map, k) does not, and is left alone.
+SELECT mapContainsKey(materialize(CAST(map(CAST('a', 'FixedString(4)'), 'v'), 'Map(LowCardinality(FixedString(4)), String)')), unhex('6100')) AS lc, length(arrayFilter(x -> x = unhex('6100'), mapKeys(materialize(CAST(map(CAST('a', 'FixedString(4)'), 'v'), 'Map(LowCardinality(FixedString(4)), String)'))))) AS oracle;
+SELECT mapContainsValue(materialize(CAST(map('k', CAST('a', 'FixedString(4)')), 'Map(String, LowCardinality(FixedString(4)))')), unhex('6100')) AS lc, length(arrayFilter(x -> x = unhex('6100'), mapValues(materialize(CAST(map('k', CAST('a', 'FixedString(4)')), 'Map(String, LowCardinality(FixedString(4)))'))))) AS oracle;
 
 SELECT 'LowCardinality lossy casts outside the numeric domain';
 -- https://github.com/ClickHouse/ClickHouse/issues/117316
