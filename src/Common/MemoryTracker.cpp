@@ -833,6 +833,8 @@ void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
             ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
             ReadableSize(allocated_));
 
+    /// Everything allocated and freed since the last tick went into `amount` and not into the
+    /// corrected value we replace it with, so carry that net change over to the plain counter.
     auto current_amount = total_memory_tracker.amount.exchange(new_amount, std::memory_order_relaxed);
     total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);
     total_memory_tracker.last_corrected_amount = new_amount;
@@ -844,6 +846,16 @@ void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
 
     bool log_memory_usage = true;
     total_memory_tracker.updatePeak(new_amount, log_memory_usage);
+}
+
+void MemoryTracker::updateUncorrected()
+{
+    /// Nothing replaced `amount` since the last tick, so the net change of the plain counter is
+    /// the net change of `amount` itself.
+    auto current_amount = total_memory_tracker.amount.load(std::memory_order_relaxed);
+    total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);
+    total_memory_tracker.last_corrected_amount = current_amount;
+    CurrentMetrics::set(CurrentMetrics::MemoryTrackingUncorrected, total_memory_tracker.uncorrected_amount);
 }
 
 void MemoryTracker::setSoftLimit(Int64 value)
