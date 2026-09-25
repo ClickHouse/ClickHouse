@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
 #include <Processors/Executors/Runtime/PipelineExecutionStatus.h>
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 #include <Processors/Executors/Runtime/ExecutorTasks.h>
-#include <Common/EventCounter.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
@@ -72,6 +70,10 @@ public:
     /// It would be called every time when processor reports read progress.
     void setReadProgressCallback(ReadProgressCallbackPtr callback);
 
+    void setCollectWorkIntervals(bool collect_work_intervals_);
+
+    WorkIntervalsPerThread takeWorkIntervals();
+
 private:
     ExecutingGraphPtr graph;
 
@@ -82,6 +84,7 @@ private:
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
+    UInt64 query_start_ns = 0;
 
     /// Pipeline's max thread count (captured from execute(num_threads)).
     size_t max_pipeline_threads = 1;
@@ -105,6 +108,7 @@ private:
     /// system.opentelemetry_span_log
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
+    bool collect_work_intervals = false;
     /// EXPLAIN ANALYZE
     const StepWallClockRegistry * step_wall_clock_registry = nullptr;
 
@@ -119,8 +123,8 @@ private:
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
-    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
+    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
+    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.

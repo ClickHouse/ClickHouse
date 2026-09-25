@@ -1,12 +1,19 @@
 #pragma once
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
-#include <Processors/StepWallClockRegistry.h>
+
+#include <Processors/Executors/WorkInterval.h>
+#include <base/types.h>
+
+#include <atomic>
 #include <condition_variable>
+#include <exception>
+#include <utility>
 
 namespace DB
 {
 
+class IProcessor;
 class ReadProgressCallback;
+class StepWallClockRegistry;
 
 /// Context for each executing thread of PipelineExecutor.
 class ExecutionThreadContext
@@ -17,14 +24,17 @@ private:
     std::mutex mutex;
     bool wake_flag = false;
 
-    /// Currently processing node.
-    ExecutingGraph::Node * node = nullptr;
+    /// Currently processing processor.
+    IProcessor * processor = nullptr;
 
     /// Exception from executing thread itself.
     std::exception_ptr exception;
 
     /// Callback for read progress.
     ReadProgressCallback * read_progress_callback = nullptr;
+
+    /// The intervals for computing the time per step in EXPLAIN ANALYZE
+    std::vector<WorkInterval> work_intervals;
 
 public:
 #ifndef NDEBUG
@@ -48,28 +58,35 @@ public:
     const size_t thread_number;
     const bool profile_processors;
     const bool trace_processors;
+    const bool collect_work_intervals = false;
 
     void wait(std::atomic_bool & finished);
     void wakeUp();
 
     /// Methods to access/change currently executing task.
-    bool hasTask() const { return node != nullptr; }
-    void setTask(ExecutingGraph::Node * task) { node = task; }
-    ExecutingGraph::Node * getTask() const { return node; }
-    ExecutingGraph::Node * popTask() { return std::exchange(node, nullptr); }
+    bool hasTask() const { return processor != nullptr; }
+    void setTask(IProcessor * task) { processor = task; }
+    IProcessor * getTask() const { return processor; }
+    IProcessor * popTask() { return std::exchange(processor, nullptr); }
     bool executeTask();
 
     void setException(std::exception_ptr exception_);
     std::exception_ptr getException();
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
+    WorkIntervals takeWorkIntervals();
+
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, bool collect_work_intervals_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
         : read_progress_callback(callback)
         , step_to_wall_clock_registry(step_wall_clock_registry_)
         , thread_number(thread_number_)
         , profile_processors(profile_processors_)
         , trace_processors(trace_processors_)
-    {}
+        , collect_work_intervals(collect_work_intervals_)
+    {
+        if (collect_work_intervals)
+            work_intervals.reserve(1024ul);
+    }
 };
 
 }

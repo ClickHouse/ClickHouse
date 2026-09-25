@@ -4,6 +4,7 @@
 #include <Access/AccessControl.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -806,7 +807,12 @@ void HTTPHandler::processQuery(
 
     if (internal_compression)
     {
-        used_output.out_compressed_holder = std::make_shared<CompressedWriteBuffer>(*used_output.out);
+        /// The frames are the same self-describing format as the native protocol's, so the codec comes from
+        /// the same setting. It must not come from the default codec for table data: that one is chosen for
+        /// how data sits on disk, and tying the two together silently changes, on every such change, what
+        /// each `compress=1` client has to be able to decode.
+        used_output.out_compressed_holder
+            = std::make_shared<CompressedWriteBuffer>(*used_output.out, chooseNetworkCompressionCodec(&settings));
         used_output.out_maybe_compressed = used_output.out_compressed_holder;
         used_output.out = used_output.out_compressed_holder;
     }

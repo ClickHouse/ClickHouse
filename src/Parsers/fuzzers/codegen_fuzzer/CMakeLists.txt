@@ -16,11 +16,51 @@ configure_file(
     "${CURRENT_DIR_IN_BINARY}/clickhouse-template.g"
     COPYONLY)
 
-# Note that it depends on all.dict file!
+# The grammar is embedded at build time, when no runnable binary exists yet, so
+# the binary-derived all.dict (see tests/fuzz/update_dict.sh) is not available
+# here. Seed it from a dictionary derived from the sources instead: parser
+# keywords, function and data type names extracted from their registration
+# code, merged with the committed curated dictionary. It regenerates with the
+# sources, so it cannot drift the way a committed snapshot does.
+# The dictionary is derived from the registration code, so an incremental
+# build must rerun it when any scanned source changes, not only when the
+# script itself does. The generator greps its trees with no suffix filter, so
+# the trees are globbed whole here: this list and the trees and files that
+# generate_source_dict.sh scans are the same set.
+file(GLOB_RECURSE CODEGEN_DICT_SCANNED_SOURCES CONFIGURE_DEPENDS
+    "${ClickHouse_SOURCE_DIR}/src/Functions/*"
+    "${ClickHouse_SOURCE_DIR}/src/AggregateFunctions/*"
+    "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*"
+    "${ClickHouse_SOURCE_DIR}/src/DataTypes/*"
+    "${ClickHouse_SOURCE_DIR}/src/Formats/*"
+)
+list(APPEND CODEGEN_DICT_SCANNED_SOURCES
+    "${ClickHouse_SOURCE_DIR}/src/Processors/Transforms/WindowTransform.cpp"
+    "${ClickHouse_SOURCE_DIR}/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h"
+)
+
+add_custom_command(
+    OUTPUT
+        "${CURRENT_DIR_IN_BINARY}/codegen.dict"
+    COMMAND "${ClickHouse_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh" "${ClickHouse_SOURCE_DIR}" "${CURRENT_DIR_IN_BINARY}/codegen.dict"
+    DEPENDS
+        "${ClickHouse_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh"
+        "${ClickHouse_SOURCE_DIR}/src/Parsers/CommonParsers.h"
+        "${ClickHouse_SOURCE_DIR}/tests/fuzz/dictionaries/old.dict"
+        ${CODEGEN_DICT_SCANNED_SOURCES}
+)
+
+# The script and the template it prepends are inputs like the dictionary is:
+# a command only reruns for a file named in its DEPENDS, so without them an
+# edit to either leaves the grammar as it was.
 add_custom_command(
     OUTPUT
         "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
-    COMMAND ./update.sh "${ClickHouse_SOURCE_DIR}/tests/fuzz/all.dict"
+    COMMAND ./update.sh "${CURRENT_DIR_IN_BINARY}/codegen.dict"
+    DEPENDS
+        "${CURRENT_DIR_IN_BINARY}/codegen.dict"
+        "${CURRENT_DIR_IN_BINARY}/update.sh"
+        "${CURRENT_DIR_IN_BINARY}/clickhouse-template.g"
 )
 
 add_custom_command(
@@ -28,7 +68,9 @@ add_custom_command(
         "${CURRENT_DIR_IN_BINARY}/out.cpp"
         "${CURRENT_DIR_IN_BINARY}/out.proto"
     COMMAND python3 gen.py clickhouse.g out.cpp out.proto
-    DEPENDS "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
+    DEPENDS
+        "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
+        "${CURRENT_DIR_IN_BINARY}/gen.py"
 )
 
 set(PROTOBUF_GENERATE_CPP_APPEND_PATH TRUE)

@@ -27,6 +27,7 @@
 #include <Parsers/parseQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/ArrowFlightSource.h>
@@ -56,7 +57,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool output_format_arrow_unsupported_types_as_binary;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -335,10 +335,8 @@ namespace
     /// Creates a converter to convert ClickHouse blocks to the Arrow format.
     std::shared_ptr<CHColumnToArrowColumn> createCHToArrowConverter(const Block & header, ContextPtr query_context)
     {
-        CHColumnToArrowColumn::Settings arrow_settings;
-        arrow_settings.output_string_as_string = true;
-        arrow_settings.output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary];
-        auto ch_to_arrow_converter = std::make_shared<CHColumnToArrowColumn>(header, "Arrow", arrow_settings);
+        auto ch_to_arrow_converter
+            = std::make_shared<CHColumnToArrowColumn>(header, "Arrow", ArrowFlight::arrowConversionSettings(query_context));
         ch_to_arrow_converter->initializeArrowSchema();
         return ch_to_arrow_converter;
     }
@@ -594,7 +592,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
             executor.getHeader().getColumnsWithTypeAndName(),
             "Arrow",
             nullptr,
-            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+            ArrowFlight::arrowConversionSettings(query_context));
 
         if (schema_modifier)
         {
@@ -602,6 +600,8 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
             ARROW_RETURN_NOT_OK(status);
             schema = status.ValueUnsafe();
         }
+
+        const auto conversion_settings = ArrowFlight::arrowConversionSettings(query_context);
 
         std::optional<ColumnsWithTypeAndName> header;
         std::vector<Chunk> chunks;
@@ -619,9 +619,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
                 {
                     tables.emplace_back(
                         CHColumnToArrowColumn::calculateArrowTable(
-                            *header, "Arrow", chunks,
-                            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]},
-                            header->size(), schema));
+                            *header, "Arrow", chunks, conversion_settings, header->size(), schema));
                     chunks.clear();
                 }
             }
@@ -632,9 +630,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
         else if (single_table)
             tables.emplace_back(
         CHColumnToArrowColumn::calculateArrowTable(
-            *header, "Arrow", chunks,
-            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]},
-            header->size(), schema));
+            *header, "Arrow", chunks, conversion_settings, header->size(), schema));
 
         query_finished = true;
     }
@@ -808,7 +804,7 @@ arrow::Status ArrowFlightServer::GetSchema(
 
                     schema = CHColumnToArrowColumn::calculateArrowSchema(
                         executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr,
-                        {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+                        ArrowFlight::arrowConversionSettings(query_context));
                     if (schema_modifier)
                     {
                         auto status = schema_modifier(schema);
@@ -1017,7 +1013,7 @@ arrow::Status ArrowFlightServer::evaluatePollDescriptor(const String & poll_desc
             chunks.emplace_back(Chunk{std::move(block).getColumns(), rows});
             std::shared_ptr<arrow::Table> table = CHColumnToArrowColumn::calculateArrowTable(
                 header, "Arrow", chunks,
-                {.output_string_as_string = true, .output_unsupported_types_as_binary = poll_session->queryContext()->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]},
+                ArrowFlight::arrowConversionSettings(poll_session->queryContext()),
                 header.size(), poll_session->getSchema());
             auto ticket_info = calls_data->createTicket(table);
             ticket = ticket_info->ticket;
@@ -1379,14 +1375,14 @@ arrow::Status ArrowFlightServer::DoAction(
                 }
             };
 
-            for (const auto & [setting, value] : request.session_options)
+            auto apply_option = [&](const std::string & setting, const auto & value)
             {
                 if (!isValidIdentifier(setting))
                 {
                     result.errors[setting] = arrow::flight::SetSessionOptionsResult::Error{
                         arrow::flight::SetSessionOptionErrorValue::kInvalidName
                     };
-                    continue;
+                    return;
                 }
 
                 try
@@ -1394,14 +1390,14 @@ arrow::Status ArrowFlightServer::DoAction(
                     if (std::holds_alternative<std::monostate>(value))
                     {
                         /// std::monostate means "reset to default" (SET setting = DEFAULT).
-                        query_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
+                        session_context->checkSettingsConstraintsForSettingsReset({setting}, SettingSource::QUERY);
                         session_context->resetSettingsToDefaultValue({setting});
                     }
                     else
                     {
                         auto string_value = std::visit(to_string_value, value);
                         SettingChange change{setting, Field{string_value}};
-                        query_context->checkSettingsConstraints(change, SettingSource::QUERY);
+                        session_context->checkSettingsConstraints(change, SettingSource::QUERY);
                         session_context->setSetting(setting, string_value);
                     }
                 }
@@ -1419,6 +1415,15 @@ arrow::Status ArrowFlightServer::DoAction(
 
                     result.errors[setting] = arrow::flight::SetSessionOptionsResult::Error{error_value};
                 }
+            };
+
+            /// The options arrive in a map with no order, so `profile` goes first for its constraints to bind the rest.
+            if (auto profile = request.session_options.find("profile"); profile != request.session_options.end())
+                apply_option(profile->first, profile->second);
+            for (const auto & [setting, value] : request.session_options)
+            {
+                if (setting != "profile")
+                    apply_option(setting, value);
             }
 
             ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
@@ -1536,7 +1541,7 @@ arrow::Status ArrowFlightServer::DoAction(
                                 executor.getHeader().getColumnsWithTypeAndName(),
                                 "Arrow",
                                 nullptr,
-                                {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+                                ArrowFlight::arrowConversionSettings(query_context));
                         }
                         block_io.onCancelOrConnectionLoss();
                     }

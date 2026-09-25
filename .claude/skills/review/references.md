@@ -235,19 +235,11 @@ list above rather than as a closed case.
 
 ## Native protocol / native format spec sync {#spec-sync}
 
-Trigger (protocol): the diff touches the native TCP protocol — `src/Core/Protocol.h`,
-`src/Core/ProtocolDefines.h`, `src/Core/Protocol.cpp`, packet handling in `src/Server/TCPHandler.*`
-or `src/Client/Connection.*`, the `DBMS_TCP_PROTOCOL_VERSION` / `DBMS_MIN_REVISION_*` constants,
-packet types, handshake/version negotiation, or the wire layout of any non-`Block` message.
+Fires only when the diff changes the bytes on the wire: a new or changed packet type or handshake
+field, a `DBMS_TCP_PROTOCOL_VERSION` / `DBMS_MIN_REVISION_*` bump, or a new or changed column
+encoding in `NativeReader` / `NativeWriter`. Refactors, bug fixes that keep the layout, and edits to
+`TCPHandler` / `Connection` that do not change what is sent do not trigger it.
 
-Trigger (format): the diff changes the `Native` format — its wire/serialization format, type
-encodings (`LowCardinality`, `Array`, `Map`, `Variant`, `Dynamic`, `JSON`), the block/column
-structure, the compression frame, `NativeReader`/`NativeWriter`, or `docs/reference/formats/Native.mdx`.
-
-Verify the corresponding specification is updated in the **same PR**:
-`docs/reference/interfaces/specs/NativeProtocol.mdx` for protocol changes,
-`docs/reference/interfaces/specs/NativeFormat.mdx` for format changes. The spec is the canonical reference
-third-party native clients (`ch-go`, `clickhouse-go`) are built against; letting it drift forces
-re-deriving the protocol/format from C++ source. This applies to new features, bug fixes, and
-behavior changes alike. Flag a missing or stale spec section as a **Major**, naming the
-packet/version/field/encoding the diff changed.
+When it fires, check that the matching spec is updated: `docs/reference/interfaces/specs/NativeProtocol.mdx`
+for the protocol, `docs/reference/interfaces/specs/NativeFormat.mdx` for the format. Third-party
+clients are built against these specs. A missing update is a **Major** finding naming what changed.
