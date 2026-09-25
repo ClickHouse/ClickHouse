@@ -1,0 +1,53 @@
+P0 plan	1	0
+P0 plain	0	1
+P1 dist	31	99	78
+P1 plain	31	99	78
+P2 dist	4	10	10
+P2 plain	4	10	10
+P3 dist	31	99	78
+P3 plain	31	99	78
+P4 dist	7	78
+P4 plain	7	78
+P5 dist	27	89	68
+P5 plain	27	89	68
+P6 dist	1	Nullable(UInt8)	31
+P6 plain	1	Nullable(UInt8)	31
+P7 plan	1
+P8 plan	1
+P8 plain	0
+P9 plan	1	0
+P9 plain	0	1
+P9b plan	1	Nullable(UInt8)	3
+P9b plain	1	Nullable(UInt8)	3
+P10 plan	1	0
+P10 plain	0	1
+P10b plan	true	Nullable(Bool)	3
+P10b plain	true	Nullable(Bool)	3
+P11 counters	1	0
+P11 counters plain	0	1
+P11 plan	true	Nullable(Bool)	3
+P11 plain	true	Nullable(Bool)	3
+P12 counters	1	0
+P12 counters plain	0	1
+N1 dist	50
+N1 plain	50
+N1b dist	1	Nullable(UInt8)	50
+N1b plain	1	Nullable(UInt8)	50
+N2 dist	4
+N2 plain	4
+N3 dist	6
+N3 plain	6
+N4 dist	351
+N4 plain	351
+N5 dist	80	400	360
+N5 plain	80	400	360
+N6 dist	79	399	360
+N6 plain	79	399	360
+N7 dist	true	Bool	89
+N7 plain	true	Bool	89
+N8 dist	1	Nullable(UInt8)	79
+N8 plain	1	Nullable(UInt8)	79
+N9 dist	true	Bool	35
+N9 plain	true	Bool	35
+N10 dist	1	UInt8	35
+N10 plain	1	UInt8	35
