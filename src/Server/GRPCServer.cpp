@@ -1629,9 +1629,9 @@ namespace
                 {
                     /// We cannot throw an exception right here because this code is executed
                     /// on queue_thread.
-                    auto exception = std::make_exception_ptr(Exception(
-                        ErrorCodes::NETWORK_ERROR,
-                        initial_query_info_read ? "Failed to read extra QueryInfo" : "Failed to read initial QueryInfo"));
+                    auto exception = initial_query_info_read
+                        ? std::make_exception_ptr(Exception(ErrorCodes::NETWORK_ERROR, "Failed to read extra QueryInfo"))
+                        : std::make_exception_ptr(Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo"));
                     cancelQueryOnTransportFailure(exception);
                     failed_to_read_query_info = true;
                 }
