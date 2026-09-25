@@ -63,9 +63,12 @@ struct EngineSettingsMetadata
 /// of rows for `MergeTree` - so a scan of `system.table_settings` would otherwise rebuild it per table. Kept for
 /// the life of the program, which costs one copy of each engine's metadata.
 ///
-/// Only what is compiled in is kept. A value is not: an engine that has a server-level instance reports the
-/// server's values, which a config reload changes, and this is keyed by engine name alone. They are cleared
-/// rather than merely left unread, so that a later caller cannot take a stale one from here by mistake.
+/// Only what is compiled in is kept - the name, default, type, description, tier and aliases. Two other kinds
+/// of field are in a `SettingDescription` and neither belongs here: a value, which an engine with a server-level
+/// instance reports from the server and a config reload changes, and the constraints, which
+/// `MergeTreeSettings::enumerateEngineSettings` fills from the calling user's profile. This is shared by every
+/// user and keyed by the engine name alone, so both are cleared rather than merely left unread - a later caller
+/// must not be able to take one from here by mistake.
 const EngineSettingsMetadata & engineSettingsMetadata(const String & engine_name, ContextPtr context)
 {
     static std::mutex mutex;
@@ -89,6 +92,12 @@ const EngineSettingsMetadata & engineSettingsMetadata(const String & engine_name
         setting.masked_value.clear();
         setting.named_collection.clear();
         setting.origin = SettingOrigin::Default;
+        /// Per user, not compiled in: `MergeTreeSettings::enumerateEngineSettings` fills these from the calling
+        /// user's settings constraints, while this is shared by every user and keyed by the engine name alone.
+        setting.min_value.reset();
+        setting.max_value.reset();
+        setting.disallowed_values.clear();
+        setting.readonly = false;
 
         metadata.by_name.emplace(setting.name, i);
         for (const auto & alias : setting.aliases)

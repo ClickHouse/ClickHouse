@@ -36,6 +36,12 @@ namespace Setting
     extern const SettingsBool database_datalake_require_metadata_access;
 }
 
+namespace ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
+}
+
 
 StorageSystemTableSettings::StorageSystemTableSettings(const StorageID & table_id_)
     : StorageWithCommonVirtualColumns(table_id_)
@@ -198,8 +204,17 @@ private:
                     if (const auto table = resolveTable(tables_it.table(), table_name))
                         rows_count += writeTableSettings(writer, database_name, table_name, table);
                 }
-                catch (...)
+                catch (const Exception & e)
                 {
+                    /// These two say the query is over rather than that this table failed, so they are not
+                    /// swallowed: a scan that eats a memory limit would run on and hit it again on the next
+                    /// table, and one that eats a cancellation would keep reading after the query asked it to
+                    /// stop. Everything else is this table's own failure. `const Exception &` rather than `...`
+                    /// for the same reason `system.tables` catches that: a `std::bad_alloc` is not a table's
+                    /// problem either.
+                    if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                        throw;
+
                     tryLogCurrentException(
                         "StorageSystemTableSettings",
                         fmt::format("Cannot read the settings of table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name)));
