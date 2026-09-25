@@ -76,6 +76,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
         const Block & header_,
+        const NameToNameMap & column_name_aliases_,
         size_t hash_functions_,
         NameSet columns_shadowing_map_subcolumns_);
 
@@ -93,9 +94,13 @@ public:
 
 private:
     const Block & header;
+    const NameToNameMap & column_name_aliases;
     const size_t hash_functions;
     const NameSet columns_shadowing_map_subcolumns;
     std::vector<RPNElement> rpn;
+
+    /// The position in `header` of the column a query names `name`, as declared or as `column_name_aliases` maps it.
+    std::optional<size_t> findIndexColumn(const String & name) const;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
 

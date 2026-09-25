@@ -225,13 +225,21 @@ struct MapIndexInfo
 /// Try to resolve a Map column against the bloom filter index header by the map column name
 /// and the key as a Field. Returns std::nullopt if neither `mapKeys(<col>)` nor `mapValues(<col>)`
 /// is present in the index.
-std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_name, const Field & key_field, const Block & header)
+std::optional<MapIndexInfo> tryResolveMapIndexInfo(
+    const String & map_column_name, const Field & key_field, const Block & header, const NameToNameMap & column_name_aliases)
 {
-    auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
-    auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
+    /// The map may be an expression the query names otherwise, see `findIndexColumn`.
+    auto find = [&](const String & name)
+    {
+        if (auto position = header.findPositionByName(name))
+            return position;
+        if (auto alias = column_name_aliases.find(name); alias != column_name_aliases.end())
+            return header.findPositionByName(alias->second);
+        return std::optional<size_t>{};
+    };
 
-    auto keys_position = header.findPositionByName(map_keys_index_column_name);
-    auto values_position = header.findPositionByName(map_values_index_column_name);
+    auto keys_position = find(fmt::format("mapKeys({})", map_column_name));
+    auto values_position = find(fmt::format("mapValues({})", map_column_name));
 
     if (!keys_position && !values_position)
         return std::nullopt;
@@ -255,7 +263,7 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
 /// against the bloom filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
 std::optional<MapIndexInfo> tryParseMapSubcolumn(
-    const String & column_name, const Block & header, const NameSet & shadowing_columns)
+    const String & column_name, const Block & header, const NameSet & shadowing_columns, const NameToNameMap & column_name_aliases)
 {
     auto parsed = tryParseMapSubcolumnName(column_name, shadowing_columns);
     if (!parsed)
@@ -265,7 +273,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
 
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     if (!header.has(map_keys_index_column_name))
-        return tryResolveMapIndexInfo(map_column_name, {}, header);
+        return tryResolveMapIndexInfo(map_column_name, {}, header, column_name_aliases);
 
     /// Deserialize the key from its text representation using the key type from the index header.
     size_t keys_position = header.getPositionByName(map_keys_index_column_name);
@@ -280,13 +288,13 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
     Field key_field;
     key_column->get(0, key_field);
 
-    return tryResolveMapIndexInfo(map_column_name, key_field, header);
+    return tryResolveMapIndexInfo(map_column_name, key_field, header, column_name_aliases);
 }
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
 /// function call or a `map.key_<serialized_key>` subcolumn reference.
 std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
-    const RPNBuilderTreeNode & key_node, const Block & header, const NameSet & shadowing_columns)
+    const RPNBuilderTreeNode & key_node, const Block & header, const NameSet & shadowing_columns, const NameToNameMap & column_name_aliases)
 {
     if (key_node.isFunction())
     {
@@ -301,11 +309,11 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
             if (!second_argument.tryGetConstant(constant_value, constant_type))
                 return std::nullopt;
 
-            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, header);
+            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, header, column_name_aliases);
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, shadowing_columns);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, shadowing_columns, column_name_aliases);
 }
 
 }
@@ -314,10 +322,12 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & header_,
+    const NameToNameMap & column_name_aliases_,
     size_t hash_functions_,
     NameSet columns_shadowing_map_subcolumns_)
     : WithContext(context_)
     , header(header_)
+    , column_name_aliases(column_name_aliases_)
     , hash_functions(hash_functions_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
 {
@@ -332,6 +342,15 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
         context_,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
     rpn = std::move(builder).extractRPN();
+}
+
+std::optional<size_t> MergeTreeIndexConditionBloomFilter::findIndexColumn(const String & name) const
+{
+    if (auto position = header.findPositionByName(name))
+        return position;
+    if (auto alias = column_name_aliases.find(name); alias != column_name_aliases.end())
+        return header.findPositionByName(alias->second);
+    return {};
 }
 
 bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
@@ -601,10 +620,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 {
     auto key_node_column_name = key_node.getColumnName();
 
-    if (header.has(key_node_column_name))
+    if (auto found = findIndexColumn(key_node_column_name))
     {
         size_t row_size = column->size();
-        size_t position = header.getPositionByName(key_node_column_name);
+        size_t position = *found;
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
 
@@ -692,7 +711,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns, column_name_aliases))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -755,10 +774,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     auto array_column_name = array_join_argument->getColumnName();
-    if (!header.has(array_column_name))
+    auto found = findIndexColumn(array_column_name);
+    if (!found)
         return false;
 
-    size_t position = header.getPositionByName(array_column_name);
+    size_t position = *found;
     const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
     if (!array_type)
         return false;
@@ -985,9 +1005,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (auto array_join_argument = key_node.getArrayJoinArgument())
         {
             auto array_column_name = array_join_argument->getColumnName();
-            if (header.has(array_column_name))
+            if (auto found = findIndexColumn(array_column_name))
             {
-                size_t position = header.getPositionByName(array_column_name);
+                size_t position = *found;
                 const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
                 if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
                 {
@@ -1004,9 +1024,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         }
     }
 
-    if (header.has(key_column_name))
+    if (auto found = findIndexColumn(key_column_name))
     {
-        size_t position = header.getPositionByName(key_column_name);
+        size_t position = *found;
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
@@ -1121,11 +1141,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (function_name == "mapContainsValue")
             map_keys_index_column_name = fmt::format("mapValues({})", key_column_name);
 
-        if (!header.has(map_keys_index_column_name))
+        auto found = findIndexColumn(map_keys_index_column_name);
+        if (!found)
             return false;
 
-        size_t position = header.getPositionByName(map_keys_index_column_name);
-
+        size_t position = *found;
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
@@ -1197,7 +1217,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns, column_name_aliases))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1314,7 +1334,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getColumnsShadowingMapSubcolumns());
+        predicate, context, index.sample_block, index.column_name_aliases, hash_functions, getColumnsShadowingMapSubcolumns());
 }
 
 static void assertIndexColumnsType(const Block & header)

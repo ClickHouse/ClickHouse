@@ -82,6 +82,17 @@ public:
         bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
         bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
 
+    /// Same as above; a query may also name a key column as `key_column_aliases` maps it, see `getColumnNameAliases`.
+    KeyCondition(
+        const ActionsDAGWithInversionPushDown & filter_dag,
+        ContextPtr context,
+        const Names & key_column_names,
+        const NameToNameMap & key_column_aliases,
+        const ExpressionActionsPtr & key_expr,
+        bool single_point_ = false,
+        bool skip_analysis_ = false,
+        bool require_ready_sets_ = false);
+
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
     /// Any condition over a key that can be reverse-sorted (a MergeTree primary key) must be
@@ -677,6 +688,11 @@ private:
     std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> topLevelConjunction() const;
 
     RPN rpn;
+
+    /// Query-side name -> declared name of a key column, see `getColumnNameAliases`.
+    NameToNameMap key_column_aliases;
+    /// The declared name of the key column a query names `query_side_name`.
+    String keyColumnName(const String & query_side_name) const;
 
     /// If query has no filter, rpn will has one element with unknown function.
     /// This flag identify whether there are filters.

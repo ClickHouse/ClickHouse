@@ -37,6 +37,9 @@ struct KeyDescription
     /// Column names in key definition, example: x, toStartOfMonth(date), a * b.
     Names column_names;
 
+    /// The name a query gives a column of `column_names` where it differs, see `getColumnNameAliases`.
+    NameToNameMap column_name_aliases;
+
     /// Indicator of key column being sorted reversely, example: x DESC, y -> {1, 0}.
     std::vector<bool> reverse_flags;
 
@@ -120,5 +123,12 @@ struct KeyDescription
         const ContextPtr & context,
         bool allow_order);
 };
+
+/// The query analyzer rewrites `x = ''` to `empty(x)` and `x != ''` to `notEmpty(x)` (`optimize_empty_string_comparisons`),
+/// so a key or index expression holding such a comparison has another name in a query than in its declaration, and
+/// the query is matched to the key or index by that name. Maps the name each expression of the list has after the
+/// rewrite to its declared name, for the expressions whose name changes. The rewrite follows the pass: only a
+/// `String` or `FixedString` is compared, typed by the built `expression_actions`, lambda bodies included.
+NameToNameMap getColumnNameAliases(const ASTPtr & expression_list, const ExpressionActions & expression_actions);
 
 }

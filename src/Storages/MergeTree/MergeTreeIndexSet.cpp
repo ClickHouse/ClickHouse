@@ -396,7 +396,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 
 static KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
-    return KeyCondition{filter_dag, context, index.column_names, index.expression};
+    return KeyCondition{filter_dag, context, index.column_names, index.column_name_aliases, index.expression};
 }
 
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
@@ -406,6 +406,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     const IndexDescription & index_description)
     : index_name(index_description.name)
     , max_rows(max_rows_)
+    , column_name_aliases(index_description.column_name_aliases)
     , index_data_types(index_description.data_types)
     , condition(buildCondition(index_description, filter_dag, context))
 {
@@ -691,7 +692,9 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
-    auto column_name = tree_node.getColumnName();
+    /// The granule block holds the declared name, whichever one the query used.
+    auto column_name = keyColumnName(tree_node.getColumnName());
+    const bool renamed = column_name != tree_node.getColumnName();
     if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
     {
         /// A name match does not imply a type match: the query-side node can carry a `Nullable` the
@@ -721,8 +724,8 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         {
             result_node = node_to_check;
 
-            /// Bind to the type the granule block holds, not the query-side type.
-            if (node.type != ActionsDAG::ActionType::INPUT)
+            /// Bind to the name and type the granule block holds, not the query-side ones.
+            if (node.type != ActionsDAG::ActionType::INPUT || renamed)
                 result_node = &result_dag.addInput(column_name, index_type);
 
             key_column_inputs[column_name] = result_node;
@@ -859,8 +862,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     }
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
-        auto column_name = tree_node.getColumnName();
-        if (key_columns.contains(column_name))
+        if (key_columns.contains(keyColumnName(tree_node.getColumnName())))
             return false;
 
         auto function_name = node.function_base->getName();
@@ -892,8 +894,13 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, /*atomic=*/ true); });
     }
 
-    auto column_name = tree_node.getColumnName();
-    return !key_columns.contains(column_name);
+    return !key_columns.contains(keyColumnName(tree_node.getColumnName()));
+}
+
+const String & MergeTreeIndexConditionSet::keyColumnName(const String & query_side_name) const
+{
+    auto alias = column_name_aliases.find(query_side_name);
+    return alias == column_name_aliases.end() ? query_side_name : alias->second;
 }
 
 

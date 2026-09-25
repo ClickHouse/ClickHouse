@@ -2,6 +2,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/KeyDescription.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -56,6 +57,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , type(other.type)
     , arguments(other.arguments ? other.arguments->clone() : nullptr)
     , column_names(other.column_names)
+    , column_name_aliases(other.column_name_aliases)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
     , granularity(other.granularity)
@@ -96,6 +98,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
         arguments.reset();
 
     column_names = other.column_names;
+    column_name_aliases = other.column_name_aliases;
     data_types = other.data_types;
     sample_block = other.sample_block;
     granularity = other.granularity;
@@ -195,6 +198,7 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
 
     sample_block = expression->getSampleBlock();
+    column_name_aliases = getColumnNameAliases(expression_list_ast, *expression);
 }
 
 Field getFieldFromIndexArgumentAST(const ASTPtr & ast)

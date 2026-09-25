@@ -1,9 +1,11 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -30,6 +32,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
+    , column_name_aliases(other.column_name_aliases)
     , reverse_flags(other.reverse_flags)
     , data_types(other.data_types)
     , additional_columns(other.additional_columns)
@@ -61,6 +64,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
     sample_block = other.sample_block;
     column_names = other.column_names;
+    column_name_aliases = other.column_name_aliases;
     reverse_flags = other.reverse_flags;
     data_types = other.data_types;
 
@@ -189,6 +193,7 @@ KeyDescription KeyDescription::getKeyFromAST(
         /// In sample block we use just key columns
         result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
     }
+    result.column_name_aliases = getColumnNameAliases(result.expression_list_ast, *result.expression);
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
     {
@@ -282,6 +287,87 @@ KeyDescription KeyDescription::parse(
         ast->setParenthesized(false);
 
     return getKeyFromAST(ast, columns, virtuals, context);
+}
+
+namespace
+{
+
+using NodeTypes = std::unordered_map<String, DataTypePtr>;
+
+/// The result type of every node of the expression by its name. A lambda body is compiled into its own
+/// `FunctionCapture`, so a comparison written inside one is typed there.
+void collectNodeTypes(const ActionsDAG & dag, NodeTypes & types)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        types.emplace(node.result_name, node.result_type);
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+            if (const auto * capture = typeid_cast<const FunctionCapture *>(node.function_base.get()))
+                collectNodeTypes(capture->getAcionsDAG(), types);
+    }
+}
+
+/// Rewrites as `ConvertEmptyStringComparisonToFunctionPass` does: only a `String` or `FixedString` compared with `''`.
+/// The type is looked up by the declared spelling, so it is decided before the children are rewritten.
+void rewriteEmptyStringComparisons(ASTPtr & ast, const NodeTypes & types)
+{
+    auto * function = ast->as<ASTFunction>();
+    std::optional<size_t> compared;
+    if (function && (function->name == "equals" || function->name == "notEquals")
+        && function->arguments && function->arguments->children.size() == 2)
+    {
+        auto is_empty_string_literal = [](const ASTPtr & node)
+        {
+            const auto * literal = node->as<ASTLiteral>();
+            return literal && literal->value.getType() == Field::Types::String && literal->value.safeGet<String>().empty();
+        };
+
+        const auto & arguments = function->arguments->children;
+        if (is_empty_string_literal(arguments[1]))
+            compared = 0;
+        else if (is_empty_string_literal(arguments[0]))
+            compared = 1;
+
+        if (compared)
+        {
+            auto type = types.find(arguments[*compared]->getColumnName());
+            if (type == types.end() || !isStringOrFixedString(type->second))
+                compared.reset();
+        }
+    }
+
+    for (auto & child : ast->children)
+        rewriteEmptyStringComparisons(child, types);
+
+    if (compared)
+        ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", function->arguments->children[*compared]);
+}
+
+}
+
+NameToNameMap getColumnNameAliases(const ASTPtr & expression_list, const ExpressionActions & expression_actions)
+{
+    NameToNameMap aliases;
+    if (!expression_list)
+        return aliases;
+
+    NodeTypes types;
+    collectNodeTypes(expression_actions.getActionsDAG(), types);
+
+    NameSet declared_names;
+    for (const auto & expression : expression_list->children)
+        declared_names.insert(expression->getColumnName());
+
+    for (const auto & expression : expression_list->children)
+    {
+        ASTPtr rewritten = expression->clone();
+        rewriteEmptyStringComparisons(rewritten, types);
+
+        String rewritten_name = rewritten->getColumnName();
+        if (!declared_names.contains(rewritten_name))
+            aliases.emplace(std::move(rewritten_name), expression->getColumnName());
+    }
+    return aliases;
 }
 
 }

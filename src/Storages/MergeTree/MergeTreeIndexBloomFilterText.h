@@ -69,6 +69,7 @@ public:
             const ActionsDAG::Node * predicate,
             ContextPtr context,
             const Block & index_sample_block,
+            const NameToNameMap & column_name_aliases_,
             const BloomFilterParameters & params_,
             TokenizerPtr token_extactor_,
             NameSet columns_shadowing_map_subcolumns_);
@@ -148,6 +149,7 @@ private:
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
     Names index_columns;
+    NameToNameMap column_name_aliases;
     DataTypes index_data_types;
     BloomFilterParameters params;
 

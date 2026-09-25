@@ -1,0 +1,44 @@
+minmax
+1
+Name: idx
+Granules: 1/2
+set(100)
+1
+Name: idx
+Granules: 1/2
+bloom_filter
+1
+Name: idx
+Granules: 1/2
+tokenbf_v1(512, 3, 0)
+1
+Name: idx
+Granules: 1/2
+primary key
+1
+Granules: 1/2
+1
+partition key
+1
+Parts: 4/4
+Parts: 1/4
+1
+bloom filter on a map built by a lambda
+1
+2
+Name: idx
+Granules: 1/2
+2
+Granules: 1/2
+index on an alias column
+1
+Name: idx
+Granules: 1/2
+through a subquery and a Distributed table
+1
+1
+controls
+1
+Granules: 1/2
+Granules: 1/2
+0
