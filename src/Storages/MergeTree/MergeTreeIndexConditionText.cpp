@@ -282,8 +282,9 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
         || function_name == "hasPhrase"
-        || function_name == "hasTokenPrefix"
-        || function_name == "hasTokenLike"
+        || function_name == "hasAnyTokenPrefix"
+        || function_name == "hasAnyTokenLike"
+        || function_name == "hasAllTokenLike"
         || function_name == "hasTokenMatch"
         || function_name == "equals"
         || function_name == "mapContainsKey"
@@ -304,10 +305,11 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiMatchAny";
 }
 
-/// `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` apply their needle to each token separately.
+/// `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasTokenMatch` apply their patterns to each token separately.
 bool MergeTreeIndexConditionText::isPerTokenPatternFunction(const String & function_name)
 {
-    return function_name == "hasTokenPrefix" || function_name == "hasTokenLike" || function_name == "hasTokenMatch";
+    return function_name == "hasAnyTokenPrefix" || function_name == "hasAnyTokenLike" || function_name == "hasAllTokenLike"
+        || function_name == "hasTokenMatch";
 }
 
 bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
@@ -1801,7 +1803,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (isPerTokenPatternFunction(function_name))
     {
         /// A NULL needle gives NULL. A map element or a JSON path is not the indexed column, so it is not rewritten.
-        if (!value_data_type.isString() || !candidate_for_exact_mode)
+        if (!(value_data_type.isString() || value_data_type.isArray()) || !candidate_for_exact_mode)
             return false;
 
         /// The function is rewritten even when the index is not used, so these cases return a query without patterns.
@@ -1813,26 +1815,48 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return true;
         };
 
-        const auto & needle = value_field.safeGet<String>();
+        /// A String is one pattern, it is not split into tokens.
+        std::vector<String> needles;
+        if (value_data_type.isString())
+        {
+            needles.push_back(value_field.safeGet<String>());
+        }
+        else
+        {
+            for (const auto & element : value_field.safeGet<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
+                needles.push_back(element.safeGet<String>());
+            }
+        }
 
-        /// Compile like the function does, so an invalid pattern always throws.
+        /// Compile all patterns like the function does, so an invalid one always throws.
         /// A prefix becomes `prefix%`, so the dictionary scan can seek to it.
         std::vector<OptimizedRegularExpression> patterns;
-        if (function_name == "hasTokenPrefix")
-            patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(escapeForLikePattern(needle) + "%"));
-        else if (function_name == "hasTokenLike")
-            patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
-        else
-            patterns.emplace_back(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+        for (const auto & needle : needles)
+        {
+            if (function_name == "hasAnyTokenPrefix")
+                patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(escapeForLikePattern(needle) + "%"));
+            else if (function_name == "hasTokenMatch")
+                patterns.emplace_back(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+            else
+                patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+        }
 
         /// The index answer is exact only if the function sees the stored tokens: no preprocessor, no postprocessor.
-        /// An empty needle matches everything, so the index does not help.
-        if (has_preprocessor || has_postprocessor || needle.empty()
+        /// An empty needle matches every token or none, so the index does not help, and neither does an empty array.
+        const bool has_empty_needle = std::ranges::any_of(needles, [](const String & needle) { return needle.empty(); });
+        if (has_preprocessor || has_postprocessor || needles.empty() || has_empty_needle
             || !settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
             return rewrite_only();
 
         /// Direct read returns UInt8 and loses a NULL result, which `NOT` would turn into true.
-        const auto pattern_read_mode = affix_patterns_allowed ? direct_read_mode : TextIndexDirectReadMode::None;
+        auto pattern_read_mode = affix_patterns_allowed ? direct_read_mode : TextIndexDirectReadMode::None;
+
+        /// With several patterns the index only finds the rows where one of them matches, the function checks the rest.
+        if (function_name == "hasAllTokenLike" && patterns.size() > 1 && pattern_read_mode != TextIndexDirectReadMode::None)
+            pattern_read_mode = getHintOrNoneMode();
 
         out.function = RPNElement::FUNCTION_LIKE;
         out.text_search_queries.emplace_back(

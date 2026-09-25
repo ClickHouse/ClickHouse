@@ -9219,7 +9219,7 @@ Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dict
 
 The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
 
-Functions `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` read the text index only by this dictionary scan, so with the setting disabled they skip no granules but still use the tokenizer of the index.
+Functions `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasTokenMatch` use the text index only through this dictionary scan: with the setting disabled they skip no granules and are evaluated on the column. The setting does not change their result.
 )", 0) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
 Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern, or of a `startsWith`/`endsWith` needle,
@@ -9228,22 +9228,22 @@ Patterns shorter than this threshold match too many dictionary tokens and are sk
 
 With the `array` tokenizer, where any pattern qualifies, the threshold is compared against the number of non-wildcard characters in the whole pattern.
 
-Does not apply to `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`, whose dictionary scan is bounded by `text_index_like_max_matched_tokens` instead.
+Does not apply to `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasTokenMatch`, whose dictionary scan is bounded by `text_index_like_max_matched_tokens` instead.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
 Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
-Applies to `LIKE`, `ILIKE`, `startsWith`, `endsWith`, `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`.
+Applies to `LIKE`, `ILIKE`, `startsWith`, `endsWith`, `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasTokenMatch`.
 If more of them match, the dictionary scan is abandoned and the predicate is evaluated on the column.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_matched_tokens, 20000, R"(
-Maximum number of dictionary tokens the patterns of `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` may match in the text index dictionary scan,
-counting the tokens with small (embedded) postings that `text_index_like_max_postings_to_read` does not count.
-Does not apply to `LIKE`, `ILIKE`, `startsWith` and `endsWith`, and the tokens their patterns match are not counted.
-If more tokens match, the dictionary scan is abandoned and every pattern predicate on the index (a `LIKE` next to these functions included)
+Maximum number of distinct dictionary tokens that the patterns of `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasTokenMatch` may match
+in the text index dictionary scan of a data part, counting the tokens with small (embedded) postings that `text_index_like_max_postings_to_read` does not count.
+A token matched by several patterns counts once. Tokens matched only by `LIKE`, `ILIKE`, `startsWith` and `endsWith` are not counted.
+If more tokens match, the scan of the part is abandoned and every pattern predicate on the index (a `LIKE` next to these functions included)
 is evaluated on the column, which is faster than collecting the postings of that many tokens. 0 means no limit.
 The default is the measured break-even: on a part of 10 million rows, the dictionary scan and the postings of about 20000 matching tokens
 cost as much as evaluating the predicate on the column with several threads, and a pattern that matches 1 million tokens is more than 30 times slower than the column scan.

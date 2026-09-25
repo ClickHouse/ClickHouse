@@ -102,7 +102,7 @@ public:
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
-    /// `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`.
+    /// `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasTokenMatch`.
     static bool isPerTokenPatternFunction(const String & function_name);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 

@@ -449,7 +449,7 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 /// then this class replaces some nodes in the ActionsDAG (and references to them) to generate an equivalent query:
 ///     SELECT count() FROM table where __text_index_text_col_idx_hasToken_0
 ///
-/// Also this class processes text index functions (hasToken, hasAllTokens, hasAnyTokens, hasPhrase, hasTokenPrefix, hasTokenLike, hasTokenMatch):
+/// Also this class processes text index functions (hasToken, hasAllTokens, hasAnyTokens, hasPhrase, hasAnyTokenPrefix, hasAnyTokenLike, hasAllTokenLike, hasTokenMatch):
 /// applies tokenizer and preprocessors (lower, upper, etc.) for the haystack and needles arguments.
 /// It allows their stadalone executions without the direct read from text index.
 /// It is required to return the the same results as with the direct read.
