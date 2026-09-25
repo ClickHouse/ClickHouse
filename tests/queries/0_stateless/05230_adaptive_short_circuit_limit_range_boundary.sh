@@ -37,13 +37,14 @@ function check_profile_is_preserved()
 }
 
 # The boundary is reached only near the end of the table, so the condition is evaluated over enough
-# rows for the heuristic to profile it and revisit its decision.
+# rows for the heuristic to profile it and revisit its decision. `ORDER BY n` pins the row order:
+# without it, the range depends on the read order, which is not deterministic with parallel replicas.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE boundary (n UInt64, b0 UInt8, b1 UInt8, b2 UInt8) ENGINE = MergeTree ORDER BY n;
     INSERT INTO boundary SELECT number, number % 2, number > 400000, number % 5 != 0 FROM numbers(500000);"
 
 check_profile_is_preserved "limit_after" "
-    SELECT count() FROM (SELECT n FROM boundary LIMIT 100 AFTER if(b0, and(b1, b2), 0))"
+    SELECT count() FROM (SELECT n FROM boundary ORDER BY n LIMIT 100 AFTER if(b0, and(b1, b2), 0))"
 
 check_profile_is_preserved "limit_until" "
-    SELECT count() FROM (SELECT n FROM boundary LIMIT 1000000 UNTIL if(b0, and(b1, b2), 0))"
+    SELECT count() FROM (SELECT n FROM boundary ORDER BY n LIMIT 1000000 UNTIL if(b0, and(b1, b2), 0))"
