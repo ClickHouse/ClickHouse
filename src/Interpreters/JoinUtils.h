@@ -16,6 +16,7 @@ namespace DB
 struct ColumnWithTypeAndName;
 class TableJoin;
 class IColumn;
+struct JoinSettings;
 
 using ColumnPtrMap = std::unordered_map<String, ColumnPtr>;
 using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
@@ -28,8 +29,9 @@ namespace JoinCommon
 /// strictness. The sort-merge algorithms implement only a part of them - neither `SEMI` nor `ANTI`,
 /// and `partial_merge` does not do `ANY` beyond `INNER`/`LEFT` - so a plan rewrite that produces such
 /// a join under `join_algorithm = 'full_sorting_merge'` or `'partial_merge'` would turn a query that
-/// runs into `NOT_IMPLEMENTED`.
-bool canBeExecutedByEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinKind kind, JoinStrictness strictness);
+/// runs into `NOT_IMPLEMENTED`. `grace_hash` counts only where the join pickers would not pass it
+/// over, i.e. with a spill threshold, with `legacy_join_size_limits_trigger_spilling`, or alone.
+bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKind kind, JoinStrictness strictness);
 
 /// Helper interface to work with mask from JOIN ON section
 class JoinMask

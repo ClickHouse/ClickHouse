@@ -1,0 +1,11 @@
+an ANY LEFT JOIN filtered on the right side
+33
+33
+a correlated EXISTS and NOT EXISTS
+14
+86
+14
+86
+the strictness the plan ends up with
+│  Strictness: ANY
+│  Strictness: SEMI

@@ -154,11 +154,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
         return 0;
 
     /// Both conversions below are only worth doing if the join can still be executed afterwards.
-    const auto & join_algorithms = join->getJoinSettings().join_algorithms;
+    const auto & join_settings = join->getJoinSettings();
     const bool semi_can_be_executed
-        = JoinCommon::canBeExecutedByEnabledAlgorithm(join_algorithms, join_operator.kind, JoinStrictness::Semi);
+        = JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_operator.kind, JoinStrictness::Semi);
     const bool anti_can_be_executed
-        = JoinCommon::canBeExecutedByEnabledAlgorithm(join_algorithms, join_operator.kind, JoinStrictness::Anti);
+        = JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_operator.kind, JoinStrictness::Anti);
 
     if (!semi_can_be_executed && !anti_can_be_executed)
         return 0;
