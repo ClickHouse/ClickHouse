@@ -244,7 +244,7 @@ then
                             echo "  source ${pretty_profile}"
                         else
                             asked=0
-                            if [ -c /dev/tty ] && [ -z "${NONINTERACTIVE}" ]; then
+                            if [ -z "${NONINTERACTIVE}" ] && ( : < /dev/tty ) 2>/dev/null; then
                                 echo
                                 printf "Do you want to add '%s' to PATH in %s? [Y/n] " "${chctl_install_dir}" "${pretty_profile}" > /dev/tty
                                 if read -r reply < /dev/tty 2>/dev/null; then
