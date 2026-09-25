@@ -13,7 +13,7 @@ explain indexes=1 select * from points where plus(minus(x, 1), 10) < 10;
 explain indexes=1 select * from points where (plus(minus(x, 1), 10), minus(plus(y, 2), 20)) in (10, 20);
 explain indexes=1 select * from points where (plus(minus(x, 1), 10), minus(plus(x, 2), 20)) in (10, 20);
 
-create table morton (x UInt64, y UInt64) engine MergeTree order by mortonEncode(x, y) SETTINGS add_minmax_index_for_numeric_columns=0;
+create table morton (x UInt32, y UInt32) engine MergeTree order by mortonEncode(x, y) SETTINGS add_minmax_index_for_numeric_columns=0;
 insert into morton values (100, 200);
 explain indexes=1 select * from morton where x > 100;
 explain indexes=1 select x+y from morton where x+1 = 101;

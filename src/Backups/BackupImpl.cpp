@@ -1399,7 +1399,11 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     if (size_and_checksum.first == 0)
     {
         /// Entry's data is empty.
-        if (write_mode == WriteMode::Rewrite)
+        /// The destination must exist afterwards either way: the non-empty path below writes through
+        /// writeFile(), which creates a missing file, while createFile() throws on an existing one.
+        const bool create_destination
+            = (write_mode == WriteMode::Rewrite) || !destination_disk->existsFile(destination_path);
+        if (create_destination)
         {
             if (sync)
             {

@@ -360,23 +360,30 @@ Possible values:
 - `map_with_buckets` - store shared data as several separate `Map(String, String)` columns. Using buckets improves reading individual paths from shared data.
 - `advanced` - special serialization of shared data designed to significantly improve reading of individual paths from shared data.
 Note that this serialization increases the shared data storage size on disk because we store a lot of additional information.
+- `advanced_chunked` - the same as `advanced` but with support for splitting rows into smaller chunks during serialization to reduce peak memory during merges of JSON columns with many unique paths. The chunk size is controlled by the [object_shared_data_target_chunk_rows](#object_shared_data_target_chunk_rows) setting.
 
-The number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
+The number of buckets for `map_with_buckets`, `advanced`, and `advanced_chunked` serializations is determined by settings
 [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
 )", 0) \
     DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map_with_buckets", R"(
 This setting allows to specify different serialization version of the
 shared data inside JSON type for zero level parts that are created during inserts.
-It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
+It's recommended not to use `advanced` or `advanced_chunked` shared data serialization for zero level parts because it can increase
 the insertion time significantly.
 )", 0) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 8, R"(
-The number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+The number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets`, `advanced`, and `advanced_chunked` shared data serializations.
 The maximum allowed value is 256.
 )", 0) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
-The number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+The number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets`, `advanced`, and `advanced_chunked` shared data serializations.
 The maximum allowed value is 256.
+)", 0) \
+    DECLARE(NonZeroUInt64, object_shared_data_target_chunk_rows, 8192, R"(
+Target number of rows per chunk during `advanced_chunked` JSON shared data serialization.
+This is not a hard limit: if the last chunk would be smaller than half the target, it is merged with the previous chunk,
+so actual chunk sizes range from `target/2` to `1.5 * target`.
+Smaller values reduce peak memory during merges of JSON columns with many unique paths at the cost of more chunks.
 )", 0) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
 Serialization version for Dynamic data type. Required for compatibility.
@@ -718,7 +725,7 @@ Maximum number of processed tokens accumulated by a text index builder before fl
 Maximum estimated memory retained by a text index builder before flushing a temporary segment.
 )", 0) \
     DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
-Default posting list codec for text indexes.
+Default posting list codec for text indexes. One of `none`, `bitpacking`, `pfor`.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0) \
     DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
@@ -1835,8 +1842,10 @@ column during merge
 If true, lightweight delete is optimized on vertical merge.
 )", 0) \
     DECLARE(Bool, vertical_merge_optimize_ttl_delete, true, R"(
-If true, rows TTL delete is optimized on vertical merge. Instead of forcing horizontal merge,
-the TTL filter is evaluated and passed to the merging algorithm which sets skip flags in row sources.
+If true, a rows-TTL merge can use the vertical merge algorithm instead of falling back to a
+horizontal merge. Applies only in `MergeTree`, `Replacing`, `Collapsing` or `VersionedCollapsing`
+merging mode, to a table with a rows TTL and no column or `GROUP BY` TTL, and only while no part
+in the merge has a lightweight delete. Any other TTL merge stays horizontal.
 )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 The maximum postpone time for failed mutations.
@@ -1943,6 +1952,11 @@ expired based on their TTL settings are removed.
 
 When `ttl_only_drop_parts` is enabled, the entire part is dropped if all
 rows in that part have expired according to their `TTL` settings.
+
+This applies only to the TTLs that delete rows. A column `TTL` can only be
+honoured by rewriting the part, so the merges that clear expired columns are
+still assigned when this setting is enabled. Such a merge rewrites the part
+anyway, and therefore also removes the rows that have expired in it.
 )", 0) \
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
 Only recalculate ttl info when MATERIALIZE TTL
@@ -2485,17 +2499,28 @@ Minimal index sizes (data skipping and primary key) on disk (but uncompressed) t
 Batch size for ZooKeeper multi-create get-part requests when cloning replica.
 )", 0) \
     DECLARE(Bool, table_readonly, false, R"(
-If set to true, the table is in read-only mode and performs no modifications on disk.
+If set to true, the table is in read-only mode.
 
 All foreground operations that would modify the table are rejected: inserts, mutations, `OPTIMIZE`, and the data-mutating partition commands
 (`ATTACH`/`MOVE`/`DROP`/`DROP DETACHED`/`FETCH`/`REPLACE PARTITION`, as well as `MOVE PARTITION ... TO TABLE` targeting this table). Operations
 that do not modify the table's data, such as `FREEZE`/`UNFREEZE` and `FORGET PARTITION`, remain allowed.
 
-No background work is scheduled either: regular merges, TTL merges (`DELETE`/`MOVE`/recompression), recompression merges, background mutations,
+Background work that modifies table data is not scheduled: regular merges, TTL merges (`DELETE`/`MOVE`/recompression), recompression merges, background mutations,
 and background part moves are all suppressed. As a consequence, a table with a TTL no longer reclaims or moves its expired data while this setting
-is enabled.
+is enabled. Cleanup is stopped, waiting for an active cleanup iteration to finish. The asynchronous loading of outdated (inactive) parts that a
+writable table performs after start is suspended if it is still pending: no further part is loaded, including the loads that were already queued
+but had not started, and the parts that remain unloaded are loaded once the setting is turned off again. The background workers are disabled
+before the `ALTER` that enables the setting commits it, so no cleanup or part load starts on a table that is already durably read-only. Other
+operations already in progress, including the loading of the parts that had already started, may finish.
 
-The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). It is not supported for `ReplicatedMergeTree`.
+The in-memory statistics cache still refreshes periodically. Set `refresh_statistics_interval = 0` to disable this background task too.
+Streaming reads (`SELECT ... STREAM`) keep working: the background job that serves their subscriptions only reads parts and runs on read-only tables as well.
+
+The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). The background workers
+that a read-only table never started are started at that point, so merges, mutations, moves, TTL, and cleanup resume without a server restart.
+Outdated (inactive) parts are loaded before cleanup can remove empty parts that cover them. The table stays read-only for concurrent queries for
+the whole duration of that `ALTER`: it accepts writes again only once the statement returned, not already when its metadata was committed.
+This setting is not supported for `ReplicatedMergeTree`.
 )", 0) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.
@@ -3018,6 +3043,8 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
 
     ClickHouseVersion version(compatibility_value);
     const auto & settings_changes_history = getMergeTreeSettingsChangesHistory();
+    /// Keep blockers across versions to skip earlier changes to the same setting.
+    std::unordered_set<std::string_view> blocked_settings;
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
@@ -3030,6 +3057,13 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
         {
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
+
+            if (change.compatibility_mode == SettingsChangesHistory::SettingChange::CompatibilitySetting::Ignore)
+                blocked_settings.insert(final_name);
+
+            if (blocked_settings.contains(final_name))
+                continue;
+
             auto setting_index = MergeTreeSettingsTraits::Accessor::instance().find(final_name);
             if (setting_index == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting in history: {}", final_name);
