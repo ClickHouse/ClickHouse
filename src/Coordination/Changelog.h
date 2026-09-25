@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <deque>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
@@ -558,6 +559,9 @@ private:
     void retireCommitReaderLocked() TSA_REQUIRES(readers_mutex);
 };
 
+class IChangelogWriter;
+
+using ChangelogWriterPtr = std::unique_ptr<IChangelogWriter>;
 /// Simplest changelog with files rotation.
 /// No compression, no metadata, just entries with headers one by one.
 /// Able to read broken files/entries and discard them. Not thread safe.
@@ -682,6 +686,7 @@ private:
 
     DiskPtr getDisk() const;
     DiskPtr getLatestLogDisk() const;
+    DiskPtr getS3LogDisk() const;
 
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
@@ -746,7 +751,7 @@ private:
 
     mutable std::mutex writer_mutex;
     /// Current writer for changelog file
-    std::unique_ptr<ChangelogWriter> current_writer;
+    ChangelogWriterPtr current_writer;
 
     LogEntryStorage entry_storage;
 
