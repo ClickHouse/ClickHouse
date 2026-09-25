@@ -510,7 +510,8 @@ void optimizeTreeSecondPass(
         const auto * reading = typeid_cast<const ReadFromMergeTree *>(stack.back().node->step.get());
         if (reading && optimization_settings.optimize_projection)
         {
-            auto result = optimizeUseNormalProjections(stack, nodes, optimization_settings);
+            /// Projection optimization relies on PK optimization
+            auto result = optimizeUseNormalProjections(stack, nodes, optimization_settings, applied_projection_names);
             projection_reject_reasons.merge(result.projection_reject_reasons);
             if (result.applied_projection)
             {
