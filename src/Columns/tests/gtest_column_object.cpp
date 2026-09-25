@@ -9,10 +9,14 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Common/Arena.h>
-#include <Common/SipHash.h>
+#include <limits>
 #include <Core/Field.h>
 #include <gtest/gtest.h>
+#include <Common/Arena.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
+#include <Common/SipHash.h>
+#include <Common/scope_guard_safe.h>
 
 using namespace DB;
 
@@ -328,6 +332,297 @@ TEST(ColumnObject, InsertRangeFrom)
     ASSERT_EQ(deserializeFieldFromSharedData(shared_data_values, 11), Field("Str6"));
     ASSERT_EQ((*shared_data_paths)[12], "a.i");
     ASSERT_EQ(deserializeFieldFromSharedData(shared_data_values, 12), Field("Str11"));
+}
+
+static void assertObjectColumnsEqual(const ColumnObject & actual, const ColumnObject & expected)
+{
+    ASSERT_EQ(actual.size(), expected.size());
+    ASSERT_EQ(actual.getMaxDynamicPaths(), expected.getMaxDynamicPaths());
+    ASSERT_EQ(actual.getMaxDynamicPathsUpperBound(), expected.getMaxDynamicPathsUpperBound());
+    ASSERT_TRUE(actual.dynamicStructureEquals(expected));
+    actual.validateDynamicPathsSizes();
+    expected.validateDynamicPathsSizes();
+    for (const auto & [_, column] : actual.getTypedPaths())
+        ASSERT_EQ(column->size(), actual.size());
+
+    const auto & shared = actual.getSharedDataNestedColumn();
+    ASSERT_EQ(shared.getData().size(), shared.getOffsets().back());
+    const auto [paths, values] = actual.getSharedDataPathsAndValues();
+    ASSERT_EQ(paths->size(), values->size());
+    ASSERT_EQ(paths->size(), shared.getData().size());
+    for (size_t row = 0; row < actual.size(); ++row)
+    {
+        ASSERT_EQ(actual[row], expected[row]) << row;
+        ASSERT_EQ(shared[row], expected.getSharedDataNestedColumn()[row]) << row;
+    }
+}
+
+TEST(ColumnObject, RollbackRestoresDynamicPathLimits)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=4)");
+    auto source = type->createColumn();
+    auto updated_source = type->createColumn();
+    auto destination = type->createColumn();
+    auto & source_object = assert_cast<ColumnObject &>(*source);
+    auto & updated_source_object = assert_cast<ColumnObject &>(*updated_source);
+    auto & destination_object = assert_cast<ColumnObject &>(*destination);
+
+    source_object.setMaxDynamicPathsUpperBound(2);
+    auto checkpoint = destination_object.getCheckpoint();
+    destination_object.takeMaxDynamicPathsUpperBoundFrom(source_object);
+    ASSERT_EQ(destination_object.getMaxDynamicPaths(), 2);
+    ASSERT_EQ(destination_object.getMaxDynamicPathsUpperBound(), 2);
+
+    destination_object.rollback(*checkpoint);
+    ASSERT_EQ(destination_object.getMaxDynamicPaths(), 4);
+    ASSERT_EQ(destination_object.getMaxDynamicPathsUpperBound(), 4);
+
+    updated_source_object.setMaxDynamicPathsUpperBound(3);
+    destination_object.takeMaxDynamicPathsUpperBoundFrom(updated_source_object);
+    destination_object.updateCheckpoint(*checkpoint);
+
+    source_object.setMaxDynamicPathsUpperBound(1);
+    destination_object.takeMaxDynamicPathsUpperBoundFrom(source_object);
+    ASSERT_EQ(destination_object.getMaxDynamicPaths(), 1);
+    ASSERT_EQ(destination_object.getMaxDynamicPathsUpperBound(), 1);
+
+    destination_object.rollback(*checkpoint);
+    ASSERT_EQ(destination_object.getMaxDynamicPaths(), 3);
+    ASSERT_EQ(destination_object.getMaxDynamicPathsUpperBound(), 3);
+}
+
+TEST(ColumnObject, InsertManyFrom)
+{
+    for (const String & type_name :
+         {"JSON",
+          "JSON(max_dynamic_paths=0)",
+          "JSON(max_dynamic_paths=1, max_dynamic_types=1)",
+          "JSON(max_dynamic_paths=2, n UInt64, s String, a Array(String), t Tuple(UInt64, String))"})
+    {
+        SCOPED_TRACE(type_name);
+        auto type = DataTypeFactory::instance().get(type_name);
+        auto source = type->createColumn();
+        source->insert(Object{});
+        source->insert(
+            Object{
+                {"n", Field(42u)},
+                {"s", Field(String("a\0b", 3))},
+                {"a", Array{"", "value"}},
+                {"t", Tuple{7u, "tuple"}},
+                {"x", Field(1u)}});
+        source->insert(Object{{"n", Field(5u)}, {"s", Field("")}, {"x", Field("string")}, {"y", Field(Null())}});
+        for (size_t position : {0u, 1u, 2u})
+        {
+            for (size_t length : {0u, 1u, 2u, 17u, 1024u})
+            {
+                SCOPED_TRACE(position);
+                SCOPED_TRACE(length);
+                auto bulk = source->cloneEmpty();
+                auto scalar = source->cloneEmpty();
+                bulk->insertDefault();
+                scalar->insertDefault();
+                bulk->insertManyFrom(*source, position, length);
+                for (size_t i = 0; i < length; ++i)
+                    scalar->insertFrom(*source, position);
+                assertObjectColumnsEqual(assert_cast<const ColumnObject &>(*bulk), assert_cast<const ColumnObject &>(*scalar));
+            }
+        }
+    }
+}
+
+TEST(ColumnObject, InsertManyFromFreshDestination)
+{
+    for (const String & type_name :
+         {"JSON", "JSON(max_dynamic_paths=0)", "JSON(max_dynamic_paths=1, max_dynamic_types=1)", "JSON(n UInt64, s String)"})
+    {
+        SCOPED_TRACE(type_name);
+        auto type = DataTypeFactory::instance().get(type_name);
+        auto source = type->createColumn();
+        source->insert(Object{});
+        source->insert(Object{{"n", Field(42u)}, {"s", Field("repeated")}, {"x", Field(7u)}, {"y", Field("overflow")}});
+        source->insert(Object{{"n", Field(5u)}, {"s", Field("")}, {"x", Field("string")}});
+
+        for (size_t position : {0u, 1u, 2u})
+        {
+            for (size_t length : {0u, 1u, 2u, 17u, 1024u})
+            {
+                SCOPED_TRACE(position);
+                SCOPED_TRACE(length);
+                auto bulk = type->createColumn();
+                auto scalar = type->createColumn();
+                const Field source_value = (*source)[position];
+                bulk->insertManyFrom(*source, position, length);
+                for (size_t i = 0; i < length; ++i)
+                    scalar->insertFrom(*source, position);
+                assertObjectColumnsEqual(assert_cast<const ColumnObject &>(*bulk), assert_cast<const ColumnObject &>(*scalar));
+                ASSERT_EQ(source->size(), 3);
+                ASSERT_EQ((*source)[position], source_value);
+            }
+        }
+    }
+}
+
+TEST(ColumnObject, InsertManyFromSharedData)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=0)");
+    auto source = type->createColumn();
+    source->insert(Object{});
+    source->insert(Object{{"x", Field("value")}});
+    source->insert(Object{{"x", Field("value")}, {"y", Field(42u)}});
+    for (size_t position : {0u, 1u, 2u})
+    {
+        auto bulk = source->cloneEmpty();
+        auto scalar = source->cloneEmpty();
+        bulk->insertManyFrom(*source, position, 257);
+        for (size_t i = 0; i < 257; ++i)
+            scalar->insertFrom(*source, position);
+        assertObjectColumnsEqual(assert_cast<const ColumnObject &>(*bulk), assert_cast<const ColumnObject &>(*scalar));
+    }
+}
+
+TEST(ColumnObject, InsertManyFromDifferentLayouts)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=2, max_dynamic_types=1)");
+    auto source = type->createColumn();
+    source->insert(Object{{"x", Field(42u)}, {"y", Field("source")}, {"z", Field(5u)}});
+    source->insert(Object{{"x", Field(Null())}, {"y", Field("value")}, {"z", Field(9u)}});
+
+    for (size_t position : {0u, 1u})
+    {
+        auto bulk = type->createColumn();
+        auto scalar = type->createColumn();
+        for (auto * destination : {bulk.get(), scalar.get()})
+            destination->insert(Object{{"x", Field("destination")}, {"z", Field(1u)}});
+        bulk->insertManyFrom(*source, position, 5);
+        for (size_t i = 0; i < 5; ++i)
+            scalar->insertFrom(*source, position);
+        assertObjectColumnsEqual(assert_cast<const ColumnObject &>(*bulk), assert_cast<const ColumnObject &>(*scalar));
+    }
+}
+
+TEST(ColumnObject, InsertManyFromSharedDataPromotion)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=2)");
+    auto source = type->createColumn();
+    auto & source_object = assert_cast<ColumnObject &>(*source);
+    source_object.setMaxDynamicPaths(0);
+    source->insert(Object{{"x", Field("promoted")}, {"y", Field(42u)}, {"z", Field(1u)}});
+    auto bulk = type->createColumn();
+    auto scalar = type->createColumn();
+    ASSERT_TRUE(bulk->dynamicStructureEquals(*source));
+    bulk->insertManyFrom(*source, 0, 5);
+    for (size_t i = 0; i < 5; ++i)
+        scalar->insertFrom(*source, 0);
+    assertObjectColumnsEqual(assert_cast<const ColumnObject &>(*bulk), assert_cast<const ColumnObject &>(*scalar));
+    ASSERT_EQ(assert_cast<const ColumnObject &>(*bulk).getDynamicPaths().size(), 2);
+}
+
+TEST(ColumnObject, InsertManyFromUpperBoundAndZeroLength)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=4)");
+    auto source = type->createColumn();
+    assert_cast<ColumnObject &>(*source).setMaxDynamicPathsUpperBound(0);
+    auto bulk = type->createColumn();
+    bulk->insertManyFrom(*source, std::numeric_limits<size_t>::max(), 0);
+    ASSERT_TRUE(bulk->empty());
+    ASSERT_EQ(assert_cast<const ColumnObject &>(*bulk).getMaxDynamicPathsUpperBound(), 4);
+
+    source->insert(Object{{"x", Field(42u)}});
+    auto scalar = type->createColumn();
+    bulk->insertManyFrom(*source, 0, 5);
+    for (size_t i = 0; i < 5; ++i)
+        scalar->insertFrom(*source, 0);
+    assertObjectColumnsEqual(assert_cast<const ColumnObject &>(*bulk), assert_cast<const ColumnObject &>(*scalar));
+    ASSERT_EQ(assert_cast<const ColumnObject &>(*bulk).getMaxDynamicPathsUpperBound(), 0);
+}
+
+TEST(ColumnObject, InsertManyFromSelf)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, s String)");
+    auto bulk = type->createColumn();
+    auto scalar = type->createColumn();
+    const Object value{{"s", Field(String(8192, 's'))}, {"x", Field(String(8192, 'x'))}, {"y", Field("shared")}};
+    bulk->insert(value);
+    scalar->insert(value);
+    bulk->insertManyFrom(*bulk, 0, 17);
+    for (size_t i = 0; i < 17; ++i)
+        scalar->insertFrom(*scalar, 0);
+    assertObjectColumnsEqual(assert_cast<const ColumnObject &>(*bulk), assert_cast<const ColumnObject &>(*scalar));
+}
+
+TEST(ColumnObject, InsertManyFromRollbackAfterAllocationFailure)
+{
+    auto type = DataTypeFactory::instance().get("JSON(t Tuple(UInt64, String))");
+    auto source = type->createColumn();
+    source->insert(Object{{"t", Tuple{42u, String(65536, 'x')}}});
+    auto destination = source->cloneEmpty();
+    destination->insertDefault();
+    auto & destination_object = assert_cast<ColumnObject &>(*destination);
+    auto & tuple = assert_cast<ColumnTuple &>(*destination_object.getTypedPaths().at("t"));
+    tuple.getColumn(0).reserve(1025);
+    auto expected = source->cloneEmpty();
+    expected->insertDefault();
+    auto checkpoint = destination->getCheckpoint();
+    {
+        CurrentThread::flushUntrackedMemory();
+        const auto old_limit = total_memory_tracker.getHardLimit();
+        SCOPE_EXIT_SAFE(total_memory_tracker.setHardLimit(old_limit));
+        total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+        ASSERT_THROW(destination->insertManyFrom(*source, 0, 1024), Exception);
+    }
+    ASSERT_EQ(tuple.getColumn(0).size(), 1025);
+    ASSERT_EQ(tuple.getColumn(1).size(), 1);
+    destination->rollback(*checkpoint);
+    assertObjectColumnsEqual(assert_cast<const ColumnObject &>(*destination), assert_cast<const ColumnObject &>(*expected));
+    destination->insertManyFrom(*source, 0, 2);
+    expected->insertFrom(*source, 0);
+    expected->insertFrom(*source, 0);
+    assertObjectColumnsEqual(assert_cast<const ColumnObject &>(*destination), assert_cast<const ColumnObject &>(*expected));
+}
+
+TEST(ColumnObject, InsertManyFromPartiallyAliasedArray)
+{
+    auto shared_string = ColumnString::create();
+    const String value(8192, 'x');
+    shared_string->insert(value);
+
+    auto make_object = [&]
+    {
+        auto offsets = ColumnArray::ColumnOffsets::create();
+        offsets->insertValue(1);
+        MutableColumnPtr nested = shared_string->getPtr();
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths;
+        typed_paths.emplace("a", ColumnArray::create(std::move(nested), std::move(offsets)));
+        auto empty_object = ColumnObject::create({}, 0, 16);
+        auto shared_data = empty_object->getSharedDataPtr()->cloneResized(1);
+        return ColumnObject::create(std::move(typed_paths), {}, std::move(shared_data), 0, 0, 0, 16);
+    };
+
+    auto source = make_object();
+    auto destination = make_object();
+    ASSERT_NE(source->getTypedPaths().at("a").get(), destination->getTypedPaths().at("a").get());
+    destination->insertManyFrom(*source, 0, 17);
+    ASSERT_EQ(destination->size(), 18);
+    ASSERT_EQ(destination->getTypedPaths().at("a")->size(), 18);
+    ASSERT_EQ(shared_string->size(), 18);
+    for (size_t row = 0; row < destination->size(); ++row)
+        ASSERT_EQ((*destination)[row], (Object{{"a", Array{value}}}));
+}
+
+TEST(ColumnObject, InsertManyFromLargeCountAndOverflow)
+{
+    auto source = ColumnObject::create({}, 1, 16);
+    source->insert(Object{{"n", Field(42u)}});
+    auto destination = source->cloneEmpty();
+    destination->insertManyFrom(*source, 0, 65536);
+    ASSERT_EQ(destination->size(), 65536);
+    const auto & object = assert_cast<const ColumnObject &>(*destination);
+    object.validateDynamicPathsSizes();
+    ASSERT_EQ(object[0], (*source)[0]);
+    ASSERT_EQ(object[65535], (*source)[0]);
+    ASSERT_THROW(destination->insertManyFrom(*source, 0, std::numeric_limits<size_t>::max()), Exception);
+    ASSERT_EQ(destination->size(), 65536);
+    object.validateDynamicPathsSizes();
 }
 
 TEST(ColumnObject, SerializeDeserializerFromArena)

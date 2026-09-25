@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <random>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -213,3 +214,68 @@ REGISTER_ARRAY_REPEATED_BENCHMARKS(type_array_string);
 REGISTER_ARRAY_REPEATED_BENCHMARKS(type_array_low_cardinality_string);
 
 #undef REGISTER_ARRAY_REPEATED_BENCHMARKS
+
+template <const std::string & str_type, bool bulk>
+static void BM_insertRepeatedObject(benchmark::State & state)
+{
+    auto type = DataTypeFactory::instance().get(str_type);
+    const size_t paths = static_cast<size_t>(state.range(0));
+    const size_t length = static_cast<size_t>(state.range(1));
+    const bool matching_layout = state.range(2);
+    const bool reserve_destination = state.range(3);
+    auto source = type->createColumn();
+    Object value;
+    for (size_t i = 0; i < paths; ++i)
+        value["p" + std::to_string(i)] = i % 2 ? Field(String("repeated")) : Field(UInt64(i));
+    source->insert(value);
+    MutableColumnPtr destination;
+
+    for (auto _ [[maybe_unused]] : state)
+    {
+        state.PauseTiming();
+        destination = matching_layout ? source->cloneEmpty() : type->createColumn();
+        if (reserve_destination)
+            destination->reserve(length);
+        state.ResumeTiming();
+
+        /// Include any growth beyond the optional caller-style reservation.
+        if constexpr (bulk)
+            insertManyFromRepeatedly(*destination, *source, length);
+        else
+            insertFromRepeatedly(*destination, *source, length);
+        benchmark::DoNotOptimize(destination);
+    }
+
+    state.SetItemsProcessed(state.iterations() * length);
+}
+
+static const String type_object = "JSON";
+static const String type_object_shared = "JSON(max_dynamic_paths=0)";
+static const String type_object_typed = "JSON(p0 UInt64, p1 String)";
+
+#define REGISTER_OBJECT_REPEATED_BENCHMARKS(type, bulk) \
+    BENCHMARK_TEMPLATE(BM_insertRepeatedObject, type, bulk) \
+        ->Args({0, ROWS, 1, 0}) \
+        ->Args({1, ROWS, 1, 0}) \
+        ->Args({16, 1, 1, 0}) \
+        ->Args({16, 2, 1, 0}) \
+        ->Args({256, 2, 1, 0}) \
+        ->Args({256, 4, 1, 0}) \
+        ->Args({16, 16, 1, 0}) \
+        ->Args({16, 256, 1, 0}) \
+        ->Args({16, ROWS, 1, 0}) \
+        ->Args({16, 2, 0, 0}) \
+        ->Args({16, 256, 0, 0}) \
+        ->Args({16, ROWS, 0, 0}) \
+        ->Args({16, 256, 1, 1}) \
+        ->Args({16, ROWS, 1, 1}) \
+        ->Args({16, ROWS, 0, 1})
+
+REGISTER_OBJECT_REPEATED_BENCHMARKS(type_object, false);
+REGISTER_OBJECT_REPEATED_BENCHMARKS(type_object, true);
+REGISTER_OBJECT_REPEATED_BENCHMARKS(type_object_shared, false);
+REGISTER_OBJECT_REPEATED_BENCHMARKS(type_object_shared, true);
+REGISTER_OBJECT_REPEATED_BENCHMARKS(type_object_typed, false);
+REGISTER_OBJECT_REPEATED_BENCHMARKS(type_object_typed, true);
+
+#undef REGISTER_OBJECT_REPEATED_BENCHMARKS
