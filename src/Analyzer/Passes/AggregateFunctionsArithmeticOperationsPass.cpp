@@ -20,6 +20,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
 }
 
@@ -54,9 +55,10 @@ Field zeroField(const Field & value)
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
-/// A keyless aggregation, and the WITH TOTALS grand total, emit a row even over empty input; a key set with
-/// a non-constant key cannot. Constant keys are eliminated during analysis, so such a set counts as keyless.
-bool aggregationMayBeEmpty(const QueryNode & query_node)
+/// A keyless aggregation, and the WITH TOTALS grand total, emit a row even over empty input; a key set with a
+/// non-constant key cannot. A plain all-constant key set is eliminated whole, so the planner suppresses that row
+/// unless `empty_result_for_constant_keys` is off; a grouping set is only suppressed when NO set contributes a key.
+bool aggregationMayBeEmpty(const QueryNode & query_node, bool empty_result_for_constant_keys)
 {
     if (query_node.isGroupByWithTotals() || !query_node.hasGroupBy())
         return true;
@@ -87,7 +89,10 @@ bool aggregationMayBeEmpty(const QueryNode & query_node)
     if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube())
         return false;
 
-    return !has_non_constant_key(query_node.getGroupBy().getNodes());
+    if (has_non_constant_key(query_node.getGroupBy().getNodes()))
+        return false;
+
+    return !empty_result_for_constant_keys;
 }
 
 bool isPositiveFiniteConstant(const Field & value)
@@ -126,8 +131,7 @@ bool hoistPreservesEmptyAggregationResult(
     if (aggregated_argument_is_nullable)
         return true;
 
-    /// Arithmetic can introduce the nullability from the other operand: then only the unrewritten aggregate
-    /// is over a Nullable column, and only it is NULL over empty input.
+    /// Nullability can come from the other operand: then only the unrewritten aggregate is NULL over empty input.
     if (aggregate_result_is_nullable)
         return false;
 
@@ -153,7 +157,8 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (const auto * query_node = node->as<QueryNode>())
-            aggregation_may_be_empty_stack.push_back(aggregationMayBeEmpty(*query_node));
+            aggregation_may_be_empty_stack.push_back(aggregationMayBeEmpty(
+                *query_node, getSettings()[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]));
 
         if (!getSettings()[Setting::optimize_arithmetic_operations_in_aggregate_functions])
             return;

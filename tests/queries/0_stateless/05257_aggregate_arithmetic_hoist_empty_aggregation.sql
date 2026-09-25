@@ -160,6 +160,10 @@ SELECT 'group by key rows', count() FROM (SELECT min(number + 1) FROM numbers(0)
 SELECT 'group by key rows', count() FROM (SELECT min(number + 1) FROM numbers(0) GROUP BY number % 2) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'group by key and constant rows', count() FROM (SELECT min(number + 1) FROM numbers(0) GROUP BY number % 2, 'x') SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1, empty_result_for_aggregation_by_constant_keys_on_empty_set = 0;
 SELECT 'group by key and constant rows', count() FROM (SELECT min(number + 1) FROM numbers(0) GROUP BY number % 2, 'x') SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0, empty_result_for_aggregation_by_constant_keys_on_empty_set = 0;
+-- At the default of the empty-result setting a plain constant-only key set emits no row either, which is
+-- what lets the hoist stay for it.
+SELECT 'constant key at default rows', count() FROM (SELECT min(number + 1) FROM numbers(0) GROUP BY 1 + 1) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
+SELECT 'constant key at default rows', count() FROM (SELECT min(number + 1) FROM numbers(0) GROUP BY 1 + 1) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'with rollup rows', count() FROM (SELECT min(number + 1) FROM numbers(0) GROUP BY number % 2 WITH ROLLUP) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
 SELECT 'with rollup rows', count() FROM (SELECT min(number + 1) FROM numbers(0) GROUP BY number % 2 WITH ROLLUP) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT 'with cube rows', count() FROM (SELECT min(number + 1) FROM numbers(0) GROUP BY number % 2 WITH CUBE) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1;
@@ -204,7 +208,7 @@ SELECT 'the aggregate argument in the plan tells a kept hoist from a declined on
 SELECT 'declined: keyless plus', count() FROM (EXPLAIN actions = 1 SELECT min(number + 1) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(number + 1)%';
 SELECT 'declined: with totals', count() FROM (EXPLAIN actions = 1 SELECT min(number + 1) FROM numbers(0) GROUP BY number % 2 WITH TOTALS SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(number + 1)%';
 SELECT 'declined: grouping sets with a keyless member', count() FROM (EXPLAIN actions = 1 SELECT min(number + 1) FROM numbers(0) GROUP BY GROUPING SETS ((number % 2), ()) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(number + 1)%';
-SELECT 'declined: constant key', count() FROM (EXPLAIN actions = 1 SELECT min(number + 1) FROM numbers(0) GROUP BY 1 + 1 SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(number + 1)%';
+SELECT 'declined: constant key with empty result off', count() FROM (EXPLAIN actions = 1 SELECT min(number + 1) FROM numbers(0) GROUP BY 1 + 1 SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1, empty_result_for_aggregation_by_constant_keys_on_empty_set = 0) WHERE explain LIKE '%Aggregates: min(number + 1)%';
 SELECT 'declined: negative constant', count() FROM (EXPLAIN actions = 1 SELECT min(toFloat64(number) * -3.5) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(toFloat64(number) * -3.5)%';
 SELECT 'declined: divide by zero', count() FROM (EXPLAIN actions = 1 SELECT min(number / 0) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(number / 0)%';
 SELECT 'declined: sum divide by zero', count() FROM (EXPLAIN actions = 1 SELECT sum(number / 0) FROM numbers(0) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: sum(number / 0)%';
@@ -220,6 +224,8 @@ SELECT 'kept: with cube', count() FROM (EXPLAIN actions = 1 SELECT min(number + 
 SELECT 'kept: grouping sets all keyed', count() FROM (EXPLAIN actions = 1 SELECT min(number + 1) FROM numbers(0) GROUP BY GROUPING SETS ((number % 2), (number % 3)) SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(number)%';
 SELECT 'kept: constant key rollup', count() FROM (EXPLAIN actions = 1 SELECT min(number + 1) FROM numbers(0) GROUP BY ROLLUP('x') SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(number)%';
 SELECT 'kept: constant key cube', count() FROM (EXPLAIN actions = 1 SELECT min(number + 1) FROM numbers(0) GROUP BY CUBE('x') SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(number)%';
+SELECT 'kept: constant key at default', count() FROM (EXPLAIN actions = 1 SELECT min(number + 1) FROM numbers(0) GROUP BY 1 + 1 SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(number)%';
+SELECT 'kept: constant key literal at default', count() FROM (EXPLAIN actions = 1 SELECT min(number + 1) FROM numbers(0) GROUP BY 'x' SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 1) WHERE explain LIKE '%Aggregates: min(number)%';
 -- The count-scaled sum rewrite is still applied for a positive finite constant: this prints 1 both
 -- before and after the change, so a wholesale disabling of the sibling pass would redden it.
 -- The count aggregate is matched case-insensitively, and as a boolean rather than a row count,

@@ -128,6 +128,8 @@ group by key rows	0
 group by key rows	0
 group by key and constant rows	0
 group by key and constant rows	0
+constant key at default rows	0
+constant key at default rows	0
 with rollup rows	0
 with rollup rows	0
 with cube rows	0
@@ -193,7 +195,7 @@ the aggregate argument in the plan tells a kept hoist from a declined one
 declined: keyless plus	1
 declined: with totals	1
 declined: grouping sets with a keyless member	1
-declined: constant key	1
+declined: constant key with empty result off	1
 declined: negative constant	1
 declined: divide by zero	1
 declined: sum divide by zero	1
@@ -209,5 +211,7 @@ kept: with cube	1
 kept: grouping sets all keyed	1
 kept: constant key rollup	1
 kept: constant key cube	1
+kept: constant key at default	1
+kept: constant key literal at default	1
 kept: sum plus finite	1
 off: nothing is hoisted	0
