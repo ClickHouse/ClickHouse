@@ -82,7 +82,7 @@ JOIN {CLICKHOUSE_DATABASE_1:Identifier}.tbl USING (id);
 -- inner table name must not throw.
 SELECT (SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier} WHERE id = {CLICKHOUSE_DATABASE_1:Identifier}.tbl.value + 37)
 FROM {CLICKHOUSE_DATABASE_1:Identifier}.tbl
-SETTINGS allow_experimental_correlated_subqueries = 1;
+SETTINGS allow_correlated_subqueries = 1;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
