@@ -10,12 +10,15 @@ INNER JOIN (SELECT number AS k, number AS m FROM numbers(8)) AS b ON a.k = b.k
 WHERE a.k < 100 AND (a.k + b.m) % 4 = 0 AND toUInt64(a.s) + b.m > 3
 SETTINGS enable_join_runtime_filters = 0;
 
--- The cell above returns the same rows when the push-down declines to fire, so assert the hoisted atom is
--- the guard: that is false both if the rewrite never runs (the leftmost residual atom is then `a.k < 100`,
--- the conjunct written first) and if the order regresses (it is then the throwing conjunct). The extra
--- settings are pinned (all randomized in CI) because the assertion needs a deterministic plan, and
+-- Liveness + order oracle for the cell above, which returns the same rows when the rewrite declines:
+-- `AND column:` names every atom the filter step extracts, so require the guard to be among them and
+-- `a.k < 100` not to be - the latter is only extracted while it is still in the WHERE. The extra settings
+-- are pinned (all randomized in CI) because the assertion needs a deterministic plan, and
 -- `query_plan_merge_filter_into_join_condition = 0` keeps this cell measuring push-down alone.
-SELECT count() > 0 FROM (
+SELECT countIf(position(explain,
+                        'AND column: equals(modulo(plus(__table1.k, __table3.m), 4_UInt8), 0_UInt8)') > 0) > 0
+   AND countIf(position(explain, 'AND column: less(__table1.k, 100_UInt8)') > 0) = 0
+FROM (
     EXPLAIN actions = 1, compact = 0, pretty = 0
     SELECT count(), min(a.k)
     FROM (SELECT number AS k, if(number % 2 = 0, toString(number), 'oops') AS s FROM numbers(8)) AS a
@@ -26,7 +29,7 @@ SELECT count() > 0 FROM (
              query_plan_remove_unused_columns = 1, query_plan_optimize_join_order_limit = 0,
              query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
              optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
-) WHERE position(explain, 'AND column: equals(modulo(plus(__table1.k, __table3.m), 4_UInt8), 0_UInt8)') > 0;
+);
 
 -- A second equality in the WHERE becomes part of the join condition and the other two conjuncts stay behind.
 SELECT count(), min(a.k)
@@ -35,9 +38,12 @@ INNER JOIN (SELECT number AS k, number AS j, number AS m FROM numbers(8)) AS b O
 WHERE a.j = b.j AND (a.k + b.m) % 4 = 0 AND toUInt64(a.s) + b.m > 3
 SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 1;
 
--- Same liveness assertion for the filter-into-join-condition carrier: without it the cell above returns
--- the same rows when that merge declines, and the leftmost residual atom would be `a.j = b.j`.
-SELECT count() > 0 FROM (
+-- Same oracle for the filter-into-join-condition carrier: the guard must be among the extracted atoms and
+-- `a.j = b.j` must not be, since that atom is only extracted while the merge leaves it in the WHERE.
+SELECT countIf(position(explain,
+                        'AND column: equals(modulo(plus(__table1.k, __table3.m), 4_UInt8), 0_UInt8)') > 0) > 0
+   AND countIf(position(explain, 'AND column: equals(__table1.j, __table3.j)') > 0) = 0
+FROM (
     EXPLAIN actions = 1, compact = 0, pretty = 0
     SELECT count(), min(a.k)
     FROM (SELECT number AS k, number AS j, if(number % 2 = 0, toString(number), 'oops') AS s FROM numbers(8)) AS a
@@ -48,7 +54,7 @@ SELECT count() > 0 FROM (
              query_plan_remove_unused_columns = 1, query_plan_optimize_join_order_limit = 0,
              query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
              optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
-) WHERE position(explain, 'AND column: equals(modulo(plus(__table1.k, __table3.m), 4_UInt8), 0_UInt8)') > 0;
+);
 
 -- The same shape with the guard written twice. Repeating a conjunct must not change which of the two
 -- conjuncts that stay behind is evaluated first.
@@ -58,10 +64,13 @@ INNER JOIN (SELECT number AS k, number AS j, number AS m FROM numbers(8)) AS b O
 WHERE (a.j = b.j AND (a.k + b.m) % 4 = 0 AND toUInt64(a.s) + b.m > 3) AND (a.k + b.m) % 4 = 0
 SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 1;
 
--- Same liveness assertion for the shared-atom shape. The cell above is green on master too, so this is
--- what discriminates against reordering by reversal: reversing the de-duplicated conjunct list hoists the
--- throwing conjunct here, and only taking the order from the predicate hoists the guard.
-SELECT count() > 0 FROM (
+-- Same oracle for the shared-atom shape, with `a.j = b.j` again the atom the merge consumes. The cell above
+-- is green on master too, so this is what discriminates against reordering by reversal: reversing the
+-- de-duplicated conjunct list hoists the throwing conjunct here, and only the predicate order hoists the guard.
+SELECT countIf(position(explain,
+                        'AND column: equals(modulo(plus(__table1.k, __table3.m), 4_UInt8), 0_UInt8)') > 0) > 0
+   AND countIf(position(explain, 'AND column: equals(__table1.j, __table3.j)') > 0) = 0
+FROM (
     EXPLAIN actions = 1, compact = 0, pretty = 0
     SELECT count(), min(a.k)
     FROM (SELECT number AS k, number AS j, if(number % 2 = 0, toString(number), 'oops') AS s FROM numbers(8)) AS a
@@ -72,7 +81,7 @@ SELECT count() > 0 FROM (
              query_plan_remove_unused_columns = 1, query_plan_optimize_join_order_limit = 0,
              query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
              optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
-) WHERE position(explain, 'AND column: equals(modulo(plus(__table1.k, __table3.m), 4_UInt8), 0_UInt8)') > 0;
+);
 
 -- The same shape again, with the guarded conjunct written twice instead of the guard. It shares the carrier,
 -- the shape and the pins of the two cells above and already has a pre-fix red of its own, so it gets no
