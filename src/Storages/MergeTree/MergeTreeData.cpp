@@ -4504,52 +4504,7 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
     }
 }
 
-/// Writes a RemovePart event to system.part_log for each of the parts. Best-effort: a failed
-/// write is logged, never thrown, so it cannot fail the removal or, in dropAllData(), replace
-/// the exception the drop itself is reporting.
-static void writePartRemovalLog(const MergeTreeData & storage, const MergeTreeData::DataPartsVector & parts, const LoggerPtr & log)
-try
-{
-    if (parts.empty())
-        return;
-
-    auto part_log = storage.getContext()->getPartLog();
-    if (!part_log)
-        return;
-
-    auto table_id = storage.getStorageID();
-
-    PartLogElement part_log_elem;
-
-    part_log_elem.event_type = PartLogElement::REMOVE_PART;
-
-    const auto time_now = std::chrono::system_clock::now();
-    part_log_elem.event_time = timeInSeconds(time_now);
-    part_log_elem.event_time_microseconds = timeInMicroseconds(time_now);
-
-    part_log_elem.duration_ms = 0;
-
-    part_log_elem.database_name = table_id.database_name;
-    part_log_elem.table_name = table_id.table_name;
-    part_log_elem.table_uuid = table_id.uuid;
-
-    for (const auto & part : parts)
-    {
-        part_log_elem.partition_id = part->info.getPartitionId();
-        part_log_elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
-        part_log_elem.part_name = part->name;
-        part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
-        part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
-        part_log_elem.rows = part->rows_count;
-        part_log_elem.part_format = part->getFormat();
-
-        part_log->add([&](PartLogElement & element) { element = part_log_elem; });
-    }
-}
-catch (...)
-{
-    tryLogCurrentException(log, __PRETTY_FUNCTION__);
-}
+static void writePartRemovalLog(const MergeTreeData & storage, const MergeTreeData::DataPartsVector & parts, const LoggerPtr & log);
 
 void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts, MergeTreeData::DataPartsVector * removed_parts)
 {
@@ -4582,9 +4537,51 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     LOG_DEBUG(log, "Removing {} parts from memory: Parts: [{}]", parts.size(), fmt::join(parts, ", "));
 
-    /// Data parts are still alive (DataPartsVector holds shared_ptrs) and contain the metadata to log.
     /// Parts removed by DROP TABLE do not pass through here; dropAllData() logs them itself.
     writePartRemovalLog(*this, parts, log.load());
+}
+
+/// Writes a RemovePart event to system.part_log for each of the parts. Best-effort: a failed
+/// write is logged, never thrown, so it cannot fail the removal or, in dropAllData(), replace
+/// the exception the drop itself is reporting.
+static void writePartRemovalLog(const MergeTreeData & storage, const MergeTreeData::DataPartsVector & parts, const LoggerPtr & log)
+try
+{
+    /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
+    auto table_id = storage.getStorageID();
+    if (auto part_log = storage.getContext()->getPartLog())
+    {
+        PartLogElement part_log_elem;
+
+        part_log_elem.event_type = PartLogElement::REMOVE_PART;
+
+        const auto time_now = std::chrono::system_clock::now();
+        part_log_elem.event_time = timeInSeconds(time_now);
+        part_log_elem.event_time_microseconds = timeInMicroseconds(time_now);
+
+        part_log_elem.duration_ms = 0;
+
+        part_log_elem.database_name = table_id.database_name;
+        part_log_elem.table_name = table_id.table_name;
+        part_log_elem.table_uuid = table_id.uuid;
+
+        for (const auto & part : parts)
+        {
+            part_log_elem.partition_id = part->info.getPartitionId();
+            part_log_elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
+            part_log_elem.part_name = part->name;
+            part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
+            part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
+            part_log_elem.rows = part->rows_count;
+            part_log_elem.part_format = part->getFormat();
+
+            part_log->add([&](PartLogElement & element) { element = part_log_elem; });
+        }
+    }
+}
+catch (...)
+{
+    tryLogCurrentException(log, __PRETTY_FUNCTION__);
 }
 
 
