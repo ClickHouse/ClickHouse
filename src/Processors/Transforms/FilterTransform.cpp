@@ -21,6 +21,7 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/IFunction.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 
 namespace ProfileEvents
@@ -31,6 +32,14 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char filter_transform_before_expression_pause[];
+    extern const char filter_transform_pause[];
+    extern const char query_condition_cache_part_switch_pause[];
+    extern const char query_condition_cache_final_flush_pause[];
+}
 
 namespace ErrorCodes
 {
@@ -219,7 +228,7 @@ IProcessor::Status FilterTransform::prepare()
 
     auto status = ISimpleTransform::prepare();
 
-    if (status == IProcessor::Status::Finished)
+    if (status == IProcessor::Status::Finished && !isCancelled())
         writeIntoQueryConditionCache({});
 
     return status;
@@ -230,6 +239,20 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
 {
     if (remove_filter_column)
         columns.erase(columns.begin() + filter_column_position);
+}
+
+void FilterTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    if (expression)
+    {
+        const auto & nodes = expression->getNodes();
+        for (const auto & node : nodes)
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+        }
+    }
 }
 
 void FilterTransform::transform(Chunk & chunk)
@@ -294,8 +317,24 @@ void FilterTransform::doTransform(Chunk & chunk)
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
 
+        FailPointInjection::pauseFailPoint(FailPoints::filter_transform_before_expression_pause);
+
+        if (isCancelled())
+        {
+            stopReading();
+            return;
+        }
+
         if (expression)
-            expression->execute(block, num_rows_before_filtration);
+            expression->execute(block, num_rows_before_filtration, false, false, &getCancellationFlag());
+
+        FailPointInjection::pauseFailPoint(FailPoints::filter_transform_pause);
+
+        if (isCancelled())
+        {
+            stopReading();
+            return;
+        }
 
         columns = block.getColumns();
         types = block.getDataTypes();
@@ -430,7 +469,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 
 void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
 {
-    if (!query_condition_cache)
+    if (!query_condition_cache || isCancelled())
         return;
 
     /// A transform between the reading step and this filter (e.g. `FilterSortedStreamByRange`
@@ -446,6 +485,11 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         /// FilterTransform has finished, we need to flush to the query result cache.
 
         if (!buffered_mark_ranges_info)
+            return;
+
+        FailPointInjection::pauseFailPoint(FailPoints::query_condition_cache_final_flush_pause);
+
+        if (isCancelled())
             return;
 
         query_condition_cache->write(
@@ -473,6 +517,11 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
 
         if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
         {
+            FailPointInjection::pauseFailPoint(FailPoints::query_condition_cache_part_switch_pause);
+
+            if (isCancelled())
+                return;
+
             query_condition_cache->write(
                 buffered_mark_ranges_info->table_uuid,
                 buffered_mark_ranges_info->part_name,
