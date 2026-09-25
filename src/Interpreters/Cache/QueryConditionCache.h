@@ -11,18 +11,6 @@ namespace DB
 
 struct Settings;
 
-/// Settings that change how a function inside a condition evaluates without leaving any trace in the
-/// condition's `ActionsDAG` (the `formatDateTime`/`parseDateTime` family, `locate`, `least`/`greatest` and a few more
-/// read them while they run; the registration rule is in the definition).
-/// Two queries whose conditions differ only in those settings must not share a cache entry: a mark verdict
-/// computed under one value is wrong under the other. Fold the returned salt into the condition hash.
-UInt64 queryConditionCacheSettingsSalt(const Settings & settings);
-
-/// Combines the hash of a condition's `ActionsDAG` with that salt. Every producer of a query condition
-/// cache key has to use it, or a verdict written by one query is never found by the next one.
-UInt64 queryConditionCacheHash(UInt64 condition_dag_hash, UInt64 settings_salt);
-
-
 /// An implementation of predicate caching a la https://doi.org/10.1145/3626246.3653395
 ///
 /// Given the table, part name and a hash of a predicate as key, caches which marks definitely don't match the predicate and which marks may
@@ -43,7 +31,7 @@ public:
     using MatchingMarks = std::vector<bool>;
 
 private:
-    /// A hash of the table id, part name and condition id.
+    /// A hash of the table id, part name, condition id, and the changed query settings.
     /// CityHash128 is enough to use for practical applications as the probability of collisions is very low.
     /// https://github.com/ClickHouse/ClickHouse/issues/9506
     using Key = UInt128;
@@ -87,8 +75,8 @@ private:
 public:
     using Cache = CacheBase<Key, Entry, UInt128TrivialHash, EntryWeight>;
 
-    /// Compute cache key from table UUID, part name and condition hash
-    static Key makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash);
+    /// Compute cache key from table UUID, part name and condition hash.
+    static Key makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash, const Settings & settings);
 
     /// Compose the `part_name` component of a cache key for a file-backed table (e.g. `File`, `S3`,
     /// object storage). Uses the full path (not just the base name) so files that share a name in
@@ -104,14 +92,15 @@ public:
 
     /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
     void write(
-        const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
+        const UUID & table_id, const String & part_name, UInt64 condition_hash, const Settings & settings, const String & condition,
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
     /// A single logical consultation may probe more than one key (e.g. the bare condition hash and
     /// a skip-index-profiled hash); pass increment_profile_events = false on the extra probes so the
     /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
-    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
+    std::optional<MatchingMarks> read(
+        const UUID & table_id, const String & part_name, UInt64 condition_hash, const Settings & settings, bool increment_profile_events = true);
 
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
