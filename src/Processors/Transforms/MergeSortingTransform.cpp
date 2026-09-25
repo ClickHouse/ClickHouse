@@ -218,9 +218,32 @@ void MergeSortingTransform::generate()
     {
         generated_chunk = merge_sorter->read();
         if (!generated_chunk)
+        {
             merge_sorter.reset();
+        }
         else
+        {
+            /// The sorted result is complete, so the row at `limit` is the K-th value of this stream:
+            /// the exact final threshold with a single stream, and never tighter than it with several.
+            /// Publishing it lets a reader judge its data against it once the sorting is done, which
+            /// `remerge` alone does not guarantee.
+            if (threshold_tracker && limit && !generated_threshold_published)
+            {
+                const size_t rows = generated_chunk.getNumRows();
+                if (rows_generated + rows >= limit)
+                {
+                    if (auto sort_column_position = header_without_constants.findPositionByName(description.front().column_name))
+                    {
+                        Field value;
+                        generated_chunk.getColumns()[*sort_column_position]->get(limit - rows_generated - 1, value);
+                        threshold_tracker->testAndSet(value);
+                    }
+                    generated_threshold_published = true;
+                }
+                rows_generated += rows;
+            }
             enrichChunkWithConstants(generated_chunk);
+        }
     }
 }
 

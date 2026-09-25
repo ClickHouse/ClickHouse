@@ -257,6 +257,10 @@ public:
 
         String next();
 
+        /// The files `next` returns, if they are known before reading: not with distributed processing,
+        /// from an archive, or with a `_path` / `_file` filter that can only be applied while reading.
+        std::optional<Strings> tryGetFiles() const;
+
         bool isReadFromArchive() const
         {
             return archive_info.has_value();

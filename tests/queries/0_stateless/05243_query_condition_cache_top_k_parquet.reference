@@ -28,6 +28,16 @@
 100998	100998
 100995	100995
 100992	100992
+--- a filter on _file
+100999
+100998
+100997
+100999
+100998
+100997
+100999
+100998
+100997
 --- a file changes after the cache was used
 FILE_CHANGED_DURING_READ
 100999
@@ -53,5 +63,8 @@ where_1	1	0
 where_2	1	1
 rewritten_nowhere	1	0
 rewritten_where	1	0
+file_b_1	1	0
+file_b_2	1	1
+file_b_after_a_changed	1	1
 gate_1	0	0
 gate_2	0	0

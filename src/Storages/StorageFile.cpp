@@ -1667,6 +1667,13 @@ String StorageFileSource::FilesIterator::next()
     }
 }
 
+std::optional<Strings> StorageFileSource::FilesIterator::tryGetFiles() const
+{
+    if (distributed_processing || isReadFromArchive() || deferred_filter_actions)
+        return {};
+    return files;
+}
+
 const String & StorageFileSource::FilesIterator::getFileNameInArchive()
 {
     if (archive_info->path_in_archive.empty())
@@ -2749,9 +2756,11 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     /// that loses rows or is rewritten can loosen it, and a row group skipped under the old
     /// threshold may then hold rows of the result. So the key covers the version tokens of all
     /// files, and it is made only when every token has settled (see `isFileCacheVersionTokenSettled`),
-    /// i.e. when any later change of any of the files is guaranteed to change the key.
+    /// i.e. when any later change of any of the files is guaranteed to change the key. Only the files
+    /// the query reads matter, which a `_path` / `_file` filter can narrow down.
+    Strings paths = files_iterator->tryGetFiles().value_or(storage->paths);
     SipHash files_hash;
-    for (const auto & path : storage->paths)
+    for (const auto & path : paths)
     {
         struct stat file_stat{};
         if (0 != stat(path.c_str(), &file_stat) || !S_ISREG(file_stat.st_mode) || !isFileCacheVersionTokenSettled(file_stat))

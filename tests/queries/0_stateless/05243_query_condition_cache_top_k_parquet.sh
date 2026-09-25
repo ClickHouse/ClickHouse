@@ -88,10 +88,20 @@ touch -d '2020-01-02 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/a.parquet"
 run rewritten_nowhere "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 3"
 run rewritten_where "SELECT k, s FROM t_05243 WHERE k % 3 = 0 ORDER BY k DESC LIMIT 3"
 
+echo "--- a filter on _file"
+# Only the files the query reads make the threshold, so a change of another file must not invalidate
+# the entries of a query that filters it out.
+run file_b_1 "SELECT k FROM t_05243 WHERE _file = 'b.parquet' ORDER BY k DESC LIMIT 3"
+run file_b_2 "SELECT k FROM t_05243 WHERE _file = 'b.parquet' ORDER BY k DESC LIMIT 3"
+touch -d '2020-01-03 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/a.parquet"
+run file_b_after_a_changed "SELECT k FROM t_05243 WHERE _file = 'b.parquet' ORDER BY k DESC LIMIT 3"
+
 echo "--- a file changes after the cache was used"
 # The entries under the key may only be used while every file the query reads is in the version the
 # key was made for. The failpoint stands in for a file rewritten after an entry was used for another
 # file: the query must fail rather than return what those entries left of the result.
+# First record the entries for the current versions of the files.
+${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 3 SETTINGS ${SETTINGS} FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT file_top_k_query_condition_cache_inject_file_change"
 ${CLICKHOUSE_CLIENT} --query "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 3 SETTINGS ${SETTINGS}" 2>&1 | grep -o -m1 FILE_CHANGED_DURING_READ
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT file_top_k_query_condition_cache_inject_file_change"
@@ -102,7 +112,7 @@ run gate_1 "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 5" ", use_query_conditio
 run gate_2 "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 5" ", use_query_condition_cache_for_top_k = 0"
 
 echo "--- query condition cache lookups"
-events nowhere_1 nowhere_2 nowhere_limit nowhere_asc where_1 where_2 rewritten_nowhere rewritten_where gate_1 gate_2
+events nowhere_1 nowhere_2 nowhere_limit nowhere_asc where_1 where_2 rewritten_nowhere rewritten_where file_b_1 file_b_2 file_b_after_a_changed gate_1 gate_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05243"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}"
