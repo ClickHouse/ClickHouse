@@ -1,0 +1,33 @@
+1
+A	10
+B	\N
+C	\N
+D	\N
+a	20
+A	10
+B	\N
+C	\N
+D	\N
+a	20
+a	30
+b	\N
+c	\N
+d	\N
+a	30
+b	\N
+c	\N
+d	\N
+A	10
+B	\N
+b	\N
+c	\N
+d	\N
+05261_collapse	['t05261_left.p','t05261_right.p']	1
+05261_direct	['t05261_left.p','t05261_right.p']	1
+05261_having	['t05261_left.p','t05261_right.p']	1
+05261_limit	['t05261_left.p','t05261_right.p']	1
+05261_subquery	['t05261_left.p','t05261_right.p']	1
+A	10
+A	10
+05261_disabled	1
+05261_no_projections	1

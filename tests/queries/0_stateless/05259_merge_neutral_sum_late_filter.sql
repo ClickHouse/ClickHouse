@@ -1,0 +1,39 @@
+-- Tags: no-parallel
+-- The failpoint injects a stateful filter after child creation and is server-global.
+DROP VIEW IF EXISTS t05259_view;
+DROP TABLE IF EXISTS t05259_merge;
+DROP TABLE IF EXISTS t05259_keys_other;
+DROP TABLE IF EXISTS t05259_keys;
+DROP TABLE IF EXISTS t05259_values;
+
+SET max_threads = 1;
+-- Exercise rewrite semantics on small fixtures independently of the default cost gate.
+SET optimize_merge_neutral_sum_children_min_read_bytes = 0;
+SET log_queries = 1;
+SET optimize_merge_neutral_sum_children = 1;
+CREATE TABLE t05259_values (k UInt64, pnl Nullable(Float64)) ENGINE=MergeTree ORDER BY k;
+CREATE TABLE t05259_keys (k UInt64, d Float64, PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k;
+INSERT INTO t05259_keys SELECT 7,1 FROM numbers(100000);
+CREATE TABLE t05259_keys_other AS t05259_keys;
+INSERT INTO t05259_keys_other SELECT 8,1 FROM numbers(100000);
+INSERT INTO t05259_values VALUES (9,10),(9,20);
+CREATE TABLE t05259_merge AS t05259_values ENGINE=Merge(currentDatabase(), '^t05259_(values|keys|keys_other)$');
+CREATE VIEW t05259_view AS SELECT * FROM t05259_merge;
+SELECT k,sum(pnl) FROM t05259_view GROUP BY k ORDER BY k SETTINGS log_comment='t05259_before';
+SYSTEM FLUSH LOGS;
+SELECT notEmpty(projections), read_rows < 100 FROM system.user_query_log
+WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05259_before'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+SYSTEM ENABLE FAILPOINT merge_neutral_sum_late_filter;
+SELECT k, if(k=9, s BETWEEN 10 AND 30, isNull(s)) FROM
+(SELECT k,sum(pnl) AS s FROM t05259_view GROUP BY k) ORDER BY k SETTINGS log_comment='t05259_after';
+SYSTEM DISABLE FAILPOINT merge_neutral_sum_late_filter;
+SYSTEM FLUSH LOGS;
+SELECT empty(projections), read_rows >= 200000 FROM system.user_query_log
+WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05259_after'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+DROP VIEW t05259_view;
+DROP TABLE t05259_merge;
+DROP TABLE t05259_keys_other;
+DROP TABLE t05259_keys;
+DROP TABLE t05259_values;

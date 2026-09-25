@@ -29,6 +29,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Interpreters/DistributedPlanLocalObject.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -40,6 +41,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/mergeNeutralSum.h>
+
+#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
@@ -885,7 +888,17 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
         getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", reason->text);
     settings.make_distributed_plan = false;
     distributed_plan_decision = DistributedPlanDecision::FellBack;
+    for (const auto & context : resources.distributed_plan_decision_contexts)
+        context->setSetting("make_distributed_plan", false);
     return true;
+}
+
+void QueryPlan::takeContextsFrom(const QueryPlan & kept_aside_plan)
+{
+    for (const auto & context : kept_aside_plan.resources.interpreter_context)
+        addInterpreterContext(context);
+    for (const auto & context : kept_aside_plan.resources.distributed_plan_decision_contexts)
+        addDistributedPlanDecisionContext(context);
 }
 
 
@@ -944,6 +957,11 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan error: plan became unsupported for distributed execution after optimization: {}.",
             reason->text);
+    if (const auto & used = optimization_settings.distributed_plan_local_object)
+        if (const auto entry = used->get())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan error: the query resolved {} {} of the initiator after the plan was accepted for distributed execution.",
+                DistributedPlanLocalObject::kindName(entry->kind), entry->name);
 
     /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
     /// fragments never carry their placeholder steps; the sets are added back below.
