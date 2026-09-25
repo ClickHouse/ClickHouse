@@ -125,7 +125,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
 /// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
 /// needs the new contract is not serialized for such a peer at all.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
+/// Version 21 registers the `ReadFromSystemOne` and `ReadFromSystemNumbers` steps, so a plan that
+/// reads `system.one` or `numbers(...)` can be shipped. This is a new step name rather than a change
+/// of a step's own bytes, so the per-step version added in 19 does not cover it: an older peer does
+/// not know the name at all.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -136,6 +140,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_RE
 /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger and its standalone `grace_hash` ignores
 /// `max_bytes_before_external_join`, so it would run the plan with the other contract without saying so.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS = 20;
+/// First query-plan serialization version that registers the "ReadFromSystemOne" and
+/// "ReadFromSystemNumbers" steps. Used to gate serializing them for `make_distributed_plan`; the
+/// parallel-replicas path excludes an older replica up front through
+/// DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS = 21;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
