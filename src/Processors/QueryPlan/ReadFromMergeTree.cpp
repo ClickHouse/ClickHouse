@@ -132,6 +132,24 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
+/// Floats are excluded: -0.0 and 0.0 merge as one key, but a condition can tell them apart
+NameSet sortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
+{
+    NameSet names;
+    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+    {
+        bool has_float = isFloat(removeLowCardinalityAndNullable(sorting_key.data_types[i]));
+        sorting_key.data_types[i]->forEachChild([&](const IDataType & child)
+        {
+            if (!has_float && WhichDataType(child).isFloat())
+                has_float = true;
+        });
+        if (!has_float)
+            names.insert(sorting_key.column_names[i]);
+    }
+    return names;
+}
+
 /// check if a DAG node only depends on sorting key columns
 /// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
@@ -3161,8 +3179,7 @@ bool ReadFromMergeTree::isRowPolicyDeferredAfterFinal() const
     if (!context->getSettingsRef()[Setting::apply_row_policy_after_final])
         return false;
 
-    const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-    NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+    NameSet sorting_key_set = sortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey());
 
     const auto * filter_output = &query_info.row_level_filter->actions.findInOutputs(
         query_info.row_level_filter->column_name);
@@ -3281,8 +3298,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             if (deferred_prewhere_info)
                 deferred_column_names.insert(deferred_prewhere_info->prewhere_column_name);
 
-            const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-            NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+            NameSet sorting_key_set = sortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey());
 
             std::vector<const ActionsDAG::Node *> index_nodes;
 
