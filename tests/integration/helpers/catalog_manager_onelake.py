@@ -234,7 +234,7 @@ class OneLakeCatalogManager(CatalogManager):
         """Drop-and-create a DataLakeCatalog database authenticating with a
         pre-obtained bearer token.
 
-        Assumes ``allow_experimental_database_iceberg`` is enabled in the
+        Assumes ``allow_database_iceberg`` is enabled in the
         server's user config."""
         node.query(
             f"DROP DATABASE IF EXISTS {database_name};\n"
@@ -282,7 +282,7 @@ class OneLakeCatalogManager(CatalogManager):
     def create_catalog(self, node, database_name: str) -> None:
         """Drop-and-create a DataLakeCatalog database with real credentials.
 
-        Assumes ``allow_experimental_database_iceberg`` is enabled in the
+        Assumes ``allow_database_iceberg`` is enabled in the
         server's user config."""
         node.query(
             f"DROP DATABASE IF EXISTS {database_name};\n"
@@ -295,7 +295,7 @@ class OneLakeCatalogManager(CatalogManager):
         Returns the first non-empty stderr encountered, or an empty
         string when both statements succeed.  Useful for negative tests
         where the error may surface at either stage.  Assumes
-        ``allow_experimental_database_iceberg`` is enabled in the
+        ``allow_database_iceberg`` is enabled in the
         server's user config.
         """
         sql = self.create_db_sql(database_name, **overrides)
