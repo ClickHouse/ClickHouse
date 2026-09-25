@@ -177,6 +177,9 @@ def test_write_to_table_with_writer_feature(started_cluster, feature):
     try:
         create_feature_table(spark, feature, path)
     except Exception as e:  # pylint: disable=broad-except
+        # A feature with a recorded outcome must keep being created: a Spark or setup regression
+        # must fail the matrix, not shrink it. Only features the runner never supported may skip.
+        assert feature not in EXPECTED_OUTCOME, f"{feature}: Spark stopped creating a pinned feature table: {str(e)[:300]}"
         pytest.skip(f"Spark cannot create a table with {feature} here: {str(e)[:200]}")
     # Every feature the runner can create has a recorded outcome; a runner upgrade that starts
     # creating a new one fails here until the observed outcome is recorded deliberately.
@@ -198,7 +201,10 @@ def test_write_to_table_with_writer_feature(started_cluster, feature):
         ch_columns = "id Int32, v String, var String"
     _, error = node.query_and_get_answer_with_error(f"CREATE TABLE {table_name} ({ch_columns}) ENGINE = DeltaLakeLocal('{path}')")
     if error:
-        # The table cannot even be attached (e.g. a Variant column): nothing to write into, nothing committed.
+        # Every pinned feature attaches today; an attach failure there is a behaviour change, not a
+        # tolerated branch. It stays tolerated only for a feature without a recorded outcome (e.g. a
+        # Variant column): nothing to write into, nothing committed.
+        assert feature not in EXPECTED_OUTCOME, f"{feature}: the table could not be attached: {error.splitlines()[0][:300]}"
         logging.info("%s: attach rejected: %s", feature, error.splitlines()[0][:200])
         assert "NOT_IMPLEMENTED" in error or "DELTA_KERNEL_ERROR" in error, error
         assert spark.sql(f"DESCRIBE HISTORY {table}").count() == 2
