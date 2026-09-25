@@ -98,12 +98,18 @@ struct NoOp
 /// Is this step a wrapper that can be skipped over? Only an `ExpressionStep` whose outputs are a
 /// permutation of its inputs - renamed or reordered, nothing computed, nothing forwarded twice.
 ///
+/// The renames are the point, so this cannot be `isPassthroughActions` above: that one wants
+/// `getOutputs() == getInputs()`, and a rename makes the output an `ALIAS` node rather than the `INPUT`
+/// it stands for. Every analyzer query is bracketed by such steps - `Change column names to column
+/// identifiers` on the way in, `Project names` on the way out - so demanding identity here means never
+/// recognising a wrapper at all.
+///
 /// Its two users have to agree on it, which is why it is shared: `calculateHashTableCacheKeys` lets such
 /// a step adopt its child's key, and `considerEnablingParallelReplicas` looks through it when locating
 /// the boundary the replicas would ship from. A step invisible to one and visible to the other would be
 /// instrumented in one plan and matched in the other. It is narrower than "contributes nothing to the
 /// key": a full `SortingStep` contributes nothing yet must remain a boundary of its own.
-bool isPassThroughExpression(const IQueryPlanStep & step);
+bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step);
 
 template <typename Func1, typename Func2 = NoOp>
 void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})

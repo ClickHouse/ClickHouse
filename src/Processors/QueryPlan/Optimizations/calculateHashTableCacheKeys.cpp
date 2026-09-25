@@ -126,7 +126,7 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
 /// count nor the byte layout. This is the loose, header-only test, and it stays that way: it decides
 /// only whether a step adds anything of its own to a key, where being wrong costs a slightly-off
 /// estimate. Deciding that a step can be *skipped over* is a stricter question, answered by
-/// `isPassThroughExpression` below.
+/// `isPassthroughExpressionWithRenames` below.
 bool isByteTransparentTransform(const ITransformingStep & transform)
 {
     return transform.getTransformTraits().preserves_number_of_rows
@@ -260,7 +260,7 @@ namespace QueryPlanOptimizations
 /// A forwarded column is an `INPUT` whether or not it happens to be constant - `ActionsDAG::addInput`
 /// never sets `node.column` - so a `COLUMN` output is always a constant this step materialized itself,
 /// which is the case to reject.
-static bool expressionPermutesInputs(const ActionsDAG & actions)
+static bool outputsAreRenamedInputs(const ActionsDAG & actions)
 {
     UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> forwarded;
     for (const auto * output : actions.getOutputs())
@@ -284,10 +284,10 @@ static bool expressionPermutesInputs(const ActionsDAG & actions)
 /// qualifies. Deliberately not every step that contributes nothing to a key: a full `SortingStep` does
 /// (it preserves rows and layout) and must still be a boundary of its own, which is what
 /// `Do not look through `Limit` and `Sorting` when picking the node to instrument` settled.
-bool isPassThroughExpression(const IQueryPlanStep & step)
+bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step)
 {
     const auto * expression = typeid_cast<const ExpressionStep *>(&step);
-    return expression && isByteTransparentTransform(*expression) && expressionPermutesInputs(expression->getExpression());
+    return expression && isByteTransparentTransform(*expression) && outputsAreRenamedInputs(expression->getExpression());
 }
 
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
@@ -599,7 +599,7 @@ void calculateHashTableCacheKeys(
         ///
         /// A pass-through expression that reorders its columns does contribute - the permutation, see
         /// `calculateHashFromStep` - and so keeps a key of its own.
-        if (!step_contributes && isPassThroughExpression(*node.step) && node.children.size() == 1)
+        if (!step_contributes && isPassthroughExpressionWithRenames(*node.step) && node.children.size() == 1)
         {
             raw_hashes[&node] = raw_hashes[node.children.front()];
             cache_keys[&node] = cache_keys[node.children.front()];

@@ -80,10 +80,10 @@ bool isReadFromOtherReplicas(const IQueryPlanStep & step)
 /// instrument but the reading step itself.
 ///
 /// `DelayedCreatingSetsStep` and `CreatingSetsStep` pass their rows through by construction.
-bool isPassThroughWrapper(const IQueryPlanStep & step)
+bool isPassthroughWrapper(const IQueryPlanStep & step)
 {
     if (typeid_cast<const ExpressionStep *>(&step))
-        return isPassThroughExpression(step);
+        return isPassthroughExpressionWithRenames(step);
 
     return typeid_cast<const DelayedCreatingSetsStep *>(&step)
         || typeid_cast<const CreatingSetsStep *>(&step);
@@ -138,7 +138,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                 /// replicas is never instrumented - it only has to be recognized, so that the `Union`
                 /// below is identified as the parallel-replicas pattern at all. So the guard lets the
                 /// loop step onto a `ReadFromParallelRemoteReplicas`, and only onto that.
-                while (node->children.size() == 1 && isPassThroughWrapper(*node->step)
+                while (node->children.size() == 1 && isPassthroughWrapper(*node->step)
                        && (!node->children.front()->children.empty()
                            || isReadFromOtherReplicas(*node->children.front()->step)))
                 {
