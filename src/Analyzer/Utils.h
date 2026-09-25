@@ -36,6 +36,10 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
 /// Returns true if function name is name of IN function or its variations, false otherwise
 bool isNameOfInFunction(const std::string & function_name);
 
+/// The columns a subquery projects. Empty when the node is not a subquery, and when it is correlated,
+/// whose columns are only known once it is decorrelated.
+NamesAndTypes getSubqueryProjectionColumns(const QueryTreeNodePtr & subquery);
+
 /// Returns true if function name is name of local IN function or its variations, false otherwise
 bool isNameOfLocalInFunction(const std::string & function_name);
 
@@ -45,8 +49,8 @@ bool isNameOfGlobalInFunction(const std::string & function_name);
 /// Returns global IN function name for local IN function name
 std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & function_name);
 
-/// Add unique suffix to names of duplicate columns in block
-void makeUniqueColumnNamesInBlock(Block & block);
+/// Add unique suffix to names of duplicate columns in block, and of those that carry a name in `taken_names`
+void makeUniqueColumnNamesInBlock(Block & block, const NameSet & taken_names = {});
 
 /// Returns true, if node is allowed to be a part of expression
 bool isExpressionNodeType(QueryTreeNodeType node_type);

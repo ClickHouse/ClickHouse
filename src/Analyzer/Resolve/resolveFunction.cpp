@@ -78,7 +78,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -92,8 +91,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsBool allow_correlated_subqueries;
-    extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
 }
 
@@ -739,7 +736,6 @@ static QueryTreeNodePtr makeTupleHasNoNullElementsPredicate(const QueryTreeNodeP
 /// argument is coerced into the array type, giving a confusing "Array does not start with '['
 /// character" or type-mismatch error.
 /// `in_second_argument` must be a resolved QueryNode/UnionNode and `in_first_argument` resolved.
-/// Shared by both the regular IN handling and the `rewrite_in_to_join` EXISTS rewrite.
 static void flattenArraySubqueryOnRightOfIn(
     QueryTreeNodePtr & in_second_argument,
     const QueryTreeNodePtr & in_first_argument,
@@ -842,9 +838,7 @@ static void flattenArrayTableExpressionOnRightOfIn(
 /// in the subquery (or table) on the right side. This must happen during analysis, before
 /// constant folding can optimize away the IN expression and silently hide the mismatch.
 /// Both arguments must already be resolved (and the right side already flattened by the
-/// `flattenArray*OnRightOfIn` helpers where applicable). Shared by the regular IN handling
-/// and the `rewrite_in_to_join` EXISTS rewrite, so the reported error and the moment it is
-/// thrown do not depend on that setting.
+/// `flattenArray*OnRightOfIn` helpers where applicable).
 static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argument, const QueryTreeNodePtr & in_second_argument)
 {
     auto in_second_argument_type = in_second_argument->getNodeType();
@@ -1738,215 +1732,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 }
                 /// All dead branches resolved cleanly: fall through to the generic path so that
                 /// `FunctionMultiIf::build` can perform common-supertype unification.
-            }
-        }
-    }
-
-    /// Replace IN (subquery)
-    /// NOTE: the resulting subquery in the argument of EXISTS will have correlated column x, that's why this rewriting has to be before handling
-    /// EXISTS which is done below in 'if (is_special_function_exists)' case.
-    /// NOTE: the rewrite is skipped inside `PREWHERE`: the rewritten form is a correlated subquery,
-    /// and `PREWHERE` is evaluated by the reading step, which cannot execute one (the planner rejects
-    /// it with `ILLEGAL_PREWHERE`). Keeping the plain `IN` there makes `PREWHERE x IN (subquery)`
-    /// behave exactly like its `WHERE` spelling instead of failing.
-    /// See https://github.com/ClickHouse/ClickHouse/issues/114026.
-    /// Also skip when `transform_null_in` is enabled, because the `EXISTS` rewrite is not null-aware
-    /// and would make `WHERE` diverge from `PREWHERE` (which keeps the null-aware `nullIn` path).
-    if (is_special_function_in &&
-        (function_name == "in" || function_name == "notIn") &&
-        scope.context->getSettingsRef()[Setting::rewrite_in_to_join] &&
-        !scope.context->getSettingsRef()[Setting::transform_null_in] &&
-        !scope.in_prewhere)
-    {
-        const bool is_function_not_in = function_name == "notIn";
-
-        auto & function_in_arguments_nodes = function_node_ptr->getArguments().getNodes();
-        if (function_in_arguments_nodes.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
-
-        QueryTreeNodePtr in_first_argument = function_in_arguments_nodes[0]->clone();
-
-        /// Resolve first argument of IN to determine if it is constant or not. In case of constant we will not do any rewriting
-        resolveExpressionNode(
-            in_first_argument,
-            scope,
-            true /*allow_lambda_expression*/,
-            true /*allow_table_expression*/,
-            allow_niladic_functions
-        );
-
-        if (!in_first_argument->as<ConstantNode>())
-        {
-            auto in_second_argument = function_in_arguments_nodes[1]->clone();
-
-            /// Resolve second argument of IN to determine if it is a subquery.
-            resolveExpressionNode(
-                in_second_argument,
-                scope,
-                true /*allow_lambda_expression*/,
-                true /*allow_table_expression*/,
-                allow_niladic_functions
-            );
-
-            if (in_second_argument->as<QueryNode>())
-            {
-                /// An array subquery on the right of IN is the set of its elements (see
-                /// `flattenArraySubqueryOnRightOfIn`). Flatten it with arrayJoin before building the
-                /// EXISTS rewrite, so the comparison below is `x = <element>` rather than `x = <array>`.
-                /// Otherwise this branch would keep the reported bug alive whenever `rewrite_in_to_join`
-                /// is enabled, making the new behavior depend on an unrelated setting.
-                flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
-
-                /// Validate the column-count match before building the EXISTS rewrite. The rewrite
-                /// wraps a multi-column right side into a single `tuple(...)` column and compares it
-                /// with `equals`, so without this check an arity mismatch would surface later as
-                /// `BAD_ARGUMENTS` ("Cannot compare tuples of different sizes") from the tuple
-                /// comparison - or be folded away entirely - instead of the analysis-time
-                /// `NUMBER_OF_COLUMNS_DOESNT_MATCH` the regular IN path reports.
-                validateInColumnsCountMatch(in_first_argument, in_second_argument);
-            }
-
-            /// When the right side is a single column and the left side is kept as one key,
-            /// regular IN does not unpack the left value: the whole left value is one set key, and
-            /// `Set::execute` accurately casts it to the right column type before probing (so
-            /// e.g. `(toUInt16(256), x) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'))` throws
-            /// when `256` does not fit into `Int8`). The `equals` predicate built by this rewrite
-            /// compares element-wise over a common supertype instead and cannot reproduce those
-            /// semantics, so skip the rewrite for this shape and fall through to the regular IN
-            /// handling below - the observable behavior must not depend on `rewrite_in_to_join`.
-            /// The mutated clones are discarded; the regular path re-resolves the original
-            /// arguments and flattens/validates them again itself.
-            /// A wrapped tuple such as `Nullable(Tuple(...))` (or a `LowCardinality(...)` wrapper) is
-            /// kept as a single key by `FunctionIn` as well - it unpacks only a raw top-level
-            /// `ColumnTuple`/`DataTypeTuple`. The same is true for every type with dynamic
-            /// structure, which regular `IN` rejects before building the set, and for plain
-            /// `Variant`, which still needs the accurate set-key cast when it has no dynamic
-            /// member. Scalar values also need that cast when their type differs from the sole
-            /// subquery column type. Unwrap the wrappers before identifying the structural types.
-            bool left_value_compared_as_single_key = false;
-            if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
-            {
-                const auto & left_result_type = in_first_argument->getResultType();
-                const auto left_key_type = left_result_type ? removeNullable(removeLowCardinality(left_result_type)) : nullptr;
-                left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
-                    && left_key_type
-                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type)
-                        || isNullableOrLowCardinalityNullable(left_result_type)
-                        || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
-            }
-
-            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
-            {
-                /// The rewrite below produces a correlated subquery, so it requires the setting.
-                /// Checked here rather than at the gate above, so that the shapes which are not
-                /// rewritten at all are never rejected because of it: a constant or tuple `IN`, and
-                /// the single-key shape just identified, which stays on the regular `IN` path.
-                /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
-                /// though no correlated rewrite happens.
-                if (!scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
-                    throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Setting 'rewrite_in_to_join' requires 'allow_correlated_subqueries' to also be enabled");
-
-                /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
-
-                /// Rename subquery projection to a unique name to avoid collisions with names from outer scope
-                /// E.g. when rewriting "SELECT number IN (SELECT * FROM numbers(3)) FROM numbers(5)" the inner
-                /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
-                auto subquery_node = std::move(in_second_argument);
-
-                /// Name the column after the subquery it projects rather than at random: two
-                /// identical `IN` expressions have to stay identical through the rewrite, or the
-                /// analyzer rejects a query that repeats one of them under a single alias with
-                /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS` - a query it accepts without the rewrite. The
-                /// name only has to differ from the names of the outer scope, which the prefix
-                /// already takes care of.
-                const auto subquery_hash = subquery_node->getTreeHash(/*compare_options=*/ {.compare_aliases = false});
-                String unique_column_name
-                    = fmt::format("__subquery_column_{}_{}", subquery_hash.low64, subquery_hash.high64);
-
-                /// Re-resolve subquery columns setting the unique alias
-                auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
-                subquery_node->as<QueryNode>()->clearProjectionColumns();
-                if (subquery_projection_columns.size() == 1)
-                {
-                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
-                    subquery_node->as<QueryNode>()->resolveProjectionColumns(subquery_projection_columns);
-                }
-                else
-                {
-                    /// It there are multiple columns, wrap them in a Tuple()
-                    auto projection = subquery_node->as<QueryNode>()->getProjection().clone();
-
-                    QueryTreeNodePtr wrapper_tuple_node = std::make_shared<FunctionNode>("tuple");
-                    wrapper_tuple_node->as<FunctionNode>()->getArguments().getNodes() = std::move(projection->as<ListNode>()->getNodes());
-                    resolveFunction(wrapper_tuple_node, scope);
-
-                    /// Replace the original projection columns with one Tuple column
-                    subquery_node->as<QueryNode>()->getProjection().getNodes() = { std::move(wrapper_tuple_node) };
-                    DataTypes wrapper_tuple_element_types;
-                    for (const auto & c : subquery_projection_columns)
-                        wrapper_tuple_element_types.push_back(c.type);
-                    auto wrapper_tuple_data_type = std::make_shared<DataTypeTuple>(wrapper_tuple_element_types);
-                    /// Return the Tuple under unique name
-                    subquery_node->as<QueryNode>()->resolveProjectionColumns(NamesAndTypes{{unique_column_name, wrapper_tuple_data_type}});
-                }
-
-                /// SELECT * AS _unique_name_ FROM subquery
-                auto internal_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-                internal_exists_subquery->setIsSubquery(true);
-                internal_exists_subquery->getProjection().getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{unique_column_name}));
-                internal_exists_subquery->getJoinTreeNode() = std::move(subquery_node);
-
-                /// SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE a = _unique_name_ LIMIT 1
-                auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-                {
-                    auto constant_data_type = std::make_shared<DataTypeUInt64>();
-                    new_exists_subquery->setIsSubquery(true);
-                    new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-                    new_exists_subquery->getJoinTreeNode() = std::move(internal_exists_subquery);
-
-                    auto equals_function_node_ptr = std::make_shared<FunctionNode>("equals");
-
-                    auto copy_of_in_first_parameter = function_in_arguments_nodes[0];
-
-                    auto subquery_projection = std::make_shared<IdentifierNode>(Identifier{unique_column_name});
-
-                    equals_function_node_ptr->getArguments().getNodes() = {
-                        std::move(copy_of_in_first_parameter), /// x
-                        std::move(subquery_projection) /// `_unique_name_` from subquery
-                    };
-
-                    new_exists_subquery->getWhere() = std::move(equals_function_node_ptr);
-                    new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
-                }
-
-                auto exists_function_node_ptr = std::make_shared<FunctionNode>("exists");
-                exists_function_node_ptr->getArguments().getNodes() = {
-                    std::move(new_exists_subquery)
-                };
-
-                if (is_function_not_in)
-                {
-                    /// NOT IN is rewritten to NOT EXISTS
-                    function_node_ptr = std::make_shared<FunctionNode>("not");
-                    function_node_ptr->getArguments().getNodes() = {
-                        std::move(exists_function_node_ptr)
-                    };
-
-                    node = function_node_ptr;
-                    function_name = "not";
-                    is_special_function_in = false;
-                    is_special_function_exists = false;
-                }
-                else
-                {
-                    function_node_ptr = exists_function_node_ptr;
-                    node = function_node_ptr;
-                    function_name = "exists";
-                    is_special_function_in = false;
-                    is_special_function_exists = true;
-                }
             }
         }
     }

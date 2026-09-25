@@ -1,0 +1,157 @@
+-- Left argument is a column
+1	0
+[1,1,0]
+[1,1,0]
+-- Left argument is a column, and IN is negated
+1	0
+[0,0,1]
+[0,0,1]
+-- Left argument is an expression, and IN inside where
+1	0
+[1,0,0]
+[1,0,0]
+-- Left argument is an Expression, and IN inside projection
+1	0
+[0,0]
+[0,0]
+-- Left argument is a lambda
+1	0
+[1,1,1]
+[1,1,1]
+-- Left argument is a tuple, and IN subquery returns multiple columns
+1	0
+[1,1,0]
+[1,1,0]
+-- Left argument is a grouping key
+1	0
+[1,1,0]
+[1,1,0]
+-- The left argument is a grouping expression
+1	0
+[2]
+[2]
+-- The subquery column has a different but comparable type
+1	0
+[1,1,0]
+[1,1,0]
+[0,0,0]
+[0,0,0]
+-- The subquery column is Bool, which the key is cast to like the set casts it
+1	0
+['0','1','1']
+['0','1','1']
+['1']
+['1']
+-- `Array(UInt8)` against `Array(Bool)`, which a set casts without normalizing the elements
+1	0
+['1','0','0']
+['1','0','0']
+-- The subquery column carries the name of the key, which the join keys on by side
+1	0
+2
+2
+2
+-- The same IN in the projection and in INTERPOLATE, which keeps its set
+1	1
+[(1,1,1),(2,3,0),(3,4,0),(4,4,0)]
+[(1,1,1),(2,3,0),(3,4,0),(4,4,0)]
+-- Two columns of the subquery share a name
+1	0
+[(2,3)]
+[(2,3)]
+-- The subquery is a union
+1	0
+[1,1,1]
+[1,1,1]
+-- The result of IN is the only thing the projection reads, and there is a WHERE below it
+1	0
+[0,1]
+[0,1]
+-- The projection reads the result of IN beside a column the WHERE step computed
+1	0
+['11','10']
+['11','10']
+-- The left argument has a scalar subquery folded to a constant
+1	0
+[0,0,0]
+[0,0,0]
+-- The left argument is nullable
+1	0
+['1']
+['1']
+-- The left argument is nullable, and IN is negated
+1	0
+0
+0
+-- The left argument is a window function, whose result the window step already produced
+1	0
+['1','1','0']
+['1','1','0']
+-- The same IN in two clauses of one query builds one join
+1	0
+['31']
+['31']
+-- The same IN in two clauses, spelled with a WITH alias
+1	0
+['31']
+['31']
+-- ORDER BY ALL over a projection that reads the result of IN
+1	0
+['0','1','1']
+['0','1','1']
+-- An `arrayJoin` in the left argument is evaluated once, below the join
+1	0
+[1,2]
+[1,2]
+['11','21','50','70']
+['11','21','50','70']
+-- A non-deterministic left argument is evaluated once, below the join
+1	0
+0
+0
+-- A set size limit applies to the join the rewrite builds
+1	0
+-- IN subquery inside HAVING
+1	0
+[1,2]
+[1,2]
+-- IN subquery inside QUALIFY
+1	0
+[1,2]
+[1,2]
+-- IN subquery as a grouping key
+1	0
+[(0,1),(1,2)]
+[(0,1),(1,2)]
+-- IN subquery as an argument of an aggregate function
+1	0
+2
+2
+-- The left argument is an aggregate function
+1	0
+[1]
+[1]
+-- IN subquery inside a window function
+1	0
+[(1,2),(2,3),(3,1)]
+[(1,2),(2,3),(3,1)]
+-- IN subquery inside ORDER BY
+1	0
+[3,1,2]
+[3,1,2]
+-- IN subquery inside LIMIT BY
+1	0
+[1,3]
+[1,3]
+-- A correlated subquery inside the left argument
+2	0
+1
+1
+-- An IN inside the left argument of another IN builds one join for each
+2	0
+2
+2
+-- Query with IN subquery and another correlated subquery
+1
+2
+2
