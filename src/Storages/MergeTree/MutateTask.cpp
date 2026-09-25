@@ -3986,6 +3986,25 @@ bool MutateTask::prepare()
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
+
+    /// The commands were fixed when the part was selected, but a RENAME COLUMN is applied through this
+    /// snapshot, and a RENAME is always the only mutation of its task. If the snapshot misses its version,
+    /// the mutation was killed since then, so stop like a task the kill cancels.
+    const auto & part_columns = ctx->source_part->getColumnsDescription();
+    const bool renames_part_column = std::ranges::any_of(*ctx->commands, [&](const MutationCommand & command)
+    {
+        return command.type == MutationCommand::RENAME_COLUMN
+            && (part_columns.has(command.column_name) || part_columns.hasNested(command.column_name));
+    });
+
+    if (renames_part_column)
+    {
+        const auto target_version = static_cast<UInt64>(ctx->future_part->part_info.mutation);
+        const auto on_fly_commands = mutations_snapshot->getOnFlyMutationCommandsForPart(ctx->source_part);
+        if (!std::ranges::any_of(on_fly_commands, [&](const MutationCommand & command) { return command.mutation_version == target_version; }))
+            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating part {}: mutation {} was killed", ctx->source_part->name, target_version);
+    }
+
     auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context
 #if CLICKHOUSE_CLOUD
         , nullptr
