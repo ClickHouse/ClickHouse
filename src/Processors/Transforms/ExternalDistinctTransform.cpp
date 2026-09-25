@@ -5,6 +5,8 @@
 
 #include <Interpreters/sortBlock.h>
 #include <Processors/Merges/DistinctSortedTransform.h>
+#include <Processors/QueryResultPreview.h>
+#include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
@@ -55,6 +57,7 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     bool preserve_input_order_)
     : IProcessor({header_}, {header_})
     , state(std::in_place_type<Hashing>, *header_, columns_, set_size_limits_)
+    , key_columns_positions(std::get<Hashing>(state).set.getKeyColumnsPositions())
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
     , max_bytes_before_external_distinct(max_bytes_before_external_distinct_)
@@ -288,8 +291,24 @@ void ExternalDistinctTransform::work()
     }, state);
 }
 
+bool ExternalDistinctTransform::consumeQueryResultPreview()
+{
+    if (!isQueryResultPreview(input_chunk))
+        return false;
+
+    /// `prepareInput` pushes the pending result before pulling the next input.
+    chassert(!output_chunk);
+    output_chunk = std::move(input_chunk);
+    /// An empty preview is forwarded too: it tells the client to clear the previous one.
+    deduplicateChunkForQueryResultPreview(output_chunk, key_columns_positions);
+    return true;
+}
+
 void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 {
+    if (consumeQueryResultPreview())
+        return;
+
     if (unlikely(!input_chunk.hasRows()))
     {
         input_chunk.clear();
@@ -425,6 +444,9 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
 
 void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
 {
+    if (consumeQueryResultPreview())
+        return;
+
     auto chunk = std::move(input_chunk);
     if (unlikely(!chunk.hasRows()))
         return;

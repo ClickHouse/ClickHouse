@@ -1,5 +1,6 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/Port.h>
 
 namespace DB
@@ -110,6 +111,16 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         /// we won't have to read any chunks anymore;
         /// If virtual row exists, let it pass through, so don't read more chunks.
         auto chunk = input.pull(true);
+
+        /// See `QueryResultPreview.h`: previews bypass the merging algorithm.
+        if (isQueryResultPreview(chunk))
+        {
+            pending_query_result_preview = std::move(chunk);
+            input.setNeeded();
+            all_inputs_has_data = false;
+            continue;
+        }
+
         bool virtual_row = isVirtualRow(chunk);
         if (limit_hint == 0 && !virtual_row)
             input.setNeeded();
@@ -180,8 +191,16 @@ IProcessor::Status IMergingTransformBase::prepare()
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
+    bool pushed_output_chunk = false;
     if ((state.output_chunk || !state.output_chunk.getChunkInfos().empty()) && !is_port_full)
+    {
         output.push(std::move(state.output_chunk));
+        pushed_output_chunk = true;
+    }
+
+    /// An out-of-band query result preview forwarded from one of the inputs (see `QueryResultPreview.h`).
+    if (pending_query_result_preview && !is_port_full && !pushed_output_chunk)
+        output.push(std::move(pending_query_result_preview));
 
     if (!is_initialized)
         return prepareInitializeInputs();
@@ -247,7 +266,19 @@ IProcessor::Status IMergingTransformBase::prepare()
             if (!input.hasData())
                 return Status::NeedData;
 
-            state.input_chunk.set(input.pull(/* set_not_needed */ true));
+            auto pulled_chunk = input.pull(/* set_not_needed */ true);
+
+            /// An out-of-band query result preview (see `QueryResultPreview.h`): forward it to the
+            /// output instead of feeding it to the merging algorithm. A newer preview replaces a
+            /// pending one - each preview supersedes the previous.
+            if (isQueryResultPreview(pulled_chunk))
+            {
+                pending_query_result_preview = std::move(pulled_chunk);
+                input.setNeeded();
+                return Status::NeedData;
+            }
+
+            state.input_chunk.set(std::move(pulled_chunk));
             const auto & input_chunk = state.input_chunk.chunk;
 
             bool virtual_row = isVirtualRow(input_chunk);

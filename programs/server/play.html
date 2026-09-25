@@ -3098,6 +3098,13 @@ class QueryResultElement extends HTMLElement
                     border-collapse: collapse;
                 }
 
+                /* A real-time preview of the query result (the "preview" packets, see
+                   updatePreview) is visually muted until the real result replaces it. */
+                #data-table.preview
+                {
+                    opacity: 0.6;
+                }
+
                 #data-table.fixed
                 {
                     table-layout: fixed;
@@ -4547,6 +4554,8 @@ class QueryResultElement extends HTMLElement
 
         this._dataTable.classList.remove('fixed');
         this._dataTable.classList.remove('single-value');
+        this._dataTable.classList.remove('preview');
+        this._received_real_meta = false;
         this._dataDiv.classList.remove('fixed');
         /// Drop the stale single-row marker: it is recomputed in `applyColumnColors` once the new
         /// result finishes rendering. Clearing it here means that while rows are still streaming in,
@@ -4872,6 +4881,45 @@ class QueryResultElement extends HTMLElement
         table.appendChild(tbody);
         table.style.display = 'table';
 
+        this._row_idx = 0;
+    }
+
+    /// Real-time preview of the query result (the `preview` packets of framing formats, see the
+    /// `query_result_previews` setting): each preview is a complete small result set that fully
+    /// replaces the previous one, rendered like the ordinary table but visually muted
+    /// (`#data-table.preview`). The first packet of the real result supersedes the preview.
+    updatePreview(meta, rows)
+    {
+        /// A stale preview must never overwrite the real result.
+        if (this._received_real_meta) return;
+        this.appendHeader(meta);
+        this._dataTable.classList.add('preview');
+        const fragment = document.createDocumentFragment();
+        for (const row of rows)
+            if (!this.appendRow(row, fragment))
+                break;
+        this.flushFragment(fragment);
+        /// Colorization (bars, heatmaps, categorical colors) applies to previews like to the real
+        /// result. The pass is re-runnable and each preview frame is a complete small table; the
+        /// user-selected color modes (`_colorModes`, keyed by column name) survive the per-frame
+        /// table rebuild, so a mode toggled during previews sticks for the frames that follow and
+        /// for the real result.
+        this.applyColumnColors();
+    }
+
+    /// Drop the currently shown preview without waiting for the real result. Two callers:
+    /// an EMPTY `preview` packet - the intermediate result became empty (`HAVING`, `OFFSET`,
+    /// `LIMIT`), which is a preview state of its own and must not leave the rows of the previous
+    /// preview on the screen - and a query that failed before any real row arrived, where the error
+    /// replaces the result and an obsolete preview must not stay next to it.
+    clearPreview()
+    {
+        /// The real result is authoritative: it is not a preview and must never be cleared here.
+        if (this._received_real_meta) return;
+        if (!this._dataTable.classList.contains('preview')) return;
+        this._clearElement(this._dataTable);
+        this._dataTable.classList.remove('preview');
+        this._header = {};
         this._row_idx = 0;
     }
 
@@ -7319,6 +7367,8 @@ class QueryResultElement extends HTMLElement
         }
         else if (json.meta)
         {
+            this._received_real_meta = true;
+            this._dataTable.classList.remove('preview');
             this.appendHeader(json.meta);
             return true;
         }
@@ -10265,6 +10315,37 @@ function makeEventStreamHandler(targetResultEl, options = {})
             targetResultEl.flushFragment(fragment);
             if (!cont && options.onStop) options.onStop();
         }
+        else if (name === 'preview')
+        {
+            /// A real-time preview of the query result (the `query_result_previews` setting). Each
+            /// `preview` packet carries a complete, self-contained document of the payload format -
+            /// for the framed default format: its own column names line, types line, and the rows -
+            /// and fully replaces the previous preview. Shown only on the table path: the verbatim
+            /// modes reproduce the format's own output, which previews are not part of.
+            if (options.onBytes || options.rawText) return;
+            const payload = options.base64
+                ? new TextDecoder().decode(base64ToBytes(dataLines.join('')))
+                : dataLines.join('\n');
+            let preview_names = null;
+            let preview_meta = null;
+            const preview_rows = [];
+            for (const line of payload.split('\n'))
+            {
+                if (line === '') continue;
+                const json = JSON.parse(line);
+                if (!Array.isArray(json)) return;
+                if (preview_names === null)
+                    preview_names = json;
+                else if (preview_meta === null)
+                    preview_meta = preview_names.map((n, i) => ({ name: n, type: json[i] }));
+                else
+                    preview_rows.push(Object.fromEntries(preview_names.map((n, i) => [n, json[i]])));
+            }
+            /// An empty payload is an empty preview: the intermediate result has no rows any more,
+            /// so the previous preview must be taken off the screen rather than left standing.
+            if (preview_meta) targetResultEl.updatePreview(preview_meta, preview_rows);
+            else targetResultEl.clearPreview();
+        }
         else if (name === 'progress')
         {
             if (dataLines[0]) targetResultEl.update({ progress: JSON.parse(dataLines[0]) });
@@ -10299,7 +10380,10 @@ function makeEventStreamHandler(targetResultEl, options = {})
         }
         else if (name === 'exception')
         {
-            /// The payload is `{"exception": "..."}`, handled by `update` as an error.
+            /// The payload is `{"exception": "..."}`, handled by `update` as an error. A query that
+            /// fails after a few previews but before the first real row would otherwise keep the
+            /// last preview on the screen next to the error message.
+            targetResultEl.clearPreview();
             if (dataLines[0]) targetResultEl.update(JSON.parse(dataLines[0]));
             if (options.onException) options.onException();
         }

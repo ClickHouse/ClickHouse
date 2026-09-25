@@ -53,6 +53,10 @@ public:
 
     String getName() const override { return "ExternalDistinctTransform"; }
 
+    /// Preview chunks (see `QueryResultPreview.h`) are deduplicated standalone and pushed right away,
+    /// in every state that consumes input, without touching the set, the runs or the result counters.
+    bool supportsQueryResultPreviews() const override { return true; }
+
     Status prepare() override;
     void work() override;
     PipelineUpdate updatePipeline() override;
@@ -185,6 +189,8 @@ private:
     void readRun(RunWriteProgress & progress);
     void prepareTail(PreparingTail & tail);
     void consumeMerged(Merging & merging);
+    /// Returns whether `input_chunk` was a query result preview; the deduplicated preview becomes `output_chunk`.
+    bool consumeQueryResultPreview();
 
     PreparedRun prepareRun(
         SharedHeader header, Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode);
@@ -195,6 +201,8 @@ private:
     size_t minBytesInRun() const;
 
     State state;
+    /// Captured from the set, which is released during spilling, while previews keep arriving.
+    const ColumnNumbers key_columns_positions;
     const UInt64 limit_hint;
     const SizeLimits set_size_limits;
     const size_t max_bytes_before_external_distinct;
