@@ -691,33 +691,27 @@ bool variantElementWidensTo(const DataTypePtr & alternative, size_t width)
     return which.isInteger() && alternative->getSizeOfValueInMemory() > width;
 }
 
-/// The natural pairing of a decoded element with an alternative: the alternative it was itself inferred
-/// as. Decoded element names are unique (the decoder rejects a union whose children map to one ClickHouse
-/// type), so no two elements ever prefer the same alternative.
+/// The natural pairing of a decoded element with an alternative: the alternative it was itself inferred as.
+/// Decoded element names are unique (the decoder rejects a union whose children map to one ClickHouse type).
 bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & alternative)
 {
     return ArrowIPC::stripHint(alternative)->getName() == decoded->getName();
 }
 
-/// Whether a decoded `Variant` element can be repaired into a requested alternative: always its own decoded type, and
-/// otherwise only an alternative the ordinary (non-union) Arrow column path already reaches from a column decoded as
-/// `decoded`. An `Int8` or `UInt8` element is never re-declared as `Bool`, although the two compare equal: a value
-/// outside 0/1 would then render as `true`. The reverse is allowed, since a `Bool` element only holds 0 or 1. A
-/// composite is never substituted, since this walk keeps the decoded field names and a cast between tuples with
-/// differing names fills the target fields instead of rejecting them. `Date32` is never substituted,
-/// since the decoder decides from its own hint whether a day number is range-checked, saturated or copied verbatim,
-/// and this layer cannot supply one; a decoded `UInt16` may take `Date`, and a decoded `UInt32` or `DateTime` a
-/// `DateTime64`, since those decodes read no hint and every value they produce is in range at every scale, while the
-/// narrowing reverse is refused.
+/// Whether a decoded `Variant` element can be repaired into a requested alternative: its own decoded type,
+/// otherwise only an alternative the ordinary (non-union) Arrow column path already reaches from `decoded`.
+/// Three exclusions whose reason the arms below do not show: a `UInt8` value outside 0/1 would render as
+/// `true` under the equal-comparing `Bool`; a cast between tuples with differing names fills the target
+/// fields rather than rejecting them, and this walk keeps the decoded names; and `Date32` decoding is
+/// hint-dependent (range-checked, saturated or verbatim) while this layer supplies no hint, whereas the
+/// admitted widenings read no hint and are in range at every scale.
 bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative)
 {
     const DataTypePtr to = ArrowIPC::stripHint(alternative);
     const WhichDataType from(decoded);
     const WhichDataType which(to);
 
-    /// An element that no conversion arm admits must still be able to claim its own alternative: otherwise it leaves
-    /// that alternative to a sibling, and the sibling is left ambiguous by an element that was never a candidate for
-    /// anything.
+    /// An element admitted by no arm must still claim its own alternative, or it leaves a sibling ambiguous.
     if (variantElementPrefersType(decoded, alternative))
         return true;
     if (isBool(decoded))
@@ -762,13 +756,11 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
 
 /// The alternative each element of a decoded `Variant` must be repaired into, in the decoded type's global
 /// order, null where nothing is forced. `Variant` sorts its alternatives, so the positional correspondence
-/// between Arrow union children and requested alternatives is lost and has to be reconstructed
-/// structurally: collect each element's admissible alternatives, keep the forced assignments (an element
-/// takes an alternative when it is its only remaining candidate), then tie-break by the natural pairing,
-/// one assignment per round. An element whose correspondence stays ambiguous is left unassigned, so no
-/// guess is ever made. Assignments that would leave two elements on one alternative name are finally
-/// dropped: the rebuilt `DataTypeVariant` deduplicates by name while the column keeps one element per Arrow
-/// union child, so a shared name would describe a column whose layout contradicts its type.
+/// between Arrow union children and requested alternatives is lost and is reconstructed structurally here;
+/// an element whose correspondence stays ambiguous is left unassigned, so no guess is ever made. Two
+/// elements are never left on one alternative name: `DataTypeVariant` deduplicates by name while the column
+/// keeps one element per union child, so a shared name would describe a column whose layout contradicts its
+/// type.
 DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to)
 {
     const DataTypes & elements = from.getVariants();
@@ -789,8 +781,7 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
                 preferred.push_back(a);
         return preferred;
     };
-    /// Erasing the taken alternative everywhere else is what keeps two elements off one alternative: it can
-    /// no longer be another element's candidate, forced or preferred.
+    /// Erasing the taken alternative elsewhere is what keeps two elements off one alternative.
     const auto take = [&](size_t e, size_t a)
     {
         targets[e] = alternatives[a];
@@ -818,8 +809,7 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
         {
             if (targets[e] || candidates[e].size() < 2)
                 continue;
-            /// No two elements can prefer one alternative: the preference is name equality and the decoded
-            /// element names are pairwise distinct, so a lone preference is never contested.
+            /// A lone preference is never contested: the decoded element names are pairwise distinct.
             const std::vector<size_t> preferred = preferred_candidates(e);
             if (preferred.size() != 1)
                 continue;
@@ -1073,8 +1063,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 }
 
 /// Rebuild a decoded `Variant` column with each element under the alternative the requested `Variant`
-/// forces on it, or return the input unchanged when nothing is forced. A `Variant` -> `Variant` cast can
-/// only append alternatives, never substitute one, so nothing else can reconcile the two.
+/// forces on it, or return the input unchanged. A `Variant` -> `Variant` cast only appends alternatives.
 std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
     const ColumnPtr & col, const DataTypePtr & from_type, const DataTypeVariant & from_variant,
     const DataTypeVariant & to_variant, bool case_insensitive, const FormatSettings & format_settings)
@@ -1088,8 +1077,7 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
         return {col, from_type};
 
     /// Repairing helps only when every element ends up under an alternative the request names, matched by
-    /// full name as the cast itself matches them: otherwise the cast rejects the read whatever this walk
-    /// does, and rebuilding would only change the type its message prints.
+    /// full name as the cast matches them: otherwise the cast rejects the read whatever this walk does.
     for (size_t g = 0; g < elements.size(); ++g)
     {
         if (targets[g])
@@ -1104,9 +1092,9 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
     const auto & variant_col = assert_cast<const ColumnVariant &>(*col);
     const size_t num_elements = variant_col.getNumVariants();
 
-    /// Gather each element down to the rows that reference it, in row order. A dense Arrow union child keeps
-    /// every slot it declares, and the Arrow spec leaves the bytes of a slot no row selects undefined, so
-    /// those bytes must reach neither a width sniff nor a cast: either rejects a whole element over one row.
+    /// Gather each element down to the rows that reference it, in row order: a dense union child keeps every
+    /// slot it declares, and the Arrow spec leaves the bytes of an unreferenced slot undefined, so a width
+    /// sniff or a cast must never see them.
     const ColumnVariant::Discriminators & local_discriminators = variant_col.getLocalDiscriminators();
     const ColumnVariant::Offsets & offsets = variant_col.getOffsets();
     const size_t rows = local_discriminators.size();
@@ -1140,11 +1128,9 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
         DataTypePtr element_type = from_element;
         if (const DataTypePtr & target = targets[global])
         {
-            /// The ordinary recursion, so a raw-byte element converts exactly as the same bytes would in a
-            /// plain column. The gathered element holds only rows some union row references, and an element
-            /// lives in its own row space, so there are no undefined values and no ancestor nulls.
-            /// No field: a union is decoded without consulting its children's `clickhouse.opaque` tags, so
-            /// no alternative here has one to act on.
+            /// The ordinary recursion, so a raw-byte element converts as the same bytes would in a plain
+            /// column; a gathered element lives in its own row space, so no undefined values and no ancestor
+            /// nulls. No field: a union is decoded without consulting its children's `clickhouse.opaque` tags.
             std::tie(element, element_type) = reinterpretRawBytes(
                 element, from_element, target, /*ancestor_nulls=*/nullptr, case_insensitive, /*field=*/nullptr,
                 format_settings);
@@ -1169,8 +1155,6 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
             if (new_alternatives[global]->getName() == new_types[local]->getName())
                 new_local_to_global[local] = static_cast<ColumnVariant::Discriminator>(global);
 
-    /// Every row keeps the element it selected, at its gathered position; only the element columns, their
-    /// offsets and the type change.
     auto new_column = ColumnVariant::create(
         variant_col.getLocalDiscriminatorsPtr(), std::move(new_offsets_col), new_elements, new_local_to_global);
     return {std::move(new_column), std::move(new_variant_type)};
