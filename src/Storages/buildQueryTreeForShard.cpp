@@ -47,7 +47,6 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageSnapshot.h>
 #include <Analyzer/UnionNode.h>
-#include <Common/logger_useful.h>
 
 #include <stack>
 
@@ -294,9 +293,17 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<DistributedProductModeRewriteInJoinVisitor>;
     using Base::Base;
 
-    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_, bool allow_global_join_for_right_table_)
+    /// `enforce_distributed_product_mode` is false when the visitor is only asked what shipping would
+    /// do, rather than driving it. `distributed_product_mode = 'deny'` - the default - makes a local
+    /// IN/JOIN over a distributed table an error, which is a policy the real shipping path has to
+    /// apply but a prediction must not: it would fail a query that the caller was only considering.
+    /// A denied query ships nothing, so it also materializes nothing, which is the answer the
+    /// prediction wants.
+    explicit DistributedProductModeRewriteInJoinVisitor(
+        const ContextPtr & context_, bool allow_global_join_for_right_table_, bool enforce_distributed_product_mode_ = true)
         : Base(context_)
         , allow_global_join_for_right_table(allow_global_join_for_right_table_)
+        , enforce_distributed_product_mode(enforce_distributed_product_mode_)
     {}
 
     struct InFunctionOrJoin
@@ -442,6 +449,9 @@ private:
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {
+            if (!enforce_distributed_product_mode)
+                return;
+
             throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
                 "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
                 "You may rewrite query to use local tables "
@@ -456,6 +466,7 @@ private:
     IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
     bool allow_global_join_for_right_table = false;
+    bool enforce_distributed_product_mode = true;
 };
 
 /** Replaces large constant values with `__getScalar` function calls to avoid
@@ -610,22 +621,6 @@ void addDistinctRecursively(const QueryTreeNodePtr & node)
     }
 }
 
-/// `buildQueryPlanForAutomaticParallelReplicas` arms the deferral flag on the context it builds from and
-/// on the query context. The context that reaches here is derived from one of them, but it was copied
-/// before the arming, so it does not carry the flag itself - consult the query context as well.
-ContextMutablePtr contextHoldingDeferralFlag(const ContextMutablePtr & context)
-{
-    if (context->isSubqueryMaterializationDeferred())
-        return context;
-    if (context->hasQueryContext())
-    {
-        auto query_context = context->getQueryContext();
-        if (query_context->isSubqueryMaterializationDeferred())
-            return query_context;
-    }
-    return nullptr;
-}
-
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
@@ -681,22 +676,6 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     StoragePtr external_storage = external_storage_holder.getTable();
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
-
-    /// Building the automatic-parallel-replicas probe plan must not execute the query's subqueries: the
-    /// probe exists to be costed and is usually discarded, so the rows would be thrown away with it. Only
-    /// the table's structure is needed to cost the plan, and the caller rebuilds it - materializing for
-    /// real - before any of it is executed. Measured on TPC-H q15, where the probe's copy of the
-    /// `revenue0` view was a third of every mark the query read.
-    if (auto deferring_context = contextHoldingDeferralFlag(mutable_context))
-    {
-        deferring_context->setSubqueryMaterializationDeferred();
-        LOG_DEBUG(
-            getLogger("buildQueryTreeForShard"),
-            "Leaving temporary table {} empty: this plan is a probe that has not been chosen yet",
-            temporary_table_name);
-        mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
-        return temporary_table_expression_node;
-    }
 
     QueryPlanOptimizationSettings optimization_settings(mutable_context);
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
@@ -956,6 +935,28 @@ void rejectUnshippableJoinUsingKeys(const QueryTreeNodePtr & root)
 void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
 {
     inlineAliasColumnsImpl(query_tree_to_modify);
+}
+
+bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+{
+    /// Fixed rather than a parameter: this predicts the parallel-replicas path, and both of its
+    /// `buildQueryTreeForShard` call sites - `findParallelReplicasQuery` and
+    /// `ClusterProxy::executeQuery` - pass true. `StorageDistributed` passes false, but nothing here
+    /// predicts that path, and letting a caller choose would let it predict the wrong one.
+    static constexpr bool allow_global_join_for_right_table = true;
+
+    /// Both rewrites below modify the tree as they walk it - `in` becomes `globalIn`, a join's
+    /// locality becomes `Global` - so they get a clone. Handing them the caller's tree would convert
+    /// the real query to its shipped form behind its back.
+    auto query_tree_copy = query_tree->clone();
+
+    /// `ClusterProxy::executeQuery` makes joins global before shipping, so predict that first:
+    /// without it a plain `JOIN` that ships as a `GLOBAL JOIN` goes unnoticed. Then ask the visitor
+    /// `buildQueryTreeForShard` itself uses to decide what to ship.
+    rewriteJoinToGlobalJoin(query_tree_copy, context);
+    DistributedProductModeRewriteInJoinVisitor visitor(context, allow_global_join_for_right_table, /*enforce_distributed_product_mode*/ false);
+    visitor.visit(query_tree_copy);
+    return !visitor.getGlobalInOrJoinNodes().empty();
 }
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)

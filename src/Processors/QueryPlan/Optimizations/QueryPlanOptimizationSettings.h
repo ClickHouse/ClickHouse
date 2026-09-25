@@ -22,6 +22,8 @@ using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class QueryPlan;
 
+struct DistributedPlanLocalObject;
+
 struct QueryPlanOptimizationSettings
 {
     QueryPlanOptimizationSettings(
@@ -137,6 +139,9 @@ struct QueryPlanOptimizationSettings
     bool cascades_aggregation_pushdown = true;
 
     bool make_distributed_plan = false;
+    /// The query's record of resolved server-local objects (dictionaries, `Join` tables, ...): a live pointer to the
+    /// query context's, read by the fallback decision. Null outside a query.
+    std::shared_ptr<const DistributedPlanLocalObject> distributed_plan_local_object;
     bool serialize_query_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
@@ -259,19 +264,9 @@ struct QueryPlanOptimizationSettings
     /// per cluster like the optimizer scopes the estimated cost
     mutable UInt64 join_reorder_next_cluster_id = 0;
 
-    struct ParallelReplicasPlan
-    {
-        std::unique_ptr<QueryPlan> plan;
-        /// Set when the build left a `GLOBAL IN` / `GLOBAL JOIN` temporary table empty because it was
-        /// asked to defer materialization. Such a plan describes the query correctly but cannot be
-        /// executed, so it may only be costed - see `considerEnablingParallelReplicas`.
-        bool materialization_deferred = false;
-    };
-
     /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
-    /// of re-running the same subqueries, and whether to skip materializing subqueries entirely.
-    std::function<ParallelReplicasPlan(const BuiltSetsByHashPtr &, bool /*defer_materialization*/)>
-        query_plan_with_parallel_replicas_builder;
+    /// of re-running the same subqueries.
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;

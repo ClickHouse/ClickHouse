@@ -20,6 +20,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/DistributedPlanLocalObject.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
@@ -286,9 +287,6 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-/// Whether a plan build should leave `GLOBAL IN` / `GLOBAL JOIN` temporary tables empty, and whether
-/// it has done so. Null means not deferring at all.
-using DeferredSubqueryMaterializationState = std::shared_ptr<std::atomic_bool>;
 
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
@@ -598,6 +596,8 @@ public:
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    /// Created by `makeQueryContext` and shared by every context copied from the query context.
+    DistributedPlanLocalObjectPtr distributed_plan_local_object;
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
@@ -659,9 +659,6 @@ protected:
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
-    /// Shared with every context derived from this one, so that a plan build several contexts deep can
-    /// report back that it skipped materializing a subquery.
-    DeferredSubqueryMaterializationState deferred_subquery_materialization;
 
     struct StorageCache
     {
@@ -1182,6 +1179,11 @@ public:
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
+    /// Records that the query resolved an object of this server by name (see `DistributedPlanLocalObject`). Written by
+    /// the resolvers, read by the `make_distributed_plan` fallback decision. No-op outside a query.
+    void addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const;
+    std::shared_ptr<const DistributedPlanLocalObject> getDistributedPlanLocalObject() const;
+
     /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
     /// Use it in introspection paths (e.g. reading system.functions) where instantiating
     /// every function — and the helper functions they construct internally — must not
@@ -1296,6 +1298,8 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
+    /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
+    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
@@ -2089,23 +2093,6 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
-
-    /// The automatic-parallel-replicas probe plan exists to be costed and is usually discarded, so it is
-    /// built without materializing the subqueries a `GLOBAL IN` / `GLOBAL JOIN` rewrite would otherwise
-    /// execute. Arming this makes such a build create the temporary tables empty and record that it did;
-    /// the caller rebuilds the plan for real before executing it. See `considerEnablingParallelReplicas`.
-    /// Armed only for the duration of one probe build and disarmed again when it returns, so that a
-    /// discarded probe cannot leave the query context deferring for planning that happens later in the
-    /// same query - such planning would leave a real temporary table empty and return wrong results.
-    void setDeferredSubqueryMaterialization(bool defer);
-    bool isSubqueryMaterializationDeferred() const;
-    void setSubqueryMaterializationDeferred();
-    bool wasSubqueryMaterializationDeferred() const;
-    /// Save and restore the whole state rather than re-arming, so that a nested probe - an `IN`
-    /// subquery is costed by a probe of its own - hands the enclosing build back exactly the state it
-    /// had, including whether it had already deferred something.
-    DeferredSubqueryMaterializationState getDeferredSubqueryMaterializationState() const;
-    void setDeferredSubqueryMaterializationState(DeferredSubqueryMaterializationState state);
 
     ReverseLookupCache & getReverseLookupCache() const;
 

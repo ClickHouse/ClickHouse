@@ -626,12 +626,7 @@ void considerEnablingParallelReplicas(
     /// `buildOrderedSetInplace` for every `IN` whose left argument maps to key columns. The
     /// `selectRangesToRead` below reuses those `indexes` (it builds them only `if (!indexes)`), so it
     /// adds no set that collecting later would catch.
-    /// The probe is only costed, so it is built without materializing the subqueries a `GLOBAL IN` /
-    /// `GLOBAL JOIN` rewrite would execute. If replicas win, the plan is rebuilt for real below - the
-    /// deferred one describes the query but its temporary tables are empty.
-    auto built_sets = collectBuiltSets(query_plan);
-    auto probe_build = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, /*defer_materialization*/ true);
-    auto & plan_with_parallel_replicas = probe_build.plan;
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
@@ -680,6 +675,20 @@ void considerEnablingParallelReplicas(
     if (!analysis)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
+        return;
+    }
+    /// A read served from a projection measures the projection's parts, not the table's, and the two
+    /// plans need not agree on using it: `parallel_replicas_support_projection` is honoured only where
+    /// a local plan is available, and the distributed path turns projections off outright (see
+    /// `ClusterProxy::executeQuery`). The statistics key cannot tell the two apart either - a
+    /// projection part belongs to the same storage and produces the same header - so a hash match
+    /// between a projection-backed boundary here and a base-table boundary in the replicas plan would
+    /// price one with the other's measurements, and `selected_rows` stays put so the drift check sees
+    /// nothing. Skip, the way `force_use_projection` is skipped above: projection use is the one thing
+    /// the parallel-replicas plan cannot be relied on to reproduce.
+    if (analysis->readFromProjection())
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "The read is served from a projection. Skipping optimization");
         return;
     }
     const auto rows_to_read = analysis->selected_rows;
@@ -754,34 +763,6 @@ void considerEnablingParallelReplicas(
                         stats->input_bytes / num_replicas,
                         optimization_settings.automatic_parallel_replicas_min_bytes_per_replica);
                     return;
-                }
-
-                /// Replicas are worth it, so the probe is about to become the plan that runs. If it was
-                /// built with its `GLOBAL IN` / `GLOBAL JOIN` temporary tables left empty, build it again
-                /// and materialize them this time - only now is it known that the rows will be used. If
-                /// that build does not come back, decline rather than execute a plan whose temporary
-                /// tables are empty, which would silently return wrong results.
-                if (probe_build.materialization_deferred)
-                {
-                    auto materialized = optimization_settings.query_plan_with_parallel_replicas_builder(
-                        built_sets, /*defer_materialization*/ false);
-                    /// `materialization_deferred` must be false here - this build was asked to
-                    /// materialize. Check it anyway: a plan that still holds empty temporary tables
-                    /// would run and return wrong results rather than fail, so decline instead.
-                    if (!materialized.plan || materialized.materialization_deferred)
-                    {
-                        LOG_DEBUG(
-                            getLogger("optimizeTree"),
-                            "Could not rebuild the parallel replicas plan with its subqueries materialized "
-                            "(plan built: {}, still deferred: {}). Not enabling parallel replicas reading",
-                            materialized.plan != nullptr,
-                            materialized.materialization_deferred);
-                        return;
-                    }
-                    plan_with_parallel_replicas = std::move(materialized.plan);
-                    final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
-                    if (!final_node_in_replica_plan)
-                        return;
                 }
 
                 /// Every read of the candidate has to be given its analysis. One that is not would read
