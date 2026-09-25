@@ -362,7 +362,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
     REGULAR(smt_force_takeover_predicate_true) \
-    REGULAR(smt_takeover_fake_hardware_error_after_set)
+    REGULAR(smt_takeover_fake_hardware_error_after_set) \
+    REGULAR(aggregate_function_state_transfer_throw) \
+    REGULAR(aggregate_function_state_transfer_throw_after_child)
 
 namespace FailPoints
 {
