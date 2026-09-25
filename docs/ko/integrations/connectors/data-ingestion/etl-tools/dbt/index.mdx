@@ -59,6 +59,7 @@ dbt는 [ClickHouse에서 지원하는 어댑터](https://github.com/ClickHouse/d
 * [x] 임시 머티리얼라이즈
 * [x] 분산 테이블 머티리얼라이즈(Experimental)
 * [x] 분산 증분 머티리얼라이즈(Experimental)
+* [x] 딕셔너리 머티리얼라이즈(Experimental)
 * [x] Contracts
 * [x] ClickHouse 전용 컬럼 구성(코덱, TTL...)
 * [x] ClickHouse 전용 테이블 설정(인덱스, 프로젝션...)
@@ -78,21 +79,19 @@ dbt는 5가지 머티리얼라이즈 타입을 제공합니다. 이들 모두 `d
 * **view** (기본값): 모델이 데이터베이스에서 뷰로 빌드됩니다. ClickHouse에서는 [view](/ko/reference/statements/create/view)로 빌드됩니다.
 * **table**: 모델이 데이터베이스에서 테이블로 빌드됩니다. ClickHouse에서는 [table](/ko/reference/statements/create/table)로 빌드됩니다.
 * **ephemeral**: 모델은 데이터베이스에 직접 빌드되지 않고, 대신 이를 참조하는 모델에 CTE(공통 테이블 표현식)로 포함됩니다.
-* **incremental**: 모델은 처음에는 테이블로 materialize되며, 이후 실행에서는 dbt가 테이블에 새 행을 삽입하고 변경된 행을 업데이트합니다.
+* **증분**: 모델은 처음에는 테이블로 materialize되며, 이후 실행에서는 dbt가 테이블에 새 행을 삽입하고 변경된 행을 업데이트합니다.
 * **materialized view**: 모델이 데이터베이스에서 materialized view로 빌드됩니다. ClickHouse에서는 [materialized view](/ko/reference/statements/create/view#materialized-view)로 빌드됩니다.
 
-추가 구문과 절을 통해 기반 데이터가 변경될 때 이러한 모델을 어떻게 업데이트할지 정의합니다. dbt는 일반적으로 성능이 문제가 되기 전까지는 view 머티리얼라이즈으로 시작할 것을 권장합니다. table 머티리얼라이즈은 저장소 사용량이 증가하는 대신 모델의 쿼리 결과를 테이블로 저장하여 쿼리 시점 성능을 향상합니다. incremental 방식은 여기에서 한 단계 더 나아가, 이후 기반 데이터의 업데이트가 대상 테이블에 반영되도록 합니다.
-
-ClickHouse용 [현재 어댑터](https://github.com/silentsokolov/dbt-clickhouse)는 **dictionary**, **distributed table**, **distributed incremental** 머티리얼라이즈도 지원합니다. 또한 이 어댑터는 dbt [snapshots](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots#check-strategy)와 [seeds](https://docs.getdbt.com/docs/building-a-dbt-project/seeds)도 지원합니다.
+추가 구문과 절을 통해 기반 데이터가 변경될 때 이러한 모델을 어떻게 업데이트할지 정의합니다. dbt는 일반적으로 성능이 문제가 되기 전까지는 view 머티리얼라이즈으로 시작할 것을 권장합니다. table 머티리얼라이즈은 저장소 사용량이 증가하는 대신 모델의 쿼리 결과를 테이블로 저장하여 쿼리 시점 성능을 향상합니다. 증분 방식은 여기에서 한 단계 더 나아가, 이후 기반 데이터의 업데이트가 대상 테이블에 반영되도록 합니다.
 
 다음은 `dbt-clickhouse`의 [실험적 기능](/ko/reference/settings/beta-and-experimental-features)입니다.
 
-| 유형                                      | 지원 여부                             | 세부 사항                                                                                                                                                                                                                   |
-| --------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 유형                              | 지원 여부                             | 세부 사항                                                                                                                                                                                                                   |
+| ------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Materialized View 머티리얼라이즈       | 예. explicit target을 사용한 생성은 베타입니다 | [materialized view](/ko/reference/statements/create/view#materialized-view)를 생성합니다.                                                                                                                                        |
-| Distributed table 머티리얼라이즈       | 예, Experimental                   | [distributed table](/ko/reference/engines/table-engines/special/distributed)를 생성합니다.                                                                                                                                       |
-| Distributed incremental 머티리얼라이즈 | 예, Experimental                   | distributed table과 같은 아이디어를 기반으로 하는 incremental 모델입니다. 모든 전략이 지원되는 것은 아니므로, 자세한 내용은 [해당 문서 섹션](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-distributed-incremental)을 참조하십시오. |
-| Dictionary 머티리얼라이즈              | 예, Experimental                   | [dictionary](/ko/reference/engines/table-engines/special/dictionary)를 생성합니다.                                                                                                                                               |
+| 분산 테이블 머티리얼라이즈       | 예, Experimental                   | [분산 테이블](/ko/reference/engines/table-engines/special/distributed)를 생성합니다.                                                                                                                                       |
+| 분산 증분 머티리얼라이즈 | 예, Experimental                   | 분산 테이블과 같은 아이디어를 기반으로 하는 증분 모델입니다. 모든 전략이 지원되는 것은 아니므로, 자세한 내용은 [해당 문서 섹션](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-distributed-incremental)을 참조하십시오. |
+| 딕셔너리 머티리얼라이즈              | 예, Experimental                   | [dictionary](/ko/reference/engines/table-engines/special/dictionary)를 생성합니다.                                                                                                                                               |
 
 <div id="setup-of-dbt-and-the-clickhouse-adapter">
   ## dbt와 ClickHouse 어댑터 설정
@@ -176,16 +175,29 @@ CD 단계는 프로덕션 ClickHouse 클러스터를 대상으로 `dbt build`를
 
 일반적인 전략 중 하나는 수정된 모델(및 해당 업스트림/다운스트림 의존성)만 다시 배포하는 [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) job을 사용하는 것입니다. 이 접근 방식은 프로젝트 실행 시간을 줄이고 환경 간 스키마 드리프트(스키마 드리프트)가 발생하지 않도록 하기 위해 프로덕션 실행의 artifact(즉, [dbt manifest](https://docs.getdbt.com/reference/artifacts/manifest-json))를 활용합니다.
 
-개발 환경을 서로 일치된 상태로 유지하고 오래된 배포를 기준으로 모델을 실행하는 일을 방지하려면 [clone](https://docs.getdbt.com/reference/commands/clone) 또는 [defer](https://docs.getdbt.com/reference/node-selection/defer)까지 사용할 수 있습니다.
+개발 환경을 서로 일치된 상태로 유지하고 오래된 배포를 기준으로 모델을 실행하는 일을 방지하려면 [clone](https://docs.getdbt.com/reference/commands/clone) 또는 [defer](https://docs.getdbt.com/reference/node-selection/defer)까지 사용할 수 있습니다. ClickHouse에서 `dbt clone`은 zero-copy `CLONE` 문을 사용하여 MergeTree 테이블을 복사합니다. 자세한 내용은 아래의 [dbt clone으로 모델 복제하기](#dbt-clone)를 참조하십시오.
 
-프로덕션 환경 운영에 영향을 주지 않도록 테스트 환경(즉, staging 환경)에는 전용 ClickHouse 클러스터 또는 서비스를 사용하는 것을 권장합니다. 테스트 환경이 실제 운영을 잘 반영하도록 하려면 프로덕션 데이터의 일부를 사용하고, 환경 간 스키마 드리프트를 방지하는 방식으로 dbt를 실행하는 것이 중요합니다.
+프로덕션 환경 운영에 영향을 주지 않도록 테스트 환경(즉, 스테이징 환경)에는 전용 ClickHouse 클러스터 또는 서비스를 사용하는 것을 권장합니다. 테스트 환경이 실제 운영을 잘 반영하도록 하려면 프로덕션 데이터의 일부를 사용하고, 환경 간 스키마 드리프트를 방지하는 방식으로 dbt를 실행하는 것이 중요합니다.
 
-* 테스트에 최신 데이터가 필요하지 않다면 프로덕션 데이터의 Backup을 staging 환경으로 복원할 수 있습니다.
-* 테스트에 최신 데이터가 필요하다면 [`remoteSecure()` 테이블 함수](/ko/reference/functions/table-functions/remote)와 갱신 가능 구체화 뷰를 조합해 원하는 주기로 데이터를 삽입할 수 있습니다. 또 다른 방법으로는 객체 스토리지를 중간 계층으로 사용해 프로덕션 서비스에서 데이터를 주기적으로 기록한 뒤, 객체 스토리지 테이블 함수 또는 ClickPipes(지속적인 수집용)를 사용해 staging 환경으로 가져오는 것입니다.
+* 테스트에 최신 데이터가 필요하지 않다면 프로덕션 데이터의 Backup을 스테이징 환경으로 복원할 수 있습니다.
+* 테스트에 최신 데이터가 필요하다면 [`remoteSecure()` 테이블 함수](/ko/reference/functions/table-functions/remote)와 갱신 가능 구체화 뷰를 조합해 원하는 주기로 데이터를 삽입할 수 있습니다. 또 다른 방법으로는 객체 스토리지를 중간 계층으로 사용해 프로덕션 서비스에서 데이터를 주기적으로 기록한 뒤, 객체 스토리지 테이블 함수 또는 ClickPipes(지속적인 수집용)를 사용해 스테이징 환경으로 가져오는 것입니다.
 
 CI 테스트에 전용 환경을 사용하면 프로덕션 환경에 영향을 주지 않고 수동 테스트도 수행할 수 있습니다. 예를 들어, 테스트를 위해 BI 도구가 이 환경을 가리키도록 설정할 수 있습니다.
 
 배포(즉, CD 단계)의 경우 변경된 모델만 업데이트할 수 있도록 프로덕션 배포의 artifact를 사용하는 것을 권장합니다. 이를 위해서는 dbt artifact용 중간 스토리지로 객체 스토리지(예: S3)를 설정해야 합니다. 설정이 완료되면 `dbt build --select state:modified+ --state path/to/last/deploy/state.json`와 같은 명령을 실행하여 프로덕션의 마지막 실행 이후 변경된 내용을 기준으로 필요한 최소한의 모델만 선택적으로 다시 빌드할 수 있습니다.
+
+<div id="dbt-clone">
+  #### `dbt clone`을 사용한 모델 복제
+</div>
+
+dbt-clickhouse 1.10.1부터 [`dbt clone`](https://docs.getdbt.com/reference/commands/clone) 명령어는 MergeTree 계열 엔진을 사용하는 테이블로 머티리얼라이즈된 모델을 복제할 때 ClickHouse의 zero-copy `CREATE OR REPLACE TABLE ... CLONE AS ...` 문을 사용합니다. 기본 데이터 파트를 중복하지 않고 테이블 사본을 생성하므로, 프로덕션 상태를 기반으로 개발 또는 [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) 환경을 구성하는 등 환경을 빠르고 저렴하게 동기화할 수 있습니다.
+
+이 방식으로 복제할 수 없는 모델은 소스 릴레이션을 가리키는 뷰를 생성하는 dbt의 기본 동작으로 폴백됩니다.
+
+* MergeTree 이외의 엔진을 사용하는 테이블
+* 분산 머티리얼라이즈
+
+materialized view 모델은 대상 테이블만 복제되며, materialized view 자체는 복제된 테이블을 기반으로 생성됩니다.
 
 <div id="troubleshooting-common-issues">
   ## 일반적인 문제 해결
@@ -207,6 +219,23 @@ dbt에서 ClickHouse에 연결하는 데 문제가 발생하면 다음 사항을
 </div>
 
 일부 작업은 특정 ClickHouse 쿼리로 인해 예상보다 오래 걸릴 수 있습니다. 어떤 쿼리가 더 오래 걸리는지 자세히 파악하려면 [로그 수준](https://docs.getdbt.com/reference/global-configs/logs#log-level)을 `debug`로 높이십시오 — 그러면 각 쿼리에 소요된 시간이 출력됩니다. 예를 들어, dbt 명령에 `--log-level debug`를 추가하면 됩니다.
+
+<div id="query-id-tracking">
+  ### dbt 실행과 ClickHouse 쿼리 연결
+</div>
+
+서버 측 세부 정보를 확인하려면 dbt-clickhouse 1.10.1부터 어댑터가 실행하는 각 SQL 문에 고유한 쿼리 ID(UUID4)가 할당되며, 이 ID는 ClickHouse로 전달됩니다. model의 주 SQL 문 ID는 dbt 결과의 `adapter_response`에 반환되므로 [`run_results.json`](https://docs.getdbt.com/reference/artifacts/run-results-json)과 같은 dbt artifact에서 확인할 수 있습니다. [`system.query_log`](/ko/reference/system-tables/query_log) table에서 이 ID를 조회하여 해당 SQL 문의 실행 시간과 리소스 사용량을 확인할 수 있습니다:
+
+```sql
+SELECT query_id, query, query_duration_ms, read_rows, memory_usage
+FROM system.query_log
+WHERE query_id = '<query_id from run_results.json>'
+  AND type = 'QueryFinish'
+```
+
+머티리얼라이즈는 일반적으로 모델당 여러 SQL 문(DDL, 삽입 등)을 실행하며, 각 SQL 문에는 고유한 쿼리 ID가 있습니다. `run_results.json`의 쿼리 ID는 모델의 기본 SQL 문만 식별합니다. 실행에 포함된 모든 SQL 문을 찾으려면 각 쿼리 텍스트에 포함된 [dbt 쿼리 주석](https://docs.getdbt.com/reference/project-configs/query-comment)을 기준으로 `system.query_log`를 필터링하십시오.
+
+쿼리 ID를 사용하면 dbt artifact를 사용하는 관측성 도구(예: Elementary)에서 dbt 모델 실행을 `system.query_log`의 항목에 자동으로 연결할 수도 있습니다.
 
 <div id="limitations">
   ## 제한 사항

@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Regression test: when a distributed read errors mid-flight, the query must terminate with that
 -- error rather than hang. The local in-memory exchanges are cancelled on teardown so tasks waiting
 -- for input do not block forever. max_rows_to_read trips during the distributed read while it is
@@ -12,7 +9,6 @@ CREATE TABLE t_distr_read_error (a UInt32, v UInt32) ENGINE = MergeTree ORDER BY
 INSERT INTO t_distr_read_error SELECT number % 10, number FROM numbers(100000);
 
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 
 SELECT a, sum(v) FROM t_distr_read_error GROUP BY a

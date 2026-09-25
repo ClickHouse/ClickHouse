@@ -10,6 +10,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
 
+#include <optional>
+
 namespace boost
 {
 namespace program_options
@@ -88,10 +90,12 @@ struct MergeTreeSettings
     void set(std::string_view name, const Field & value);
 
     SettingsChanges changes() const;
+    /// Every setting whose value differs from `base`, i.e. what changes when `base` is replaced by this.
+    SettingsChanges changesFrom(const MergeTreeSettings & base) const;
     void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
     void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
-    std::vector<std::string_view> getAllAliasNames() const;
+    static std::vector<std::string_view> getAllAliasNames();
     std::string_view getDescription(std::string_view name) const;
     std::string_view getTypeName(std::string_view name) const;
     String getDefaultValueString(std::string_view name) const;
@@ -103,12 +107,7 @@ struct MergeTreeSettings
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
-    void sanityCheck(
-        size_t background_pool_tasks,
-        bool allow_experimental,
-        bool allow_private_preview,
-        bool allow_beta,
-        bool background_pool_auto_lowered) const;
+    void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
@@ -119,6 +118,7 @@ struct MergeTreeSettings
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
+    static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static bool isReadonlySetting(const String & name);
     static void checkCanSet(std::string_view name, const Field & value);

@@ -1,7 +1,12 @@
 #pragma once
+
 #include <Interpreters/ActionsDAG.h>
+
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+
+#include <expected>
+#include <unordered_map>
 
 namespace DB
 {
@@ -15,7 +20,17 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Common checks that projection can be used for this step.
-bool canUseProjectionForReadingStep(ReadFromMergeTree * reading);
+std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTree * reading);
+
+/// Keeps only the projection named `preferred_name` when it is in the list, otherwise leaves the list as is.
+void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & preferred_name);
+
+/// Records `reason` in `reject_reasons` for every projection of `projections` that is not in `kept`, keeping a reason that is already there.
+void rejectProjections(
+    std::unordered_map<String, String> & reject_reasons,
+    const std::vector<const ProjectionDescription *> & projections,
+    const std::vector<const ProjectionDescription *> & kept,
+    const String & reason);
 
 /// Max blocks for sequential consistency reading from replicated table.
 PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading);
