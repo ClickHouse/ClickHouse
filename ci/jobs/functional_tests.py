@@ -864,7 +864,10 @@ def main():
         try:
             # Every targeted job selects on its own. The inputs are pinned to
             # `Targeting.selection_cutoff`, so all jobs of an attempt agree.
-            Shell.check("python3 -m ci.jobs.scripts.test_selection_smoke", strict=True)
+            if targeter.selection_code_changed():
+                Shell.check(
+                    "python3 -m ci.jobs.scripts.test_selection_smoke", strict=True
+                )
             tests, selection_result = targeter.get_all_relevant_tests_with_info(
                 include_changed_tests=True
             )

@@ -93,6 +93,23 @@ class Targeting:
             )
         return self._cidb
 
+    # The test selection code: a change here runs `test_selection_smoke` first.
+    SELECTION_SOURCES = (
+        "ci/jobs/scripts/find_tests.py",
+        "ci/jobs/scripts/coverage_selection.py",
+        "ci/jobs/scripts/test_selection_config.py",
+        "ci/jobs/scripts/test_selection_manifest.py",
+        "ci/jobs/scripts/test_selection_smoke.py",
+        "ci/praktika/cidb.py",
+    )
+
+    def selection_code_changed(self):
+        # Unknown changed files count as changed: the smoke is cheap and offline.
+        changed_files = self.info.get_changed_files()
+        return changed_files is None or any(
+            path in self.SELECTION_SOURCES for path in changed_files
+        )
+
     # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
     _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
 

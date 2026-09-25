@@ -71,6 +71,8 @@ Run deterministic smoke without network access:
 python3 -m ci.jobs.scripts.test_selection_smoke
 ```
 
+A targeted job runs it before selecting only when the pull request changes the selection code (`Targeting.SELECTION_SOURCES`).
+
 Operational monitoring uses the production query and scorer:
 
 ```bash
