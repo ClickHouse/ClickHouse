@@ -213,6 +213,35 @@ def test_slowloris_exceeds_timeout(started_cluster):
     sock.close()
 
 
+def test_idle_after_partial_headers_gets_bad_request(started_cluster):
+    """The client stops writing, so it can read the response without racing the close."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(30)
+    sock.connect((node.ip_address, HTTP_PORT))
+
+    # Everything but the blank line that ends the headers.
+    sock.sendall(
+        b"POST /?query=SELECT+1 HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n"
+    )
+
+    response = b""
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        response += chunk
+    sock.close()
+
+    assert response, "the connection was closed without a response"
+    header_part, _, body_part = response.partition(b"\r\n\r\n")
+    status_line = header_part.split(b"\r\n")[0].decode()
+    assert status_line.split(" ")[1] == "400", status_line
+    assert (
+        body_part.decode(errors="replace").strip()
+        == "Timeout exceeded while reading HTTP headers"
+    )
+
+
 # -- query-string overrides must not bypass pre-auth limits --
 
 

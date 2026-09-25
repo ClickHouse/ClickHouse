@@ -14,7 +14,9 @@
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 
+#include <Common/NetException.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
@@ -26,6 +28,12 @@ static constexpr UInt64 HTTP_MAX_CHUNK_SIZE = 100ULL << 30;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SOCKET_TIMEOUT;
+}
+
 HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & read_event)
     : max_uri_size(context->getMaxUriSize())
     , max_fields_number(context->getMaxFields())
@@ -50,13 +58,25 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     auto socket_in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
     socket = session.socket().impl();
 
-    /// Bounds the request line, the URI and the headers; clearing it restores the body timeout.
-    if (headers_read_timeout > Poco::Timespan(0))
-        socket_in->setHandshakeTimeout(headers_read_timeout.totalMilliseconds());
+    {
+        /// Bounds the request line, the URI and the headers. Clearing it restores the body timeouts,
+        /// which is also what the error response is written with, so it has to happen while unwinding.
+        if (headers_read_timeout > Poco::Timespan(0))
+            socket_in->setHandshakeTimeout(headers_read_timeout.totalMilliseconds());
+        SCOPE_EXIT({ socket_in->clearHandshakeTimeout(); });
 
-    readRequest(*socket_in);  /// Try parse according to RFC7230
-
-    socket_in->clearHandshakeTimeout();
+        try
+        {
+            readRequest(*socket_in);  /// Try parse according to RFC7230
+        }
+        catch (const NetException & e)
+        {
+            if (e.code() != ErrorCodes::SOCKET_TIMEOUT)
+                throw;
+            /// `HTTPServerConnection` answers 400 to this; a `DB` exception escapes its handlers.
+            throw Poco::Net::MessageException("Timeout exceeded while reading HTTP headers");
+        }
+    }
 
     auto in = std::move(socket_in);
 
