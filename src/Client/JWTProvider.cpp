@@ -502,7 +502,7 @@ void JWTProvider::tryPrintQRCode(const std::string & url, std::ostream & out)
 
     pid_t pid = 0;
     const char * argv[] = {"qrencode", "-t", "ANSIUTF8", "-o", "-", url.c_str(), nullptr};
-    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_t actions{};
     if (posix_spawn_file_actions_init(&actions) != 0)
     {
         closeFD(pipefd[0]);
