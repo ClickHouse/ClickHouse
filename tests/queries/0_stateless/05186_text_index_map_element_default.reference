@@ -58,6 +58,11 @@
 1
 0
 0
+-- a pattern atom over a non-String map key keeps the matching row
+1
+1
+1
+1
 -- a FixedString key is that representation, so it stays indexed
 1
 1

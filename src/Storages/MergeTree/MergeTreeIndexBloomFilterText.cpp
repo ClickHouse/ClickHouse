@@ -939,10 +939,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// characters and build a probe the index cannot hold, pruning the granule that has the key.
     if (substituted_map_key && (function_name == "like" || function_name == "notLike" || function_name == "match"))
     {
+        String value;
+        if (!convertConstantToIndexDomain(index_data_types[*key_index], const_source_type, const_value, value))
+            return false;
         out.key_column = *key_index;
         out.function = function_name == "notLike" ? RPNElement::FUNCTION_NOT_EQUALS : RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
-        const auto & value = const_value.safeGet<String>();
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }

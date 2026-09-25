@@ -146,6 +146,22 @@ SELECT count() FROM tab_ip_key WHERE m[toIPv6('dead:beef::1')] = '' SETTINGS use
 
 DROP TABLE tab_ip_key;
 
+DROP TABLE IF EXISTS tab_ip_key_pattern;
+CREATE TABLE tab_ip_key_pattern (m Map(IPv6, String), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO tab_ip_key_pattern VALUES (map(toIPv6('2001:db8::abcd:1'), 'v'));
+
+-- A pattern atom probes the index with the substituted key, so the key text needs the same conversion
+-- into the index domain that equality does. Tokenized as text against a binary key it matches nothing
+-- and prunes the granule that holds the key.
+SELECT '-- a pattern atom over a non-String map key keeps the matching row';
+SELECT count() FROM tab_ip_key_pattern WHERE m.`key_2001:db8::abcd:1` LIKE '%v%';
+SELECT count() FROM tab_ip_key_pattern WHERE m.`key_2001:db8::abcd:1` LIKE '%v%' SETTINGS ignore_data_skipping_indices = 'idx';
+SELECT count() FROM tab_ip_key_pattern WHERE match(m.`key_2001:db8::abcd:1`, 'v');
+SELECT count() FROM tab_ip_key_pattern WHERE match(m.`key_2001:db8::abcd:1`, 'v') SETTINGS ignore_data_skipping_indices = 'idx';
+
+DROP TABLE tab_ip_key_pattern;
+
 DROP TABLE IF EXISTS tab_fs_key;
 CREATE TABLE tab_fs_key (m Map(FixedString(4), String), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
