@@ -374,11 +374,9 @@ void optimizeTreeSecondPass(
                         break;
                 }
 
-                /// `tryMergeExpressions` fuses an expression step into a filter step, which turns those
-                /// expressions into required outputs of the filter and so evaluates them on the rows the
-                /// filter removes. `trySplitFilter` is what keeps a filter minimal for that reason, so
-                /// the rerun has to apply it again to whatever it just fused.
-                /// Only the filter branch is wanted: trySplitFilter also extracts a logical join's ON conditions.
+                /// `tryMergeExpressions` fuses an expression step into a filter step, which makes those
+                /// expressions required outputs of the filter, so they run on the rows the filter removes.
+                /// `trySplitFilter` splits such a filter; it also extracts a logical join's ON conditions.
                 if ((rewrite_regardless_of_settings || optimization_settings.split_filter)
                     && typeid_cast<FilterStep *>(frame_node.step.get()))
                     trySplitFilter(&frame_node, nodes, extra_settings);
