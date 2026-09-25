@@ -1642,7 +1642,7 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
 /// query: the kill switch has to reach the context of every nested `QueryNode`/`UnionNode` as well.
 /// The materialized CTE subquery is a child of its `TableNode` and the correlated subquery is a child of
 /// the expression that uses it, so a full traversal of the query tree covers all the carriers.
-static void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
+void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
 {
     traverseQueryTree(node, Everything{}, [](const QueryTreeNodePtr & current_node)
     {
