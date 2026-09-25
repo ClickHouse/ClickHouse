@@ -38,6 +38,22 @@ node5 = cluster.add_instance(
     stay_alive=True,
 )
 
+# The implicit default schema is `bucketed`, but it needs alias columns and the default table
+# definition, so these two nodes must fall back to `wide` instead.
+node6 = cluster.add_instance(
+    "node6",
+    main_configs=[
+        "config/metric_log_default_schema.xml",
+        "config/skip_alias_columns.xml",
+    ],
+    stay_alive=True,
+)
+node7 = cluster.add_instance(
+    "node7",
+    main_configs=["config/metric_log_default_schema_with_engine.xml"],
+    stay_alive=True,
+)
+
 LOG_PATH = "/etc/clickhouse-server/config.d/metric_log_config.xml"
 BUCKETED_LOG_PATH = "/etc/clickhouse-server/config.d/metric_log_bucketed_config.xml"
 
@@ -55,7 +71,7 @@ def start_cluster():
         cluster.shutdown()
 
 def test_table_rotation(start_cluster):
-    # default wide mode
+    # the `wide` schema, requested explicitly by the config (the default is `bucketed`)
     node1.query("SYSTEM FLUSH LOGS")
     assert int(node1.query("select count() from system.metric_log").strip()) > 0
     assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log")
@@ -145,7 +161,7 @@ def test_persisted_metric_log_documentation_without_config(start_cluster):
 
 
 def test_bucketed_schema(start_cluster):
-    # default wide mode
+    # the `wide` schema, requested explicitly by the config (the default is `bucketed`)
     node2.query("SYSTEM FLUSH LOGS")
     assert int(node2.query("select count() from system.metric_log").strip()) > 0
     assert "ProfileEvent_Query" in node2.query("SHOW CREATE TABLE system.metric_log")
@@ -166,6 +182,8 @@ def test_bucketed_schema(start_cluster):
     assert "max_buckets_in_map = 128" in create_query
     assert "map_buckets_strategy = 'constant'" in create_query
     assert "ALIAS metrics['ProfileEvent_Query']" in create_query
+    # The alias columns carry the documentation of the metric, as the `wide` schema does
+    assert "COMMENT 'Number of queries to be interpreted" in create_query
     assert (
         node2.query(
             "SELECT source FROM system.documentation WHERE type = 'System Table' AND name = 'metric_log'"
@@ -210,6 +228,56 @@ def test_bucketed_schema_is_rejected_without_alias_columns(start_cluster):
 
     node5.replace_in_config(BUCKETED_LOG_PATH, ">bucketed<", ">wide<")
     node5.start_clickhouse()
+
+
+def test_default_schema_stays_wide_without_alias_columns(start_cluster):
+    # An existing configuration that only sets `skip_alias_columns` must keep working: the
+    # `bucketed` schema consists of alias columns, so the implicit default stays `wide`
+    # instead of failing the startup.
+    node6.query("SYSTEM FLUSH LOGS")
+    create_query = node6.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
+    assert "`ProfileEvent_Query` UInt64" in create_query
+    assert "`metrics` Map(Enum16(" not in create_query
+    assert int(node6.query("select count() from system.metric_log").strip()) > 0
+
+
+def test_default_schema_stays_wide_with_explicit_engine(start_cluster):
+    # An explicit `engine` replaces the default table definition, and with it the settings of
+    # the bucketed Map serialization, so the implicit default stays `wide` instead of giving a
+    # table with the shape of the `bucketed` schema without the bucketed reads.
+    node7.query("SYSTEM FLUSH LOGS")
+    create_query = node7.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
+    assert "`ProfileEvent_Query` UInt64" in create_query
+    assert "`metrics` Map(Enum16(" not in create_query
+    assert int(node7.query("select count() from system.metric_log").strip()) > 0
+
+
+def test_bucketed_schema_with_explicit_engine_warns(start_cluster):
+    # An explicit `bucketed` schema with an explicit `engine` works, but the server warns when the
+    # engine does not set `map_serialization_version`. A setting that only shares the prefix,
+    # `map_serialization_version_for_zero_level_parts`, leaves the main serialization at its
+    # default, so it must not suppress the warning.
+    warning = "that does not set 'map_serialization_version'"
+    config_path = "/etc/clickhouse-server/config.d/metric_log_default_schema_with_engine.xml"
+
+    node7.replace_in_config(config_path, "<table>metric_log</table>", "<table>metric_log</table><schema_type>bucketed</schema_type>")
+    node7.replace_in_config(config_path, "</engine>", "SETTINGS map_serialization_version_for_zero_level_parts = 'basic'</engine>")
+    node7.restart_clickhouse()
+    node7.query("SYSTEM FLUSH LOGS metric_log")
+    assert "`metrics` Map(Enum16(" in node7.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
+    assert int(node7.count_in_log(warning)) > 0
+
+    node7.replace_in_config(config_path, "SETTINGS map_serialization_version_for_zero_level_parts", "SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts")
+    node7.stop_clickhouse()
+    node7.exec_in_container(["bash", "-c", "truncate -s 0 /var/log/clickhouse-server/clickhouse-server.log"])
+    node7.start_clickhouse()
+    node7.query("SYSTEM FLUSH LOGS metric_log")
+    assert "map_serialization_version = 'with_buckets'" in node7.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
+    assert int(node7.count_in_log(warning)) == 0
+
+    node7.replace_in_config(config_path, "<schema_type>bucketed</schema_type>", "")
+    node7.replace_in_config(config_path, "SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'basic'", "")
+    node7.restart_clickhouse()
 
 
 def insert_into_transposed_metric_log(node, table_name, size):

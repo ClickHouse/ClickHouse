@@ -1016,6 +1016,16 @@ String renderSystemTableColumns(const String & table_name, const ColumnsDescript
     {
         if (column.default_desc.expression && column.default_desc.kind == ColumnDefaultKind::Alias)
         {
+            const String alias_comment = boost::algorithm::trim_copy(column.comment);
+            if (!alias_comment.empty())
+            {
+                /// An alias with its own comment documents a value rather than a spelling of another column
+                /// (the per-metric aliases of `system.metric_log`), so it is rendered like an ordinary column.
+                aliases += "- `" + column.name + "` (" + formatSystemTableType(column.type->getName()) + ") — "
+                    + indentMarkdownContinuation(alias_comment) + "\n";
+                continue;
+            }
+
             String description;
             if (table_name == "trace_log" && column.name == "build_id")
                 description = "Alias for the build ID of the running ClickHouse server binary.";
