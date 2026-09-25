@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartitionStatistics.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -46,6 +47,7 @@ public:
         const IMergePredicate & predicate,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeSettingsPtr & merge_tree_settings,
+        const MergeTreeData::MergingParams & merging_params,
         const PartitionIdToTTLs & next_delete_times,
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,

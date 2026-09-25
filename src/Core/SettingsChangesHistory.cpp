@@ -1540,6 +1540,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"max_memory_ratio_to_activate_adaptive_write_buffer", 0., 1. / 32, "New setting. Activate adaptive write buffers when the buffers a wide part preallocates would take at least this fraction of the server memory limit, so that a many-column table does not reserve hundreds of megabytes of write buffers on a small server. The previous value disables the trigger, preserving pre-26.10 behavior."},
+            {"merge_memory_estimate_per_source_part_column", 0, 4096, "New setting. Lowers `max_parts_to_merge_at_once` when merging that many parts of a very wide table would not fit in memory, so that such merges stop failing with `MEMORY_LIMIT_EXCEEDED` on small servers. The previous value disables the estimate, preserving pre-26.10 behavior."},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},
