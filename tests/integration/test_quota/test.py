@@ -1466,13 +1466,13 @@ def test_dcl_introspection():
         == "CREATE QUOTA myQuota KEYED BY user_name FOR INTERVAL 1 year MAX queries = 1000, query_selects = 500, query_inserts = 500, read_rows = 1000 TO default\n"
     )
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t0\\t1000\\t0\\t500\\t0\\t500\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t1000\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
+        "myQuota\\tdefault\\t.*\\t31556952\\t0\\t1000\\t0\\t500\\t0\\t500\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t1000\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1487,7 +1487,7 @@ def test_dcl_introspection():
         == "CREATE QUOTA myQuota KEYED BY user_name FOR INTERVAL 1 year MAX queries = 1000, read_rows = 1000, FOR RANDOMIZED INTERVAL 2 year MAX result_bytes = 30000, read_bytes = 20000, execution_time = 120 TO default\n"
     )
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\n"
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\{\\}\\t\\{\\}\n"
         "myQuota\\tdefault\\t.*\\t63113904\\t0\\t\\\\N\t0\\t\\\\N\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t30000\\t0\\t\\\\N\\t0\\t20000\\t.*\\t120\\t0\\t\\\\N",
         instance.query("SHOW QUOTA"),
     )
@@ -1509,7 +1509,7 @@ def test_dcl_introspection():
         "CREATE QUOTA myQuota2 KEYED BY client_key, user_name FOR RANDOMIZED INTERVAL 1 hour MAX result_rows = 4000, result_bytes = 400000, read_rows = 4000, read_bytes = 400000, execution_time = 60, failed_sequential_authentications = 3, FOR INTERVAL 1 month MAX execution_time = 1800\n"
     )
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1532,14 +1532,14 @@ def test_dcl_management():
         == "CREATE QUOTA qA FOR INTERVAL 5 quarter MAX queries = 123 TO default\n"
     )
     assert re.match(
-        "qA\\t\\t.*\\t39446190\\t0\\t123\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n",
+        "qA\\t\\t.*\\t39446190\\t0\\t123\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t39446190\\t\\d+\\t123\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t123\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1551,16 +1551,16 @@ def test_dcl_management():
         == "CREATE QUOTA qA FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default\n"
     )
     assert re.match(
-        "qA\\t\\t.*\\t1800\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n"
-        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\n",
+        "qA\\t\\t.*\\t1800\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t\\{\\}\\t\\{\\}\n"
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t1800\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t0.5\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n"
-        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qA\\t\\t.*\\t1800\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t0.5\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\{\\}\\t\\{\\}\n"
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1568,14 +1568,14 @@ def test_dcl_management():
         "ALTER QUOTA qA FOR INTERVAL 15 MONTH NO LIMITS, FOR RANDOMIZED INTERVAL 16 MONTH TRACKING ONLY, FOR INTERVAL 1800 SECOND NO LIMITS"
     )
     assert re.match(
-        "qA\\t\\t.*\\t42075936\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
+        "qA\\t\\t.*\\t42075936\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qA\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1586,14 +1586,14 @@ def test_dcl_management():
     )
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\{\\}\\t\\{\\}\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1837,6 +1837,40 @@ def test_quota_keyed_by_normalized_query_hash_from_users_xml():
     assert (
         instance.query("SELECT keys FROM system.quotas WHERE name = 'myQuota'")
         == "['normalized_query_hash']\n"
+    )
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")
+
+
+def test_quota_on_profile_events_from_users_xml():
+    # Any tag inside <interval> which names a profile event defines a limit over it.
+    # The value is parsed with the same rules as in `CREATE QUOTA`, so size suffixes work,
+    # and an explicitly written 0 means "track this event but do not limit it" - the same
+    # as for the predefined resource types.
+    copy_quota_xml("profile_events_limits.xml")
+    assert (
+        instance.query(
+            "SELECT max_profile_events FROM system.quota_limits WHERE quota_name = 'myQuota'"
+        )
+        == "{'NetworkSendBytes':1000000000,'SelectQuery':0}\n"
+    )
+
+    # An unknown name is ignored (it only produces a warning in the log), so that a typo
+    # cannot break the server startup.
+    assert (
+        instance.query(
+            "SELECT mapContains(max_profile_events, 'NoSuchProfileEvent') FROM system.quota_limits WHERE quota_name = 'myQuota'"
+        )
+        == "0\n"
+    )
+
+    # The tracked events are reported in the usage tables even when they are not limited.
+    assert (
+        instance.query(
+            "SELECT mapKeys(max_profile_events) FROM system.quota_usage WHERE quota_name = 'myQuota'"
+        )
+        == "['NetworkSendBytes','SelectQuery']\n"
     )
 
     # Restore a clean config so later periodic reloads do not fail.

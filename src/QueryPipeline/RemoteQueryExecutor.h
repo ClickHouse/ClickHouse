@@ -394,6 +394,10 @@ private:
 
     void processReadTaskRequest();
 
+    /// Accounts the `ProfileEvents` packet of a remote server for the quotas over profile events and
+    /// passes it on to the client.
+    void processProfileEventsPacket(Block block);
+
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
