@@ -16,7 +16,7 @@ INSERT INTO t_in_filter SELECT number * 7 FROM numbers(1000);
 SET distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_default_shuffle_join_bucket_count = 3, max_rows_to_group_by = 0,
-    enable_join_runtime_filters = 0, allow_experimental_correlated_subqueries = 1,
+    enable_join_runtime_filters = 0, allow_correlated_subqueries = 1,
     use_index_for_in_with_subqueries = 1, use_query_condition_cache = 0;
 -- Pinned because the test greps the plan.
 SET explain_query_plan_default = 'legacy';
