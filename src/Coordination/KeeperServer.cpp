@@ -38,6 +38,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadStatus.h>
+#include <base/unaligned.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -90,6 +91,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 snapshot_distance;
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
+    extern const CoordinationSettingsMilliseconds session_timeout_ms;
     extern const CoordinationSettingsBool nuraft_test_mode;
     extern const CoordinationSettingsBool nuraft_use_bg_thread_for_snapshot_io;
     extern const CoordinationSettingsBool nuraft_streaming_mode;
@@ -116,6 +118,18 @@ using namespace std::chrono_literals;
 
 namespace
 {
+
+/// Keeper Session Touch metadata, all integer fields are little-endian:
+/// `"KST" | UInt8 version | UInt64 session_count | session_count * Int64 session_id`.
+/// Example: "KST" | UInt8(1) | UInt64(2) | Int64(10) | Int64(42)
+constexpr std::string_view SESSION_TOUCHES_METADATA_MAGIC = "KST";
+enum class SessionTouchesMetadataVersion : UInt8
+{
+    V1 = 1,
+};
+constexpr auto CURRENT_SESSION_TOUCHES_METADATA_VERSION = SessionTouchesMetadataVersion::V1;
+constexpr size_t SESSION_TOUCHES_METADATA_HEADER_SIZE
+    = SESSION_TOUCHES_METADATA_MAGIC.size() + sizeof(UInt8) + sizeof(UInt64);
 
 #if USE_SSL
 
@@ -676,6 +690,29 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// still as safeguard it's better to have some redundant capacity here
     asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
     asio_opts.streaming_mode_ = coordination_settings[CoordinationSetting::nuraft_streaming_mode];
+    /// A follower can reject `AppendEntries` while catching up and still serve local reads.
+    /// Equal request and response terms are enough to prove that the request came from the current leader.
+    asio_opts.write_resp_meta_ = [this](const nuraft::asio_service_meta_cb_params & callback_params)
+    {
+        if (
+            callback_params.msg_type_ != nuraft::msg_type::append_entries_request
+            || !callback_params.resp_
+            || callback_params.resp_->get_term() != callback_params.term_)
+            return std::string{};
+
+        return takeSessionTouches();
+    };
+    asio_opts.read_resp_meta_ = [this](const nuraft::asio_service_meta_cb_params & callback_params, const std::string & metadata)
+    {
+        if (
+            callback_params.msg_type_ == nuraft::msg_type::append_entries_request
+            && callback_params.resp_
+            && callback_params.resp_->get_term() == callback_params.term_)
+            applySessionTouches(metadata);
+
+        return true;
+    };
+    asio_opts.invoke_resp_cb_on_empty_meta_ = false;
 
     if (state_manager->isSecure())
     {
@@ -859,7 +896,94 @@ void KeeperServer::putLocalReadRequests(const KeeperRequestsForSessions & reques
         if (!request_for_session.request->isReadRequest())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
     }
+
+    if (!isLeader())
+    {
+        std::lock_guard lock(session_touches_mutex);
+        for (const auto & request_for_session : requests)
+        {
+            if (request_for_session.session_id >= 0)
+                pending_session_touches.insert(request_for_session.session_id);
+        }
+    }
+
     state_machine->processReadRequests(requests);
+}
+
+std::string KeeperServer::takeSessionTouches()
+{
+    std::unordered_set<int64_t> session_touches;
+    std::string metadata;
+    {
+        std::lock_guard lock(session_touches_mutex);
+        if (pending_session_touches.empty())
+            return {};
+
+        metadata.resize(SESSION_TOUCHES_METADATA_HEADER_SIZE + sizeof(Int64) * pending_session_touches.size());
+        session_touches.swap(pending_session_touches);
+    }
+
+    char * position = metadata.data();
+    memcpy(position, SESSION_TOUCHES_METADATA_MAGIC.data(), SESSION_TOUCHES_METADATA_MAGIC.size());
+    position += SESSION_TOUCHES_METADATA_MAGIC.size();
+    unalignedStoreLittleEndian<UInt8>(position, static_cast<UInt8>(CURRENT_SESSION_TOUCHES_METADATA_VERSION));
+    position += sizeof(UInt8);
+    unalignedStoreLittleEndian<UInt64>(position, session_touches.size());
+    position += sizeof(UInt64);
+
+    for (int64_t session_id : session_touches)
+    {
+        unalignedStoreLittleEndian<Int64>(position, session_id);
+        position += sizeof(session_id);
+    }
+
+    return metadata;
+}
+
+void KeeperServer::applySessionTouches(std::string_view metadata)
+{
+    if (metadata.size() < SESSION_TOUCHES_METADATA_HEADER_SIZE
+        || !metadata.starts_with(SESSION_TOUCHES_METADATA_MAGIC))
+        return;
+
+    const char * position = metadata.data() + SESSION_TOUCHES_METADATA_MAGIC.size();
+    const auto version = static_cast<SessionTouchesMetadataVersion>(unalignedLoadLittleEndian<UInt8>(position));
+    if (version != CURRENT_SESSION_TOUCHES_METADATA_VERSION)
+        return;
+
+    position += sizeof(UInt8);
+    const auto count = unalignedLoadLittleEndian<UInt64>(position);
+    if (count > (metadata.size() - SESSION_TOUCHES_METADATA_HEADER_SIZE) / sizeof(Int64))
+    {
+        LOG_WARNING(
+            log,
+            "Ignoring malformed Keeper session touches metadata with {} sessions and {} bytes",
+            count,
+            metadata.size());
+        return;
+    }
+
+    const size_t expected_size = SESSION_TOUCHES_METADATA_HEADER_SIZE + sizeof(Int64) * count;
+    if (metadata.size() != expected_size)
+    {
+        LOG_WARNING(
+            log,
+            "Ignoring malformed Keeper session touches metadata: expected {} bytes, got {}",
+            expected_size,
+            metadata.size());
+        return;
+    }
+
+    std::vector<int64_t> session_ids;
+    session_ids.reserve(count);
+    position = metadata.data() + SESSION_TOUCHES_METADATA_HEADER_SIZE;
+    for (UInt64 i = 0; i < count; ++i)
+    {
+        session_ids.push_back(unalignedLoadLittleEndian<Int64>(position));
+        position += sizeof(Int64);
+    }
+
+    state_machine->touchSessions(session_ids);
 }
 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)
@@ -1430,6 +1554,12 @@ void KeeperServer::waitInit()
 
 std::vector<int64_t> KeeperServer::getDeadSessions()
 {
+    const auto leader_uptime_ms = getLeaderUptimeMetrics();
+    const auto max_session_timeout_ms
+        = keeper_context->getCoordinationSettings()[CoordinationSetting::session_timeout_ms].totalMilliseconds();
+    if (!leader_uptime_ms || *leader_uptime_ms < static_cast<UInt64>(max_session_timeout_ms))
+        return {};
+
     return state_machine->getDeadSessions();
 }
 

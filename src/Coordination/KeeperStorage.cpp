@@ -865,6 +865,16 @@ SessionAndTimeout KeeperStorage::getActiveSessions() const
     return session_and_timeout;
 }
 
+void KeeperStorage::touchSessions(const std::vector<int64_t> & session_ids)
+{
+    for (int64_t session_id : session_ids)
+    {
+        const auto session_it = session_and_timeout.find(session_id);
+        if (session_it != session_and_timeout.end())
+            session_expiry_queue.addNewSessionOrUpdate(session_id, session_it->second);
+    }
+}
+
 std::vector<std::pair<std::string, Int32>> KeeperStorage::collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const
 {
     std::vector<std::pair<std::string, Int32>> result;
