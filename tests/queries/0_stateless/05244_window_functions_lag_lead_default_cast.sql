@@ -9,3 +9,10 @@ SELECT number, leadInFrame(number, 1, 7) OVER (ORDER BY number ROWS BETWEEN CURR
 -- A wider default widens the result; a default with no common type is rejected.
 SELECT lag(toUInt8(number), 1, 300) OVER (ORDER BY number) AS v, toTypeName(v) FROM numbers(3);
 SELECT lag(number, 1, 'x') OVER (ORDER BY number) FROM numbers(3); -- { serverError NO_COMMON_TYPE }
+
+-- A grouping key that becomes Nullable under group_by_use_nulls still takes a default of the plain type.
+WITH 'x' AS v
+SELECT lag(v, 1, '') OVER (ORDER BY v)
+GROUP BY ROLLUP(v)
+ORDER BY 1 NULLS FIRST
+SETTINGS group_by_use_nulls = 1;
