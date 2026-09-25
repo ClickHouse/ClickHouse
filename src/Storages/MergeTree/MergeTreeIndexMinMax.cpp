@@ -341,6 +341,8 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     , condition(buildCondition(index, filter_dag, context))
 {
     condition.projectExponentialTimeDecayingIndexKeys(index.data_types);
+    /// The granule bound comes from `getExtremes`, which skips NaN.
+    condition.relaxAtomsOverNaNHidingColumns(index_data_types);
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const

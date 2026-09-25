@@ -134,6 +134,7 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
+DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -229,11 +230,20 @@ DECLARE_SETTING_ENUM(DefaultTableEngine)
 
 enum class TextIndexPostingListApplyMode : uint8_t
 {
-    MATERIALIZE,
-    LAZY,
+    Materialize,
+    Lazy,
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
+
+enum class TextIndexPostingsIntersectionAlgorithm : uint8_t
+{
+    BruteForce,
+    Leapfrog,
+    Auto,
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm)
 
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 
@@ -544,7 +554,8 @@ DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 enum class TextIndexPostingListCodec : uint8_t
 {
     None,
-    Bitpacking
+    Bitpacking,
+    PFor
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
