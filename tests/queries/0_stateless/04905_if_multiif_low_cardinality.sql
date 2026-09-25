@@ -147,6 +147,9 @@ SELECT if((NULL IS NULL) AND
 
 SELECT 'toBool(LowCardinality(Nullable(String))) from if';
 SELECT toBool(if(number % 2, 'true', NULL)) as x, toTypeName(x) from numbers(2);
+-- An invalid non-NULL value on the same LowCardinality path must still throw rather than turn into NULL.
+SELECT toTypeName(if(number % 2, 'truetrue', NULL)) FROM numbers(1);
+SELECT toBool(if(number % 2, 'truetrue', NULL)) FROM numbers(2); -- { serverError CANNOT_PARSE_BOOL }
 
 SELECT 'multiIf weirdness';
 SELECT DISTINCT multiIf(materialize(toLowCardinality(0)), 'A', 0 = number, 'B', 'C') AS txt, toTypeName(txt) FROM numbers(15);

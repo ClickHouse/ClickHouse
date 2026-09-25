@@ -186,6 +186,7 @@ From 02366_kql_func_dynamic.sql
 toBool(LowCardinality(Nullable(String))) from if
 \N	LowCardinality(Nullable(Bool))
 true	LowCardinality(Nullable(Bool))
+LowCardinality(Nullable(String))
 multiIf weirdness
 B	LowCardinality(String)
 C	LowCardinality(String)
