@@ -1,4 +1,7 @@
--- `timeSeriesSelector` over a TimeSeries table with histograms (version 6 and later) returns the float samples and the histogram
+-- Tags: no-fasttest
+-- no-fasttest: Test requires ANTLR4, which is disabled in FastTest job.
+
+-- `timeSeriesSelector` over a TimeSeries table with histograms returns the float samples and the histogram
 -- samples together; the column `histogram` holds a histogram sample as it's stored. Older tables return three columns.
 
 SET allow_experimental_time_series_table = 1;

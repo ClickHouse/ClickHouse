@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: Test requires ANTLR4, which is disabled in FastTest job.
+
 # The plan of `timeSeriesSelector` over a TimeSeries table with histograms: the samples table and the histograms table are read
 # by one union, the id set of the selector is built once for both of them, and for a selector matching a whole metric the
 # probe runs once and the primary-key range on `id` is applied to both tables.

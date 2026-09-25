@@ -128,7 +128,7 @@ remote_write:
     send_native_histograms: true
 ```
 
-A `TimeSeries` table of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 6 or later stores them in its [histograms table](/reference/engines/table-engines/integrations/time-series#histograms-table), exactly as sent: integer and float histograms, histograms with custom buckets, and stale markers. They can be read through the `histograms.*` columns of the table or the [timeSeriesHistograms](/reference/functions/table-functions/timeSeriesHistograms) table function.
+A `TimeSeries` table stores them in its [histograms table](/reference/engines/table-engines/integrations/time-series#histograms-table), exactly as sent: integer and float histograms, histograms with custom buckets, and stale markers. They can be read through the `histograms.*` columns of the table or the [timeSeriesHistograms](/reference/functions/table-functions/timeSeriesHistograms) table function.
 
 PromQL queries don't support native histograms yet: a query fails if the time series it selects have histogram samples in the evaluated time range. Queries selecting only time series without histogram samples aren't affected.
 
@@ -138,7 +138,7 @@ A histogram which Prometheus itself would reject, for example one whose bucket s
 Prometheus does not send native histograms with custom buckets (such as classic histograms converted with `convert_classic_histograms_to_nhcb`) over remote-write 1.0, which is the protocol version ClickHouse supports: Prometheus 3.10 and later drop them on the sending side with a warning, and earlier versions send them without their bucket bounds, which makes ClickHouse reject the request. Exponential native histograms are sent by every version. Other senders do send custom-bucket histograms over remote-write 1.0, for example the OpenTelemetry Collector with `convert_explicit_histograms_to_nhcb` enabled, and ClickHouse stores them.
 :::
 
-A table of an earlier version has no histograms table. Such a table stores the float samples of a request and drops its native histograms: rejecting the request would make Prometheus drop the float samples too. Every drop is counted in the `PrometheusRemoteWriteDroppedHistograms` profile event and logged with a warning, at most once a minute. To store native histograms, create a table of the current version and move the data into it.
+A table of an older [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) has no histograms table. Such a table stores the float samples of a request and drops its native histograms: rejecting the request would make Prometheus drop the float samples too. Every drop is counted in the `PrometheusRemoteWriteDroppedHistograms` profile event and logged with a warning, at most once a minute. To store native histograms, create a table of the current version and move the data into it.
 
 ## Query with PromQL {#promql-query-support}
 
@@ -277,7 +277,7 @@ remote_read:
       password: <password>
 ```
 
-For a `TimeSeries` table of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 6 or later, remote read returns the [native histograms](#remote-write-native-histograms) of a time series too, exactly as they were written.
+For a `TimeSeries` table with a [histograms table](/reference/engines/table-engines/integrations/time-series#histograms-table), remote read returns the [native histograms](#remote-write-native-histograms) of a time series too, exactly as they were written.
 
 If a time series has several samples with the same timestamp, remote read returns one of them, as close to Prometheus as possible. Prometheus keeps the sample written first and rejects the others; ClickHouse doesn't keep the order of writes, so it resolves the conflict when reading:
 - Identical samples count as one sample, as in Prometheus.

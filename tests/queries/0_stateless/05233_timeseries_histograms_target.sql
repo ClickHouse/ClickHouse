@@ -1,8 +1,5 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
---
--- The histograms target table of the TimeSeries table engine (see TimeSeriesVersion.h): tables of version 6 and later
--- get a generated inner histograms table, tables of earlier versions have none, and the table can't be declared explicitly yet.
 
 SET allow_experimental_time_series_table = 1;
 

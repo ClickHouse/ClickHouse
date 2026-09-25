@@ -1,5 +1,5 @@
 -- The `histograms.*` outer columns of the TimeSeries table engine: inserting histogram samples through them stores rows in the
--- inner histograms table, and reading them returns the samples back (see TimeSeriesVersion.h, version 6).
+-- inner histograms table, and reading them returns the samples back.
 
 SET allow_experimental_time_series_table = 1;
 
