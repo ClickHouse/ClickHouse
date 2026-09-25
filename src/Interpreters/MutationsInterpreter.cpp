@@ -2418,9 +2418,23 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
     if (!startsWith(storage->getName(), "Replicated") || context->getSettingsRef()[Setting::allow_nondeterministic_mutations])
         return;
 
+    /// Virtual columns declared with `deterministic = false` (`_table`, `_database`, `_disk_name`, ...)
+    /// are constants on one server, but replicas of the same table may have different local names or
+    /// disks, so a mutation that reads them would produce different parts on different replicas.
+    /// A real column with the same name shadows the virtual one and is deterministic.
+    NameSet nondeterministic_virtual_columns;
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    const auto & real_columns = metadata_snapshot->getColumns();
+    for (const auto & virtual_column : metadata_snapshot->virtuals)
+    {
+        if (!virtual_column.deterministic && !real_columns.has(virtual_column.name))
+            nondeterministic_virtual_columns.insert(virtual_column.name);
+    }
+
+    const auto storage_id = storage->getStorageID();
     for (const auto & command : commands)
     {
-        const auto nondeterministic_func_data = findFirstNonDeterministicFunction(command, context);
+        const auto nondeterministic_func_data = findFirstNonDeterministicFunction(command, context, nondeterministic_virtual_columns, &storage_id);
         if (nondeterministic_func_data.subquery)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER UPDATE/ALTER DELETE statement with subquery may be nondeterministic, "
                                                        "see allow_nondeterministic_mutations setting");
@@ -2429,6 +2443,12 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                 "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
+
+        if (nondeterministic_func_data.nondeterministic_virtual_column_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic expressions. "
+                "Virtual column '{}' is non-deterministic: its value may differ between replicas, "
+                "see allow_nondeterministic_mutations setting", *nondeterministic_func_data.nondeterministic_virtual_column_name);
     }
 }
 

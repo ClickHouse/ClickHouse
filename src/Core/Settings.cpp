@@ -5547,7 +5547,7 @@ Result:
 - [NULL Processing in IN Operators](/reference/statements/in#null-processing)
 )", 0) \
     DECLARE(Bool, allow_nondeterministic_mutations, false, R"(
-User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
+User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`, and of the virtual columns whose values may differ between replicas, such as `_table`, `_database` and `_disk_name`.
 
 Given that, for example, dictionaries, can be out of sync across nodes, mutations that pull values from them are disallowed on replicated tables by default. Enabling this setting allows this behavior, making it the user's responsibility to ensure that the data used is in sync across all nodes.
 
