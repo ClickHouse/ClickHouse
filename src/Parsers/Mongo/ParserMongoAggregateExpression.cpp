@@ -1,5 +1,6 @@
 #include <Parsers/Mongo/ParserMongoAggregateExpression.h>
 
+#include <cmath>
 #include <cstring>
 #include <string_view>
 #include <unordered_map>
@@ -366,6 +367,28 @@ UInt64 startOfWeekMode(const rapidjson::Value & argument, std::string_view opera
         operator_name, stringView(it->value));
 }
 
+/** The `amount` of `$dateAdd` and `$dateSubtract`, which Mongo requires to be a whole number. The
+  * ClickHouse functions it goes to would truncate a fraction instead - `1.5` days would add one -
+  * so a literal is checked here and any other expression is checked per row: `throwIf` answers
+  * `0` for a whole number and is always evaluated, as an argument of `plus` rather than a branch
+  * of a conditional that could be skipped.
+  */
+ASTPtr parseDateAddAmount(const rapidjson::Value & value, std::string_view operator_name)
+{
+    if (value.IsNumber())
+    {
+        if (value.IsDouble() && (!std::isfinite(value.GetDouble()) || std::trunc(value.GetDouble()) != value.GetDouble()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'amount' of '{}' must be a whole number", operator_name);
+        return parseMongoAggregateExpression(value);
+    }
+
+    auto amount = parseMongoAggregateExpression(value);
+    auto fractional = makeASTFunction("notEquals", amount->clone(), makeASTFunction("trunc", amount->clone()));
+    auto check = makeASTFunction(
+        "throwIf", std::move(fractional), makeLiteral(Field(fmt::format("The 'amount' of '{}' must be a whole number", operator_name))));
+    return makeASTFunction("plus", makeASTFunction("toInt64", std::move(amount)), std::move(check));
+}
+
 /// `toStartOfWeek(date, mode[, timezone])`: the first day of the week a date falls in.
 ASTPtr makeStartOfWeek(ASTPtr date, UInt64 mode, const ASTPtr & timezone)
 {
@@ -630,11 +653,11 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         auto date = parseMongoAggregateExpression(requireMember(argument, "date", name));
         auto unit = dateUnit(argument, name);
         auto timezone = parseTimezoneMember(argument);
-        auto start_of_week = startOfWeekMode(argument, name);
 
         /// `dateTrunc` starts a week on Monday; the start of the week Mongo means is a different day.
+        /// `startOfWeek` is read for the `week` unit only: Mongo ignores it for every other unit.
         if (unit == "week")
-            return makeStartOfWeek(std::move(date), start_of_week, timezone);
+            return makeStartOfWeek(std::move(date), startOfWeekMode(argument, name), timezone);
 
         auto result = makeASTFunction("dateTrunc", makeLiteral(Field(String(unit))), std::move(date));
         if (timezone)
@@ -777,12 +800,41 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 
     if (name == "$dateToString")
     {
+        /// `onNull` answers a value of its own for a missing or `null` date, which is a different
+        /// expression rather than a different text, so it is refused rather than dropped, the same
+        /// way the `onNull` of `$dateFromString` is.
+        static const std::unordered_set<std::string_view> supported_members{"date", "format", "timezone"};
+        rejectUnknownMembers(argument, name, supported_members);
+
         auto date = parseMongoAggregateExpression(requireMember(argument, "date", name));
-        auto segments = translateMongoDateFormat(requireMember(argument, "format", name), name);
         ASTPtr timezone;
-        if (auto timezone_it = argument.FindMember("timezone"); timezone_it != argument.MemberEnd())
+        auto timezone_it = argument.FindMember("timezone");
+        if (timezone_it != argument.MemberEnd())
             timezone = parseMongoAggregateExpression(timezone_it->value);
-        return makeFormattedDate(date, segments, timezone);
+
+        if (auto format_it = argument.FindMember("format"); format_it != argument.MemberEnd())
+            return makeFormattedDate(date, translateMongoDateFormat(format_it->value, name), timezone);
+
+        /** Without a `format`, Mongo writes the date in ISO 8601 with milliseconds, and marks it with
+          * `Z` when it is written in UTC - that is, when the operator names no time zone or names
+          * UTC. A date written in another time zone carries no designator at all. Which of the two a
+          * time zone computed per document would pick is not known here, so it needs a `format`.
+          */
+        bool in_utc = true;
+        if (timezone_it != argument.MemberEnd())
+        {
+            const auto & zone = timezone_it->value;
+            if (!zone.IsString() || stringView(zone).starts_with('$'))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "'{}' without a 'format' needs a 'timezone' that is a string literal: whether the text ends with 'Z' depends on it",
+                    name);
+            static const std::unordered_set<std::string_view> utc_zones{
+                "UTC", "GMT", "Z", "+00", "-00", "+0000", "-0000", "+00:00", "-00:00"};
+            in_utc = utc_zones.contains(stringView(zone));
+        }
+        rapidjson::Value default_format(rapidjson::StringRef(in_utc ? "%Y-%m-%dT%H:%M:%S.%LZ" : "%Y-%m-%dT%H:%M:%S.%L"));
+        return makeFormattedDate(date, translateMongoDateFormat(default_format, name), timezone);
     }
 
     if (name == "$dateFromString")
@@ -811,7 +863,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         rejectUnknownMembers(argument, name, supported_members);
 
         auto start = parseMongoAggregateExpression(requireMember(argument, "startDate", name));
-        auto amount = parseMongoAggregateExpression(requireMember(argument, "amount", name));
+        auto amount = parseDateAddAmount(requireMember(argument, "amount", name), name);
         auto function = dateAddFunction(requireMember(argument, "unit", name), name);
         if (name == "$dateSubtract")
             function.replace(0, strlen("add"), "subtract");
