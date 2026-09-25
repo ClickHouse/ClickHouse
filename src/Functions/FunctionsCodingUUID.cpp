@@ -576,12 +576,13 @@ SELECT
 
     /// UUIDToNum documentation
     FunctionDocumentation::Description description_UUIDToNum = R"(
-Accepts a [UUID](/reference/data-types/uuid) and returns its binary representation as a [FixedString(16)](/reference/data-types/fixedstring), with its format optionally specified by `variant` (`Big-endian` by default).
+Accepts a [UUID](/reference/data-types/uuid) or a [UUID2](/reference/data-types/uuid2) and returns its binary representation as a [FixedString(16)](/reference/data-types/fixedstring), with its format optionally specified by `variant` (`Big-endian` by default).
+The binary representation depends only on the UUID value, not on which of the two types holds it.
 This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
     )";
     FunctionDocumentation::Syntax syntax_UUIDToNum = "UUIDToNum(uuid[, variant = 1])";
     FunctionDocumentation::Arguments arguments_UUIDToNum = {
-        {"uuid", "UUID.", {"String", "FixedString"}},
+        {"uuid", "UUID.", {"UUID", "UUID2"}},
         {"variant", "Variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDToNum = {"Returns a binary representation of the UUID.", {"FixedString(16)"}};
@@ -625,7 +626,7 @@ Returns the timestamp component of a UUID version 7.
     )";
     FunctionDocumentation::Syntax syntax_UUIDv7ToDateTime = "UUIDv7ToDateTime(uuid[, timezone])";
     FunctionDocumentation::Arguments arguments_UUIDv7ToDateTime = {
-        {"uuid", "A UUID version 7.", {"String"}},
+        {"uuid", "A UUID version 7.", {"UUID", "UUID2"}},
         {"timezone", "Optional. [Timezone name](/reference/settings/server-settings/settings/other#timezone) for the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDv7ToDateTime = {"Returns a timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns `1970-01-01 00:00:00.000`.", {"DateTime64(3)"}};
