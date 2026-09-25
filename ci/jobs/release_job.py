@@ -699,7 +699,7 @@ def main():
                 name="Post Slack Message",
                 command=[
                     f"python3 ./ci/jobs/scripts/create_release.py --post-status"
-                    f" {dry_run_flag}".strip()
+                    f" {'' if ok else '--failed'} {dry_run_flag}".strip()
                 ],
                 workdir=REPO_PATH,
             )
