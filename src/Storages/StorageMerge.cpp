@@ -33,6 +33,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
@@ -188,6 +189,22 @@ ReadFromMergeTree * findMergeTreeRead(QueryPlan::Node * node)
     return nullptr;
 }
 
+/// Fixed-width dictionary values do not imply fixed-width stored rows, even
+/// inside a `Tuple` or `Nullable`. Do not scale dictionaries by selected rows.
+bool canEstimateNeutralKeyBytesByRows(const IDataType & type)
+{
+    if (!type.haveMaximumSizeOfValue() || type.lowCardinality())
+        return false;
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return canEstimateNeutralKeyBytesByRows(*nullable->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::all_of(tuple->getElements(), [](const auto & element)
+        {
+            return canEstimateNeutralKeyBytesByRows(*element);
+        });
+    return true;
+}
+
 /// This gate is intentionally biased toward retaining the original scan.
 /// Part column sizes are loaded from metadata; missing/compact size information
 /// is unknown rather than zero. Selected mark rows are only used for types
@@ -210,7 +227,7 @@ std::optional<UInt64> estimateNeutralKeyReadBytes(
             UInt64 size = part.data_part->getColumnSize(key).data_uncompressed;
             if (!size)
             {
-                if (!column->type->haveMaximumSizeOfValue() || column->type->lowCardinality())
+                if (!canEstimateNeutralKeyBytesByRows(*column->type))
                 {
                     /// Compact parts share a data stream. Their total column
                     /// bytes bound all requested key columns, without assuming
@@ -272,7 +289,7 @@ std::optional<UInt64> estimateNeutralKeyReadBytes(
             UInt64 size = part.data_part->getColumnSize(key).data_uncompressed;
             /// Variable-width and LowCardinality columns can concentrate bytes
             /// in selected marks or carry a whole-part dictionary.
-            if (rows < total_rows && (!column->type->haveMaximumSizeOfValue() || column->type->lowCardinality()))
+            if (rows < total_rows && !canEstimateNeutralKeyBytesByRows(*column->type))
                 return std::nullopt;
             if (!size)
                 return std::nullopt;
@@ -1140,7 +1157,8 @@ void ReadFromMerge::setNeutralSumProof(String measure, Names keys)
 void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
     /// Do not traverse expressions on the default-off path.
-    const bool has_reduction = child_plans && std::ranges::any_of(*child_plans,
+    const bool has_reduction = context->getSettingsRef()[Setting::optimize_merge_neutral_sum_children]
+        && child_plans && std::ranges::any_of(*child_plans,
         [](const auto & child) { return child.unreduced_plan != nullptr; });
     bool can_keep_reduction = true;
     if (neutral_sum_proof || has_reduction)

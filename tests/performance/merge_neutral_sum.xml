@@ -11,11 +11,21 @@
     <fill_query>INSERT INTO perf_neutral_values SELECT number%1000,toFloat64(number%100) FROM numbers(10000)</fill_query>
     <fill_query>INSERT INTO perf_neutral_keys SELECT number%1000,1 FROM numbers(1000000)</fill_query>
     <fill_query>INSERT INTO perf_neutral_high SELECT number,1 FROM numbers(1000000)</fill_query>
+    <!-- Large unfiltered read: the default byte gate admits a projection candidate. -->
+    <query>SELECT k,sum(pnl) FROM perf_neutral_merge GROUP BY k SETTINGS optimize_merge_neutral_sum_children=0 FORMAT Null</query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_merge GROUP BY k SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
+    <!-- Filtered read: default policy declines unknown selected ranges; explicit
+         byte-gate override separately measures projection execution. -->
     <query>SELECT k,sum(pnl) FROM perf_neutral_merge WHERE k BETWEEN 100 AND 900 GROUP BY k SETTINGS optimize_merge_neutral_sum_children=0 FORMAT Null</query>
     <query>SELECT k,sum(pnl) FROM perf_neutral_merge WHERE k BETWEEN 100 AND 900 GROUP BY k SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
-    <query>SELECT k,sum(pnl) FROM perf_neutral_view WHERE k BETWEEN 10 AND 90 GROUP BY k ORDER BY k SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_merge WHERE k BETWEEN 100 AND 900 GROUP BY k SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=0 FORMAT Null</query>
+    <!-- Transformed view: compare raw, conservative default, and explicit override. -->
     <query>SELECT k,sum(pnl) FROM perf_neutral_view WHERE k BETWEEN 10 AND 90 GROUP BY k ORDER BY k SETTINGS optimize_merge_neutral_sum_children=0 FORMAT Null</query>
-    <query>SELECT k,sum(pnl) FROM perf_neutral_merge GROUP BY k SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_max_rows=1 FORMAT Null</query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_view WHERE k BETWEEN 10 AND 90 GROUP BY k ORDER BY k SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
+    <query>SELECT k,sum(pnl) FROM perf_neutral_view WHERE k BETWEEN 10 AND 90 GROUP BY k ORDER BY k SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=0 FORMAT Null</query>
+    <!-- Force post-selection cost rejection, not preflight rejection. -->
+    <query>SELECT k,sum(pnl) FROM perf_neutral_merge GROUP BY k SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=0,optimize_merge_neutral_sum_children_max_rows=1 FORMAT Null</query>
+    <!-- High-cardinality projections should retain the raw scan. -->
     <query>SELECT k,sum(pnl) FROM perf_neutral_high_merge GROUP BY k SETTINGS optimize_merge_neutral_sum_children=0 FORMAT Null</query>
     <query>SELECT k,sum(pnl) FROM perf_neutral_high_merge GROUP BY k SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
     <drop_query>DROP VIEW IF EXISTS perf_neutral_view</drop_query>
