@@ -5039,6 +5039,16 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
             "BACKUP is not supported for UNIQUE KEY tables yet: delete-bitmap sidecars "
             "are not preserved across backup/restore.");
 
+    /// Under `leader_election` only the writable leader has an authoritative set of parts. A follower
+    /// learns about the parts the leader commits only through the periodic `refreshDataParts` scan, so a
+    /// backup built from its in-memory set could silently miss committed data. Refreshing synchronously
+    /// here would not make it safe either: the leader does not know which parts a follower's backup still
+    /// references, so it may merge them away and delete their files while the backup is being written.
+    /// `isLeaderAndWritable` also excludes the takeover window, in which a new leader has not yet loaded
+    /// what the previous one committed.
+    if (leader_election_ptr)
+        leader_election_ptr->assertIsLeaderAndWritable();
+
     DataPartsVector data_parts;
     if (partitions)
         data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(*partitions, local_context));

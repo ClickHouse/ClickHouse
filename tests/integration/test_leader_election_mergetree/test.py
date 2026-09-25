@@ -4601,6 +4601,67 @@ def test_vanished_patch_parts_retired_on_refresh_and_takeover(started_cluster):
                 pass
 
 
+SHARED_UUID_BACKUP_ON_FOLLOWER = "12345678-abcd-abcd-abcd-12345678ab60"
+SHARED_UUID_BACKUP_ON_FOLLOWER_RESTORED = "12345678-abcd-abcd-abcd-12345678ab61"
+
+
+def test_backup_rejected_on_follower(started_cluster):
+    """
+    `BACKUP TABLE` must be taken on the writable leader. A follower sees the parts the leader
+    commits only after its next periodic refresh, so a backup built from its in-memory part set
+    used to succeed while silently missing data already committed to the shared storage. The
+    leader does not know which parts a follower's backup references either, so it could delete
+    them in the middle of the backup. The follower rejects the `BACKUP` instead; the leader's
+    backup is the positive control and must hold every row.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    table = "test_backup_on_follower"
+    restored = "test_backup_on_follower_restored"
+    backup_destination = (
+        "S3('http://minio1:9001/root/backups/test_backup_rejected_on_follower', "
+        "'minio', 'ClickHouse_Minio_P@ssw0rd')"
+    )
+
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_BACKUP_ON_FOLLOWER)
+        attach_table_on_second_node(node2, table, SHARED_UUID_BACKUP_ON_FOLLOWER)
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        follower = followers[0]
+
+        leader.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+
+        error = follower.query_and_get_error(f"BACKUP TABLE {table} TO {backup_destination}")
+        assert "TABLE_IS_READ_ONLY" in error, (
+            f"Expected the follower to reject BACKUP with TABLE_IS_READ_ONLY, got: {error}"
+        )
+
+        leader.query(f"BACKUP TABLE {table} TO {backup_destination}")
+        # Same pattern as `test_restore_fenced_to_admission_epoch`: the destination is pre-created and
+        # its leadership awaited, so that the restore is admitted. It holds the probe rows of
+        # `wait_for_leader` and has a different UUID, hence the two settings; `x > 0` excludes them.
+        create_table_on_first_node(leader, restored, SHARED_UUID_BACKUP_ON_FOLLOWER_RESTORED)
+        wait_for_leader([leader], table_name=restored)
+        leader.query(
+            f"RESTORE TABLE {table} AS {restored} FROM {backup_destination} "
+            "SETTINGS allow_non_empty_tables = true, allow_different_table_def = true"
+        )
+        assert leader.query(f"SELECT x FROM {restored} WHERE x > 0 ORDER BY x").split() == [
+            "1", "2", "3",
+        ], "The leader's backup does not hold every committed row"
+    finally:
+        for node in (node1, node2):
+            try:
+                ensure_node_up(node)
+            except Exception:
+                pass
+            for name in (table, restored):
+                try:
+                    node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+                except Exception:
+                    pass
+
+
 SHARED_UUID_RESTORE_BROKEN_SRC = "12345678-abcd-abcd-abcd-12345678ab44"
 SHARED_UUID_RESTORE_BROKEN_DST = "12345678-abcd-abcd-abcd-12345678ab45"
 
