@@ -124,6 +124,10 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
                 return;
 
+            /// `filter_actions_dag` is frozen at index analysis; a later-merged step can carry conjuncts it omits.
+            if (!read_from_merge_tree->filterActionsDAGWasBuiltFrom(filter_step->getFilterColumnName()))
+                return;
+
             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
             /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
             size_t condition_hash = queryConditionCacheHash(
