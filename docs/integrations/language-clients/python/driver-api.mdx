@@ -36,15 +36,15 @@ Use `clickhouse_connect.get_client` to create a synchronous `Client`, or install
 | `compress` | bool or str | `True` | Enable compression or select `"lz4"`, `"zstd"`, `"br"`, or `"gzip"`. See [Compression](/integrations/language-clients/python/additional-options#compression). |
 | `query_limit` | int | `0` | Default row limit appended to eligible queries. Zero means unlimited. Stream large results instead of materializing them all in memory. |
 | `query_retries` | int | `2` | Retry budget for retryable read failures. Commands and inserts are not generally retried because replay can duplicate side effects. |
-| `connect_timeout` | int | `10` | Connection timeout in seconds. |
-| `send_receive_timeout` | int | `300` | Socket read timeout in seconds. |
+| `connect_timeout` | int for sync, float for async | `10` | Timeout in seconds for establishing a new connection. Waiting for a free connection pool slot is excluded. The async client accepts fractional seconds. |
+| `send_receive_timeout` | int for sync, float for async | `300` | Socket read timeout in seconds. The async client accepts fractional seconds. |
 | `client_name` | str or None | `None` | Prefix added to the HTTP User-Agent for identification in `system.query_log`. |
 | `session_id` | str or None | Generated for sync | Explicit ClickHouse session ID. Synchronous clients generate one by default; async clients do not. |
 | `autogenerate_session_id` | bool or None | Global setting for sync, `False` for async | Override automatic session ID generation. Disable it on a client shared by concurrent operations unless session state is required. |
 | `autogenerate_query_id` | bool or None | Global setting, `True` | Override automatic UUID query ID generation. |
 | `http_proxy` | str or None | Environment/default | Per-client HTTP proxy address. |
 | `https_proxy` | str or None | Environment/default | Per-client HTTPS proxy address. |
-| `pool_mgr` | `urllib3.PoolManager` or None | Shared default | Custom pool manager for the synchronous client only. |
+| `pool_mgr` | `urllib3.PoolManager` or None | Shared per process | Custom pool manager for the synchronous client only. |
 | `tz_source` | str or None | `"auto"` | Fallback timezone source for columns without timezone metadata: `"auto"`, `"server"`, or `"local"`. |
 | `tz_mode` | str or None | `"naive_utc"` | UTC result policy: `"naive_utc"`, `"aware"`, or `"schema"`. See [Time zones](/integrations/language-clients/python/advanced-querying#time-zones). |
 | `show_clickhouse_errors` | bool, boolean string, `"scrub"`, or None | `True` | Controls `str(exc)` for server errors, transport errors, and mid-stream `StreamFailureError`. `True` includes the request URL and server version trailer. `"scrub"` keeps the SQL error text and symbolic name but strips the host/URL and `(version ...)` trailer. `False` returns a generic message (`code` is still set for server errors). Boolean strings are accepted. Other strings raise `ProgrammingError`. For transport errors, `__cause__` and tracebacks still contain the original transport exception. |
@@ -53,7 +53,9 @@ Use `clickhouse_connect.get_client` to create a synchronous `Client`, or install
 | `native_codec` | str or None | Global setting, `"python"` | Experimental codec for client-managed Native format traffic: `"python"`, `"rust"`, or `"rust_strict"`. The Rust values require the `clickhouse-connect-core` wheel. See [Rust codec](/integrations/language-clients/python/rust-codec). |
 | `rename_response_column` | str or None | `None` | Column renaming strategy: `"remove_prefix"`, `"to_camelcase"`, `"to_camelcase_without_prefix"`, `"to_underscore"`, or `"to_underscore_without_prefix"`. |
 
-The async factory also accepts `connector_limit=100`, `connector_limit_per_host=20`, and `keepalive_timeout=30.0` to configure its aiohttp connection pool. It does not accept `pool_mgr`. The synchronous chDB backend accepts `path` and `chdb_options`; see [Embedded chDB backend](#embedded-chdb-backend).
+Both synchronous and asynchronous HTTP factories convert string values from DSN query parameters or `generic_args` for the following client options: `connect_timeout`, `send_receive_timeout`, `query_limit`, and `query_retries` become the numeric types shown above; `autogenerate_query_id`, `autogenerate_session_id`, and `form_encode_query_params` become booleans. Invalid string values for these options raise `ProgrammingError`.
+
+The async factory also accepts `connector_limit=100`, `connector_limit_per_host=20`, and `keepalive_timeout=30.0` to configure its aiohttp connection pool. Pass them as direct keywords, DSN query parameters, or through `generic_args`, which is used internally for SQLAlchemy `connect_args`. String values for these connector options are converted to the documented numeric types. Invalid selected string values raise `ProgrammingError`. Explicit non-`None` keywords take precedence over `generic_args`, then the DSN. It does not accept `pool_mgr`. The synchronous chDB backend accepts `path` and `chdb_options`; see [Embedded chDB backend](#embedded-chdb-backend).
 
 ### HTTPS/TLS arguments {#httpstls-arguments}
 
@@ -197,7 +199,7 @@ for i in range(1000):
 ### Multi-threaded applications {#multi-threaded-applications}
 
 <Warning>
-Client instances are **NOT thread-safe** when using session IDs. By default, clients have an auto-generated session ID, and concurrent queries within the same session will raise a `ProgrammingError`.
+Client instances are **NOT thread-safe** when using session IDs. By default, clients have an auto-generated session ID. Concurrent queries through one client and the same session raise a `ProgrammingError` when the client detects local overlap. Named-session state and server-side session overlap checks are local to one ClickHouse server process, so a fixed `session_id` is not distributed state or a distributed mutex in ClickHouse Cloud or other load-balanced deployments.
 </Warning>
 
 To share a client across threads safely:
@@ -324,9 +326,7 @@ WHERE date >= '2022-10-01 15:20:05'
   AND string ILIKE 'a string with a single quote\''
 ```
 
-<Warning>
-Server-side binding is supported for `SELECT` queries. It doesn't work for `ALTER`, `DELETE`, `INSERT`, or other statement types.
-</Warning>
+Server-side binding works with `SELECT` queries and `INSERT ... VALUES` statements. For large plain insert batches, prefer `Client.insert`.
 
 #### Client-side binding {#client-side-binding}
 
@@ -382,7 +382,9 @@ WHERE metric >= 35200.44
 <Note>
 Datetime binding treats naive values as wall time. The client formats a naive `datetime` verbatim. ClickHouse interprets it using the timezone declared in a server-side placeholder such as `{dt:DateTime('Europe/Berlin')}`, then `session_timezone` when set, then the server timezone. A timezone-aware `datetime` is converted to the timezone declared in the placeholder when present, otherwise to the server timezone reported at connection time. If the `session_timezone` setting differs from that reported server timezone, declare a timezone in the placeholder to keep the intended instant for aware values.
 
-For temporary compatibility with older host-local conversion, set `common.set_setting("naive_datetime_binding", "legacy")` before binding parameters. To preserve an instant, attach the intended `tzinfo` to the `datetime` value before passing it as a parameter. Inserts through `client.insert` interpret naive `datetime` values in the process local timezone by default. Set the global `naive_datetime_insert` setting to `"server"` to interpret them as wall time in the column timezone, or the server timezone when the column has none. See [Timezone-naive datetime objects](/integrations/language-clients/python/advanced-inserting#timezone-naive-datetime-objects).
+For temporary compatibility with older host-local conversion, set `common.set_setting("naive_datetime_binding", "legacy")` before binding parameters. To preserve an instant, attach the intended `tzinfo` to the `datetime` value before passing it as a parameter. Inserts into `DateTime` or `DateTime64` columns through `client.insert` interpret naive `datetime` values in the process local timezone by default. Set the global `naive_datetime_insert` setting to `"server"` to interpret them as wall time in the column timezone, or the server timezone when the column has none. See [Timezone-naive datetime objects](/integrations/language-clients/python/advanced-inserting#timezone-naive-datetime-objects).
+
+Native inserts into `Date` and `Date32` columns use a Python `datetime` value's own calendar date without timezone conversion. When the same calendar date is needed for both an insert and a query parameter, pass `value.date()` explicitly. See [Date and Date32 values](/integrations/language-clients/python/advanced-inserting#date-and-date32-values).
 
 For a server-side `{value:DateTime64(precision)}` placeholder, the declared type preserves sub-second precision automatically, including inside `Array` and `Tuple` hints.
 
@@ -525,6 +527,12 @@ result = client.command(
 ## Client `query` method {#client-query-method}
 
 `Client.query` retrieves a tabular dataset in ClickHouse Native format and returns a `QueryResult`. The complete result is materialized when a result property is accessed. Use a streaming method for results that should not be held in memory.
+
+<Note>
+When the client recognizes a trailing `LIMIT 0`, it requests column metadata in JSON format. If the response contains rows, it raises `clickhouse_connect.driver.exceptions.InternalError` and does not replay the query. This can happen with `UNION`, `EXCEPT`, or `EXPLAIN` queries that end in `LIMIT 0`.
+
+Use [`raw_query`](/integrations/language-clients/python/advanced-usage#client-rawquery-method) with an output format such as `fmt="JSON"` for these queries. It returns `bytes` for your application to decode. This behavior applies to synchronous HTTP, asynchronous HTTP, and chDB clients.
+</Note>
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -799,6 +807,8 @@ For advanced use cases requiring direct access to ClickHouse HTTP interfaces wit
 
 The `clickhouse_connect.dbapi` module implements the PEP 249 connection and cursor interface. It declares API level 2.0, `threadsafety=2`, and `paramstyle="pyformat"`. The module also provides the PEP 249 type constructors `Date`, `Time`, `Timestamp`, and `Binary`, and the `DateFromTicks`, `TimeFromTicks`, and `TimestampFromTicks` functions.
 
+The module exports the PEP 249 exception hierarchy: `Warning`, `Error`, `InterfaceError`, `DatabaseError`, `DataError`, `OperationalError`, `IntegrityError`, `InternalError`, `ProgrammingError`, and `NotSupportedError`. These are the same class objects exposed by `clickhouse_connect.driver.exceptions`, so either import path catches driver errors. The driver-specific `StreamFailureError` remains available from `clickhouse_connect.driver.exceptions` and is an `OperationalError`.
+
 ```python
 from clickhouse_connect import dbapi
 
@@ -823,7 +833,7 @@ finally:
     connection.close()
 ```
 
-`Cursor.execute` and `Cursor.executemany` accept additional `settings` and `query_formats` keyword arguments. `settings` passes ClickHouse settings. `query_formats` applies read formats by ClickHouse type when a statement returns rows, using the same mapping as `Client.query`. `Cursor.execute` also accepts the keyword-only `pyformat_encoded` argument. Its default `True` follows the DB-API `pyformat` contract. The SQLAlchemy dialect sets it to `False` when the statement compiler emitted raw percent signs, so applications normally should not set it. `executemany` uses the driver's Native bulk-insert path for compatible `INSERT ... VALUES` statements with a materialized sequence of rows. `fetchone`, `fetchmany`, and `fetchall` consume the current materialized result.
+`Cursor.execute` and `Cursor.executemany` accept additional `settings` and `query_formats` keyword arguments. `settings` passes ClickHouse settings. `query_formats` applies read formats by ClickHouse type when a statement returns rows, using the same mapping as `Client.query`. Both methods also accept the keyword-only `pyformat_encoded` argument. Its default `True` follows the DB-API `pyformat` contract. The SQLAlchemy dialect sets it to `False` when the statement compiler emitted raw percent signs, so applications normally should not set it. Parameterized `Cursor.executemany` operations execute once for each parameter set, preserving SQL binding and expression semantics. With HTTP, this sends one request per parameter set. If a later parameter set fails, earlier writes remain committed. For these `executemany` inserts, `Cursor.rowcount` is the sum of the `written_rows` values reported by ClickHouse, or `-1` when that value is unavailable. INSERT statements sent through `Cursor.execute` report `0`. The placeholder-less `INSERT INTO table (columns) VALUES` compatibility form uses Native insertion. A placeholder-less INSERT ending in `VALUES` raises `ProgrammingError` if it cannot be recognized as that compatibility form. Applications that need explicit Native bulk insertion should use `Client.insert`. `fetchone`, `fetchmany`, and `fetchall` consume the current materialized result.
 
 `Cursor.description` derives `null_ok` from each result column type. Non-nullable types report `False`, and nullable types report `True`, including `Nullable` wrappers, `Variant`, and `Dynamic`. `None` means the nullability is unknown. When a query that starts with `SELECT` or `WITH`, ignoring leading comments, returns no rows and no column metadata, the cursor runs a `LIMIT 0` metadata query to populate `description`. If that metadata query fails, `description` is left empty.
 
@@ -837,7 +847,7 @@ The installed package version is exposed as the string `clickhouse_connect.__ver
 
 ### Exceptions {#exceptions}
 
-Custom exceptions, including the DB-API 2.0 exception hierarchy, are defined in `clickhouse_connect.driver.exceptions`. `DatabaseError` and `OperationalError` expose a numeric `code` attribute with the ClickHouse error code and a `name` attribute with the symbolic name such as `UNKNOWN_TABLE`, so applications can branch on `exc.code` instead of parsing the message. `code` is set even when `show_clickhouse_errors` is disabled, while `name` requires error detail (`True` or `"scrub"`). Both are `None` when unavailable, such as on transport errors. Use `show_clickhouse_errors="scrub"` when end users should see SQL errors without host or server version information. The setting also controls mid-stream `StreamFailureError` messages and generic transport messages. It governs `str(exc)` only. Transport errors are still attached as `__cause__`, and tracebacks can contain the original host, URL, or library error text.
+Custom exceptions, including the DB-API 2.0 exception hierarchy re-exported by `clickhouse_connect.dbapi`, are defined in `clickhouse_connect.driver.exceptions`. `DatabaseError` and `OperationalError` expose a numeric `code` attribute with the ClickHouse error code and a `name` attribute with the symbolic name such as `UNKNOWN_TABLE`, so applications can branch on `exc.code` instead of parsing the message. `code` is set even when `show_clickhouse_errors` is disabled, while `name` requires error detail (`True` or `"scrub"`). Both are `None` when unavailable, such as on transport errors. Use `show_clickhouse_errors="scrub"` when end users should see SQL errors without host or server version information. The setting also controls mid-stream `StreamFailureError` messages and generic transport messages. It governs `str(exc)` only. Transport errors are still attached as `__cause__`, and tracebacks can contain the original host, URL, or library error text.
 
 ### ClickHouse SQL utilities {#clickhouse-sql-utilities}
 
