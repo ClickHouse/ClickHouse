@@ -1,0 +1,74 @@
+--- hash partitioning ---
+=== max, min, sum, count: hash partitioning 1 ===
+1000	10387034222054805013
+=== avg over Decimal: hash partitioning 1 ===
+1000	1362980378740078537
+=== parametric: hash partitioning 1 ===
+1000	12150702112965152512
+=== two arguments: hash partitioning 1 ===
+1000	1129668514364439100
+=== combinators: hash partitioning 1 ===
+1000	14055351531423111139
+=== -State: hash partitioning 1 ===
+1000	827569046260263161
+=== String key: hash partitioning 1 ===
+1000	4917494545045808731
+=== LowCardinality key: hash partitioning 1 ===
+1000	16930080909001573821
+=== Nullable key and argument: hash partitioning 1 ===
+1000	14018741854503332087
+=== Decimal key: hash partitioning 1 ===
+1000	3276245873310342236
+=== several keys: hash partitioning 1 ===
+1000	3875128378272818553
+=== expression key: hash partitioning 1 ===
+1000	18307189033890189559
+=== ROWS UNBOUNDED to UNBOUNDED: hash partitioning 1 ===
+1000	827569046260263161
+=== RANGE CURRENT ROW to UNBOUNDED: hash partitioning 1 ===
+1000	827569046260263161
+=== two windows: hash partitioning 2 ===
+1000	16251537262132382812
+=== with a sorted window: hash partitioning 0 ===
+1000	7040547279422168030
+=== ORDER BY another column: hash partitioning 1 ===
+0	71071
+1	71214
+2	71357
+3	71500
+4	71643
+=== constant column: hash partitioning 1 ===
+1000	16882701902629657426
+=== empty input: hash partitioning 1 ===
+0	0
+=== one thread: hash partitioning 1 ===
+1000	827569046260263161
+=== spilling to disk: hash partitioning 1 ===
+1000	16284558354079855379
+=== spilling with a constant column: hash partitioning 1 ===
+1000	6223964277268871235
+=== filter on the partition key: hash partitioning 1 ===
+3	3	71500
+3	10	71500
+3	17	71500
+=== max_rows_to_sort: hash partitioning 1 ===
+1000	827569046260263161
+=== LIMIT: hash partitioning 1 ===
+0	21
+1	24
+2	27
+--- sorting ---
+=== ORDER BY in the window: hash partitioning 0 ===
+1000	11556798320876185930
+=== ROWS frame up to the current row: hash partitioning 0 ===
+1000	6300839009629309175
+=== window function: hash partitioning 0 ===
+1000	568558075398800865
+=== no PARTITION BY: hash partitioning 0 ===
+1000	16203455277380446655
+=== Float key: hash partitioning 0 ===
+1000	10237042675097416130
+=== ORDER BY the partition key: hash partitioning 0 ===
+0	71071
+0	71071
+0	71071

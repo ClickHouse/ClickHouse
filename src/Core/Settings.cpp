@@ -7098,6 +7098,9 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_window_functions_hash_partitioning, false, R"(
+Compute aggregate window functions over whole partitions (`PARTITION BY` without `ORDER BY`) by hashing the partition keys instead of sorting the input.
+)", 0) \
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \

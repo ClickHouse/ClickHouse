@@ -216,8 +216,34 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         return {};
     }
 
-    if (const auto * window = typeid_cast<const WindowStep *>(step))
+    if (auto * window = typeid_cast<WindowStep *>(step))
     {
+        /// Like the sorting of a window above: the scatter is redundant with disjoint streams, otherwise
+        /// the window becomes a disjointness source.
+        if (window->usesHashPartitioning())
+        {
+            Names partition_by_names = window->getPartitionByColumnNames();
+
+            const bool profitable = !property.reading || settings.force_window_partitions_independently
+                || property.reading->isPartitionIndependentProcessingProfitable(ReadFromMergeTree::ProcessorKind::Window);
+            if (settings.window_partitions_independently && profitable && !window->hasSortSizeLimits()
+                && partitionDeterminedByKeys(property, partition_by_names))
+            {
+                window->skipScatterByPartition();
+            }
+            else
+            {
+                ColumnsWithTypeAndName partition_columns;
+                for (const auto & name : partition_by_names)
+                    partition_columns.push_back(step->getInputHeaders().front()->getByName(name));
+                property = {ActionsDAG(partition_columns), std::move(partition_by_names), std::nullopt};
+            }
+
+            if (property.isDisjoint())
+                appendExpression(property.column_actions, ActionsDAG(window->getOutputHeader()->getColumnsWithTypeAndName()));
+            return property;
+        }
+
         /// The window transform keeps every row within its input stream and only appends the window
         /// function result columns, so disjointness survives. The appended columns are recorded as
         /// pass-through inputs so that a consumer above can resolve keys that reference them. After the

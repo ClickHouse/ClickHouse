@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/useDataParallelAggregation.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/KeyDescription.h>
 
@@ -247,6 +248,29 @@ void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, cons
 {
     if (node.children.size() != 1)
         return;
+
+    if (const auto * window = typeid_cast<const WindowStep *>(node.step.get()); window && window->usesHashPartitioning())
+    {
+        if (window->hasSortSizeLimits())
+            return;
+        auto * reading = findReadingStep(*node.children.front());
+        if (!reading)
+            return;
+
+        const Names key_names = window->getPartitionByColumnNames();
+
+        std::optional<ActionsDAG> dag;
+        buildKeyDAG(*node.children.front(), dag);
+        if (!dag)
+            return;
+
+        if (!reading->willOutputEachPartitionThroughSeparatePort()
+            && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names))
+        {
+            reading->requestOutputEachPartitionThroughSeparatePortForWindow();
+        }
+        return;
+    }
 
     auto * sorting_step = typeid_cast<SortingStep *>(node.step.get());
     if (!sorting_step)

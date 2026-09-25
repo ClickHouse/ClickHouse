@@ -325,10 +325,7 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bo
     apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
-/// A hash scatter into `threads` shards followed by per-shard merges of the `streams` inputs wires up
-/// (threads * streams) connections in the pipeline. Bound this by a sane value so that a large
-/// `max_threads` cannot explode the port/processor count.
-static void checkScatterConnectionLimit(size_t threads, size_t streams)
+void SortingStep::checkScatterConnectionLimit(size_t threads, size_t streams)
 {
     const size_t connection_count_limit = 1000000;
     if (threads * streams > connection_count_limit)

@@ -115,6 +115,9 @@ public:
     const SortDescription & getPartitionByDescription() const { return partition_by_description; }
     Names getPartitionByColumnNames() const;
 
+    /// Throws if scattering `streams` into `threads` shards needs too many connections.
+    static void checkScatterConnectionLimit(size_t threads, size_t streams);
+
     size_t getScatterPartitions() const { return scatter_partitions; }
 
     /// Do not reshuffle the input by the hash of the partition columns before sorting: the input streams
