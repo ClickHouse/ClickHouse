@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -198,15 +199,17 @@ TEST(AzureBoundedRead, TruncatedBlobIsAnError)
 
     const size_t errors_before = requestErrors();
 
+    /// Expected to be set by an exception on a premature end of the response before the right bound.
+    std::optional<int> error_code;
     try
     {
         readWithRightBound(endpoint, /* read_until_position */ 100, /* buffer_size */ 64, /* max_read_retries */ 3);
-        FAIL() << "Expected an exception on a premature end of the response before the right bound";
     }
     catch (const DB::Exception & e)
     {
-        ASSERT_EQ(e.code(), DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
+        error_code = e.code();
     }
+    ASSERT_EQ(error_code, std::optional<int>(DB::ErrorCodes::UNEXPECTED_END_OF_FILE));
     /// Every retry reopened the download at the offset the read had reached.
     ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0, 40, 40}));
     /// A reopened download that hands out nothing is the error case, and it is counted as one.
