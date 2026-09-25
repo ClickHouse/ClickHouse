@@ -155,6 +155,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
     extern const MergeTreeSettingsBool vertical_merge_optimize_ttl_delete;
+    extern const MergeTreeSettingsBool vertical_merge_read_in_separate_thread;
     extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_wide_part;
     extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_compact_part;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
@@ -2226,7 +2227,19 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
     /// Is calculated inside MergeProgressCallback.
     ctx->column_parts_pipeline.disableProfileEventUpdate();
-    ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
+    /// Read and gather the column in another thread, so it overlaps with writing, if a thread is free.
+    if ((*global_ctx->data_settings)[MergeTreeSetting::vertical_merge_read_in_separate_thread])
+        ctx->read_thread_slot = MergeHelperThreads::tryAcquire();
+
+    if (ctx->read_thread_slot)
+    {
+        /// The slot accounts for exactly one thread, and merges do not use the concurrency control of queries.
+        ctx->column_parts_pipeline.setNumThreads(1);
+        ctx->column_parts_pipeline.setConcurrencyControl(false);
+        ctx->async_executor = std::make_unique<PullingAsyncPipelineExecutor>(ctx->column_parts_pipeline);
+    }
+    else
+        ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
@@ -2266,7 +2279,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
         /// sees it via `checkOperationIsNotCanceled` even if the blocker is
         /// released between these two reads.
         bool cancelled = global_ctx->isCancelled();
-        if (cancelled || !ctx->executor->pull(block))
+        if (cancelled || !(ctx->async_executor ? ctx->async_executor->pull(block) : ctx->executor->pull(block)))
         {
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
@@ -2274,6 +2287,9 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
                 throwIfPipelineCancelled(ctx->column_parts_pipeline);
             return false;
         }
+
+        if (block.empty())
+            continue;
 
         ctx->column_elems_written += block.rows();
         ctx->column_to->write(block);
@@ -2290,6 +2306,8 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     global_ctx->checkOperationIsNotCanceled();
 
     ctx->executor.reset();
+    ctx->async_executor.reset();
+    ctx->read_thread_slot.reset();
     mergeBuiltStatistics(std::move(ctx->build_statistics_transforms), global_ctx);
 
     ctx->column_to->finalizeIndexGranularity();
@@ -2573,7 +2591,21 @@ void MergeTask::VerticalMergeStage::cancel() noexcept
 
     if (ctx->executor)
         ctx->executor->cancel();
-
+    if (ctx->async_executor)
+    {
+        /// `PullingAsyncPipelineExecutor::cancel` rethrows the exception of the reading thread that `pull` has not
+        /// rethrown yet. It happens when the merge thread throws first, for example when both threads see that the
+        /// merge is cancelled. The merge has already failed with its own exception, so only log this one.
+        try
+        {
+            ctx->async_executor->cancel();
+        }
+        catch (...)
+        {
+            if (getCurrentExceptionCode() != ErrorCodes::ABORTED)
+                tryLogCurrentException("MergeTask::VerticalMergeStage", "Exception of the thread that read columns");
+        }
+    }
 }
 
 MergeTask::StageRuntimeContextPtr MergeTask::MergeTextIndexStage::getContextForNextStage()

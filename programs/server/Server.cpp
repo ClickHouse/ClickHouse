@@ -98,6 +98,7 @@
 #include <Access/User.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+#include <Storages/MergeTree/MergeHelperThreads.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -228,6 +229,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_message_broker_schedule_pool_size;
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
+    extern const ServerSettingsUInt64 max_merge_helper_threads;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
     extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
     extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
@@ -1801,6 +1803,7 @@ try
     server_settings.loadSettingsFromConfig(config());
     validate_insert_deduplication_version(server_settings);
     global_context->configureServerWideThrottling();
+    MergeHelperThreads::setMaxThreads(server_settings[ServerSetting::max_merge_helper_threads]);
 
     /// Create the dedicated MergeTree metadata arena pool. Placed after the ZooKeeper-include reload
     /// above so a `from_zk` value of the setting is honored, and still well before any parts are loaded.
@@ -2724,6 +2727,8 @@ try
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(static_cast<double>(new_pool_size) * static_cast<double>(new_ratio)));
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings[ServerSetting::background_merges_mutations_scheduling_policy].toString());
             }
+
+            MergeHelperThreads::setMaxThreads(new_server_settings[ServerSetting::max_merge_helper_threads]);
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
