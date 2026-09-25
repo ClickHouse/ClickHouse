@@ -1389,7 +1389,7 @@ def is_asan_build(args):
     binary = getattr(args, "binary", "clickhouse")
     local = find_clickhouse_command(binary, "local")
     out = shell_get_output(
-        f"{local} --query \"SELECT count() FROM system.build_options "
+        f"{local} --tmp --query \"SELECT count() FROM system.build_options "
         f"WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)\"",
         timeout=60,
     )
@@ -1414,7 +1414,7 @@ def is_slow_build_binary(args) -> bool:
         for san in ("thread", "address", "undefined", "memory")
     )
     out = shell_get_output(
-        f"{local} --query \""
+        f"{local} --tmp --query \""
         "SELECT countIf(name = 'BUILD_TYPE' AND position('Debug' IN value)) "
         "+ countIf(name = 'WITH_COVERAGE' AND value IN ('ON', '1')) "
         f"+ countIf(name = 'CXX_FLAGS' AND ({sanitizers})) "
