@@ -109,8 +109,9 @@ static String runtimeFilterName(UInt64 structural_hash)
 /// per-granule result that a later execution with a different key would read as stale — `__applyFilter`
 /// is non-deterministic too, so `Node::isDeterministic` reports the whole filter expression as such).
 ///
-/// It is additionally marked `is_runtime_filter_id=true`,
-/// which makes `Node::updateHash` skip its VALUE while still hashing its stable NAME.
+/// It is additionally marked `is_runtime_filter_id=true`, which makes `Node::updateHash` skip its VALUE
+/// while still hashing its stable NAME - in an exact hash; a build-independent hash drops derived names
+/// altogether, so there two carriers are told apart by the DAG around them.
 static const ActionsDAG::Node & addRuntimeFilterLabelColumn(ActionsDAG & actions_dag, const RuntimeFilterId & id)
 {
     auto string_type = std::make_shared<DataTypeString>();

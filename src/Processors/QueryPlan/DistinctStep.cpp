@@ -348,7 +348,7 @@ void DistinctStep::serialize(Serialization & ctx) const
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        writeStringBinary(column, ctx.out);
+        ctx.writeColumnName(column);
 
     if (ctx.step_version >= 1 && !ctx.for_cache_key)
         writeBinary(preserve_input_order, ctx.out);

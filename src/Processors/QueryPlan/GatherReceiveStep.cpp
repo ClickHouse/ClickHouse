@@ -55,7 +55,7 @@ void GatherReceiveStep::serialize(Serialization & ctx) const
     writeVarUInt(num_buckets, ctx.out);
     writeVarUInt(maintain_sort_description.has_value(), ctx.out);
     if (maintain_sort_description.has_value())
-        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version);
+        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 }
 
 std::unique_ptr<IQueryPlanStep> GatherReceiveStep::deserialize(Deserialization & ctx)
