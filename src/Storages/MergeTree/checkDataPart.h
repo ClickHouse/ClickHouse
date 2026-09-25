@@ -6,8 +6,15 @@
 namespace DB
 {
 
+/// Recomputed checksums of the part and of every projection whose own checksums.txt was regenerated (missing on disk).
+struct CheckDataPartResult
+{
+    IMergeTreeDataPart::Checksums computed_checksums;
+    std::vector<std::pair<String, IMergeTreeDataPart::Checksums>> computed_projections_checksums;
+};
+
 /// Calculates checksums and compares them with checksums.txt.
-IMergeTreeDataPart::Checksums checkDataPart(
+CheckDataPartResult checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     bool & is_broken_projection,

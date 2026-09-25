@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ReadSettings.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>

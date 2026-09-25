@@ -472,8 +472,7 @@ MarkRanges pruneSyntheticProjectionPart(
         /// `Synthetic` keeps the part off its directory: `CreateFresh` would reclaim a `.tmp_proj` left
         /// by an interrupted materialization, and an estimate must not write to storage at all
         auto synthetic_part = const_cast<IMergeTreeDataPart &>(*parent_ranges.data_part)
-                                  .getProjectionPartBuilder(
-                                      projection.name, &projection, PartDirIntent::Synthetic, /* is_temp_projection */ true)
+                                  .getSyntheticProjectionPartBuilder(projection.name, &projection)
                                   .withPartType(MergeTreeDataPartType::Compact)
                                   .withBytesAndRows(0, data.rows, 0)
                                   .build();
