@@ -1,0 +1,8 @@
+rows	100
+persisted: 1.bin 2.bin 
+the first mutation is committed and not finished, and applied in memory	50	50	99
+the second mutation fails before it is committed, and the table is as it was	50	50	99
+persisted: 3.bin 
+staged: mut.bin 
+after a reload, the rows of the committed mutation	50	50	99
+persisted: 3.bin 

@@ -80,6 +80,8 @@ static struct InitFiu
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
+    REGULAR(storage_join_mutate_interrupt_before_replacing_file) \
+    REGULAR(storage_join_mutate_interrupt_before_commit) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(merge_tree_refresh_parts_throw_once) \
     REGULAR(patch_part_index_write_empty) \

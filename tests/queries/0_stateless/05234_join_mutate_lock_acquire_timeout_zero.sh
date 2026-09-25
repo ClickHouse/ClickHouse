@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# `ALTER TABLE ... DELETE` on a `Join` table waits for the inserts that started before it. The wait
+# is bounded by `lock_acquire_timeout`, and zero means "no timeout" for every other lock in the
+# server, so the mutation has to wait indefinitely instead of failing with `DEADLOCK_AVOIDED` as
+# soon as it sees a running insert.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+${CLICKHOUSE_CLIENT} -q "
+DROP TABLE IF EXISTS j;
+CREATE TABLE j (id UInt64, v String) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO j SELECT number, toString(number) FROM numbers(100);
+"
+
+# The rows of this insert arrive one at a time, long after its sink was created.
+insert_query_id="insert_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query_id "${insert_query_id}" -q "
+INSERT INTO j SELECT number + 1000, toString(sleepEachRow(0.3)) FROM numbers(5) SETTINGS max_block_size = 1, max_threads = 1;
+" &
+insert_pid=$!
+
+# A row that the insert has already read proves that its sink exists - the interleaving that makes
+# the mutation wait. Waiting for a fixed time instead would let the `ALTER` win the race on a loaded
+# machine and the test pass without ever exercising it.
+for _ in {1..600}
+do
+    [[ "$(${CLICKHOUSE_CLIENT} -q "SELECT max(read_rows) FROM system.processes WHERE query_id = '${insert_query_id}'")" != "0" ]] && break
+    kill -0 ${insert_pid} 2>/dev/null || break
+    sleep 0.05
+done
+
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE j DELETE WHERE id < 50 SETTINGS lock_acquire_timeout = 0;"
+
+wait ${insert_pid}
+
+${CLICKHOUSE_CLIENT} -q "
+SELECT 'in memory', count(), min(id), max(id), countIf(id >= 1000) FROM (SELECT id FROM j);
+DETACH TABLE j;
+ATTACH TABLE j;
+SELECT 'after a reload', count(), min(id), max(id), countIf(id >= 1000) FROM (SELECT id FROM j);
+DROP TABLE j;
+"

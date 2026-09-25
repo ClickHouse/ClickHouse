@@ -1,0 +1,17 @@
+rows	100
+persisted: 1.bin 2.bin 
+the mutation fails before it is committed, and the table is as it was	100	0	99
+and the insert after it is in memory	110	0	109
+persisted: 1.bin 2.bin 3.bin 
+the replacement is staged but not committed: mut.bin 
+and on disk	110	0	109
+back to	100	0	99
+persisted: 4.bin 
+the mutation is interrupted mid-swap: 1
+the replacement is staged and the window is marked: mut.bin mut.commit 
+the rows the mutation kept are there	50	50	99
+and nothing is left staged: 
+persisted: 5.bin 
+after a mutation that completes	25	75	99
+and after a reload	25	75	99
+persisted: 6.bin 

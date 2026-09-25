@@ -15,6 +15,9 @@
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Set.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -36,8 +39,16 @@ namespace SetSetting
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
+    extern const int DEADLOCK_AVOIDED;
+    extern const int FAULT_INJECTED;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace FailPoints
+{
+    extern const char storage_join_mutate_interrupt_before_replacing_file[];
 }
 
 class SetOrJoinSink final : public SinkToStorage, WithContext
@@ -85,12 +96,20 @@ SetOrJoinSink::SetOrJoinSink(
     , backup_file_name(backup_file_name_)
     , persistent(persistent_)
 {
+    std::lock_guard lock(table.outstanding_sinks_mutex);
+    ++table.outstanding_sinks;
 }
 
 SetOrJoinSink::~SetOrJoinSink()
 {
     if (isCancelled())
         cancelBuffers();
+
+    {
+        std::lock_guard lock(table.outstanding_sinks_mutex);
+        --table.outstanding_sinks;
+    }
+    table.outstanding_sinks_changed.notify_all();
 }
 
 void SetOrJoinSink::cancelBuffers() noexcept
@@ -272,6 +291,110 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 }
 
 
+/** The fence is on the lifetime of the sinks, not on the success of the inserts they carried.
+  * `SetOrJoinSink::consume` publishes each block into the in-memory `set` / `join` before anything
+  * is written durably, and there is no way to take a block out of either again, so an `INSERT` that
+  * throws on its way out - in `flush`, `finalize` or `replaceFile` - leaves its rows visible to
+  * every subsequent `SELECT` while no `.bin` of its own is ever published. That divergence between
+  * what the table shows and what it would show after a restart is a property of the insert path and
+  * predates the mutation work here: a mutation has always rewritten whatever the table held in
+  * memory into a single file, so those rows were already made durable by the next `ALTER ... DELETE`
+  * whether or not it overlapped the failed insert. Waiting here changes when the snapshot is taken,
+  * not what is in it, and it makes the durable copy agree with what readers are already served
+  * rather than leaving the two apart. Making an `INSERT` into these engines atomic - staging the
+  * blocks and publishing them in memory only once the file is in place - is a change to the insert
+  * path of both `Set` and `Join`, and is deliberately not attempted here.
+  */
+void StorageSetOrJoinBase::waitForOutstandingSinks(std::chrono::milliseconds timeout)
+{
+    std::unique_lock lock(outstanding_sinks_mutex);
+
+    /// Zero means "no timeout" everywhere else in the locking code (see `RWLockImpl::getLock`), so wait indefinitely.
+    if (timeout == std::chrono::milliseconds(0))
+    {
+        outstanding_sinks_changed.wait(lock, [&] TSA_REQUIRES(outstanding_sinks_mutex) { return outstanding_sinks == 0; });
+        return;
+    }
+
+    if (!outstanding_sinks_changed.wait_for(lock, timeout, [&] TSA_REQUIRES(outstanding_sinks_mutex) { return outstanding_sinks == 0; }))
+    {
+        /// The lock is held here; the analysis does not see through `wait_for`.
+        size_t remaining = TSA_SUPPRESS_WARNING_FOR_READ(outstanding_sinks);
+        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+            "Cannot mutate table {}: {} insert(s) started before the mutation did not finish in {} ms",
+            getStorageID().getNameForLogs(), remaining, timeout.count());
+    }
+}
+
+
+void StorageSetOrJoinBase::commitMutation(UInt64 mutation_id)
+{
+    {
+        auto commit_buf = disk->writeFile(path + mutation_commit_tmp_file_name);
+        writeIntText(mutation_id, *commit_buf);
+        commit_buf->finalize();
+    }
+    disk->replaceFile(path + mutation_commit_tmp_file_name, path + mutation_commit_file_name);
+}
+
+
+void StorageSetOrJoinBase::completeMutation(UInt64 mutation_id)
+{
+    static constexpr auto file_suffix = ".bin";
+    static constexpr auto file_suffix_size = std::string_view(file_suffix).size();
+
+    /// Once the mutation is committed, the files it replaces may already be gone, and its replacement
+    /// is the only durable copy of the table. If it is neither staged nor in place, the state is broken:
+    /// removing anything or clearing the marker would silently lose the data, so refuse instead.
+    const String replacement_file_name = toString(mutation_id) + file_suffix;
+    if (!disk->existsFile(path + mutation_data_file_name) && !disk->existsFile(path + replacement_file_name))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "The mutation of {} is committed with the replacement file {}, but neither {} nor {} exists",
+            path, mutation_id, mutation_data_file_name, replacement_file_name);
+
+    std::vector<std::string> files;
+    disk->listFiles(path, files);
+    for (const auto & file_name : files)
+    {
+        if (!file_name.ends_with(file_suffix))
+            continue;
+
+        UInt64 file_num = parse<UInt64>(file_name.substr(0, file_name.size() - file_suffix_size));
+        if (file_num < mutation_id)
+            disk->removeFileIfExists(path + file_name);
+    }
+
+    fiu_do_on(FailPoints::storage_join_mutate_interrupt_before_replacing_file,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before the replacement file of the mutation is put in place");
+    });
+
+    if (disk->existsFile(path + mutation_data_file_name))
+        disk->replaceFile(path + mutation_data_file_name, path + replacement_file_name);
+
+    disk->removeFileIfExists(path + mutation_commit_file_name);
+}
+
+
+void StorageSetOrJoinBase::finishInterruptedMutation()
+{
+    /// The marker is only ever renamed into place, so a leftover of creating it is not a commitment.
+    disk->removeFileIfExists(path + mutation_commit_tmp_file_name);
+
+    if (!disk->existsFile(path + mutation_commit_file_name))
+        return;
+
+    UInt64 mutation_id = 0;
+    {
+        auto commit_buf = disk->readFile(path + mutation_commit_file_name, getReadSettings());
+        readIntText(mutation_id, *commit_buf);
+    }
+
+    LOG_INFO(getLogger("StorageSetOrJoinBase"), "Finishing the mutation of {} that was interrupted, the replacement is file {}", path, mutation_id);
+    completeMutation(mutation_id);
+}
+
+
 void StorageSetOrJoinBase::restore()
 {
     if (!disk->existsDirectory(fs::path(path) / "tmp"))
@@ -279,6 +402,8 @@ void StorageSetOrJoinBase::restore()
         disk->createDirectories(fs::path(path) / "tmp");
         return;
     }
+
+    finishInterruptedMutation();
 
     static const char * file_suffix = ".bin";
     static const auto file_suffix_size = strlen(".bin");
