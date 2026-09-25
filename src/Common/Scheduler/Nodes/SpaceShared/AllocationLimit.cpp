@@ -154,26 +154,14 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     chassert(&from_child == child.get());
-    bool detached_suspended_subtree = false;
-    bool detached_suction_subtree = false;
+    bool detached_recovery_subtree = false;
     if (update.detached && recovery_growth)
     {
         for (ISchedulerNode * node = &recovery_growth->allocation.queue; node; node = node->parent)
         {
             if (node == update.detached)
             {
-                detached_suspended_subtree = true;
-                break;
-            }
-        }
-    }
-    if (update.detached && recovery_growth)
-    {
-        for (ISchedulerNode * node = &recovery_growth->allocation.queue; node; node = node->parent)
-        {
-            if (node == update.detached)
-            {
-                detached_suction_subtree = true;
+                detached_recovery_subtree = true;
                 break;
             }
         }
@@ -226,10 +214,13 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         allocation_to_kill = nullptr;
         /// A topology update is not a pressure-resolution event. Preserve the episode when an
         /// unrelated sibling detaches; clear it only when its owning subtree is the one removed.
-        if (detached_suspended_subtree)
-            clearMemoryGrowthSuspension();
-        if (detached_suction_subtree)
-            clearSuction();
+        if (detached_recovery_subtree)
+        {
+            if (recovery_growth && recovery_growth->allocation.isSuctioned())
+                clearSuction();
+            else
+                clearMemoryGrowthSuspension();
+        }
         reapply_constraint = true;
     }
     // Publish the decrease BEFORE evaluating the increase: the eviction decision in `setIncrease` skips
@@ -443,7 +434,8 @@ void AllocationLimit::retrySuspendedIncreases()
 
 bool AllocationLimit::hasSuspendedIncrease() const
 {
-    return recovery_growth || (child && child->hasSuspendedIncrease());
+    return (recovery_growth && !recovery_growth->allocation.isSuctioned())
+        || (child && child->hasSuspendedIncrease());
 }
 
 ResourceAllocation * AllocationLimit::getLocalSpillingAllocation() const
