@@ -1,0 +1,5 @@
+BACKUP TABLE d.t AS t TO Disk(\'backups\', \'b.zip\')
+RESTORE TABLE d.t AS t FROM Disk(\'backups\', \'b.zip\')
+BACKUP TABLE d.t AS e.t2, TABLE t3 AS t4, DATABASE db AS db2 TO Disk(\'backups\', \'b.zip\')
+BACKUP TABLE d.t, DATABASE db EXCEPT TABLES a, b TO Disk(\'backups\', \'b.zip\')
+1

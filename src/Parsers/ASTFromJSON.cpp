@@ -39,6 +39,8 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTObjectTypeArgument.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTOptimizeQuery.h>
@@ -206,6 +208,9 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"ShowColumnsQuery", [] { return make_intrusive<ASTShowColumnsQuery>(); }},
         {"ShowIndexesQuery", [] { return make_intrusive<ASTShowIndexesQuery>(); }},
         {"KillQueryQuery", [] { return make_intrusive<ASTKillQueryQuery>(); }},
+        {"DescribeQuery", [] { return make_intrusive<ASTDescribeQuery>(); }},
+        {"ObjectTypeArgument", [] { return make_intrusive<ASTObjectTypeArgument>(); }},
+        {"ObjectTypedPathArgument", [] { return make_intrusive<ASTObjectTypedPathArgument>(); }},
         {"OptimizeQuery", [] { return make_intrusive<ASTOptimizeQuery>(); }},
         {"DeleteQuery", [] { return make_intrusive<ASTDeleteQuery>(); }},
         {"UpdateQuery", [] { return make_intrusive<ASTUpdateQuery>(); }},
