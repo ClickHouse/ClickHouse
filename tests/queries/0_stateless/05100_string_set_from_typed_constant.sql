@@ -57,4 +57,28 @@ INSERT INTO t_string_set VALUES ('yes'), ('true');
 SELECT v FROM t_string_set WHERE v IN (true) ORDER BY v;
 SET bool_true_representation = 'true';
 
+-- A composite constant renders each nested element as `CAST` does, so the source element, key and value
+-- types are carried into the recursion rather than lost at the first level.
+SELECT 'nested elements of arrays, tuples and maps are rendered as CAST renders them';
+SELECT CAST([toDate('2020-01-01')], 'Array(String)');
+SELECT ['2020-01-01'] IN ([toDate('2020-01-01')]), ['18262'] IN ([toDate('2020-01-01')]);
+SELECT x FROM values('x Array(String)', [toDate('2020-01-01')]);
+SELECT x FROM values('x Array(Array(String))', [[toIPv4('1.2.3.4')]]);
+SELECT x FROM values('x Tuple(String, String)', (toDate('2020-01-01'), toUUID('00000000-0000-0000-0000-000000000001')));
+SELECT CAST(map(toDate('2020-01-01'), true), 'Map(String, String)');
+SELECT x FROM values('x Map(String, String)', map(toDate('2020-01-01'), true));
+SET bool_true_representation = 'yes';
+SELECT CAST([true], 'Array(String)'), CAST(map('k', true), 'Map(String, String)');
+SELECT ['yes'] IN ([true]), ['true'] IN ([true]);
+SELECT x FROM values('x Map(String, String)', map('k', true));
+SET bool_true_representation = 'true';
+
+-- `CAST` writes a `Decimal` with fixed text as well, so the decimal output settings do not reach the set.
+SELECT 'decimal output settings do not apply, as in CAST';
+SET output_format_decimal_trailing_zeros = 1;
+SELECT CAST(toDecimal32(1.5, 2), 'String');
+SELECT '1.5' IN (toDecimal32(1.5, 2)), '1.50' IN (toDecimal32(1.5, 2));
+SELECT x FROM values('x String', toDecimal32(1.5, 2));
+SET output_format_decimal_trailing_zeros = 0;
+
 DROP TABLE t_string_set;

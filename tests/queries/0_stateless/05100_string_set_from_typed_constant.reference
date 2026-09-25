@@ -33,3 +33,18 @@ yes
 1	0
 yes
 yes
+nested elements of arrays, tuples and maps are rendered as CAST renders them
+['2020-01-01']
+1	0
+['2020-01-01']
+[['1.2.3.4']]
+('2020-01-01','00000000-0000-0000-0000-000000000001')
+{'2020-01-01':'true'}
+{'2020-01-01':'true'}
+['yes']	{'k':'yes'}
+1	0
+{'k':'yes'}
+decimal output settings do not apply, as in CAST
+1.5
+1	0
+1.5
