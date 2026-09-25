@@ -149,6 +149,10 @@ namespace Net
         /// The object is normally guarded by the socket's mutex; a caller that uses it
         /// directly must ensure the socket is not accessed concurrently.
 
+        void markFatalError();
+        /// Records that an external operation on the underlying `SSL` object failed fatally.
+        /// An orderly SSL shutdown must not be attempted afterwards.
+
         X509 * peerCertificate() const;
         /// Returns the peer's certificate.
 
@@ -238,7 +242,19 @@ namespace Net
         /// Returns true iff the given host name is the local host
         /// (either "localhost" or "127.0.0.1").
 
-        bool mustRetry(int rc, Poco::Timespan & remaining_time);
+        bool mustRetry(int rc, int sslError, int socketError, Poco::Timespan & remaining_time);
+        /// Returns true if the last operation should be retried,
+        /// otherwise false.
+        ///
+        /// In case of an SSL_ERROR_WANT_READ error, and if the socket is
+        /// blocking, waits for the underlying socket to become readable.
+        ///
+        /// In case of an SSL_ERROR_WANT_WRITE error, and if the socket is
+        /// blocking, waits for the underlying socket to become writable.
+        ///
+        /// Can also throw a Poco::TimeoutException if the socket does
+        /// not become readable or writable within the sockets
+        /// receive or send timeout.
 
         /// Whether waiting for the peer is this class's job rather than the caller's.
         bool waitHere() const { return _drivingHandshake || _pSocket->getBlocking(); }
@@ -256,20 +272,8 @@ namespace Net
             SecureSocketImpl & impl;
             bool waits_here;
         };
-        /// Returns true if the last operation should be retried,
-        /// otherwise false.
-        ///
-        /// In case of an SSL_ERROR_WANT_READ error, and if the socket is
-        /// blocking, waits for the underlying socket to become readable.
-        ///
-        /// In case of an SSL_ERROR_WANT_WRITE error, and if the socket is
-        /// blocking, waits for the underlying socket to become writable.
-        ///
-        /// Can also throw a Poco::TimeoutException if the socket does
-        /// not become readable or writable within the sockets
-        /// receive or send timeout.
 
-        int handleError(int rc);
+        int handleError(int rc, int sslError, int socketError, unsigned long errorCode);
         /// Handles an SSL error by throwing an appropriate exception.
 
         void reset();
@@ -303,6 +307,7 @@ namespace Net
         Poco::AutoPtr<SocketImpl> _pSocket;
         Context::Ptr _pContext;
         bool _needHandshake;
+        bool _fatalError;
         /// Set while completeHandshakeImpl runs the handshake on a socket it made non-blocking, so
         /// that waiting for the peer stays this class's job rather than the caller's.
         bool _drivingHandshake = false;
