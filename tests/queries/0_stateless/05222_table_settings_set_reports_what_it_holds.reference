@@ -8,7 +8,7 @@ persistent	0	definition
 1
 -- the two rows it reports agree with what `system.engine_settings` says of the engine
 0
--- but the engine advertises far more than any table of it reports, which is the remaining gap
+-- and the engine describes those two and nothing else, so the two tables agree about this engine
 2	1
 -- `persistent` is the value the engine acts on
 0

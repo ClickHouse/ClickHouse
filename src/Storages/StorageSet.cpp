@@ -215,6 +215,16 @@ SettingDescriptions StorageSetOrJoinBase::persistenceSettings() const
     return settings;
 }
 
+SettingDescriptions StorageSet::enumerateEngineSettings(ContextPtr)
+{
+    /// `SetSettings` also declares every format setting, which the creator applies to the struct and never
+    /// reads - `StorageSet` acts on `disk` and `persistent` alone. Describing the struct wholesale would have
+    /// this engine advertise some three hundred settings that do nothing, and would have `system.engine_settings`
+    /// disagree with what a `Set` table reports in `system.table_settings`. A clause naming one of them is still
+    /// accepted, as `has_builtin_setting_fn` decides that and is unchanged.
+    return persistenceSettingDefaults();
+}
+
 SettingDescriptions StorageSet::getTableSettings(ContextPtr query_context) const
 {
     /// The creator applies the table's `SETTINGS` clause to a `SetSettings`, takes `disk` and `persistent` from it and
@@ -400,7 +410,7 @@ void registerStorageSet(StorageFactory & factory)
     StorageFactory::StorageFeatures{
         .supports_settings = true,
         .has_builtin_setting_fn = SetSettings::hasBuiltin,
-        .enumerate_engine_settings_fn = enumerateCompiledDefaults<SetSettings>,
+        .enumerate_engine_settings_fn = StorageSet::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(

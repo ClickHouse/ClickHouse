@@ -37,14 +37,16 @@ SELECT count() FROM (
     EXCEPT
     SELECT name, `default`, description, type, tier FROM system.engine_settings WHERE engine = 'Set');
 
-SELECT '-- but the engine advertises far more than any table of it reports, which is the remaining gap';
--- `SetSettings` declares the format settings too, and the engine accepts them and never reads them, so a table
--- can say nothing about them. `system.engine_settings` still lists them. This pins the asymmetry so that
--- closing it - by narrowing what the engine accepts, or by reporting the rest - is a visible change.
+SELECT '-- and the engine describes those two and nothing else, so the two tables agree about this engine';
+-- `SetSettings` declares the format settings too, and the engine accepts them and never reads them - the
+-- assertion above pins that one of them stays in the definition. `system.engine_settings` used to list all of
+-- them, so the engine advertised some three hundred settings that no table of it says anything about; it
+-- describes the two the engine acts on now, which is what a table reports. What the engine accepts is decided
+-- by `has_builtin_setting_fn` and is unchanged, so a clause naming a format setting still loads.
 SELECT
     (SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'set_plain'),
     (SELECT count() FROM system.engine_settings WHERE engine = 'Set')
-        > (SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'set_plain');
+        = (SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'set_plain');
 
 SELECT '-- `persistent` is the value the engine acts on';
 DROP TABLE IF EXISTS set_volatile;

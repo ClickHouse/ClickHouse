@@ -89,6 +89,9 @@ public:
     /// Reports `disk` and `persistent`, the two settings this engine acts on - see the definition.
     SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
+    /// The same two for `system.engine_settings`, so that the engine describes what a table of it reports.
+    static SettingDescriptions enumerateEngineSettings(ContextPtr context);
+
     /// Access the insides.
     SetPtr getSet() const;
 
