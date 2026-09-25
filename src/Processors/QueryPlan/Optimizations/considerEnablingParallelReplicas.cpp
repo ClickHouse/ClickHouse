@@ -723,9 +723,15 @@ void considerEnablingParallelReplicas(
             const auto max_threads = optimization_settings.max_threads;
             // This value is an upper bound on the number of threads that can be used for reading (we simply don't have enough data to utilize more threads).
             // Since the Auto PR optimization is currently estimates only reading, it is better to use this value to avoid overestimating the benefits of PRs.
-            const auto effective_max_reading_threads = optimization_settings.min_bytes_per_task_for_reading
-                ? stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
-                : SIZE_MAX;
+            /// Ignoring the cap makes both sides of the comparison divide by the real thread counts.
+            /// Otherwise a read too small to occupy `max_threads` clamps both sides to the same value,
+            /// the comparison collapses to `0 > output_bytes / replicas`, and the query is decided here
+            /// rather than by the cost model - which is the point of the cap outside of testing.
+            const auto effective_max_reading_threads
+                = (optimization_settings.automatic_parallel_replicas_ignore_thresholds
+                   || !optimization_settings.min_bytes_per_task_for_reading)
+                ? SIZE_MAX
+                : stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1;
             const auto num_replicas = optimization_settings.max_parallel_replicas;
             /// Dividing `output_bytes` by `num_replicas` assumes the replicas partition the output
             /// between them, as they do for `Aggregating` or a plain `Sorting`. A boundary that keeps a

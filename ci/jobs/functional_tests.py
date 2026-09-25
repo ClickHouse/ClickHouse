@@ -204,6 +204,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
+    "AutoParallelReplicas": "--autopr",
     "distributed plan": "--distributed-plan",
     "azure": "--azure",
     "AsyncInsert": " --async-insert",
@@ -214,6 +215,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
+    "AutoParallelReplicas": "--autopr --no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
     "DBReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
@@ -488,6 +490,7 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
+    is_auto_parallel_replicas = False
     is_llvm_coverage = False
     is_excluded_from_llvm = False
     is_per_test_coverage = False
@@ -548,8 +551,10 @@ def main():
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
-        if "ParallelReplicas" in to:
+        if to == "ParallelReplicas":
             is_parallel_replicas = True
+        if to == "AutoParallelReplicas":
+            is_auto_parallel_replicas = True
 
     # The xfail inversion (and therefore the "a crash on master HEAD is a
     # reproduction" reading of a server death) only applies when the PR is
@@ -645,7 +650,7 @@ def main():
         # mode mid-session). See tests/config/users.d/coverage_fault_injection_seeds.xml.
         config_installs_args += " --llvm-coverage"
 
-    if is_shared_catalog or is_parallel_replicas:
+    if is_shared_catalog or is_parallel_replicas or is_auto_parallel_replicas:
         pass
     else:
         if allow_oversubscription(args.options, test_options, is_flaky_check, is_targeted_check):

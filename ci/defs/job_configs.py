@@ -1036,6 +1036,22 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
+        # `automatic_parallel_replicas_mode` = 1 is the only mode that runs the cost model and
+        # replaces the plan with the parallel-replicas one. The settings randomizer picks only 0 or 2,
+        # and mode 2 collects statistics without ever switching, so these two jobs are the only broad
+        # coverage the plan rewrite gets. Debug, because what they are meant to catch is the
+        # optimization's own invariants (`chassert`s and the LOGICAL_ERRORs it throws when the
+        # single-node and parallel-replicas plans disagree).
+        Job.ParamSet(
+            parameter="amd_debug, AutoParallelReplicas, parallel",
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+        Job.ParamSet(
+            parameter="amd_debug, AutoParallelReplicas, sequential",
+            runs_on=RunnerLabels.AMD_SMALL,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, s3 storage, parallel, {batch}/{total_batches}",

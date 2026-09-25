@@ -2020,6 +2020,29 @@ class SettingsRandomizer:
 
     @staticmethod
     def adjust_settings_for_autopr(args, tags, random_settings):
+        # The AutoPR job pins the settings the optimization needs in the server profile
+        # (tests/config/users.d/enable_automatic_parallel_replicas.xml). A randomized value is sent
+        # with every query and overrides the profile, so any setting that appears both there and in
+        # `SettingsRandomizer.settings` must be dropped here - otherwise the job silently runs with
+        # the optimization disabled for a fraction of the suite and covers nothing.
+        #
+        # `automatic_parallel_replicas_mode` turns it off outright; `parallel_replicas_local_plan` = 0
+        # makes the analyzer skip building the parallel-replicas plan at all
+        # (`InterpreterSelectQueryAnalyzer::buildQueryPlanWithParallelReplicas`), so AutoPR has nothing
+        # to compare against.
+        #
+        # Compare by ALIAS, not by name, when adding to the profile: `DECLARE_WITH_ALIAS` in
+        # Settings.cpp gives some settings a second name, and a setting pinned in the profile under one
+        # name can be randomized here under the other. That is how the randomizer silently put back a
+        # threshold the profile had disabled, for 84% of the queries in a run, without colliding by
+        # name with anything.
+        if args.autopr:
+            for setting in (
+                "automatic_parallel_replicas_mode",
+                "parallel_replicas_local_plan",
+            ):
+                random_settings.pop(setting, None)
+            return
         # no_parallel_replicas is set for runs with enabled parallel replicas. In this case we should not reset `cluster_for_parallel_replicas`
         if (
             not args.no_parallel_replicas
@@ -4276,6 +4299,9 @@ class TestCase:
                     result.reason = FailureReason.NOT_FAILED
                 if result.status == TestStatus.FAIL:
                     result.status = TestStatus.SKIPPED
+            elif self.name in suite.blacklist_tolerate_only:
+                if result.status == TestStatus.FAIL:
+                    result.status = TestStatus.SKIPPED
 
             self._cleanup(result.status == TestStatus.OK)
 
@@ -4642,6 +4668,11 @@ class TestSuite:
         # They will be run, and if they succeed, the test status will be changed to FAIL
         # to notify PR author that the changes in PR fixes this test.
         self.blacklist_check: List[str] = []
+        # Same idea, but tolerate-only: a failure is accepted, a success is NOT turned into
+        # NOT_FAILED. Used for the parallel-replicas blacklist under `--autopr`, where the
+        # optimization only switches a query when its statistics say it pays off, so most of the
+        # blacklisted tests legitimately keep passing and must not be reported as needing removal.
+        self.blacklist_tolerate_only: List[str] = []
 
         if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
             if args.run_by_hash_num > args.run_by_hash_total:
@@ -6787,9 +6818,18 @@ ORDER BY (test_name, callee_offset)
 
     blacklist_check.extend(try_get_skip_list(base_dir, "../analyzer_tech_debt.txt"))
 
+    blacklist_tolerate_only = []
     if args.no_parallel_replicas is True:
         blacklist = try_get_skip_list(base_dir, "../parallel_replicas_blacklist.txt")
-        blacklist_check.extend(blacklist)
+        if args.autopr:
+            blacklist_tolerate_only.extend(blacklist)
+        else:
+            blacklist_check.extend(blacklist)
+
+    if args.autopr:
+        # Tests that break specifically when the optimization rewrites the plan - not the same set as
+        # the ones that break with parallel replicas forced on, which is why this is its own list.
+        blacklist_tolerate_only.extend(try_get_skip_list(base_dir, "../autopr_blacklist.txt"))
 
     if args.no_async_insert is True:
         skip_list_async_inserts = try_get_skip_list(
@@ -6867,6 +6907,7 @@ ORDER BY (test_name, callee_offset)
             test_suite.private_skip_list = private_skip_list
             test_suite.cloud_skip_errors_list = cloud_skip_errors_list
             test_suite.blacklist_check = blacklist_check
+            test_suite.blacklist_tolerate_only = blacklist_tolerate_only
             total_tests_run += do_run_tests(
                 args.jobs,
                 test_suite,
@@ -7573,6 +7614,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Do not include tests that are not supported with parallel replicas feature",
+    )
+    parser.add_argument(
+        "--autopr",
+        action="store_true",
+        default=False,
+        help="The server profile pins `automatic_parallel_replicas_mode`; do not randomize it",
     )
     parser.add_argument(
         "--no-async-insert",

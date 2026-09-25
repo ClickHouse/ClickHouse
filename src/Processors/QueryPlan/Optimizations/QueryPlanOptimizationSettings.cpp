@@ -121,6 +121,7 @@ namespace Setting
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
+    extern const SettingsBool automatic_parallel_replicas_ignore_thresholds;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsNonZeroUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -382,6 +383,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
+    automatic_parallel_replicas_ignore_thresholds = from[Setting::automatic_parallel_replicas_ignore_thresholds];
 
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 }
