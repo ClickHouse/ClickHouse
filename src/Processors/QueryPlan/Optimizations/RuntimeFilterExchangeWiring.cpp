@@ -63,7 +63,6 @@ bool stageDependsOnTransitively(
 
 struct RuntimeFilterApplication
 {
-    String filter_name; /// Result name of the label constant: the structural id `_runtime_filter_<hash>`.
     String filter_key; /// Value of the label constant: the rendezvous key.
     String key_column; /// The probed input column; empty when the probed key is not a plain column.
 };
@@ -102,8 +101,7 @@ void collectRuntimeFilterApplications(const ActionsDAG & dag, std::vector<Runtim
                 break;
         }
         out.push_back(
-            {.filter_name = key_argument->result_name,
-             .filter_key = String(key_constant->getDataAt(0)),
+            {.filter_key = String(key_constant->getDataAt(0)),
              .key_column = probed->type == ActionsDAG::ActionType::INPUT ? probed->result_name : String{}});
     }
 }
@@ -205,41 +203,6 @@ bool siteAdmitsRuntimeFilterTransport(
     return true;
 }
 
-}
-
-void restoreRuntimeFilterRendezvousKeys(QueryPlan & plan)
-{
-    auto * root = plan.getRootNode();
-    if (!root)
-        return;
-
-    std::unordered_map<String, String> key_by_name;
-    std::vector<BuildRuntimeFilterStep *> builds;
-    std::vector<QueryPlan::Node *> stack{root};
-    while (!stack.empty())
-    {
-        auto * node = stack.back();
-        stack.pop_back();
-        for (auto * child : node->children)
-            stack.push_back(child);
-
-        if (auto * build = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
-            builds.push_back(build);
-
-        std::vector<RuntimeFilterApplication> applications;
-        collectStepApplications(*node->step, applications);
-        for (const auto & application : applications)
-            key_by_name.emplace(application.filter_name, application.filter_key);
-    }
-
-    for (auto * build : builds)
-    {
-        if (!build->getFilterKey().empty())
-            continue;
-        auto it = key_by_name.find(build->getFilterName());
-        if (it != key_by_name.end())
-            build->setFilterKey(it->second);
-    }
 }
 
 void wireRuntimeFilterExchangeTopology(

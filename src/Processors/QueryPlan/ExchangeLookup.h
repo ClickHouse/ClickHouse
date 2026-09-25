@@ -51,7 +51,8 @@ struct IExchangeLookup : boost::noncopyable
     /// packets they make, or the data chunks as they are when there are no such processors.
     /// An advisory sink carries data the receiver is free to stop reading at any moment (a
     /// runtime filter): peer disconnects and resets stop the delivery instead of throwing.
-    /// Data streams must pass false so a lost receiver stays an error.
+    /// Data streams must pass false so a lost receiver stays an error. Only a streaming sink has a
+    /// peer that can disconnect. Persisted and in-memory sinks ignore the flag.
     virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool advisory) = 0;
     /// `output_is_serialized`: the source hands out the packets of the exchange as they are, one per
     /// chunk, for the processors of `createDeserializer` to turn into data; only an exchange kind that

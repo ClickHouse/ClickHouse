@@ -176,7 +176,10 @@ def _collect_task_rows(query_id):
                 ProfileEvents['RuntimeFilterStateBytesSent'],
                 ProfileEvents['RuntimeFilterStateBytesReceived'],
                 ProfileEvents['RuntimeFilterOversizedStatesRejected'],
-                memory_usage
+                memory_usage,
+                ProfileEvents['StreamingExchangeSendBytes'] + ProfileEvents['StreamingExchangeReceiveBytes'],
+                ProfileEvents['WriteBufferFromS3Bytes'],
+                ProfileEvents['ReadBufferFromS3Bytes']
             FROM system.query_log
             WHERE type = 'QueryFinish' AND initial_query_id = '{query_id}'
                 AND query_id != initial_query_id AND event_date >= yesterday()
@@ -193,6 +196,9 @@ def _collect_task_rows(query_id):
                     "bytes_received": int(fields[4]),
                     "oversized_rejected": int(fields[5]),
                     "memory_usage": int(fields[6]),
+                    "streaming_bytes": int(fields[7]),
+                    "s3_bytes_written": int(fields[8]),
+                    "s3_bytes_read": int(fields[9]),
                     "node": node.name,
                 }
             )
@@ -478,7 +484,18 @@ def test_persisted_exchange_delivers_and_terminates(started_cluster):
         + ", distributed_plan_force_exchange_kind = 'Persisted'",
     )
     assert result == JOIN_EXPECTED
-    _check_topology(tasks, 4, levels=[1])
+    merge_tasks, _ = _check_topology(tasks, 4, levels=[1])
+
+    # `_check_topology` holds just as well on streaming exchanges, so it cannot tell whether the
+    # forced kind reached the filter chain. A merge task carries no data streams: its inputs are
+    # the build tasks' partials, and its outputs are the union copies for the probe tasks. On a
+    # persisted chain it reads and writes all of them as temporary files in object storage and
+    # moves nothing over a streaming exchange. The object storage here is MinIO, so the traffic
+    # shows up in `ReadBufferFromS3Bytes` and `WriteBufferFromS3Bytes`.
+    for task in merge_tasks:
+        assert task["streaming_bytes"] == 0, task
+        assert task["s3_bytes_read"] > 0, task
+        assert task["s3_bytes_written"] > 0, task
 
 
 def test_result_equality_nested_joins(started_cluster):

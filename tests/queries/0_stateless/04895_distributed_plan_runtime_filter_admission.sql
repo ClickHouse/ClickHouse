@@ -12,7 +12,7 @@ SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimiz
 SET distributed_plan_join_runtime_filters = 1;
 
 -- More estimated build keys than the probe site has rows: shipping the filter costs at least as
--- much as it could ever save, so transport is refused and the local build step stays.
+-- much as it could ever save, so transport is refused and the filter stays local.
 SELECT '-- build side larger than the probe site: transport refused';
 SELECT count() FROM t_small, t_large WHERE sid = lid SETTINGS log_comment = '04895_refused';
 
@@ -45,8 +45,8 @@ SELECT
                     AND current_database = currentDatabase() AND event_date >= yesterday())
     ),
     -- A refused filter must never reach an exchange, so neither transported processor may appear.
-    -- This zero separates a refused filter from the admitted one below; it does not show that the
-    -- local filter was built. `count() > 0` keeps it from holding just because no task ran.
+    -- This zero separates a refused filter from the admitted one below; the next check shows that
+    -- the local filter was built. `count() > 0` keeps it from holding just because no task ran.
     (
         SELECT count() > 0 AND (
             SELECT count()
@@ -69,6 +69,23 @@ SELECT
                 AND current_database = currentDatabase() AND log_comment = '04895_refused')
           AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%')
     );
+
+SELECT '-- refused filter stays local: registered and applied';
+-- A filter that is not transported works only inside the join stage: each join task derives its
+-- own local build/apply pair when it optimizes its fragment. The initiator's build step sits in the
+-- build-scan stage with no apply site next to it and does nothing. So a `Registered runtime filter`
+-- line comes from a join task's local build. A `Stats for` line with a nonzero block count comes
+-- from the apply site that found that filter.
+SELECT countIf(startsWith(message, 'Registered runtime filter')) >= 1
+   AND countIf(startsWith(message, 'Stats for')
+       AND toUInt64OrZero(extract(message, 'blocks processed (\\d+)'))
+           + toUInt64OrZero(extract(message, 'blocks skipped (\\d+)')) > 0) >= 1
+FROM system.text_log
+WHERE event_date >= yesterday() AND logger_name = 'RuntimeFilter'
+  AND query_id IN (
+      SELECT query_id FROM system.query_log
+      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+        AND current_database = currentDatabase() AND log_comment = '04895_refused');
 
 SELECT '-- admitted: admission trace and states sent';
 SELECT

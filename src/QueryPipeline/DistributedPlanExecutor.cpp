@@ -26,7 +26,6 @@
 #include <QueryPipeline/printPipeline.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
@@ -192,6 +191,8 @@ public:
     {
     }
 
+    /// `advisory` is ignored: a persisted stream has no peer, and its reader starts only after this
+    /// stage finishes. A write failure is a failure of the object storage, so it stays an error.
     std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool /*advisory*/) override
     {
         if (!temporary_files)
@@ -410,6 +411,8 @@ public:
     {
     }
 
+    /// `advisory` is ignored: when the reader detaches, the sink already drops chunks quietly, and
+    /// the exchange is cancelled only when the whole query stops.
     std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool /*advisory*/) override
     {
         auto file_name = exchange_stream_id.toString();
@@ -806,9 +809,11 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
 /// executor thread. A branch waits for a filter that the producer builds only after reading its
 /// whole build side, so the filter can arrive late or never. Keeping the branches out of the data
 /// pipeline has three effects. The task finishes when its data work finishes, because `finish`
-/// cancels the branches that still wait. A branch error never fails the task: the filter is not
-/// registered, and `__applyFilter` passes all rows. And a remote worker does not deadlock, which a
-/// branch folded into the data streams would do (see `MergeRuntimeFiltersTransform`).
+/// cancels the branches that still wait. The exception is a branch still in the exchange handshake
+/// with an unresponsive producer: it holds `finish` until that handshake times out. A branch error
+/// never fails the task: the filter is not registered, and `__applyFilter` passes all rows. And a
+/// remote worker does not deadlock. A branch folded into the data streams would deadlock it (see
+/// `MergeRuntimeFiltersTransform`).
 class RuntimeFilterReceiveBranches
 {
 public:
@@ -818,24 +823,41 @@ public:
     {
         auto branch = std::make_shared<Branch>(std::move(pipeline));
         branches.push_back(branch);
-        branch->thread = ThreadFromGlobalPool(
-            [branch, filter_name, thread_group = CurrentThread::getGroup(), log = logger]
+        try
         {
-            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
-            try
-            {
-                CompletedPipelineExecutor executor(branch->pipeline);
-                executor.setCancelCallback([branch] { return branch->cancelled.load(); }, /*interactive_timeout_ms_*/ 50);
-                executor.execute();
-            }
-            catch (...)
-            {
-                ProfileEvents::increment(ProfileEvents::RuntimeFilterReceiveBranchFailures);
-                tryLogCurrentException(log, fmt::format(
-                    "Receive branch for runtime filter '{}' failed; the filter is skipped and rows pass unfiltered",
+            branch->thread = ThreadFromGlobalPool(
+                [branch, filter_name, thread_group = CurrentThread::getGroup(), log = logger]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
+                    try
+                    {
+                        CompletedPipelineExecutor executor(branch->pipeline);
+                        executor.setCancelCallback([branch] { return branch->cancelled.load(); }, /*interactive_timeout_ms_*/ 50);
+                        executor.execute();
+                    }
+                    catch (...)
+                    {
+                        ProfileEvents::increment(ProfileEvents::RuntimeFilterReceiveBranchFailures);
+                        tryLogCurrentException(
+                            log,
+                            fmt::format(
+                                "Receive branch for runtime filter '{}' failed; the filter is skipped and rows pass unfiltered",
+                                filter_name));
+                    }
+                });
+        }
+        catch (...)
+        {
+            /// The pool threw before queueing the job, so the branch never ran. As when a branch fails to
+            /// connect, the filter is not registered and rows pass unfiltered.
+            branches.pop_back();
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterReceiveBranchFailures);
+            tryLogCurrentException(
+                logger,
+                fmt::format(
+                    "Cannot start the receive branch for runtime filter '{}'; the filter is skipped and rows pass unfiltered",
                     filter_name));
-            }
-        });
+        }
     }
 
     /// Cancel the branches that are still waiting and join their threads. Idempotent.
@@ -935,7 +957,6 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     {
         QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
-        QueryPlanOptimizations::restoreRuntimeFilterRendezvousKeys(query_plan);
 
         /// A deserialized plan carries neither the thread limit nor the concurrency-control flag,
         /// so both come from the query's settings.

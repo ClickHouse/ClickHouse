@@ -1,8 +1,10 @@
 -- Tags: no-old-analyzer
 
--- `dim` is broadcast into the stage that scans `local_probe`, while `remote_probe` stays behind
--- a shuffle, so one filter has a same-stage apply site and a remote one. The build side ships the
--- filter and also registers it locally after serializing it, so the same-stage apply must prune.
+-- `dim` is scanned in a stage of its own. That stage builds the filter for `p.id = d.id` and ships
+-- it through a merge tree to the stage that scans `local_probe`. `dim` is also broadcast into that
+-- stage for the join, and the stage derives its own local filter from the broadcast rows. The join
+-- with `remote_probe` goes through a shuffle, and transport of its filter is refused. So one plan
+-- mixes a transported filter, a stage-local one and a refused one.
 
 CREATE TABLE dim (id UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE local_probe (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
@@ -29,9 +31,12 @@ SETTINGS log_comment = '04948_mixed';
 SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 
--- A fail-open `__applyFilter` never calls `RuntimeFilter::find`, so it leaves no `Stats for` line
--- with fewer rows passed than checked.
-SELECT '-- local apply pruned the same-stage probe';
+-- Two filters apply to the `local_probe` scan: the shipped one and the stage's own one, built from
+-- the broadcast `dim`. So the scan is pruned whether or not the shipped filter arrives first. Even
+-- without transport, the stage's own filter would prune it alone. A fail-open `__applyFilter` never
+-- calls `RuntimeFilter::find`, so it leaves no `Stats for` line with fewer rows passed than
+-- checked.
+SELECT '-- local_probe pruned in its own stage';
 SELECT count() >= 1
 FROM system.text_log
 WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday()
@@ -48,15 +53,15 @@ WHERE logger_name = 'RuntimeFilter' AND event_date >= yesterday()
               AND current_database = currentDatabase() AND log_comment = '04948_mixed')
         AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%'));
 
--- The local apply is at risk only when the producer also ships the filter, so check that it did.
+-- The filter for `p.id = d.id` is transported, so check that its producer shipped it.
 -- `BuildRuntimeFilterPartialTransform` serializes the build task's partial and appends it to the
 -- task's exchange sink as one extra row, so `output_rows > input_rows` marks a task that put a
 -- state on an exchange. It exists only on the transported path: a filter that stays local is
 -- built by `BuildRuntimeFilterTransform`, which appears in equal numbers either way.
 --
--- It does not assert that the remote probe received the state: the merge -> probe broadcast is
--- best-effort by design, because a probe task cancels its receive branch once its data work is
--- done.
+-- It does not assert that the `local_probe` stage received the state: the merge -> probe
+-- broadcast is best-effort by design, because a probe task cancels its receive branch once its
+-- data work is done.
 SELECT '-- the producer also shipped the filter over the exchange';
 SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows) >= 1
 FROM system.processors_profile_log

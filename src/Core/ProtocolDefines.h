@@ -125,8 +125,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
 /// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
 /// needs the new contract is not serialized for such a peer at all. Version 20 also writes the runtime
-/// filter exchange topology and `join_runtime_filter_exact_bytes_limit`
-/// (see `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES`).
+/// filter exchange topology and `join_runtime_filter_exact_bytes_limit`, and introduces the
+/// `MergeRuntimeFilters` step (see `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES`).
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
@@ -185,8 +185,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// Version 4 added runtime filter receive descriptors to the task.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 4;
 /// First distributed-task serialization version that carries the runtime filter receive
-/// descriptors. Gates writing them, and refusing to write them to an older peer that would skip
-/// the field and misread everything after it.
+/// descriptors. Gates writing and reading them; writing descriptors below this version is a
+/// logical error.
 static constexpr auto DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS = 4;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;

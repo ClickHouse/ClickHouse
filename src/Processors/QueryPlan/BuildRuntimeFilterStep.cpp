@@ -206,7 +206,9 @@ public:
         WriteBufferFromOwnString out;
         task_filter->filter->serialize(out);
         /// Same-stage `__applyFilter` sites read this task's lookup: an exchange edge back to this stage
-        /// would cycle the scheduler. Every stream has merged in, so the published filter expects no merges.
+        /// would cycle the scheduler. Every transported build registers here, whether or not its stage
+        /// has such a site. The filter is already built, so this only keeps it until the task ends.
+        /// Every stream has merged in, so the published filter expects no merges.
         if (!filter_key.empty())
         {
             if (!query_context)
@@ -297,9 +299,8 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
         return;
     }
 
-    /// The key is not serialized: a deserialized step has one only if
-    /// `restoreRuntimeFilterRendezvousKeys` copied it from a matching `__applyFilter` in its
-    /// fragment. Without a key no lookup could find the filter, so there is nothing to build.
+    /// Only a transported build serializes its key, so a deserialized local build has none. No lookup
+    /// could find its filter. The join task derives its own local filter when it optimizes its fragment.
     if (filter_key.empty())
         return;
 
@@ -428,9 +429,9 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
     writeStringBinary(filter_name, ctx.out);
     writeBinary(build_options.polarity == RuntimeFilterPolarity::Contains, ctx.out);
 
-    /// Step version 1 carries the filter exchange topology. The registry picks version 0 for a peer
-    /// whose release predates the transport; such a peer would run the step as a local build and the
-    /// filter would silently never arrive, so the topology is refused rather than dropped.
+    /// Step version 1 carries the filter exchange topology and the key. The registry picks version 0
+    /// for a peer whose release predates the transport. Such a peer would run the step as a local
+    /// build, and the filter would silently never arrive. So the topology is refused, not dropped.
     if (ctx.step_version < 1)
     {
         if (hasFilterExchanges())
@@ -454,6 +455,10 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
         writeStringBinary(exchange.exchange_id, ctx.out);
         writeVectorBinary(exchange.destination_buckets, ctx.out);
     }
+
+    /// The rendezvous key is random per plan build, so a cache key must not contain it. A local build
+    /// sends no key and stays inert on the worker. The worker plans its own local filters.
+    writeStringBinary(hasFilterExchanges() && !ctx.for_cache_key ? filter_key : String{}, ctx.out);
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
@@ -476,7 +481,8 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     String tree_exchange_id;
     Strings tree_source_buckets;
     size_t tree_fan_in = 0;
-    size_t num_exchanges = 0;
+    std::vector<FilterExchange> exchanges;
+    String filter_key;
     if (ctx.step_version >= 1)
     {
         readBinary(has_tree_exchange, ctx.in);
@@ -491,13 +497,28 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep has a malformed tree exchange");
         }
 
+        size_t num_exchanges = 0;
         readVarUInt(num_exchanges, ctx.in);
         if (has_tree_exchange && num_exchanges != 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep has both a tree exchange and broadcast exchanges");
+        for (size_t i = 0; i < num_exchanges; ++i)
+        {
+            FilterExchange exchange;
+            readStringBinary(exchange.exchange_id, ctx.in);
+            readVectorBinary(exchange.destination_buckets, ctx.in);
+            if (exchange.exchange_id.empty() || exchange.destination_buckets.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep has an exchange without an id or destinations");
+            exchanges.push_back(std::move(exchange));
+        }
+
+        readStringBinary(filter_key, ctx.in);
+        /// Only a build with filter exchanges carries its key. A local build must stay inert.
+        if (!filter_key.empty() && !has_tree_exchange && exchanges.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep without filter exchanges carries a rendezvous key");
     }
 
     auto geometry = RuntimeFilterGeometry::fromSettings(ctx.settings);
-    if (has_tree_exchange || num_exchanges != 0)
+    if (has_tree_exchange || !exchanges.empty())
         geometry.validateTransported();
 
     auto step = std::make_unique<BuildRuntimeFilterStep>(
@@ -505,7 +526,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         std::move(filter_column_name),
         filter_column_type,
         std::move(filter_name),
-        /*filter_key_=*/String{},
+        std::move(filter_key),
         RuntimeFilterBuildOptions{
             .geometry = geometry,
             .polarity = allow_to_use_not_exact_filter ? RuntimeFilterPolarity::Contains : RuntimeFilterPolarity::NotContains,
@@ -516,16 +537,8 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
             .distinct_keys_hint_matches_filter_key = false});
     if (has_tree_exchange)
         step->setTreeExchange(std::move(tree_exchange_id), std::move(tree_source_buckets), tree_fan_in);
-    for (size_t i = 0; i < num_exchanges; ++i)
-    {
-        String exchange_id;
-        readStringBinary(exchange_id, ctx.in);
-        Strings destination_buckets;
-        readVectorBinary(destination_buckets, ctx.in);
-        if (exchange_id.empty() || destination_buckets.empty())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep has an exchange without an id or destinations");
-        step->addExchange(std::move(exchange_id), std::move(destination_buckets));
-    }
+    for (auto & exchange : exchanges)
+        step->addExchange(std::move(exchange.exchange_id), std::move(exchange.destination_buckets));
     return step;
 }
 

@@ -115,14 +115,15 @@ void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_sta
 }
 
 /// A runtime filter prunes nothing at plan time, so it must not count as a filter when estimating.
-/// True when the predicate is built only out of `__applyFilter` calls (possibly ANDed, via aliases).
-bool isRuntimeFilterOnlyPredicate(const ActionsDAG::Node * node)
+/// True for a `__applyFilter` call, an `and` of such predicates, or an `or` with at least one such
+/// operand. Aliases are looked through.
+bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
 {
     if (!node)
         return false;
 
     if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-        return isRuntimeFilterOnlyPredicate(node->children.front());
+        return prunesNothingAtPlanTime(node->children.front());
 
     if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
         return false;
@@ -131,17 +132,25 @@ bool isRuntimeFilterOnlyPredicate(const ActionsDAG::Node * node)
     if (function_name == "__applyFilter")
         return true;
 
-    if (function_name != "and" || node->children.empty())
+    if (node->children.empty())
         return false;
 
-    return std::ranges::all_of(node->children, isRuntimeFilterOnlyPredicate);
+    if (function_name == "and")
+        return std::ranges::all_of(node->children, prunesNothingAtPlanTime);
+
+    /// One operand passes every row at plan time, so the whole `or` does. `addNullBypassForAntiJoin`
+    /// builds this form for `LEFT ANTI JOIN`: `__applyFilter(...) OR isNull(key)`.
+    if (function_name == "or")
+        return std::ranges::any_of(node->children, prunesNothingAtPlanTime);
+
+    return false;
 }
 
 }
 
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
 {
-    if (isRuntimeFilterOnlyPredicate(filter))
+    if (prunesNothingAtPlanTime(filter))
         filter = nullptr;
 
     IQueryPlanStep * step = node.step.get();
@@ -184,12 +193,12 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 .source = RowEstimateSource::NoStatistics};
         }
 
-        /// A PREWHERE that only applies runtime filters is likewise not a plan-time filter.
+        /// A PREWHERE that prunes nothing at plan time is likewise not a plan-time filter.
         const PrewhereInfoPtr prewhere_info = reading->getPrewhereInfo();
         const ActionsDAG::Node * prewhere_node = prewhere_info
             ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
             : nullptr;
-        const bool has_prewhere_filter = prewhere_info && !isRuntimeFilterOnlyPredicate(prewhere_node);
+        const bool has_prewhere_filter = prewhere_info && !prunesNothingAtPlanTime(prewhere_node);
         if (!has_prewhere_filter)
             prewhere_node = nullptr;
 

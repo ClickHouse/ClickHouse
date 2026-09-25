@@ -4,5 +4,7 @@
 100
 -- refused: admission trace and no states sent
 1	1
+-- refused filter stays local: registered and applied
+1
 -- admitted: admission trace and states sent
 1	1

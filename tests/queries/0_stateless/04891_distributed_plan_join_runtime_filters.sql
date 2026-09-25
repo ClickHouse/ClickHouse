@@ -51,7 +51,7 @@ SET make_distributed_plan = 0;
 --
 -- Nothing below asserts on the receiving side: the merge -> probe broadcast is best-effort by
 -- design, because a probe task cancels its receive branch once its data work is done.
-SYSTEM FLUSH LOGS query_log, processors_profile_log;
+SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 
 SELECT '-- shuffle join, setting on: states crossed the exchange';
 -- 8 build tasks (the `distributed_plan_default_shuffle_join_bucket_count` default), each
@@ -128,3 +128,21 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday()
       WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
         AND current_database = currentDatabase() AND log_comment = '04891_anti_join')
   AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%');
+
+SELECT '-- anti join keeps its local filter: registered and applied';
+-- The check above shows that nothing was sent, not that a filter still works. A filter that is
+-- not transported works only inside the join stage: each join task derives its own local
+-- build/apply pair when it optimizes its fragment. The initiator's build step sits in the
+-- build-scan stage with no apply site next to it and does nothing. So a `Registered runtime filter`
+-- line comes from a join task's local build. A `Stats for` line with a nonzero block count comes
+-- from the apply site that found that filter.
+SELECT countIf(startsWith(message, 'Registered runtime filter')) >= 1
+   AND countIf(startsWith(message, 'Stats for')
+       AND toUInt64OrZero(extract(message, 'blocks processed (\\d+)'))
+           + toUInt64OrZero(extract(message, 'blocks skipped (\\d+)')) > 0) >= 1
+FROM system.text_log
+WHERE event_date >= yesterday() AND logger_name = 'RuntimeFilter'
+  AND query_id IN (
+      SELECT query_id FROM system.query_log
+      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+        AND current_database = currentDatabase() AND log_comment = '04891_anti_join');

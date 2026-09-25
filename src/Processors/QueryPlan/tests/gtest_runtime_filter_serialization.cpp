@@ -13,13 +13,14 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/typeid_cast.h>
 
 #include <gtest/gtest.h>
 
@@ -35,6 +36,7 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
+extern const int INCORRECT_DATA;
 extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -589,7 +591,7 @@ SharedHeader serializationHeader()
     return std::make_shared<const Block>(Block{ColumnWithTypeAndName(ColumnUInt64::create(), type, "x")});
 }
 
-BuildRuntimeFilterStep makeBuildStep(bool with_topology)
+BuildRuntimeFilterStep makeBuildStep(bool with_topology, const String & filter_key = "rendezvous-key")
 {
     auto header = serializationHeader();
     BuildRuntimeFilterStep step(
@@ -597,7 +599,7 @@ BuildRuntimeFilterStep makeBuildStep(bool with_topology)
         "x",
         std::make_shared<DataTypeUInt64>(),
         "f",
-        "rendezvous-key",
+        filter_key,
         RuntimeFilterBuildOptions{
             .geometry = makeGeometry(),
             .polarity = RuntimeFilterPolarity::Contains,
@@ -630,15 +632,18 @@ UInt64 buildStepVersionToWrite(UInt64 plan_version)
 }
 
 /// Writes the step's settings into `settings` and returns the serialized step body.
-String serializeBuildStep(const BuildRuntimeFilterStep & step, UInt64 version, QueryPlanSerializationSettings & settings)
+String serializeBuildStep(
+    const BuildRuntimeFilterStep & step, UInt64 version, QueryPlanSerializationSettings & settings, bool for_cache_key = false)
 {
     step.serializeSettings(settings, version);
 
     WriteBufferFromOwnString out;
     SerializedSetsRegistry serialize_registry;
+    serialize_registry.for_cache_key = for_cache_key;
     IQueryPlanStep::Serialization serialization{
         .out = out,
         .registry = serialize_registry,
+        .for_cache_key = for_cache_key,
         .version = version,
         .step_version = buildStepVersionToWrite(version),
     };
@@ -685,7 +690,7 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRoundTrips)
     ASSERT_NE(restored, nullptr);
 
     EXPECT_TRUE(restored->hasFilterExchanges());
-    EXPECT_TRUE(restored->getFilterKey().empty());
+    EXPECT_EQ(restored->getFilterKey(), "rendezvous-key");
     EXPECT_EQ(restored->getFilterName(), "f");
     EXPECT_EQ(restored->getFilterColumnName(), "x");
     EXPECT_TRUE(restored->getFilterColumnType()->equals(*std::make_shared<DataTypeUInt64>()));
@@ -728,6 +733,70 @@ TEST(RuntimeFilterSerialization, BuildStepTopologyRequiresRuntimeFilterExchanges
     expectGeometryMatches(restored->getGeometry(), expected_geometry);
 }
 
+TEST(RuntimeFilterSerialization, MergeStepRequiresRuntimeFilterExchangesVersion)
+{
+    constexpr UInt64 pre_exchanges_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES - 1;
+    const MergeRuntimeFiltersStep step(
+        "f", std::make_shared<DataTypeUInt64>(), makeGeometry(), "exchange_1", {"0", "1"}, 2, {{"exchange_2", {"0"}}});
+
+    auto serialize_step = [](const IQueryPlanStep & merge_step, UInt64 version, QueryPlanSerializationSettings & settings)
+    {
+        merge_step.serializeSettings(settings, version);
+        WriteBufferFromOwnString out;
+        SerializedSetsRegistry registry;
+        IQueryPlanStep::Serialization serialization{.out = out, .registry = registry, .version = version};
+        merge_step.serialize(serialization);
+        return out.str();
+    };
+    auto deserialize_step = [](const String & payload, const QueryPlanSerializationSettings & settings, UInt64 version)
+    {
+        ReadBufferFromString in(payload);
+        DeserializedSetsRegistry registry;
+        const SharedHeaders input_headers;
+        const SharedHeader output_header = std::make_shared<const Block>();
+        ContextPtr context = getContext().context;
+        IQueryPlanStep::Deserialization deserialization{
+            .in = in,
+            .registry = registry,
+            .storage_holders = {},
+            .context = context,
+            .input_headers = input_headers,
+            .output_header = output_header,
+            .settings = settings,
+            .version = version,
+        };
+        return MergeRuntimeFiltersStep::deserialize(deserialization);
+    };
+
+    QueryPlanSerializationSettings pre_exchanges_settings;
+    try
+    {
+        serialize_step(step, pre_exchanges_version, pre_exchanges_settings);
+        FAIL() << "serializing a merge step below the runtime-filter-exchanges version should throw";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::SUPPORT_IS_DISABLED);
+    }
+
+    QueryPlanSerializationSettings settings;
+    const String payload = serialize_step(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings);
+    try
+    {
+        deserialize_step(payload, settings, pre_exchanges_version);
+        FAIL() << "deserializing a merge step below the runtime-filter-exchanges version should throw";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+    }
+
+    auto restored = deserialize_step(payload, settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    ASSERT_NE(typeid_cast<MergeRuntimeFiltersStep *>(restored.get()), nullptr);
+    QueryPlanSerializationSettings restored_settings;
+    EXPECT_EQ(serialize_step(*restored, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, restored_settings), payload);
+}
+
 TEST(RuntimeFilterSerialization, BuildStepTreeExchangeRoundTrips)
 {
     auto step = makeBuildStep(/*with_topology=*/false);
@@ -746,7 +815,7 @@ TEST(RuntimeFilterSerialization, BuildStepTreeExchangeRoundTrips)
     ASSERT_NE(restored, nullptr);
 
     EXPECT_TRUE(restored->hasFilterExchanges());
-    EXPECT_TRUE(restored->getFilterKey().empty());
+    EXPECT_EQ(restored->getFilterKey(), "rendezvous-key");
     EXPECT_EQ(restored->getFilterName(), "f");
     EXPECT_EQ(restored->getFilterColumnName(), "x");
     EXPECT_TRUE(restored->getFilterColumnType()->equals(*std::make_shared<DataTypeUInt64>()));
@@ -777,4 +846,18 @@ TEST(RuntimeFilterSerialization, BuildStepWithoutTopologyRoundTrips)
 
     QueryPlanSerializationSettings restored_settings;
     EXPECT_EQ(serializeBuildStep(*restored, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, restored_settings), payload);
+}
+
+TEST(RuntimeFilterSerialization, BuildStepCacheKeyOmitsRendezvousKey)
+{
+    auto first = makeBuildStep(/*with_topology=*/true, "key-1");
+    auto second = makeBuildStep(/*with_topology=*/true, "key-2");
+
+    QueryPlanSerializationSettings settings;
+    EXPECT_NE(
+        serializeBuildStep(first, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings),
+        serializeBuildStep(second, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings));
+    EXPECT_EQ(
+        serializeBuildStep(first, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings, /*for_cache_key=*/true),
+        serializeBuildStep(second, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, settings, /*for_cache_key=*/true));
 }

@@ -26,3 +26,5 @@ Filter id: _runtime_filter_UNIQ_ID
 1
 -- anti join keeps its local filter: not sent
 1
+-- anti join keeps its local filter: registered and applied
+1

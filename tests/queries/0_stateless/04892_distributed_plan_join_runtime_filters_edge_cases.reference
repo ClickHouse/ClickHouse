@@ -12,5 +12,7 @@
 100
 -- Nullable key sent no states
 1
+-- Nullable key keeps its local filter: registered and applied
+1
 -- two joins, each with a transported filter
 1

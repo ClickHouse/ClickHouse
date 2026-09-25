@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
 extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 MergeRuntimeFiltersStep::MergeRuntimeFiltersStep(
@@ -131,6 +132,15 @@ void MergeRuntimeFiltersStep::serializeSettings(QueryPlanSerializationSettings &
 
 void MergeRuntimeFiltersStep::serialize(Serialization & ctx) const
 {
+    /// A peer below this version does not know the step name.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: cannot serialize a MergeRuntimeFiltersStep for query plan serialization version {}; "
+            "version {} or newer is required, and all nodes must run the same version",
+            ctx.version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES);
+
     writeStringBinary(filter_name, ctx.out);
     encodeDataType(filter_column_type, ctx.out);
     writeStringBinary(input_exchange_id, ctx.out);
@@ -146,6 +156,13 @@ void MergeRuntimeFiltersStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr MergeRuntimeFiltersStep::deserialize(Deserialization & ctx)
 {
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "MergeRuntimeFiltersStep is not part of query plan serialization version {}; the first version that carries it is {}",
+            ctx.version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_RUNTIME_FILTER_EXCHANGES);
+
     if (!ctx.input_headers.empty())
         throw Exception(ErrorCodes::INCORRECT_DATA, "MergeRuntimeFiltersStep must have no input streams");
 

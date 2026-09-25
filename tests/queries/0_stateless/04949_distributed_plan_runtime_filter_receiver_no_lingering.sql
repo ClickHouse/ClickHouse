@@ -24,21 +24,29 @@ SET make_distributed_plan = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Two checks, so a failure says which half broke. The first is that the build side really did
+-- Three checks, so a failure says which part broke. The first is that the build side really did
 -- sleep: a sleep that landed elsewhere or got split across buckets would otherwise read as a
 -- lingering probe.
 --
--- The second is the property itself. The probe tasks (stage_0) must finish much earlier than the
+-- The second is that the probe tasks have a receive branch to linger on. A filter-merge task
+-- (`rf_merge_%`) is planned only when a stage receives the transported filter, and here only the
+-- probe stage does. Without a merge task, the third check would hold with nothing to cancel.
+--
+-- The third is the property itself. The probe tasks (stage_0) must finish much earlier than the
 -- build-scan task holding the sleep (stage_1). Without the receive-branch cancellation a probe
 -- task lives until the filter arrives, which cannot happen before the sleep ends, and both sides
 -- show the same duration. Durations, not end timestamps: a task's duration does not depend on
 -- when the scheduler got to it, and under load a probe can start late enough that its end time
--- approaches the merge task's while its duration stays in the milliseconds.
+-- approaches the merge task's while its duration stays in the milliseconds. `maxIf` over no rows
+-- returns 0 and would let a check pass with no tasks, so each check also requires its stage to
+-- have rows.
 --
 -- With local execution every task fragment shares the root query's `query_id`, so the fragments
 -- are selected through the root query, which carries the current database.
-SELECT maxIf(query_duration_ms, query LIKE 'stage_1_%') > 5000,
-       maxIf(query_duration_ms, query LIKE 'stage_0_%') * 2 < maxIf(query_duration_ms, query LIKE 'stage_1_%')
+SELECT countIf(query LIKE 'stage_1_%') > 0 AND maxIf(query_duration_ms, query LIKE 'stage_1_%') > 5000,
+       countIf(query LIKE 'rf_merge_%') > 0,
+       countIf(query LIKE 'stage_0_%') > 0
+           AND maxIf(query_duration_ms, query LIKE 'stage_0_%') * 2 < maxIf(query_duration_ms, query LIKE 'stage_1_%')
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query NOT LIKE 'SELECT%'
     AND query_id IN (

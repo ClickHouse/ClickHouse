@@ -16,28 +16,23 @@ SET query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_joi
 SET log_processors_profiles = 1;
 SET distributed_plan_join_runtime_filters = 1;
 
--- The apply sites for both dimension filters sit in the fact scan fragment, below both shuffle
--- exchanges of the nested joins, so both filters must be registered on those scan tasks rather
--- than one exchange below the owning join.
-SELECT '-- nested joins: both filters register on the fact scan fragment';
+-- The apply sites for both dimension filters sit in the fact-scan fragment, below both shuffle
+-- exchanges of the nested joins, so both filters must be wired to those scan tasks rather than
+-- one exchange below the owning join.
+SELECT '-- nested joins: both filters wired to the fact-scan fragment';
 SELECT count() FROM fact INNER JOIN dim1 ON fact.k1 = dim1.d1 INNER JOIN dim2 ON fact.k2 = dim2.d2 WHERE dim2.attr < 100
     SETTINGS log_comment = '04894_nested_placement';
 SELECT count() FROM fact INNER JOIN dim1 ON fact.k1 = dim1.d1 INNER JOIN dim2 ON fact.k2 = dim2.d2 WHERE dim2.attr < 100
     SETTINGS distributed_plan_join_runtime_filters = 0;
 
 SET make_distributed_plan = 0;
-SYSTEM FLUSH LOGS query_log, processors_profile_log;
+SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 
--- Each dimension join gets its own filter, so a correctly placed pair means two merge trees and
+-- Each dimension join gets its own filter, so two transported filters mean two merge trees and
 -- two sets of serialized partials. The tree count stays exact at two: one dimension losing its
 -- filter, or the two collapsing into one, still fails. The partial count is a bound, so a
 -- different bucket count does not break it. A local filter plans no tree and serializes nothing.
---
--- Nothing here asserts on the receiving side. The merge -> probe broadcast is best-effort by
--- design: a probe task cancels its receive branch once its data work is done, so the filter may
--- never arrive. And with `distributed_plan_execute_locally` every task logs under the initiator's
--- `query_id`, so a `system.text_log` line cannot be attributed to the probe tasks.
-SELECT '-- both filters registered on fact-scan tasks';
+SELECT '-- both filters transported, each through its own merge tree';
 SELECT uniqExact(extract(query, '^rf_merge_\\d+_(_runtime_filter_\\d+)')) = 2
    AND (
        SELECT countIf(name = 'BuildRuntimeFilterPartialTransform' AND output_rows > input_rows)
@@ -54,6 +49,47 @@ SELECT uniqExact(extract(query, '^rf_merge_\\d+_(_runtime_filter_\\d+)')) = 2
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'rf_merge_%'
   AND initial_query_id IN (
+      SELECT query_id FROM system.query_log
+      WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+        AND current_database = currentDatabase() AND log_comment = '04894_nested_placement');
+
+-- The executor logs the planned wiring: every stage's plan (logger `DistributedQueryPlanExecutor`,
+-- message `Executing stage`) and every task's exchange streams (logger `executeDistributedQuery`,
+-- message `Task '...' input exchange streams: [...]`). This check reads placement from those lines.
+-- A task that receives a filter lists the broadcast exchange of that filter's `rf_merge_%` root
+-- among its inputs. So every task of the one stage whose plan reads `fact` must list the exchanges
+-- of both merge roots.
+-- This is the wiring, not the arrival: the merge -> probe broadcast is best-effort by design,
+-- because a probe task cancels its receive branch once its data work is done.
+SELECT '-- both filters are wired to every fact-scan task';
+WITH
+    (
+        SELECT groupArray(extract(message, 'Executing stage \'([^\']+)\''))
+        FROM system.text_log
+        WHERE event_date >= yesterday() AND logger_name = 'DistributedQueryPlanExecutor'
+          AND position(message, concat('ReadFromMergeTree (', currentDatabase(), '.fact)')) > 0
+          AND query_id IN (
+              SELECT query_id FROM system.query_log
+              WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+                AND current_database = currentDatabase() AND log_comment = '04894_nested_placement')
+    ) AS fact_stages,
+    (
+        SELECT groupUniqArrayArray(extractAll(extract(message, 'output exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__'))
+        FROM system.text_log
+        WHERE event_date >= yesterday() AND logger_name = 'executeDistributedQuery'
+          AND startsWith(message, 'Task \'rf_merge_')
+          AND query_id IN (
+              SELECT query_id FROM system.query_log
+              WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
+                AND current_database = currentDatabase() AND log_comment = '04894_nested_placement')
+    ) AS filter_exchanges
+SELECT length(fact_stages) = 1 AND length(filter_exchanges) = 2 AND count() >= 1
+   AND min(length(arrayIntersect(
+       extractAll(extract(message, 'input exchange streams: \\[([^\\]]*)\\]'), '(exchange_\\d+)__'), filter_exchanges))) = 2
+FROM system.text_log
+WHERE event_date >= yesterday() AND logger_name = 'executeDistributedQuery'
+  AND startsWith(message, concat('Task \'', fact_stages[1], '_'))
+  AND query_id IN (
       SELECT query_id FROM system.query_log
       WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
         AND current_database = currentDatabase() AND log_comment = '04894_nested_placement');
