@@ -457,10 +457,21 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
         data_type, argument_types, parameters, base, direction, min_required_args);
 }
 
+/// The factory passes null settings when the calling thread has no query context (table loading,
+/// query plan decoding), which means "no session to read the setting from", not "the gate is off".
+bool isFunnelFunctionsEnabled(const Settings * settings)
+{
+    if (settings)
+        return (*settings)[Setting::enable_funnel_functions];
+
+    auto context = Context::getGlobalContextInstance();
+    return context && context->getSettingsRef()[Setting::enable_funnel_functions];
+}
+
 AggregateFunctionPtr
 createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings == nullptr || !(*settings)[Setting::enable_funnel_functions])
+    if (!isFunnelFunctionsEnabled(settings))
     {
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
             "Set `enable_funnel_functions` setting to enable it", name);
