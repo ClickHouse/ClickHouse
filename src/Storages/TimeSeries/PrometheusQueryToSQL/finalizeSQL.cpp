@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
@@ -282,6 +283,16 @@ namespace
         builder.select_list.push_back(std::move(value));
 
         builder.where = std::move(where);
+
+        if (result.node->node_type == PrometheusQueryTree::NodeType::AggregationOperator)
+        {
+            const auto * aggregation = static_cast<const PrometheusQueryTree::AggregationOperator *>(result.node);
+            if (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk")
+            {
+                builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+                builder.order_direction = aggregation->operator_name == "topk" ? -1 : 1;
+            }
+        }
 
         builder.with = std::move(context.subqueries);
         if (result.select_query)
