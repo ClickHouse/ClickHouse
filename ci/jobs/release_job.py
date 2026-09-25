@@ -9,6 +9,7 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import argparse
+import dataclasses
 import os
 import re
 import shlex
@@ -687,20 +688,30 @@ def main():
         workdir=REPO_PATH,
     )
 
-    # Post the final release status — but only when "Prepare Release Info" ran
-    # this attempt and produced RELEASE_INFO_FILE. If an early setup step failed
-    # before prepare, the file is absent (cleared at the top of main), so
-    # --post-status would raise FileNotFoundError trying to read it; skip it and
-    # let the aggregated job Result (praktika Slack feed) report the failing
-    # setup step instead.
+    def post_slack_message():
+        release_info = ReleaseInfo.from_file()
+        title = "New release branch" if release_info.is_new_release_branch() else "New release"
+        print(f"{title}: {release_info.release_tag}")
+        # ci_buddy needs PyGithub and unidiff; importing here keeps the other steps free of them
+        from ci_buddy import CIBuddy
+        from slack_ids import LESHIKUS
+
+        buddy = CIBuddy(dry_run=args.dry_run)
+        if ok:
+            buddy.post_done(f"Completed: {title}", dataclasses.asdict(release_info))
+        else:
+            buddy.post_critical(
+                f"<@{LESHIKUS}> Failed: {title}",
+                dataclasses.asdict(release_info),
+                channels=[CIBuddy.Channels.ALERTS, CIBuddy.Channels.INFO],
+            )
+
+    # RELEASE_INFO_FILE exists only if "Prepare Release Info" ran this attempt
     if os.path.exists(RELEASE_INFO_FILE):
         results.append(
             Result.from_commands_run(
                 name="Post Slack Message",
-                command=[
-                    f"python3 ./ci/jobs/scripts/create_release.py --post-status"
-                    f" {'' if ok else '--failed'} {dry_run_flag}".strip()
-                ],
+                command=post_slack_message,
                 workdir=REPO_PATH,
             )
         )

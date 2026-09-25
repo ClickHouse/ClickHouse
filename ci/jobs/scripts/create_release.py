@@ -890,12 +890,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--post-status",
         action="store_true",
-        help="Post release status to Slack via CIBuddy",
-    )
-    parser.add_argument(
-        "--failed",
-        action="store_true",
-        help="With --post-status: report the release as failed",
+        help="Post release status (prints summary; Slack integration removed)",
     )
     parser.add_argument(
         "--ref",
@@ -969,22 +964,10 @@ if __name__ == "__main__":
             title = "New release branch"
         else:
             title = "New release"
+        # Print the release-info summary for the job log / Slack context. Pass or
+        # fail is conveyed by the workflow job result, not re-derived here.
         print(f"{title}: {release_info.release_tag}")
         print(json.dumps(dataclasses.asdict(release_info), indent=2))
-        # ci_buddy needs PyGithub and unidiff; importing here keeps the other steps free of them
-        from ci_buddy import CIBuddy
-        from slack_ids import LESHIKUS
-
-        if args.failed:
-            CIBuddy(dry_run=args.dry_run).post_critical(
-                f"<@{LESHIKUS}> Failed: {title}",
-                dataclasses.asdict(release_info),
-                channels=[CIBuddy.Channels.ALERTS, CIBuddy.Channels.INFO],
-            )
-        else:
-            CIBuddy(dry_run=args.dry_run).post_done(
-                f"Completed: {title}", dataclasses.asdict(release_info)
-            )
 
     if _ssh_agent and _key_pub:
         _ssh_agent.remove(_key_pub)
