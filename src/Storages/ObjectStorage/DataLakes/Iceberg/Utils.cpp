@@ -37,6 +37,7 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -1224,22 +1225,38 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
 
         std::vector<String> metadata_files;
-        for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+        String listed_prefix;
         {
-            metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
-            if (!metadata_files.empty())
-                break;
-            LOG_DEBUG(
-                log,
-                "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
-                "(attempt {} of {}), retrying",
-                table_path,
-                attempt + 1,
-                MAX_LIST_RETRIES);
-        }
-        if (metadata_files.empty())
-        {
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
+            PrefixListing listing;
+            Stopwatch listing_watch;
+            for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+            {
+                listing = listPrefix(*object_storage, table_path, "metadata", ".metadata.json");
+                if (!listing.matched.empty())
+                    break;
+                if (attempt + 1 < MAX_LIST_RETRIES)
+                    LOG_DEBUG(
+                        log,
+                        "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
+                        "(attempt {} of {}), retrying",
+                        table_path,
+                        attempt + 1,
+                        MAX_LIST_RETRIES);
+            }
+            metadata_files = std::move(listing.matched);
+            listed_prefix = std::move(listing.listed_prefix);
+            if (metadata_files.empty())
+            {
+                throw Exception(
+                    ErrorCodes::FILE_DOESNT_EXIST,
+                    "The metadata file for Iceberg table with path {} doesn't exist. {} listing attempts over {} ms found "
+                    "no .metadata.json under {}, which held {}",
+                    table_path,
+                    MAX_LIST_RETRIES,
+                    listing_watch.elapsedMilliseconds(),
+                    listed_prefix,
+                    describeListedObjects(listing.entries, listed_prefix, MAX_REPORTED_LISTING_ENTRIES));
+            }
         }
 
         /// A candidate outside the scheme the table itself commits through counts a version sequence
@@ -1331,11 +1348,15 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
         metadata_files_with_versions.reserve(metadata_files.size());
+        size_t temporary_candidates = 0;
         for (const auto & path : metadata_files)
         {
             String filename = std::filesystem::path(path).filename();
             if (isTemporaryMetadataFile(filename))
+            {
+                ++temporary_candidates;
                 continue;
+            }
             if (own_scheme_is_version_numbered && isVersionNumberedCommitScheme(filename) != *own_scheme_is_version_numbered)
                 continue;
             auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
@@ -1377,18 +1398,32 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         if (metadata_files_with_versions.empty())
         {
+            const String candidates = describeObjectKeys(metadata_files, listed_prefix, MAX_REPORTED_LISTING_ENTRIES);
+            const char * candidate_noun = metadata_files.size() == 1 ? "candidate" : "candidates";
             if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
             {
                 throw Exception(
                     ErrorCodes::FILE_DOESNT_EXIST,
-                    "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                    "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist. "
+                    "{} {} found under {}, {} of them temporary commit files: {}",
                     table_path,
-                    table_uuid.value());
+                    table_uuid.value(),
+                    metadata_files.size(),
+                    candidate_noun,
+                    listed_prefix,
+                    temporary_candidates,
+                    candidates);
             }
             throw Exception(
                 ErrorCodes::FILE_DOESNT_EXIST,
-                "The metadata file for Iceberg table with path {} doesn't exist",
-                table_path);
+                "The metadata file for Iceberg table with path {} doesn't exist. "
+                "{} {} found under {}, {} of them temporary commit files: {}",
+                table_path,
+                metadata_files.size(),
+                candidate_noun,
+                listed_prefix,
+                temporary_candidates,
+                candidates);
         }
 
         /// Two schemes among the candidates mean no `v<N>` pointer declared one, and their numbers are

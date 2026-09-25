@@ -1,0 +1,12 @@
+a1: the original sentence is kept
+a2: an empty metadata prefix is reported as empty
+f: the listing attempts and the time they spanned are reported
+b1: an entry the suffix filter dropped is named
+b2: its modification time is reported
+c1: a long listing keeps its total and counts the remainder
+c2: entry names printed: 10
+d: retry log lines: 4
+e: listing traces: 5
+g: the raw and the filtered listing counts are both logged
+h: a candidate rejected as a temporary commit file is reported
+h2: candidates are reported when table UUID selection finds none
