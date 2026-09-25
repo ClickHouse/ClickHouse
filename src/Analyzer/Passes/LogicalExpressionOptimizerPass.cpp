@@ -2531,17 +2531,26 @@ private:
         auto & function_node = node->as<FunctionNode &>();
         chassert(function_node.getFunctionName() == "or");
 
-        QueryTreeNodes or_operands;
+        const auto & arguments = function_node.getArguments().getNodes();
 
-        QueryTreeNodePtrWithHashMap<QueryTreeNodes> node_to_equals_functions;
+        /// The operands keep their original positions: `or` is evaluated lazily from left to right
+        /// (`short_circuit_function_evaluation`), so `x = 0 OR intDiv(1, x) != 0 OR x = 2 OR x = 3`
+        /// must become `x IN (0, 2, 3) OR intDiv(1, x) != 0` and not the other way round, otherwise the
+        /// guard the user wrote stops protecting the division. An `IN` takes the slot of the first
+        /// equality of its chain; the slots of the other equalities are left empty and dropped below.
+        QueryTreeNodes result_operands(arguments.size());
+
+        /// Indices (into `arguments`) of the `x = constant` checks of each expression `x`.
+        QueryTreeNodePtrWithHashMap<std::vector<size_t>> node_to_equals_indices;
         QueryTreeNodePtrWithHashMap<QueryTreeNodeConstRawPtrWithHashSet> node_to_constants;
 
-        for (const auto & argument : function_node.getArguments())
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
+            const auto & argument = arguments[i];
             auto * argument_function = argument->as<FunctionNode>();
             if (!argument_function || argument_function->getFunctionName() != "equals")
             {
-                or_operands.push_back(argument);
+                result_operands[i] = argument;
                 continue;
             }
 
@@ -2557,8 +2566,9 @@ private:
                 if (!constant_set.contains(constant))
                 {
                     constant_set.insert(constant);
-                    node_to_equals_functions[expression_node].push_back(argument);
+                    node_to_equals_indices[expression_node].push_back(i);
                 }
+                /// A duplicate `x = c` is dropped: its slot stays empty.
             };
 
             if (const auto * lhs_literal = lhs->as<ConstantNode>();
@@ -2568,16 +2578,28 @@ private:
                      rhs_literal && !rhs_literal->getValue().isNull())
                 add_equals_function_if_not_present(lhs, rhs_literal);
             else
-                or_operands.push_back(argument);
+                result_operands[i] = argument;
         }
 
-        for (auto & [expression, equals_functions] : node_to_equals_functions)
+        for (auto & [expression, equals_indices] : node_to_equals_indices)
         {
+            /// Keeps the chain as it was written.
+            const auto keep_equals_functions = [&]
+            {
+                for (size_t index : equals_indices)
+                    result_operands[index] = arguments[index];
+            };
+
+            QueryTreeNodes equals_functions;
+            equals_functions.reserve(equals_indices.size());
+            for (size_t index : equals_indices)
+                equals_functions.push_back(arguments[index]);
+
             const auto & settings = getSettings();
             if (equals_functions.size() < settings[Setting::optimize_min_equality_disjunction_chain_length]
                 && !expression.node->getResultType()->lowCardinality())
             {
-                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                keep_equals_functions();
                 continue;
             }
 
@@ -2585,7 +2607,7 @@ private:
             /// OR chain into an error. Keep the original comparisons.
             if (expression.node->getResultType()->hasDynamicStructure())
             {
-                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                keep_equals_functions();
                 continue;
             }
 
@@ -2594,7 +2616,7 @@ private:
                 = getInFunctionNameForPassCreatedNode("in", expression.node->getResultType(), getContext());
             if (!in_function_name)
             {
-                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                keep_equals_functions();
                 continue;
             }
 
@@ -2633,7 +2655,7 @@ private:
 
             if (!all_constants_convert_losslessly)
             {
-                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                keep_equals_functions();
                 continue;
             }
 
@@ -2660,7 +2682,7 @@ private:
             /// keep the original chain rather than change it.
             if (result_type->isNullable() && !is_any_nullable)
             {
-                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                keep_equals_functions();
                 continue;
             }
             /** For `k :: UInt8`, expression `k = 1 OR k = NULL` with result type Nullable(UInt8)
@@ -2677,13 +2699,19 @@ private:
                     new_result_type = std::make_shared<DataTypeLowCardinality>(new_result_type);
                 }
                 auto in_function_nullable = createCastFunction(std::move(in_function), std::move(new_result_type), getContext());
-                or_operands.push_back(std::move(in_function_nullable));
+                result_operands[equals_indices.front()] = std::move(in_function_nullable);
             }
             else
             {
-                or_operands.push_back(std::move(in_function));
+                result_operands[equals_indices.front()] = std::move(in_function);
             }
         }
+
+        QueryTreeNodes or_operands;
+        or_operands.reserve(result_operands.size());
+        for (auto & operand : result_operands)
+            if (operand)
+                or_operands.push_back(std::move(operand));
 
         if (or_operands.size() == function_node.getArguments().getNodes().size())
             return;
