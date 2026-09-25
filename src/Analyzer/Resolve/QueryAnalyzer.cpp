@@ -71,7 +71,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
@@ -87,6 +87,7 @@ namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
+    extern const SettingsBool analyzer_compatibility_allow_cte_redefinition;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_compatibility_multiple_joins_qualify_column_names;
@@ -166,6 +167,45 @@ void checkMaterializedCTESubqueryIsNotCorrelated(
             "Materialized CTE '{}' cannot be correlated. In scope {}",
             cte_name,
             scope_node->formatASTForErrorMessage());
+}
+
+/// A named `APPLY (x -> untuple(x), 'prefix')` resolves to a list of `tupleElement(arg, name)`
+/// calls (see `untuple` handling in resolveFunction). Recognize that shape so the matcher can
+/// expand it into one prefixed projection column per element, matching the legacy analyzer.
+bool isUntupleExpansion(const QueryTreeNodes & nodes)
+{
+    for (const auto & element : nodes)
+    {
+        const auto * function = element->as<FunctionNode>();
+        if (!function || function->getFunctionName() != "tupleElement")
+            return false;
+
+        const auto & arguments = function->getArguments().getNodes();
+        if (arguments.size() != 2 || !arguments[1]->as<ConstantNode>())
+            return false;
+    }
+    return !nodes.empty();
+}
+
+/// The tuple field name a `tupleElement(arg, name)` node projects. The legacy path names an
+/// untupled element `<prefix><column>.<field>` (`f_a.1`, `f_a.id`); the field comes from the
+/// constant second argument.
+String getTupleElementName(const QueryTreeNodePtr & tuple_element_node)
+{
+    const auto & arguments = tuple_element_node->as<FunctionNode &>().getArguments().getNodes();
+    return arguments[1]->as<ConstantNode &>().getValue().safeGet<String>();
+}
+
+/// True for a `WITH` element declared `AS MATERIALIZED`, before or after its replacement by a `TableNode`.
+bool isMaterializedCTEDefinition(const QueryTreeNodePtr & node)
+{
+    if (const auto * query_node = node->as<QueryNode>())
+        return query_node->isMaterialized();
+    if (const auto * union_node = node->as<UnionNode>())
+        return union_node->isMaterialized();
+    if (const auto * table_node = node->as<TableNode>())
+        return table_node->isMaterializedCTE();
+    return false;
 }
 
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
@@ -995,12 +1035,12 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
     const auto & columns = storage_snapshot->metadata->getColumns();
 
     /// Watermark target column must exist in table.
-    const auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, watermark.column);
+    const auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, watermark.time_attribute_column);
     if (!column)
-        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' not found in table {}", watermark.column, storage_snapshot->storage.getStorageID().getFullNameNotQuoted());
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' not found in table {}", watermark.time_attribute_column, storage_snapshot->storage.getStorageID().getFullNameNotQuoted());
 
     if (!isDateOrDate32OrDateTimeOrDateTime64(column->type))
-        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' must be of Date, Date32, DateTime or DateTime64 type, got {}", watermark.column, column->type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' must be of Date, Date32, DateTime or DateTime64 type, got {}", watermark.time_attribute_column, column->type->getName());
 
     /// Watermark expression's result type must match the column type.
     auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, storage_snapshot->metadata->getColumns());
@@ -1010,7 +1050,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
 
     auto expression_type = expression_node->getResultType();
     if (!expression_type->equals(*column->type))
-        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK expression result type {} does not match column '{}' type {}", expression_type->getName(), watermark.column, column->type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK expression result type {} does not match column '{}' type {}", expression_type->getName(), watermark.time_attribute_column, column->type->getName());
 }
 
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
@@ -1058,13 +1098,18 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
                 if (stream_settings->watermark)
+                {
+                    if (stream_settings->unordered)
+                        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK is not supported for UNORDERED streams");
+
                     validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, scope);
+                }
             }
         }
     }
 }
 
-void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope) const
 {
     if (!scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
         return;
@@ -1073,12 +1118,21 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if (table_expression_has_alias)
         return;
 
+    /// An inlined view is named by the view, the way a table is named, so it needs no alias where a subquery does.
+    if (getInlinedViewName(table_expression_node.get()))
+        return;
+
     if (const auto * join = join_node->as<const JoinNode>(); join && join->getKind() == JoinKind::Paste)
         return;
 
     auto * query_node = table_expression_node->as<QueryNode>();
     auto * union_node = table_expression_node->as<UnionNode>();
     if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
+        return;
+
+    /// A parameterized view has a name to qualify its columns with, so it is exempt like the plain table below.
+    if (const auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+        table_function_node && table_function_node->isParameterizedView())
         return;
 
     auto table_expression_node_type = table_expression_node->getNodeType();
@@ -1510,7 +1564,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
 )
 {
     auto full_name = identifier_lookup.identifier.getFullName();
-    auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+    auto cte_nodes_it = scope.cte_name_to_query_node.find(full_name);
+    if (cte_nodes_it == scope.cte_name_to_query_node.end())
+        return {};
 
     /// CTE may reference table expressions with the same name, e.g.:
     ///
@@ -1524,10 +1580,23 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     ///
     /// To accomplish this behaviour it's not allowed to resolve identifiers to
     /// CTE that is being resolved.
-    if (cte_query_node_it == scope.cte_name_to_query_node.end() || ctes_in_resolve_process.contains(cte_query_node_it->second))
+    ///
+    /// With `analyzer_compatibility_allow_cte_redefinition` a name can have several definitions; the latest one
+    /// not being resolved wins, so a redefinition reads the previous definition and the query body the last one.
+    auto & cte_nodes = cte_nodes_it->second;
+    /// Every site that marks a scope-map CTE node as being resolved updates both sets. With one definition keep the
+    /// structural check: the materialized-CTE expression site inserts a clone, which only identity would miss.
+    const bool several_definitions = cte_nodes.size() > 1;
+    auto cte_node_it = std::find_if(cte_nodes.rbegin(), cte_nodes.rend(), [this, several_definitions](const QueryTreeNodePtr & node)
+    {
+        if (several_definitions)
+            return !cte_definitions_in_resolve_process.contains(node.get());
+        return !ctes_in_resolve_process.contains(node);
+    });
+    if (cte_node_it == cte_nodes.rend())
         return {};
 
-    auto & cte_node = cte_query_node_it->second;
+    auto & cte_node = *cte_node_it;
     auto * query_node = cte_node->as<QueryNode>();
     auto * union_node = cte_node->as<UnionNode>();
 
@@ -1883,6 +1952,8 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
 
     if (table_expression_node->hasAlias())
         additional_column_qualification_parts = {table_expression_node->getAlias()};
+    else if (const auto * inlined_view_name = getInlinedViewName(table_expression_node.get()))
+        additional_column_qualification_parts = {inlined_view_name->getDatabaseName(), inlined_view_name->getTableName()};
     else if (auto * table_node = table_expression_node->as<TableNode>())
     {
         additional_column_qualification_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
@@ -1894,6 +1965,13 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
           */
         if (table_node->isMaterializedCTE())
             additional_column_qualification_parts = {table_node->getMaterializedCTE()->cte_name};
+    }
+    else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+        table_function_node && table_function_node->isParameterizedView())
+    {
+        /// A parameterized view has a name of its own, qualify with it exactly like for a `TableNode`.
+        const auto & table_storage_id = table_function_node->getStorageID();
+        additional_column_qualification_parts = {table_storage_id.getDatabaseName(), table_storage_id.getTableName()};
     }
     else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
         additional_column_qualification_parts = {query_node->getCTEName()};
@@ -1919,6 +1997,8 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         std::string forced_qualifier;
         if (table_expression_node->hasAlias())
             forced_qualifier = table_expression_node->getAlias();
+        else if (const auto * inlined_view_name = getInlinedViewName(table_expression_node.get()))
+            forced_qualifier = inlined_view_name->getTableName();
         else if (auto * table_node = table_expression_node->as<TableNode>())
         {
             /// Same as above: a materialized CTE must be qualified with its visible name,
@@ -1930,6 +2010,9 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             else
                 forced_qualifier = table_node->getStorageID().getTableName();
         }
+        else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+            table_function_node && table_function_node->isParameterizedView())
+            forced_qualifier = table_function_node->getStorageID().getTableName();
         else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
             forced_qualifier = query_node->getCTEName();
         else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
@@ -2826,15 +2909,47 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         else
             result_projection_names.push_back(column_name);
 
-        for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
+        String apply_column_name_prefix;
+        /// Short-based accumulator for `APPLY (expr, 'prefix')`: the prefix must attach to the
+        /// short column name (`f_a`), not the qualified projection name (`f_t1.a`).
+        String apply_prefixed_projection_name = column_name;
+
+        const auto & column_transformers = matcher_node_typed.getColumnTransformers().getNodes();
+        for (const auto & transformer : column_transformers)
         {
+            /// The node this transformer starts from. After resolution we compare against it to
+            /// tell an identity lambda (`x -> x` resolves back to this same node) from a freshly
+            /// created node (a function/lambda that wraps it). Only a reused node may overwrite
+            /// its cached projection name.
+            const IQueryTreeNode * input_node_before_transformer = node.get();
+            /// The name this matched column carries into the transformer. A name the transformer
+            /// changes belongs to this chain alone and may not be published on a shared node.
+            const String projection_name_before_transformer = result_projection_names.back();
+            const bool is_last_transformer = transformer.get() == column_transformers.back().get();
+
             if (auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
             {
                 const auto & expression_node = apply_transformer->getExpressionNode();
                 apply_transformer_was_used = true;
+                apply_column_name_prefix = apply_transformer->getColumnNamePrefix();
 
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
                 {
+                    /// A named `APPLY (x -> <matcher>, 'prefix')` whose lambda body is itself a
+                    /// bare matcher/asterisk (`*`, `t.*`, `COLUMNS(...)`) has no column to attach
+                    /// the prefix to. The legacy path rejects this with BAD_ARGUMENTS (it calls
+                    /// setAlias on a non-aliasable asterisk node); reject it here too, before the
+                    /// matcher is expanded into a column list and the reused column is silently
+                    /// renamed. A matcher nested inside a function (`x -> tuple(*)`) is not a bare
+                    /// matcher and stays allowed, matching the legacy path.
+                    if (!apply_column_name_prefix.empty()
+                        && expression_node->as<LambdaNode &>().getExpression()->getNodeType() == QueryTreeNodeType::MATCHER)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "APPLY transformer {} sets a name prefix on an asterisk or COLUMNS matcher, "
+                            "which does not name a single column. In scope {}",
+                            transformer->formatASTForErrorMessage(),
+                            scope.scope_node->formatASTForErrorMessage());
+
                     /// A lambda body can only learn a matched column's name from this map; the FUNCTION branch below also reads its alias.
                     node_to_projection_name.emplace(node, result_projection_names.back());
 
@@ -2895,6 +3010,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (!replace_expression)
                     continue;
 
+                /// `REPLACE (<matcher> AS a)` renames the matched column to the replacement's
+                /// name, but a bare matcher/asterisk replacement (`COLUMNS('a')`, `*`, `t.*`)
+                /// has no single name to carry. The legacy path rejects this with BAD_ARGUMENTS
+                /// (setAlias on a non-aliasable asterisk node); reject it here too instead of
+                /// expanding the matcher and renaming the reused column.
+                if (replace_expression->getNodeType() == QueryTreeNodeType::MATCHER)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "REPLACE transformer {} uses an asterisk or COLUMNS matcher as the replacement "
+                        "for column '{}', which does not name a single column. In scope {}",
+                        transformer->formatASTForErrorMessage(),
+                        column_name,
+                        scope.scope_node->formatASTForErrorMessage());
+
                 replace_transformer_was_used = true;
 
                 if (replace_transformer->isStrict())
@@ -2923,6 +3051,50 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     auto & node_list_nodes = node_list->getNodes();
                     size_t node_list_nodes_size = node_list_nodes.size();
 
+                    /// A named `APPLY (x -> untuple(x), 'prefix')` or a `REPLACE (untuple(a) AS a)`
+                    /// resolves to a list of `tupleElement` calls, one per tuple field. The legacy
+                    /// path expands each element (`f_a.1`/`f_a.id` for APPLY, `a.1`/`a.id` for
+                    /// REPLACE), so expand the whole list here as sibling projection columns.
+                    /// This also fires for a single-field tuple (a size-1 list): the legacy path
+                    /// keeps the field suffix there too (`f_a.id`, `a.1`), so we must not fall
+                    /// through to the generic single-node path that would drop it. Only when this
+                    /// is the terminal transformer: a transformer chained after `untuple` is
+                    /// rejected by both analyzers, so leave it to the throw below.
+                    const bool expand_named_untuple = is_last_transformer
+                        && isUntupleExpansion(node_list_nodes)
+                        && ((execute_apply_transformer && !apply_column_name_prefix.empty())
+                            || execute_replace_transformer);
+                    if (expand_named_untuple)
+                    {
+                        for (size_t i = 0; i < node_list_nodes_size; ++i)
+                        {
+                            /// Base each element on the display name feeding untuple. For APPLY that
+                            /// is the accumulated prefixed name (a direct untuple keeps `f_a.1`, a
+                            /// chained one follows the prior transformer: `q_p_a.1`, `q_identity(a).1`).
+                            /// For REPLACE the prefix is empty and the accumulator is the replaced
+                            /// column name, so this yields `a.1` (matching `ActionsVisitor::doUntuple`,
+                            /// which aliases the untuple to the REPLACE target name).
+                            String element_projection_name = apply_column_name_prefix + apply_prefixed_projection_name
+                                + '.' + getTupleElementName(node_list_nodes[i]);
+
+                            /// The first element reuses the name slot already pushed for this
+                            /// matched column; the rest add new sibling slots.
+                            if (i != 0)
+                                result_projection_names.push_back({});
+                            result_projection_names.back() = element_projection_name;
+
+                            node_to_projection_name.emplace(node_list_nodes[i], element_projection_name);
+
+                            /// Push all but the last element now; the last stays in `node` so
+                            /// the loop tail pushes it, keeping the node/name counts in sync.
+                            if (i + 1 < node_list_nodes_size)
+                                list->getNodes().push_back(node_list_nodes[i]);
+                        }
+                        node = node_list_nodes.back();
+                        node_projection_names.clear();
+                        break;
+                    }
+
                     if (node_list_nodes_size != 1)
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                             "{} transformer {} resolved as list node with size {}. Expected 1. In scope {}",
@@ -2937,8 +3109,63 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (node_projection_names.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Matcher node expected 1 projection name. Actual: {}", node_projection_names.size());
 
-                result_projection_names.back() = std::move(node_projection_names[0]);
-                node_to_projection_name.emplace(node, result_projection_names.back());
+                /// The natural resolved name of `node` after this transformer (e.g. `toString(a)`,
+                /// `identity(a)`). A later chained transformer must see this as its argument name,
+                /// so this is what a freshly created node stores in node_to_projection_name.
+                String natural_projection_name = node_projection_names[0];
+
+                if (execute_apply_transformer && !apply_column_name_prefix.empty())
+                {
+                    /// `APPLY (expr, 'prefix')` names the result `prefix` + the short column name
+                    /// before this transformer, mirroring the legacy path (which prefixes
+                    /// ASTIdentifier::shortName(), not a qualified name). Chained prefixes
+                    /// accumulate: `q_` + `p_` + `a`.
+                    apply_prefixed_projection_name = apply_column_name_prefix + apply_prefixed_projection_name;
+                    result_projection_names.back() = apply_prefixed_projection_name;
+                }
+                else
+                {
+                    result_projection_names.back() = natural_projection_name;
+                    apply_prefixed_projection_name = natural_projection_name;
+                }
+                /// Whether the transformer resolved back to the very node it started from
+                /// (an identity lambda `x -> x`). A function/lambda that wraps the input is a
+                /// fresh node instead.
+                const bool node_pointer_reused = node.get() == input_node_before_transformer;
+                if (node_pointer_reused)
+                {
+                    /// The reused node is this column's canonical node, shared with every other
+                    /// expression in the query, so a name only this chain sees (an APPLY prefix, or
+                    /// an alias inside the lambda body) goes on a private copy, never on it.
+                    const bool node_is_private_copy = execute_apply_transformer
+                        && result_projection_names.back() != projection_name_before_transformer;
+                    if (node_is_private_copy)
+                        node = node->clone();
+
+                    /// Reused node: the legacy AST path has no equivalent (an identity lambda
+                    /// cannot be expressed there), so we carry the accumulated (prefixed) name.
+                    /// Overwrite, not emplace: the node may already be in the map, so a chained
+                    /// transformer must observe the updated name (`APPLY (identity, 'p_') APPLY toString`
+                    /// -> `toString(p_a)`).
+                    node_to_projection_name.insert_or_assign(node, result_projection_names.back());
+                    /// resolveExpressionNode reads resolved_expressions before node_to_projection_name,
+                    /// so the name must reach that cache too. A private copy has no entry yet.
+                    if (execute_apply_transformer)
+                    {
+                        if (node_is_private_copy)
+                            resolved_expressions.emplace(node, ProjectionNames{result_projection_names.back()});
+                        else if (auto resolved_it = resolved_expressions.find(node); resolved_it != resolved_expressions.end())
+                            resolved_it->second = {result_projection_names.back()};
+                    }
+                }
+                else
+                {
+                    /// Freshly created node: store its natural name, not the prefix alias, so a
+                    /// later unprefixed `APPLY f` formats its argument from the real expression
+                    /// (`toString(identity(a))`, `upper(toString(a))`), matching the legacy path.
+                    /// The prefix only affects this column's terminal display name above.
+                    node_to_projection_name.emplace(node, natural_projection_name);
+                }
                 node_projection_names.clear();
             }
         }
@@ -3558,6 +3785,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         /// In this example argument of function `in` is being resolve here. If CTE `test1` is not forbidden,
                         /// `test1` is resolved to CTE (not to the table) in `initializeQueryJoinTreeNode` function.
                         ctes_in_resolve_process.insert(original_cte_node);
+                        cte_definitions_in_resolve_process.insert(original_cte_node.get());
 
                         if (subquery_node)
                             resolveQuery(resolved_identifier_node, subquery_scope);
@@ -3565,6 +3793,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                             resolveUnion(resolved_identifier_node, subquery_scope);
 
                         ctes_in_resolve_process.erase(original_cte_node);
+                        cte_definitions_in_resolve_process.erase(original_cte_node.get());
                     }
                     else if (table_node != nullptr && table_node->isMaterializedCTE())
                     {
@@ -4713,10 +4942,31 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     {
         table_expression_data.table_name = query_node ? query_node->getCTEName() : union_node->getCTEName();
         table_expression_data.table_expression_description = "subquery";
+
+        /** An inlined view keeps the name it had as a table expression, so that references qualified by
+          * the view name, with or without the database name, resolve the way they do without inlining -
+          * where a table name qualifies references even when the table expression also has an alias.
+          * Example: `SELECT default.v.b FROM t JOIN default.v USING (k)`.
+          */
+        if (const auto * inlined_view_name = getInlinedViewName(table_expression_node.get()))
+        {
+            table_expression_data.database_name = inlined_view_name->database_name;
+            table_expression_data.table_name = inlined_view_name->table_name;
+            table_expression_data.table_expression_name = inlined_view_name->getFullNameNotQuoted();
+        }
     }
     else if (table_function_node)
     {
         table_expression_data.table_expression_description = "table_function";
+
+        /// A parameterized view has a name of its own, expose it exactly like a `TableNode` does.
+        if (table_function_node->isParameterizedView())
+        {
+            const auto & table_storage_id = table_function_node->getStorageID();
+            table_expression_data.database_name = table_storage_id.database_name;
+            table_expression_data.table_name = table_storage_id.table_name;
+            table_expression_data.table_expression_name = table_storage_id.getFullNameNotQuoted();
+        }
     }
 
     if (table_expression_node->hasAlias())
@@ -5462,7 +5712,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     array_join_nodes = std::move(array_join_column_expressions);
 }
 
-void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope)
+void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope) const
 {
     Names column_names;
     if (!scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
@@ -5471,8 +5721,16 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode &
     if (join_node.getKind() != JoinKind::Paste)
         return;
 
-    auto * left_node = join_node.getLeftTableExpressionNode()->as<QueryNode>();
-    auto * right_node = join_node.getRightTableExpressionNode()->as<QueryNode>();
+    /// An inlined view is a table by name and takes no part in this check, as it does not without inlining.
+    auto as_unnamed_subquery = [&](const QueryTreeNodePtr & table_expression_node) -> QueryNode *
+    {
+        if (getInlinedViewName(table_expression_node.get()))
+            return nullptr;
+        return table_expression_node->as<QueryNode>();
+    };
+
+    auto * left_node = as_unnamed_subquery(join_node.getLeftTableExpressionNode());
+    auto * right_node = as_unnamed_subquery(join_node.getRightTableExpressionNode());
 
     if (!left_node && !right_node)
         return;
@@ -6064,7 +6322,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
   * This replaces the TableNode wrapping a StorageView with a QueryNode/UnionNode built from the
   * view's inner query AST, making the view transparent to the analyzer and all optimization passes.
   */
-void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const
+void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope)
 {
     if (!scope.context->getSettingsRef()[Setting::analyzer_inline_views])
         return;
@@ -6106,9 +6364,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
     /// Check for row policies on the view itself.
-    auto row_policy_filter = scope.context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, scope.context);
+    bool has_row_policy = row_policy_filter != nullptr;
 
     /// Build the query tree from the view's inner query AST.
     ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
@@ -6244,7 +6501,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         result_node = std::move(wrapper_query);
     }
 
-    /// Preserve alias: the outer query references columns via the view name or user-provided alias.
+    /// Preserve the user-provided alias, if any: the outer query references columns via it.
     result_node->setAlias(table_node->getAlias());
 
     /// Fix scope tracking: the old TableNode pointer was inserted during initializeQueryJoinTreeNode.
@@ -6253,6 +6510,13 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
 
     join_tree_node = std::move(result_node);
     scope.table_expressions_in_resolve_process.insert(join_tree_node.get());
+
+    /** The inlined subquery keeps the view's name as a table expression, see `table_expression_to_inlined_view_name`.
+      * In particular, the subquery carries no name of its own, and `joined_subquery_requires_alias` (on by
+      * default) rejects a join with an unnamed subquery, so joining a view by its name used to fail with
+      * `ALIAS_REQUIRED` under inlining while the same query runs without it.
+      */
+    table_expression_to_inlined_view_name.emplace(join_tree_node.get(), storage_id);
 }
 
 /** Resolve query join tree.
@@ -6280,12 +6544,18 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
             QueryTreeNodePtr original_cte_node = try_get_original_cte_node(join_tree_node);
 
             if (original_cte_node)
+            {
                 ctes_in_resolve_process.insert(original_cte_node);
+                cte_definitions_in_resolve_process.insert(original_cte_node.get());
+            }
 
             resolveExpressionNode(join_tree_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
 
             if (original_cte_node)
+            {
                 ctes_in_resolve_process.erase(original_cte_node);
+                cte_definitions_in_resolve_process.erase(original_cte_node.get());
+            }
             break;
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
@@ -6308,19 +6578,22 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
                     /// Prevent recursive CTE references during subquery resolution.
                     const auto & cte_name = materialized_cte_ptr->cte_name;
-                    QueryTreeNodePtr cte_map_node;
+                    QueryTreeNodes cte_map_nodes;
                     for (auto * s = &scope; s; s = s->parent_scope)
                     {
                         auto it = s->cte_name_to_query_node.find(cte_name);
                         if (it != s->cte_name_to_query_node.end())
                         {
-                            cte_map_node = it->second;
+                            cte_map_nodes = it->second;
                             break;
                         }
                     }
 
-                    if (cte_map_node)
+                    for (const auto & cte_map_node : cte_map_nodes)
+                    {
                         ctes_in_resolve_process.insert(cte_map_node);
+                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
+                    }
 
                     IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(subquery, &scope);
                     subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -6330,8 +6603,11 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     else
                         resolveUnion(subquery, subquery_scope);
 
-                    if (cte_map_node)
+                    for (const auto & cte_map_node : cte_map_nodes)
+                    {
                         ctes_in_resolve_process.erase(cte_map_node);
+                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
+                    }
 
                     checkMaterializedCTESubqueryIsNotCorrelated(subquery, cte_name, scope.scope_node);
 
@@ -6571,7 +6847,7 @@ void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_n
 
     /// The parser builds left-associative binary `and` trees, so `(a AND b) AND c`
     /// arrives as `and(and(a, b), c)`. Flatten the whole chain into atomic conjuncts,
-    /// mirroring the legacy `splitConjunctionsAst` used by `PredicateExpressionsOptimizer`.
+    /// mirroring the legacy `splitConjunctionsAst` helper.
     /// Without this, a nested `and` containing an aggregate is classified as a single
     /// `KeepInHaving` conjunct and its non-aggregate siblings stay trapped in `HAVING`.
     QueryTreeNodes conjuncts;
@@ -6796,12 +7072,32 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             continue;
         const auto & cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
 
-        auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
-        if (!inserted)
-            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                "CTE with name {} already exists. In scope {}",
-                cte_name,
-                scope.scope_node->formatASTForErrorMessage());
+        auto & cte_nodes = scope.cte_name_to_query_node[cte_name];
+        if (!cte_nodes.empty())
+        {
+            if (query_node_typed.isRecursiveWith())
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name {} already exists and cannot be redefined in a recursive WITH clause. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            /// A redefinition is rejected on its second registration, so only the first node can be materialized.
+            if (isMaterializedCTEDefinition(node) || isMaterializedCTEDefinition(cte_nodes.front()))
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name {} already exists and cannot be redefined because it is declared as MATERIALIZED. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            /// Checked last, so the hint is given only when enabling the setting would help.
+            if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_cte_redefinition])
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name {} already exists. Enable the setting analyzer_compatibility_allow_cte_redefinition "
+                    "to let a later definition shadow the earlier one. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+
+        cte_nodes.push_back(node);
     }
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
