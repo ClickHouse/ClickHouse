@@ -66,23 +66,6 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
 }
 
 
-static bool needsDefaultDatabaseForBareDictionaryOnCluster(const ASTPtr & query_ptr)
-{
-    const auto * system_query = query_ptr->as<ASTSystemQuery>();
-    if (!system_query)
-        return false;
-
-    if (system_query->type != ASTSystemQuery::Type::RELOAD_DICTIONARY
-        && system_query->type != ASTSystemQuery::Type::UNLOAD_DICTIONARY)
-        return false;
-
-    if (!system_query->table || system_query->database)
-        return false;
-
-    return true;
-}
-
-
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
     OpenTelemetry::SpanHolder span(__FUNCTION__, OpenTelemetry::SpanKind::PRODUCER);
@@ -153,12 +136,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     bool need_replace_current_database = std::any_of(
         access_to_check.begin(),
         access_to_check.end(),
-        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
-        || needsDefaultDatabaseForBareDictionaryOnCluster(query_ptr);
+        [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
 
     bool use_local_default_database = false;
     const String & current_database = context->getCurrentDatabase();
-    Strings access_check_default_databases{current_database};
 
     if (need_replace_current_database)
     {
@@ -183,7 +164,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
         else
         {
-            access_check_default_databases = host_default_databases;
             for (size_t i = 0; i != access_to_check.size();)
             {
                 auto & element = access_to_check[i];
@@ -205,10 +185,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     /// Check access rights, assume that all servers have the same users config
     context->checkAccess(access_to_check);
-
-    if (params.additional_access_check)
-        for (const auto & default_database : access_check_default_databases)
-            params.additional_access_check(default_database);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);

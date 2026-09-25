@@ -1,4 +1,6 @@
--- Tags: no-replicated-database, shard
+-- Tags: no-old-analyzer, no-replicated-database, shard
+--       no-old-analyzer: this suite assumes the analyzer as the default, like its first half;
+--       the explicit `SETTINGS enable_analyzer = 0` lines still cover the old one.
 --       no-replicated-database: for the lazy_load_tables section below.
 --       shard: the Remote-engine and Distributed sections need a second server address.
 

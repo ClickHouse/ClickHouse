@@ -7,7 +7,7 @@ import random
 import threading
 import time
 
-from kafka import KafkaProducer
+from kafka import KafkaAdminClient, KafkaProducer
 import kafka.errors
 import pytest
 
@@ -1259,8 +1259,6 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
         consumer_group=f"{topic_name}-group",
     )
 
-    # A streaming loop keeps the materialized views it started with, so one that began before the
-    # second view existed commits without it; detaching and re-attaching joins it before producing.
     instance.query(f"""
         DROP TABLE IF EXISTS test.{kafka_table}_view1;
         DROP TABLE IF EXISTS test.{kafka_table}_view2;
@@ -1277,10 +1275,11 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
             SELECT * FROM test.{kafka_table};
         CREATE MATERIALIZED VIEW test.{kafka_table}_consumer2 TO test.{kafka_table}_view2 AS
             SELECT * FROM test.{kafka_table};
-
-        DETACH TABLE test.{kafka_table} SYNC;
-        ATTACH TABLE test.{kafka_table};
     """)
+
+    # we have to wait > kafka_poll_timeout_ms before producing data,
+    #  otherwise it is expected that data might go via the first MV only
+    time.sleep(3)
 
     messages = []
     for i in range(50):
@@ -1311,8 +1310,8 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
             DROP TABLE test.{kafka_table}_view2;
         """)
 
-        assert k.kafka_check_result(result1), f"view1 got: {result1!r}"
-        assert k.kafka_check_result(result2), f"view2 got: {result2!r}"
+        k.kafka_check_result(result1, True)
+        k.kafka_check_result(result2, True)
 
 @pytest.mark.parametrize(
     "create_query_generator",
@@ -2147,7 +2146,9 @@ def test_kafka_insert_avro(kafka_cluster, create_query_generator):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
     topic_config = {
         # default retention, since predefined timestamp_ms is used.
         "retention.ms": "-1",
@@ -2262,7 +2263,9 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
     topic_name = "flush_by_time" + k.get_topic_postfix(create_query_generator)
 
     with k.kafka_topic(admin_client, topic_name):
@@ -2405,7 +2408,9 @@ def test_kafka_lot_of_partitions_partial_commit_of_bulk(
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     topic_name = "topic_with_multiple_partitions2" + k.get_topic_postfix(
         create_query_generator
@@ -2468,7 +2473,9 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
     topic_name = "no_holes_when_write_suffix_failed" + k.get_topic_postfix(
         create_query_generator
     )
@@ -2877,7 +2884,7 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
                _error AS error
                FROM test.{kafka_table} WHERE length(_error) > 0;
 
-        DETACH TABLE test.{kafka_table} SYNC;
+        DETACH TABLE test.{kafka_table};
         ATTACH TABLE test.{kafka_table};
         """
     )
@@ -2965,7 +2972,7 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
                _error AS error
                FROM test.{kafka_table} WHERE length(_error) > 0;
 
-        DETACH TABLE test.{kafka_table} SYNC;
+        DETACH TABLE test.{kafka_table};
         ATTACH TABLE test.{kafka_table};
     """)
 
@@ -3007,7 +3014,9 @@ def test_kafka_predefined_configuration(kafka_cluster):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
     topic_name = "conf"
     k.kafka_create_topic(admin_client, topic_name)
 
@@ -3344,7 +3353,9 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     topic_name = "system_kafka_cons" + k.get_topic_postfix(create_query_generator)
 
@@ -3444,7 +3455,9 @@ def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
     kafka_table = f"kafka_{suffix}"
 
     # based on test_kafka_consumer_hang2
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(cluster.kafka_port),
@@ -3563,7 +3576,9 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(cluster.kafka_port),
@@ -4381,53 +4396,6 @@ def test_kafka2_dead_letter_queue_commit_on_select(kafka_cluster):
     assert dlq_count_after == 1
 
     instance.query(f"DROP TABLE test.{kafka_table} SYNC")
-
-
-def test_kafka_consumers_with_assignment_after_rebalance(kafka_cluster):
-    suffix = k.random_string(6)
-    topic_name = f"consumers_with_assignment_{suffix}"
-    k.kafka_create_topic(k.get_admin_client(kafka_cluster), topic_name, num_partitions=2)
-
-    metric_query = (
-        "SELECT value FROM system.metrics WHERE metric = 'KafkaConsumersWithAssignment'"
-    )
-    before = int(instance.query(metric_query))
-
-    def create(table):
-        instance.query(
-            f"""
-            CREATE TABLE test.{table} (key UInt64, value UInt64)
-                ENGINE = Kafka
-                SETTINGS kafka_broker_list = 'kafka1:19092',
-                         kafka_topic_list = '{topic_name}',
-                         kafka_group_name = '{topic_name}',
-                         kafka_format = 'JSONEachRow';
-            CREATE MATERIALIZED VIEW test.{table}_mv ENGINE = Memory AS SELECT * FROM test.{table};
-            """
-        )
-
-    # The first consumer takes both partitions.
-    create(f"kafka_a_{suffix}")
-    assert_eq_with_retry(instance, metric_query, str(before + 1))
-
-    # The second member joining the group revokes and reassigns the live assignment.
-    create(f"kafka_b_{suffix}")
-    assert_eq_with_retry(
-        instance,
-        f"""
-        SELECT num_rebalance_assignments
-        FROM system.kafka_consumers
-        WHERE database = 'test' AND table = 'kafka_b_{suffix}'
-        """,
-        "1",
-    )
-
-    for table in (f"kafka_a_{suffix}", f"kafka_b_{suffix}"):
-        instance.query(f"DROP TABLE test.{table}_mv SYNC")
-        instance.query(f"DROP TABLE test.{table} SYNC")
-
-    # Without the fix the revocation is counted twice, so the gauge ends one below where it started.
-    assert_eq_with_retry(instance, metric_query, str(before))
 
 
 if __name__ == "__main__":

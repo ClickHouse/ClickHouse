@@ -1540,7 +1540,13 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
             setv->set_property(setting);
             if (chs.oracle_values.size() == 2)
             {
-                if (rg.nextBool())
+                if (setting == "enable_analyzer")
+                {
+                    /// For the analyzer, always run the old first, so we can minimize the usage of it
+                    setv->set_value("0");
+                    nsettings.push_back("1");
+                }
+                else if (rg.nextBool())
                 {
                     setv->set_value(*chs.oracle_values.begin());
                     nsettings.push_back(*std::next(chs.oracle_values.begin(), 1));

@@ -9,12 +9,13 @@
 #include <IO/SocketPeerClosed.h>
 
 #include <Common/Exception.h>
+#include <Common/SilkThrottler.h>
 #include <Common/Stopwatch.h>
-#include <Common/Throttler.h>
 #include <Common/tests/gtest_ephemeral_certificate.h>
-#include <Common/tests/gtest_silk_scheduler.h>
 
+#include <silk/fibers/fiber.h>
 #include <silk/fibers/future.h>
+#include <silk/util/init.h>
 
 #include <Poco/Exception.h>
 #include <Poco/Net/Context.h>
@@ -40,6 +41,29 @@
 
 namespace
 {
+
+class SilkEnvironment : public ::testing::Environment
+{
+public:
+    void SetUp() override
+    {
+        /// TODO(mstetsyuk): Silk::initializeFiberScheduler and Silk::destroyFiberScheduler are coming in another PR.
+        silk::initialize();
+        silk::FiberScheduler::Options options;
+        /// OpenSSL handshakes run on fiber stacks and need more room than the silk default.
+        options.fiberStackSize = 320 * 1024;
+        silk::FiberScheduler::initialize(&options);
+    }
+
+    void TearDown() override
+    {
+        silk::FiberScheduler::destroy();
+        silk::destroy();
+    }
+};
+
+::testing::Environment * const silk_env = ::testing::AddGlobalTestEnvironment(new SilkEnvironment);
+
 
 struct PlainPolicy
 {
@@ -143,11 +167,6 @@ template <typename Policy>
 class SilkFiberSocketTest : public ::testing::Test
 {
 protected:
-    static void SetUpTestSuite()
-    {
-        initializeFiberSchedulerForTests();
-    }
-
     Policy policy;
 };
 
@@ -160,17 +179,23 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
     auto listener = this->policy.makeListener();
     const uint16_t port = listener.address().port();
 
+    struct Params
+    {
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
+    };
+
     silk::FiberFuture client_future;
-    const int run_result = Silk::spawn(
-        [port, impl = this->policy.makeClient()]() -> int
+    const int run_result = silk::FiberScheduler::run(
+        +[](Params * p) noexcept -> int
         {
-            Poco::Net::StreamSocket socket(impl);
-            const auto throttler = std::make_shared<DB::Throttler>(/*max_speed_*/ 1'000'000);
+            Poco::Net::StreamSocket socket(p->impl);
+            const auto throttler = std::make_shared<Silk::Throttler>(/*max_speed_*/ 1'000'000);
             socket.setSendThrottler(throttler);
             socket.setReceiveThrottler(throttler);
             socket.bind(Poco::Net::SocketAddress("127.0.0.1", 0), /*reuseAddress*/ true);
             const uint16_t bound_port = socket.address().port();
-            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
             EXPECT_EQ(socket.address().port(), bound_port);
 
             socket.sendBytes("Hello ", 6);
@@ -191,7 +216,8 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
             socket.close();
             return 0;
         },
-        client_future);
+        Params{port, this->policy.makeClient()},
+        &client_future);
     ASSERT_EQ(run_result, 0);
 
     auto peer = listener.acceptConnection();
@@ -218,12 +244,19 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
 
     std::latch negative_poll_done{1};
 
+    struct Params
+    {
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
+        std::latch * negative_poll_done;
+    };
+
     silk::FiberFuture client_future;
-    const int run_result = Silk::spawn(
-        [port, impl = this->policy.makeClient(), &negative_poll_done]() -> int
+    const int run_result = silk::FiberScheduler::run(
+        +[](Params * p) noexcept -> int
         {
-            Poco::Net::StreamSocket socket(impl);
-            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            Poco::Net::StreamSocket socket(p->impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
             socket.sendBytes("ping", 4);
             char prime[4] = {};
@@ -238,7 +271,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
             }
 
             EXPECT_FALSE(socket.poll(Poco::Timespan(0, 50'000), Poco::Net::Socket::SELECT_READ));
-            negative_poll_done.count_down();
+            p->negative_poll_done->count_down();
             EXPECT_TRUE(socket.poll(Poco::Timespan(0, 500'000), Poco::Net::Socket::SELECT_READ));
 
             char data[1] = {};
@@ -249,7 +282,8 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
             socket.close();
             return 0;
         },
-        client_future);
+        Params{port, this->policy.makeClient(), &negative_poll_done},
+        &client_future);
     ASSERT_EQ(run_result, 0);
 
     auto peer = listener.acceptConnection();
@@ -279,17 +313,24 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
     bound_socket.bind(Poco::Net::SocketAddress("127.0.0.1", 0), true);
     const uint16_t closed_port = bound_socket.address().port();
 
+    struct Params
+    {
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
+    };
+
     silk::FiberFuture client_future;
-    const int run_result = Silk::spawn(
-        [closed_port, impl = this->policy.makeClient()]() -> int
+    const int run_result = silk::FiberScheduler::run(
+        +[](Params * p) noexcept -> int
         {
-            Poco::Net::StreamSocket socket(impl);
+            Poco::Net::StreamSocket socket(p->impl);
             EXPECT_THROW(
-                socket.connect(Poco::Net::SocketAddress("127.0.0.1", closed_port)),
+                socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port)),
                 Poco::Net::ConnectionRefusedException);
             return 0;
         },
-        client_future);
+        Params{closed_port, this->policy.makeClient()},
+        &client_future);
     ASSERT_EQ(run_result, 0);
 
     client_future.wait();
@@ -301,12 +342,18 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
     auto listener = this->policy.makeListener();
     const uint16_t port = listener.address().port();
 
+    struct Params
+    {
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
+    };
+
     silk::FiberFuture client_future;
-    const int run_result = Silk::spawn(
-        [port, impl = this->policy.makeClient()]() -> int
+    const int run_result = silk::FiberScheduler::run(
+        +[](Params * p) noexcept -> int
         {
-            Poco::Net::StreamSocket socket(impl);
-            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            Poco::Net::StreamSocket socket(p->impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
             /// An unthrottled exchange first: it drives the TLS handshake for the secure
             /// variant and keeps the connection open until the server is done with it.
@@ -314,17 +361,18 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
             char pong[1] = {};
             EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
 
-            socket.setSendThrottler(std::make_shared<DB::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Send limit exceeded"));
+            socket.setSendThrottler(std::make_shared<Silk::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Send limit exceeded"));
             EXPECT_THROW(socket.sendBytes("x", 1), DB::Exception);
 
-            socket.setReceiveThrottler(std::make_shared<DB::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Receive limit exceeded"));
+            socket.setReceiveThrottler(std::make_shared<Silk::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Receive limit exceeded"));
             char buf[1] = {};
             EXPECT_THROW(socket.receiveBytes(buf, sizeof(buf)), DB::Exception);
 
             socket.close();
             return 0;
         },
-        client_future);
+        Params{port, this->policy.makeClient()},
+        &client_future);
     ASSERT_EQ(run_result, 0);
 
     auto peer = listener.acceptConnection();
@@ -347,15 +395,23 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
     auto listener = policy.makeListener();
     const uint16_t port = listener.address().port();
 
+    struct Params
+    {
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
+        uint64_t * elapsed_us;
+        DB::SocketState * state;
+    };
+
     uint64_t elapsed_us = 0;
     DB::SocketState state = DB::SocketState::Closed;
 
     silk::FiberFuture client_future;
-    const int run_result = Silk::spawn(
-        [port, impl = policy.makeClient(), &elapsed_us, &state]() -> int
+    const int run_result = silk::FiberScheduler::run(
+        +[](Params * p) noexcept -> int
         {
-            Poco::Net::StreamSocket socket(impl);
-            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            Poco::Net::StreamSocket socket(p->impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
             /// Drive the TLS handshake to completion and drain the exchange, so that by the time
             /// of the probe below the connection is idle: alive, but with nothing pending.
@@ -370,13 +426,14 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
             /// connection pool's staleness check in `HTTPConnectionPool.cpp`) calls `SSL_peek`,
             /// which reaches the always non-blocking Silk TLS BIO.
             Stopwatch watch;
-            state = DB::getSocketState(socket);
-            elapsed_us = watch.elapsedMicroseconds();
+            *p->state = DB::getSocketState(socket);
+            *p->elapsed_us = watch.elapsedMicroseconds();
 
             socket.close();
             return 0;
         },
-        client_future);
+        Params{port, policy.makeClient(), &elapsed_us, &state},
+        &client_future);
     ASSERT_EQ(run_result, 0);
 
     auto peer = listener.acceptConnection();
@@ -404,15 +461,23 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
     auto listener = policy.makeListener();
     const uint16_t port = listener.address().port();
 
+    struct Params
+    {
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
+        uint64_t * elapsed_us;
+        int * ssl_error;
+    };
+
     uint64_t elapsed_us = 0;
     int ssl_error = 0;
 
     silk::FiberFuture client_future;
-    const int run_result = Silk::spawn(
-        [port, impl = policy.makeClient(), &elapsed_us, &ssl_error]() -> int
+    const int run_result = silk::FiberScheduler::run(
+        +[](Params * p) noexcept -> int
         {
-            Poco::Net::StreamSocket socket(impl);
-            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            Poco::Net::StreamSocket socket(p->impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
             /// Complete the TLS handshake and drain the exchange, so the connection is idle.
             socket.sendBytes("x", 1);
@@ -430,13 +495,14 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
             ERR_clear_error();
             Stopwatch watch;
             const int res = SSL_peek(ssl, &c, 1);
-            ssl_error = SSL_get_error(ssl, res);
-            elapsed_us = watch.elapsedMicroseconds();
+            *p->ssl_error = SSL_get_error(ssl, res);
+            *p->elapsed_us = watch.elapsedMicroseconds();
 
             socket.close();
             return 0;
         },
-        client_future);
+        Params{port, policy.makeClient(), &elapsed_us, &ssl_error},
+        &client_future);
     ASSERT_EQ(run_result, 0);
 
     auto peer = listener.acceptConnection();
@@ -463,15 +529,23 @@ TEST_F(SilkFiberSecureSocketTest, SslReadReturnsWantReadWithoutSuspending)
     auto listener = policy.makeListener();
     const uint16_t port = listener.address().port();
 
+    struct Params
+    {
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
+        uint64_t * elapsed_us;
+        int * ssl_error;
+    };
+
     uint64_t elapsed_us = 0;
     int ssl_error = 0;
 
     silk::FiberFuture client_future;
-    const int run_result = Silk::spawn(
-        [port, impl = policy.makeClient(), &elapsed_us, &ssl_error]() -> int
+    const int run_result = silk::FiberScheduler::run(
+        +[](Params * p) noexcept -> int
         {
-            Poco::Net::StreamSocket socket(impl);
-            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            Poco::Net::StreamSocket socket(p->impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
             socket.sendBytes("x", 1);
             char pong[1] = {};
@@ -484,13 +558,14 @@ TEST_F(SilkFiberSecureSocketTest, SslReadReturnsWantReadWithoutSuspending)
             ERR_clear_error();
             Stopwatch watch;
             const int res = SSL_read(ssl, &c, 1);
-            ssl_error = SSL_get_error(ssl, res);
-            elapsed_us = watch.elapsedMicroseconds();
+            *p->ssl_error = SSL_get_error(ssl, res);
+            *p->elapsed_us = watch.elapsedMicroseconds();
 
             socket.close();
             return 0;
         },
-        client_future);
+        Params{port, policy.makeClient(), &elapsed_us, &ssl_error},
+        &client_future);
     ASSERT_EQ(run_result, 0);
 
     auto peer = listener.acceptConnection();
@@ -513,15 +588,22 @@ TEST_F(SilkFiberSecureSocketTest, BlockingShutdownRetriesWantWrite)
     auto listener = policy.makeListener();
     const uint16_t port = listener.address().port();
 
+    struct Params
+    {
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
+        int * shutdown_write_calls;
+    };
+
     int shutdown_write_calls = 0;
 
     silk::FiberFuture client_future;
-    const int run_result = Silk::spawn(
-        [port, impl = policy.makeClient(), &shutdown_write_calls]() -> int
+    const int run_result = silk::FiberScheduler::run(
+        +[](Params * p) noexcept -> int
         {
             RetryOnceWriteBIOState retry_state;
-            Poco::Net::StreamSocket socket(impl);
-            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            Poco::Net::StreamSocket socket(p->impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
 
             /// Complete the TLS handshake before injecting the retry into the next TLS write.
             socket.sendBytes("x", 1);
@@ -537,10 +619,11 @@ TEST_F(SilkFiberSecureSocketTest, BlockingShutdownRetriesWantWrite)
             }
 
             socket.shutdown();
-            shutdown_write_calls = retry_state.write_calls;
+            *p->shutdown_write_calls = retry_state.write_calls;
             return 0;
         },
-        client_future);
+        Params{port, policy.makeClient(), &shutdown_write_calls},
+        &client_future);
     ASSERT_EQ(run_result, 0);
 
     auto peer = listener.acceptConnection();

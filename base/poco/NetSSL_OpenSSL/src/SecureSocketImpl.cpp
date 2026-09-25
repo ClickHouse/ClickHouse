@@ -29,20 +29,6 @@
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
-
-
-namespace ProfileEvents
-{
-	extern const Event TLSHandshakes;
-	extern const Event TLSHandshakeMicroseconds;
-	extern const Event TLSHandshakeErrors;
-	extern const Event TLSServerHandshakes;
-	extern const Event TLSServerHandshakeMicroseconds;
-	extern const Event TLSServerHandshakeErrors;
-}
-
 
 using Poco::IOException;
 using Poco::TimeoutException;
@@ -114,40 +100,6 @@ SSLOperationResult performSSLOperation(SSL * ssl, Operation && operation, bool z
 	return result;
 }
 
-
-/// Accounts one TLS handshake in profile events, separately for incoming (server) and
-/// outgoing (client) connections.
-///
-/// The elapsed time is always charged, because a handshake on a non-blocking socket is
-/// abandoned and retried until it completes, and the cost of all of its attempts belongs
-/// to the one handshake. The handshake itself is counted once it stops being retriable,
-/// by `succeeded` or by `failed`.
-struct HandshakeProfileEventCounter
-{
-	explicit HandshakeProfileEventCounter(bool isServer_) : isServer(isServer_) {}
-
-	~HandshakeProfileEventCounter()
-	{
-		ProfileEvents::increment(
-			isServer ? ProfileEvents::TLSServerHandshakeMicroseconds : ProfileEvents::TLSHandshakeMicroseconds,
-			watch.elapsedMicroseconds());
-	}
-
-	void succeeded() const
-	{
-		ProfileEvents::increment(isServer ? ProfileEvents::TLSServerHandshakes : ProfileEvents::TLSHandshakes);
-	}
-
-	void failed() const
-	{
-		ProfileEvents::increment(isServer ? ProfileEvents::TLSServerHandshakeErrors : ProfileEvents::TLSHandshakeErrors);
-	}
-
-private:
-	const bool isServer;
-	/// Qualified: `Poco::Stopwatch` is a different class and would win the unqualified lookup here.
-	::Stopwatch watch;
-};
 
 SecureSocketImpl::SecureSocketImpl(Poco::AutoPtr<SocketImpl> pSocketImpl, Context::Ptr pContext):
 	_pSSL(nullptr),
@@ -324,8 +276,25 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	{
 		if (performHandshake && _pSocket->getBlocking())
 		{
-			if (completeHandshakeImpl(true) != 1)
+			SSLOperationResult result;
+			Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
+			do
+			{
+				RemainingTimeCounter counter(remaining_time);
+				result = performSSLOperation(_pSSL, [this]
+				{
+					return SSL_connect(_pSSL);
+				});
+			}
+			while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
+			if (result.rc <= 0)
+			{
+				if (handleError(result.rc, result.sslError, result.socketError, result.errorCode) < 0)
+					throw Poco::TimeoutException("SSL handshake timed out");
 				throw SSLConnectionUnexpectedlyClosedException();
+			}
+			_needHandshake = false;
+			verifyPeerCertificate();
 		}
 	}
 	catch (...)
@@ -432,10 +401,12 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 	int rc;
 	if (_needHandshake)
 	{
-		rc = completeHandshakeImpl(true);
-		if (rc == 0)
+		rc = completeHandshake();
+		if (rc == 1)
+			verifyPeerCertificate();
+		else if (rc == 0)
 			throw SSLConnectionUnexpectedlyClosedException();
-		else if (rc != 1)
+		else
 			return rc;
 	}
 
@@ -480,8 +451,10 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 	int rc;
 	if (_needHandshake)
 	{
-		rc = completeHandshakeImpl(true);
-		if (rc != 1)
+		rc = completeHandshake();
+		if (rc == 1)
+			verifyPeerCertificate();
+		else
 			return rc;
 	}
 
@@ -525,58 +498,31 @@ int SecureSocketImpl::available() const
 
 int SecureSocketImpl::completeHandshake()
 {
-	return completeHandshakeImpl(false);
-}
-
-
-int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
-{
 	ScopedLock lock(*_mutex);
 	poco_assert (_pSocket->initialized());
 	poco_check_ptr (_pSSL);
 
-	HandshakeProfileEventCounter handshakeCounter(SSL_is_server(_pSSL) != 0);
-
 	int rc;
-	try
+	SSLOperationResult result;
+	Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
+	do
 	{
-		SSLOperationResult result;
-		Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
-		do
+		RemainingTimeCounter counter(remaining_time);
+		result = performSSLOperation(_pSSL, [this]
 		{
-			RemainingTimeCounter counter(remaining_time);
-			result = performSSLOperation(_pSSL, [this]
-			{
-				return SSL_do_handshake(_pSSL);
-			});
-		}
-		/// `mustRetry` itself throws `Poco::TimeoutException` when a blocking socket runs out of time.
-		while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
-		rc = result.rc;
-		if (rc <= 0)
-		{
-			rc = handleError(rc, result.sslError, result.socketError, result.errorCode);
-			if (rc < 0 && _pSocket->getBlocking())
-				throw Poco::TimeoutException("SSL handshake timed out");
-			/// A negative `rc` on a non-blocking socket means the handshake wants more data and will be
-			/// resumed by the next read or write, so it has neither succeeded nor failed yet. Zero means
-			/// the peer closed the connection in the middle of the handshake.
-			if (rc == 0)
-				handshakeCounter.failed();
-			return rc;
-		}
-		_needHandshake = false;
-		/// The peer certificate is validated as a part of the handshake, so that an unacceptable
-		/// certificate is accounted as a handshake error rather than as a successful handshake.
-		if (verifyPeer)
-			verifyPeerCertificate();
+			return SSL_do_handshake(_pSSL);
+		});
 	}
-	catch (...)
+	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
+	rc = result.rc;
+	if (rc <= 0)
 	{
-		handshakeCounter.failed();
-		throw;
+		rc = handleError(rc, result.sslError, result.socketError, result.errorCode);
+		if (rc < 0 && _pSocket->getBlocking())
+			throw Poco::TimeoutException("SSL handshake timed out");
+		return rc;
 	}
-	handshakeCounter.succeeded();
+	_needHandshake = false;
 	return rc;
 }
 
