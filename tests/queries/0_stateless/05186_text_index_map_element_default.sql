@@ -17,7 +17,8 @@ SELECT count() FROM tab_ip WHERE m['nokey'] = '::' SETTINGS optimize_functions_t
 SELECT count() FROM tab_ip WHERE m['nokey'] = '::' SETTINGS optimize_functions_to_subcolumns = 1, ignore_data_skipping_indices = 'idx';
 
 SELECT '-- a constant the default cannot satisfy still prunes';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_ip WHERE m['zzz'] = 'dead:beef::1') WHERE explain ILIKE '%Granules: 0/1%';
+-- A parallel replicas plan can have no local read, and then shows no index analysis.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_ip WHERE m['zzz'] = 'dead:beef::1' SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules: 0/1%';
 SELECT count() FROM tab_ip WHERE m['abc'] = '2001:db8:1:2:3:4:5:6' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0;
 SELECT count() FROM tab_ip WHERE m['abc'] = '2001:db8:1:2:3:4:5:6' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1;
 
