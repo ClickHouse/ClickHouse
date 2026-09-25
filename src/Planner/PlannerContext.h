@@ -200,6 +200,13 @@ public:
     /// 2. ignore_ast_optimizations is set.
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
+    /// True when this plan is built to be serialized and shipped to another node (a shard under
+    /// `serialize_query_plan`, or a replica in the plan-based parallel replicas mode). Everything
+    /// materialized while planning must then survive serialization, which rules out a JIT-compiled
+    /// expression: a compiled function has no name in `FunctionFactory`, so the receiving node
+    /// cannot resolve it.
+    bool isLogicalPlan() const { return is_logical_plan; }
+
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
@@ -213,6 +220,8 @@ private:
     GlobalPlannerContextPtr global_planner_context;
 
     bool is_ast_level_optimization_allowed;
+
+    bool is_logical_plan = false;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
