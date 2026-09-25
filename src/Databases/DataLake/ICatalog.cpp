@@ -319,15 +319,13 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
     std::string metadata_location = iceberg_metadata_file_location;
     if (!metadata_location.empty())
     {
-        std::string data_location = getLocation();
-
-        // Use the actual storage type prefix (e.g., s3://, file://, etc.)
-        if (metadata_location.starts_with(storage_type_str))
-            metadata_location = metadata_location.substr(storage_type_str.size());
-        if (data_location.starts_with(storage_type_str))
-            data_location = data_location.substr(storage_type_str.size());
-        else if (!endpoint.empty() && data_location.starts_with(endpoint))
-            data_location = data_location.substr(endpoint.size());
+        /// The catalog reports the table location and the metadata file location in the same
+        /// `s3://<bucket>/...` shape, so anchor on what `setLocation` parsed out of the former.
+        /// `getLocation` must not be used here: with a vended `s3.endpoint` it rebuilds the table
+        /// location around that endpoint (`http://minio:9000/<bucket>/...`), so the prefix below no
+        /// longer matches and the absolute metadata URI would be returned, which the caller joins
+        /// onto the table path, duplicating it.
+        const std::string data_location = std::filesystem::path(location_without_path) / path;
 
         if (metadata_location.starts_with(data_location))
         {
