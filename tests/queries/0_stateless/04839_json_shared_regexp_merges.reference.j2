@@ -1,6 +1,10 @@
-horizontal before	10	6	0	0	16
-horizontal algorithm	Horizontal
-horizontal after	10	0	0	6	16
-vertical before	10	6	0	0	16
-vertical algorithm	Vertical
-vertical after	10	0	0	6	16
+{% for name in ['horizontal', 'vertical'] -%}
+{{ name }} before	10	6	0	0	16
+{{ name }} algorithm	{{ name.capitalize() }}
+{{ name }} after	10	0	0	6	16
+{{ name }} added mutations	0
+{{ name }} added before	16	16	0
+{{ name }} added algorithm	{{ name.capitalize() }}
+{{ name }} added after	16	0	16
+{{ name }} added part type	JSON(max_dynamic_paths=100, SHARED REGEXP \'^forced[.]\')
+{% endfor -%}

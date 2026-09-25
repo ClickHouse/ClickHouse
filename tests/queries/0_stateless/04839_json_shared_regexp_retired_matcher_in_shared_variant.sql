@@ -3,81 +3,56 @@
 SET enable_json_type = 1;
 SET mutations_sync = 2;
 
-DROP TABLE IF EXISTS retired_matcher_shared_variant_04839;
+-- Inferred nested objects never carry SHARED REGEXP in their type, so removing the rule and
+-- widening the type later must leave the same nested type names as a table that never had the rule.
+DROP TABLE IF EXISTS retired_rule_04839;
+DROP TABLE IF EXISTS control_04839;
 
--- A nested object that sits in a dynamic path's shared variant carries the type name it was
--- written under, in the header ahead of its bytes. Rewriting only the shared-variant statistics
--- leaves that name behind, and it does not stay put: it holds a max_dynamic_types slot, so the
--- next widening ALTER promotes it out and the retired name absorbs values written after the
--- policy was retired. The column then has no row on the type it declares, and a read naming the
--- declared type comes back empty rather than failing.
--- Re-promotion opted in, so a merge writes the table's own rule-free type instead of retaining the
--- retired rule as placement provenance; only then is a name left behind observably wrong.
-CREATE TABLE retired_matcher_shared_variant_04839
-(
-    id UInt64,
-    j JSON(max_dynamic_paths=10, max_dynamic_types=2, SHARED REGEXP '^tag_')
-)
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS allow_json_shared_data_paths_repromotion = 1;
+CREATE TABLE retired_rule_04839 (id UInt64, j JSON(max_dynamic_paths=10, max_dynamic_types=2, SHARED REGEXP '^tag_'))
+ENGINE = MergeTree ORDER BY id;
+CREATE TABLE control_04839 (id UInt64, j JSON(max_dynamic_paths=10, max_dynamic_types=2))
+ENGINE = MergeTree ORDER BY id;
 
--- Two frequent scalar types fill max_dynamic_types, so the rare nested object spills.
-INSERT INTO retired_matcher_shared_variant_04839 SELECT number, concat('{"arr": ', toString(number), '}') FROM numbers(10);
-INSERT INTO retired_matcher_shared_variant_04839 SELECT 100 + number, concat('{"arr": "s', toString(number), '"}') FROM numbers(10);
-INSERT INTO retired_matcher_shared_variant_04839 VALUES (999, '{"arr": [{"tag_x": 1}]}');
-OPTIMIZE TABLE retired_matcher_shared_variant_04839 FINAL;
+-- Two frequent scalar types fill max_dynamic_types, so the rare nested object goes to the shared variant.
+INSERT INTO retired_rule_04839 SELECT number, concat('{"arr": ', toString(number), '}') FROM numbers(10);
+INSERT INTO retired_rule_04839 SELECT 100 + number, concat('{"arr": "s', toString(number), '"}') FROM numbers(10);
+INSERT INTO retired_rule_04839 VALUES (999, '{"arr": [{"tag_x": 1}]}');
+OPTIMIZE TABLE retired_rule_04839 FINAL;
 
-ALTER TABLE retired_matcher_shared_variant_04839 MODIFY COLUMN j JSON(max_dynamic_paths=10, max_dynamic_types=2);
-INSERT INTO retired_matcher_shared_variant_04839 VALUES (2000, '{"arr": [{"tag_y": 2}]}');
-OPTIMIZE TABLE retired_matcher_shared_variant_04839 FINAL;
+INSERT INTO control_04839 SELECT number, concat('{"arr": ', toString(number), '}') FROM numbers(10);
+INSERT INTO control_04839 SELECT 100 + number, concat('{"arr": "s', toString(number), '"}') FROM numbers(10);
+INSERT INTO control_04839 VALUES (999, '{"arr": [{"tag_x": 1}]}');
+OPTIMIZE TABLE control_04839 FINAL;
 
-SELECT 'after retirement', id, position(dynamicType(j.arr), 'tag_') = 0 AS matcher_gone
-FROM retired_matcher_shared_variant_04839 WHERE id IN (999, 2000) ORDER BY id;
+SELECT 'rule', id, dynamicType(j.arr), isDynamicElementInSharedData(j.arr), dynamicElement(j.arr, 'Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))')
+FROM retired_rule_04839 WHERE id = 999;
+SELECT 'control', id, dynamicType(j.arr), isDynamicElementInSharedData(j.arr), dynamicElement(j.arr, 'Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))')
+FROM control_04839 WHERE id = 999;
 
--- An unrelated widening. This is what promotes the shared-variant value back out, and what used
--- to spread the retired name onto the row inserted after the retirement.
-ALTER TABLE retired_matcher_shared_variant_04839 MODIFY COLUMN j JSON(max_dynamic_paths=10, max_dynamic_types=3);
+-- Remove the rule, then write a row after the removal.
+ALTER TABLE retired_rule_04839 MODIFY COLUMN j JSON(max_dynamic_paths=10, max_dynamic_types=2);
+INSERT INTO retired_rule_04839 VALUES (2000, '{"arr": [{"tag_y": 2}]}');
+OPTIMIZE TABLE retired_rule_04839 FINAL;
 
-SELECT 'after widening', id, position(dynamicType(j.arr), 'tag_') = 0 AS matcher_gone
-FROM retired_matcher_shared_variant_04839 WHERE id IN (999, 2000) ORDER BY id;
+INSERT INTO control_04839 VALUES (2000, '{"arr": [{"tag_y": 2}]}');
+OPTIMIZE TABLE control_04839 FINAL;
 
--- The values themselves are never in doubt; it is the name that decides whether they can be read
--- by the type the table declares.
-SELECT 'values intact', id, j.arr
-FROM retired_matcher_shared_variant_04839 WHERE id IN (999, 2000) ORDER BY id;
+SELECT 'after removal', 'rule', id, dynamicType(j.arr), isDynamicElementInSharedData(j.arr), dynamicElement(j.arr, 'Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))')
+FROM retired_rule_04839 WHERE id IN (999, 2000) ORDER BY id;
+SELECT 'after removal', 'control', id, dynamicType(j.arr), isDynamicElementInSharedData(j.arr), dynamicElement(j.arr, 'Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))')
+FROM control_04839 WHERE id IN (999, 2000) ORDER BY id;
 
-DROP TABLE retired_matcher_shared_variant_04839;
+-- An unrelated widening frees a max_dynamic_types slot, so the nested object leaves the shared variant.
+ALTER TABLE retired_rule_04839 MODIFY COLUMN j JSON(max_dynamic_paths=10, max_dynamic_types=3);
+ALTER TABLE control_04839 MODIFY COLUMN j JSON(max_dynamic_paths=10, max_dynamic_types=3);
 
--- The same retired name also survives on the regular-variant route, which never touches the shared
--- variant at all: with nothing else at `arr` the nested object takes a regular slot outright, so the
--- payload rewrite above never sees it and only the cached variant name is wrong. That name is what a
--- read reports and what the merge seeds its destination set from.
-DROP TABLE IF EXISTS retired_matcher_regular_variant_04839;
+SELECT 'after widening', 'rule', id, dynamicType(j.arr), isDynamicElementInSharedData(j.arr), dynamicElement(j.arr, 'Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))')
+FROM retired_rule_04839 WHERE id IN (999, 2000) ORDER BY id;
+SELECT 'after widening', 'control', id, dynamicType(j.arr), isDynamicElementInSharedData(j.arr), dynamicElement(j.arr, 'Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))')
+FROM control_04839 WHERE id IN (999, 2000) ORDER BY id;
 
-CREATE TABLE retired_matcher_regular_variant_04839
-(
-    id UInt64,
-    j JSON(max_dynamic_paths=10, max_dynamic_types=2, SHARED REGEXP '^tag_')
-)
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS allow_json_shared_data_paths_repromotion = 1;
+SELECT 'distinct nested types', 'rule', arraySort(groupUniqArray(dynamicType(j.arr))) FROM retired_rule_04839;
+SELECT 'distinct nested types', 'control', arraySort(groupUniqArray(dynamicType(j.arr))) FROM control_04839;
 
-INSERT INTO retired_matcher_regular_variant_04839 VALUES (1, '{"arr": [{"tag_x": 1}]}');
-OPTIMIZE TABLE retired_matcher_regular_variant_04839 FINAL;
-
-ALTER TABLE retired_matcher_regular_variant_04839 MODIFY COLUMN j JSON(max_dynamic_paths=10, max_dynamic_types=2);
-
--- Row 2 is written after the retirement and shares the query below, so an empty read on row 1 cannot
--- pass as a dead oracle.
-INSERT INTO retired_matcher_regular_variant_04839 VALUES (2, '{"arr": [{"tag_z": 3}]}');
-OPTIMIZE TABLE retired_matcher_regular_variant_04839 FINAL;
-
-SELECT id,
-       isDynamicElementInSharedData(j.arr) AS in_shared,
-       position(dynamicType(j.arr), 'tag_') = 0 AS matcher_gone,
-       dynamicElement(j.arr, 'Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))') AS via_declared_type
-FROM retired_matcher_regular_variant_04839 ORDER BY id;
-
-DROP TABLE retired_matcher_regular_variant_04839;
+DROP TABLE retired_rule_04839;
+DROP TABLE control_04839;

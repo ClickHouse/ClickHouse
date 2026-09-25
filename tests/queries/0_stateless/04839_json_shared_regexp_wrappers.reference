@@ -1,19 +1,18 @@
 before alter	1	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	['keep']	['force']
 before alter	2	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	[]	[]
-2	0
-arr	0
-mp	0
-nul	0
-tup	0
-arr	2	2
-mp	2	2
-nul	2	2
-tup	2	2
-after metadata reload	1	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	['keep']	['force']
-after metadata reload	2	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	[]	[]
-arr	1	1
-mp	1	1
-nul	1	1
-tup	1	1
-after merge	1	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	['keep']	['force']
-after merge	2	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	[]	[]
+values before	1	['{"force":1,"keep":11}','{"force":2}']	('{"force":3,"keep":13}')	{'left':'{"force":4,"keep":14}','right':'{"force":5}'}	{"force":20,"keep":21}
+values before	2	['{"force":6,"keep":16}','{"force":7}']	('{"force":8,"keep":18}')	{'left':'{"force":9,"keep":19}','right':'{"force":10}'}	\N
+mutations after arr and nul	0
+after arr and nul alter	1	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	['keep']	['force']
+after arr and nul alter	2	[['keep'],[]]	[['force'],['force']]	['keep']	['force']	[['keep'],[]]	[['force'],['force']]	[]	[]
+mutations after tup and mp	1
+values after alter	1	['{"force":1,"keep":11}','{"force":2}']	('{"force":3,"keep":13}')	{'left':'{"force":4,"keep":14}','right':'{"force":5}'}	{"force":20,"keep":21}
+values after alter	2	['{"force":6,"keep":16}','{"force":7}']	('{"force":8,"keep":18}')	{'left':'{"force":9,"keep":19}','right':'{"force":10}'}	\N
+arr	Array(JSON(max_dynamic_paths=1))
+mp	Map(String, JSON(max_dynamic_paths=1))
+nul	Nullable(JSON(max_dynamic_paths=1))
+tup	Tuple(doc JSON(max_dynamic_paths=1))
+after merge	1	[['force'],['force']]	[['keep'],[]]	['force']	['keep']	[['force'],['force']]	[['keep'],[]]	['force']	['keep']
+after merge	2	[['force'],['force']]	[['keep'],[]]	['force']	['keep']	[['force'],['force']]	[['keep'],[]]	[]	[]
+values after merge	1	['{"force":1,"keep":11}','{"force":2}']	('{"force":3,"keep":13}')	{'left':'{"force":4,"keep":14}','right':'{"force":5}'}	{"force":20,"keep":21}
+values after merge	2	['{"force":6,"keep":16}','{"force":7}']	('{"force":8,"keep":18}')	{'left':'{"force":9,"keep":19}','right':'{"force":10}'}	\N

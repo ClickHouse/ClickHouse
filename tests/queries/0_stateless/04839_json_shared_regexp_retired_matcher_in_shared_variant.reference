@@ -1,8 +1,12 @@
-after retirement	999	1
-after retirement	2000	1
-after widening	999	1
-after widening	2000	1
-values intact	999	['{"tag_x":1}']
-values intact	2000	['{"tag_y":2}']
-1	false	1	['{"tag_x":1}']
-2	false	1	['{"tag_z":3}']
+rule	999	Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))	true	['{"tag_x":1}']
+control	999	Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))	true	['{"tag_x":1}']
+after removal	rule	999	Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))	true	['{"tag_x":1}']
+after removal	rule	2000	Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))	true	['{"tag_y":2}']
+after removal	control	999	Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))	true	['{"tag_x":1}']
+after removal	control	2000	Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))	true	['{"tag_y":2}']
+after widening	rule	999	Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))	false	['{"tag_x":1}']
+after widening	rule	2000	Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))	false	['{"tag_y":2}']
+after widening	control	999	Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))	false	['{"tag_x":1}']
+after widening	control	2000	Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))	false	['{"tag_y":2}']
+distinct nested types	rule	['Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))','Int64','String']
+distinct nested types	control	['Array(JSON(max_dynamic_types=1, max_dynamic_paths=2))','Int64','String']

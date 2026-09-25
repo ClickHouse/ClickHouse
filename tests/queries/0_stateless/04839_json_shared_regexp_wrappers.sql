@@ -41,10 +41,7 @@ INSERT INTO wrappers_04839 VALUES
     NULL
 );
 
--- Read each part on its own (like the sections below): a single SELECT spanning both parts goes
--- through the merging-sorted path, which rebuilds the result columns and re-routes every dynamic
--- path into shared data in the in-memory result regardless of any policy (current upstream
--- behavior for all JSON columns), hiding the storage placement this test asserts.
+-- Read each part on its own: a read that merges both parts rebuilds the placement of the result.
 SELECT
     'before alter',
     id,
@@ -73,40 +70,17 @@ SELECT
 FROM wrappers_04839
 WHERE id = 2;
 
--- Policy-only comparison must recurse through all four wrappers, so this ALTER is metadata-only.
+SELECT 'values before', id, arr, tup, mp, nul FROM wrappers_04839 ORDER BY id;
+
+-- A rules-only change of JSON inside Array or Nullable is metadata-only.
 ALTER TABLE wrappers_04839
     MODIFY COLUMN arr Array(JSON(max_dynamic_paths=1)),
-    MODIFY COLUMN tup Tuple(doc JSON(max_dynamic_paths=1)),
-    MODIFY COLUMN mp Map(String, JSON(max_dynamic_paths=1)),
     MODIFY COLUMN nul Nullable(JSON(max_dynamic_paths=1));
 
-SELECT
-    count() AS active_parts,
-    (SELECT count() FROM system.mutations
-     WHERE database=currentDatabase() AND table='wrappers_04839') AS mutations
-FROM system.parts
-WHERE database=currentDatabase() AND table='wrappers_04839' AND active;
-
-DETACH TABLE wrappers_04839;
-ATTACH TABLE wrappers_04839;
-SYSTEM STOP MERGES wrappers_04839;
-
-SELECT name, position(type, 'SHARED REGEXP') > 0
-FROM system.columns
-WHERE database=currentDatabase() AND table='wrappers_04839' AND name IN ('arr', 'tup', 'mp', 'nul')
-ORDER BY name;
+SELECT 'mutations after arr and nul', count() FROM system.mutations WHERE database=currentDatabase() AND table='wrappers_04839';
 
 SELECT
-    column,
-    count(),
-    countIf(position(type, 'SHARED REGEXP') > 0)
-FROM system.parts_columns
-WHERE database=currentDatabase() AND table='wrappers_04839' AND active AND column IN ('arr', 'tup', 'mp', 'nul')
-GROUP BY column
-ORDER BY column;
-
-SELECT
-    'after metadata reload',
+    'after arr and nul alter',
     id,
     arrayMap(x -> arraySort(JSONDynamicPaths(x)), arr),
     arrayMap(x -> arraySort(JSONSharedDataPaths(x)), arr),
@@ -117,11 +91,10 @@ SELECT
     arraySort(JSONDynamicPaths(nul)),
     arraySort(JSONSharedDataPaths(nul))
 FROM wrappers_04839
-WHERE id = 1
-ORDER BY id;
+WHERE id = 1;
 
 SELECT
-    'after metadata reload',
+    'after arr and nul alter',
     id,
     arrayMap(x -> arraySort(JSONDynamicPaths(x)), arr),
     arrayMap(x -> arraySort(JSONSharedDataPaths(x)), arr),
@@ -132,19 +105,25 @@ SELECT
     arraySort(JSONDynamicPaths(nul)),
     arraySort(JSONSharedDataPaths(nul))
 FROM wrappers_04839
-WHERE id = 2
-ORDER BY id;
+WHERE id = 2;
 
+-- Inside Tuple or Map the change is a regular type conversion that rewrites the column.
 SYSTEM START MERGES wrappers_04839;
+
+ALTER TABLE wrappers_04839
+    MODIFY COLUMN tup Tuple(doc JSON(max_dynamic_paths=1)),
+    MODIFY COLUMN mp Map(String, JSON(max_dynamic_paths=1))
+SETTINGS mutations_sync=2;
+
+SELECT 'mutations after tup and mp', count() > 0 FROM system.mutations WHERE database=currentDatabase() AND table='wrappers_04839';
+
+SELECT 'values after alter', id, arr, tup, mp, nul FROM wrappers_04839 ORDER BY id;
+
 OPTIMIZE TABLE wrappers_04839 FINAL;
 
-SELECT
-    column,
-    count(),
-    countIf(position(type, 'SHARED REGEXP') > 0)
+SELECT column, type
 FROM system.parts_columns
 WHERE database=currentDatabase() AND table='wrappers_04839' AND active AND column IN ('arr', 'tup', 'mp', 'nul')
-GROUP BY column
 ORDER BY column;
 
 SELECT
@@ -161,10 +140,11 @@ SELECT
 FROM wrappers_04839
 ORDER BY id;
 
+SELECT 'values after merge', id, arr, tup, mp, nul FROM wrappers_04839 ORDER BY id;
+
 DROP TABLE wrappers_04839;
 
--- `JSON` inside `Variant` is the documented unsupported boundary: a policy-only ALTER is rejected
--- with CANNOT_CONVERT_TYPE rather than applied (see DataTypeObject.cpp), never silently rewritten.
+-- Changing JSON inside Variant is rejected, as for any other JSON parameter.
 SET enable_variant_type = 1;
 
 DROP TABLE IF EXISTS variant_wrappers_04839;

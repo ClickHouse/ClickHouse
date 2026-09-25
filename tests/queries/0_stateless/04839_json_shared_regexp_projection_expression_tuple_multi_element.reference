@@ -1,2 +1,0 @@
-tuple(j, 1) retains provenance on the JSON element	1
-tupleElement(t, 2) retains provenance from the JSON element	1
