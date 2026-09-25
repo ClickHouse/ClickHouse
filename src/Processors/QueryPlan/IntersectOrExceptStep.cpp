@@ -1,9 +1,7 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
+#include <Columns/getLeastSuperColumn.h>
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -28,16 +26,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-static bool containsAggregateStateColumn(const IColumn & column)
-{
-    if (typeid_cast<const ColumnAggregateFunction *>(&column))
-        return true;
-
-    bool found = false;
-    column.forEachSubcolumn([&](const auto & subcolumn) { found = found || containsAggregateStateColumn(*subcolumn); });
-    return found;
 }
 
 static SharedHeader checkHeaders(const SharedHeaders & input_headers)
@@ -67,46 +55,14 @@ static SharedHeader checkHeaders(const SharedHeaders & input_headers)
     for (const auto & header : input_headers)
         assertBlocksHaveEqualStructure(without_top_level_const(*header), reference, "IntersectOrExceptStep");
 
-    /// Build the common header following the same rule as getLeastSuperColumn: keep a
-    /// column Const only when every branch is Const with the same value, otherwise
-    /// materialize it. This matches the execution-time makeConvertingActions path, which
-    /// can convert a branch to a full column but not to a different branch's Const value.
-    ColumnsWithTypeAndName common = input_headers.front()->getColumnsWithTypeAndName();
+    /// Build the common header following the same rule as getLeastSuperColumn. The columns were
+    /// just asserted to match one by one, so branches are looked up by position.
     bool materialized = false;
-    for (size_t col = 0; col < common.size(); ++col)
-    {
-        if (!common[col].column || !isColumnConst(*common[col].column))
-            continue;
-
-        /// Aggregate-state values cannot be compared as `Field`: the comparison throws when the
-        /// aggregate function type names differ, and they may legitimately differ between branches
-        /// when the functions have the same state representation (e.g. `quantileState` and
-        /// `quantilesState(0.9)`). Don't keep constness for them, materialize instead.
-        if (containsAggregateStateColumn(assert_cast<const ColumnConst &>(*common[col].column).getDataColumn()))
-        {
-            common[col].column = common[col].column->convertToFullColumnIfConst();
-            materialized = true;
-            continue;
-        }
-
-        const Field value = assert_cast<const ColumnConst &>(*common[col].column).getField();
-        bool keep_const = true;
-        for (const auto & header : input_headers)
-        {
-            const auto & branch = header->getByPosition(col).column;
-            if (!branch || !isColumnConst(*branch) || assert_cast<const ColumnConst &>(*branch).getField() != value)
-            {
-                keep_const = false;
-                break;
-            }
-        }
-
-        if (!keep_const)
-        {
-            common[col].column = common[col].column->convertToFullColumnIfConst();
-            materialized = true;
-        }
-    }
+    ColumnsWithTypeAndName common = reconcileConstness(
+        input_headers.front()->getColumnsWithTypeAndName(),
+        input_headers.size(),
+        [&](size_t branch, size_t position, const String &) { return &input_headers[branch]->getByPosition(position); },
+        &materialized);
 
     if (!materialized)
         return input_headers.front();
