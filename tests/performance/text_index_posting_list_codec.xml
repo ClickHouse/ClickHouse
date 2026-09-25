@@ -1,0 +1,41 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>codec</name>
+           <values>
+               <value>none</value>
+               <value>bitpacking</value>
+               <value>pfor</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+        <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <query_plan_optimize_count_from_text_index>0</query_plan_optimize_count_from_text_index>
+        <use_text_index_postings_cache>0</use_text_index_postings_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_text_index_codec_{codec}
+        (
+            SearchPhrase String,
+            INDEX idx (SearchPhrase) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = '{codec}')
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>INSERT INTO t_text_index_codec_{codec} SELECT SearchPhrase FROM hits_10m_single</fill_query>
+    <fill_query>OPTIMIZE TABLE t_text_index_codec_{codec} FINAL</fill_query>
+
+    <query>SELECT count() FROM t_text_index_codec_{codec} WHERE hasToken(SearchPhrase, 'video')</query>
+    <query>SELECT count() FROM t_text_index_codec_{codec} WHERE hasToken(SearchPhrase, 'google')</query>
+    <query>SELECT count() FROM t_text_index_codec_{codec} WHERE hasToken(SearchPhrase, 'market')</query>
+    <query>SELECT count() FROM t_text_index_codec_{codec} WHERE hasToken(SearchPhrase, 'mail')</query>
+    <query>SELECT count() FROM t_text_index_codec_{codec} WHERE hasAllTokens(SearchPhrase, ['the', 'video'])</query>
+    <query>SELECT count() FROM t_text_index_codec_{codec} WHERE hasAnyTokens(SearchPhrase, ['the', 'video', 'world', 'market'])</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_text_index_codec_{codec}</drop_query>
+</test>
