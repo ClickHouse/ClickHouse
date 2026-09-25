@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/getASTFunctionArgumentColumns.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -32,7 +33,8 @@ namespace
 
 /// Finds expression like x = 'y' or f(x) = 'y',
 /// where `x` is identifier, 'y' is literal and `f` is injective functions.
-ASTPtr getFixedPoint(const ASTPtr & ast, const ContextPtr & context)
+ASTPtr getFixedPoint(
+    const ASTPtr & ast, const NamesAndTypesList & source_columns, const NameSet & array_join_result_names, const ContextPtr & context)
 {
     const auto * func = ast->as<ASTFunction>();
     if (!func || func->name != "equals")
@@ -59,17 +61,32 @@ ASTPtr getFixedPoint(const ASTPtr & ast, const ContextPtr & context)
             return nullptr;
 
         auto func_resolver = FunctionFactory::instance().tryGet(arg_func->name, context);
-        if (!func_resolver || !func_resolver->isInjective({}))
+        if (!func_resolver)
+            return nullptr;
+
+        /// Injectivity can depend on the arguments - `toString` of a date-time in a time zone with
+        /// a UTC offset transition is not injective - so resolve what the AST alone decides and
+        /// peel nothing when an argument stays unresolved.
+        auto argument_columns = tryGetASTFunctionArgumentColumns(*arg_func, source_columns, array_join_result_names);
+        if (!argument_columns || !func_resolver->isInjective(*argument_columns))
             return nullptr;
 
         argument = arg_func->arguments->children[0];
     }
 
-    return argument->as<ASTIdentifier>() ? argument : nullptr;
+    /// An `ARRAY JOIN` result shadows the source column of the same name, so it is not fixed in the stream.
+    const auto * identifier = argument->as<ASTIdentifier>();
+    if (!identifier || array_join_result_names.contains(identifier->name()))
+        return nullptr;
+
+    return argument;
 }
 
 NameSet getFixedSortingColumns(
-    const ASTSelectQuery & query, const Names & sorting_key_columns, const ContextPtr & context)
+    const ASTSelectQuery & query,
+    const Names & sorting_key_columns,
+    const NamesAndTypesList & source_columns,
+    const ContextPtr & context)
 {
     ASTPtr condition;
     if (query.where() && query.prewhere())
@@ -89,6 +106,8 @@ NameSet getFixedSortingColumns(
 
     NameSet fixed_points;
     NameSet sorting_key_columns_set(sorting_key_columns.begin(), sorting_key_columns.end());
+    /// An `ARRAY JOIN` result may shadow a source column of the same name; see `tryGetASTFunctionArgumentColumns`.
+    NameSet array_join_result_names = getArrayJoinResultNames(query);
 
     /// If we met expression like 'column = x', where 'x' is literal,
     /// in clause of size 1 in CNF, then we can guarantee
@@ -97,7 +116,7 @@ NameSet getFixedSortingColumns(
     {
         if (group.size() == 1 && !group.begin()->negative)
         {
-            auto fixed_point = getFixedPoint(group.begin()->ast, context);
+            auto fixed_point = getFixedPoint(group.begin()->ast, source_columns, array_join_result_names, context);
             if (fixed_point)
             {
                 auto column_name = fixed_point->getColumnName();
@@ -211,6 +230,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
 
     // array join result columns cannot be used in alias expansion.
     array_join_result_to_source = syntax_result->array_join_result_to_source;
+    source_columns = syntax_result->source_columns;
 }
 
 InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
@@ -227,7 +247,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     /// read_direction will be set from the first non-constant ORDER BY column
     int read_direction = 0;
 
-    auto fixed_sorting_columns = getFixedSortingColumns(query, sorting_key_columns, context);
+    auto fixed_sorting_columns = getFixedSortingColumns(query, sorting_key_columns, source_columns, context);
 
     SortDescription sort_description_for_merging;
     sort_description_for_merging.reserve(description.size());
