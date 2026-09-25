@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -372,6 +373,15 @@ void optimizeTreeSecondPass(
                     if (!changed_nodes)
                         break;
                 }
+
+                /// `tryMergeExpressions` fuses an expression step into a filter step, which turns those
+                /// expressions into required outputs of the filter and so evaluates them on the rows the
+                /// filter removes. `trySplitFilter` is what keeps a filter minimal for that reason, so
+                /// the rerun has to apply it again to whatever it just fused.
+                /// Only the filter branch is wanted: trySplitFilter also extracts a logical join's ON conditions.
+                if ((rewrite_regardless_of_settings || optimization_settings.split_filter)
+                    && typeid_cast<FilterStep *>(frame_node.step.get()))
+                    trySplitFilter(&frame_node, nodes, extra_settings);
             });
 
         /// After the __applyFilter filters been fixed, do work to indicate index analysis again
