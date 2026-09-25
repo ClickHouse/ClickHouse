@@ -285,3 +285,8 @@ spark.stop()
 
 The resulting `/out/warehouse/default/eq_deletes_required_table` directory is copied here
 as is, except for the `.*.crc` files.
+
+On this branch `eq_deletes_required_table` is kept at `data_minio/default/eq_deletes_required_table`
+instead of here, so that the path the test queries is a component-aligned suffix of the `location`
+recorded in its metadata (`/out/warehouse/default/eq_deletes_required_table`). 26.3 resolves data
+paths with `getProperFilePathFromMetadataInfo`, which needs that alignment.

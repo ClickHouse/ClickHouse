@@ -2,7 +2,7 @@
 -- used to share a substreams cache slot, so one of them got the other's column. The data on disk is correct.
 -- The wide reader uses the cache for every read, the compact reader only for subcolumn reads.
 
-SET enable_nullable_tuple_type = 1;
+SET allow_experimental_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS t_cache_key;
 

@@ -1,6 +1,5 @@
 #pragma once
 #include <Columns/ColumnString.h>
-#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -24,11 +23,6 @@ struct LowerUpperImpl
     {
         res_data.resize_exact(data.size());
         array(data.data(), data.data() + data.size(), res_data.data());
-    }
-
-    static void vectorRaw(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
-    {
-        array(src, src_end, dst);
     }
 
 private:

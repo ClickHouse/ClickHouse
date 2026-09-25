@@ -32,7 +32,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonsEquals final : public IFunction
+class FunctionPolygonsEquals : public IFunction
 {
 public:
     static const char * name;

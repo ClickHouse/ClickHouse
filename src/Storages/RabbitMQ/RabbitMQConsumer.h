@@ -4,9 +4,6 @@
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/saturatedDuration.h>
-
-#include <functional>
 
 namespace Poco
 {
@@ -70,44 +67,24 @@ public:
     bool isConsumerStopped() const { return stopped.load(); }
 
     bool ackMessages(const CommitInfo & commit_info);
-    bool nackMessages(const CommitInfo & commit_info, bool requeue = false);
+    bool nackMessages(const CommitInfo & commit_info);
 
     bool hasPendingMessages() { return !received.empty(); }
 
-    void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt, std::function<bool()> is_cancelled = {})
+    void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt)
     {
         std::unique_lock lock(mutex);
         if (!timeout_ms)
             timeout_ms = SANITY_TIMEOUT;
-        cv.wait_for(lock, saturatedMilliseconds(*timeout_ms),
-            [&]{ return !received.empty() || isConsumerStopped() || (is_cancelled && is_cancelled()); });
+        cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms), [this]{ return !received.empty() || isConsumerStopped(); });
     }
 
-    /// Wake a source parked in `waitForMessages` so it can re-check its cancellation state.
-    void wakeUp();
-
     void closeConnections();
-
-    /// True once the broker has answered the channel.close sent by closeConnections(). A consumer
-    /// that never had a channel reports true, as there is nothing to wait for.
-    bool isChannelCloseCompleted() const { return !close_state || close_state->completed; }
-
-    /// Stop expecting that answer, so a callback dispatched later becomes a no-op.
-    void abandonChannelClose() { if (close_state) close_state->abandoned = true; }
 
 private:
     void subscribe();
     bool isChannelUsable();
     void updateCommitInfo(CommitInfo record);
-
-    /// Shared by value into the close() callbacks, mirroring RabbitMQProducer::finish, so that a
-    /// late dispatch after the wait was abandoned cannot touch a destroyed consumer.
-    struct ChannelCloseState
-    {
-        std::atomic<bool> completed = false;
-        std::atomic<bool> abandoned = false;
-    };
-    std::shared_ptr<ChannelCloseState> close_state;
 
     ChannelPtr consumer_channel;
     RabbitMQHandler & event_handler; /// Used concurrently, but is thread safe.

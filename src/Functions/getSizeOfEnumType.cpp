@@ -16,7 +16,7 @@ namespace
 {
 
 /// Returns number of fields in Enum data type of passed value.
-class FunctionGetSizeOfEnumType final : public IFunction
+class FunctionGetSizeOfEnumType : public IFunction
 {
 public:
     static constexpr auto name = "getSizeOfEnumType";
@@ -78,7 +78,7 @@ private:
 REGISTER_FUNCTION(GetSizeOfEnumType)
 {
     FunctionDocumentation::Description description = R"(
-Returns the number of fields in the given [`Enum`](/reference/data-types/enum).
+Returns the number of fields in the given [`Enum`](../../sql-reference/data-types/enum.md).
 )";
     FunctionDocumentation::Syntax syntax = "getSizeOfEnumType(x)";
     FunctionDocumentation::Arguments arguments = {
