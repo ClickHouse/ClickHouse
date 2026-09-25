@@ -1804,7 +1804,12 @@ std::optional<Field> FixedStringConverter::convertField(std::span<const char> da
     if (data.size() != input_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of fixed string in statistics: {} != {}", data.size(), input_size);
 
-    return Field(String(data.data(), data.size()));
+    size_t size = data.size();
+    if (field_strip_trailing_zeros)
+        while (size > 0 && data[size - 1] == 0)
+            --size;
+
+    return Field(String(data.data(), size));
 }
 
 void TrivialStringConverter::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const

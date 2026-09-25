@@ -286,6 +286,9 @@ struct FixedStringConverter : public FixedSizeConverter
 {
     bool isTrivial() const override { return true; }
 
+    /// Remove trailing zero bytes from a min/max bound. Affects convertField only, not convertColumn.
+    bool field_strip_trailing_zeros = false;
+
     std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
 };
 
