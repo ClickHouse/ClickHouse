@@ -514,15 +514,6 @@ struct EnumSource
 
 
 /// Differs to StringSource by having 'offset' and 'length' in code points instead of bytes in getSlice* methods.
-/** NOTE: The behaviour of substring and substringUTF8 is inconsistent when negative offset is greater than string size:
-  * substring:
-  *      hello
-  * ^-----^ - offset -10, length 7, result: "he"
-  * substringUTF8:
-  *      hello
-  *      ^-----^ - offset -10, length 7, result: "hello"
-  * This may be subject for change.
-  */
 struct UTF8StringSource : public StringSource
 {
     using StringSource::StringSource;
@@ -534,15 +525,18 @@ struct UTF8StringSource : public StringSource
         return pos;
     }
 
-    static const ColumnString::Char * skipCodePointsBackward(const ColumnString::Char * pos, size_t size, const ColumnString::Char * begin)
+    static const ColumnString::Char * skipCodePointsBackward(
+        const ColumnString::Char * pos, size_t size, const ColumnString::Char * begin, size_t * skipped = nullptr)
     {
-        for (size_t i = 0; i < size && pos > begin; ++i)
+        size_t i = 0;
+        for (; i < size && pos > begin; ++i)
         {
             --pos;
-            if (pos == begin)
-                break;
-            UTF8::syncBackward(pos, begin);
+            if (pos != begin)
+                UTF8::syncBackward(pos, begin);
         }
+        if (skipped)
+            *skipped = i;
         return pos;
     }
 
@@ -593,7 +587,17 @@ struct UTF8StringSource : public StringSource
     {
         const auto * begin = &elements[prev_offset];
         const auto * end = elements.data() + offsets[row_num];
-        const auto * res_begin = skipCodePointsBackward(end, offset, begin);
+        size_t skipped = 0;
+        const auto * res_begin = skipCodePointsBackward(end, offset, begin, &skipped);
+
+        if (skipped < offset)
+        {
+            size_t clipped_prefix = offset - skipped;
+            if (length <= clipped_prefix)
+                return {begin, 0};
+            length -= clipped_prefix;
+        }
+
         const auto * res_end = skipCodePointsForward(res_begin, length, end);
 
         if (res_end >= end)

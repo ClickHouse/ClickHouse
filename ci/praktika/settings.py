@@ -86,6 +86,9 @@ class _Settings:
     PYTHON_PACKET_MANAGER: str = "pip3"
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
+    # Global toggle. When true (or a workflow sets praktika_debug), the
+    # praktika-controller's full per-job log is attached to the job result.
+    PRAKTIKA_DEBUG: bool = False
 
     SECRET_GH_APP: str = "gh-app"
 
@@ -133,6 +136,19 @@ class _Settings:
     # If enabled, submodule clones authenticate with the App installation token
     # (required for private submodules); otherwise they run anonymously.
     ENABLE_SUBMODULE_CLONE_AUTH: bool = False
+    # If enabled, Config Workflow snapshots the whole repo state once and publishes
+    # it to S3 (repo-snapshots/v1/{PRs,REFs}/<sha256>.tar.zst); every downstream job
+    # restores it instead of cloning from GitHub.
+    ENABLE_S3_REPO_SNAPSHOT: bool = False
+    # For pull_request runs (requires ENABLE_S3_REPO_SNAPSHOT), snapshot the
+    # ephemeral merge of the PR head into the target-branch tip (GitHub Actions
+    # style) instead of the plain head. No-op for push (always a head snapshot).
+    ENABLE_PR_EPHEMERAL_MERGE_COMMIT: bool = False
+    # Sticky merge base (ephemeral-merge mode, PR only). When > 0, a new run reuses
+    # the previous run's pinned target-branch commit if it started within this many
+    # hours of the PR's previous run — keeping the digest cache warm across rapid
+    # iterations. 0 disables it (always merge against the live tip).
+    STICKY_MERGE_BASE_HOURS: float = 0
 
     # v2: records carry the producing workflow event, used as the reuse trust
     # signal instead of the branch (see CacheRunnerHooks.configure).
@@ -202,6 +218,10 @@ class _Settings:
 
 _USER_DEFINED_SETTINGS = [
     "PROJECT_SLUG",
+    "PRAKTIKA_DEBUG",
+    "ENABLE_S3_REPO_SNAPSHOT",
+    "ENABLE_PR_EPHEMERAL_MERGE_COMMIT",
+    "STICKY_MERGE_BASE_HOURS",
     "S3_ARTIFACT_BUCKET",
     "CACHE_S3_PATH",
     "S3_REPORT_BUCKET",

@@ -112,6 +112,8 @@
                 {
                   "group": "September",
                   "pages": [
+                    "clickstack/demo-days/2026/2026-09-17",
+                    "clickstack/demo-days/2026/2026-09-10",
                     "clickstack/demo-days/2026/2026-09-04"
                   ]
                 },
@@ -174,6 +176,7 @@
         "clickstack/managing/admin",
         "clickstack/managing/config",
         "clickstack/managing/estimating-resources",
+        "clickstack/managing/isolating-read-write",
         "clickstack/managing/materialized-views",
         "clickstack/managing/performance-tuning",
         "clickstack/managing/production",

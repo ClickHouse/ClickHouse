@@ -1,6 +1,5 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- The sparsity-filter trivial count produces a `ReadFromPreparedSource` leaf that the
 -- Cascades optimizer cannot clone.  Like the plain trivial count, the rewrite must skip
