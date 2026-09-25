@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Interpreters/StorageID.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -107,6 +108,29 @@ namespace
     bool hasInnerUUID(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
     {
         return create_query.getTargetInnerUUID(kind) != UUIDHelpers::Nil;
+    }
+
+    /// Normalize `DEFAULT` expressions written inside `Tuple` data types by pulling them up to the column
+    /// level for every column declaration of a `TimeSeries` table - both the outer columns and the columns
+    /// of the inner tables (`SAMPLES INNER COLUMNS (...)` and so on). This must happen before any of the
+    /// declared types is reified with `DataTypeFactory`, because a type AST that still carries a `DEFAULT`
+    /// is rejected by `DataTypeTuple::create`.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/2797.
+    void pullUpTupleElementDefaultsInColumnList(ASTColumns * columns_list)
+    {
+        if (!columns_list || !columns_list->columns)
+            return;
+
+        for (const auto & column : columns_list->columns->children)
+            pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>());
+    }
+
+    void pullUpTupleElementDefaultsInTimeSeriesDefinition(ASTCreateQuery & create_query)
+    {
+        pullUpTupleElementDefaultsInColumnList(create_query.columns_list);
+
+        for (auto kind : getTargetKinds())
+            pullUpTupleElementDefaultsInColumnList(create_query.getTargetInnerColumns(kind));
     }
 
     /// Returns the name of the column with the name of a metric family in the "metric families" table used by the versions
@@ -2048,6 +2072,10 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
     bool has_recent_samples_definition
         = hasInnerColumns(create_query, ViewTarget::RecentSamples) || hasInnerEngine(create_query, ViewTarget::RecentSamples)
         || hasTargetTableID(create_query, ViewTarget::RecentSamples);
+
+    /// Pull up `DEFAULT` expressions written inside `Tuple` data types of the outer and inner columns.
+    /// It has to be done before the declared types are reified below.
+    pullUpTupleElementDefaultsInTimeSeriesDefinition(create_query);
 
     /// The definition of the table from the clause `AS <other_table>` if any, and its resolved types.
     /// The clause is used only for a new table: the stored definition of an existing table has no such clause.
