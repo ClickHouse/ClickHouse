@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int UNKNOWN_FORMAT_VERSION;
     extern const int INCORRECT_DATA;
 }
 
@@ -653,12 +654,15 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     if (!object->has(KEY_VERSION))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed version of serialization infos");
 
+    /// A version or a field this server does not know about means the part was written by a newer
+    /// server, not that the part is corrupted: report it as `UNKNOWN_FORMAT_VERSION`, so that callers
+    /// (`RESTORE`, in particular) can tell "too new to read" apart from "damaged".
     MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     {
         auto version_value = static_cast<std::underlying_type_t<MergeTreeSerializationInfoVersion>>(object->getValue<size_t>(KEY_VERSION));
         auto maybe_enum = magic_enum::enum_cast<MergeTreeSerializationInfoVersion>(version_value);
         if (!maybe_enum)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown version of serialization infos ({})", version_value);
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown version of serialization infos ({})", version_value);
         version = *maybe_enum;
     }
 
@@ -690,7 +694,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         }
         else
         {
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected field '{}' in MergeTreeSerializationInfo JSON", key);
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unexpected field '{}' in MergeTreeSerializationInfo JSON", key);
         }
     }
 
@@ -714,26 +718,26 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             {
                 auto maybe_enum = magic_enum::enum_cast<MergeTreeStringSerializationVersion>(version_value);
                 if (!maybe_enum.has_value())
-                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
+                    throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Invalid version {} for type '{}'", version_value, type_name);
                 string_serialization_version = *maybe_enum;
             }
             else if (type_name == KEY_NULLABLE_SERIALIZATION_VERSION)
             {
                 auto maybe_enum = magic_enum::enum_cast<MergeTreeNullableSerializationVersion>(version_value);
                 if (!maybe_enum.has_value())
-                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
+                    throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Invalid version {} for type '{}'", version_value, type_name);
                 nullable_serialization_version = *maybe_enum;
             }
             else if (type_name == KEY_MAP_SERIALIZATION_VERSION)
             {
                 auto maybe_enum = magic_enum::enum_cast<MergeTreeMapSerializationVersion>(version_value);
                 if (!maybe_enum.has_value())
-                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
+                    throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Invalid version {} for type '{}'", version_value, type_name);
                 map_serialization_version = *maybe_enum;
             }
             else
             {
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown field '{}' in types_serialization_versions", type_name);
+                throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown field '{}' in types_serialization_versions", type_name);
             }
         }
     }
