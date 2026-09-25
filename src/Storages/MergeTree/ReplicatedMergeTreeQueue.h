@@ -320,6 +320,7 @@ private:
     private:
         ReplicatedMergeTreeQueue::LogEntryPtr entry;
         ReplicatedMergeTreeQueue & queue;
+        const time_t previous_last_attempt_time;
 
         friend class ReplicatedMergeTreeQueue;
 
@@ -438,6 +439,9 @@ public:
 
     using SelectedEntryPtr = std::shared_ptr<SelectedEntry>;
     SelectedEntryPtr selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
+
+    /// Undo what selecting the entry booked. Only valid while nothing has run it, i.e. after a refusal.
+    void rollbackAttemptForRejectedEntry(const SelectedEntryPtr & selected_entry);
 
     /** Execute `func` function to handle the action.
       * In this case, at runtime, mark the queue element as running

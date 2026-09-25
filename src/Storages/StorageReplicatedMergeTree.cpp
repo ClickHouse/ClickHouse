@@ -161,6 +161,7 @@ namespace ProfileEvents
     extern const Event NotCreatedLogEntryForMutation;
     extern const Event ReplicaPartialShutdown;
     extern const Event ReplicatedCoveredPartsInZooKeeperOnStart;
+    extern const Event ReplicatedQueueScheduleRejections;
     extern const Event MergesRejectedByMemoryLimit;
     extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection;
     extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync;
@@ -4387,34 +4388,38 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
 
     auto job_type = selected_entry->log_entry->type;
 
-    /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
-    if (job_type == LogEntry::GET_PART || job_type == LogEntry::ATTACH_PART)
+    auto schedule = [&]() -> bool
     {
-        assignee.scheduleFetchTask(std::make_shared<ExecutableLambdaAdapter>(
-            [this, selected_entry] () mutable
-            {
-                return processQueueEntry(selected_entry);
-            }, common_assignee_trigger, getStorageID()));
-        return true;
-    }
-    if (job_type == LogEntry::MERGE_PARTS)
-    {
-        auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry, *this, common_assignee_trigger);
-        assignee.scheduleMergeMutateTask(task);
-        return true;
-    }
-    if (job_type == LogEntry::MUTATE_PART)
-    {
-        auto task = std::make_shared<MutateFromLogEntryTask>(selected_entry, *this, common_assignee_trigger);
-        assignee.scheduleMergeMutateTask(task);
-        return true;
-    }
+        /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
+        if (job_type == LogEntry::GET_PART || job_type == LogEntry::ATTACH_PART)
+            return assignee.scheduleFetchTask(std::make_shared<ExecutableLambdaAdapter>(
+                [this, selected_entry] () mutable
+                {
+                    return processQueueEntry(selected_entry);
+                }, common_assignee_trigger, getStorageID()));
 
-    assignee.scheduleCommonTask(
-        std::make_shared<ExecutableLambdaAdapter>(
-            [this, selected_entry]() mutable { return processQueueEntry(selected_entry); }, common_assignee_trigger, getStorageID()),
-        /* need_trigger */ true);
-    return true;
+        if (job_type == LogEntry::MERGE_PARTS)
+            return assignee.scheduleMergeMutateTask(
+                std::make_shared<MergeFromLogEntryTask>(selected_entry, *this, common_assignee_trigger));
+
+        if (job_type == LogEntry::MUTATE_PART)
+            return assignee.scheduleMergeMutateTask(
+                std::make_shared<MutateFromLogEntryTask>(selected_entry, *this, common_assignee_trigger));
+
+        return assignee.scheduleCommonTask(
+            std::make_shared<ExecutableLambdaAdapter>(
+                [this, selected_entry]() mutable { return processQueueEntry(selected_entry); }, common_assignee_trigger, getStorageID()),
+            /* need_trigger */ true);
+    };
+
+    if (schedule())
+        return true;
+
+    /// Nothing will run this entry, so release what selecting it booked. The roll-back has to precede
+    /// the event, so that an observed increment means the release is already visible.
+    queue.rollbackAttemptForRejectedEntry(selected_entry);
+    ProfileEvents::increment(ProfileEvents::ReplicatedQueueScheduleRejections);
+    return false;
 }
 
 

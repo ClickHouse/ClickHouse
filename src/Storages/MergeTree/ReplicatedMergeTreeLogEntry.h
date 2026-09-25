@@ -132,7 +132,8 @@ struct ReplicatedMergeTreeLogEntryData
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.
     bool removed_by_other_entry = false;
-    /// These several fields are informational only (for viewing by the user using system tables).
+    /// These several fields are shown to the user in system tables. Note that num_tries and
+    /// last_exception_time_ms additionally gate execution: see getPostponeTimeMsForEntry.
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     size_t num_tries = 0;                 /// The number of attempts to perform the action (since the server started, including the running one).
     std::exception_ptr exception;         /// The last exception, in the case of an unsuccessful attempt to perform the action.
