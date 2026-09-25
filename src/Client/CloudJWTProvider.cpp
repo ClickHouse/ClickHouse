@@ -127,6 +127,13 @@ std::string CloudJWTProvider::getAudience() const
     return "token-exchange";
 }
 
+bool CloudJWTProvider::preferCompleteVerificationURI() const
+{
+    /// The ClickHouse Cloud activation page pre-fills the code from the complete URL,
+    /// so the short URL is only noise.
+    return true;
+}
+
 void CloudJWTProvider::exchangeIdPTokenForClickHouseJWT(bool show_messages)
 {
     const auto * endpoints = getAuthEndpoints(host_str);

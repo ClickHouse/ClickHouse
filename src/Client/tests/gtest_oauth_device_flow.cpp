@@ -175,6 +175,30 @@ TEST(OAuthDeviceFlow, FormatDeviceLoginInstructionsWithoutCompleteOmitsShortcut)
     EXPECT_EQ(text.find("Shortcut URL"), std::string::npos);
 }
 
+TEST(OAuthDeviceFlow, FormatDeviceLoginInstructionsPreferCompleteShowsOnlyCompleteURI)
+{
+    const std::string text = formatDeviceLoginInstructions(
+        "https://example.com/device",
+        "WDJB-MJHT",
+        "https://example.com/device?user_code=WDJB-MJHT",
+        /* prefer_complete_uri = */ true);
+
+    EXPECT_NE(text.find("https://example.com/device?user_code=WDJB-MJHT\n"), std::string::npos);
+    EXPECT_NE(text.find("enter the code: \033[1mWDJB-MJHT"), std::string::npos);
+    EXPECT_EQ(text.find("https://example.com/device\n"), std::string::npos);
+    EXPECT_EQ(text.find("Shortcut URL"), std::string::npos);
+}
+
+TEST(OAuthDeviceFlow, FormatDeviceLoginInstructionsPreferCompleteWithoutCompleteShowsShortURI)
+{
+    const std::string text = formatDeviceLoginInstructions(
+        "https://example.com/device", "ABCD", "", /* prefer_complete_uri = */ true);
+
+    EXPECT_NE(text.find("https://example.com/device\n"), std::string::npos);
+    EXPECT_NE(text.find("enter the code: \033[1mABCD"), std::string::npos);
+    EXPECT_EQ(text.find("Shortcut URL"), std::string::npos);
+}
+
 TEST(OAuthDeviceFlow, FormatDeviceLoginInstructionsRequiresURIAndCode)
 {
     EXPECT_THROW(formatDeviceLoginInstructions("", "CODE", ""), Exception);

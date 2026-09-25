@@ -50,6 +50,9 @@ public:
 
 protected:
     virtual std::string getAudience() const { return oauth_audience; }
+    /// Show only `verification_uri_complete` (the URL with the code embedded) in the login prompt,
+    /// instead of the short `verification_uri` followed by the shortcut URL.
+    virtual bool preferCompleteVerificationURI() const { return false; }
     void deviceCodeLogin();
     void refreshIdPAccessToken();
 

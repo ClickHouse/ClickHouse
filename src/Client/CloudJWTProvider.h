@@ -25,6 +25,7 @@ public:
 
 private:
     std::string getAudience() const override;
+    bool preferCompleteVerificationURI() const override;
 
     struct AuthEndpoints
     {

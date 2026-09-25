@@ -217,7 +217,8 @@ std::string formatOAuthError(const std::string & response_body, int status, cons
 std::string formatDeviceLoginInstructions(
     const std::string & verification_uri,
     const std::string & user_code,
-    const std::string & verification_uri_complete)
+    const std::string & verification_uri_complete,
+    bool prefer_complete_uri)
 {
     if (verification_uri.empty())
     {
@@ -232,15 +233,17 @@ std::string formatDeviceLoginInstructions(
             "Device authorization response is missing required user_code");
     }
 
+    const bool show_only_complete_uri = prefer_complete_uri && !verification_uri_complete.empty();
+
     std::string message;
-    message += "\nUsing a browser on another device, visit:\n\n";
+    message += "\nOpening your browser for login. If it doesn't open, visit:\n\n";
     message += "        ";
-    message += verification_uri;
-    message += "\n\nAnd enter the code: \033[1m";
+    message += show_only_complete_uri ? verification_uri_complete : verification_uri;
+    message += "\n\nThen enter the code: \033[1m";
     message += user_code;
     message += "\033[0m\n";
 
-    if (!verification_uri_complete.empty())
+    if (!show_only_complete_uri && !verification_uri_complete.empty())
     {
         message += "\nShortcut URL (optional, includes the code):\n\n";
         message += "        ";

@@ -63,12 +63,15 @@ std::optional<OAuthError> parseOAuthErrorResponse(const std::string & json_body)
 std::string formatOAuthError(const OAuthError & error);
 std::string formatOAuthError(const std::string & response_body, int status, const std::string & reason);
 
-/// RFC 8628 Section 3.3 user instructions: always show short verification_uri + user_code.
+/// RFC 8628 Section 3.3 user instructions: show short verification_uri + user_code.
 /// When `verification_uri_complete` is set, also mention the shortcut URL.
+/// With `prefer_complete_uri` and a non-empty `verification_uri_complete`, show only
+/// `verification_uri_complete` instead (used for ClickHouse Cloud).
 std::string formatDeviceLoginInstructions(
     const std::string & verification_uri,
     const std::string & user_code,
-    const std::string & verification_uri_complete);
+    const std::string & verification_uri_complete,
+    bool prefer_complete_uri = false);
 
 /// URL to open in a browser: prefer complete URI, else short verification_uri.
 std::string browserVerificationURL(

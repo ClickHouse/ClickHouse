@@ -269,7 +269,8 @@ void JWTProvider::deviceCodeLogin()
     const Poco::Timestamp::TimeVal expires_at_ts
         = Poco::Timestamp().epochTime() + device_code_object->getValue<int>("expires_in");
 
-    output_stream << formatDeviceLoginInstructions(verification_uri, user_code, verification_uri_complete);
+    output_stream << formatDeviceLoginInstructions(
+        verification_uri, user_code, verification_uri_complete, preferCompleteVerificationURI());
 
     const std::string open_url = browserVerificationURL(verification_uri_complete, verification_uri);
     if (!verification_uri_complete.empty())
