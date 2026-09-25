@@ -9,7 +9,12 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/defines.h>
+#include <chrono>
 #include <filesystem>
+#include <map>
+#include <mutex>
+#include <optional>
 #include <unordered_set>
 #include <Poco/JSON/Object.h>
 
@@ -23,6 +28,15 @@ namespace DataLake
 
 /// Parses "Name: value" into a header entry.
 DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
+
+struct VendedStorageCredentials
+{
+    std::shared_ptr<IStorageCredentials> credentials;
+    std::string endpoint;
+    std::optional<std::chrono::system_clock::time_point> expires_at;
+    std::string table_uuid{};
+    std::string location{};
+};
 
 class RestCatalog : public ICatalog, public DB::WithContext
 {
@@ -85,6 +99,8 @@ public:
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
+
+    void setVendedCredentialsCacheTTL(std::chrono::seconds ttl) override;
 
     struct Config
     {
@@ -154,6 +170,15 @@ protected:
     bool flat_namespaces = false;
     mutable MultiVersion<AccessToken> access_token;
 
+    static constexpr size_t credentials_cache_cleanup_threshold = 1000;
+
+    static constexpr std::chrono::seconds credentials_expiry_safety_window{60};
+    mutable std::mutex credentials_cache_mutex;
+    std::chrono::seconds vended_credentials_cache_ttl TSA_GUARDED_BY(credentials_cache_mutex){std::chrono::seconds::zero()};
+
+    mutable std::map<std::pair<std::string, std::string>, VendedStorageCredentials> credentials_cache
+        TSA_GUARDED_BY(credentials_cache_mutex);
+
     Poco::Net::HTTPBasicCredentials credentials{};
 
     /// `catalog_state` is the snapshot the caller derived the endpoint from, so that one
@@ -201,7 +226,8 @@ protected:
     bool getTableMetadataImpl(
         const std::string & namespace_name,
         const std::string & table_name,
-        TableMetadata & result) const;
+        TableMetadata & result,
+        bool allow_credentials_cache = true) const;
 
     /// Load catalog config (special http handler) utilizing information from catalog_state and auth_headers.
     Config loadConfig(const CatalogState & catalog_state, const std::optional<DB::HTTPHeaderEntries> & auth_headers = std::nullopt);
@@ -217,7 +243,16 @@ protected:
         const String & method,
         bool ignore_result) const;
 
-    std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
+    VendedStorageCredentials getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
+
+    std::optional<VendedStorageCredentials> tryGetCachedCredentials(
+        const std::string & namespace_name, const std::string & table_name) const;
+
+    void cacheCredentials(
+        const std::string & namespace_name,
+        const std::string & table_name,
+        const VendedStorageCredentials & parsed,
+        const CatalogStateVersion & state_snapshot) const;
 
     AccessToken retrieveAccessToken(const std::string & client_id, const std::string & client_secret) const;
 

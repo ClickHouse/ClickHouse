@@ -549,7 +549,6 @@ UnityCatalog::UnityCatalog(
 {
 }
 
-/// getCredentialsConfigurationCallback method is supported only for S3 storage
 ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(
     const DB::StorageID & table_id, const TableMetadata & table_metadata)
 {
@@ -560,10 +559,14 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCa
             "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    return [this, unity_table_id = *table_uuid] () -> std::shared_ptr<IStorageCredentials>    {
+    return [this, unity_table_id = *table_uuid, storage_type = table_metadata.getStorageType()] () -> std::shared_ptr<IStorageCredentials>
+    {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
-        return parseS3Credentials(requestReadCredentials(unity_table_id));
+        auto response = requestReadCredentials(unity_table_id);
+        if (storage_type == StorageType::Azure)
+            return parseAzureCredentials(response);
+        return parseS3Credentials(response);
     };
 }
 
