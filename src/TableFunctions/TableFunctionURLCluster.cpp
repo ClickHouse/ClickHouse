@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -19,19 +20,50 @@ namespace
         if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
     }
+
+    /// A subquery `body(...)` is executed at request time, so on a clustered read every shard would
+    /// re-execute the subquery locally. If the subquery depends on shard-local state (`hostName()`,
+    /// local tables, settings, ...), the shards would send different payloads and could receive
+    /// responses whose schema or format differ from the one inferred on the initiator. A constant
+    /// string body is identical everywhere and remains supported. This must run before schema
+    /// inference, which would otherwise already send the body-carrying request from the initiator.
+    void checkURLClusterDoesNotUseSubqueryBody(const StorageURL::Configuration & configuration)
+    {
+        if (configuration.body.query)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The urlCluster table function does not support a subquery in the 'body' argument: "
+                "every shard would re-execute the subquery locally, so the request body and the response "
+                "schema could differ between the shards and the initiator. "
+                "Use a constant string in 'body' instead.");
+    }
 }
 
 ColumnsDescription TableFunctionURLCluster::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
     checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
+    checkURLClusterDoesNotUseSubqueryBody(configuration);
     return TableFunctionURL::getActualTableStructure(context, is_insert_query);
 }
 
 StoragePtr TableFunctionURLCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
+    const std::string & table_name, const String & /*compression_method_*/, bool is_insert_query) const
 {
+    /// The `body(...)` argument only makes sense for reading, where it forms the HTTP request body.
+    /// For `INSERT INTO FUNCTION urlCluster(...)` the inserted rows themselves are sent as the request body
+    /// (see `IStorageURLBase::write`), so a user-provided `body` would be silently ignored. Reject it
+    /// explicitly instead of dropping it, mirroring the same guard in `TableFunctionURL::getStorage`.
+    /// This must run before `getActualTableStructure` below, which would otherwise send a body `POST`
+    /// for schema inference when the structure is omitted.
+    if (is_insert_query && !configuration.body.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The 'body' argument is not supported for INSERT INTO FUNCTION urlCluster(...): "
+            "the inserted data is sent as the request body.");
+
     checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
+    checkURLClusterDoesNotUseSubqueryBody(configuration);
 
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
@@ -47,6 +79,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
             context,
             compression_method,
             configuration.headers,
+            configuration.body,
             configuration.http_method,
             nullptr,
             /*distributed_processing=*/ true);
@@ -59,7 +92,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context, true),
+        getActualTableStructure(context, is_insert_query),
         ConstraintsDescription{},
         configuration);
 }
@@ -72,7 +105,7 @@ Allows processing files from URL in parallel from many nodes in a specified clus
 ## Syntax {#syntax}
 
 ```sql
-urlCluster(cluster_name, URL, format, structure)
+urlCluster(cluster_name, URL, format, structure [, body])
 ```
 
 ## Arguments {#arguments}
@@ -80,9 +113,10 @@ urlCluster(cluster_name, URL, format, structure)
 | Argument       | Description                                                                                                                                            |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `cluster_name` | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.                                      |
-| `URL`          | HTTP or HTTPS server address, which can accept `GET` requests. Type: [String](/reference/data-types/string).                               |
+| `URL`          | HTTP or HTTPS server address, which can accept `GET` requests (or `POST` requests when `body` is specified). Type: [String](/reference/data-types/string). |
 | `format`       | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                |
 | `structure`    | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string). |
+| `body`         | Optional request body in `body('content')` form, where `content` is a constant string. Specifying a body promotes the request from `GET` to `POST`, and every node sends the same body. A subquery body, which is supported by [url](/reference/functions/table-functions/url#sending-a-body), is rejected by `urlCluster`, because every node would re-execute the subquery locally. |
 
 ## Returned value {#returned-value}
 
