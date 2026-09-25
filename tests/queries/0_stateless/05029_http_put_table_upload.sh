@@ -261,6 +261,19 @@ printf '45,"no-insert"\n' \
     | grep -oE "Not enough privileges"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.${TABLE} WHERE a = 45" | grep -qx '0'
 
+echo "-- PUT to a missing table without the INSERT privilege fails exactly like a plain INSERT"
+# The upload must not run the pre-auth table existence check with nearest-table hints: the only thing it may
+# reveal is what the same user already learns from `INSERT INTO <table> FORMAT CSV` over the native protocol.
+# `QUOTED_TABLE` is invisible to this user, so a hint pointing at it would be a leak.
+put_error=$(printf '45,"no-insert"\n' \
+    | curl -sS -X PUT -H 'Content-Type: text/csv' --data-binary @- \
+        "${BASE_URL}/${DB}/%60a%3D1_05029x%60.CSV?user=${NO_INSERT_USER}" 2>&1 \
+    | grep -oE "Code: [0-9]+|Maybe you meant[^.]*|maybe you meant[^.]*" | sort -u || true)
+insert_error=$(printf '45,"no-insert"\n' \
+    | ${CLICKHOUSE_CLIENT} --user "${NO_INSERT_USER}" -q "INSERT INTO ${DB}.\`a=1_05029x\` FORMAT CSV" 2>&1 \
+    | grep -oE "Code: [0-9]+|Maybe you meant[^.]*|maybe you meant[^.]*" | sort -u || true)
+[ "${put_error}" = "${insert_error}" ] && echo "same error: ${put_error}" || echo "PUT: ${put_error}; INSERT: ${insert_error}"
+
 echo "-- failed requests drain bodies and keep connections reusable"
 python3 - <<PY
 import gzip

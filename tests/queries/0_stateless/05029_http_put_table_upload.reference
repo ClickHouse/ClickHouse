@@ -80,6 +80,8 @@ Cannot execute query in readonly mode
 Cannot execute query in readonly mode
 -- PUT still requires the INSERT privilege
 Not enough privileges
+-- PUT to a missing table without the INSERT privilege fails exactly like a plain INSERT
+same error: Code: 60
 -- failed requests drain bodies and keep connections reusable
 first-status: 400
 first-connection-close: False
