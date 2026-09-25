@@ -18,6 +18,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -211,6 +212,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
     /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_ptr);
+    /// Parser-only settings have already served their purpose on the initiator. The queued query is normalized
+    /// to the `ClickHouse` dialect, so keep these settings out of its text for mixed-version clusters as well.
+    removeSettingsFromQuery(query_ptr, getDDLQueryParserOnlySettingNames());
     entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
