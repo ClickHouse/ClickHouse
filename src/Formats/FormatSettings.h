@@ -36,6 +36,7 @@ struct FormatSettings
     UInt64 float_precision = 0;
     bool precise_float_parsing = true;
     bool trim_fixed_string = false;
+    UInt64 max_text_string_size = 0;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
     bool try_infer_variant = false;
