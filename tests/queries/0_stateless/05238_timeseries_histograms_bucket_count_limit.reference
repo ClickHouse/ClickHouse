@@ -1,0 +1,5 @@
+--- a bucket count above the maximum Int64 is rejected ---
+--- the maximum Int64 is accepted ---
+--- the total count may exceed the maximum Int64 when every bucket fits ---
+9223372036854775807	[9223372036854775807]
+18446744073709551614	[9223372036854775807,9223372036854775807]

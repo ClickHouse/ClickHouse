@@ -1005,6 +1005,8 @@ class ClickHouseCluster:
         self.prometheus_servers = set()
         self.prometheus_remote_write_handlers = []
         self.prometheus_remote_read_handlers = []
+        # Whether the "writer" Prometheus scrapes native histograms and sends them over remote-write.
+        self.prometheus_writer_native_histograms = False
 
         # available when with_ytsaurus = True
         self._ytsaurus_port = None
@@ -2124,12 +2126,21 @@ class ClickHouseCluster:
         self.with_prometheus = True
         return self.base_prometheus_cmd
 
+    def setup_prometheus_writer_native_histograms(self, env_variables):
+        # Prometheus 3.5 scrapes native histograms only with this feature flag (newer versions use the `scrape_native_histograms`
+        # scrape option instead); it then prefers the protobuf scrape format, so the classic `_bucket` series of a metric which
+        # also has a native histogram are no longer scraped. Native histograms with custom buckets are not sent by any
+        # Prometheus version over remote-write 1.0, so classic histograms are not converted to them here.
+        self.prometheus_writer_native_histograms = True
+        env_variables["PROMETHEUS_WRITER_EXTRA_FLAGS"] = "--enable-feature=native-histograms"
+
     def setup_prometheus_remote_write_handler(self, instance, env_variables, handler_port, handler_path):
         self.prometheus_remote_write_handlers.append((instance.hostname, handler_port, handler_path))
         handler_urls = []
         for host, port, path in self.prometheus_remote_write_handlers:
             handler_urls.append(f"http://{host}:{port}/{path.strip('/')}")
-        env_variables["PROMETHEUS_REMOTE_WRITE_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
+        handler_options = ", 'send_native_histograms': true" if self.prometheus_writer_native_histograms else ""
+        env_variables["PROMETHEUS_REMOTE_WRITE_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'{handler_options}}}" for url in handler_urls]) + ']'
 
     def setup_prometheus_remote_read_handler(self, instance, env_variables, handler_port, handler_path):
         self.prometheus_remote_read_handlers.append((instance.hostname, handler_port, handler_path))
@@ -2186,6 +2197,7 @@ class ClickHouseCluster:
         with_hive=False,
         with_coredns=False,
         with_prometheus_writer=False,
+        prometheus_writer_native_histograms=False,
         with_prometheus_reader=False,
         with_prometheus_receiver=False,
         with_iceberg_catalog=False,
@@ -2627,6 +2639,8 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'writer')
             )
+            if prometheus_writer_native_histograms:
+                self.setup_prometheus_writer_native_histograms(env_variables)
         if with_prometheus_reader:
             cmds.append(
                 self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'reader')

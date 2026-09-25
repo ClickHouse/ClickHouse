@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesHistogramsSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 
@@ -35,6 +36,7 @@ namespace ErrorCodes
     DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(timestamp)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))' is used. Ignored for an external recent samples table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, recent_samples_index_granularity, 8192, "Sets 'index_granularity' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
+    LIST_OF_TIME_SERIES_HISTOGRAMS_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, version, TimeSeriesVersion::LATEST, "The version of the TimeSeries table: it determines the set of the target tables and their structure. The version is pinned automatically when a table is created and cannot be changed afterwards. Tables created before this setting was introduced are considered as version 0", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
@@ -96,6 +98,11 @@ SettingsChanges TimeSeriesSettings::changes() const
     return impl->changes();
 }
 
+bool TimeSeriesSettings::isChanged(std::string_view name) const
+{
+    return impl->isChanged(name);
+}
+
 void TimeSeriesSettings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
@@ -121,6 +128,18 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Setting `id_type` requires `version` to be at least {}, but the table has version {}",
             TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING, version);
+
+    /// A table of an earlier version has no histograms table, so the settings of that table make no sense for it.
+    if (version < TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET)
+    {
+        for (const auto & setting_name : TimeSeriesHistogramsSettings::getNames())
+        {
+            if (settings.isChanged(setting_name))
+                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting `{}` requires `version` to be at least {}, but the table has version {}",
+                    setting_name, TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET, version);
+        }
+    }
 
     if (!settings[TimeSeriesSetting::recent_samples_ttl_seconds])
     {

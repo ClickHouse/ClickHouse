@@ -1,0 +1,10 @@
+--- counter_reset_hint is 0..3 ---
+--- schema is -4..8 or -53 ---
+--- exponential buckets: the spans describe the buckets and go forwards after the first span ---
+--- float histograms: no negative counts, the total count is not checked ---
+--- integer histograms: the buckets and the zero bucket sum up to the count, or to at most the count when the sum is NaN ---
+--- custom buckets: increasing finite bounds covering the spans, no negative side, no zero bucket ---
+--- the accepted histograms ---
+9
+--- the histograms_max_buckets setting ---
+1

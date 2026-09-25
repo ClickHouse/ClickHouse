@@ -27,8 +27,8 @@ ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING max_tables = 3;
 RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.mv TO {CLICKHOUSE_DATABASE_1:Identifier}.mv;
 SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String};
 
--- A `TimeSeries` table has four inner tables by default - samples, recent samples, tags and
--- metrics - so it needs five slots.
+-- A `TimeSeries` table has five inner tables by default - samples, recent samples, tags, metric
+-- families and histograms - so it needs six slots.
 SET allow_experimental_time_series_table = 1;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Ordinary SETTINGS max_tables = 2;
@@ -40,21 +40,21 @@ RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.ts TO {CLICKHOUSE_DATABASE_2:Ident
 SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String};
 
 -- One slot short of the whole group is still a rejection.
-ALTER DATABASE {CLICKHOUSE_DATABASE_2:Identifier} MODIFY SETTING max_tables = 4;
+ALTER DATABASE {CLICKHOUSE_DATABASE_2:Identifier} MODIFY SETTING max_tables = 5;
 RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.ts TO {CLICKHOUSE_DATABASE_2:Identifier}.ts; -- { serverError TOO_MANY_TABLES }
 SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String};
 
-ALTER DATABASE {CLICKHOUSE_DATABASE_2:Identifier} MODIFY SETTING max_tables = 5;
+ALTER DATABASE {CLICKHOUSE_DATABASE_2:Identifier} MODIFY SETTING max_tables = 6;
 RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.ts TO {CLICKHOUSE_DATABASE_2:Identifier}.ts;
 SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String};
 
 -- The recent samples table is optional, so a `TimeSeries` without it needs one slot less.
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Ordinary SETTINGS max_tables = 3;
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Ordinary SETTINGS max_tables = 4;
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.ts_no_recent ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
 
 RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.ts_no_recent TO {CLICKHOUSE_DATABASE_2:Identifier}.ts_no_recent; -- { serverError TOO_MANY_TABLES }
-ALTER DATABASE {CLICKHOUSE_DATABASE_2:Identifier} MODIFY SETTING max_tables = 4;
+ALTER DATABASE {CLICKHOUSE_DATABASE_2:Identifier} MODIFY SETTING max_tables = 5;
 RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.ts_no_recent TO {CLICKHOUSE_DATABASE_2:Identifier}.ts_no_recent;
 SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String};
 

@@ -23,6 +23,8 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/addPrometheusHistogramsToTimeSeries.h>
 #include <optional>
 
 
@@ -78,11 +80,17 @@ namespace
     /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
     /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
     /// GROUP BY timeSeriesIdToGroup(id) AS group
+    ///
+    /// For a TimeSeries table with histograms `timeSeriesSelector` returns histogram samples too, which are collected separately:
+    /// SELECT timeSeriesGroupToTags(group) AS tags,
+    ///        timeSeriesGroupArrayIf(timestamp, value, empty(histogram)) AS samples,
+    ///        groupArrayIf((timestamp, histogram), notEmpty(histogram)) AS histograms
     ASTPtr buildSelectQueryForReadingTimeSeries(
         const StorageID & time_series_storage_id,
+        const bool with_histograms,
         const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matchers,
-        Int64 min_time_ms,
-        Int64 max_time_ms)
+        const Int64 min_time_ms,
+        const Int64 max_time_ms)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -95,12 +103,32 @@ namespace
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
 
-            select_list_exp->children.push_back(makeASTFunction(
-                "timeSeriesGroupArray",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
+            if (with_histograms)
+            {
+                const auto make_histogram = [] { return make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Histogram); };
 
-            select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
+                select_list_exp->children.push_back(makeASTFunction(
+                    "timeSeriesGroupArrayIf",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value),
+                    makeASTFunction("empty", make_histogram())));
+                select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
+
+                select_list_exp->children.push_back(makeASTFunction(
+                    "groupArrayIf",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), make_histogram()),
+                    makeASTFunction("notEmpty", make_histogram())));
+                select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Histograms);
+            }
+            else
+            {
+                select_list_exp->children.push_back(makeASTFunction(
+                    "timeSeriesGroupArray",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
+
+                select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
+            }
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
         }
@@ -177,6 +205,9 @@ namespace
 
         UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
+        /// The column with histogram samples is present for TimeSeries tables with histograms.
+        const auto * histograms_column = block.findByName(TimeSeriesColumnNames::Histograms);
+
         for (size_t i = 0; i != num_rows; ++i)
         {
             auto & new_time_series = *out_time_series.Add();
@@ -203,6 +234,9 @@ namespace
                 new_sample.set_timestamp(timestamp_ms);
                 new_sample.set_value(value);
             }
+
+            if (histograms_column)
+                addPrometheusHistogramsToTimeSeries(*histograms_column->column, i, timestamp_scale, new_time_series);
         }
     }
 }
@@ -228,7 +262,11 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     auto time_series_storage_id = time_series_storage->getStorageID();
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
-        time_series_storage_id, label_matcher, start_timestamp_ms, end_timestamp_ms);
+        time_series_storage_id,
+        timeSeriesVersionSupportsHistograms(time_series_storage->getVersion()),
+        label_matcher,
+        start_timestamp_ms,
+        end_timestamp_ms);
 
     LOG_TRACE(log, "{}: Executing query {}",
               time_series_storage_id.getNameForLogs(), select_query->formatForLogging());

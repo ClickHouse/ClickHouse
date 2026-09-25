@@ -72,10 +72,17 @@ struct AggregateFunctionVarianceData
 
     void mergeWith(const AggregateFunctionVarianceData & source)
     {
-        UInt64 total_count = count + source.count;
-        if (total_count == 0)
+        /// An empty side must stay out of the formula below: `factor` is zero then, and for a large `mean` `delta * delta`
+        /// overflows to infinity, so `m2` would become NaN. Every merge starts from an empty state.
+        if (source.count == 0)
             return;
+        if (count == 0)
+        {
+            *this = source;
+            return;
+        }
 
+        UInt64 total_count = count + source.count;
         Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
         Float64 delta = mean - source.mean;
 
@@ -316,10 +323,16 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
 
     void mergeWith(const CovarianceData & source)
     {
-        UInt64 total_count = count + source.count;
-        if (total_count == 0)
+        /// An empty side must stay out of the formulas below, see `AggregateFunctionVarianceData::mergeWith`.
+        if (source.count == 0)
             return;
+        if (count == 0)
+        {
+            *this = source;
+            return;
+        }
 
+        UInt64 total_count = count + source.count;
         Float64 factor = static_cast<Float64>(count * source.count) / static_cast<Float64>(total_count);
         Float64 left_delta = left_mean - source.left_mean;
         Float64 right_delta = right_mean - source.right_mean;

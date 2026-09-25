@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionPrometheusQuery.h>
@@ -109,6 +110,9 @@ const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageEngineName() 
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
 {
+    /// The versions mentioned in the documentation are generated so that the documentation doesn't go stale.
+    const String histograms_version = std::to_string(TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET);
+
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Samples>>(
         {.description = R"DOCS_MD(
 `timeSeriesSamples(db_name.time_series_table)` - Returns the [samples](/reference/engines/table-engines/integrations/time-series#samples-table) table
@@ -193,6 +197,27 @@ The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which i
 
     factory.registerAlias("timeSeriesMetrics", "timeSeriesMetricFamilies");
 
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Histograms>>(
+        {.description = R"DOCS_MD(
+`timeSeriesHistograms(db_name.time_series_table)` - Returns the [histograms](/reference/engines/table-engines/integrations/time-series#histograms-table) table
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine.
+The table stores native histogram samples and exists in tables of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries HISTOGRAMS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+The following queries are equivalent:
+
+```sql
+SELECT * FROM timeSeriesHistograms(db_name.time_series_table);
+SELECT * FROM timeSeriesHistograms('db_name.time_series_table');
+SELECT * FROM timeSeriesHistograms('db_name', 'time_series_table');
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
 Reads time series from a TimeSeries table filtered by a selector and with timestamps in a specified interval.
@@ -223,6 +248,18 @@ The function returns three columns:
 - `id` - Contains the identifiers of time series matching the specified selector.
 - `timestamp` - Contains timestamps.
 - `value` - Contains values.
+
+For a TimeSeries table of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later,
+which stores native histograms, the function returns the histogram samples too, with a fourth column:
+- `histogram` - An empty array for a float sample, and an array with one element for a histogram sample. The element is a tuple
+  with the fields of the histogram as they are stored in the [histograms table](/reference/functions/table-functions/timeSeriesHistograms):
+  `is_float`, `counter_reset_hint`, `schema`, `zero_threshold`, `sum`, `positive_spans`, `negative_spans`, `custom_values`,
+  and the counts of the flavour the histogram uses: `count_int`, `zero_count_int`, `positive_values_int`, `negative_values_int`
+  for an integer histogram (`is_float = false`), `count_float`, `zero_count_float`, `positive_values_float`, `negative_values_float`
+  for a float histogram (`is_float = true`). The fields of the other flavour must be ignored.
+  The `value` of a histogram sample is 0.
 
 There is no specific order for returned data.
 

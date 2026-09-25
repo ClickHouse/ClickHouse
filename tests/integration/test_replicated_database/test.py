@@ -2081,14 +2081,14 @@ def test_timeseries(started_cluster):
         "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
     )
 
-    # The outer table + 4 inner tables (samples, recent samples, tags and metrics).
+    # The outer table + 5 inner tables (samples, recent samples, tags, metrics and histograms).
     for node in [competing_node, main_node, dummy_node]:
         assert node.query(
             """
             SYSTEM SYNC DATABASE REPLICA ts_db;
             SELECT count() FROM system.tables WHERE database='ts_db';
             """, timeout=10
-        ) == "5\n", f"Node {node.name} failed"
+        ) == "6\n", f"Node {node.name} failed"
 
 
 def test_mv_false_cyclic_dependency(started_cluster):

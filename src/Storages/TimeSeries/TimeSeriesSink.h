@@ -24,8 +24,8 @@ struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the target tables (Tags, Samples, RecentSamples, MetricFamilies).
+/// Transforms outer columns (samples, metric_name, tags, histograms.*, metric_family, type, unit, help)
+/// into blocks for the target tables (Tags, Samples, RecentSamples, Histograms, MetricFamilies).
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -85,11 +85,22 @@ private:
     LoggerPtr log;
 
     bool insert_tags_and_samples = false;
+    bool insert_histograms = false;
     bool insert_metric_families = false;
     bool async_insert = false;
 
     /// Source header for the tags pipeline WITHOUT the `id` column.
     Block tags_header_before_id;
+
+    /// Source header for the samples and the recent samples pipelines: `id`, `timestamp`, `value`.
+    Block samples_header;
+
+    /// Source header for the histograms pipeline: `id`, then the `histograms.*` outer columns under the names of the
+    /// inner table (`timestamp`, `is_float`, ...) with the types of their elements. Empty unless `insert_histograms` is set.
+    Block histograms_header;
+
+    /// The value of the `histograms_max_buckets` setting.
+    UInt64 histograms_max_buckets = 0;
 
     /// Type of the `id` column in the tags target table.
     DataTypePtr id_type;
@@ -102,8 +113,10 @@ private:
     std::shared_ptr<ExpressionActions> convert_id_actions;
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
+    /// The pipelines below are created on the first block with samples of the corresponding kind, see consumeTagsAndSamples().
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
+    std::unique_ptr<TargetPipeline> histograms_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
 };
 

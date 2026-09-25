@@ -1,2 +1,8 @@
 Files "prompb/remote.proto" and "prompb/types.proto" were downloaded from the Prometheus repository:
 https://github.com/prometheus/prometheus/tree/main/prompb
+
+"prompb/types.proto" is the file of the tag v3.5.0, verbatim.
+"prompb/remote.proto" differs from upstream only by the import path of "prompb/types.proto".
+
+After updating the files, regenerate the Python stubs used by the integration tests:
+tests/integration/test_prometheus_protocols/generate_pb2.py

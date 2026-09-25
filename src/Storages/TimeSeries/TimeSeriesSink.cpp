@@ -23,15 +23,19 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/validateTimeSeriesHistograms.h>
 #include <base/EnumReflection.h>
 
 #include <algorithm>
+#include <optional>
 #include <ranges>
+#include <span>
 
 
 namespace DB
@@ -39,6 +43,7 @@ namespace DB
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsUInt64 histograms_max_buckets;
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsMap tags_to_columns;
@@ -111,11 +116,19 @@ namespace
         return {min_value, max_value};
     }
 
-    /// Fills columns min_time and max_time for the "tags" table.
+    /// An array column with the timestamps of one kind of samples (the float samples or the histogram samples):
+    /// its data column and its offsets.
+    struct TimestampsArray
+    {
+        const IColumn & timestamps;
+        const ColumnArray::Offsets & offsets;
+    };
+
+    /// Fills columns min_time and max_time for the "tags" table with the time range of every row with `filter[i]` set
+    /// over all the kinds of samples in `timestamps_arrays`.
     void fillMinMaxTimeColumns(
         const PaddedPODArray<UInt8> & filter,
-        const ColumnArray::Offsets & ts_offsets,
-        const IColumn & ts_timestamps,
+        std::span<const TimestampsArray> timestamps_arrays,
         IColumn & out_min_time_column,
         IColumn & out_max_time_column)
     {
@@ -124,19 +137,35 @@ namespace
             if (!filter[i])
                 continue;
 
-            size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
-            size_t ts_end = ts_offsets[i];
+            std::optional<std::pair<Field, Field>> min_max;
+            for (const auto & [timestamps, offsets] : timestamps_arrays)
+            {
+                const size_t start = (i == 0) ? 0 : offsets[i - 1];
+                const size_t end = offsets[i];
+                if (start == end)
+                    continue;
 
-            if (ts_start == ts_end)
+                auto [min_time, max_time] = findMinMax(timestamps, start, end);
+                if (!min_max)
+                    min_max.emplace(std::move(min_time), std::move(max_time));
+                else
+                {
+                    if (min_time < min_max->first)
+                        min_max->first = std::move(min_time);
+                    if (max_time > min_max->second)
+                        min_max->second = std::move(max_time);
+                }
+            }
+
+            if (!min_max)
             {
                 out_min_time_column.insertDefault();
                 out_max_time_column.insertDefault();
                 continue;
             }
 
-            auto [min_time, max_time] = findMinMax(ts_timestamps, ts_start, ts_end);
-            out_min_time_column.insert(min_time);
-            out_max_time_column.insert(max_time);
+            out_min_time_column.insert(min_max->first);
+            out_max_time_column.insert(min_max->second);
         }
     }
 
@@ -174,6 +203,35 @@ namespace
                 out_timestamp_column.insertRangeFrom(ts_timestamps, ts_start, num_samples);
                 out_value_column.insertRangeFrom(ts_values, ts_start, num_samples);
             }
+
+            ++id_index;
+        }
+    }
+
+    /// Fills the column `id` for the "histograms" table: the id of a row repeated for each of its histogram samples.
+    /// The other columns of that table aren't copied: the sink shares the data columns of the `histograms.*` arrays.
+    void fillHistogramsIdColumn(
+        const PaddedPODArray<UInt8> & filter,
+        const IColumn & id_column,
+        const ColumnArray::Offsets & histograms_offsets,
+        IColumn & out_id_column)
+    {
+        /// `id_index` is the position in the tags block, which has a row for every row with `filter[i]` set.
+        size_t id_index = 0;
+        for (size_t i = 0; i < filter.size(); ++i)
+        {
+            const size_t num_histograms = histograms_offsets[i] - ((i == 0) ? 0 : histograms_offsets[i - 1]);
+
+            if (!filter[i])
+            {
+                /// We can't store time series without metric name and tags.
+                if (num_histograms > 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Got {} histogram samples without a metric name or tags", num_histograms);
+                continue;
+            }
+
+            if (num_histograms > 0)
+                out_id_column.insertManyFrom(id_column, id_index, num_histograms);
 
             ++id_index;
         }
@@ -432,9 +490,29 @@ TimeSeriesSink::TimeSeriesSink(
         return (insert_columns_.empty() || std::find(insert_columns_.begin(), insert_columns_.end(), name) != insert_columns_.end());
     };
 
+    /// The `histograms.*` columns exist in tables with the histograms target only (see TimeSeriesColumnNames::Histograms).
+    const String histograms_timestamp_column = TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp);
+    if (header_.has(histograms_timestamp_column))
+    {
+        insert_histograms = is_insert_column(histograms_timestamp_column);
+
+        /// The other columns of the group get default values aligned with the inserted ones (see addMissingDefaults),
+        /// but a histogram sample without a timestamp makes no sense.
+        if (!insert_histograms)
+        {
+            for (const auto & column : TimeSeriesHistogramsColumns::getOuterPayloadColumns())
+            {
+                if (is_insert_column(column.name))
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Column `{}` must be inserted together with column `{}`", column.name, histograms_timestamp_column);
+            }
+        }
+    }
+
     insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
         || is_insert_column(TimeSeriesColumnNames::Tags)
-        || is_insert_column(TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion()));
+        || is_insert_column(TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion()))
+        || insert_histograms;
 
     insert_metric_families = is_insert_column(TimeSeriesColumnNames::MetricFamily)
         || is_insert_column(TimeSeriesColumnNames::Type)
@@ -576,15 +654,34 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_header);
 
     /// Build source header for samples block.
-    Block samples_header;
+    /// The samples pipelines are created on the first block with samples, see consumeTagsAndSamples().
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
     samples_header.insert(ColumnWithTypeAndName{value_type, TimeSeriesColumnNames::Value});
-    samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
 
-    /// The recent samples table (if any) receives a copy of every samples block.
-    if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
-        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
+    if (insert_histograms)
+    {
+        /// The header of the histograms block: `id`, then the `histograms.*` columns of the input block under the names
+        /// of the inner table with the types of their elements. The types are taken from the input block for the same reason
+        /// as `timestamp_type` and `scalar_type` above: the data columns of the input arrays are pushed as they are.
+        /// The pipeline is created on the first block with histogram samples, see consumeTagsAndSamples().
+        histograms_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
+
+        auto add_histograms_column = [&](std::string_view inner_name)
+        {
+            const auto & column = getHeader().getByName(TimeSeriesHistogramsColumns::getOuterColumnName(inner_name));
+            const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
+            if (!array_type)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type, got {}", column.name, column.type->getName());
+            histograms_header.insert(ColumnWithTypeAndName{array_type->getNestedType(), String{inner_name}});
+        };
+
+        add_histograms_column(TimeSeriesColumnNames::Timestamp);
+        for (const auto & column : TimeSeriesHistogramsColumns::getAll())
+            add_histograms_column(TimeSeriesHistogramsColumns::getName(column));
+
+        histograms_max_buckets = settings[TimeSeriesSetting::histograms_max_buckets];
+    }
 }
 
 
@@ -612,6 +709,33 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     const ColumnArray::Offsets & ts_offsets = ts_arrays->getOffsets();
     size_t total_samples = getTotalSamples(ts_offsets);
 
+    /// The `histograms.*` columns are arrays sharing the same offsets: element k of each of them is histogram sample k of a row.
+    /// `histograms_arrays` follows the order of `histograms_header` after `id`.
+    std::vector<const ColumnArray *> histograms_arrays;
+    const ColumnArray::Offsets * histograms_offsets = nullptr;
+    size_t total_histograms = 0;
+    if (insert_histograms)
+    {
+        histograms_arrays.reserve(histograms_header.columns() - 1);
+        for (size_t i = 1; i != histograms_header.columns(); ++i)
+        {
+            const auto & outer_col = block.getByName(TimeSeriesHistogramsColumns::getOuterColumnName(histograms_header.getByPosition(i).name));
+            const auto * array = typeid_cast<const ColumnArray *>(outer_col.column.get());
+            if (!array)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the column `{}`, got {}", outer_col.name, outer_col.column->getName());
+
+            /// The insert pipeline has checked that already (see NestedElementsValidationTransform), the check here is cheap.
+            if (!histograms_offsets)
+                histograms_offsets = &array->getOffsets();
+            else if ((&array->getOffsets() != histograms_offsets) && (array->getOffsets() != *histograms_offsets))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Column `{}` has a different number of elements than the other `histograms.*` columns in some row", outer_col.name);
+
+            histograms_arrays.push_back(array);
+        }
+        total_histograms = getTotalSamples(*histograms_offsets);
+    }
+
     PaddedPODArray<UInt8> filter;
     size_t num_time_series = buildNonEmptyTagsFilter(*metric_name_col.column, tags_offsets, filter);
 
@@ -620,6 +744,8 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         /// All rows have empty metric names and no tags - samples must also be empty.
         if (total_samples)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Got {} samples without a metric name or tags", total_samples);
+        if (total_histograms)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Got {} histogram samples without a metric name or tags", total_histograms);
 
         /// Nothing to insert.
         return;
@@ -684,7 +810,16 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         max_time_column = min_max_time_type->createColumn();
         min_time_column->reserve(num_time_series);
         max_time_column->reserve(num_time_series);
-        fillMinMaxTimeColumns(filter, ts_offsets, ts_timestamps, *min_time_column, *max_time_column);
+
+        std::vector<TimestampsArray> timestamps_arrays;
+        timestamps_arrays.push_back({ts_timestamps, ts_offsets});
+        if (total_histograms)
+        {
+            const auto & histograms_timestamps = histograms_arrays[histograms_header.getPositionByName(TimeSeriesColumnNames::Timestamp) - 1]->getData();
+            timestamps_arrays.push_back({histograms_timestamps, *histograms_offsets});
+        }
+
+        fillMinMaxTimeColumns(filter, timestamps_arrays, *min_time_column, *max_time_column);
     }
 
     /// Step 3. Assemble the tags block.
@@ -718,13 +853,35 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     if (tags_block.has(TimeSeriesColumnNames::AllTags))
         tags_block.erase(TimeSeriesColumnNames::AllTags);
 
-    /// Step 4. Push the tags block.
+    /// Step 4. Assemble and validate the histograms block.
+    /// Only the `id` column is built, the data columns of the `histograms.*` arrays are shared without copying:
+    /// a row without a metric name or tags has no histogram samples (checked by fillHistogramsIdColumn), so the
+    /// concatenated elements of every array are exactly the rows of the "histograms" table.
+    /// The validation happens before anything is pushed, so an invalid histogram leaves no partial data behind.
+    Block histograms_block;
+    if (total_histograms)
+    {
+        auto histograms_id_column = id_type->createColumn();
+        histograms_id_column->reserve(total_histograms);
+        fillHistogramsIdColumn(filter, *id_column, *histograms_offsets, *histograms_id_column);
+
+        histograms_block.insert(ColumnWithTypeAndName{std::move(histograms_id_column), id_type, TimeSeriesColumnNames::ID});
+        for (size_t i = 0; i != histograms_arrays.size(); ++i)
+        {
+            const auto & header_column = histograms_header.getByPosition(i + 1);
+            histograms_block.insert(ColumnWithTypeAndName{histograms_arrays[i]->getDataPtr(), header_column.type, header_column.name});
+        }
+
+        validateTimeSeriesHistograms(histograms_block, histograms_max_buckets);
+    }
+
+    /// Step 5. Push the tags block.
 
     /// Tags are pushed first so that if the samples insert fails,
     /// we don't end up with sample rows referencing IDs that were never written to the tags table.
     tags_pipeline->push(std::move(tags_block));
 
-    /// Step 5. Assemble and push the samples block.
+    /// Step 6. Assemble and push the samples block.
     if (total_samples)
     {
         /// Build columns for the samples block.
@@ -748,6 +905,17 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), value_type, TimeSeriesColumnNames::Value});
 
+        /// The pipelines are created on the first block with samples: an insert without them (e.g. with histogram samples
+        /// or metadata only) must not pay for an insert into the samples tables.
+        if (!samples_pipeline)
+        {
+            samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
+
+            /// The recent samples table (if any) receives a copy of every samples block.
+            if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
+                recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
+        }
+
         /// The samples table is written before the recent samples table: if the insert fails between
         /// the two writes, the sample is then missing from the recent samples table and just stays
         /// invisible until the TTL window slides past it. With the opposite order the sample would be
@@ -757,6 +925,15 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 
         if (recent_samples_pipeline)
             recent_samples_pipeline->push(std::move(samples_block));
+    }
+
+    /// Step 7. Push the histograms block.
+    /// The pipeline is created on the first block with histogram samples for the same reason.
+    if (total_histograms)
+    {
+        if (!histograms_pipeline)
+            histograms_pipeline = createTargetPipeline(ViewTarget::Histograms, histograms_header);
+        histograms_pipeline->push(std::move(histograms_block));
     }
 }
 
@@ -846,6 +1023,8 @@ void TimeSeriesSink::onFinish()
         samples_pipeline->executor->finish();
     if (recent_samples_pipeline)
         recent_samples_pipeline->executor->finish();
+    if (histograms_pipeline)
+        histograms_pipeline->executor->finish();
     if (metric_families_pipeline)
         metric_families_pipeline->executor->finish();
 }
