@@ -1,0 +1,23 @@
+-- one database selected by cluster
+1	1
+-- one database selected by the alias name
+1	1
+-- one database selected via a subquery
+1	1
+-- two databases selected, one request each
+1	0	1
+0	1	1
+-- no replica-state columns requested
+1	1
+-- filter that cannot be pushed down still gives correct rows
+1
+-- all clusters
+1
+-- Keeper read requests per query
+05244_all	1
+05244_no_zk	0
+05244_not_pushed	1
+05244_one_db	1
+05244_one_db_alias	1
+05244_subquery	1
+05244_two_dbs	2

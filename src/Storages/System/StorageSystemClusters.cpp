@@ -1,3 +1,4 @@
+#include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
@@ -8,12 +9,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/System/StorageSystemClusters.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 
+#include <algorithm>
 #include <optional>
 
 namespace DB
@@ -54,64 +57,47 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
     return description;
 }
 
-void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
+namespace
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageSystemClusters::fillData");
-    for (const auto & name_and_cluster : context->getClusters())
-        writeCluster(res_columns, columns_mask, name_and_cluster, /* replicas_info_getter= */ {});
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-    for (const auto & name_and_database : databases)
-    {
-        if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
-        {
+/// A cluster to show, in output order: from the configuration or of a `Replicated` database.
+struct ClusterEntry
+{
+    String name;
+    ClusterPtr cluster;
+    /// Set for clusters of `Replicated` databases, whose replica state is read from Keeper.
+    const DatabaseReplicated * replicated = nullptr;
+};
 
-            if (auto database_cluster = replicated->tryGetCluster())
-                writeCluster(res_columns, columns_mask, {name_and_database.first, database_cluster},
-                    [replicated, database_cluster]() -> ReplicasInfo { return replicated->tryGetReplicasInfo(database_cluster); });
+/// The names that pass the part of the `WHERE` clause referring to `cluster` (see `getFilterSampleBlock`), so that
+/// `SELECT ... FROM system.clusters WHERE cluster = 'x'` does not go to Keeper for the other clusters.
+/// Names are not unique (a cluster from the configuration may have the name of a `Replicated` database), hence a set.
+NameSet selectClusterNames(const Strings & names, const ActionsDAG::Node * predicate, const ContextPtr & context)
+{
+    auto name_column = ColumnString::create();
+    for (const auto & name : names)
+        name_column->insert(name);
 
-            if (auto database_cluster = replicated->tryGetAllGroupsCluster())
-                writeCluster(res_columns, columns_mask, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster},
-                    [replicated, database_cluster]() -> ReplicasInfo { return replicated->tryGetReplicasInfo(database_cluster); });
-        }
-    }
+    Block block{ColumnWithTypeAndName(std::move(name_column), std::make_shared<DataTypeString>(), "cluster")};
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
 
-#if CLICKHOUSE_CLOUD
-    if (SharedDatabaseCatalog::initialized())
-    {
-        auto cluster_name = SharedDatabaseCatalog::instance().getClusterName();
-        if (auto catalog_cluster = SharedDatabaseCatalog::instance().getCluster(cluster_name))
-            writeCluster(res_columns, columns_mask, {cluster_name, catalog_cluster},
-                         [catalog_cluster]() -> ReplicasInfo { return SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster); });
-
-        auto all_groups_cluster_name = SharedDatabaseCatalog::ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
-        if (auto catalog_cluster = SharedDatabaseCatalog::instance().getCluster(all_groups_cluster_name))
-            writeCluster(res_columns, columns_mask, {all_groups_cluster_name, catalog_cluster},
-                         [catalog_cluster]() -> ReplicasInfo { return SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster); });
-    }
-#endif
+    NameSet selected;
+    const auto & selected_column = block.getByPosition(0).column;
+    for (size_t i = 0; i < selected_column->size(); ++i)
+        selected.insert(String(selected_column->getDataAt(i)));
+    return selected;
 }
 
-void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std::vector<UInt8> & columns_mask, const NameAndCluster & name_and_cluster, std::function<ReplicasInfo()> && replicas_info_getter)
+void writeCluster(
+    MutableColumns & res_columns,
+    const std::vector<UInt8> & columns_mask,
+    const String & cluster_name,
+    const Cluster & cluster,
+    const ReplicasInfo & replicas_info)
 {
-    const String & cluster_name = name_and_cluster.first;
-    const ClusterPtr & cluster = name_and_cluster.second;
-    const auto & shards_info = cluster->getShardsInfo();
-    const auto & addresses_with_failover = cluster->getShardsAddresses();
-
-    const size_t recovery_time_column_idx = columns_mask.size() - 1;
-    const size_t replication_lag_column_idx = columns_mask.size() - 2;
-    const size_t is_unsynced_column_idx = columns_mask.size() - 3;
-    const size_t is_active_column_idx = columns_mask.size() - 4;
-    const size_t is_shared_catalog_cluster_idx = columns_mask.size() - 5;
-    std::vector<ReplicaInfo> replicas;
-    bool replicas_belong_to_shared_catalog = false;
-    if (replicas_info_getter && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_unsynced_column_idx] || columns_mask[is_active_column_idx] || columns_mask[is_shared_catalog_cluster_idx]))
-    {
-        const ReplicasInfo info = replicas_info_getter();
-        replicas = info.replicas;
-        replicas_belong_to_shared_catalog = info.replicas_belong_to_shared_catalog;
-    }
+    const auto & shards_info = cluster.getShardsInfo();
+    const auto & addresses_with_failover = cluster.getShardsAddresses();
+    const auto & replicas = replicas_info.replicas;
 
     size_t replica_idx = 0;
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
@@ -164,10 +150,9 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(address.database_replica_name);
 
-            /// make sure these five columns remain the last ones, see is_active_column_idx, etc
             if (columns_mask[src_index++])
             {
-                res_columns[res_index++]->insert(replicas_belong_to_shared_catalog);
+                res_columns[res_index++]->insert(replicas_info.replicas_belong_to_shared_catalog);
             }
             if (columns_mask[src_index++])
             {
@@ -220,6 +205,107 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
         }
     }
 }
+
+}
+
+Block StorageSystemClusters::getFilterSampleBlock() const
+{
+    /// Must list every column of the block passed to `filterBlockWithPredicate` in `selectClusterNames`.
+    return {
+        { {}, std::make_shared<DataTypeString>(), "cluster" },
+    };
+}
+
+bool StorageSystemClusters::needsReplicasInfo(const std::vector<UInt8> & columns_mask, const ContextPtr & context) const
+{
+    /// The columns filled from the replica state in Keeper, see `DatabaseReplicated::tryGetReplicasInfo`.
+    static const Names replica_state_columns{
+        "is_shared_catalog_cluster", "is_active", "unsynced_after_recovery", "replication_lag", "recovery_time"};
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(context, /* bypass_metadata_cache= */ false);
+    const Block sample_block = metadata_snapshot->getSampleBlock();
+    return std::ranges::any_of(
+        replica_state_columns, [&](const auto & name) { return columns_mask[sample_block.getPositionByName(name)]; });
+}
+
+void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemClusters::fillData");
+    const bool with_replicas_info = needsReplicasInfo(columns_mask, context);
+
+    /// The filter is applied to the names before the clusters are built: for a `Replicated` database whose
+    /// cluster is not cached yet, `tryGetCluster` has to read the topology from Keeper.
+    const auto configured_clusters = context->getClusters();
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+
+    /// `databases` keeps the databases alive for the rest of the function.
+    std::vector<std::pair<String, const DatabaseReplicated *>> replicated_databases;
+    for (const auto & [database_name, database] : databases)
+        if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(database.get()))
+            replicated_databases.emplace_back(database_name, replicated);
+
+    Strings names;
+    for (const auto & name_and_cluster : configured_clusters)
+        names.push_back(name_and_cluster.first);
+    for (const auto & [database_name, replicated] : replicated_databases)
+    {
+        names.push_back(database_name);
+        names.push_back(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + database_name);
+    }
+    const NameSet selected_names = selectClusterNames(names, predicate, context);
+
+    std::vector<ClusterEntry> entries;
+    for (const auto & [name, cluster] : configured_clusters)
+    {
+        if (selected_names.contains(name))
+            entries.push_back({.name = name, .cluster = cluster});
+    }
+    for (const auto & [database_name, replicated] : replicated_databases)
+    {
+        if (selected_names.contains(database_name))
+            if (auto cluster = replicated->tryGetCluster())
+                entries.push_back({.name = database_name, .cluster = std::move(cluster), .replicated = replicated});
+
+        const String all_groups_name = DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + database_name;
+        if (selected_names.contains(all_groups_name))
+            if (auto cluster = replicated->tryGetAllGroupsCluster())
+                entries.push_back({.name = all_groups_name, .cluster = std::move(cluster), .replicated = replicated});
+    }
+
+    std::vector<ReplicasInfo> replicas_info(entries.size());
+    if (with_replicas_info)
+    {
+        for (size_t i = 0; i < entries.size(); ++i)
+            if (entries[i].replicated)
+                replicas_info[i] = entries[i].replicated->tryGetReplicasInfo(entries[i].cluster);
+    }
+
+    for (size_t i = 0; i < entries.size(); ++i)
+        writeCluster(res_columns, columns_mask, entries[i].name, *entries[i].cluster, replicas_info[i]);
+
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::initialized())
+    {
+        const auto cluster_name = SharedDatabaseCatalog::instance().getClusterName();
+        const Strings catalog_cluster_names{cluster_name, SharedDatabaseCatalog::ALL_GROUPS_CLUSTER_PREFIX + cluster_name};
+        const NameSet selected_catalog_cluster_names = selectClusterNames(catalog_cluster_names, predicate, context);
+        for (const auto & name : catalog_cluster_names)
+        {
+            if (!selected_catalog_cluster_names.contains(name))
+                continue;
+
+            if (auto catalog_cluster = SharedDatabaseCatalog::instance().getCluster(name))
+                writeCluster(
+                    res_columns,
+                    columns_mask,
+                    name,
+                    *catalog_cluster,
+                    with_replicas_info ? SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster) : ReplicasInfo{});
+        }
+    }
+#endif
+}
+
 }
 
 /// Register the source file of this system table for `system.documentation`.
