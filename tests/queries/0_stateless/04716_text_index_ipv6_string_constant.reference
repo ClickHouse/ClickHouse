@@ -1,0 +1,26 @@
+-- the matching row is found
+1
+1
+-- a binary FixedString(16) constant keeps using the index
+1
+-- a non-matching address still prunes, so pruning is not disabled outright
+1
+-- the other index types over the same column
+1
+1
+1
+-- an IN set from a subquery needs the same conversion
+1
+1
+1
+-- the map key subcolumn is converted with the key type, not the compared type
+1
+1
+-- a missing map key compared with the map value type default keeps the granule
+1
+1
+1
+1
+1
+-- a FixedString column keeps pruning for a constant wider than the column
+1
