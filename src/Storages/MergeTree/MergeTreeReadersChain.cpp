@@ -433,12 +433,16 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// A subcolumn of a column an on-fly mutation step recomputed keeps its own pre-mutation stream
     /// in the part; dropping the slot lets `evaluateMissingDefaults` derive it from the parent.
     ///
+    /// A column a PREWHERE step consumes and projects out is absent from `previous_header` and
+    /// survives only in `result.additional_columns`, so the parent is looked for in both.
+    ///
     /// A mutation step is excluded: a materialized mutation feeds a chained command the pre-update
     /// subcolumn too, so moving it only on the on-fly side would make the two disagree.
     const bool is_on_fly_mutation_step = prewhere_info && prewhere_info->mutation_version.has_value();
-    if (!is_on_fly_mutation_step && !columns_computed_by_mutation_steps.empty() && !previous_header.empty())
+    if (!is_on_fly_mutation_step && !columns_computed_by_mutation_steps.empty()
+        && !(previous_header.empty() && result.additional_columns.empty()))
     {
-        const auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+        const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
         const auto & storage_snapshot = merge_tree_reader->getStorageSnapshot();
         size_t pos = 0;
         for (const auto & name_and_type : merge_tree_reader->getColumns())
@@ -449,8 +453,16 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             if (column_in_storage && column_in_storage->isSubcolumn())
             {
                 const auto & name_in_storage = column_in_storage->getNameInStorage();
-                if (columns_computed_by_mutation_steps.contains(name_in_storage) && previous_header.has(name_in_storage))
+                const bool parent_available
+                    = previous_header.has(name_in_storage) || result.additional_columns.has(name_in_storage);
+
+                if (parent_available && columns_computed_by_mutation_steps.contains(name_in_storage))
+                {
                     read_columns[pos] = nullptr;
+                    /// `fillMissingColumns` learns which parents exist from this set alone, so a
+                    /// parent held only by `result.additional_columns` has to be named here too.
+                    previous_step_columns.insert(name_in_storage);
+                }
             }
             ++pos;
         }

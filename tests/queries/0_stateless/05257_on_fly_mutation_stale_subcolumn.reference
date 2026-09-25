@@ -1,13 +1,17 @@
-array, nullable and tuple subcolumns
+array, nullable and tuple subcolumns in a compact part
 pending	1	[7,8,9]	3	3	\N	1	1	new
 pending	2	[7,8,9]	3	3	\N	1	1	new
 pending, prewhere	1
 pending, prewhere	2
+pending, prewhere on the parent	1	3
+pending, prewhere on the parent	2	3
 materialized	1	[7,8,9]	3	3	\N	1	1	new
 materialized	2	[7,8,9]	3	3	\N	1	1	new
 materialized, prewhere	1
 materialized, prewhere	2
-the same in a compact part
+materialized, prewhere on the parent	1	3
+materialized, prewhere on the parent	2	3
+the same in a wide part
 pending	1	3	1	new
 pending	2	3	1	new
 materialized	1	3	1	new
