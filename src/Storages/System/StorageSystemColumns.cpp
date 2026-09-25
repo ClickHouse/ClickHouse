@@ -189,8 +189,16 @@ protected:
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (can_expose_any_column_metadata && (columns_mask[7] || columns_mask[8] || columns_mask[9]))
                 {
-                    if (auto sizes = storage->tryGetColumnSizes())
-                        column_sizes = std::move(*sizes);
+                    try
+                    {
+                        if (auto sizes = storage->tryGetColumnSizes())
+                            column_sizes = std::move(*sizes);
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Even if the method throws, it should not prevent querying system.columns.
+                        tryLogCurrentException("StorageSystemColumns");
+                    }
                 }
 
                 if (columns_mask[11])

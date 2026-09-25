@@ -1099,3 +1099,157 @@ def test_concurrent_create_drop_race_condition(cluster):
                         node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
             except Exception:
                 pass
+
+
+def test_missing_collection_in_config_does_not_block_startup(cluster):
+    """A collection removed from the configuration leaves no DROP to intercept, so a table that
+    names it survives into the next start and must not break the loading of its database."""
+    node = cluster.instances["node"]
+
+    config = """<clickhouse>
+  <named_collections>
+    <collection1>
+      <key1>value1</key1>
+    </collection1>
+    <nc_startup>
+      <url>http://127.0.0.1:1/none</url>
+      <format>TSV</format>
+    </nc_startup>
+  </named_collections>
+  <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
+</clickhouse>
+"""
+
+    with node.with_replace_config(
+        "/etc/clickhouse-server/config.d/named_collections.xml",
+        config,
+        reload_before=True,
+        reload_after=True,
+    ):
+        node.query("CREATE TABLE t_startup (n UInt32) ENGINE = URL(nc_startup)")
+
+    assert "nc_startup" not in node.query("SELECT name FROM system.named_collections")
+
+    node.restart_clickhouse()
+
+    assert "t_startup" in node.query(
+        "SELECT name FROM system.tables WHERE database = currentDatabase()"
+    )
+    assert "NAMED_COLLECTION_DOESNT_EXIST" in node.query_and_get_error(
+        "SELECT * FROM t_startup"
+    )
+
+    # A rename commits its metadata move before it creates the table's symlink, and the symlink
+    # needs the table's data path, so a stand-in must not fail it.
+    node.query("RENAME TABLE t_startup TO t_startup_renamed")
+    assert "t_startup_renamed" in node.query(
+        "SELECT name FROM system.tables WHERE database = currentDatabase()"
+    )
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = currentDatabase()"
+            " AND name = 't_startup_renamed'"
+        ).strip()
+        == "TableProxy"
+    )
+
+    # Putting the collection back makes the table work again without another restart. The read
+    # still fails, because the endpoint is unreachable, but no longer on the collection.
+    with node.with_replace_config(
+        "/etc/clickhouse-server/config.d/named_collections.xml",
+        config,
+        reload_before=True,
+        reload_after=True,
+    ):
+        assert "NAMED_COLLECTION_DOESNT_EXIST" not in node.query_and_get_error(
+            "SELECT * FROM t_startup_renamed"
+        )
+        # `getName` forwards to the storage once it is built, so the engine column reporting `URL`
+        # is what proves the stand-in materialized without a restart.
+        assert (
+            node.query(
+                "SELECT engine FROM system.tables WHERE database = currentDatabase()"
+                " AND name = 't_startup_renamed'"
+            ).strip()
+            == "URL"
+        )
+        node.query("DROP TABLE t_startup_renamed")
+
+
+def test_missing_collection_still_fails_a_push_source(cluster):
+    """A push source ingests from a background job that only `startup` starts, and it answers a
+    rename veto and streaming controls that a stand-in cannot forward, so a missing collection
+    must keep failing its load. A `URL` table in the same database still gets its stand-in.
+
+    The instance loads databases asynchronously, so a failed load reports itself on access
+    (`ASYNC_LOAD_WAIT_FAILED`) rather than refusing the start.
+    """
+    node = cluster.instances["node"]
+
+    config = """<clickhouse>
+  <named_collections>
+    <collection1>
+      <key1>value1</key1>
+    </collection1>
+    <nc_push_url>
+      <url>http://127.0.0.1:1/none</url>
+      <format>TSV</format>
+    </nc_push_url>
+    <nc_push_queue>
+      <kafka_broker_list>127.0.0.1:1</kafka_broker_list>
+      <kafka_topic_list>topic</kafka_topic_list>
+      <kafka_group_name>group</kafka_group_name>
+      <kafka_format>TSV</kafka_format>
+    </nc_push_queue>
+  </named_collections>
+  <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
+</clickhouse>
+"""
+
+    # Own database: while a load has failed, the whole database answers that failure, so a
+    # leftover would break every later test in this module.
+    with node.with_replace_config(
+        "/etc/clickhouse-server/config.d/named_collections.xml",
+        config,
+        reload_before=True,
+        reload_after=True,
+    ):
+        node.query("CREATE DATABASE db_push_source")
+        node.query(
+            "CREATE TABLE db_push_source.t_url (n UInt32) ENGINE = URL(nc_push_url)"
+        )
+        node.query(
+            "CREATE TABLE db_push_source.t_queue (n UInt32) ENGINE = Kafka(nc_push_queue)"
+        )
+
+    assert "nc_push_queue" not in node.query(
+        "SELECT name FROM system.named_collections"
+    )
+
+    node.restart_clickhouse()
+
+    try:
+        # The push source: its own load failed, so nothing stood in for it. Reading it first also
+        # settles the load job, which is what makes the EXISTS reading below deterministic.
+        error = node.query_and_get_error("SELECT * FROM db_push_source.t_queue")
+        assert "NAMED_COLLECTION_DOESNT_EXIST" in error
+        assert "ASYNC_LOAD_WAIT_FAILED" in error
+        assert node.query("EXISTS TABLE db_push_source.t_queue").strip() == "0"
+
+        # The URL table in the same database: attached, and the stand-in itself is what reports
+        # the missing collection, so its load job completed.
+        error = node.query_and_get_error("SELECT * FROM db_push_source.t_url")
+        assert "NAMED_COLLECTION_DOESNT_EXIST" in error
+        assert "ASYNC_LOAD_WAIT_FAILED" not in error
+        assert node.query("EXISTS TABLE db_push_source.t_url").strip() == "1"
+    finally:
+        # A failed load cannot be dropped, so the collections have to come back first.
+        with node.with_replace_config(
+            "/etc/clickhouse-server/config.d/named_collections.xml",
+            config,
+            reload_before=True,
+            reload_after=True,
+        ):
+            node.restart_clickhouse()
+            node.query("DROP DATABASE db_push_source SYNC")
