@@ -144,7 +144,10 @@ private:
 
     bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
     void logMemoryUsage(Int64 current) const;
-    Int64 decrementLocalUsage(Int64 size) noexcept;
+    /// `rollback_of_failed_allocation` is set when undoing the increment made by `allocImpl` for an allocation
+    /// that has failed (memory limit, fault injection, overcommit, or a parent tracker throwing): those bytes
+    /// were never obtained, so they must not be counted as held in `MemoryCredits`.
+    Int64 decrementLocalUsage(Int64 size, bool rollback_of_failed_allocation) noexcept;
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
     void traceLargeAllocation(Int64 size) noexcept;
 

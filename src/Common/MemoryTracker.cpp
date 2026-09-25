@@ -392,7 +392,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     {
         if (memoryTrackerCanThrow(level, true) && enforce_memory_limit)
         {
-            decrementLocalUsage(size);
+            decrementLocalUsage(size, /* rollback_of_failed_allocation = */ true);
 
             /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
@@ -491,7 +491,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
             {
-                decrementLocalUsage(size);
+                decrementLocalUsage(size, /* rollback_of_failed_allocation = */ true);
 
                 bool overcommit_result_ignore
                     = overcommit_result == OvercommitResult::NONE || overcommit_result == OvercommitResult::DISABLED;
@@ -558,7 +558,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         }
         catch (...)
         {
-            decrementLocalUsage(size);
+            decrementLocalUsage(size, /* rollback_of_failed_allocation = */ true);
             throw;
         }
     }
@@ -567,7 +567,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     return allocation_trace;
 }
 
-Int64 MemoryTracker::decrementLocalUsage(Int64 size) noexcept
+Int64 MemoryTracker::decrementLocalUsage(Int64 size, bool rollback_of_failed_allocation) noexcept
 {
     Int64 accounted_size = size;
     if (level == VariableContext::Global)
@@ -585,8 +585,10 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size) noexcept
         const Int64 prev_amount = amount.fetch_sub(accounted_size, std::memory_order_relaxed);
         const Int64 new_amount = prev_amount - accounted_size;
 
-        /// `prev_amount` is the amount held during the interval that just elapsed.
-        updateMemoryCredits(prev_amount);
+        /// `prev_amount` is the amount held during the interval that just elapsed. When rolling back a failed
+        /// allocation, the rolled back bytes were never obtained (`allocImpl` raises `amount` before the limit
+        /// checks and before the real allocation), so only the amount without them was held.
+        updateMemoryCredits(rollback_of_failed_allocation ? new_amount : prev_amount);
 
         /** Sometimes, query could free some data, that was allocated outside of query context.
           * Example: cache eviction.
@@ -767,7 +769,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
         return AllocationTrace(_sample_probability);
     }
 
-    Int64 accounted_size = decrementLocalUsage(size);
+    Int64 accounted_size = decrementLocalUsage(size, /* rollback_of_failed_allocation = */ false);
     if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))
         overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(accounted_size);
 
