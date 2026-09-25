@@ -460,8 +460,15 @@ public:
       * If final = false, then ColumnAggregateFunction is created as the aggregation columns with the state of the calculations,
       *  which can then be combined with other states (for distributed query processing).
       * If final = true, then columns with ready values are created as aggregate columns.
+      * A non-zero `max_rows_per_block` caps the size of the emitted single-level chunks below `max_block_size`.
       */
-    AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final) const;
+    AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block = 0) const;
+
+    /// A single-level result smaller than `max_block_size` is converted to one chunk, and a `Resize`
+    /// hands out whole chunks, so everything downstream of it runs in one thread. Returns a chunk size
+    /// that splits `rows` into about one chunk per output stream, never below 512 rows per chunk, or 0
+    /// to leave the result as is.
+    static size_t singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams);
 
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) feeds the
     /// thaw verdict into the hash-table statistics next to the observed sizes.

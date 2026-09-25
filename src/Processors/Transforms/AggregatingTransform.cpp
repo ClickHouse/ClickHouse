@@ -546,7 +546,7 @@ public:
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
         size_t num_threads_,
-        bool split_single_level_result_,
+        size_t output_streams_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
         AdaptiveAggregationSessionPtr adaptive_session_)
         : IProcessor({}, {params_->getHeader()})
@@ -554,7 +554,7 @@ public:
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
-        , split_single_level_result(split_single_level_result_)
+        , output_streams(output_streams_)
         , updater(std::move(updater_))
         , adaptive_session(std::move(adaptive_session_))
     {
@@ -740,23 +740,6 @@ private:
         return std::bit_floor(std::clamp<size_t>(max_table_size / MIN_KEYS_PER_PARTITION, 1, max_partitions));
     }
 
-    /// A single-level result smaller than `max_block_size` is converted into one chunk, and the `Resize`
-    /// after the aggregation hands out whole chunks, so everything downstream of it (e.g. the probe of a
-    /// following join) would run in one thread. Returns a chunk size that splits the result into about
-    /// one chunk per thread, never below `MIN_ROWS_PER_CHUNK` rows, or 0 to leave the result as is.
-    size_t singleLevelResultMaxRowsPerBlock(size_t rows) const
-    {
-        if (!split_single_level_result || num_threads <= 1)
-            return 0;
-
-        static constexpr size_t MIN_ROWS_PER_CHUNK{512};
-        const size_t num_chunks = std::clamp<size_t>(rows / MIN_ROWS_PER_CHUNK, 1, num_threads);
-        if (num_chunks <= 1)
-            return 0;
-
-        return (rows + num_chunks - 1) / num_chunks;
-    }
-
     /// The partition sources emit finished chunks in no particular order; forward them as they come.
     IProcessor::Status preparePartitionMerge()
     {
@@ -926,10 +909,10 @@ private:
 
     size_t num_threads;
 
-    /// Whether `AggregatingStep` spreads the output of this transform over several streams. It does not
-    /// when the results must go out in bucket order: there is a single output stream then, and splitting
-    /// the single-level result would only produce more, smaller blocks.
-    bool split_single_level_result;
+    /// How many streams the output is spread over downstream. It is not `num_threads`. That is capped by the
+    /// number of aggregating streams (1 for a single input stream), while the `Resize` after the aggregation
+    /// fans out to `max_threads`. 1 when the results must go out in bucket order.
+    size_t output_streams;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     AdaptiveAggregationSessionPtr adaptive_session;
@@ -1027,7 +1010,7 @@ private:
                 throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
         }
 
-        const size_t max_rows_per_block = singleLevelResultMaxRowsPerBlock(first->sizeWithoutOverflowRow());
+        const size_t max_rows_per_block = Aggregator::singleLevelChunkRowsForFanOut(first->sizeWithoutOverflowRow(), output_streams);
         if (max_rows_per_block)
             LOG_TRACE(getLogger("AggregatingTransform"), "Split single level result into chunks of at most {} rows.", max_rows_per_block);
 
@@ -1114,7 +1097,7 @@ private:
 };
 
 AggregatingTransform::AggregatingTransform(
-    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_)
     : AggregatingTransform(
           std::move(header),
           std::move(params_),
@@ -1124,7 +1107,8 @@ AggregatingTransform::AggregatingTransform(
           1,
           true /* should_produce_results_in_order_of_bucket_number */,
           false /* skip_merging */,
-          updater_)
+          updater_,
+          output_streams_)
 {
 }
 
@@ -1137,7 +1121,8 @@ AggregatingTransform::AggregatingTransform(
     size_t temporary_data_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_,
     bool skip_merging_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    size_t output_streams_)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
     , key_columns(params->params.keys_size)
@@ -1149,6 +1134,7 @@ AggregatingTransform::AggregatingTransform(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
     , updater(std::move(updater_))
+    , output_streams(output_streams_)
 {
     /// `AggregatingStep` leaves its engagement verdict in the flag. Without a producer nothing is ever
     /// staged, so the merge-time drains find empty backlogs and do nothing.
@@ -1440,7 +1426,7 @@ void AggregatingTransform::initGenerate()
                 params,
                 std::move(prepared_data_ptr),
                 max_threads,
-                !should_produce_results_in_order_of_bucket_number,
+                output_streams,
                 updater,
                 adaptive_engaged ? adaptive_context->session : nullptr));
         }

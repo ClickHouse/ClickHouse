@@ -4123,7 +4123,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
 }
 
 
-Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants & data_variants, bool final) const
+Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block) const
 {
     LOG_TRACE(log, "Converting aggregated data to chunks");
 
@@ -4142,7 +4142,7 @@ Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants 
     if (data_variants.type != AggregatedDataVariants::Type::without_key)
     {
         if (!data_variants.isTwoLevel())
-            chunks.splice(chunks.end(), prepareChunkAndFillSingleLevel<false>(data_variants, final));
+            chunks.splice(chunks.end(), prepareChunkAndFillSingleLevel<false>(data_variants, final, max_rows_per_block));
         else
             chunks.splice(chunks.end(), prepareChunksAndFillTwoLevel(data_variants, final));
     }
@@ -4171,6 +4171,16 @@ Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants 
         ReadableSize(static_cast<double>(bytes) / elapsed_seconds));
 
     return chunks;
+}
+
+size_t Aggregator::singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams)
+{
+    static constexpr size_t MIN_ROWS_PER_CHUNK{512};
+    const size_t num_chunks = std::clamp<size_t>(rows / MIN_ROWS_PER_CHUNK, 1, std::max<size_t>(output_streams, 1));
+    if (num_chunks <= 1)
+        return 0;
+
+    return (rows + num_chunks - 1) / num_chunks;
 }
 
 
