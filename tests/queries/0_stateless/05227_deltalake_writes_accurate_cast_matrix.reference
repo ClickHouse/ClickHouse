@@ -17,8 +17,8 @@ versions: 1, data files: 0
 (CANNOT_CONVERT_TYPE)
 versions: 1, data files: 0
 -- boundary values that fit are committed and read back exactly
--128	-32768	-2147483648	0	-0.25	-1234567.89	1970-01-01	1970-01-01 00:00:00.000000000	
-127	32767	2147483647	9223372036854775807	3.5	1234567.89	2020-01-01	2020-01-01 00:00:00.000000000	text
+-128	-32768	-2147483648	0	-0.25	-1234567.89	1970-01-01	1970-01-01 00:00:00.000000000		0
+127	32767	2147483647	9223372036854775807	3.5	1234567.89	2020-01-01	2020-01-01 00:00:00.000000000	text	1
 versions: 3, data files: 2
 -- sub-microsecond precision is truncated to the timestamp's microseconds (not rejected)
 2020-01-01 00:00:00.123456
@@ -26,8 +26,13 @@ versions: 3, data files: 2
 42	Nullable(String)
 -- a timestamp keeps its instant regardless of the source column's time zone
 1	2024-06-01 00:00:00.000000
+-- a boolean column from an Int32 source: 0 and 1 round-trip; any other value becomes true, with or
+-- without the accurate cast (accurateCast to Bool accepts every value, so nothing is rejected here)
+10	true	Nullable(Bool)
+11	true	Nullable(Bool)
+12	true
 -- with the accurate cast off the plain cast wraps silently (300 -> 44 in a byte column)
 44	wrapped
 -- compatibility below 26.9 selects the plain cast as well
 44	compat
-versions: 8, data files: 7
+versions: 11, data files: 10

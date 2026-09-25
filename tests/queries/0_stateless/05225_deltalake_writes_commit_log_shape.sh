@@ -3,8 +3,9 @@
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
-# Lint of the committed `_delta_log` entries against the Delta protocol, duplicate INSERT, 0-row INSERT
-# (empty version on an unpartitioned table, no version on a partitioned one: recorded so a change is deliberate).
+# Lint of the committed `_delta_log` entries against the Delta protocol, duplicate INSERT, 0-row INSERT on a
+# partitioned table (no version). The unpartitioned 0-row case is covered with its fix in
+# https://github.com/ClickHouse/ClickHouse/pull/122092.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -111,14 +112,6 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
     SELECT count(), uniqExact(id) FROM deltaLakeLocal('${UNPART}');
 "
 echo "versions after two INSERTs: $(versions "${UNPART}")"
-
-echo "-- a 0-row INSERT on an unpartitioned table: an empty version, no data file"
-${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
-    INSERT INTO FUNCTION deltaLakeLocal('${UNPART}') SELECT number AS id, 'p' AS p FROM numbers(10) WHERE 0;
-    SELECT count() FROM deltaLakeLocal('${UNPART}');
-"
-echo "versions after a 0-row INSERT: $(versions "${UNPART}")"
-echo "data files: $(find "${UNPART}" -name '*.parquet' | wc -l | tr -d ' ')"
 
 echo "==== partitioned by p (a value with a space exercises the URI encoding of add.path, a NULL the default partition)"
 PART="${ROOT}/part"
