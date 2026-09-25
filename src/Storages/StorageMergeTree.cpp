@@ -3507,8 +3507,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 if (isPatchForPartition(patch_part->info, src_partition_id))
                     partition_patches.push_back(patch_part);
 
-            src_data.assertNoPatchesForParts(partition_parts, partition_patches,
-                fmt::format("{} PARTITION {} FROM", replace ? "REPLACE" : "ATTACH", src_partition_id));
+            auto command_name = fmt::format("{} PARTITION {} FROM", replace ? "REPLACE" : "ATTACH", src_partition_id);
+            src_data.assertNoPatchesForParts(partition_parts, partition_patches, command_name);
+            src_data.assertNoUnappliedMetadataMutationsForParts(partition_parts, source_metadata_snapshot, command_name);
         }
     }
 
@@ -3734,6 +3735,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     }
 
     src_data.assertNoPatchesForParts(src_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
+    src_data.assertNoUnappliedMetadataMutationsForParts(src_parts, metadata_snapshot, "MOVE PARTITION " + partition_id);
 
     if (src_parts.size() > settings[Setting::max_parts_to_move])
     {

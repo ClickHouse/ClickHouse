@@ -1,0 +1,17 @@
+src reads the renamed column	10	10045
+after refused ATTACH FROM: dst parts	0
+after refused REPLACE FROM: dst2 keeps its rows	3	21
+after refused ATTACH FROM into MergeTree: dst parts	0
+after refused MOVE TO TABLE: src intact	10	10045
+after OPTIMIZE FINAL the clone carries the renamed data	10	10045
+MergeTree src reads the renamed column	10	10045
+after refused MergeTree MOVE: src intact	10	10045
+src reads the dropped-and-readded column	10	0
+after refused ATTACH FROM: drop dst parts	0
+src reads the renamed column and not the stale one	10	10045
+after refused ATTACH FROM: swap dst parts	0
+src reads the re-added nested column as defaults	10	0
+after refused ATTACH FROM: share dst parts	0
+the skipped column has no files in the part	0
+src reads the re-added default and not the marker	10	9990
+after refused ATTACH FROM: marker dst parts	0

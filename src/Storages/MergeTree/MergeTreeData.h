@@ -881,6 +881,12 @@ public:
 
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
 
+    /// Metadata mutations (RENAME/DROP COLUMN) are applied to a part on read, as alter conversions derived from the
+    /// table's own mutation history, which a clone into another table leaves behind. Call on the SOURCE table of a
+    /// cross-table clone. Refuses a part only if a column the table has would read through a lost conversion.
+    void assertNoUnappliedMetadataMutationsForParts(
+        const DataPartsVector & parts, const StorageMetadataPtr & metadata_snapshot, std::string_view command) const;
+
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.

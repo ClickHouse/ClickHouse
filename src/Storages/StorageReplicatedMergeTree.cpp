@@ -9438,6 +9438,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         entries[idx] = replacePartitionFromImpl(watch,
                 profile_events_scope,
                 metadata_snapshot,
+                source_metadata_snapshot,
                 src_data,
                 partition_id,
                 zookeeper,
@@ -9460,6 +9461,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     const Stopwatch & watch,
     ProfileEventsScope & profile_events_scope,
     const StorageMetadataPtr & metadata_snapshot,
+    const StorageMetadataPtr & source_metadata_snapshot,
     const MergeTreeData & src_data,
     const String & partition_id,
     const ZooKeeperPtr & zookeeper,
@@ -9478,7 +9480,9 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, parts_lock);
     }
 
-    assertNoPatchesForParts(src_all_parts, src_patch_parts, "REPLACE PARTITION " + partition_id + " FROM");
+    auto command_name = fmt::format("{} PARTITION {} FROM", replace ? "REPLACE" : "ATTACH", partition_id);
+    assertNoPatchesForParts(src_all_parts, src_patch_parts, command_name);
+    src_data.assertNoUnappliedMetadataMutationsForParts(src_all_parts, source_metadata_snapshot, command_name);
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
     /// REPLACE PARTITION FROM a source that has no parts in the requested partition would
@@ -9833,6 +9837,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         }
 
         assertNoPatchesForParts(src_all_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
+        src_data.assertNoUnappliedMetadataMutationsForParts(src_all_parts, metadata_snapshot, "MOVE PARTITION " + partition_id);
 
         if (covering_part)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",
