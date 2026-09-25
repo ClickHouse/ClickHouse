@@ -261,19 +261,21 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 struct SplitResult
 {
     std::unique_ptr<QueryPlan> non_intersecting_plan;
-    /// Set when `optimizeLazyFinal` must stop right after the split: either the plan was replaced in-place
-    /// (all parts non-intersecting), or lazy FINAL does not apply and the reading step was left untouched.
+    /// The ranges that need FINAL, if some ranges were split off.
+    std::optional<RangesInDataParts> intersecting_parts_ranges;
+    /// The plan was replaced in-place, because all parts are non-intersecting.
     bool fully_replaced = false;
+    /// Lazy FINAL does not apply, the reading step must stay as it is.
+    bool not_applicable = false;
 };
 
-/// Try to split parts into non-intersecting and intersecting by primary key.
+/// Try to split `parts` into non-intersecting and intersecting by primary key.
 /// If all parts are non-intersecting, replaces the plan node directly and returns fully_replaced=true.
 /// Otherwise, if allow_partial_split is set, returns a plan for non-intersecting parts (or nullptr
-/// if none), and updates the reading step's analyzed result to contain only intersecting parts;
-/// if not set, leaves the reading step untouched and returns fully_replaced=true to stop.
+/// if none) and the intersecting ranges; if not set, returns not_applicable=true.
 static SplitResult trySplitNonIntersectingParts(
     ReadFromMergeTree * reading_step,
-    ReadFromMergeTree::AnalysisResultPtr analyzed_result,
+    const RangesInDataParts & parts,
     FilterStep * filter_step,
     QueryPlan::Node * read_node,
     QueryPlan & query_plan,
@@ -298,7 +300,7 @@ static SplitResult trySplitNonIntersectingParts(
         }
     }
 
-    auto split = splitPartsRanges(reading_step->getParts(), in_reverse_order, getLogger("optimizeLazyFinal"));
+    auto split = splitPartsRanges(parts, in_reverse_order, getLogger("optimizeLazyFinal"));
 
     if (split.intersecting_parts_ranges.empty())
     {
@@ -311,69 +313,81 @@ static SplitResult trySplitNonIntersectingParts(
 
         auto expected_header = reading_step->getOutputHeader();
         query_plan.replaceNodeWithPlan(read_node, std::move(*plan), expected_header);
-        return {.non_intersecting_plan = nullptr, .fully_replaced = true};
+        SplitResult result;
+        result.fully_replaced = true;
+        return result;
     }
+
+    SplitResult not_applicable;
+    not_applicable.not_applicable = true;
 
     /// The set/true-branch machinery built for intersecting parts reads through the lazy true-branch
     /// source, which cannot produce the `__text_index_*` virtual columns of a direct read from a text
     /// index. Leave the reading step untouched so the query falls back to a regular FINAL read.
     /// Must come before the `non_intersecting_parts_ranges.empty()` check to cover the all-intersecting case.
     if (!reading_step->getIndexReadTasks().empty())
-        return {.non_intersecting_plan = nullptr, .fully_replaced = true};
+        return not_applicable;
 
     /// For queries that can stop reading early the set-building plan is a pessimization, and the
     /// partial split alone does not preserve the reading order; keep the regular FINAL read.
     if (!allow_partial_split)
-        return {.non_intersecting_plan = nullptr, .fully_replaced = true};
+        return not_applicable;
 
     if (split.non_intersecting_parts_ranges.empty())
         return {};
 
-    /// Update the original reading step to only have intersecting parts.
-    /// Adjust index_stats by subtracting the non-intersecting contribution,
-    /// then add a NonIntersectingSplit entry showing the split.
-    if (analyzed_result)
-    {
-        analyzed_result->parts_with_ranges = std::move(split.intersecting_parts_ranges);
-
-        size_t intersecting_marks = 0;
-        size_t intersecting_ranges = 0;
-        size_t intersecting_rows = 0;
-        for (const auto & part : analyzed_result->parts_with_ranges)
-        {
-            intersecting_marks += part.getMarksCount();
-            intersecting_ranges += part.ranges.size();
-            intersecting_rows += part.getRowsCount();
-        }
-
-        auto num_parts = analyzed_result->parts_with_ranges.size();
-        analyzed_result->total_parts = num_parts;
-        analyzed_result->parts_before_pk = num_parts;
-        analyzed_result->selected_parts = num_parts;
-        analyzed_result->selected_ranges = intersecting_ranges;
-        analyzed_result->selected_marks = intersecting_marks;
-        analyzed_result->selected_marks_pk = intersecting_marks;
-        analyzed_result->total_marks_pk = intersecting_marks;
-        analyzed_result->selected_rows = intersecting_rows;
-
-        /// Add a new index entry for the non-intersecting split.
-        /// Earlier entries keep their original numbers (which include non-intersecting parts).
-        analyzed_result->index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-            .type = ReadFromMergeTree::IndexType::NonIntersectingSplit,
-            .description = "Split non-intersecting parts for lazy FINAL",
-            .num_parts_after = num_parts,
-            .num_granules_after = intersecting_marks});
-
-        reading_step->setAnalyzedResult(analyzed_result);
-    }
-
     auto plan = createNonIntersectingPlan(
         std::move(split.non_intersecting_parts_ranges), reading_step, filter_step);
 
-    if (!plan)
-        return {};
+    SplitResult result;
+    if (plan)
+        result.non_intersecting_plan = std::make_unique<QueryPlan>(std::move(*plan));
+    result.intersecting_parts_ranges = std::move(split.intersecting_parts_ranges);
+    return result;
+}
 
-    return {.non_intersecting_plan = std::make_unique<QueryPlan>(std::move(*plan))};
+/// Keeps the marks of `parts` that are also in `allowed`. The parts are matched by `part_index_in_query`.
+static RangesInDataParts intersectPartsRanges(const RangesInDataParts & parts, const RangesInDataParts & allowed)
+{
+    std::unordered_map<size_t, MarkRanges> allowed_ranges;
+    for (const auto & part : allowed)
+    {
+        auto & ranges = allowed_ranges[part.part_index_in_query];
+        ranges.insert(ranges.end(), part.ranges.begin(), part.ranges.end());
+    }
+    for (auto & [_, ranges] : allowed_ranges)
+        std::sort(ranges.begin(), ranges.end());
+
+    RangesInDataParts result;
+    for (const auto & part : parts)
+    {
+        auto it = allowed_ranges.find(part.part_index_in_query);
+        if (it == allowed_ranges.end())
+            continue;
+
+        MarkRanges ranges;
+        const auto * part_it = part.ranges.begin();
+        const auto * allowed_it = it->second.begin();
+        while (part_it != part.ranges.end() && allowed_it != it->second.end())
+        {
+            const size_t begin = std::max(part_it->begin, allowed_it->begin);
+            const size_t end = std::min(part_it->end, allowed_it->end);
+            if (begin < end)
+                ranges.emplace_back(begin, end);
+
+            if (part_it->end < allowed_it->end)
+                ++part_it;
+            else
+                ++allowed_it;
+        }
+
+        if (!ranges.empty())
+        {
+            auto & result_part = result.emplace_back(part);
+            result_part.ranges = std::move(ranges);
+        }
+    }
+    return result;
 }
 
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes [[maybe_unused]], const QueryPlanOptimizationSettings & optimization_settings)
@@ -468,23 +482,76 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (primary_key.column_names.empty())
         return;
 
+    if (!reading_step->getQueryInfo().table_expression_modifiers)
+        return;
+
     /// Run early index analysis so the analyzed (PK-filtered) parts can be used
     /// both for the non-intersecting split and for the set/true-branch plans.
     /// The WHERE filter was already pushed by optimizePrimaryKeyConditionAndLimit,
-    /// so selectRangesToRead uses the PK condition for index analysis.
+    /// so the analysis uses the PK condition.
     /// Reuse the partition/PK/index ranges memoized on `ReadFromMergeTree` by join-order
     /// estimation. This is an analysis-time range set, not an estimated join cardinality
     /// or a row count observed during execution. The PK conditions were pushed before that
     /// pass as well, so re-running the analysis would produce the same ranges.
+    ///
+    /// Otherwise, analyze without adding back the granules rejected by skip indexes for
+    /// `use_skip_indexes_if_final_exact_mode`: only the fallback FINAL read needs them, and it
+    /// analyzes itself when (and only if) it is used.
     auto analyzed_result = reading_step->getAnalyzedResult();
+    bool final_expansion_deferred = false;
     if (!analyzed_result)
-        analyzed_result = reading_step->selectRangesToRead();
-    if (reading_step->getParts().empty())
+    {
+        auto analysis = reading_step->selectRangesToReadWithoutFinalExpansion();
+        analyzed_result = std::move(analysis.result);
+        final_expansion_deferred = analysis.final_expansion_deferred;
+    }
+
+    /// Leaves the reading step as it is, with a complete analysis for the FINAL read.
+    auto keep_reading_step = [&]
+    {
+        if (final_expansion_deferred)
+            reading_step->setAnalyzedResultWithFinalExpansion(*analyzed_result);
+    };
+
+    if (!analyzed_result)
         return;
+
+    /// The ranges selected by the primary key: every version of a selected row is in them.
+    /// And the ranges selected by skip indexes: every row that passes the filter is in them.
+    /// They differ only if the granules rejected by skip indexes were not added back.
+    RangesInDataParts pk_parts_ranges;
+    RangesInDataParts selected_parts_ranges;
+    for (const auto & part : analyzed_result->parts_with_ranges)
+    {
+        if (!part.ranges.empty())
+            selected_parts_ranges.push_back(part);
+
+        if (final_expansion_deferred)
+        {
+            if (!part.ranges_snapshot_after_pk_analysis)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Lazy FINAL: expected ranges selected by primary key for part {}", part.data_part->name);
+
+            if (!part.ranges_snapshot_after_pk_analysis->empty())
+            {
+                auto & pk_part = pk_parts_ranges.emplace_back(part);
+                pk_part.ranges = *part.ranges_snapshot_after_pk_analysis;
+            }
+        }
+        else if (!part.ranges.empty())
+        {
+            pk_parts_ranges.push_back(part);
+        }
+    }
+
+    if (pk_parts_ranges.empty())
+    {
+        keep_reading_step();
+        return;
+    }
 
     /// A limit below the number of selected rows means the query is expected to finish early.
     const bool stops_reading_early = reading_in_order
-        || (limit_above_reading && analyzed_result && limit_above_reading < analyzed_result->selected_rows);
+        || (limit_above_reading && limit_above_reading < analyzed_result->selected_rows);
 
     /// Split parts into non-intersecting (unique key ranges, no FINAL needed) and
     /// intersecting (overlapping, need FINAL). This avoids running the expensive
@@ -492,20 +559,32 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// When all parts are non-intersecting, replaceNodeWithPlan is called inside
     /// and fully_replaced is set — in that case we're done.
     auto split_result = trySplitNonIntersectingParts(
-        reading_step, analyzed_result, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early);
+        reading_step, pk_parts_ranges, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early);
 
     if (split_result.fully_replaced)
         return;
+
+    if (split_result.not_applicable)
+    {
+        keep_reading_step();
+        return;
+    }
 
     const auto & context = reading_step->getContext();
     const auto & storage_snapshot = reading_step->getStorageSnapshot();
     auto mutations_snapshot = reading_step->getMutationsSnapshot();
     auto max_block_numbers_to_read = getMaxAddedBlocks(reading_step);
 
-    /// Use parts from the analyzed result (possibly narrowed to intersecting-only by the split).
-    /// These are PK-filtered parts with narrowed mark ranges from selectRangesToRead.
+    /// The ranges that need FINAL. The final result can have newer versions of the rows from the
+    /// set in any of them, so the true branch reads them all to find those versions.
+    const bool ranges_were_split = split_result.intersecting_parts_ranges.has_value();
     auto parts_for_set = std::make_shared<RangesInDataParts>(
-        analyzed_result ? analyzed_result->parts_with_ranges : reading_step->getParts());
+        ranges_were_split ? std::move(*split_result.intersecting_parts_ranges) : std::move(pk_parts_ranges));
+
+    /// The rows that pass the filter are only in the ranges selected by skip indexes, so the set is built from them.
+    auto parts_for_set_building = final_expansion_deferred
+        ? std::make_shared<RangesInDataParts>(intersectPartsRanges(selected_parts_ranges, *parts_for_set))
+        : parts_for_set;
 
     /// Build the set for primary key columns only (PK is a prefix of sorting key;
     /// the remaining sorting key columns are useless for index analysis).
@@ -608,8 +687,6 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     {
         SelectQueryInfo set_query_info = reading_step->getQueryInfo();
-        if (!set_query_info.table_expression_modifiers)
-            return;
         /// Remove FINAL for the set-building read — we want all rows.
         set_query_info.table_expression_modifiers->setHasFinal(false);
 
@@ -644,7 +721,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         }
 
         auto set_reading = std::make_unique<ReadFromMergeTree>(
-            parts_for_set,
+            parts_for_set_building,
             mutations_snapshot,
             set_columns,
             data,
@@ -818,6 +895,13 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// False branch (no signal = set truncated): fallback to original reading step.
     /// The existing FilterStep (if any) stays above InputSelectorStep and applies to both branches.
+    /// It reads only the ranges that need FINAL. It is analyzed and built only if the query uses it:
+    /// its analysis is expensive (e.g. for `use_skip_indexes_if_final_exact_mode`), and so is
+    /// the split of its ranges into layers for the FINAL merge.
+    if (ranges_were_split)
+        reading_step->resetParts(*parts_for_set);
+    reading_step->buildPipelineOnDemand();
+
     /// Save the expected header before moving the step out of the node.
     auto expected_header = reading_step->getOutputHeader();
     QueryPlan false_plan;
