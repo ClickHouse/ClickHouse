@@ -85,6 +85,7 @@
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/executeQuery.h>
@@ -3303,6 +3304,21 @@ static BlockIO executeQueryImpl(
                     optimization_settings,
                     BuildQueryPipelineSettings(context),
                     /*do_optimize=*/ false);
+
+            /// A deserialized plan carries no storage limits: every step's `deserialize` builds a fresh
+            /// `SelectQueryInfo`, and nothing fills its `storage_limits`. `ReadProgressCallback` takes the
+            /// limits from the source it reports for, and `ISource` falls back to an empty list, so without
+            /// this the byte limits and the read-speed and timeout checks are not enforced for any read in
+            /// a shipped plan fragment. The query-based path does not need it: there the replica receives
+            /// SQL and re-plans it, so its own interpreter derives the limits.
+            ///
+            /// The settings arrived with the query, so they are derived here the way an interpreter derives
+            /// them for this stage - which also keeps the minimal-speed limits to the initiator, since only
+            /// it sees the whole query.
+            auto storage_limits = std::make_shared<StorageLimitsList>();
+            storage_limits->emplace_back(IInterpreterUnionOrSelectQuery::getStorageLimits(*context, SelectQueryOptions(stage)));
+            for (const auto & processor : pipeline->getProcessors())
+                processor->setStorageLimits(storage_limits);
 
             res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline));
         }

@@ -1,0 +1,5 @@
+the query-based implementation refuses
+and so does the plan-based one
+the total byte limit as well
+a limit that is not exceeded does not fire
+4999950000
