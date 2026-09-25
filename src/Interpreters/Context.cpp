@@ -170,6 +170,7 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <fmt/format.h>
 
 namespace fs = std::filesystem;
 
@@ -8464,14 +8465,11 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
                 exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected"));
             return StorageID::createEmpty();
         }
-        storage_id.database_name = current_database.getFullName();
+        storage_id.database_name = current_database.getDatabasePart();
         /// the current database may be a logical namespace path, fold it into the table name
         if (current_database.hasTablePrefix())
-        {
-            storage_id = DatabaseCatalog::foldNamespaceIntoTableName(std::move(storage_id), current_database, exception);
-            if (!storage_id)
-                return StorageID::createEmpty();
-        }
+            storage_id.table_name = fmt::format("{}.{}", current_database.getTablePrefixPart(), storage_id.table_name);
+
         /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;
     }
