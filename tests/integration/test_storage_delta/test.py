@@ -4840,16 +4840,17 @@ def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
     # A DeltaLake commit that fails must stay the error the client sees, even when
     # removing the data files the failed INSERT had already uploaded itself fails, and
     # that removal failure must be reported with the data file it was left on. Two
-    # faults are injected at once: the _delta_log directory is made read-only so the
-    # new log entry cannot be written (the commit fails), and
+    # faults are injected at once: delta_lake_commit_fail_before_log_write throws
+    # before the commit writes its log entry (the commit fails), and
     # local_object_storage_network_error_during_remove throws on the first data-file
     # removal. The first INSERT is a control: it commits, so the committed data files
     # are known and the failed INSERT can be held to changing nothing.
     instance = started_cluster.instances["node1"]
     failpoint = "local_object_storage_network_error_during_remove"
+    commit_failpoint = "delta_lake_commit_fail_before_log_write"
+    commit_error = "Failpoint for a commit failure before the log write"
     table_name = randomize_table_name("test_commit_failure_cleanup")
     result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
-    log_dir = f"/{result_file}/_delta_log"
     # One row per data file, one row per block: the unpartitioned sink rolls a new data
     # file per block and the partitioned one opens a sink per partition value, so both
     # write 3 data files. With a single data file the cleanup loop runs only one
@@ -4898,8 +4899,8 @@ def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
     assert len(committed) == 3, f"control insert wrote {len(committed)} data files: {committed}"
     assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
 
-    instance.exec_in_container(["chmod", "555", log_dir], user="root")
     try:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {commit_failpoint}")
         instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
         assert failpoint_enabled() == "1"
         _, error = instance.query_and_get_answer_with_error(
@@ -4910,7 +4911,7 @@ def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
         fired = failpoint_enabled() == "0"
     finally:
         instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        instance.exec_in_container(["chmod", "755", log_dir], user="root")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {commit_failpoint}")
 
     assert fired, "the removal failpoint never fired, so the cleanup path was not exercised"
 
@@ -4919,7 +4920,7 @@ def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
     assert "Injected error after remove object" not in error, (
         f"the data-file removal error replaced the commit error: {error}"
     )
-    assert "_delta_log" in error, f"unexpected insert error: {error}"
+    assert commit_error in error, f"unexpected insert error: {error}"
 
     # O2: the removal that failed is reported, naming the data file it was left on. The
     # message is the full one only the commit-failure cleanup emits; the cancel path logs a
@@ -4950,9 +4951,10 @@ def test_commit_failure_cleanup_attempts_every_data_file(started_cluster, partit
     # is attempted, one in total when the loop stops at the first failure.
     instance = started_cluster.instances["node1"]
     failpoint = "local_object_storage_network_error_during_every_remove"
+    commit_failpoint = "delta_lake_commit_fail_before_log_write"
+    commit_error = "Failpoint for a commit failure before the log write"
     table_name = randomize_table_name("test_commit_failure_every_file")
     result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
-    log_dir = f"/{result_file}/_delta_log"
     insert_settings = (
         "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
         "output_format_parquet_compression_method = 'none'"
@@ -4992,8 +4994,8 @@ def test_commit_failure_cleanup_attempts_every_data_file(started_cluster, partit
         f"control insert wrote {len(committed)} data files: {committed}"
     )
 
-    instance.exec_in_container(["chmod", "555", log_dir], user="root")
     try:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {commit_failpoint}")
         # REGULAR, so it stays armed until disabled and every removal in the window fails.
         instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
         _, error = instance.query_and_get_answer_with_error(
@@ -5002,13 +5004,13 @@ def test_commit_failure_cleanup_attempts_every_data_file(started_cluster, partit
         )
     finally:
         instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        instance.exec_in_container(["chmod", "755", log_dir], user="root")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {commit_failpoint}")
 
     # O1: the client is still told why nothing was written, not why a cleanup step failed.
     assert "Injected error after remove object" not in error, (
         f"the data-file removal error replaced the commit error: {error}"
     )
-    assert "_delta_log" in error, f"unexpected insert error: {error}"
+    assert commit_error in error, f"unexpected insert error: {error}"
 
     # O2: one failed removal is logged per data file, each naming a different one. The
     # table name anchors the match so the two parametrizations cannot read each other's
