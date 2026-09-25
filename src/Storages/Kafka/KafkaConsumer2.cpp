@@ -65,7 +65,8 @@ KafkaConsumer2::~KafkaConsumer2()
     if (!consumer)
         return;
 
-    moveConsumer();
+    auto consumer_to_close = moveConsumer();
+    consumer_to_close.reset();
 }
 
 void KafkaConsumer2::createConsumer(cppkafka::Configuration consumer_config)
@@ -402,6 +403,9 @@ void KafkaConsumer2::resetIfStopped()
     if (stopped)
     {
         stalled_status = StalledStatus::CONSUMER_STOPPED;
+        /// Discard the interrupted batch; a later batch must not continue from its middle.
+        messages.clear();
+        current = messages.end();
     }
 }
 
