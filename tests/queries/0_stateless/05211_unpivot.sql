@@ -86,7 +86,9 @@ WITH 42 AS jan SELECT * FROM (SELECT 1 AS x) UNPIVOT (sales FOR month IN (jan));
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN ()); -- { clientError SYNTAX_ERROR }
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (jan + 1)); -- { clientError SYNTAX_ERROR }
 SELECT * FROM monthly_sales UNPIVOT (sales FOR month); -- { clientError SYNTAX_ERROR }
-SELECT * FROM monthly_sales UNPIVOT (sales FOR month IN (jan, feb)) SETTINGS enable_analyzer = 0; -- { serverError UNSUPPORTED_METHOD }
+-- The old analysis path refuses the clause rather than ignoring it. It cannot be reached from here:
+-- since 26.9 a query cannot turn the analyzer off, it is only a query another server sent that keeps
+-- the old analysis alive.
 
 -- `UNPIVOT` is not a reserved word: it is only the clause where the clause can start, so an alias
 -- named after it keeps working, with or without `AS`.
