@@ -44,9 +44,11 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/IFunction.h>
-#include <Interpreters/misc.h>
+#include <Interpreters/DistributedPlanLocalObject.h>
+#include <Interpreters/inplaceBlockConversions.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <fmt/ranges.h>
 #include <Common/logger_useful.h>
 
@@ -66,102 +68,64 @@ namespace QueryPlanOptimizations
 
 std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
 std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
-std::optional<String> findDictionaryFunction(const IQueryPlanStep & step);
+std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings);
 
-/// A dictionary function ships as a name, not as data: the fragment carries `dictGet('db.dict', ...)` and the
-/// worker resolves `db.dict` in its own catalog, which is not the initiator's. The step is serializable, so
-/// `isSerializable` cannot tell, hence a DAG walk. A lambda keeps its body in a DAG of its own, so
-/// `arrayMap(x -> dictGet(...), ...)` is only found by looking under the node (`hasUnsafeHiddenLambdaBody`).
-/// Every serializable step that carries an `ActionsDAG` is scanned: expression, filter, the join expression,
-/// the filters pushed into a source read, `LIMIT AFTER/UNTIL` boundaries, `INTERPOLATE`, the element filter
-/// fused into `ARRAY JOIN`. `TotalsHaving` is rejected before this (WITH TOTALS is unsupported) and
-/// `ObjectFilterStep` exists only in the old interpreter, which `make_distributed_plan` does not use.
-/// The check goes away once the workers receive the dictionaries a distributed plan reads.
-std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
+/// Here we are using the same code which will run on worker to resolve DEFAULT / MATERIALIZED columns and if
+/// resolution needs some of the objects which are not shipped (like dictionaries) the query falls back
+/// to local execution.
+std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
+    const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    auto find_in_dag = [](const ActionsDAG & dag) -> std::optional<String>
+    if (optimization_settings.distributed_plan_local_object  == nullptr)
     {
-        std::optional<String> found;
-        auto is_dictionary_function = [&](const IFunctionBase & function)
-        {
-            const auto & name = function.getName();
-            /// `assignCentroid` reads a dictionary only when its second argument is a `String` (the name); the other form
-            /// carries the centroids inline as an array and ships fine.
-            const auto & argument_types = function.getArgumentTypes();
-            bool is_assign_centroid_over_dictionary = name == "assignCentroid" && argument_types.size() == 2 && isString(argument_types[1]);
-            if (!functionIsDictGet(name) && !is_assign_centroid_over_dictionary)
-                return false;
-            found = name;
-            return true;
-        };
+        LOG_TRACE(getLogger("makeDistributed"), "Could not evaluate default columns on initiator due to missing tracker for local objects");
+        return std::nullopt;
+    }
+    const auto & columns = read.getStorageMetadata()->getColumns();
 
-        for (const auto & node : dag.getNodes())
-        {
-            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && is_dictionary_function(*node.function_base))
-                return found;
-            if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, is_dictionary_function))
-                return found;
-        }
-        return std::nullopt;
-    };
+    /// For columns which are not default we assume they will be present on workers
+    Block columns_present_in_parts;
+    for (const auto & column : columns.getAllPhysical())
+        if (!columns.getDefault(column.name))
+            columns_present_in_parts.insert(ColumnWithTypeAndName(column.type, column.name));
 
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
-        return find_in_dag(expression->getExpression());
-    if (const auto * filter = typeid_cast<const FilterStep *>(&step))
-        return find_in_dag(filter->getExpression());
-    if (const auto * join = typeid_cast<const JoinStepLogical *>(&step))
-        return find_in_dag(join->getActionsDAG());
-    if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(&step))
-        return find_in_dag(limit_range->getConditions());
-    if (const auto * filling = typeid_cast<const FillingStep *>(&step))
+    /// What this read produces; virtual columns have no metadata entry and are skipped.
+    NamesAndTypesList required_columns;
+    for (const auto & name : read.getAllColumnNames())
+        if (auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, name))
+            required_columns.push_back(*column);
+    try
     {
-        if (const auto & interpolate = filling->getInterpolateDescription())
-            return find_in_dag(interpolate->actions);
+        /// Resolution records additional object usages
+        if (!resolveMissingDefaults(columns_present_in_parts, required_columns, columns, read.getContext()))
+            return std::nullopt;
+    }
+    catch (const Exception & e)
+    {
+        return PreformattedMessage::create(
+            "make_distributed_plan cannot distribute this query: a column default of table {} does not resolve ({})",
+            read.getStorageID().getFullTableName(), e.message());
+    }
+
+    const auto & used = optimization_settings.distributed_plan_local_object;
+    if (!used)
         return std::nullopt;
-    }
-    if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(&step))
-    {
-        if (const auto & element_filter = array_join->getElementFilter())
-            return find_in_dag(*element_filter);
-        return std::nullopt;
-    }
-    if (const auto * source = dynamic_cast<const SourceStepWithFilterBase *>(&step))
-    {
-        if (const auto & prewhere = source->getPrewhereInfo())
-            if (auto name = find_in_dag(prewhere->prewhere_actions))
-                return name;
-        if (const auto & row_level_filter = source->getRowLevelFilter())
-            if (auto name = find_in_dag(row_level_filter->actions))
-                return name;
-        if (const auto & filter_dag = source->getFilterActionsDAG())
-            if (auto name = find_in_dag(*filter_dag))
-                return name;
-        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
-        {
-            if (const auto & prewhere = read->getDeferredPrewhereInfo())
-                if (auto name = find_in_dag(prewhere->prewhere_actions))
-                    return name;
-            if (const auto & row_level_filter = read->getDeferredRowLevelFilter())
-                if (auto name = find_in_dag(row_level_filter->actions))
-                    return name;
-        }
-    }
+    if (const auto entry = used->get())
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support {} {}: it is an object of the initiator, used by a column default of table {}",
+            DistributedPlanLocalObject::kindName(entry->kind), entry->name, read.getStorageID().getFullTableName());
     return std::nullopt;
 }
 
 /// The reason the step cannot be shipped to a worker as part of a serialized fragment, or nullopt.
 /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this server
 /// (a shard gets it on the plan of a secondary query) and must run in the process that owns that
-/// connection: its callback holds the connection's protocol version and codec. A step that calls a
-/// dictionary function refers to a dictionary of the initiator (`findDictionaryFunction`). A `ReadFromMergeTree`
+/// connection: its callback holds the connection's protocol version and codec. A `ReadFromMergeTree`
 /// is serialized specially as a bucketed worker read, and a logical exchange becomes a stage
 /// boundary and is never serialized itself, so the generic `isSerializable` answer does not apply
 /// to those two.
 std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
 {
-    if (auto dictionary_function = findDictionaryFunction(step); dictionary_function.has_value())
-        return PreformattedMessage::create(
-            "make_distributed_plan does not support the dictionary function {}", *dictionary_function);
 
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
         return std::nullopt;
@@ -412,8 +376,12 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
     /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
     /// `_part_starting_offset`.
     if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
+    {
         if (auto reason = getReasonReadCannotBeDistributed(read); reason.has_value())
             return reason;
+        if (auto reason = getReasonColumnDefaultsCannotBeShipped(*read, optimization_settings); reason.has_value())
+            return reason;
+    }
 
     /// A FinishSorting expects rows already sorted by the read below it. This optimizer creates one
     /// only from a Full sorting, and only when no exchange separates the read from the sort. The old
@@ -499,6 +467,23 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
         for (auto * child : node->children)
             stack.push_back(child);
     }
+
+
+    /// A dictionary, embedded dictionary or `Join` table the query resolved by name while it was analyzed exists on
+    /// the initiator, not necessarily on a worker, and the fragment ships only the name. Read before the walk; the
+    /// column-default check inside the walk records for reads whose defaults the query text never touched.
+    const auto & used = optimization_settings.distributed_plan_local_object;
+    if (!used)
+    {
+        /// No query context, so nothing could have been recorded; the plan is taken as free of such objects.
+        LOG_TRACE(getLogger("makeDistributedPlan"), "No record of the server-local objects the query resolved; assuming none");
+        return std::nullopt;
+    }
+    if (const auto entry = used->get())
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support {} {}: it is an object of the initiator",
+            DistributedPlanLocalObject::kindName(entry->kind), entry->name);
+
     return std::nullopt;
 }
 
