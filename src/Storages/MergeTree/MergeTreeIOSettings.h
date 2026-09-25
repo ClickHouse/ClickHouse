@@ -77,7 +77,6 @@ struct MergeTreeReaderSettings
     UInt64 merge_tree_coarse_index_granularity = 8;
     UInt64 merge_tree_generic_exclusion_search_max_steps = 0;
     size_t filesystem_prefetches_limit = 0;
-    bool enable_analyzer = false;
     bool load_marks_asynchronously = false;
     /// If true, compress marks into the in-memory representation one block at a time
     /// instead of materializing the full plain marks array.

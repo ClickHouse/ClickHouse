@@ -20,10 +20,6 @@
 #include <Common/StringValueFilter.h>
 #include <Common/assert_cast.h>
 
-#ifdef __SSE2__
-    #include <emmintrin.h>
-#endif
-
 
 namespace DB
 {
