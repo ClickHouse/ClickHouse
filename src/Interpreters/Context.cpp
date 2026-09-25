@@ -1448,6 +1448,7 @@ ContextData::ContextData(const ContextData &o) :
     normalized_query_hash(o.normalized_query_hash),
     insertion_table_info(o.insertion_table_info),
     is_distributed(o.is_distributed),
+    http_method_implies_readonly(o.http_method_implies_readonly),
     default_format(o.default_format),
     insert_format(o.insert_format),
     http_combined_filter(o.http_combined_filter),
@@ -3636,7 +3637,7 @@ void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElement
 void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source)
 {
     settings->checkShorthandChange(change);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, change, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, change, source, http_method_implies_readonly);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
@@ -3644,7 +3645,7 @@ void Context::checkSettingsConstraintsWithLock(const SettingChange & change, Set
 void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source)
 {
     settings->checkShorthandChanges(changes);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source, http_method_implies_readonly);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
@@ -3652,14 +3653,14 @@ void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, 
 void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
     settings->checkShorthandChanges(changes);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source, http_method_implies_readonly);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
 void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(*settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(*settings, changes, source, http_method_implies_readonly);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
@@ -3685,14 +3686,14 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
 {
     SharedLockGuard lock(mutex);
     settings->checkShorthandChanges(changes);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source, http_method_implies_readonly);
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
 {
     SharedLockGuard lock(mutex);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source, http_method_implies_readonly);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)

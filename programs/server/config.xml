@@ -895,6 +895,19 @@
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 
+        <!-- By default the 'readonly' setting cannot be changed at all while readonly mode is in force,
+             not even towards more restriction, and a profile declaring 'changeable_in_readonly' on
+             'readonly' lets a session leave readonly mode. You can change this behaviour by setting this
+             to true.
+             If it's set to true then 'readonly' may only be changed towards more restriction: the order of
+             restriction is 0 (no restriction) < 2 (no writes, any setting but 'readonly') < 1 (no writes,
+             no setting changes), so a client may drop from 0 or 2 to 1 and nothing else. Additionally, on
+             an HTTP request whose method implies readonly (anything but POST, and PUT/DELETE outside
+             SQL-defined handlers that accept them), 'changeable_in_readonly' stops applying to 'readonly'
+             itself. Every other setting keeps that constraint type, and so does 'readonly' over POST and
+             the native protocol. By default this setting is false. -->
+        <readonly_can_only_be_tightened>false</readonly_can_only_be_tightened>
+
         <!-- Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). -->
         <allow_impersonate_user>true</allow_impersonate_user>
 

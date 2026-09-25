@@ -250,23 +250,27 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
     }
 }
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change, SettingSource source) const
+void SettingsConstraints::check(
+    const Settings & current_settings, const SettingChange & change, SettingSource source, bool http_method_implies_readonly) const
 {
-    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source);
+    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source, http_method_implies_readonly);
 }
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const
+void SettingsConstraints::check(
+    const Settings & current_settings, const SettingsChanges & changes, SettingSource source, bool http_method_implies_readonly) const
 {
     for (const auto & change : changes)
-        check(current_settings, change, source);
+        check(current_settings, change, source, http_method_implies_readonly);
 }
 
-void SettingsConstraints::check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
+void SettingsConstraints::check(
+    const Settings & current_settings, SettingsChanges & changes, SettingSource source, bool http_method_implies_readonly) const
 {
-    checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
+    checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source, http_method_implies_readonly);
 }
 
-void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const
+void SettingsConstraints::checkResetToDefault(
+    const Settings & current_settings, const std::vector<String> & names, SettingSource source, bool http_method_implies_readonly) const
 {
     /// A reset of a built-in setting is equivalent to assigning its declared default. The regular
     /// check also deliberately permits a reset that does not change the value.
@@ -279,7 +283,7 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
     {
         if (settingIsBuiltin(name))
         {
-            check(current_settings, SettingChange{name, settingDefaultValue(name)}, source);
+            check(current_settings, SettingChange{name, settingDefaultValue(name)}, source, http_method_implies_readonly);
             continue;
         }
 
@@ -298,7 +302,8 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
         if (has_current_value)
         {
             SettingChange change{name, current_value};
-            getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, THROW_ON_VIOLATION, source);
+            getChecker(current_settings, Settings::resolveName(name), http_method_implies_readonly)
+                .check(change, current_value, THROW_ON_VIOLATION, source);
         }
     }
 }
@@ -314,19 +319,31 @@ void SettingsConstraints::check(const MergeTreeSettings & current_settings, cons
         check(current_settings, change);
 }
 
-void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
+void SettingsConstraints::clamp(
+    const Settings & current_settings, SettingsChanges & changes, SettingSource source, bool http_method_implies_readonly) const
 {
-    checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION, source);
+    checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION, source, http_method_implies_readonly);
 }
 
-void SettingsConstraints::checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const
+void SettingsConstraints::checkOrClamp(
+    const Settings & current_settings,
+    SettingsChanges & changes,
+    ReactionOnViolation reaction,
+    SettingSource source,
+    bool http_method_implies_readonly) const
 {
     /// If we filter out settings that match the current default here, `compatibility` will silently override them.
     /// So when `compatibility` is present, we keep unchanged settings so they are applied after `compatibility`.
     bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
     std::erase_if(changes, [&](SettingChange & change)
     {
-        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/has_compatibility_setting);
+        return !checkImpl(
+            current_settings,
+            change,
+            reaction,
+            source,
+            http_method_implies_readonly,
+            /*ignore_unchanged_settings=*/has_compatibility_setting);
     });
 }
 
@@ -416,6 +433,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     SettingChange & change,
                                     ReactionOnViolation reaction,
                                     SettingSource source,
+                                    bool http_method_implies_readonly,
                                     bool ignore_unchanged_settings) const
 {
     std::string_view setting_name = Settings::resolveName(change.name);
@@ -476,7 +494,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         return true;
     }
 
-    return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
+    return getChecker(current_settings, setting_name, http_method_implies_readonly).check(change, new_value, reaction, source);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
@@ -624,7 +642,8 @@ std::string_view SettingsConstraints::resolveSettingNameWithCache(std::string_vi
     return name;
 }
 
-SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name) const
+SettingsConstraints::Checker SettingsConstraints::getChecker(
+    const Settings & current_settings, std::string_view setting_name, bool http_method_implies_readonly) const
 {
     /// The cache only knows the names constraints were declared with, which need not be the name a query
     /// uses. The caller has applied `Settings::resolveName` already, and that leaves a `merge_tree_`-prefixed
@@ -659,9 +678,13 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     auto it = constraints.find(resolved_name);
     if (current_settings[Setting::readonly] == 1)
     {
-        const bool changeable_in_readonly = (it != constraints.end()
-                && it->second.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY)
-            || isAlwaysChangeableInReadonly(resolved_name);
+        /// `readonly` carries the restriction the method imposed, so the keyword on it is self-defeating.
+        const bool keyword_applies = !(
+            http_method_implies_readonly && resolved_name == "readonly" && access_control
+            && access_control->doesReadonlyOnlyAllowTightening());
+        const bool changeable_in_readonly = keyword_applies
+            && ((it != constraints.end() && it->second.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY)
+                || isAlwaysChangeableInReadonly(resolved_name));
         if (!changeable_in_readonly)
             return Checker(PreformattedMessage::create("Cannot modify '{}' setting in readonly mode", setting_name),
                            ErrorCodes::READONLY);

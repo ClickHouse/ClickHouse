@@ -207,6 +207,9 @@ public:
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
+    void setReadonlyCanOnlyBeTightened(bool enable) { readonly_can_only_be_tightened = enable; }
+    bool doesReadonlyOnlyAllowTightening() const { return readonly_can_only_be_tightened; }
+
     void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
     bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
 
@@ -304,6 +307,7 @@ private:
     std::atomic_bool user_query_log_enabled = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
+    std::atomic_bool readonly_can_only_be_tightened = false;
     std::atomic_bool table_engines_require_grant = false;
     std::atomic_bool throw_on_invalid_replicated_access_entities = false;
     std::atomic_int bcrypt_workfactor = 12;

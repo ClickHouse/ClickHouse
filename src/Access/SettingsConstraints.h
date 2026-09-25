@@ -80,22 +80,23 @@ public:
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
-    void check(const Settings & current_settings, const SettingChange & change, SettingSource source) const;
-    void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
-    void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
+    /// `http_method_implies_readonly` is the per-request fact recorded by `setReadOnlyIfHTTPMethodIdempotent`.
+    void check(const Settings & current_settings, const SettingChange & change, SettingSource source, bool http_method_implies_readonly = false) const;
+    void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source, bool http_method_implies_readonly = false) const;
+    void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source, bool http_method_implies_readonly = false) const;
     void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
 
     void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     /// Checks whether resetting the specified settings to their defaults violates these constraints.
-    void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;
+    void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source, bool http_method_implies_readonly = false) const;
 
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
     /// Checks whether `change` violates these and clamps the `change` if so.
-    void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
+    void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source, bool http_method_implies_readonly = false) const;
 
 
     friend bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right);
@@ -164,19 +165,25 @@ private:
 
     /// Common logic for `check(Settings, SettingsChanges&)` and `clamp`. Both filter out unchanged settings
     /// (unless `compatibility` is present) and differ only in whether violations throw or get clamped to the nearest bound.
-    void
-    checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const;
+    void checkOrClamp(
+        const Settings & current_settings,
+        SettingsChanges & changes,
+        ReactionOnViolation reaction,
+        SettingSource source,
+        bool http_method_implies_readonly) const;
 
     bool checkImpl(
         const Settings & current_settings,
         SettingChange & change,
         ReactionOnViolation reaction,
         SettingSource source,
+        bool http_method_implies_readonly = false,
         bool ignore_unchanged_settings = false) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
-    Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
+    Checker getChecker(
+        const Settings & current_settings, std::string_view setting_name, bool http_method_implies_readonly = false) const;
 
     bool isAnyTierRestricted() const;
 
