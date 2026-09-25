@@ -16,6 +16,9 @@ Endpoints:
   POST /v1/chat/slow                 — like `/v1/chat/completions`, but sleeps SLOW_RESPONSE_SECONDS
       before answering, so overlapping requests are observable in `/concurrency`.
   POST /v1/embeddings_slow           — like `/v1/embeddings`, but slow in the same way.
+  POST /v1/chat/jitter               — like `/v1/chat/completions` without a schema (echoes the user
+      message), but sleeps a random 0 to JITTER_MAX_SECONDS first, so concurrent requests complete out
+      of order.
   GET  /set-flaky?count=N            — arm the flaky endpoints below to fail their next N requests
       with a simulated transient network error (used to exercise retries). `count=0` disarms.
   POST /v1/chat/flaky                — like `/v1/chat/completions`, but drops the connection without
@@ -66,6 +69,7 @@ Endpoints:
 
 import http.server
 import json
+import random
 import threading
 import time
 from urllib.parse import urlparse, parse_qs
@@ -86,6 +90,9 @@ FLAKY = {"fails_remaining": 0}
 # How long the slow endpoints take to answer. Long enough that concurrent requests overlap
 # observably, short enough not to slow the test down.
 SLOW_RESPONSE_SECONDS = 0.5
+
+# Upper bound of the random delay of `/v1/chat/jitter`.
+JITTER_MAX_SECONDS = 0.3
 
 # Requests the slow endpoints have served, and the high-water mark of how many they were serving
 # simultaneously, since the last `/reset-concurrency`. Guarded by `_LOCK`.
@@ -301,6 +308,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/v1/embeddings_slow":
             self._serve_slowly(lambda: make_embeddings_response(body))
+            return
+
+        if parsed.path == "/v1/chat/jitter":
+            time.sleep(random.uniform(0, JITTER_MAX_SECONDS))
+            self._send_json(200, make_success_response(extract_user_message(body)))
             return
 
         if parsed.path in ("/v1/chat/flaky", "/v1/embeddings_flaky"):

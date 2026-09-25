@@ -107,6 +107,13 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"api_key = 'test-key'"
         )
         instance.query(
+            f"CREATE NAMED COLLECTION ai_jitter AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/jitter', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
             f"CREATE NAMED COLLECTION ai_embed_slow AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_slow', "
@@ -2477,6 +2484,77 @@ def test_max_concurrent_requests_keeps_api_call_quota_exact(started_cluster):
         "is an exact cap even with concurrent requests"
     )
     assert int(get_profile_events(qid)["api_calls"]) == 5
+
+
+def test_concurrent_responses_map_to_their_rows(started_cluster):
+    """With several requests in flight and responses arriving in random order, every row still gets its
+    own response. The mock echoes the prompt after a random delay, so each output must equal its input.
+    Four blocks of 25 rows over two threads also run several function calls at once."""
+    result = instance.query(
+        "SELECT countIf(answer = prompt), count() FROM "
+        "(SELECT concat('row-', toString(number)) AS prompt, "
+        "aiGenerate(prompt, map('credentials', 'ai_jitter')) AS answer FROM numbers_mt(100))",
+        settings={
+            "ai_function_max_concurrent_requests": 10,
+            "max_block_size": 25,
+            "max_threads": 2,
+        },
+    ).strip()
+    assert result == "100\t100", f"expected every row to get its own response, got (matching, total) = {result}"
+
+
+MULTI_CALL_QUERY = (
+    "SELECT countIf(a = pa), countIf(b = pb), count(), sum(cityHash64(pa, e)) FROM "
+    "(SELECT concat('a-', toString(number)) AS pa, concat('b-', toString(number)) AS pb, "
+    "aiGenerate(pa, map('credentials', 'ai_jitter')) AS a, "
+    "aiGenerate(pb, map('credentials', 'ai_jitter')) AS b, "
+    "aiEmbed(pa, 'test-embed-model', map('credentials', 'ai_embed')) AS e "
+    "FROM numbers_mt(100))"
+)
+MULTI_CALL_SETTINGS = {
+    "max_block_size": 25,
+    "max_threads": 2,
+    "ai_function_embedding_max_batch_size": 1,
+}
+
+
+def test_multiple_ai_calls_in_one_query(started_cluster):
+    """Three AI function calls in one query share the request pool and the query's quota tracker.
+    Each call's outputs stay with its own rows, the embeddings match a run with one request at a time,
+    and `AIAPICalls` counts the requests of all three calls: 100 + 100 + 100 (one text per batch)."""
+    serial = instance.query(
+        MULTI_CALL_QUERY, settings={**MULTI_CALL_SETTINGS, "ai_function_max_concurrent_requests": 1}
+    ).split("\t")
+
+    qid = unique_query_id("ai_multi_call")
+    concurrent = instance.query(
+        MULTI_CALL_QUERY,
+        settings={**MULTI_CALL_SETTINGS, "ai_function_max_concurrent_requests": 10},
+        query_id=qid,
+    ).split("\t")
+
+    assert concurrent[:3] == ["100", "100", "100"], (
+        f"expected each aiGenerate call to answer its own rows, got (a matching, b matching, total) = {concurrent[:3]}"
+    )
+    assert concurrent[3] == serial[3], "aiEmbed returned different row/embedding pairs with concurrent requests"
+    assert int(get_profile_events(qid)["api_calls"]) == 300
+
+
+def test_api_call_quota_is_shared_by_ai_calls_in_one_query(started_cluster):
+    """`ai_function_max_api_calls_per_query` is one allowance for all AI function calls of the query,
+    and stays exact with concurrent requests from three calls drawing on it at once."""
+    qid = unique_query_id("ai_multi_call_quota")
+    instance.query(
+        MULTI_CALL_QUERY,
+        settings={
+            **MULTI_CALL_SETTINGS,
+            "ai_function_max_concurrent_requests": 10,
+            "ai_function_max_api_calls_per_query": 50,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    assert int(get_profile_events(qid)["api_calls"]) == 50
 
 
 def test_kill_query_stops_issuing_requests(started_cluster):
