@@ -12,6 +12,7 @@ String ColumnStatsProvenance::toString() const
         case ColumnStatsOrigin::Unknown: result = "unknown"; break;
         case ColumnStatsOrigin::PartStatistics: result = "part-statistics"; break;
         case ColumnStatsOrigin::SyntheticFallback: result = "synthetic-fallback"; break;
+        case ColumnStatsOrigin::SyntheticOverride: result = "synthetic-override"; break;
         case ColumnStatsOrigin::ExactRowCount: result = "exact-row-count"; break;
     }
 

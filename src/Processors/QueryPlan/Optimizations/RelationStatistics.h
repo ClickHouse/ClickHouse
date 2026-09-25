@@ -41,10 +41,12 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
 /// Record a transformation on both independent facts carried by every column statistic.
 void addTransformation(std::unordered_map<String, ColumnStats> & column_stats, ColumnStatsTransformation transformation);
 
-/// A distinct-count sketch was measured on exactly the rows the relation will produce; "exact" refers
-/// to row coverage, not to the sketch's numerical error.
+/// A distinct-count sketch was measured on exactly the rows the relation will produce, or a test-only
+/// synthetic override explicitly supplies that planner contract. "Exact" refers to row coverage,
+/// not to the estimate's numerical error.
 bool isExactDistinctCount(const ColumnStatsProvenance & provenance);
-/// The true distinct count cannot exceed the estimate.
+/// The true distinct count cannot exceed the estimate, or a test-only synthetic override explicitly
+/// supplies that planner contract.
 bool isDistinctCountUpperBound(const ColumnStatsProvenance & provenance);
 /// The following predicates also govern `ColumnStats::null_fraction`: it is a value fact for the
 /// same rows as the range and consumers must require the corresponding range guarantee.
@@ -54,7 +56,7 @@ bool isExactValueRange(const ColumnStatsProvenance & provenance);
 bool isValueRangeSuperset(const ColumnStatsProvenance & provenance);
 /// Values are plausibly spread over the range, as required by uniform-distribution consumers.
 /// A filtered relation is deliberately not representative: interpolating uniformly over an
-/// unfiltered whole-part range can mis-estimate a predicate that cuts that range.
+/// unfiltered whole-part range can misestimate a predicate that cuts that range.
 bool isRepresentativeValueRange(const ColumnStatsProvenance & provenance);
 
 /// GROUP BY preserves the distinct set and value range of a direct grouping key. When the input

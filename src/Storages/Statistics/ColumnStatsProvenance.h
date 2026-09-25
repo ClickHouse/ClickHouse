@@ -10,7 +10,10 @@ enum class ColumnStatsOrigin : UInt8
 {
     Unknown,
     PartStatistics,
+    /// A heuristic derived in the absence of a distinct-count statistic.
     SyntheticFallback,
+    /// An explicit synthetic planner input from test-only statistics hints or randomization.
+    SyntheticOverride,
     /// Produced by the runtime-filter planner (row-count-derived NDV bound); not emitted here yet.
     ExactRowCount,
 };

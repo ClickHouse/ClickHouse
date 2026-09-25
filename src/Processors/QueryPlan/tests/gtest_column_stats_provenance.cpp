@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -304,6 +305,7 @@ TEST(ColumnStatsProvenance, StableDiagnosticString)
     EXPECT_EQ(provenance(ColumnStatsOrigin::Unknown).toString(), "unknown");
     EXPECT_EQ(provenance(ColumnStatsOrigin::PartStatistics).toString(), "part-statistics");
     EXPECT_EQ(provenance(ColumnStatsOrigin::SyntheticFallback).toString(), "synthetic-fallback");
+    EXPECT_EQ(provenance(ColumnStatsOrigin::SyntheticOverride).toString(), "synthetic-override");
     EXPECT_EQ(provenance(ColumnStatsOrigin::ExactRowCount).toString(), "exact-row-count");
 
     constexpr UInt16 all_transformations
@@ -313,6 +315,20 @@ TEST(ColumnStatsProvenance, StableDiagnosticString)
         provenance(ColumnStatsOrigin::PartStatistics, all_transformations).toString(),
         "part-statistics[row-subset,non-uniform-row-subset,exact-row-clamp,estimated-row-clamp,"
         "ndv-bound-expression,value-preserving-expression,partial-part-coverage,unsupported]");
+}
+
+TEST(ColumnStatsProvenance, SyntheticPlannerInputsCarryOverrideProvenance)
+{
+    const auto hinted = parseTableStatsHint(
+        R"({"t":{"cardinality":100,"distinct_keys":{"k":25}}})", "t");
+    ASSERT_EQ(hinted.source, RowEstimateSource::Hint);
+    ASSERT_EQ(hinted.column_stats.size(), 1);
+    EXPECT_EQ(hinted.column_stats.at("k").ndv_provenance.origin, ColumnStatsOrigin::SyntheticOverride);
+
+    const auto randomized = getRandomizedStats(42, 0, "t", *makeHeader());
+    ASSERT_EQ(randomized.source, RowEstimateSource::Randomized);
+    ASSERT_EQ(randomized.column_stats.size(), 1);
+    EXPECT_EQ(randomized.column_stats.at("k").ndv_provenance.origin, ColumnStatsOrigin::SyntheticOverride);
 }
 
 TEST(ColumnStatsProvenance, ExpressionLineageAppendsTransformationsAndKeepsFacts)
@@ -1014,8 +1030,14 @@ TEST(ColumnStatsProvenance, PredicatesEstablishOnlyNamedGuarantees)
     const auto exact_rows = ColumnStatsProvenance{.origin = ColumnStatsOrigin::ExactRowCount};
     EXPECT_FALSE(isExactDistinctCount(exact_rows));
     EXPECT_TRUE(isDistinctCountUpperBound(exact_rows));
-    const auto synthetic = ColumnStatsProvenance{.origin = ColumnStatsOrigin::SyntheticFallback};
-    EXPECT_FALSE(isDistinctCountUpperBound(synthetic));
+
+    const auto synthetic_fallback = ColumnStatsProvenance{.origin = ColumnStatsOrigin::SyntheticFallback};
+    EXPECT_FALSE(isExactDistinctCount(synthetic_fallback));
+    EXPECT_FALSE(isDistinctCountUpperBound(synthetic_fallback));
+
+    const auto synthetic_override = ColumnStatsProvenance{.origin = ColumnStatsOrigin::SyntheticOverride};
+    EXPECT_TRUE(isExactDistinctCount(synthetic_override));
+    EXPECT_TRUE(isDistinctCountUpperBound(synthetic_override));
 }
 
 TEST(ColumnStatsProvenance, RelationStatsCacheDoesNotPersistAcrossMutableJoins)

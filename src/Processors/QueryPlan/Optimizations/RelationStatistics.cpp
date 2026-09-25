@@ -22,14 +22,18 @@ void addTransformation(std::unordered_map<String, ColumnStats> & column_stats, C
 bool isExactDistinctCount(const ColumnStatsProvenance & provenance)
 {
     constexpr UInt16 allowed = ValuePreservingExpression | ExactRowCountClamp;
-    return provenance.origin == ColumnStatsOrigin::PartStatistics && provenance.hasOnly(allowed);
+    const bool has_exact_row_coverage = provenance.origin == ColumnStatsOrigin::PartStatistics
+        || provenance.origin == ColumnStatsOrigin::SyntheticOverride;
+    return has_exact_row_coverage && provenance.hasOnly(allowed);
 }
 
 bool isDistinctCountUpperBound(const ColumnStatsProvenance & provenance)
 {
     constexpr UInt16 forbidden = PartialPartCoverage | EstimatedRowCountClamp | Unsupported;
-    return (provenance.origin == ColumnStatsOrigin::PartStatistics || provenance.origin == ColumnStatsOrigin::ExactRowCount)
-        && !provenance.hasAny(forbidden);
+    const bool has_upper_bound = provenance.origin == ColumnStatsOrigin::PartStatistics
+        || provenance.origin == ColumnStatsOrigin::SyntheticOverride
+        || provenance.origin == ColumnStatsOrigin::ExactRowCount;
+    return has_upper_bound && !provenance.hasAny(forbidden);
 }
 
 bool isExactValueRange(const ColumnStatsProvenance & provenance)
