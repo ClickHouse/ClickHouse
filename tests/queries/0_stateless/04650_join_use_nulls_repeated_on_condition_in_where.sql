@@ -23,10 +23,12 @@ INSERT INTO t2 VALUES (1, 100, true), (2, 200, false);
 SELECT 'left join, right-side ON condition repeated in WHERE';
 SELECT t1.id, t2.reviewer
 FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND t2.enabled = true
-WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
+WHERE t2.enabled = true AND t1.grp = 10 AND t2.reviewer = 100
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
+-- The repeated `ON` condition is written first in every `WHERE` in this file so that it is the duplicate
+-- that gets hoisted, which is what reaches the rename asserted below.
 -- The `AND`-chain split has to rename the colliding boundary input. Assert the rename is in the
 -- plan: a plan shape that never reaches the split would make every case below pass vacuously.
 -- The extra settings are pinned (all randomized in CI) because the assertion needs both colliding
@@ -36,7 +38,7 @@ SELECT count() > 0 FROM (
     EXPLAIN actions = 1, compact = 0, pretty = 0
     SELECT t1.id, t2.reviewer
     FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND t2.enabled = true
-    WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
+    WHERE t2.enabled = true AND t1.grp = 10 AND t2.reviewer = 100
     SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1,
              query_plan_remove_unused_columns = 1, query_plan_merge_filter_into_join_condition = 0,
              query_plan_optimize_join_order_limit = 0, optimize_move_to_prewhere = 0,
@@ -53,7 +55,7 @@ SELECT max(toUInt32OrZero(extract(explain, 'FilterTransform[^0-9]+([0-9]+)'))) >
     EXPLAIN PIPELINE
     SELECT t1.id, t2.reviewer
     FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND t2.enabled = true
-    WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
+    WHERE t2.enabled = true AND t1.grp = 10 AND t2.reviewer = 100
     SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1,
              query_plan_remove_unused_columns = 1, query_plan_merge_filter_into_join_condition = 0,
              query_plan_optimize_join_order_limit = 0, optimize_move_to_prewhere = 0,
@@ -70,21 +72,21 @@ SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_ou
 SELECT 'full join';
 SELECT t1.id, t2.reviewer
 FROM t1 FULL JOIN t2 ON t1.id = t2.id AND t2.enabled = true
-WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
+WHERE t2.enabled = true AND t1.grp = 10 AND t2.reviewer = 100
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
 SELECT 'inner join';
 SELECT t1.id, t2.reviewer
 FROM t1 INNER JOIN t2 ON t1.id = t2.id AND t2.enabled = true
-WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
+WHERE t2.enabled = true AND t1.grp = 10 AND t2.reviewer = 100
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
 SELECT 'left join, non-Bool repeated condition';
 SELECT t1.id, t2.reviewer
 FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND t2.reviewer = 100
-WHERE t1.grp = 10 AND t2.enabled = true AND t2.reviewer = 100
+WHERE t2.reviewer = 100 AND t1.grp = 10 AND t2.enabled = true
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
@@ -94,14 +96,14 @@ SELECT 'left join, ARRAY JOIN above the join';
 SELECT t1.id, t2.reviewer, x
 FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND t2.enabled = true
 ARRAY JOIN [1, 2] AS x
-WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
+WHERE t2.enabled = true AND t1.grp = 10 AND t2.reviewer = 100
 ORDER BY t1.id, x
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
 SELECT 'left join, ORDER BY an expression above the join';
 SELECT t1.id, t2.reviewer
 FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND t2.enabled = true
-WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
+WHERE t2.enabled = true AND t1.grp = 10 AND t2.reviewer = 100
 ORDER BY t2.reviewer + 1
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
@@ -111,7 +113,7 @@ INSERT INTO t2_string VALUES (1, 100, 'x'), (2, 200, 'y');
 SELECT 'left join, String repeated condition';
 SELECT t1.id, t2_string.reviewer
 FROM t1 LEFT JOIN t2_string ON t1.id = t2_string.id AND t2_string.tag = 'x'
-WHERE t1.grp = 10 AND t2_string.reviewer = 100 AND t2_string.tag = 'x'
+WHERE t2_string.tag = 'x' AND t1.grp = 10 AND t2_string.reviewer = 100
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
@@ -121,7 +123,7 @@ INSERT INTO t2_lc VALUES (1, 100, 'x'), (2, 200, 'y');
 SELECT 'left join, LowCardinality repeated condition';
 SELECT t1.id, t2_lc.reviewer
 FROM t1 LEFT JOIN t2_lc ON t1.id = t2_lc.id AND t2_lc.tag = 'x'
-WHERE t1.grp = 10 AND t2_lc.reviewer = 100 AND t2_lc.tag = 'x'
+WHERE t2_lc.tag = 'x' AND t1.grp = 10 AND t2_lc.reviewer = 100
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
@@ -133,7 +135,7 @@ INSERT INTO t2_uint8 VALUES (1, 100, 1), (2, 200, 0);
 SELECT 'left join, plain UInt8 repeated condition';
 SELECT t1.id, t2_uint8.reviewer
 FROM t1 LEFT JOIN t2_uint8 ON t1.id = t2_uint8.id AND t2_uint8.flag = 1
-WHERE t1.grp = 10 AND t2_uint8.reviewer = 100 AND t2_uint8.flag = 1
+WHERE t2_uint8.flag = 1 AND t1.grp = 10 AND t2_uint8.reviewer = 100
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
@@ -143,7 +145,7 @@ INSERT INTO t2_nullable VALUES (1, 100, true), (2, 200, false), (3, 300, NULL);
 SELECT 'left join, already Nullable repeated condition (non-regression)';
 SELECT t1.id, t2_nullable.reviewer
 FROM t1 LEFT JOIN t2_nullable ON t1.id = t2_nullable.id AND t2_nullable.enabled = true
-WHERE t1.grp = 10 AND t2_nullable.reviewer = 100 AND t2_nullable.enabled = true
+WHERE t2_nullable.enabled = true AND t1.grp = 10 AND t2_nullable.reviewer = 100
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
@@ -157,7 +159,7 @@ INSERT INTO t2_lc_nullable VALUES (1, 100, 'x'), (2, 200, NULL);
 SELECT 'left join, LowCardinality(Nullable) repeated condition (no promotion, non-regression)';
 SELECT t1.id, t2_lc_nullable.reviewer
 FROM t1 LEFT JOIN t2_lc_nullable ON t1.id = t2_lc_nullable.id AND t2_lc_nullable.tag = 'x'
-WHERE t1.grp = 10 AND t2_lc_nullable.reviewer = 100 AND t2_lc_nullable.tag = 'x'
+WHERE t2_lc_nullable.tag = 'x' AND t1.grp = 10 AND t2_lc_nullable.reviewer = 100
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
@@ -171,7 +173,7 @@ INSERT INTO mt2 VALUES (1, 100, true), (2, 200, false);
 SELECT 'left join over ReplacingMergeTree with FINAL, prewhere disabled';
 SELECT mt1.id, mt2.reviewer
 FROM mt1 LEFT JOIN mt2 ON mt1.id = mt2.id AND mt2.enabled = true
-WHERE mt1.grp = 10 AND mt2.reviewer = 100 AND mt2.enabled = true
+WHERE mt2.enabled = true AND mt1.grp = 10 AND mt2.reviewer = 100
 ORDER BY mt1.id
 SETTINGS join_use_nulls = 1, final = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
          query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
