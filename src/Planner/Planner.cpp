@@ -64,6 +64,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageInput.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
 
@@ -2319,6 +2320,38 @@ void addReadFromQueryResultCacheStep(
     query_plan.addStep(std::move(read_from_query_result_cache_step));
 }
 
+/// `input()` is a one-shot stream from the client: the data arrives on the connection that carries
+/// the query, so the storage is only readable on the server the client is talking to.
+/// An unresolved table function node, such as one inside the query `view()` takes, has no storage, so only its name identifies it.
+bool readsInputTableFunction(const QueryTreeNodePtr & root)
+{
+    std::vector<const IQueryTreeNode *> to_visit{root.get()};
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+
+        if (const auto * table_function_node = node->as<TableFunctionNode>())
+        {
+            if (table_function_node->getTableFunctionName() == "input"
+                || typeid_cast<const StorageInput *>(table_function_node->getStorage().get()))
+                return true;
+        }
+
+        /// A reused materialized CTE reaches a replica as an external table under its temporary name, so its subquery is not sent.
+        const auto * table_node = node->as<TableNode>();
+        const auto * materialized_cte_subquery = table_node && table_node->isMaterializedCTE()
+            ? table_node->getMaterializedCTESubquery().get()
+            : nullptr;
+
+        for (const auto & child : node->getChildren())
+            if (child && child.get() != materialized_cte_subquery)
+                to_visit.push_back(child.get());
+    }
+
+    return false;
+}
+
 }
 
 static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
@@ -2716,6 +2749,14 @@ void Planner::buildPlanForQueryNode()
         auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         LOG_DEBUG(log, "Disabling parallel replicas to execute a query with additional_table_filters");
+    }
+
+    /// Custom-key parallel replicas send the whole query to every replica, which cannot read `input()`.
+    if (query_context->canUseParallelReplicasCustomKey() && readsInputTableFunction(query_tree))
+    {
+        auto & mutable_context = planner_context->getMutableQueryContext();
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        LOG_DEBUG(log, "Disabling parallel replicas to execute a query reading input()");
     }
 
     collectTableExpressionData(query_tree, planner_context);
