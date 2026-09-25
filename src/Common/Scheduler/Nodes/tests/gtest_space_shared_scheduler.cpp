@@ -21,6 +21,7 @@
 #include <iostream>
 #include <optional>
 #include <random>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -2172,6 +2173,53 @@ TEST(SchedulerSpaceShared, DedicatedSpillRetainsProcessorDuringRemoval)
     spill.get();
     EXPECT_TRUE(lifetime.expired());
 }
+
+TEST(SchedulerSpaceShared, LateForcedSpillFailureStaysWithRecoveryEpisode)
+{
+    auto scheduler = std::make_shared<MemorySpillScheduler>(/*enable_=*/ false);
+    auto processor = std::make_shared<ManualSpillProcessor>(0, /*spill_succeeds_=*/ false);
+
+    std::promise<void> spill_started;
+    auto spill_started_future = spill_started.get_future();
+    std::promise<void> release_spill;
+    auto release_spill_future = release_spill.get_future();
+    std::promise<void> recovery_returned;
+    auto recovery_returned_future = recovery_returned.get_future();
+
+    processor->runOnDedicatedSpill([&]
+    {
+        spill_started.set_value();
+        release_spill_future.get();
+        throw std::runtime_error("late forced-spill failure");
+    });
+    scheduler->registerProcessor(processor);
+
+    const auto episode = scheduler->requestForcedSpill();
+    auto closer = std::async(std::launch::async, [&]
+    {
+        EXPECT_EQ(spill_started_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+        scheduler->finishMemoryPressure(episode);
+        EXPECT_EQ(recovery_returned_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+        release_spill.set_value();
+    });
+
+    scheduler->executeForcedSpillUntil(
+        episode,
+        std::chrono::steady_clock::now() + std::chrono::seconds(5));
+    recovery_returned.set_value();
+    closer.get();
+
+    {
+        std::unique_lock lock(episode->mutex);
+        ASSERT_TRUE(episode->cv.wait_for(lock, std::chrono::seconds(5), [&]
+        {
+            return !episode->async_running.load(std::memory_order_acquire);
+        }));
+    }
+
+    EXPECT_THROW(scheduler->rethrowIfFailed(episode), std::runtime_error);
+}
+
 
 TEST(SchedulerSpaceShared, DedicatedSpillIncludesProcessorsAddedDuringPass)
 {
