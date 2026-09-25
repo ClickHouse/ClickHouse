@@ -1201,13 +1201,17 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
     /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
-    /// checks a row against another row's value, or reads past the end of a shorter column. Screened for
+    /// checks a row against another row's value, or reads past the end of a shorter column. And a second
+    /// declaration of a name is reachable only once the first one has been dropped. Screened for
     /// every definition the user supplies now - an explicit column list, a full-definition `ATTACH`, and
     /// the `AS src` / `CLONE AS src` copy of the constraints of another table, which may have been stored
-    /// by a version without this check. A replay of stored metadata is not screened, so such a table
+    /// by a version without these checks. A replay of stored metadata is not screened, so such a table
     /// still attaches.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    {
         properties.constraints.checkExpressionsPreserveRowCount();
+        properties.constraints.checkNamesAreUnique();
+    }
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
