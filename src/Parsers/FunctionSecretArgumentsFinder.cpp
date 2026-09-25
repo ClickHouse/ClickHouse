@@ -16,8 +16,7 @@ namespace DB
 namespace
 {
     /// Masks credential material embedded in an S3 URL itself: the userinfo part and the values of
-    /// presigned-URL query parameters. The parameter set mirrors `BackupInfo::removeCredentialsFromS3URL`
-    /// (which strips the same fields from persisted backup metadata). Returns true if anything was masked.
+    /// presigned-URL query parameters. Returns true if anything was masked.
     bool maskS3URICredentials(String & url)
     {
         /// Both scans live in `Common/maskURIPassword.h` and are checked against the regular
