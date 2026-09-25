@@ -65,16 +65,6 @@ String getPathToArchive(const String & table_path, const ContextPtr & context)
     return splitToArchiveParts(table_path, context).first;
 }
 
-/// The file whose presence decides whether a table name resolves to a table. A name can use the
-/// archive path syntax (`archive.tar.zst::data.native`), which the `file` table function resolves
-/// to a file stored inside the archive; the file that has to exist on the filesystem is then the
-/// archive, not the whole name.
-String getPathToProbe(const String & table_path, const ContextPtr & context)
-{
-    String path_to_archive = getPathToArchive(table_path, context);
-    return path_to_archive.empty() ? table_path : path_to_archive;
-}
-
 }
 
 DatabaseFilesystem::DatabaseFilesystem(
@@ -199,8 +189,16 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name, co
             table = it->second;
     }
 
-    /// Invalidate cache if file no longer exists.
-    if (table && !existsOrFileNameTooLong([&] { return fs::exists(getPathToProbe(getTablePath(name), context_)); }))
+    if (!table)
+        return nullptr;
+
+    /// Invalidate cache if file no longer exists. A name addressing a file inside an archive stays a
+    /// table only while the archive contains that file: the archive can be rewritten without it, and
+    /// a cached table would then claim the name and read nothing instead of reporting a missing table.
+    const auto [path_to_archive, path_in_archive] = splitToArchiveParts(getTablePath(name), context_);
+    const String path_to_probe = path_to_archive.empty() ? path_in_archive : path_to_archive;
+    if (!existsOrFileNameTooLong([&] { return fs::exists(path_to_probe); })
+        || (!path_to_archive.empty() && !archiveContainsFile(path_to_archive, path_in_archive)))
     {
         std::lock_guard lock(mutex);
         loaded_tables.erase(key);

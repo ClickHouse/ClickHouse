@@ -103,4 +103,27 @@ ${CLICKHOUSE_CLIENT} --query "
     DROP DATABASE ${CLICKHOUSE_DATABASE}_missing_fs;
 "
 
+echo '-- A cached table is dropped once its file is no longer in the rewritten archive'
+# The `Filesystem` database caches a resolved table. The archive stays in place while its contents
+# change, so the cache entry must not outlive the file it was resolved for.
+REWRITTEN="${CLICKHOUSE_TEST_UNIQUE_NAME}_rewritten.tar"
+OTHER="${CLICKHOUSE_TEST_UNIQUE_NAME}_other.csv"
+echo -e "4,Other" > "${CLICKHOUSE_TMP}/${OTHER}"
+tar -C "${CLICKHOUSE_TMP}" -cf "${USER_FILES_PATH}/${REWRITTEN}" "${DATA}"
+
+${CLICKHOUSE_CLIENT} --query "
+    CREATE DATABASE ${CLICKHOUSE_DATABASE}_rewritten ENGINE = Filesystem;
+    SELECT * FROM ${CLICKHOUSE_DATABASE}_rewritten.\`${REWRITTEN}::${DATA}\` ORDER BY 1;
+"
+tar -C "${CLICKHOUSE_TMP}" -cf "${USER_FILES_PATH}/${REWRITTEN}" "${OTHER}"
+echo -n 'Filesystem, the file is no longer in the archive: '
+${CLICKHOUSE_CLIENT} --query \
+    "EXISTS TABLE ${CLICKHOUSE_DATABASE}_rewritten.\`${REWRITTEN}::${DATA}\`"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT * FROM ${CLICKHOUSE_DATABASE}_rewritten.\`${REWRITTEN}::${DATA}\`" 2>&1 \
+    | grep -om1 'UNKNOWN_TABLE'
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE}_rewritten"
+
+rm "${USER_FILES_PATH}/${REWRITTEN}" "${CLICKHOUSE_TMP}/${OTHER}"
+
 rm "${CLICKHOUSE_TMP}/${DATA}" "${ARCHIVE}.tar" "${ARCHIVE}.tar.zst" "${ARCHIVE}.zip"

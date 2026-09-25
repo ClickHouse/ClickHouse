@@ -47,3 +47,8 @@ UNKNOWN_TABLE
 Filesystem, a glob over the files in the archive: 1
 1	Hello
 2	World
+-- A cached table is dropped once its file is no longer in the rewritten archive
+1	Hello
+2	World
+Filesystem, the file is no longer in the archive: 0
+UNKNOWN_TABLE
