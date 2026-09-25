@@ -3564,13 +3564,21 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         && !settings[Setting::force_data_skipping_indices].changed
         && query_info_.prewhere_info->prewhere_actions.isSuitableForConstantFolding())
     {
-        auto header = query_info_.prewhere_info->prewhere_actions.updateHeader(
-            storage_snapshot_->getSampleBlockForColumns(
-                query_info_.prewhere_info->prewhere_actions.getRequiredColumnsNames()));
-        const auto & filter_column = header.getByName(query_info_.prewhere_info->prewhere_column_name).column;
-        if ((filter_column && ConstantFilterDescription(*filter_column).always_false)
-            || FilterTransform::isAlwaysFalseByEmptySet(
-                query_info_.prewhere_info->prewhere_actions, query_info_.prewhere_info->prewhere_column_name))
+        const auto & prewhere_actions = query_info_.prewhere_info->prewhere_actions;
+        const auto & prewhere_column_name = query_info_.prewhere_info->prewhere_column_name;
+
+        /// Same order as in `FilterTransform::prepare`: check the empty set first, because the dry run
+        /// may throw for a sibling branch of `and` that the empty set would have short-circuited.
+        bool always_false = FilterTransform::isAlwaysFalseByEmptySet(prewhere_actions, prewhere_column_name);
+        if (!always_false)
+        {
+            auto header = prewhere_actions.updateHeader(
+                storage_snapshot_->getSampleBlockForColumns(prewhere_actions.getRequiredColumnsNames()));
+            const auto & filter_column = header.getByName(prewhere_column_name).column;
+            always_false = filter_column && ConstantFilterDescription(*filter_column).always_false;
+        }
+
+        if (always_false)
         {
             result.has_exact_ranges = true;
             return std::make_shared<AnalysisResult>(std::move(result));
