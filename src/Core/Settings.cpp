@@ -2142,8 +2142,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, \
-        {"26.2", false, true, "The text index is now GA"}, \
-        {"26.1", false, false, "Default enable"}, \
+        {"26.1", false, true, "Default enable"}, \
         {"25.9", false, false, "New setting"}) \
     DECLARE(Bool, use_skip_indexes_for_disjunctions, true, R"(
 Evaluate WHERE filters with mixed AND and OR conditions using skip indexes. Example: WHERE A = 5 AND (B = 5 OR C = 5).
@@ -7318,7 +7317,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, \
-        {"26.9", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."}) \
+        {"26.8", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."}) \
     DECLARE(Bool, query_plan_split_filter, true, R"(
 <Note>
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -7576,9 +7575,7 @@ Use query plan for lazy materialization optimization.
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
 Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0, \
-        {"26.9", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."}, \
-        {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."}, \
-        {"26.7", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."}) \
+        {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."}) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_file, true, R"(
 Use lazy materialization optimization for reading local Parquet files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0, \
@@ -8436,9 +8433,7 @@ Only has an effect in ClickHouse Cloud. Discard connection if some data is unrea
     DECLARE(UInt64, distributed_cache_min_inflight_bytes_to_discard_connection_on_seek, 4 * 1024 * 1024, R"(
 Only has an effect in ClickHouse Cloud. On a seek away from the current position of an open distributed cache stream, if the estimated number of in-flight bytes that would have to be discarded to keep reusing the connection (via the read range id mechanism) exceeds this value, drop the connection and open a new one instead. This avoids draining a large amount of unused data when seeks are frequent. 0 disables this and always reuses the connection.
 )", 0, \
-        {"26.9", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."}, \
-        {"26.8", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."}, \
-        {"26.7", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."}) \
+        {"26.8", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."}) \
     DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0, \
@@ -10318,7 +10313,6 @@ How many stateless workers will be used to execute this query. Zero disables sta
     DECLARE(UInt64, distributed_plan_workers_provisioning_timeout_ms, 10000, R"(
 Total wall-clock time, in milliseconds, a query may spend provisioning stateless workers before execution: leasing them from the discovery service and verifying they are reachable. The query blocks up to this budget for the leased workers to become ready; when it elapses the query proceeds with the workers verified so far, or fails if none became available. Zero waits only for the initial lease-and-verify pass (no retries).
 )", PRIVATE_PREVIEW, \
-        {"26.9", 10000, 10000, "New setting bounding how long a query waits for leased stateless workers to become reachable before execution."}, \
         {"26.8", 0, 10000, "New setting bounding how long a query waits for leased stateless workers to become reachable before execution; `compatibility` below 26.8 restores the previous no-wait behavior."}) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
@@ -10425,6 +10419,10 @@ Prune granules on the probe side of a JOIN with the runtime filter collected fro
 Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, can be pruned.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
+
+Takes effect only when the probe side of the join is read locally. The descriptors that drive the pruning are attached to the read step while the query plan is optimized, and they are not carried over when that step is rebuilt for remote execution, so the granule pruning does not happen with parallel replicas (`enable_parallel_replicas = 1`) or with a distributed query plan (`make_distributed_plan = 1`). In those modes the setting is a no-op: the query returns the same result and the JOIN runtime filter itself behaves exactly as it does with this setting disabled, only the granule pruning is lost.
+
+The granule pruning is also skipped for a probe side read with `FINAL` (the pruning is not implemented for `FINAL` reads, and `optimizeLazyFinal` rebuilds such a read without the descriptors), and for a table with pending data or `ALTER` mutations or patch parts. These cases are a no-op in the same sense.
 )", 0, \
         {"26.10", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."}, \
         {"26.9", false, false, "The JOIN runtime filters became a Production tier feature."}, \

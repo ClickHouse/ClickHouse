@@ -1031,7 +1031,7 @@ Possible values:
 
 Old-format patches on disk remain readable regardless of this setting.
 )", 0, \
-        {"26.9", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."}) \
+        {"26.8", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."}) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
 The maximum uncompressed size of data in all patch parts in bytes.
