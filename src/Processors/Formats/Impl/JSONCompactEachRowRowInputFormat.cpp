@@ -108,24 +108,6 @@ void JSONCompactEachRowFormatReader::skipRow()
     JSONUtils::skipRowForJSONCompactEachRow(*in);
 }
 
-std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
-{
-    skipRowStartDelimiter();
-    std::vector<String> fields;
-    String field;
-    do
-    {
-        skipWhitespaceIfAny(*in);
-        readJSONString(field, *in, format_settings.json);
-        fields.push_back(field);
-        skipWhitespaceIfAny(*in);
-    }
-    while (checkChar(',', *in));
-
-    skipRowEndDelimiter();
-    return fields;
-}
-
 bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & column_name)
 {
     skipWhitespaceIfAny(*in);

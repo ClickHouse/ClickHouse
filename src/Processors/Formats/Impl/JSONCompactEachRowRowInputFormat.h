@@ -3,6 +3,7 @@
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/JSONUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -70,9 +71,8 @@ public:
 
     bool checkForSuffix() override;
 
-    std::vector<String> readHeaderRow();
-    std::vector<String> readNames() override { return readHeaderRow(); }
-    std::vector<String> readTypes() override { return readHeaderRow(); }
+    std::vector<String> readNames() override { return JSONUtils::readStringFieldsFromJSONArrayRow(*in, format_settings); }
+    std::vector<String> readTypes() override { return JSONUtils::readStringFieldsFromJSONArrayRow(*in, format_settings); }
 
     bool checkForEndOfRow() override;
 

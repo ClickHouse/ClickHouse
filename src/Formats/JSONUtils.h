@@ -23,6 +23,9 @@ namespace JSONUtils
 {
     std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, size_t max_row_size = 0);
     std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size = 0);
+    /// For the `JSONEachRowWithNames*` formats: header rows are JSON arrays and data rows are JSON
+    /// objects, so both kinds of bracket delimit a row.
+    std::pair<bool, size_t> fileSegmentationEngineJSONEachRowWithHeaderRows(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size = 0);
 
     void skipRowForJSONEachRow(ReadBuffer & in);
     void skipRowForJSONCompactEachRow(ReadBuffer & in);
@@ -177,6 +180,13 @@ namespace JSONUtils
     void skipArrayEnd(ReadBuffer & in);
     bool checkAndSkipArrayStart(ReadBuffer & in);
     bool checkAndSkipArrayEnd(ReadBuffer & in);
+
+    /// Read string fields from a JSON array row, e.g. `["id", "name"]`.
+    std::vector<String> readStringFieldsFromJSONArrayRow(ReadBuffer & in, const FormatSettings & settings);
+
+    /// Write string fields as a JSON array row, e.g. `["id", "name"]`.
+    /// Each field is expected to be pre-escaped for JSON string literal content (as returned by `makeNamesValidJSONStrings`).
+    void writeStringFieldsAsJSONArrayRow(const Strings & fields, WriteBuffer & out);
 
     void skipObjectStart(ReadBuffer & in);
     void skipObjectEnd(ReadBuffer & in);
