@@ -90,7 +90,55 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_BEING_RESTARTED;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
+    extern const int UNSUPPORTED_METHOD;
 }
+
+namespace
+{
+
+/// `ETag` is quoted for some reason.
+std::string unquoteETag(const std::string & etag)
+{
+    if (etag.size() >= 2 && etag.front() == '"' && etag.back() == '"')
+        return etag.substr(1, etag.size() - 2);
+    return etag;
+}
+
+}
+
+bool ObjectStorageQueueSource::hasStrongETag(const std::optional<ObjectMetadata> & object_metadata)
+{
+    return object_metadata && object_metadata->etag_is_strong && !unquoteETag(object_metadata->etag).empty();
+}
+
+std::string ObjectStorageQueueSource::makeDeduplicationToken(
+    const std::optional<ObjectMetadata> & object_metadata, const std::string & path, size_t row_offset)
+{
+    /// Create unique token per chunk: etag + row offset
+    if (hasStrongETag(object_metadata))
+        return fmt::format("{}:{}", unquoteETag(object_metadata->etag), row_offset);
+
+    /// `ETag` is an optional response header, and not every tag that is reported is a strong
+    /// content identifier (see `ObjectMetadata::etag_is_strong`). Without a strong one there is
+    /// nothing left that identifies a chunk exactly, and every surrogate is a wrong-results path:
+    /// a token built from the row offset alone would give the first chunk of every file `:0`, an
+    /// empty token would send the chunk down the data-hash path of `DeduplicationInfo` so that two
+    /// files holding an identical chunk collapse into one, the path alone does not survive the
+    /// re-import that `tracked_file_ttl_sec` and `tracked_files_limit` allow, and a
+    /// `(path, size, modification time)` surrogate is not enough either, because listings report
+    /// the modification time with a one-second resolution (`AzureObjectStorage::iterate`
+    /// truncates it), so a same-size rewrite within one second would still collide.
+    /// `DeduplicationInfo::getBlockUnifiedHash` takes a non-empty user token as exact identity, so
+    /// any such collision makes the rows of one of the two files disappear from the dependent
+    /// materialized views. Fail instead of dropping rows.
+    throw Exception(
+        ErrorCodes::UNSUPPORTED_METHOD,
+        "The object storage reported no strong ETag for {}, so a deduplication token that tells one file - and one "
+        "generation of the same file - from another cannot be built. Set `deduplication_v2 = 0` for this table to "
+        "read it all the same.",
+        path);
+}
+
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
     const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
@@ -1070,7 +1118,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     bool commit_once_processed_,
     bool is_direct_select_,
     bool add_deduplication_info_,
-    bool is_deduplication_v2_,
+    bool replay_after_abort_is_safe_,
     IStreamingStorage & streaming_storage_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
@@ -1097,7 +1145,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , streaming_storage(streaming_storage_)
     , cancel_epoch(streaming_storage_.currentCancelEpoch())
     , add_deduplication_info(add_deduplication_info_)
-    , is_deduplication_v2(is_deduplication_v2_)
+    , replay_after_abort_is_safe(replay_after_abort_is_safe_)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1196,9 +1244,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             auto started_file = processed_files.back().metadata;
             /// Aborting re-reads the file from offset 0 on next start, duplicating
-            /// any rows already inserted. Only safe when dedup will drop those rows,
-            /// or when the table is being dropped (no retry).
-            if (table_is_being_dropped || is_deduplication_v2)
+            /// any rows already inserted. Only safe when dedup will certainly drop those
+            /// rows, or when the table is being dropped (no retry).
+            if (table_is_being_dropped || replay_after_abort_is_safe)
             {
                 chassert(started_file->getFileStatus()->processed_rows > 0);
                 processed_files.back().state = FileState::Cancelled;
@@ -1288,6 +1336,37 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 object_metadata && object_metadata->is_last_modified_known)
             {
                 processed_files.back().last_modified = object_metadata->last_modified.epochTime();
+            }
+
+            /// A listing does not always report a usable `ETag`: `ListBlobs` may omit it, and
+            /// `StorageObjectStorageSource::createReader` only fetches the metadata when the
+            /// iterator left it missing, not when the iterator filled it in without a tag. A
+            /// per-object request on the same file can still answer with a strong one, so refresh
+            /// the metadata here, once per file, and only when a deduplication token is actually
+            /// going to be built from it. This keeps the fail-close path in
+            /// `makeDeduplicationToken` to the files the object storage really cannot identify.
+            /// Must run after emplace_back, for the same reason as the tag fetch below.
+            if (add_deduplication_info && !hasStrongETag(reader.getObjectInfo()->getObjectMetadata()))
+            {
+                if (const auto & object_info_for_etag = reader.getObjectInfo())
+                {
+                    /// Fetch the tags in the same request when they are needed anyway.
+                    const bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
+                    try
+                    {
+                        object_info_for_etag->setObjectMetadata(
+                            object_storage->getObjectMetadata(object_info_for_etag->getPath(), with_tags));
+                    }
+                    catch (...)
+                    {
+                        /// A read-path failure of an already-claimed file, exactly like the tag
+                        /// fetch below: only the label changes, not how the failure is handled.
+                        processed_files.back().state = FileState::ErrorOnRead;
+                        processed_files.back().exception_during_read = getCurrentExceptionMessage(true);
+                        processed_files.back().exception_during_read_code = getCurrentExceptionCode();
+                        throw;
+                    }
+                }
             }
 
             /// Tags are not fetched during listing (it lists with with_tags = false), so populate
@@ -1418,13 +1497,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             std::string dedup_token;
             if (add_deduplication_info)
             {
-                /// Etag is quoted for some reason.
-                std::string etag = object_metadata->etag;
-                if (etag.size() > 2 && etag.front() == '\"' && etag.back() == '\"')
-                    etag = etag.substr(1, etag.size() - 2);
-
-                /// Create unique token per chunk: etag + row offset
-                dedup_token = fmt::format("{}:{}", etag, row_offset);
+                dedup_token = makeDeduplicationToken(object_metadata, path, row_offset);
 
                 auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());

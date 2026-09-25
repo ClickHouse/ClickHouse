@@ -497,7 +497,7 @@ void ReadBufferFromAzureBlobStorage::setMetadataFromResponse(const Azure::Storag
 {
     ObjectMetadata new_metadata;
     new_metadata.size_bytes = blob_size;
-    new_metadata.etag = details.ETag.ToString();
+    new_metadata.etag = AzureBlobStorage::getETagOrEmpty(details.ETag);
     new_metadata.last_modified = static_cast<std::chrono::system_clock::time_point>(details.LastModified).time_since_epoch().count();
     if (!details.Metadata.empty())
     {

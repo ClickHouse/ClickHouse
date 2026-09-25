@@ -2,6 +2,7 @@
 #include <optional>
 
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/DeduplicateInsert.h>
 #include <Core/ServerSettings.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
@@ -13,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -84,6 +86,7 @@ namespace Setting
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
+    extern const SettingsDeduplicateInsertMode deduplicate_insert;
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
@@ -778,6 +781,45 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     pipeline.init(std::move(pipe));
 }
 
+bool StorageObjectStorageQueue::deduplicationV2Requested(const ContextPtr & local_context) const
+{
+    bool deduplication_v2_is_set = false;
+    {
+        std::lock_guard lock(mutex);
+        deduplication_v2_is_set = deduplication_v2;
+    }
+    return deduplication_v2_is_set && local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
+}
+
+bool StorageObjectStorageQueue::dependentViewsDeduplicateBlocks(const ContextPtr & local_context) const
+{
+    if (!deduplicationV2Requested(local_context))
+        return false;
+
+    /// `MergeTreeSink` consults block ids only under its own `deduplicate` flag, and `Memory` never
+    /// does, so for such targets the deduplicating insert mode and the per-chunk token are dead
+    /// weight - and the token's own requirement (a strong `ETag`) would fail reads that are perfectly
+    /// safe. The probe fails closed: anything it cannot see through counts as deduplicating.
+    return InsertDependenciesBuilder::dependentViewsDeduplicateBlocksOnInsert(getStorageID(), local_context);
+}
+
+bool StorageObjectStorageQueue::replayAfterAbortIsSafe(const ContextPtr & local_context) const
+{
+    if (!deduplicationV2Requested(local_context))
+        return false;
+
+    /// Aborting a partially processed file and replaying its batch from offset `0` on the next start
+    /// (`ObjectStorageQueueSource::generateImpl`, the mid-insert cancel callback in `streamToViews`)
+    /// re-inserts the rows inserted before the abort. That is safe only when the insert deduplicates
+    /// and every dependent target drops them again, so here, unlike `dependentViewsDeduplicateBlocks`,
+    /// what is not known for sure counts as not deduplicating: the in-flight file is then drained to
+    /// EOF before the source exits, which is always safe. `streamToViews` enables deduplication for the
+    /// insert through `async_insert_deduplicate`, which `deduplicate_insert = disable` overrides.
+    if (local_context->getSettingsRef()[Setting::deduplicate_insert] == DeduplicateInsertMode::DISABLE)
+        return false;
+    return InsertDependenciesBuilder::dependentViewsCertainlyDeduplicateBlocksOnInsert(getStorageID(), local_context);
+}
+
 std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSource(
     size_t processor_id,
     const ReadFromFormatInfo & info,
@@ -793,18 +835,25 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
-    bool add_deduplication_info = false;
     {
         std::lock_guard lock(mutex);
         commit_settings_copy = commit_settings;
         after_processing_settings_copy = after_processing_settings;
-        add_deduplication_info = deduplication_v2;
     }
     if (max_processed_files_override)
         commit_settings_copy.max_processed_files_before_commit = max_processed_files_override;
-    /// Mirrors `is_deduplication_v2` computed in `streamToViews`.
-    const bool is_deduplication_v2 = add_deduplication_info
-        && local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
+    /// The same answer `streamToViews` computed for this cycle (modulo a view created or dropped in
+    /// between, the window every capture of this flag already has).
+    const bool is_deduplication_v2 = dependentViewsDeduplicateBlocks(local_context);
+    /// The per-chunk deduplication token is only ever consumed by the insert into the dependent
+    /// materialized views. A direct `SELECT` inserts nowhere (`is_direct_select`); `streamToViews`
+    /// enables deduplication for the insert by setting `async_insert_deduplicate` on the context it
+    /// passes here, so ask the same question the insert itself will ask. Attaching a token to a
+    /// pipeline that never deduplicates would only make the token's own requirements - a strong
+    /// `ETag` - fail reads that are perfectly safe.
+    const bool add_deduplication_info = is_deduplication_v2 && !is_direct_select
+        && isDeduplicationEnabledForInsert(/*is_async_insert=*/true, local_context->getSettingsRef());
+    const bool replay_after_abort_is_safe = replayAfterAbortIsSafe(local_context);
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
@@ -828,7 +877,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         commit_once_processed,
         is_direct_select,
         add_deduplication_info,
-        is_deduplication_v2,
+        replay_after_abort_is_safe,
         *this);
 }
 
@@ -992,13 +1041,13 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     size_t min_insert_block_size_rows = 0;
     size_t min_insert_block_size_bytes = 0;
-    bool is_deduplication_v2 = false;
     {
         std::lock_guard lock(mutex);
         min_insert_block_size_rows = min_insert_block_size_rows_for_materialized_views;
         min_insert_block_size_bytes = min_insert_block_size_bytes_for_materialized_views;
-        is_deduplication_v2 = deduplication_v2 && queue_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
     }
+    const bool is_deduplication_v2 = dependentViewsDeduplicateBlocks(queue_context);
+    const bool replay_after_abort_is_safe = replayAfterAbortIsSafe(queue_context);
     if (min_insert_block_size_rows)
         queue_context->setSetting("min_insert_block_size_rows_for_materialized_views", min_insert_block_size_rows);
     if (min_insert_block_size_bytes)
@@ -1100,8 +1149,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             std::atomic_bool cancelled_mid_insert = false;
             CompletedPipelineExecutor executor(block_io.pipeline);
             /// Aborting while the insert is running and reprocessing re-adds the same rows
-            /// that is only safe when deduplication is on.
-            if (is_deduplication_v2)
+            /// that is only safe when every dependent target certainly drops them.
+            if (replay_after_abort_is_safe)
                 executor.setCancelCallback(
                     [this, cycle_epoch, &cancelled_mid_insert]
                     {
