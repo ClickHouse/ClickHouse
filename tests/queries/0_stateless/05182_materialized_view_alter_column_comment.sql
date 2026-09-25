@@ -3,6 +3,8 @@ DROP TABLE IF EXISTS mv_comment_inner;
 DROP TABLE IF EXISTS mv_comment_view;
 DROP TABLE IF EXISTS mv_comment_to;
 DROP TABLE IF EXISTS mv_comment_target;
+DROP TABLE IF EXISTS mv_comment_buffer;
+DROP TABLE IF EXISTS mv_comment_dest;
 
 CREATE TABLE mv_comment_src (id UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE MATERIALIZED VIEW mv_comment_inner (id UInt64 COMMENT 'initial')
@@ -43,6 +45,18 @@ WHERE database = currentDatabase() AND table = 'mv_comment_to' AND name = 'id';
 SELECT 'TO target', comment FROM system.columns
 WHERE database = currentDatabase() AND table = 'mv_comment_target' AND name = 'id';
 
+-- A comment command that `IF EXISTS` turns into a no-op must not reach the inner table either: an
+-- inner engine's own ALTER carries its own side effects, and `Buffer` flushes its rows on every one.
+CREATE TABLE mv_comment_dest (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW mv_comment_buffer
+    ENGINE = Buffer(currentDatabase(), mv_comment_dest, 1, 1000, 1000, 1000, 1000000, 10000000, 100000000)
+    AS SELECT id FROM mv_comment_src;
+INSERT INTO mv_comment_src VALUES (1);
+ALTER TABLE mv_comment_buffer COMMENT COLUMN IF EXISTS no_such_column 'ignored';
+SELECT 'ignored comment command', count() FROM mv_comment_dest;
+
+DROP TABLE mv_comment_buffer;
+DROP TABLE mv_comment_dest;
 DROP TABLE mv_comment_to;
 DROP TABLE mv_comment_target;
 DROP TABLE mv_comment_view;

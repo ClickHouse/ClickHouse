@@ -938,11 +938,12 @@ void StorageMaterializedView::alter(
         checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
 
         /// The copy below replaces the view's column descriptions with the inner table's, so a column
-        /// comment has to be set there. `isCommentAlter()` also covers the view's own table comment.
+        /// comment has to be set there. `isCommentAlter()` also covers the view's own table comment, and
+        /// a command `prepare()` marked ignored (`IF EXISTS`, missing column) is applied to neither table.
         AlterCommands column_comment_commands = params;
         std::erase_if(column_comment_commands, [](const AlterCommand & command)
         {
-            return !command.isCommentAlter() || command.type == AlterCommand::COMMENT_TABLE;
+            return command.ignore || !command.isCommentAlter() || command.type == AlterCommand::COMMENT_TABLE;
         });
         /// Altering the inner table is a metadata change of its own, so it has to come after every
         /// check that can still reject the statement.
