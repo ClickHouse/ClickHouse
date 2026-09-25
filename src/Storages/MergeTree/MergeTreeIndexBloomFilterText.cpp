@@ -579,10 +579,9 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
 }
 
-/// A key the row does not have reads as the map value type's default. A matching atom (`equals`, `like`, ...) builds a
-/// granule mask claiming "nothing here matches" when the key term is absent, so it must not be used when the default
-/// matches; a negating atom builds the mirrored mask, claiming "everything here matches", so it must not be used when
-/// the default does not match. A shape this cannot evaluate declines the index, which only costs pruning.
+/// A key the row does not have reads as the map value type's default. A matching atom's granule mask claims
+/// "nothing here matches" when the key term is absent, a negating atom's claims the mirror, so each is unusable
+/// on the opposite condition. A shape this cannot evaluate declines, which only costs pruning.
 bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG::Node * predicate_node, const ContextPtr & context)
 {
     const bool negating = function_name == "notEquals" || function_name == "notLike";
@@ -631,18 +630,16 @@ bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG
 
     Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
 
-    /// A function reading the map can throw on the substituted default although no stored row reaches
-    /// that input, such as a division by a length that is zero only for an empty map. Analysis must
-    /// raise nothing the scan itself would not.
+    /// A function reading the map can throw on the substituted default though no stored row reaches that
+    /// input, such as a division by a length only an empty map has. Analysis must raise nothing the scan would not.
     try
     {
         ExpressionActions(std::move(subdag)).execute(block);
     }
     catch (const Exception &)
     {
-        /// A killed or timed-out query must report that, not an index it could not use. The check throws
-        /// for a killed one, and returns false once the deadline passed under `break`, which the
-        /// cancellation check inside a function reports by throwing too.
+        /// A killed or timed-out query must report that, not an index it could not use: the check throws
+        /// for a killed one and returns false once the deadline passed under `break`.
         if (auto process_list_element = context->getProcessListElementSafe())
             if (!process_list_element->checkTimeLimit())
                 throw;
@@ -739,8 +736,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             if (!map_keys_index && !map_values_index)
                 return false;
 
-            /// A `mapKeys` probe searches for the key, so it replaces the needle below; the array-consuming
-            /// atoms (`has` with an array, `hasAny`, `hasAll`, `multiSearchAny`) would read that key as an `Array`.
+            /// The substituted key replaces the needle, which an array-consuming atom would read as an `Array`.
             if (map_keys_index && value_data_type.isArray())
                 return false;
 
@@ -817,9 +813,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         && constantIsIndexDomainDefault(index_data_types[*key_index], const_source_type, const_value))
         return false;
 
-    /// A substituted key is the needle from here on, and the index holds the key column's own bytes. Only
-    /// the atoms below that convert the needle into the index domain can describe a key that is not text;
-    /// the rest tokenize a substring or a token of the key's text, which such a key has none of.
+    /// A substituted key is the needle from here on, and the index holds the key column's own bytes. The atoms
+    /// that tokenize a substring or token of the needle's text therefore cannot describe a key that is not text.
     if (substituted_map_key && !indexedKeyIsTextComparable(index_data_types[*key_index])
         && function_name != "equals" && function_name != "notEquals" && function_name != "like"
         && function_name != "notLike" && function_name != "match")
