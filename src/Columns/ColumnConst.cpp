@@ -136,6 +136,16 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
+ColumnPtr ColumnConst::updateFrom(const Patch &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateFrom is not supported for {}", getName());
+}
+
+void ColumnConst::updateInplaceFrom(const Patch &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateInplaceFrom is not supported for {}", getName());
+}
+
 VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::scatter(size_t num_columns, const Selector & selector) const
 {
     if (s != selector.size())
