@@ -5,9 +5,9 @@ DROP TABLE IF EXISTS t_float_alp;
 
 CREATE TABLE t_float_alp
 (
-    d Float64, -- ALP(STD) expected
+    d Float64, -- two decimals: AUTO's STD branch
     f Float32, -- Float32 mirror of d
-    r Float64  -- ALP(RD) extected
+    r Float64  -- random mantissa: AUTO's RD branch
 )
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, default_compression_codec = 'LZ4';
