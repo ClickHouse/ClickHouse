@@ -33,7 +33,8 @@ private:
 
     void handleGetConfig(const Poco::URI & uri, HTTPServerResponse & response) const;
     void handleListNamespaces(const Poco::URI & uri, HTTPServerResponse & response) const;
-    void handleCreateNamespace(HTTPServerRequest & request, HTTPServerResponse & response) const;
+    /// Rejects `readonly` profiles.
+    void handleCreateNamespace(HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const;
     void handleNamespaceExists(const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
 
     /// Reads the whole request body. Returns nullopt after answering 413 if the body exceeds max_size.

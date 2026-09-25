@@ -28,10 +28,16 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 readonly;
+}
+
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
+    extern const int READONLY;
     extern const int REQUIRED_PASSWORD;
 }
 
@@ -212,7 +218,7 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
                 handleListNamespaces(uri, response);
                 return;
             case IcebergRESTOperation::CreateNamespace:
-                handleCreateNamespace(request, response);
+                handleCreateNamespace(request, response, *context);
                 return;
             case IcebergRESTOperation::NamespaceExists:
                 handleNamespaceExists(*match, response);
@@ -240,7 +246,7 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             type = "NotAuthorizedException";
             message = getCurrentExceptionMessage(false);
         }
-        else if (code == ErrorCodes::ACCESS_DENIED)
+        else if (code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::READONLY)
         {
             status = Poco::Net::HTTPResponse::HTTP_FORBIDDEN;
             type = "ForbiddenException";
@@ -344,8 +350,12 @@ void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTRouteMatc
     response.send();
 }
 
-void IcebergRESTCatalogHandler::handleCreateNamespace(HTTPServerRequest & request, HTTPServerResponse & response) const
+void IcebergRESTCatalogHandler::handleCreateNamespace(HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const
 {
+    /// V1 has no privilege model, but a `readonly` profile must not mutate the catalog.
+    if (context.getSettingsRef()[Setting::readonly])
+        throw Exception(ErrorCodes::READONLY, "Cannot create namespace in readonly mode");
+
     const auto body = readRequestBody(request, response, MAX_NAMESPACE_CREATE_BODY_SIZE);
     if (!body)
         return;
