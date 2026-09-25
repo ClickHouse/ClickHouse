@@ -123,7 +123,7 @@ sum plus	0
 totals with multiply	0
 
 totals with multiply	0
-why a grouping key set with a non-constant key is safe: it emits no row over empty input
+why a keyed grouping set is safe: it emits no row over empty input
 group by key rows	0
 group by key rows	0
 group by key and constant rows	0
@@ -134,6 +134,10 @@ with cube rows	0
 with cube rows	0
 grouping sets all keyed rows	0
 grouping sets all keyed rows	0
+constant key rollup rows	0
+constant key rollup rows	0
+constant key cube rows	0
+constant key cube rows	0
 non-empty input: the optimization is valid and the values are unchanged
 nonempty keyless	1
 nonempty keyless	1
@@ -165,6 +169,14 @@ nonempty cube	2
 nonempty cube	1
 nonempty cube	1
 nonempty cube	2
+nonempty constant key rollup	1
+nonempty constant key rollup	1
+nonempty constant key rollup	1
+nonempty constant key rollup	1
+nonempty constant key cube	1
+nonempty constant key cube	1
+nonempty constant key cube	1
+nonempty constant key cube	1
 nonempty grouping sets	1
 nonempty grouping sets	1
 nonempty grouping sets	2
@@ -195,5 +207,7 @@ kept: group by key	1
 kept: with rollup	1
 kept: with cube	1
 kept: grouping sets all keyed	1
+kept: constant key rollup	1
+kept: constant key cube	1
 kept: sum plus finite	1
 off: nothing is hoisted	0

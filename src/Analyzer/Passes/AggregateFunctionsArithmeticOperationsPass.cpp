@@ -83,6 +83,10 @@ bool aggregationMayBeEmpty(const QueryNode & query_node)
         return false;
     }
 
+    /// ROLLUP and CUBE keep constant keys to derive their grouping levels, so their key set stays keyed.
+    if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube())
+        return false;
+
     return !has_non_constant_key(query_node.getGroupBy().getNodes());
 }
 
