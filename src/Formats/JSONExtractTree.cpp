@@ -2010,6 +2010,17 @@ public:
         all_typed_paths_have_trivial_defaults = std::all_of(
             typed_paths_types_.begin(), typed_paths_types_.end(),
             [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
+
+        has_shared_data_path_rules = !assert_cast<const DataTypeObject &>(*object_type).getSharedDataPathRules().empty();
+        auto add_parent_paths = [&](const String & path)
+        {
+            for (size_t pos = path.find('.'); pos != String::npos; pos = path.find('.', pos + 1))
+                paths_with_declared_sub_paths.insert(path.substr(0, pos));
+        };
+        for (const auto & [path, _] : typed_paths_types)
+            add_parent_paths(path);
+        for (const auto & path : paths_to_skip)
+            add_parent_paths(path);
     }
 
     bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
@@ -2334,9 +2345,21 @@ private:
     /// Cached per path since it's looked up on every row for a dynamic/shared-data path.
     DynamicNode<JSONParser> & getDynamicNodeForPath(const String & path) const
     {
+        /// Without SHARED REGEXP rules, the nested type is the same for every path with no typed or SKIP path under it.
+        if (!has_shared_data_path_rules && !paths_with_declared_sub_paths.contains(path))
+        {
+            if (!default_dynamic_node)
+                default_dynamic_node = std::make_unique<DynamicNode<JSONParser>>(
+                    assert_cast<const DataTypeObject &>(*object_type).getTypeOfNestedObjects(path + "."));
+            return *default_dynamic_node;
+        }
+
         auto it = dynamic_nodes_by_path.find(path);
         if (it == dynamic_nodes_by_path.end())
         {
+            /// Paths come from the data, so clear the cache instead of letting it grow without limit.
+            if (dynamic_nodes_by_path.size() >= MAX_DYNAMIC_NODES_BY_PATH)
+                dynamic_nodes_by_path.clear();
             auto nested_type = assert_cast<const DataTypeObject &>(*object_type).getTypeOfNestedObjects(path + ".");
             it = dynamic_nodes_by_path.emplace(path, std::make_unique<DynamicNode<JSONParser>>(std::move(nested_type))).first;
         }
@@ -2658,7 +2681,12 @@ private:
     /// SHARED REGEXP provenance (see getDynamicNodeForPath), instead of one node shared, pathless,
     /// across every dynamically-inferred nested object regardless of where it was found.
     DataTypePtr object_type;
+    bool has_shared_data_path_rules = false;
+    /// Paths with a typed or SKIP path under them: a nested object there gets its own type.
+    std::unordered_set<String> paths_with_declared_sub_paths;
+    mutable std::unique_ptr<DynamicNode<JSONParser>> default_dynamic_node;
     mutable std::unordered_map<String, std::unique_ptr<DynamicNode<JSONParser>>> dynamic_nodes_by_path;
+    static constexpr size_t MAX_DYNAMIC_NODES_BY_PATH = 1024;
     SerializationPtr dynamic_serialization;
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
