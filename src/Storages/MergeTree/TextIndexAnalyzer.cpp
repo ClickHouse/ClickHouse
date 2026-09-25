@@ -178,6 +178,11 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
     }
 }
 
+bool TextIndexAnalyzer::hasQueryBuilder(const TextSearchQuery & query) const
+{
+    return query_builders.contains(query.getHash());
+}
+
 const TextIndexAnalyzer::QueryBuilder & TextIndexAnalyzer::getQueryBuilder(const TextSearchQuery & query) const
 {
     auto hash = query.getHash();
