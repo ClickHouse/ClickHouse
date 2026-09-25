@@ -6,6 +6,7 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 namespace ProfileEvents
@@ -237,6 +238,14 @@ QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, con
     hash.update(part_name);
     hash.update(condition_hash);
     return hash.get128();
+}
+
+UUID QueryConditionCache::getTableIdForFileEntries(const UUID & table_uuid)
+{
+    if (table_uuid != UUIDHelpers::Nil)
+        return table_uuid;
+    static const UUID table_id_for_files_without_table_uuid = parseFromString<UUID>("00000000-0000-0000-0000-000000000001");
+    return table_id_for_files_without_table_uuid;
 }
 
 String QueryConditionCache::makeFilePartName(const String & path, std::string_view version_token)

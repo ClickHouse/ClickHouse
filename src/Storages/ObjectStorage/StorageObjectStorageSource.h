@@ -78,7 +78,8 @@ public:
     /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
     /// object cannot be safely cached and caching must be skipped (fail-close). Exposed for testing:
     /// the safety-critical contract is that a weak etag (e.g. HDFS) never keys the cache.
-    static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
+    static std::optional<String> makeQueryConditionCacheKey(
+        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const UUID & table_uuid);
 
 protected:
     StorageID storage_id;

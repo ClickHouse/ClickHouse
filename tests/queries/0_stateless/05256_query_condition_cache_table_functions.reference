@@ -1,0 +1,19 @@
+--- file
+0
+0
+1
+file_1	0	1
+file_2	1	0
+file_rewritten	0	1
+--- s3
+0
+0
+1
+s3_1	0	1
+s3_2	1	0
+s3_rewritten	0	1
+--- icebergLocal
+0
+0
+iceberg_1	0	1
+iceberg_2	1	0
