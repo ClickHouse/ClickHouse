@@ -293,8 +293,7 @@ struct AggregateProjectionInfo
     Names keys;
     AggregateDescriptions aggregates;
 
-    /// The block the projection's parts store. `projection->metadata`, which the projection read is
-    /// built from, is derived from it, so it holds the real type of every stored aggregate state.
+    /// The block the projection's parts store, with the real type of every stored aggregate state.
     Block sample_block;
 
     /// A context copy from interpreter which was used for analysis.
