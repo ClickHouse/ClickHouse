@@ -18,6 +18,7 @@
 #    include <Processors/Sources/JemallocProfileSource.h>
 #    include <Common/Jemalloc.h>
 #    include <Common/StringUtils.h>
+#    include <Common/filesystemHelpers.h>
 #endif
 
 namespace DB
@@ -49,6 +50,8 @@ public:
         , max_block_size(max_block_size_)
     {
     }
+
+    ~JemallocSampledAllocationsSource() override { FS::tryDelete(filename, getLogger("JemallocSampledAllocations")); }
 
     String getName() const override { return "JemallocSampledAllocations"; }
 

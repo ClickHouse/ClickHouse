@@ -80,3 +80,6 @@ SELECT finalizeAggregation(CAST(unhex(concat('10808004', arrayStringConcat(array
                                     i -> hex(reinterpretAsFixedString(toUInt32(i * 65536))),
                                     range(65536))))),
                                 'AggregateFunction(uniq, UInt64)'));
+-- One past that cap belongs to the cap: until #121303 this raised a bare `Poco::Exception`.
+SELECT finalizeAggregation(CAST(unhex('10818004'),
+                                'AggregateFunction(uniq, UInt64)')); -- { serverError TOO_LARGE_ARRAY_SIZE }

@@ -49,8 +49,8 @@ Names metadataStreamColumns(const StreamSettings & stream_settings, const Storag
 {
     Names columns{PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name};
 
-    if (!std::ranges::contains(columns, stream_settings.watermark->column))
-        columns.push_back(stream_settings.watermark->column);
+    if (!std::ranges::contains(columns, stream_settings.watermark->time_attribute_column))
+        columns.push_back(stream_settings.watermark->time_attribute_column);
 
     const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
     for (const auto & source_column : source_columns)
@@ -134,6 +134,8 @@ Pipe buildPartitionReadingPipeline(
     if (const auto & filter = reading_context.prewhere_filter)
         plan->addStep(std::make_unique<FilterStep>(plan->getCurrentHeader(), filter->actions.clone(), filter->column_name, filter->do_remove_column));
 
+    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), partition_id, stream_settings.unordered));
+
     /// The watermarks are computed on the unfiltered metadata stream and aligned with data stream.
     if (stream_settings.watermark)
     {
@@ -141,6 +143,7 @@ Pipe buildPartitionReadingPipeline(
         auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
         chassert(metadata_plan);
 
+        metadata_plan->addStep(std::make_unique<StampPartitionCursorsStep>(metadata_plan->getCurrentHeader(), partition_id, stream_settings.unordered));
         metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, context));
         metadata_plan->addStep(std::make_unique<RaiseWatermarksStep>(metadata_plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
         metadata_plan->addStep(std::make_unique<StampPartitionWatermarksStep>(metadata_plan->getCurrentHeader(), partition_id));
@@ -154,9 +157,6 @@ Pipe buildPartitionReadingPipeline(
         plan = std::make_unique<QueryPlan>();
         plan->unitePlans(std::move(align_step), std::move(plans));
     }
-
-    /// Add cursor calculation step.
-    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), stream_settings.unordered));
 
     /// Add projection to required header.
     auto convert = ActionsDAG::makeConvertingActions(

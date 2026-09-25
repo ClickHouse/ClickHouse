@@ -1066,7 +1066,9 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     {
         if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
             throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// Debug level: an error-level entry is forwarded to the client as an error of this query, which succeeds.
+        /// A direct log leaves the exception unmarked, so `~Exception` still escalates an important error code.
+        LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
     /// Skip tables ClickHouse cannot read (Delta/raw files in mixed catalogs like Glue/Unity)
@@ -1215,7 +1217,7 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     {
         if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
             throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
     for (const auto & catalog_table : catalog_tables)
@@ -1253,7 +1255,7 @@ VectorWithMemoryTracking<String> DatabaseDataLake::getAllTableNames(ContextPtr /
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
     return result;

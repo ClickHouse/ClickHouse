@@ -9,6 +9,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
@@ -23,6 +24,7 @@
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -36,9 +38,14 @@
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/misc.h>
+#include <Storages/SelectQueryInfo.h>
 #include <fmt/ranges.h>
 #include <Common/logger_useful.h>
 
@@ -56,40 +63,130 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
-const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root);
+std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step);
+std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
+std::optional<String> findDictionaryFunction(const IQueryPlanStep & step);
 
-/// True if the step cannot be shipped to a worker as part of a serialized fragment.
+/// A dictionary function ships as a name, not as data: the fragment carries `dictGet('db.dict', ...)` and the
+/// worker resolves `db.dict` in its own catalog, which is not the initiator's. The step is serializable, so
+/// `isSerializable` cannot tell, hence a DAG walk. A lambda keeps its body in a DAG of its own, so
+/// `arrayMap(x -> dictGet(...), ...)` is only found by looking under the node (`hasUnsafeHiddenLambdaBody`).
+/// Every serializable step that carries an `ActionsDAG` is scanned: expression, filter, the join expression,
+/// the filters pushed into a source read, `LIMIT AFTER/UNTIL` boundaries, `INTERPOLATE`, the element filter
+/// fused into `ARRAY JOIN`. `TotalsHaving` is rejected before this (WITH TOTALS is unsupported) and
+/// `ObjectFilterStep` exists only in the old interpreter, which `make_distributed_plan` does not use.
+/// The check goes away once the workers receive the dictionaries a distributed plan reads.
+std::optional<String> findDictionaryFunction(const IQueryPlanStep & step)
+{
+    auto find_in_dag = [](const ActionsDAG & dag) -> std::optional<String>
+    {
+        std::optional<String> found;
+        auto is_dictionary_function = [&](const IFunctionBase & function)
+        {
+            const auto & name = function.getName();
+            /// `assignCentroid` reads a dictionary only when its second argument is a `String` (the name); the other form
+            /// carries the centroids inline as an array and ships fine.
+            const auto & argument_types = function.getArgumentTypes();
+            bool is_assign_centroid_over_dictionary = name == "assignCentroid" && argument_types.size() == 2 && isString(argument_types[1]);
+            if (!functionIsDictGet(name) && !is_assign_centroid_over_dictionary)
+                return false;
+            found = name;
+            return true;
+        };
+
+        for (const auto & node : dag.getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && is_dictionary_function(*node.function_base))
+                return found;
+            if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, is_dictionary_function))
+                return found;
+        }
+        return std::nullopt;
+    };
+
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
+        return find_in_dag(expression->getExpression());
+    if (const auto * filter = typeid_cast<const FilterStep *>(&step))
+        return find_in_dag(filter->getExpression());
+    if (const auto * join = typeid_cast<const JoinStepLogical *>(&step))
+        return find_in_dag(join->getActionsDAG());
+    if (const auto * limit_range = typeid_cast<const LimitRangeStep *>(&step))
+        return find_in_dag(limit_range->getConditions());
+    if (const auto * filling = typeid_cast<const FillingStep *>(&step))
+    {
+        if (const auto & interpolate = filling->getInterpolateDescription())
+            return find_in_dag(interpolate->actions);
+        return std::nullopt;
+    }
+    if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(&step))
+    {
+        if (const auto & element_filter = array_join->getElementFilter())
+            return find_in_dag(*element_filter);
+        return std::nullopt;
+    }
+    if (const auto * source = dynamic_cast<const SourceStepWithFilterBase *>(&step))
+    {
+        if (const auto & prewhere = source->getPrewhereInfo())
+            if (auto name = find_in_dag(prewhere->prewhere_actions))
+                return name;
+        if (const auto & row_level_filter = source->getRowLevelFilter())
+            if (auto name = find_in_dag(row_level_filter->actions))
+                return name;
+        if (const auto & filter_dag = source->getFilterActionsDAG())
+            if (auto name = find_in_dag(*filter_dag))
+                return name;
+        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
+        {
+            if (const auto & prewhere = read->getDeferredPrewhereInfo())
+                if (auto name = find_in_dag(prewhere->prewhere_actions))
+                    return name;
+            if (const auto & row_level_filter = read->getDeferredRowLevelFilter())
+                if (auto name = find_in_dag(row_level_filter->actions))
+                    return name;
+        }
+    }
+    return std::nullopt;
+}
+
+/// The reason the step cannot be shipped to a worker as part of a serialized fragment, or nullopt.
 /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this server
 /// (a shard gets it on the plan of a secondary query) and must run in the process that owns that
-/// connection: its callback holds the connection's protocol version and codec. A `ReadFromMergeTree`
+/// connection: its callback holds the connection's protocol version and codec. A step that calls a
+/// dictionary function refers to a dictionary of the initiator (`findDictionaryFunction`). A `ReadFromMergeTree`
 /// is serialized specially as a bucketed worker read, and a logical exchange becomes a stage
 /// boundary and is never serialized itself, so the generic `isSerializable` answer does not apply
 /// to those two.
-bool isStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
+std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(const IQueryPlanStep & step)
 {
-    if (typeid_cast<const BlocksMarshallingStep *>(&step))
-        return true;
+    if (auto dictionary_function = findDictionaryFunction(step); dictionary_function.has_value())
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support the dictionary function {}", *dictionary_function);
+
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
-        return false;
-    return !step.isSerializable();
+        return std::nullopt;
+
+    if (typeid_cast<const BlocksMarshallingStep *>(&step) || !step.isSerializable())
+        return PreformattedMessage::create(
+            "make_distributed_plan cannot distribute this query: it contains the step {} which could not execute remotely",
+            step.getName());
+
+    return std::nullopt;
 }
 
-/// The first step of an optimized plan that cannot execute remotely, or nullptr. Nothing is
-/// tolerated here: the placeholders the decision skips have been materialized away by now.
-const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root)
+/// The reason the first step of an optimized plan cannot execute remotely, or nullopt.
+std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root)
 {
     std::vector<const QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
         stack.pop_back();
-        if (isStepUnsupportedForRemoteExecution(*node->step))
-            return node->step.get();
+        if (auto reason = getReasonStepUnsupportedForRemoteExecution(*node->step); reason.has_value())
+            return reason;
         for (const auto * child : node->children)
             stack.push_back(child);
     }
-    return nullptr;
+    return std::nullopt;
 }
 
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -302,10 +399,8 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
     if (typeid_cast<const CommonSubplanStep *>(&step) || typeid_cast<const CommonSubplanReferenceStep *>(&step))
         return std::nullopt;
 
-    if (isStepUnsupportedForRemoteExecution(step))
-        return PreformattedMessage::create(
-            "make_distributed_plan cannot distribute this query: it contains the step {} which could not execute remotely",
-            step.getName());
+    if (auto reason = getReasonStepUnsupportedForRemoteExecution(step); reason.has_value())
+        return reason;
 
     /// Sets backed by an external table cannot be shipped with the worker tasks.
     if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(&step))

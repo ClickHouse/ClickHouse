@@ -8,7 +8,8 @@ void registerAggregateFunctionTimeseriesExtrapolatedValue(AggregateFunctionFacto
 void registerAggregateFunctionTimeseriesInstantValue(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesLinearRegression(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesChanges(AggregateFunctionFactory & factory);
-void registerAggregateFunctionTimeseriesToGridSparse(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeseriesLastToGrid(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeseriesFirstToGrid(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesCompensatedSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesCount(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesMax(AggregateFunctionFactory & factory);
@@ -26,7 +27,8 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
     registerAggregateFunctionTimeseriesInstantValue(factory);
     registerAggregateFunctionTimeseriesLinearRegression(factory);
     registerAggregateFunctionTimeseriesChanges(factory);
-    registerAggregateFunctionTimeseriesToGridSparse(factory);
+    registerAggregateFunctionTimeseriesLastToGrid(factory);
+    registerAggregateFunctionTimeseriesFirstToGrid(factory);
     registerAggregateFunctionTimeseriesCompensatedSum(factory);
     registerAggregateFunctionTimeseriesCount(factory);
     registerAggregateFunctionTimeseriesMax(factory);
