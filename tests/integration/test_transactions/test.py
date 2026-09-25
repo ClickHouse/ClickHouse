@@ -66,6 +66,137 @@ def expect_part_info(
     assert res[4] == removal_csn
 
 
+def held_txn_ephemerals(zk, txn_root="/clickhouse/txn"):
+    # The ephemeral znodes one TransactionManager::start() attempt takes: cleanupLockPath() and
+    # TransactionSession::replicaActivePath(). The sibling `_session` and `_tail_ptr` nodes under
+    # the same parent are persistent, hence the suffix filter.
+    #
+    # sync() first: this client is pinned to zoo1 while the server shuffles the three configured
+    # endpoints, so an unsynced read can still show a holder the server has already removed, or
+    # miss one it has just taken.
+    zk.sync(txn_root)
+    held = ["cleanup_lock"] if zk.exists(f"{txn_root}/cleanup_lock") else []
+    replicas = f"{txn_root}/replicas"
+    if zk.exists(replicas):
+        held += sorted(c for c in zk.get_children(replicas) if c.endswith("_active"))
+    return held
+
+
+def test_failed_start_releases_ephemeral_holders(start_cluster):
+    # A failing TransactionManager::start() must leave no ephemeral node holder behind: the failed
+    # attempt's instance is discarded and its ~TransactionManager -> shutdown() removes both holders
+    # under shutdown()'s own Keeper component guard. Before the split the holders were taken in the
+    # constructor body; they are members, so they outlived the body's locals, an exception destroyed
+    # the component guard first, and the member ~EphemeralNodeHolder -> tryRemove -> pushRequest then
+    # found an empty component and threw LOGICAL_ERROR, which aborts a debug build and force-closes
+    # the server's shared Keeper session otherwise. Reproducing that needs
+    # enforce_keeper_component_tracking, which is off by default but is written into every integration
+    # instance (helpers/0_common_enforce_zookeeper_component_name.xml).
+    #
+    # This test has to run before any test that creates a transactional part: with the bad entry
+    # planted below, a restart whose disk already held transactional parts would fail to resolve their
+    # CSNs while the log cannot be loaded. The log root itself already exists by the time this body
+    # runs, created by initLogRoot on the fixture's own startup initialization.
+    zk = cluster.get_kazoo_client("zoo1")
+    log_path = "/clickhouse/txn/log"
+    bad_entry = f"{log_path}/csn-0009999999"
+    try:
+        # One transaction that must succeed, so that a later failure is attributable to the entry
+        # injected below and not to the fixture. It also creates no data part, which matters for the
+        # restart below.
+        tx(100, "BEGIN TRANSACTION")
+        tx(100, "ROLLBACK")
+
+        # The log root must already exist, created by TransactionLog::initLogRoot: it is the only
+        # thing that fast-forwards the sequential counter past the reserved CSNs, and it only does so
+        # when it finds the log absent -- so the injected node below must never be what brings the
+        # log into existence. That is also why there is no makepath below.
+        assert zk.exists(log_path), f"{log_path} should have been created by initLogRoot"
+
+        # A CSN log entry claiming a format version this server does not know. Deserializing it
+        # throws from reloadCSNLogs, i.e. after initOwnReplicaState has taken `_active` and the
+        # cleanup lease: that window is what this test is about. It has to be planted before the
+        # restart, because configs/transactions.xml enables transactions and the server therefore
+        # initializes the log itself at startup.
+        zk.create(bad_entry, b"version: 2\n")
+
+        # A graceful restart runs Context::shutdown -> TransactionManager::shutdownIfAny, which
+        # releases both holders. The new process then fails start() on its own eager call.
+        node.restart_clickhouse()
+
+        # Precondition for the arm below: the eager initialization in Server.cpp ran in this process
+        # and failed on the planted entry. Without this, "the server still starts" would hold just as
+        # well on a server that never tried, and nothing in this test would observe the startup path.
+        assert int(node.count_in_log("Cannot initialize the transaction log at startup")) >= 1
+
+        # Arm 1 of 2: each failing attempt is checked on its own. A count aggregated over all three
+        # attempts cannot localize a leak, because tryAcquireCleanupLock treats an existing lease as
+        # a non-fatal skip and logs nothing, and createActiveNode removes a stale `_active` before
+        # taking its own -- one attempt's leak is therefore absorbed silently by the next.
+        leases_after_eager = int(node.count_in_log("Acquired cleanup lease"))
+        assert leases_after_eager >= 1, "the eager start() attempt never took the cleanup lease"
+        held = held_txn_ephemerals(zk)
+        assert held == [], f"the eager start() failure left ephemeral node holders behind: {held}"
+
+        # A transaction log that cannot be initialized must not keep the server from starting.
+        assert node.query("SELECT 1").strip() == "1"
+
+        # Precondition and first arm in one: the lazy path must re-enter start() and fail the same
+        # way. If the singleton were already published this would succeed, and everything below
+        # would be vacuous.
+        with pytest.raises(Exception) as excinfo:
+            tx(101, "BEGIN TRANSACTION")
+        assert "Unknown CSN entry format version" in str(excinfo.value), (
+            "BEGIN TRANSACTION did not fail inside start() -- the singleton was probably already "
+            f"published, so this test covers nothing. Got: {excinfo.value}"
+        )
+
+        # Arm 2 of 2: the same pair of checks for the lazy attempt.
+        leases_after_lazy = int(node.count_in_log("Acquired cleanup lease"))
+        assert leases_after_lazy > leases_after_eager, (
+            "the lazy start() attempt did not take the cleanup lease, so the eager failure had "
+            "not released it"
+        )
+        held = held_txn_ephemerals(zk)
+        assert held == [], f"the lazy start() failure left ephemeral node holders behind: {held}"
+
+        zk.delete(bad_entry)
+
+        # A third attempt, now unobstructed.
+        tx(102, "BEGIN TRANSACTION")
+        tx(102, "ROLLBACK")
+
+        # The count below is absolute rather than a delta because
+        # helpers/0_common_instance_config.xml sets <rotateOnOpen>, so the log file count_in_log
+        # reads holds exactly the process started by the restart above, which is the whole window of
+        # interest: every failing and succeeding start() happened in it.
+        #
+        # The direct symptom, in both build flavours: a debug build logs it from
+        # abortOnFailedAssertion, a release build from ~EphemeralNodeHolder's own handler.
+        assert int(node.count_in_log("Current component is empty")) == 0
+
+        # Liveness for both arms above: the published instance holds exactly what the failed
+        # attempts had to give up, so their empty results are an absence and not a path that never
+        # takes these znodes.
+        assert int(node.count_in_log("Acquired cleanup lease")) > leases_after_lazy
+        held = held_txn_ephemerals(zk)
+        assert "cleanup_lock" in held and len(held) == 2, (
+            f"the started instance does not hold both ephemerals, so the arms above prove nothing: {held}"
+        )
+
+        # A transaction on the now-published singleton. Had a failed attempt's instance been reused
+        # instead of discarded, a debug build would have aborted inside one of the attempts above, on
+        # loadLogFromZooKeeper's chassert(!zookeeper) or initLogRoot's chassert(tid_to_csn.empty());
+        # a working transaction here is the other end of that oracle.
+        tx(103, "BEGIN TRANSACTION")
+        tx(103, "ROLLBACK")
+    finally:
+        if zk.exists(bad_entry):
+            zk.delete(bad_entry)
+        zk.stop()
+        zk.close()
+
+
 def test_rollback_unfinished_on_restart1(start_cluster):
     node.query("DROP TABLE IF EXISTS mt")
     node.query(

@@ -105,9 +105,9 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 /// On-Keeper payloads and their formats live in `TransactionPayloads.h`.
 class TransactionManager final : public SingletonHelper<TransactionManager>
 {
-public:
+    friend class SingletonHelper<TransactionManager>;
 
-    TransactionManager();
+public:
 
     ~TransactionManager();
 
@@ -250,6 +250,11 @@ public:
     }
 
 private:
+    TransactionManager();
+    /// Establishes this replica's Keeper state. Its two ephemeral node holders are members, released
+    /// after a constructor body's locals and therefore after any component guard `pushRequest` needs.
+    void start();
+
     void loadLogFromZooKeeper() TSA_REQUIRES(mutex);
     void runUpdatingThread();
 
@@ -362,7 +367,10 @@ Derived & SingletonHelper<Derived>::createInstanceOrThrow()
     std::lock_guard lock{instance_mutex};
     if (!instance_holder)
     {
-        instance_holder = std::make_shared<Derived>();
+        /// `start()` commits Keeper state it cannot roll back, so a failed instance is never published.
+        std::shared_ptr<Derived> new_instance{new Derived()};
+        new_instance->start();
+        instance_holder = std::move(new_instance);
         instance_raw_ptr = instance_holder.get();
     }
     return *instance_holder;
