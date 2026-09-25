@@ -48,6 +48,58 @@ SettingsChanges getSettingsStatedInDefinition(const StorageID & table_id, Contex
     return getEngineStatedInDefinition(table_id, context).settings;
 }
 
+namespace
+{
+
+/// An engine's settings as `system.engine_settings` describes them, less the values: name, default, type,
+/// description, tier and aliases, with an index over the name and every alias.
+struct EngineSettingsMetadata
+{
+    SettingDescriptions settings;
+    std::unordered_map<String, size_t> by_name;
+};
+
+/// The same for every table of an engine, and built by enumerating the engine's whole settings struct - hundreds
+/// of rows for `MergeTree` - so a scan of `system.table_settings` would otherwise rebuild it per table. Kept for
+/// the life of the program, which costs one copy of each engine's metadata.
+///
+/// Only what is compiled in is kept. A value is not: an engine that has a server-level instance reports the
+/// server's values, which a config reload changes, and this is keyed by engine name alone. They are cleared
+/// rather than merely left unread, so that a later caller cannot take a stale one from here by mistake.
+const EngineSettingsMetadata & engineSettingsMetadata(const String & engine_name, ContextPtr context)
+{
+    static std::mutex mutex;
+    /// Never erased from, so a reference into it stays valid for the caller.
+    static std::unordered_map<String, EngineSettingsMetadata> cache;
+
+    std::lock_guard lock(mutex);
+    if (const auto it = cache.find(engine_name); it != cache.end())
+        return it->second;
+
+    EngineSettingsMetadata metadata;
+    const auto & engines = StorageFactory::instance().getAllStorages();
+    if (const auto engine = engines.find(engine_name); engine != engines.end())
+        if (const auto enumerate = engine->second.features.enumerate_engine_settings_fn)
+            metadata.settings = enumerate(context);
+
+    for (size_t i = 0; i < metadata.settings.size(); ++i)
+    {
+        auto & setting = metadata.settings[i];
+        setting.value.clear();
+        setting.masked_value.clear();
+        setting.named_collection.clear();
+        setting.origin = SettingOrigin::Default;
+
+        metadata.by_name.emplace(setting.name, i);
+        for (const auto & alias : setting.aliases)
+            metadata.by_name.emplace(String{alias}, i);
+    }
+
+    return cache.emplace(engine_name, std::move(metadata)).first->second;
+}
+
+}
+
 /// What a table's own `SETTINGS` clause states, which is all a storage without settings of its own can say.
 /// Values come from the AST, so unlike an override backed by a settings struct there is no accessor to give a
 /// type-faithful rendering.
@@ -59,34 +111,28 @@ SettingDescriptions describeSettingsStatedInDefinition(const StorageID & table_i
 
     /// The default, type, description, tier and aliases of a setting are compiled in: where the engine lists its
     /// settings for `system.engine_settings`, take them from there, so that the two tables describe it alike.
-    SettingDescriptions known;
-    const auto & engines = StorageFactory::instance().getAllStorages();
-    if (const auto engine = engines.find(engine_name); engine != engines.end())
-        if (const auto enumerate = engine->second.features.enumerate_engine_settings_fn)
-            known = enumerate(context);
+    const auto & known = engineSettingsMetadata(engine_name, context);
 
     SettingDescriptions result;
     result.reserve(changes.size());
     for (const auto & change : changes)
     {
         /// A clause may state a setting under an alias; the row then carries the canonical name, as every other
-        /// row does.
-        const auto it = std::ranges::find_if(known, [&](const SettingDescription & setting)
-        {
-            return setting.name == change.name || std::ranges::find(setting.aliases, change.name) != setting.aliases.end();
-        });
+        /// row does. Both are keys of the index, so an alias costs no more than the declared name.
+        const auto it = known.by_name.find(change.name);
 
         SettingDescription described;
-        if (it != known.end())
+        if (it != known.by_name.end())
         {
-            described.name = it->name;
-            described.default_value = it->default_value;
-            /// Views outliving `known`, which is local: every engine's enumeration points them at its settings
-            /// struct's metadata or at a literal, both of which live as long as the program.
-            described.type = it->type;
-            described.comment = it->comment;
-            described.tier = it->tier;
-            described.aliases = it->aliases;
+            const auto & setting = known.settings[it->second];
+            described.name = setting.name;
+            described.default_value = setting.default_value;
+            /// Views outliving the cache entry is what makes this safe: every engine's enumeration points them
+            /// at its settings struct's metadata or at a literal, both of which live as long as the program.
+            described.type = setting.type;
+            described.comment = setting.comment;
+            described.tier = setting.tier;
+            described.aliases = setting.aliases;
         }
         else
         {

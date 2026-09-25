@@ -104,6 +104,7 @@ public:
         , engine_filter_reads_table(engine_filter_reads_table_)
         , table_name_hint(std::move(table_name_hint_))
         , context(Context::createCopy(context_))
+        , access(context->getAccess())
         , require_datalake_metadata_access(context->getSettingsRef()[Setting::database_datalake_require_metadata_access])
     {
     }
@@ -123,16 +124,15 @@ protected:
         /// there must not read it through a table built on it. A value whose collection was not recorded cannot
         /// be checked, so it is not shown.
         const bool show_secrets = canDisplaySecrets(context);
-        const auto access = context->getAccess();
         SettingRowWriter writer(
             res_columns,
             columns_mask,
             show_secrets,
-            [show_secrets, access](const String & collection)
+            [show_secrets, reader = access](const String & collection)
             {
                 return show_secrets && !collection.empty()
-                    && access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS, collection)
-                    && access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
+                    && reader->isGranted(AccessType::SHOW_NAMED_COLLECTIONS, collection)
+                    && reader->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
             });
 
         size_t rows_count = writeCatalogTables(writer);
@@ -148,7 +148,6 @@ private:
     /// The tables of the catalog's databases, continuing where the last call left off. Returns the rows written.
     size_t writeCatalogTables(SettingRowWriter & writer)
     {
-        const auto access = context->getAccess();
         const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
@@ -295,17 +294,21 @@ private:
     /// `table` the answer holds for every table of one database with that engine, and is remembered.
     bool engineFilterKeeps(const String & db_name, const String & tbl_name, const String & engine_name)
     {
-        /// The answer holds for one database, not for the server: the predicate may read `database` too, and the
-        /// session's temporary tables report an empty one. So the memo goes with the database it was built for.
-        if (engine_filter_answers_database != db_name)
-        {
-            engine_filter_answers.clear();
-            engine_filter_answers_database = db_name;
-        }
-
+        /// Nothing is remembered where the predicate reads `table`, since then the answer is this table's alone.
         if (!engine_filter_reads_table)
+        {
+            /// The answer holds for one database, not for the server: the predicate may read `database` too, and
+            /// the session's temporary tables report an empty one. So the memo goes with the database it was
+            /// built for.
+            if (engine_filter_answers_database != db_name)
+            {
+                engine_filter_answers.clear();
+                engine_filter_answers_database = db_name;
+            }
+
             if (const auto answered = engine_filter_answers.find(engine_name); answered != engine_filter_answers.end())
                 return answered->second;
+        }
 
         auto database_column = ColumnString::create();
         database_column->insert(db_name);
@@ -424,6 +427,9 @@ private:
     std::unordered_map<String, bool> engine_filter_answers;
     TablesFilter table_name_hint;
     ContextPtr context;
+    /// Taken once: the same object for the query's lifetime, and `generate()` asks it per database and per table.
+    /// Declared after `context`, which its initializer reads.
+    std::shared_ptr<const ContextAccessWrapper> access;
     const bool require_datalake_metadata_access;
     Tables external_tables;
     Tables::const_iterator external_tables_it;
@@ -460,6 +466,8 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
+    /// Held, not read: the source outlives `readImpl`, and this keeps the storage it was made from alive for
+    /// that long, as the other system tables' reading steps do.
     std::shared_ptr<StorageSystemTableSettings> storage;
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
@@ -522,6 +530,8 @@ void StorageSystemTableSettings::readImpl(
     ContextPtr context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t max_block_size,
+    /// One source: the databases are walked in order and a cursor carries the place across blocks, so there is
+    /// nothing to split. Reading one table's settings is not the expensive part; walking the catalog is.
     size_t /* num_streams */)
 {
     storage_snapshot->check(column_names);
