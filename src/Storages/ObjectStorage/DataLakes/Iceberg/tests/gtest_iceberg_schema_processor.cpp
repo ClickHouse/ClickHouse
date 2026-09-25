@@ -245,7 +245,7 @@ TEST(IcebergSchemaProcessor, ManifestSchemaWithNewIdRegistersNormally)
     IcebergSchemaProcessor processor;
     EXPECT_NO_THROW(processor.addIcebergTableSchema(
         from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true));
-    EXPECT_TRUE(processor.hasClickHouseTableSchemaById(5));
+    EXPECT_TRUE(processor.hasClickhouseTableSchemaById(5));
 }
 
 /// The maintenance entrypoints (`remove_orphan_files`, `expire_snapshots`, manifest compaction) can
@@ -325,7 +325,7 @@ TEST(IcebergSchemaProcessor, ConflictingManifestHeadersWithoutMetadataSchemaReje
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION);
     }
-    EXPECT_TRUE(processor.hasClickHouseTableSchemaById(0));
+    EXPECT_TRUE(processor.hasClickhouseTableSchemaById(0));
     EXPECT_EQ(processor.getClickhouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
 }
 
