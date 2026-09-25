@@ -158,8 +158,10 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
 /// A declared column type is recorded in the object's definition and rebuilt when the server starts,
 /// on a thread that has no session. A state whose feature gate only a session can answer would make
 /// the object unloadable, so declaring one is refused here. Does nothing when `database_name` names a
-/// database that keeps definitions in memory only, since nothing rebuilds those.
-void checkAggregateFunctionStatesCanBeStored(const NamesAndTypesList & names_and_types, const String & database_name);
+/// database that keeps definitions in memory only, since nothing rebuilds those. A replayed definition
+/// is left alone too, because its author already answered the question.
+void checkAggregateFunctionStatesCanBeStored(
+    const NamesAndTypesList & names_and_types, const String & database_name, const ContextPtr & context);
 
 /// Rejects a `SETTINGS` name that is neither a setting of this engine nor a query setting. Judges only a fresh definition.
 void checkStorageSettingNames(const StorageFactory::Arguments & args);

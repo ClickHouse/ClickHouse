@@ -49,6 +49,22 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 }
 
 
+/// Whether the definition being validated is replayed rather than judged here. A check whose answer
+/// depends on this server's configuration must not run on a replay: the answer can differ from the
+/// author's, and a secondary refusing one retries its queue entry forever.
+static bool isReplayedDefinition(const ContextPtr & context)
+{
+    const auto metadata_txn = context->getZooKeeperMetadataTransaction();
+    if (metadata_txn && !metadata_txn->isInitialQuery())
+        return true;
+#if CLICKHOUSE_CLOUD
+    if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
+        return true;
+#endif
+    return context->isRecoveryFromStoredMetadata();
+}
+
+
 /// An object whose definition is never written to disk is never rebuilt, so a gate that asks what a
 /// future server startup could reconstruct does not apply to it. `DatabaseMemory` keeps definitions in
 /// memory only, and the database that holds temporary tables is one of those.
@@ -80,9 +96,10 @@ static void checkAggregateFunctionStatesInType(const DataTypePtr & type)
 }
 
 
-void checkAggregateFunctionStatesCanBeStored(const NamesAndTypesList & names_and_types, const String & database_name)
+void checkAggregateFunctionStatesCanBeStored(
+    const NamesAndTypesList & names_and_types, const String & database_name, const ContextPtr & context)
 {
-    if (!definitionIsRebuiltOnStartup(database_name))
+    if (isReplayedDefinition(context) || !definitionIsRebuiltOnStartup(database_name))
         return;
 
     for (const auto & elem : names_and_types)
@@ -100,16 +117,7 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
     /// Each term marks a definition this server did not judge: `attach` outranks `secondary` in
     /// `LoadingStrictnessLevel`, Keeper recovery carries no metadata transaction, and Shared Catalog
     /// secondaries re-execute the initiator's DDL. A secondary refusing one retries its queue entry forever.
-    const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay
-        = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-    if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_ddl_replay
-        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay)
+    if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || isReplayedDefinition(local_context))
         return;
 
     /// A name that is neither a setting of this engine nor a query setting of this context is no setting at
@@ -181,8 +189,10 @@ StoragePtr StorageFactory::get(
     bool has_engine_args = false;
 
     /// A temporary CREATE carries no database name at all, so it cannot be classified by database.
-    if (!query.isTemporary())
-        checkAggregateFunctionStatesCanBeStored(columns.getAll(), query.getDatabase());
+    /// Only a definition this server is given now is judged; `isFreshTableDefinition` is the same
+    /// test the engine-settings check below applies.
+    if (!query.isTemporary() && isFreshTableDefinition(mode, query.attach_short_syntax))
+        checkAggregateFunctionStatesCanBeStored(columns.getAll(), query.getDatabase(), local_context);
 
     if (query.is_ordinary_view)
     {

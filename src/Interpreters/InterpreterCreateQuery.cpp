@@ -2327,7 +2327,7 @@ void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode,
     {
         checkAllTypesAreAllowedInTable(metadata_snapshot->getColumns().getAll());
         checkAggregateFunctionStatesCanBeStored(
-            metadata_snapshot->getColumns().getAll(), storage.getStorageID().database_name);
+            metadata_snapshot->getColumns().getAll(), storage.getStorageID().database_name, context);
     }
 
     if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
