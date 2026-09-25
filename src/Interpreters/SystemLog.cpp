@@ -1096,7 +1096,8 @@ void SystemLog<LogElement>::prepareUnionTable()
                     " `create_union_system_log_tables` feature, so it may contain data. Drop or rename it"
                     " to let the union table be created at the next flush of the log.\nExisting definition: {}",
                     union_table_id.getNameForLogs(),
-                    existing_create_query);
+                    /// The table is user-owned and may use a secret-bearing engine or table function.
+                    existing_create_query_ast->formatForLogging());
                 /// This is a recoverable state, unlike `union_table_broken`: the check is not repeated
                 /// (and the warning is not written again) while the user table is in place, but as soon
                 /// as the name becomes free, the union table is created at the next flush.
@@ -1108,7 +1109,7 @@ void SystemLog<LogElement>::prepareUnionTable()
                 log,
                 "Existing table {} has an obsolete or different definition. Recreating it.\nOld: {}\nNew: {}\n.",
                 union_table_id.getNameForLogs(),
-                existing_create_query,
+                existing_create_query_ast->formatForLogging(),
                 union_create_query);
         }
         else
