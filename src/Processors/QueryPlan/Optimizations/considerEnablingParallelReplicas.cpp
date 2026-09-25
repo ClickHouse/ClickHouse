@@ -3,6 +3,7 @@
 #include <Core/Joins.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -926,6 +927,26 @@ void considerEnablingParallelReplicas(
     )
     {
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(single_replica_plan_node_hash, rows_to_read);
+
+        /// A replica whose partial aggregation uses memory-bound merging sorts its output by the group
+        /// by keys before sending it, while this plan, which the sample is taken from, leaves it in
+        /// hash-table order. The sample has to be priced in the replica's order, so tell the updater to
+        /// sort it.
+        ///
+        /// The decision is read off the step that will actually run on the replicas rather than
+        /// reconstructed from the settings, because the two parallel-replicas implementations turn bucket
+        /// order on under different conditions: the query-based one via the `Planner` (`WithMergeableState`
+        /// plus either `distributed_aggregation_memory_efficient` or
+        /// `enable_memory_bound_merging_of_aggregation_results`), the plan-based one in
+        /// `applyParallelReplicas` (`distributed_aggregation_memory_efficient` alone). Only the replica's
+        /// own step knows which of the two built it.
+        const auto * replicas_aggregating = typeid_cast<const AggregatingStep *>(final_node_in_replica_plan->step.get());
+        const auto * local_aggregating
+            = typeid_cast<const AggregatingStep *>(corresponding_node_in_single_replica_plan->step.get());
+        if (replicas_aggregating && local_aggregating && replicas_aggregating->memoryBoundMergingWillBeUsed()
+            && !local_aggregating->memoryBoundMergingWillBeUsed())
+            updater->setReplicasSendOutputInKeyOrder();
+
         source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         /// Share the updater with the lazy half of the same read so its bytes land in the same

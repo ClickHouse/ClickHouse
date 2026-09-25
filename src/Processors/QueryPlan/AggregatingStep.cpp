@@ -18,6 +18,7 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -632,6 +633,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.resize(new_merge_threads);
 
             const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
+            /// When this merge does not sort but the replicas' does, the sample it feeds to the updater is
+            /// priced in the replicas' row order all the same - see `setReplicasSendOutputInKeyOrder`,
+            /// which `considerEnablingParallelReplicas` sets from the plan the replicas will run.
             pipeline.addSimpleTransform(
                 [&](const SharedHeader &)
                 { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description, dataflow_cache_updater); });

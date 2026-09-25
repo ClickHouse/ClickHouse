@@ -19,6 +19,7 @@
 #include <base/memcmpSmall.h>
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -315,15 +316,22 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
                     chassert(place);
                     if (it++ % period == 0)
                     {
-                        is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
-                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                        is_simple_count ? writeVarUInt(getInlineCountState(place), wbuf)
+                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wbuf);
                     }
                     /// A hundred samples should be enough to get a good estimate.
                     return it < 100 * period;
                 });
 
             wbuf.finalize();
-            res += it ? static_cast<size_t>(table.size() * wb.count() / ((it + period - 1) / period)) : 0;
+            /// `wb.count()` also carries the per-frame checksum and header, which the scaling below would
+            /// multiply by the sampling period - on a hundred cheap states (a `count` state is a varint)
+            /// that fixed cost outweighs the states themselves. The replicas write their states into full
+            /// blocks, where it is amortized away, so charge only the compressed payload.
+            const size_t frames = (wbuf.count() + DBMS_DEFAULT_BUFFER_SIZE - 1) / DBMS_DEFAULT_BUFFER_SIZE;
+            const size_t frame_overhead = frames * (sizeof(CityHash_v1_0_2::uint128) + COMPRESSED_BLOCK_HEADER_SIZE);
+            const size_t payload = wb.count() > frame_overhead ? wb.count() - frame_overhead : 0;
+            res += it ? static_cast<size_t>(table.size() * payload / ((it + period - 1) / period)) : 0;
         }
         return res;
     };
@@ -342,10 +350,12 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
         {
             NullWriteBuffer wb;
             CompressedWriteBuffer wbuf(wb);
-            is_simple_count ? writeVarUInt(getCountState(result.without_key), wb)
-                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
+            is_simple_count ? writeVarUInt(getCountState(result.without_key), wbuf)
+                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wbuf);
             wbuf.finalize();
-            res += wb.count();
+            /// One state, one frame: charge the payload, as above.
+            const size_t frame_overhead = sizeof(CityHash_v1_0_2::uint128) + COMPRESSED_BLOCK_HEADER_SIZE;
+            res += wb.count() > frame_overhead ? wb.count() - frame_overhead : 0;
         }
         return res;
     }
