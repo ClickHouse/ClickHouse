@@ -49,3 +49,10 @@ a String value type compares exactly, so a zero byte still prunes
 a non-default FixedString constant still prunes
 0
 1
+absent map key against a set of another type
+3
+3
+3
+3
+0
+1
