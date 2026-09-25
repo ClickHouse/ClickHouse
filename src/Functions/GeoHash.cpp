@@ -1,11 +1,17 @@
 #include <array>
 #include <base/defines.h>
 #include <cmath>
+#include <Common/Exception.h>
 #include <Functions/GeoHash.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -225,7 +231,11 @@ void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * lo
     for (size_t i = 0; i < precision; ++i)
     {
         const uint8_t c = static_cast<uint8_t>(encoded_string[i]);
-        bits = (bits << BITS_PER_SYMBOL) | (geohash_base32_decode_lookup_table[c] & 0x1F);
+        const uint8_t decoded = geohash_base32_decode_lookup_table[c];
+        if (decoded == 0xFF)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid character '{}' in geohash", encoded_string[i]);
+
+        bits = (bits << BITS_PER_SYMBOL) | (decoded & 0x1F);
     }
 
     /// Longitude takes the even bit positions counting from the most significant, latitude the odd ones.
