@@ -293,6 +293,10 @@ struct AggregateProjectionInfo
     Names keys;
     AggregateDescriptions aggregates;
 
+    /// The block the projection's parts store. `projection->metadata`, which the projection read is
+    /// built from, is derived from it, so it holds the real type of every stored aggregate state.
+    Block sample_block;
+
     /// A context copy from interpreter which was used for analysis.
     /// Just in case it is used by some function.
     ContextPtr context;
@@ -327,6 +331,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     info.before_aggregation = analysis_result.before_aggregation->dag.clone();
     info.keys = query_analyzer->aggregationKeys().getNames();
     info.aggregates = query_analyzer->aggregates();
+    info.sample_block = projection.sample_block;
 
     /// Add part/partition virtual columns to projection aggregation keys.
     /// We can do it because projection is stored for every part separately.
@@ -344,6 +349,8 @@ struct AggregateFunctionMatch
 {
     const AggregateDescription * description = nullptr;
     DataTypes argument_types;
+    /// Type of the state column the projection stores for `description->column_name`.
+    DataTypePtr projection_column_type;
 };
 
 using AggregateFunctionMatches = std::vector<AggregateFunctionMatch>;
@@ -393,6 +400,12 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
             if (!candidate.function->getStateType()->equals(*aggregate.function->getStateType()))
                 continue;
 
+            /// The check above compares NORMALIZED state types, so a candidate can match while its
+            /// own parameters (hence its stored state type) differ from the query aggregate's.
+            const auto * projection_column = info.sample_block.findByName(candidate.column_name);
+            if (!projection_column)
+                continue;
+
             /// This is a special case for the function count().
             /// We can assume that 'count(expr) == count()' if expr is not nullable,
             /// which can be verified by simply casting to `AggregateFunctionCount *`.
@@ -401,7 +414,7 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
             {
                 /// we can ignore arguments for count()
                 found_match = true;
-                res.push_back({&candidate, DataTypes()});
+                res.push_back({&candidate, DataTypes(), projection_column->type});
                 break;
             }
 
@@ -443,7 +456,7 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                 continue;
 
             found_match = true;
-            res.push_back({&candidate, std::move(argument_types)});
+            res.push_back({&candidate, std::move(argument_types), projection_column->type});
             break;
         }
 
@@ -472,7 +485,7 @@ static void appendAggregateFunctions(
 
         auto & input = inputs[match.description];
         if (!input)
-            input = &proj_dag.addInput(match.description->column_name, type);
+            input = &proj_dag.addInput(match.description->column_name, match.projection_column_type);
 
         const auto * node = input;
 
