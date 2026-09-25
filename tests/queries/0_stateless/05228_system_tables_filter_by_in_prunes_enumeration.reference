@@ -1,0 +1,30 @@
+t_a
+t_a
+t_a
+t_a
+t_a
+t_a
+t_a
+t_a
+t_a
+t_a
+t_a
+1	t_a
+1	t_a
+1	t_a
+0	t_a
+-- tables enumerated
+parts in subquery	1
+parts_columns in subquery	1
+projection_parts in subquery	1
+columns in subquery	1
+constraints in subquery	1
+data_skipping_indices in subquery	1
+projections in subquery	1
+tables in subquery	2
+parts in subquery control	3
+columns in subquery control	3
+tables in subquery control	4
+parts tuple	1
+tables tuple	2
+tables tuple control	4

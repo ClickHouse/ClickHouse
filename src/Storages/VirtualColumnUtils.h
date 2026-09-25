@@ -55,6 +55,13 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 /// check the result.
 bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
+/// The same, but a set built from a subquery keeps its explicit elements when
+/// `use_index_for_in_with_subqueries` allows it (the way `buildOrderedSetsForDAG` builds it), so a
+/// condition on the set can still be read back afterwards - `extractConstantStringValuesForColumn`
+/// finds nothing in a set built without them. When the setting forbids that, the sets are built
+/// the plain way and stay ready for the filter to run.
+void buildSetsForDAGKeepingElements(const ActionsDAG & dag, const ContextPtr & context);
+
 /// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
 /// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
 /// Those sets need external tables set up by ReadFromRemote before they can be built.
@@ -109,6 +116,24 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
     const NamesAndTypesList & virtual_columns,
     const ContextPtr & context,
     const NamesAndTypesList & hive_columns = {});
+
+/// If `predicate` pins the String column read through `column_node` down to a finite set of
+/// constant values, return that set. This covers `col = 'x'`, `col IN ('x', 'y')`, `IN` over a
+/// prepared set, and conjunctions and disjunctions of those; it gives up (returns `nullopt`)
+/// when the column is left open-ended - no predicate on it, a range comparison, a `LIKE`, a
+/// `NOT IN`, or more than `limit` values.
+///
+/// The result is an over-approximation: every row that can pass `predicate` has its value of
+/// the column in the returned set, but a returned value need not match any row. So it is only
+/// good for pruning an enumeration - looking the candidates up directly instead of walking
+/// everything - and the caller must still apply the real filter to what it enumerated. An
+/// empty set means the predicate cannot be satisfied at all.
+std::optional<Strings> extractConstantStringValues(
+    const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit);
+
+/// Same, for the column read through the `predicate`'s input named `column_name`.
+std::optional<Strings> extractConstantStringValuesForColumn(
+    const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit);
 
 /// Extracts constant values expected for `_path` input from the query filter DAG.
 std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit);

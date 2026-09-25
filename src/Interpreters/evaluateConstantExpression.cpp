@@ -625,62 +625,122 @@ namespace
         if (!set || !set->hasExplicitSetElements())
             return {};
 
-        const auto * node = findMatch(key, matches);
-        if (!node)
-            return {};
-
         auto elements = set->getSetElements();
         auto types = set->getElementsTypes();
-
-        ColumnPtr column;
-        DataTypePtr type;
         if (elements.empty())
             return {};
-        if (elements.size() == 1)
+
+        /// The values a component of the key takes, row by row, aligned with the set's elements.
+        struct Component
         {
-            column = elements[0];
-            type = types[0];
+            const ActionsDAG::Node * node;
+            ColumnPtr column;
+            const NullMap * null_map = nullptr;
+        };
+        std::vector<Component> components;
+
+        if (const auto * node = findMatch(key, matches))
+        {
+            /// The whole key is one of the expressions: a single column, or the tuple itself.
+            ColumnPtr column;
+            DataTypePtr type;
+            if (elements.size() == 1)
+            {
+                column = elements[0];
+                type = types[0];
+            }
+            else
+            {
+                column = ColumnTuple::create(std::move(elements));
+                type = std::make_shared<DataTypeTuple>(std::move(types));
+            }
+            components.push_back({node, std::move(column), nullptr});
+            types = {std::move(type)};
+        }
+        else if (key->type == ActionsDAG::ActionType::FUNCTION
+            && key->function_base->getName() == "tuple"
+            && key->children.size() == elements.size())
+        {
+            /// `(a, b) IN ((1, 'x'), (2, 'y'))` pins each expression among `a`, `b` to the values of
+            /// the element column at the same position. A component that is not one of the
+            /// expressions is left out: the values of the others stay a superset of what the
+            /// condition allows, which is all the caller needs.
+            DataTypes component_types;
+            for (size_t i = 0; i < key->children.size(); ++i)
+            {
+                if (const auto * component_node = findMatch(key->children[i], matches))
+                {
+                    components.push_back({component_node, elements[i], nullptr});
+                    component_types.push_back(types[i]);
+                }
+            }
+            if (components.empty())
+                return {};
+            types = std::move(component_types);
         }
         else
         {
-            column = ColumnTuple::create(std::move(elements));
-            type = std::make_shared<DataTypeTuple>(std::move(types));
+            return {};
         }
 
-        if (column->size() > max_elements)
+        size_t num_rows = components[0].column->size();
+        if (num_rows > max_elements)
             return {};
 
-        ColumnPtr cast_col;
-        const NullMap * null_map = nullptr;
-
-        if (!type->equals(*node->result_type))
+        for (size_t i = 0; i < components.size(); ++i)
         {
-            cast_col = tryCastColumn(column, type, node->result_type);
+            auto & component = components[i];
+            if (types[i]->equals(*component.node->result_type))
+                continue;
+
+            auto cast_col = tryCastColumn(component.column, types[i], component.node->result_type);
             if (!cast_col)
                 return {};
             const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);
-            null_map = &col_nullable.getNullMapData();
-            column = col_nullable.getNestedColumnPtr();
+            component.null_map = &col_nullable.getNullMapData();
+            component.column = col_nullable.getNestedColumnPtr();
         }
 
         DisjunctionList res;
-        if (node->result_type->isNullable() && set->hasNull())
+        if (set->hasNull())
         {
-            auto col_null = node->result_type->createColumnConst(1, Field());
-            res.push_back({ConjunctionMap{{node, {std::move(col_null), node->result_type, node->result_name}}}});
+            /// A NULL in the set matches nothing, but keep it as a variant for a Nullable key so a
+            /// caller that evaluates the variants sees the same NULL the condition mentions.
+            ConjunctionMap null_variant;
+            for (const auto & component : components)
+            {
+                if (component.node->result_type->isNullable())
+                {
+                    auto col_null = component.node->result_type->createColumnConst(1, Field());
+                    null_variant.emplace(component.node, ColumnWithTypeAndName{std::move(col_null), component.node->result_type, component.node->result_name});
+                }
+            }
+            if (!null_variant.empty())
+                res.push_back(std::move(null_variant));
         }
 
-        size_t num_rows = column->size();
         for (size_t row = 0; row < num_rows; ++row)
         {
-            if (null_map && (*null_map)[row])
+            ConjunctionMap variant;
+            bool has_null = false;
+            for (const auto & component : components)
+            {
+                if (component.null_map && (*component.null_map)[row])
+                {
+                    has_null = true;
+                    break;
+                }
+
+                auto innder_column = component.node->result_type->createColumn();
+                innder_column->insert((*component.column)[row]);
+                auto column_const = ColumnConst::create(std::move(innder_column), 1);
+
+                variant.emplace(component.node, ColumnWithTypeAndName{std::move(column_const), component.node->result_type, component.node->result_name});
+            }
+            if (has_null)
                 continue;
 
-            auto innder_column = node->result_type->createColumn();
-            innder_column->insert((*column)[row]);
-            auto column_const = ColumnConst::create(std::move(innder_column), 1);
-
-            res.push_back({ConjunctionMap{{node, {std::move(column_const), node->result_type, node->result_name}}}});
+            res.push_back(std::move(variant));
         }
 
         return res;
