@@ -238,7 +238,6 @@ private:
         }
 
         /// Scale the histogram to the range [0, BAR_LEVELS]
-#pragma clang loop vectorize(disable) /// Workaround for a bug in clang-23
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
