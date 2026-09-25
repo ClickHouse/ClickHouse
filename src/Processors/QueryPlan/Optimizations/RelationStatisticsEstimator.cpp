@@ -347,7 +347,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                     addTransformation(stats.column_stats, RowSubset);
                 if (has_unsupported_value_changes)
                     addTransformation(stats.column_stats, Unsupported);
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", ::DB::dumpRelationStatsForLogs(stats));
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
                 return persistentRelationStats(std::move(stats));
             }
         }
