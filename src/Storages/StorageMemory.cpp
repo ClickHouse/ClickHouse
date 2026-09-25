@@ -408,7 +408,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     for (const auto & buffer : new_data->blocks)
     {
         new_data->rows += buffer.rows();
-        new_data->bytes += buffer.bytes();
+        new_data->bytes += buffer.allocatedBytes();
     }
     data.set(std::move(new_data));
 }
@@ -693,7 +693,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
                 new_blocks.push_back(std::move(block));
             }
 
-            new_bytes += new_blocks.back().bytes();
+            new_bytes += new_blocks.back().allocatedBytes();
             new_rows += new_blocks.back().rows();
         }
     }
