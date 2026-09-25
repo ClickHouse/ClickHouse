@@ -1,0 +1,20 @@
+a NULL in a later granule
+2
+(10,1)
+(500,7)
+2
+1
+without the primary key
+2
+2
+a NULL in the first granule
+3
+2
+the key column in the partition key
+2
+2
+1
+the key column in the partition key, not loaded in memory
+2
+2
+1
