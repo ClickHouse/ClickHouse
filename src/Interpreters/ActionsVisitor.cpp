@@ -60,6 +60,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -205,6 +206,7 @@ ColumnsWithTypeAndName createBlockForSet(
     GetSetElementParams params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
+        .format_settings = getFormatSettings(context),
     };
 
     /// Reuse the analyzer logic
@@ -223,6 +225,7 @@ ColumnsWithTypeAndName createBlockForSet(
     GetSetElementParams params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
+        .format_settings = getFormatSettings(context),
     };
 
     auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(right_arg, context);

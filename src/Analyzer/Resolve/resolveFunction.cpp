@@ -44,6 +44,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/misc.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/grouping.h>
@@ -3322,6 +3323,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+                    .format_settings = getFormatSettings(scope.context),
                 });
 
 

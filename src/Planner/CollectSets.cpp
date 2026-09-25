@@ -13,6 +13,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/misc.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Set.h>
@@ -97,6 +98,7 @@ public:
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+                    .format_settings = getFormatSettings(planner_context.getQueryContext()),
                 });
 
             if (set.empty())

@@ -1,6 +1,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -746,6 +747,33 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertFieldToTypeImpl(
                 enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
 
+        /// Every other known source type is rendered with its own text serialization, so that a set
+        /// built for `IN` holds what `CAST(x AS String)` produces. `FieldVisitorToString` below writes
+        /// a query literal instead, which for several types is not the value's text at all: a `Date`
+        /// comes out as its day number, a `Float64` as `1.`, and a `UUID` or an `IPv4` carries the
+        /// quote characters of the literal inside the string.
+        if (unwrapped_hint)
+        {
+            auto column = unwrapped_hint->createColumn();
+            if (column->tryInsert(src))
+            {
+                /// `CAST(x AS String)` writes numbers, decimals, dates and times with fixed text
+                /// (`FormatImpl` in `FunctionsConversion.h`), so `date_time_output_format` or
+                /// `decimal_trailing_zeros` do not apply to them, and it serializes every other type
+                /// with the query's format settings, so `bool_true_representation` does apply. Mirror
+                /// that split, or the set would hold a text that `CAST` never produces.
+                static const FormatSettings fixed_text_format_settings;
+                WhichDataType which_hint(*unwrapped_hint);
+                bool fixed_text = (which_hint.isNumber() && unwrapped_hint->getName() != "Bool")
+                    || which_hint.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64();
+
+                WriteBufferFromOwnString out;
+                unwrapped_hint->getDefaultSerialization()->serializeText(
+                    *column, 0, out, fixed_text ? fixed_text_format_settings : format_settings);
+                return convertFieldToTypeImpl(out.str(), type, nullptr, format_settings, strict, convert_inexact_floats);
+            }
+        }
+
         return applyVisitor(FieldVisitorToString(), src);
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
@@ -756,11 +784,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             size_t src_arr_size = src_arr.size();
 
             const auto & element_type = *(type_array->getNestedType());
+            /// Pass the source element type down, so that an element rendered to `String` is written as
+            /// `CAST` writes it (`[toDate('2020-01-01')]` to `Array(String)` gives `['2020-01-01']`).
+            const auto * array_hint = typeid_cast<const DataTypeArray *>(from_type_hint);
+            const IDataType * element_hint = array_hint ? array_hint->getNestedType().get() : nullptr;
             bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_arr[i], element_type, element_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -787,12 +819,18 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     dst_tuple_size,
                     src_tuple_size);
 
+            /// Pass the source element types down, see the comment for arrays above.
+            const auto * tuple_hint = typeid_cast<const DataTypeTuple *>(from_type_hint);
+            if (tuple_hint && tuple_hint->getElements().size() != src_tuple_size)
+                tuple_hint = nullptr;
+
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                const IDataType * element_hint = tuple_hint ? tuple_hint->getElements()[i].get() : nullptr;
+                res[i] = convertFieldToType(src_tuple[i], element_type, element_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -968,6 +1006,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
 
+            /// Pass the source key and value types down, see the comment for arrays above.
+            const auto * map_hint = typeid_cast<const DataTypeMap *>(from_type_hint);
+            const IDataType * key_hint = map_hint ? map_hint->getKeyType().get() : nullptr;
+            const IDataType * value_hint = map_hint ? map_hint->getValueType().get() : nullptr;
+
             const auto & map = src.safeGet<Map>();
             size_t map_size = map.size();
 
@@ -984,12 +1027,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, key_hint, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, value_hint, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
