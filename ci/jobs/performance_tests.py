@@ -25,6 +25,7 @@ from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
 )
+from ci.jobs.scripts.perf import s3_service
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -2140,6 +2141,26 @@ def main():
 
     test_keyword = args.test
 
+    # Selected up front (after the release_base vintage checkout above): Configure needs the list for the S3 decision.
+    test_files = [
+        file for file in os.listdir("./tests/performance/") if file.endswith(".xml")
+    ]
+    # TODO: in PRs filter test files against changed files list if only tests has been changed
+    # changed_files = info.get_custom_data("changed_files")
+    if test_keyword:
+        test_files = [file for file in test_files if test_keyword in file]
+    else:
+        test_files = test_files[batch_num::total_batches]
+    print(f"Job Batch: [{batch_num}/{total_batches}]")
+    print(f"Test Files ({len(test_files)}): [{test_files}]")
+    assert test_files
+
+    # Content-based, so naturally off for release_base vintages that predate the S3 tests and for shards without them.
+    needs_s3 = any(
+        s3_service.test_requires_s3(f"./tests/performance/{file}")
+        for file in test_files
+    )
+
     ch_path = args.ch_path
     assert (
         Path(ch_path + "/clickhouse").is_file()
@@ -2388,6 +2409,24 @@ def main():
         # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
         commands += iceberg_database_ddl_commands(perf_left)
         commands += iceberg_database_ddl_commands(perf_right)
+
+        if needs_s3:
+
+            def start_s3():
+                # The log lands under perf_wd, so logs.tar.zst picks it up.
+                return s3_service.ensure(f"{perf_wd}/s3_server.log")
+
+            # After the right->left `cp -rv` above: the overrides are the only per-server config delta.
+            def write_s3_side_overrides():
+                s3_service.write_side_override(perf_left_config, "left")
+                s3_service.write_side_override(perf_right_config, "right")
+                return True
+
+            commands += [start_s3, write_s3_side_overrides]
+        else:
+            print(
+                "No selected test uses the job-local S3 endpoint - skip its provisioning"
+            )
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
 
@@ -2461,18 +2500,7 @@ def main():
 
     if res and JobStages.TEST in stages:
         print("Tests")
-        test_files = [
-            file for file in os.listdir("./tests/performance/") if file.endswith(".xml")
-        ]
-        # TODO: in PRs filter test files against changed files list if only tests has been changed
-        # changed_files = info.get_custom_data("changed_files")
-        if test_keyword:
-            test_files = [file for file in test_files if test_keyword in file]
-        else:
-            test_files = test_files[batch_num::total_batches]
-        print(f"Job Batch: [{batch_num}/{total_batches}]")
-        print(f"Test Files ({len(test_files)}): [{test_files}]")
-        assert test_files
+        # test_files was selected at the start of the job, where the S3 provisioning decision needs it.
 
         def cleanup_user_files():
             # Tests can write into user_files (INSERT INTO FUNCTION file(...)) and nothing else removes those files.
@@ -2861,6 +2889,10 @@ def main():
                 results=check_sub_results,
             )
         )
+
+    # Only after Report: its confirm_changes step reruns flagged queries, which may read the object store.
+    if needs_s3:
+        s3_service.stop()
 
     files_to_attach = []
     if res:

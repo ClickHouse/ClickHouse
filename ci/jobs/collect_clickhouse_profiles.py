@@ -27,6 +27,7 @@ from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
 )
+from ci.jobs.scripts.perf import s3_service
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -406,6 +407,11 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
         # profiles. Skip them here (logged, never silently dropped).
         if test_has_shell_query(f"{repo_path}/tests/performance/{test_file}"):
             print(f"  Skipping {test_name}: shell-script query test, not used for profile collection")
+            continue
+        # This job provisions no S3 endpoint, so tests using the `perf_s3` collection cannot work here.
+        # TODO: opt into S3 coverage by provisioning the endpoint via s3_service.ensure and dropping this skip.
+        if s3_service.test_requires_s3(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: uses the job-local S3 endpoint, which profile collection does not provision")
             continue
         remaining = deadline - time.monotonic()
         if remaining <= 0:

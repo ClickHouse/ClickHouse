@@ -1,0 +1,12 @@
+<!-- The job-local S3 endpoint for performance tests, provisioned by ci/jobs/scripts/perf/s3_service.py. -->
+<!-- The perf job overrides <url> per server (left/right namespaces): identical DDL on both servers, isolated writes. -->
+<!-- The `local` namespace is the default for single-server runs; values follow setup_seaweedfs.sh conventions. -->
+<clickhouse>
+    <named_collections>
+        <perf_s3>
+            <url>http://localhost:11111/test/perf/local/</url>
+            <access_key_id>clickhouse</access_key_id>
+            <secret_access_key>clickhouse</secret_access_key>
+        </perf_s3>
+    </named_collections>
+</clickhouse>
