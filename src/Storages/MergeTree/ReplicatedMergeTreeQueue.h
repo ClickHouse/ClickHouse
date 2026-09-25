@@ -440,7 +440,7 @@ public:
     using SelectedEntryPtr = std::shared_ptr<SelectedEntry>;
     SelectedEntryPtr selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
 
-    /// Undo what selecting the entry booked. Only valid while nothing has run it, i.e. after a refusal.
+    /// Only valid while nothing has run the entry, i.e. after a refusal.
     void rollbackAttemptForRejectedEntry(const SelectedEntryPtr & selected_entry);
 
     /** Execute `func` function to handle the action.

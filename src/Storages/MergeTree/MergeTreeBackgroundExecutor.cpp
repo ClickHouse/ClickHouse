@@ -189,7 +189,6 @@ size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
 template <class Queue>
 bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 {
-    /// Test hook: behave as a saturated pool without filling it, to exercise callers' rejection handling.
     fiu_do_on(FailPoints::mt_background_executor_pretend_busy, { return false; });
 
     LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);

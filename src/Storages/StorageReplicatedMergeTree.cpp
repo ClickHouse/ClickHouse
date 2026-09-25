@@ -4415,8 +4415,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     if (schedule())
         return true;
 
-    /// Nothing will run this entry, so release what selecting it booked. The roll-back has to precede
-    /// the event, so that an observed increment means the release is already visible.
+    /// Roll back before publishing the event, so an observed increment implies the release is visible.
     queue.rollbackAttemptForRejectedEntry(selected_entry);
     ProfileEvents::increment(ProfileEvents::ReplicatedQueueScheduleRejections);
     return false;
