@@ -1,5 +1,6 @@
 #include <Analyzer/Resolve/FunctionCompositionRewrite.h>
 
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
@@ -193,7 +194,8 @@ void collectProjectionNames(const QueryTreeNodePtr & node, BoundNames & bound_na
 }
 
 /// The names a join tree binds: the aliases of its table expressions, which are qualifiers only,
-/// and the columns exposed by the subqueries it selects from, which bind a bare identifier. The
+/// and the columns exposed by the subqueries it selects from and the aliases of `ARRAY JOIN`
+/// expressions, which bind a bare identifier. The
 /// columns of a real table cannot be known here — that needs the catalog — which is the
 /// conservative case documented at `subqueryReferencesIdentifier`.
 void collectNamesBoundInJoinTree(const QueryTreeNodePtr & node, BoundNames & bound_names)
@@ -208,6 +210,20 @@ void collectNamesBoundInJoinTree(const QueryTreeNodePtr & node, BoundNames & bou
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
         collectProjectionNames(node, bound_names);
+        return;
+    }
+
+    /// The alias of an `ARRAY JOIN` expression binds a bare expression identifier
+    /// (`IdentifierResolver::tryBindIdentifierToArrayJoinExpressions`), e.g. `ARRAY JOIN [5] AS y`.
+    /// An unaliased `ARRAY JOIN y` is not collected: the joined `y` is itself looked up in this
+    /// scope, so it may be the very outer reference the caller is looking for.
+    if (const auto * array_join_node = node->as<ArrayJoinNode>())
+    {
+        for (const auto & join_expression : array_join_node->getJoinExpressions().getNodes())
+            if (join_expression->hasAlias())
+                bound_names.expressions.insert(join_expression->getAlias());
+
+        collectNamesBoundInJoinTree(array_join_node->getTableExpressionNode(), bound_names);
         return;
     }
 
