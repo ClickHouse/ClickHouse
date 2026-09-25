@@ -18,7 +18,7 @@ histogram(number_of_bins)(values)
 
 The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as new data enters a function. In common case, the widths of bins are not equal.
 
-The result depends on the order of input values when there are more distinct values than `number_of_bins`.
+Bins are merged while data arrives, so once a single aggregation state has received more than `2 * number_of_bins` values, the result depends on the order in which the values are processed. Aggregating the same rows in a different order can therefore produce different bin borders and heights.
 
 **Arguments**
 
