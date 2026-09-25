@@ -1,0 +1,30 @@
+<clickhouse>
+    <async_load_databases>true</async_load_databases>
+    <max_concurrent_queries>0</max_concurrent_queries>
+    <max_waiting_queries>2</max_waiting_queries>
+    <fail_points_active>
+        <database_replicated_startup_pause>false</database_replicated_startup_pause>
+    </fail_points_active>
+    <!-- Present only so that the server creates the "startup ddl worker" load job, which is the one
+         load job that stays PENDING for as long as the startup pause is held. -->
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+    <protocols>
+        <introspection_native>
+            <type>tcp</type>
+            <introspection>true</introspection>
+            <port>9010</port>
+        </introspection_native>
+    </protocols>
+    <remote_servers>
+        <test_shard>
+            <shard>
+                <replica>
+                    <host>node</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_shard>
+    </remote_servers>
+</clickhouse>

@@ -28,6 +28,7 @@ namespace CurrentMetrics
 {
     extern const Metric Query;
     extern const Metric QueryNonInternal;
+    extern const Metric WaitingQuery;
 }
 
 namespace ProfileEvents
@@ -132,6 +133,7 @@ ProcessList::EntryPtr ProcessList::insert(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port;
+    bool is_waiting_limit_exempt = (ast && ast->as<ASTKillQueryQuery>()) || client_info.is_from_introspection_port;
     std::shared_ptr<QueryStatus> query;
 
     // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
@@ -379,6 +381,7 @@ ProcessList::EntryPtr ProcessList::insert(
             settings,
             watch_start_nanoseconds,
             is_internal);
+        query->is_waiting_limit_exempt = is_waiting_limit_exempt;
 
         auto process_it = processes.emplace(
             processes.end(),
@@ -1143,6 +1146,85 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     if (found == query_kind_amounts.end())
         return 0;
     return found->second;
+}
+
+void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
+{
+    const UInt64 limit = status->isWaitingLimitExempt() ? 0 : max_waiting_queries_amount.load();
+    UInt64 value = waiting_queries_amount.load();
+    while (true)
+    {
+        if (limit && value >= limit)
+            throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                            "Too many simultaneous waiting queries. Maximum: {}, waiting: {}",
+                            limit, value);
+        if (waiting_queries_amount.compare_exchange_weak(value, value + 1))
+            break;
+    }
+
+    /// WARNING: do not throw below this point, or the matching `decreaseWaitingQueryAmount` is never called.
+
+    CurrentMetrics::add(CurrentMetrics::WaitingQuery);
+}
+
+void ProcessList::decreaseWaitingQueryAmount(const QueryStatusPtr &)
+{
+    UInt64 value = waiting_queries_amount.load();
+    while (true)
+    {
+        if (value == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount: decrease to negative");
+        if (waiting_queries_amount.compare_exchange_weak(value, value - 1))
+            break;
+    }
+
+    CurrentMetrics::sub(CurrentMetrics::WaitingQuery);
+}
+
+void ProcessList::incrementWaiters(const QueryStatusPtr & status)
+{
+    std::lock_guard lock(status->waiting_mutex);
+    if (status->waiting_threads == 0)
+        increaseWaitingQueryAmount(status);
+    ++status->waiting_threads;
+}
+
+void ProcessList::decrementWaiters(const QueryStatusPtr & status)
+{
+    std::lock_guard lock(status->waiting_mutex);
+    if (status->waiting_threads == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting thread amount: decrease to negative");
+
+    if (--status->waiting_threads == 0)
+        decreaseWaitingQueryAmount(status);
+}
+
+/// Process list and the query to account for, or nullptr when the waiter is not a counted query:
+/// server or `clickhouse-local` startup, an AsyncLoader worker, or an internal query. A query's
+/// process list element does not change, so one wait's increment and decrement always agree.
+static ProcessList * getProcessListForWaitingQuery(QueryStatusPtr & status)
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (!query_context)
+        return nullptr;
+    status = query_context->getProcessListElementSafe();
+    if (!status || status->isInternal())
+        return nullptr;
+    return &query_context->getGlobalContext()->getProcessList();
+}
+
+void onLoadJobWaitersIncrement(const LoadJobPtr &)
+{
+    QueryStatusPtr status;
+    if (auto * process_list = getProcessListForWaitingQuery(status))
+        process_list->incrementWaiters(status);
+}
+
+void onLoadJobWaitersDecrement(const LoadJobPtr &)
+{
+    QueryStatusPtr status;
+    if (auto * process_list = getProcessListForWaitingQuery(status))
+        process_list->decrementWaiters(status);
 }
 
 }

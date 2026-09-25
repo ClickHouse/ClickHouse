@@ -31,6 +31,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -1045,6 +1046,8 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
         base->goals(),
         TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup Replicated database {}", getDatabaseName()),
+        onLoadJobWaitersIncrement,
+        onLoadJobWaitersDecrement,
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
             auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::startupDatabaseAsync");

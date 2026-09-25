@@ -59,6 +59,8 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int ASYNC_LOAD_CANCELED;
 }
 
 namespace ActionLocks
@@ -500,6 +502,20 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     if (query.if_empty)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
+
+    /// The later waits for the database to start cannot be refused: the last of them runs in the
+    /// noexcept `~LoadTask`. A startup that failed for another reason must still leave it droppable.
+    try
+    {
+        database->waitDatabaseStarted();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
+            throw;
+        if (e.code() != ErrorCodes::ASYNC_LOAD_CANCELED)
+            tryLogCurrentException("InterpreterDropQuery", "Async loading failed", LogsLevel::warning);
+    }
 
     if (!truncate && database->hasReplicationThread())
         database->stopReplication();
