@@ -1558,6 +1558,7 @@ static void processStatisticsChanges(
     const ColumnsStatistics & stats_to_recalc,
     const MutationCommands & commands_for_renames,
     const IMergeTreeDataPart & source_part,
+    const NamesAndTypesList & new_part_columns,
     StorageMetadataPtr metadata_snapshot)
 {
     auto storage_settings = source_part.storage.getSettings();
@@ -1608,6 +1609,10 @@ static void processStatisticsChanges(
         for (const auto & [stat_name, stat] : stats_to_recalc)
             all_statistics[stat_name] = stat->cloneEmpty();
     }
+
+    /// A statistic is keyed by a column name, and both statistics loaders resolve a persisted entry
+    /// against the part's own column list, so one for a column this part does not store is unreadable.
+    std::erase_if(all_statistics, [&](const auto & entry) { return !new_part_columns.contains(entry.first); });
 
     /// Remove old statistics files.
     if (isFullPartStorage(source_part.getDataPartStorage()))
@@ -2757,19 +2762,6 @@ private:
 
         auto builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->mutating_pipeline_builder));
 
-        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
-        {
-            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
-            if (!extracting_subcolumns_dag.getNodes().empty())
-                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
-
-            builder->addTransform(std::make_shared<ExpressionTransform>(
-                builder->getSharedHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
-
-            builder->addTransform(std::make_shared<MaterializingTransform>(builder->getSharedHeader()));
-        }
-
         PreparedSets::Subqueries subqueries;
 
         if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
@@ -2796,6 +2788,23 @@ private:
 
         if (!subqueries.empty())
             builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
+
+        /// The primary key and the skip indices are calculated after the TTL transforms, because TTL rewrites the data:
+        /// `TTL ... GROUP BY ... SET` assigns new values to the columns of the aggregated rows, and a column TTL resets
+        /// the expired values to the defaults. Calculating the index expressions before that would write indices
+        /// describing the data of the source part instead of the data of the new part.
+        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
+        {
+            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            if (!extracting_subcolumns_dag.getNodes().empty())
+                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
+
+            builder->addTransform(std::make_shared<ExpressionTransform>(
+                builder->getSharedHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
+
+            builder->addTransform(std::make_shared<MaterializingTransform>(builder->getSharedHeader()));
+        }
 
         bool affects_all_columns = false;
 
@@ -2837,6 +2846,7 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
+            new_part_columns,
             ctx->metadata_snapshot);
 
         /// This task rewrites every column, so all statistics objects were created empty from the
@@ -2962,6 +2972,7 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
+            ctx->new_data_part->getColumns(),
             ctx->metadata_snapshot);
 
         /// This task rewrites only some of the columns and carries the rest over from the source

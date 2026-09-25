@@ -104,10 +104,9 @@ public:
         /// Used for exponential backoff on errors.
         Int64 attempt_number = 0;
 
-        /// Random number in [-1e9, 1e9], for RANDOMIZE FOR. Re-rolled after every refresh attempt.
-        /// (Why write it to keeper instead of letting each replica toss its own coin? Because then refresh would happen earlier
-        /// on average, on the replica that generated the shortest delay. We could use nonuniform distribution to compensate, but this is easier.)
-        Int64 randomness = 0;
+        /// Not used by this version. Replicas running older versions read it as the shared
+        /// RANDOMIZE FOR offset, so it has to keep carrying a random value.
+        Int64 randomness_obsolete = 0;
 
         /// Whether any replica is executing a refresh right now.
         /// May be inaccurate if the replica that's executing refresh lost zookeeper connection for
@@ -127,8 +126,6 @@ public:
 
         /// Znode version. Not serialized.
         int32_t version = -1;
-
-        void randomize(); // assigns `randomness`
 
         String toString() const;
         void parse(const String & data, bool running_znode_exists, const LoggerPtr & log_);
@@ -343,6 +340,11 @@ private:
         std::optional<String> unexpected_error;
         /// The schedule state reached only memory. No refresh until doScheduling saves it.
         bool local_state_save_pending = false;
+
+        /// This replica's RANDOMIZE FOR offset, and what it was drawn for.
+        /// Redrawn when last_completed_timeslot changes.
+        std::chrono::sys_seconds randomness_drawn_for_timeslot {};
+        Int64 randomness = 0;
 
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.
