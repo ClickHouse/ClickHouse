@@ -286,21 +286,21 @@ std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_n
         /// whose first identifier is never ambiguous - so a collection that is missing at load time
         /// (say, after a drop with `check_named_collection_dependencies = 0`) is protected when it is
         /// recreated later.
+        ///
+        /// A single identifier (`Remote(x)`) is a collection reference exactly when a collection with
+        /// that name exists at the moment the engine resolves the arguments, and a cluster name
+        /// otherwise. A lazy proxy resolves them only at its first access, which may happen after the
+        /// collection is created (or recreated after a drop with `check_named_collection_dependencies = 0`),
+        /// so whether the collection exists at load time proves nothing. The dependency is registered
+        /// conservatively: while the proxy is not materialized, a collection with that name is exactly
+        /// what the table will resolve through. If the table has already been materialized as a
+        /// cluster reference, the dependency only makes a same-named collection harder to drop.
         const auto * second_arg = positional_args.size() >= 2 ? positional_args[1]->as<ASTFunction>() : nullptr;
-        if (!second_arg || second_arg->name != "equals")
+        if ((!second_arg || second_arg->name != "equals") && positional_args.size() >= 2)
         {
             /// Anything else is a positional argument list (`Remote(cluster, system, one)`), which
             /// never references a collection.
-            if (positional_args.size() >= 2)
-                return std::nullopt;
-
-            /// A single identifier (`Remote(x)`) is a collection reference exactly when a collection
-            /// with that name exists at this moment, and a cluster name otherwise: the meaning of the
-            /// stored definition itself depends on the namespace here, and the engine resolves it the
-            /// same way at the same moment.
-            NamedCollectionFactory::instance().loadIfNot();
-            if (!NamedCollectionFactory::instance().exists(*collection_name))
-                return std::nullopt;
+            return std::nullopt;
         }
     }
 
