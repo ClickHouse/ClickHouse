@@ -827,8 +827,9 @@ public:
 
     void insertRange(const T * begin, const T * end)
     {
-        size_t count = end - begin;
-        memmove(result_ptr, begin, count * sizeof(T));
+        const size_t count = end - begin;
+        if (count && likely(result_ptr != begin))
+            memmove(result_ptr, begin, count * sizeof(T));
         result_ptr += count;
         container_size += count;
     }
@@ -838,6 +839,9 @@ DECLARE_DEFAULT_CODE(
 template <typename T, typename Inserter, size_t SIMD_ELEMENTS>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Inserter & inserter)
 {
+    static constexpr size_t MIN_RANGE_COPY_LENGTH = 4;
+    static constexpr UInt64 MIN_RANGE_COPY_MASK = (UInt64{1} << MIN_RANGE_COPY_LENGTH) - 1;
+
     while (filt_pos < filt_end_aligned)
     {
         UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
@@ -856,11 +860,47 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
             }
             else
             {
-                while (mask)
+                /// Avoid paying the run-detection cost for fragmented masks. A bit in `run_starts`
+                /// marks the first selected row of a contiguous run.
+                const size_t selected_count = std::popcount(mask);
+                const size_t run_count = std::popcount(mask & ~(mask << 1));
+                if (selected_count < MIN_RANGE_COPY_LENGTH * run_count)
                 {
-                    size_t index = std::countr_zero(mask);
-                    inserter.insertSingle(data_pos[index]);
-                    mask = blsr(mask);
+                    while (mask)
+                    {
+                        const size_t index = std::countr_zero(mask);
+                        inserter.insertSingle(data_pos[index]);
+                        mask = blsr(mask);
+                    }
+                }
+                else
+                {
+                    while (mask)
+                    {
+                        /// `mask` has one bit per row, with bit 0 corresponding to `data_pos[0]`.
+                        /// Start at the first selected row and align the mask to that row.
+                        const size_t index = std::countr_zero(mask);
+                        const UInt64 shifted_mask = mask >> index;
+
+                        /// Short runs are cheaper to append one row at a time than to pass through
+                        /// insertRange(), which uses memmove() for in-place filtering.
+                        if ((shifted_mask & MIN_RANGE_COPY_MASK) != MIN_RANGE_COPY_MASK)
+                        {
+                            inserter.insertSingle(data_pos[index]);
+                            mask = blsr(mask);
+                            continue;
+                        }
+
+                        /// Otherwise, copy the complete contiguous run in one operation.
+                        const size_t run_length = std::countr_one(shifted_mask);
+                        inserter.insertRange(data_pos + index, data_pos + index + run_length);
+
+                        /// Avoid shifting by 64, and clear the run before looking for the next one.
+                        if (run_length == 64)
+                            mask = 0;
+                        else
+                            mask &= ~(((UInt64{1} << run_length) - 1) << index);
+                    }
                 }
             }
         }
