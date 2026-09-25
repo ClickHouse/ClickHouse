@@ -37,6 +37,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -326,10 +327,13 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 {
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
-    /// One token per pair, so `m['key'] = 'value'` is a single-token lookup whose posting list is exactly
-    /// the matching rows. Nothing else is supported yet.
+    /// One token per pair: `m['key'] = 'value'` is one posting list, `mapContainsKeyValue` the union of
+    /// the first-occurrence and repeated-occurrence lists. Nothing else is supported yet.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
-        return function_name == "equals" ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+    {
+        const bool is_exact = function_name == "equals" || function_name == "mapContainsKeyValue";
+        return is_exact ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+    }
 
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
@@ -396,8 +400,9 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
         return true;
 
     const auto function_name = node.function_base->getName();
-    /// The third argument of `like` and `ilike` is an ESCAPE character, not a tokenizer.
-    if (function_name == "like" || function_name == "ilike")
+    /// The third argument is an ESCAPE character for `like`/`ilike` and the searched value for
+    /// `mapContainsKeyValue`, not a tokenizer.
+    if (function_name == "like" || function_name == "ilike" || function_name == "mapContainsKeyValue")
         return true;
 
     RPNBuilderTreeContext rpn_tree_context(getContext());
@@ -758,6 +763,10 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
         if (function_arguments_size == 3)
         {
+            /// Both needles are arguments of the call, so the (column, constant) shape below cannot express it.
+            if (function_name == "mapContainsKeyValue")
+                return traverseMapContainsKeyValueNode(function, out);
+
             /// The index path tokenizes needles with the index tokenizer, so it can answer the
             /// predicate only when the tokenizer argument denotes that same tokenizer.
             if (!tokenizerArgumentMatchesIndex(function_name, function.getArgumentAt(2)))
@@ -771,7 +780,8 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if ((function_name == "in" || function_name == "globalIn")
+        if ((function_name == "in" || function_name == "globalIn"
+             || function_name == "nullIn" || function_name == "globalNullIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -1160,6 +1170,19 @@ static bool tryNormalizeNeedlePadding(Field & value, const DataTypePtr & value_t
     return tryNormalizeNeedlePadding(value.safeGet<String>(), isFixedString(inner_type), context);
 }
 
+/// The value an absent map key reads: `''`, or all NUL when the value type is `FixedString`.
+/// `mapValues` stores neither.
+static bool isMapValueDefault(std::string_view value, const Block & header)
+{
+    /// A text index is always defined on a single expression.
+    chassert(header.columns() == 1);
+    auto value_type = removeNullable(removeLowCardinality(header.getByPosition(0).type));
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(value_type.get()))
+        value_type = removeNullable(removeLowCardinality(array_type->getNestedType()));
+
+    return value.empty() || (isFixedString(value_type) && value.find_first_not_of('\0') == std::string_view::npos);
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -1214,7 +1237,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             auto & [map_column_name, _] = *parsed;
             if (header.has(fmt::format("mapValues({})", map_column_name))
                 && value_field.getType() == Field::Types::String
-                && !value_field.safeGet<String>().empty())
+                && !isMapValueDefault(value_field.safeGet<String>(), header))
             {
                 has_index_column = true;
                 direct_read_mode = getHintOrNoneMode();
@@ -2019,6 +2042,47 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
     return true;
 }
 
+bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
+    const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    if (tokenizer->getType() != ITokenizer::Type::KeyValuePairs)
+        return false;
+
+    if (!hasIndexForColumn(function_node.getArgumentAt(0).getColumnName()))
+        return false;
+
+    /// FixedString excluded: its padding is compared away by the function but not stored in the token,
+    /// so exact direct read would drop matching rows. Same as traverseMapElementKeyValueNode.
+    auto get_string_constant = [](const RPNBuilderTreeNode & node) -> std::optional<String>
+    {
+        Field field;
+        DataTypePtr type;
+        if (!node.tryGetConstant(field, type) || !WhichDataType(type).isString())
+            return std::nullopt;
+        return field.safeGet<String>();
+    };
+
+    auto key = get_string_constant(function_node.getArgumentAt(1));
+    if (!key)
+        return false;
+
+    auto value = get_string_constant(function_node.getArgumentAt(2));
+    if (!value)
+        return false;
+
+    /// The pair is either the key's first occurrence or a repetition. Every entry has a token, so even
+    /// an empty value is searchable here, unlike in `equals`.
+    VectorWithMemoryTracking<String> tokens;
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_duplicate=*/ false));
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_duplicate=*/ true));
+
+    const auto function_name = function_node.getFunctionName();
+    out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        function_name, TextSearchMode::Any, getDirectReadMode(function_name), std::move(tokens)));
+    return true;
+}
+
 bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
 {
     /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
@@ -2047,7 +2111,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
     /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
     /// If index can be used, than we can analyze the index as for scalar string column
     /// because `arrayElement(m, 'const_key')` projects Array(String) to String.
-    if (const_value.getType() != Field::Types::String || const_value.safeGet<String>().empty())
+    if (const_value.getType() != Field::Types::String || isMapValueDefault(const_value.safeGet<String>(), header))
         return false;
 
     return hasIndexForMapElementValue(index_column_node);
@@ -2110,10 +2174,17 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 {
     std::optional<size_t> set_key_position;
 
+    /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
+    bool has_index_for_map_element_value = false;
+
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
+        if (hasIndexForMapElementValue(node))
+        {
+            has_index_for_map_element_value = true;
+            return true;
+        }
         return hasIndexForColumn(node.getColumnName())
-            || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
     };
 
@@ -2162,11 +2233,16 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     const auto & set_column = *columns[*set_key_position];
-    if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
+
+    /// With setting `transform_null_in = 1`, the IN set can be nullable.
+    const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(&set_column);
+    const auto & set_column_values = set_column_nullable ? set_column_nullable->getNestedColumn() : set_column;
+
+    if (!WhichDataType(set_column_values.getDataType()).isStringOrFixedString())
         return false;
 
     size_t total_row_count = prepared_set->getTotalRowCount();
-    const bool set_is_fixed_string = WhichDataType(set_column.getDataType()).isFixedString();
+    const bool set_is_fixed_string = WhichDataType(set_column_values.getDataType()).isFixedString();
     /// `IN` casts the value to the set's type, so a `FixedString` on either side drops trailing zero bytes like `equals`.
     const bool has_fixed_string = set_is_fixed_string || indexed_fixed_string_size.has_value();
     const FixedStringNeedleContext context{
@@ -2178,6 +2254,14 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
+        /// The atom is an OR over the elements, and the index skips NULL rows when building a
+        /// granule, so a NULL element is a disjunct it cannot bind. Decline the atom.
+        if (set_column.isNullAt(row))
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+
         std::string_view element = set_column.getDataAt(row);
 
         if (has_fixed_string)
@@ -2194,7 +2278,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
-        if (element.empty())
+        if (element.empty() || (has_index_for_map_element_value && isMapValueDefault(element, header)))
         {
             out.text_search_queries.clear();
             return false;
