@@ -24,7 +24,7 @@ SELECT hasTokenLike('abc', '%');
 SELECT hasTokenLike('', '%');
 SELECT hasTokenLike('abc', '');
 SELECT hasTokenLike('привет мир', 'пр_вет');
--- `\` escapes `%` and `_`, tokens are split by spaces here to keep them in the tokens.
+-- `\` escapes `%` and `_`. Tokens are split by spaces here, so they keep these characters.
 SELECT hasTokenLike('a%b axb', 'a\\%b', 'splitByString([\' \'])');
 SELECT hasTokenLike('axb', 'a\\%b', 'splitByString([\' \'])');
 SELECT hasTokenLike('a_b', 'a\\_b', 'splitByString([\' \'])');
@@ -69,6 +69,17 @@ SELECT
     countIf(hasTokenPrefix(s, 'ab'))
 FROM (SELECT arrayStringConcat(arrayMap(x -> ['ab', 'abc', 'bac', 'ca', 'aac', ' ', '-'][x % 7 + 1], range(number % 5)), '') AS s FROM numbers(1000))
 SETTINGS optimize_rewrite_array_exists_over_tokens = 0;
+
+SELECT '-- many blocks and threads with a stateful tokenizer';
+SELECT
+    countIf(hasTokenPrefix(s, '12', 'sparseGrams(3, 5)') != arrayExists(t -> startsWith(t, '12'), tokens(s, 'sparseGrams', 3, 5))),
+    countIf(hasTokenLike(s, '1_3%', 'sparseGrams(3, 5)') != arrayExists(t -> like(t, '1_3%'), tokens(s, 'sparseGrams', 3, 5))),
+    countIf(hasTokenMatch(s, '^1.3', 'sparseGrams(3, 5)') != arrayExists(t -> match(t, '^1.3'), tokens(s, 'sparseGrams', 3, 5))),
+    countIf(hasTokenPrefix(s, '12', 'sparseGrams(3, 5)')),
+    countIf(hasTokenLike(s, '1_3%', 'sparseGrams(3, 5)')),
+    countIf(hasTokenMatch(s, '^1.3', 'sparseGrams(3, 5)'))
+FROM (SELECT toString(number * 7919) AS s FROM numbers_mt(100000))
+SETTINGS max_block_size = 100, max_threads = 4;
 
 SELECT '-- arrays in a full column, the first row included';
 SELECT n, hasTokenPrefix(arr, 'ab'), hasTokenLike(arr, 'a_c'), hasTokenMatch(arr, '^abc$')

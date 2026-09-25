@@ -727,7 +727,6 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
 
     size_t postings_to_read = 0;
-    size_t matched_tokens = 0;
     std::vector<size_t> matched_indices;
     PaddedPODArray<UInt8> candidate_marks;
     for (const auto & [range_begin, range_end] : block_ranges)
@@ -773,10 +772,10 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 analyzer->addTokenInfo(token, infos[i]);
             }
 
-            matched_tokens += matched_indices.size();
-
-            /// Collecting the postings of a great many tokens, even small embedded ones, is slower than evaluating the predicate on the column.
-            if (postings_to_read > max_postings_to_read || (max_matched_tokens && matched_tokens > max_matched_tokens))
+            /// Reading postings for very many tokens is slower than checking the column.
+            /// Only hasTokenPrefix/Like/Match are capped, not `LIKE`.
+            if (postings_to_read > max_postings_to_read
+                || (max_matched_tokens && analyzer->getNumPerTokenPatternTokens() > max_matched_tokens))
             {
                 /// Too many tokens matched.
                 /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.

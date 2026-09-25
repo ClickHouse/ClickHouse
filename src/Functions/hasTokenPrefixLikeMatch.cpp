@@ -14,6 +14,9 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 
+#include <mutex>
+#include <optional>
+
 namespace DB
 {
 
@@ -25,8 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Each matcher decides whether a single token satisfies the constant needle.
-/// The text index applies the same predicate to its dictionary tokens (see `MergeTreeIndexConditionText`).
+/// Each matcher checks one token against the needle. The text index runs the same check on its dictionary.
 
 struct TokenPrefixMatcher
 {
@@ -103,21 +105,26 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const String needle(arguments[1].column->getDataAt(0));
-        const String tokenizer_name = arguments.size() < 3
-            ? String(SplitByNonAlphaTokenizer::getExternalName())
-            : String(arguments[2].column->getDataAt(0));
+        /// The needle and the tokenizer are parsed once.
+        std::call_once(init_flag, [&]
+        {
+            const String tokenizer_name = arguments.size() < 3
+                ? String(SplitByNonAlphaTokenizer::getExternalName())
+                : String(arguments[2].column->getDataAt(0));
+            shared_tokenizer = TokenizerFactory::instance().get(tokenizer_name);
+            matcher.emplace(String(arguments[1].column->getDataAt(0)));
+        });
 
-        /// A fresh instance per call, so stateful tokenizers are not shared between threads.
-        const auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
-        const Matcher matcher(needle);
+        /// A stateful tokenizer is not thread-safe, so each call gets its own copy.
+        const auto cloned_tokenizer = shared_tokenizer->isStateful() ? shared_tokenizer->clone() : nullptr;
+        const ITokenizer & tokenizer = cloned_tokenizer ? *cloned_tokenizer : *shared_tokenizer;
 
         auto has_matching_token = [&](std::string_view value)
         {
             bool found = false;
-            forEachToken(*tokenizer, value.data(), value.size(), [&](const char * token, size_t length)
+            forEachToken(tokenizer, value.data(), value.size(), [&](const char * token, size_t length)
             {
-                found = matcher(std::string_view(token, length));
+                found = (*matcher)(std::string_view(token, length));
                 return found;
             });
             return found;
@@ -165,6 +172,10 @@ private:
     {
         return checkAndGetColumn<ColumnString>(&column) || checkAndGetColumn<ColumnFixedString>(&column);
     }
+
+    mutable std::once_flag init_flag;
+    mutable std::unique_ptr<ITokenizer> shared_tokenizer;
+    mutable std::optional<Matcher> matcher;
 };
 
 using FunctionHasTokenPrefix = FunctionHasTokenPattern<TokenPrefixMatcher>;
@@ -175,16 +186,18 @@ constexpr auto text_index_note = R"(
 <Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 The function then finds the matching tokens in the index dictionary and reads only their posting lists instead of tokenizing every row.
-The index is not used if it has a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional),
-or if it has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) other than `lower` or `upper` of the column (`hasTokenPrefix`) or any preprocessor at all (`hasTokenLike`, `hasTokenMatch`).
+The index is not used if it has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional)
+or a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional).
 In these cases the function is evaluated on the raw `input` values, still with the tokenizer of the index.
 </Note>
 )";
 
 constexpr auto tokenizer_description = R"(
 Prior to searching, the function tokenizes `input` using the tokenizer specified for the text index on `input`, and the `splitByNonAlpha` tokenizer if `input` has no text index.
-The optional `tokenizer` argument sets the tokenizer explicitly, then the text index is used only if it has the same tokenizer.
-If several text indexes on `input` would give the function a different tokenizer or preprocessor, it throws an exception, and the `tokenizer` argument selects among different tokenizers.
+As for [`hasAnyTokens`](#hasAnyTokens), whether the tokenizer of the index is used depends on the query plan: it is used in filters and projections directly over the table, including conditions pushed down to it such as `HAVING` on a grouping key,
+but not in expressions after `GROUP BY` or `JOIN`, in mutations such as `ALTER TABLE ... DELETE`, or in conditions that are not pushed down, where the result can differ.
+The optional `tokenizer` argument sets the tokenizer explicitly, which gives the same result in every query, and then the text index is used only if it has the same tokenizer.
+If several text indexes on `input` would give the function different tokenizers, it throws an exception, and the `tokenizer` argument selects among them.
 )";
 
 FunctionDocumentation::Arguments commonArguments(const char * needle_name, const char * needle_description)
@@ -205,10 +218,7 @@ Returns 1 if at least one token of `input` starts with `prefix`, and 0 otherwise
 
 The comparison is case-sensitive. An empty `prefix` matches every token, so the function returns 1 if `input` has at least one token.
 
-`hasTokenPrefix(input, prefix)` is equivalent to `arrayExists(t -> startsWith(t, prefix), tokens(input))`.
-
-If the text index has the preprocessor `lower` or `upper`, it is applied to `input` and `prefix`, as for [`hasAnyTokens`](#hasAnyTokens).
-Unlike for `hasAnyTokens`, this does not depend on whether the index is used for the query (e.g. `SETTINGS use_skip_indexes = 0`), only on the index definition.
+If `input` has no text index, `hasTokenPrefix(input, prefix)` is equivalent to `arrayExists(t -> startsWith(t, prefix), tokens(input))`.
 )") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenPrefix(input, prefix[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token starts with `prefix`, `0` otherwise.", {"UInt8"}};
@@ -255,7 +265,7 @@ Returns 1 if at least one token of `input` matches the [`LIKE`](#like) pattern `
 
 The pattern is applied to each token separately and must match the whole token: `%` matches any sequence of bytes, `_` matches one character, and `\` escapes them.
 
-`hasTokenLike(input, pattern)` is equivalent to `arrayExists(t -> like(t, pattern), tokens(input))`.
+If `input` has no text index, `hasTokenLike(input, pattern)` is equivalent to `arrayExists(t -> like(t, pattern), tokens(input))`.
 )") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenLike(input, pattern[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token matches `pattern`, `0` otherwise.", {"UInt8"}};
@@ -294,7 +304,7 @@ Returns 1 if at least one token of `input` matches the regular expression `regex
 The regular expression uses the [re2 syntax](https://github.com/google/re2/wiki/Syntax) and is applied to each token separately, like function [`match`](#match):
 it may match any part of the token, and the anchors `^` and `$` refer to the start and the end of the token.
 
-`hasTokenMatch(input, regexp)` is equivalent to `arrayExists(t -> match(t, regexp), tokens(input))`.
+If `input` has no text index, `hasTokenMatch(input, regexp)` is equivalent to `arrayExists(t -> match(t, regexp), tokens(input))`.
 )") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenMatch(input, regexp[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token matches `regexp`, `0` otherwise.", {"UInt8"}};

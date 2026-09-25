@@ -55,6 +55,8 @@
 1
 -- same as arrayExists over tokens
 0	0	0	800
+-- many blocks and threads with a stateful tokenizer
+0	0	0	7110	7122	7122
 -- arrays in a full column, the first row included
 0	1	1	1
 1	0	0	0

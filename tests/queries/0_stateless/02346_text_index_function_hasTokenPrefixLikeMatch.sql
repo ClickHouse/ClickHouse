@@ -1,6 +1,5 @@
 -- Tags: no-parallel-replicas
--- `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` use the text index: the dictionary tokens matching the
--- needle are exactly the tokens the functions look for, so the index prunes granules and answers them by direct read.
+-- `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` use the text index to skip granules and to answer by direct read.
 
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
@@ -21,7 +20,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 
--- 128 granules of 8 rows. Only a few granules have tokens starting with 'charg', 'recharge' only contains it.
+-- 128 granules of 8 rows. Few granules have a token starting with 'charg' ('recharge' does not).
 INSERT INTO tab SELECT
     number,
     multiIf(
@@ -77,13 +76,13 @@ SELECT '-- invalid patterns raise an exception with the index as well';
 SELECT count() FROM tab WHERE hasTokenMatch(msg, '('); -- { serverError CANNOT_COMPILE_REGEXP }
 
 SELECT '-- too many matching posting lists: the functions are evaluated on the column';
-SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'u') SETTINGS text_index_like_max_postings_to_read = 0, log_comment = '05244_fallback';
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'u') SETTINGS text_index_like_max_postings_to_read = 0, log_comment = 'has_token_pattern_fallback';
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'u') SETTINGS use_skip_indexes = 0;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['TextIndexDiscardPatternScan'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment = '05244_fallback';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment = 'has_token_pattern_fallback';
 
 DROP TABLE tab;
 
@@ -127,7 +126,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE
 
 DROP TABLE tab;
 
-SELECT '-- lower preprocessor: applied to the input and the prefix of hasTokenPrefix, hasTokenLike and hasTokenMatch do not use the index';
+SELECT '-- lower preprocessor: the functions see the raw values and do not use the index';
 
 CREATE TABLE tab
 (
@@ -150,6 +149,26 @@ SELECT count() FROM tab WHERE hasTokenLike(msg, 'charg%');
 SELECT count() FROM tab WHERE hasTokenLike(msg, 'Charg%');
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenLike(msg, 'Charg%')) WHERE explain LIKE '%Granules:%';
 SELECT count() FROM tab WHERE hasTokenMatch(msg, '^C');
+
+DROP TABLE tab;
+
+-- The tokenizer of the index is still used.
+CREATE TABLE tab
+(
+    id UInt32,
+    tag String,
+    INDEX idx(tag) TYPE text(tokenizer = array, preprocessor = lower(tag)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab SELECT number, if(number < 8, 'Env:prod-eu', 'env:dev') FROM numbers(64);
+
+SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'Env:prod');
+SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'Env:prod') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'env:prod');
+SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'prod');
 
 DROP TABLE tab;
 
@@ -180,7 +199,7 @@ SELECT hasTokenPrefix(tag, 'env:prod') AS h, count() FROM tab GROUP BY h ORDER B
 
 DROP TABLE tab;
 
-SELECT '-- text_index_like_max_matched_tokens: a pattern matching too many tokens is evaluated on the column';
+SELECT '-- text_index_like_max_matched_tokens: a per-token pattern matching too many tokens is evaluated on the column';
 
 CREATE TABLE tab
 (
@@ -195,23 +214,33 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 -- Every row has its own token, so all postings are small and embedded.
 INSERT INTO tab SELECT number, concat('req id', toString(number), ' ok') FROM numbers(2000);
 
-SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = '05244_matched_tokens_prefix';
-SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = '05244_matched_tokens_match';
-SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = '05244_matched_tokens_like';
-SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = '05244_matched_tokens_unlimited';
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_prefix';
+SELECT count() FROM tab WHERE hasTokenLike(msg, 'id1%') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_token_like';
+SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_match';
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = 'has_token_pattern_matched_tokens_unlimited';
+-- LIKE, ILIKE, startsWith and endsWith are not capped.
+-- The endsWith needle is one character, so it matches 200 tokens.
+SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_like';
+SELECT count() FROM tab WHERE msg ILIKE '%ID12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_ilike';
+SELECT count() FROM tab WHERE startsWith(msg, 'id12') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_starts_with';
+SELECT count() FROM tab WHERE endsWith(msg, '5') SETTINGS text_index_like_min_pattern_length = 1, text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_ends_with';
+SELECT count() FROM tab WHERE msg LIKE '%id12%' OR hasTokenPrefix(msg, 'id199') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_like_or_prefix';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100) WHERE explain LIKE '%Granules:%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE endsWith(msg, '5') SETTINGS text_index_like_min_pattern_length = 1, text_index_like_max_matched_tokens = 100) WHERE explain LIKE '%Granules:%';
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE msg LIKE '%id12%' OR hasTokenPrefix(msg, 'id199') SETTINGS use_skip_indexes = 0;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['TextIndexDiscardPatternScan'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment LIKE '05244_matched_tokens_%'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment LIKE 'has_token_pattern_matched_tokens_%'
 ORDER BY log_comment;
 
 DROP TABLE tab;
 
-SELECT '-- the result does not depend on settings, only on the index definition';
+SELECT '-- the result does not depend on settings';
 
 CREATE TABLE tab_array
 (
@@ -380,13 +409,13 @@ SELECT 'hasTokenPrefix(msg, \'charg\') IS NULL', count() FROM tab_nullable WHERE
 
 DROP TABLE tab_nullable;
 
-SELECT '-- several text indexes on one expression must give the function the same tokenizer and preprocessor';
+SELECT '-- several text indexes on one expression must give the function the same tokenizer';
 
 -- A column has at most one text index.
 CREATE TABLE tab_two (id UInt32, msg String, INDEX idx_a(msg) TYPE text(tokenizer = splitByNonAlpha), INDEX idx_b(msg) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(msg))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
--- But differently written expressions can both be the indexed expression: `tag != ''` is analyzed as `notEmpty(tag)`.
--- Different tokenizers: the function throws whatever the settings, unless the tokenizer argument selects one index.
+-- Two differently written expressions can be the same indexed expression (`tag != ''` is `notEmpty(tag)`).
+-- With different tokenizers the function throws, unless the tokenizer argument picks one index.
 CREATE TABLE tab_tokenizers
 (
     id UInt32,
@@ -439,8 +468,8 @@ SELECT 'splitByNonAlpha', count() FROM tab_tokenizers_swapped WHERE hasTokenPref
 DROP TABLE tab_tokenizers;
 DROP TABLE tab_tokenizers_swapped;
 
--- Same tokenizer, but only one index lowercases the input and the prefix of hasTokenPrefix, which the tokenizer argument
--- cannot resolve. hasTokenLike and hasTokenMatch apply no preprocessor, so both indexes agree for them.
+-- Same tokenizer, one index has a preprocessor: the functions ignore it and give the result on the raw values.
+-- The index without the preprocessor answers by direct read.
 CREATE TABLE tab_preprocessors
 (
     id UInt32,
@@ -466,14 +495,16 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 INSERT INTO tab_preprocessors SELECT number, multiIf(number < 8, 'Charged', number < 16, 'charged', 'other') FROM numbers(64);
 INSERT INTO tab_preprocessors_swapped SELECT * FROM tab_preprocessors;
 
-SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg'); -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
-SELECT countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors; -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg', 'splitByNonAlpha'); -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg'); -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
-SELECT countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors_swapped; -- { serverError BAD_ARGUMENTS }
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg');
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'hasTokenPrefix', countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors;
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg', 'splitByNonAlpha');
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg');
+SELECT 'hasTokenPrefix', count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0;
+SELECT 'hasTokenPrefix', countIf(hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors_swapped;
+SELECT 'hasTokenPrefix', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasTokenPrefix(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab_preprocessors_swapped WHERE hasTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg'));
 
 SELECT 'hasTokenLike', count() FROM tab_preprocessors WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%');
 SELECT 'hasTokenLike', count() FROM tab_preprocessors WHERE hasTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%') SETTINGS use_skip_indexes = 0;
@@ -487,7 +518,7 @@ SELECT 'hasTokenMatch', count() FROM tab_preprocessors_swapped WHERE hasTokenMat
 DROP TABLE tab_preprocessors;
 DROP TABLE tab_preprocessors_swapped;
 
--- The indexes agree: the function uses their tokenizer whatever the settings, and the first index by name serves it.
+-- The indexes agree, so the first one by name serves the function.
 CREATE TABLE tab_agree
 (
     id UInt32,

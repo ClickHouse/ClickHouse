@@ -612,12 +612,10 @@ private:
 
     /// Returns true for functions that require applying the preprocessor to the haystack.
     /// has/hasAll/hasAny bypass both transforms.
-    /// A preprocessor cannot be applied to the pattern of hasTokenLike/hasTokenMatch, so the index does not serve them then.
     static bool needApplyPreprocessor(const String & function_name)
     {
         return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase"
-            || function_name == "hasTokenPrefix";
+            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
     /// Returns true for functions that require applying the postprocessor to the haystack and needle.
@@ -628,14 +626,15 @@ private:
             || function_name == "hasPhrase";
     }
 
-    /// A per-token pattern function takes the tokenizer and the preprocessor from the index it is analyzed for, so all such
-    /// indexes must agree on them, whatever the settings. Returns the first of them by name, which then serves the function.
+    /// All indexes that can serve the function must use the same tokenizer.
+    /// Prefer an index that can scan its dictionary, then the first by name.
     std::optional<String> choosePerTokenPatternFunctionIndex(const ActionsDAG::Node & function_node, const ActionsDAG::Node & canonical_node) const
     {
         const auto function_name = function_node.function_base->getName();
         const auto haystack_name = getNameWithoutAliases(function_node.children[0]);
 
         std::map<String, String> rewrite_by_index;
+        NameOrderedSet scanning_indexes;
         for (const auto & [index_name, info] : text_index_read_infos)
         {
             const auto & condition = typeid_cast<const MergeTreeIndexConditionText &>(*info.condition);
@@ -647,11 +646,9 @@ private:
                 continue;
 
             String rewrite = "tokenizer = " + condition.getTokenizer()->getDescription();
-            auto preprocessor = condition.getPreprocessor();
-            if (preprocessor && MergeTreeIndexConditionText::perTokenPatternFunctionAppliesPreprocessor(function_name, *preprocessor))
-                rewrite += ", preprocessor = " + preprocessor->getExpressionAST(haystack_name)->formatForErrorMessage();
-
             rewrite_by_index.emplace(index_name, std::move(rewrite));
+            if (!search_query->getPatterns().empty())
+                scanning_indexes.insert(index_name);
         }
 
         if (rewrite_by_index.empty())
@@ -664,11 +661,11 @@ private:
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Text indexes {} and {} on {} define function {} differently ({} vs {}). "
-                    "Pass the tokenizer as the third argument if the tokenizers differ, otherwise keep only one of these indexes",
+                    "Pass the tokenizer as the third argument",
                     backQuote(chosen_index), backQuote(index_name), backQuote(haystack_name), function_name, chosen_rewrite, rewrite);
         }
 
-        return chosen_index;
+        return scanning_indexes.empty() ? chosen_index : *scanning_indexes.begin();
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
@@ -707,7 +704,7 @@ private:
             if (!text_index_condition.canAnswerFunctionNode(function_node))
                 continue;
 
-            /// Only the chosen index serves a per-token pattern function, even if another one is analyzed for it as well.
+            /// Only the chosen index serves the function.
             if (per_token_pattern_index && search_query->getFunctionName() == function_name && index_name != *per_token_pattern_index)
                 continue;
 
@@ -802,8 +799,7 @@ private:
 
         const auto & condition = selected_conditions.front();
 
-        /// A per-token pattern function takes the tokenizer and the preprocessor only from an index it is analyzed for, not
-        /// from e.g. an index on `mapKeys(m)` that serves `hasTokenPrefix(m['key'], ...)` as `mapContainsKey`.
+        /// Take the tokenizer only from an index built for this function, not e.g. from a `mapKeys(m)` index.
         if (MergeTreeIndexConditionText::isPerTokenPatternFunction(function_node.function_base->getName())
             && condition.search_query->getFunctionName() != function_node.function_base->getName())
             return;
@@ -816,11 +812,9 @@ private:
         auto function_name = replacement.node->function_base->getName();
 
         /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
-        /// The per-token pattern functions apply it wherever the index is defined, so their result does not depend on settings or on the query shape.
-        const bool is_per_token_pattern_function = MergeTreeIndexConditionText::isPerTokenPatternFunction(function_name);
-        const bool apply_preprocessor = is_per_token_pattern_function
-            ? preprocessor && MergeTreeIndexConditionText::perTokenPatternFunctionAppliesPreprocessor(function_name, *preprocessor)
-            : is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
+        const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
+        /// As for hasAnyTokens, only queries this pass sees get the index tokenizer (not e.g. after GROUP BY, or mutations).
+        /// An explicit tokenizer argument gives the same result everywhere.
         const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 
