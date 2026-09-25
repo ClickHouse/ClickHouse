@@ -2991,20 +2991,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto action = function_node_ptr->getNullsAction();
         std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
 
-        /// The value and the default of lag and lead are brought to their common type, like PostgreSQL's anycompatible.
-        const auto function_name_lowercase = Poco::toLower(function_name);
-        const bool is_lag_or_lead = function_name_lowercase == "lag"
-                                 || function_name_lowercase == "lead"
-                                 || function_name_lowercase == "laginframe"
-                                 || function_name_lowercase == "leadinframe";
-        if (is_lag_or_lead && argument_types.size() == 3)
-        {
-            const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-            function_arguments[0] = castNodeToType(function_arguments[0], supertype, scope);
-            function_arguments[2] = castNodeToType(function_arguments[2], supertype, scope);
-            argument_types[0] = supertype;
-            argument_types[2] = supertype;
-        }
+        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
+        for (size_t i = 0; i < argument_types.size(); ++i)
+            function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
         AggregateFunctionProperties properties;
         auto aggregate_function

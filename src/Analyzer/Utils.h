@@ -7,6 +7,7 @@
 
 #include <Core/Field.h>
 #include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
 
 #include <Columns/IColumn_fwd.h>
 
@@ -161,7 +162,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context);
 /// Just collect all identifiers from query tree
 NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 
-/// Wrap node into `_CAST` function
+/// Wrap node into `_CAST` function; the node is returned as is when it already has the result type
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
 /// Constant-fold a resolved `_CAST(<constant>, <type>)` function node, exactly as `resolveFunction` would.
@@ -198,6 +199,9 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 /// Resolves function node as aggregate function with given name.
 /// Arguments and parameters are taken from the node.
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
+
+/// Returns the types the arguments of a window function must be cast to before it is resolved.
+DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types);
 
 /// Returns single source of expression node.
 /// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
