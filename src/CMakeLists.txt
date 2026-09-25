@@ -853,6 +853,10 @@ if (TARGET ch_contrib::vectorscan)
     target_link_libraries(dbms PRIVATE ch_contrib::vectorscan)
 endif()
 
+if (TARGET ch_contrib::simsimd)
+    target_link_libraries(dbms PRIVATE ch_contrib::simsimd)
+endif()
+
 if (TARGET ch_contrib::brotli)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::brotli)
 endif()

@@ -1376,8 +1376,6 @@ void WindowTransform::addInputBlock(Chunk chunk)
     // Initialize output columns.
     for (auto & ws : workspaces)
     {
-        block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
-
         block.output_columns.push_back(ws.aggregate_function->getResultType()
             ->createColumn());
         block.output_columns.back()->reserve(block.rows);
