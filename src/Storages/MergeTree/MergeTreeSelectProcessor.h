@@ -16,6 +16,8 @@ struct PrewhereExprInfo;
 struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
+class MergeTreeReadPoolInOrderSliced;
+
 struct ChunkAndProgress
 {
     Chunk chunk;
@@ -167,8 +169,9 @@ public:
     void setVirtualRowConversions(ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_);
 
     /// Emit an empty chunk with MergeTreeSliceEndInfo after the last chunk of every task, and stay alive
-    /// when the pool has no task for this source right now. Used with MergeTreeInOrderSliceRouter.
-    void enableSliceEndMarkers() { emit_slice_end_markers = true; }
+    /// while the pool has no task for this source right now; the stream ends once the pool is finished.
+    /// Used with MergeTreeInOrderSliceRouter.
+    void enableSliceEndMarkers(std::shared_ptr<const MergeTreeReadPoolInOrderSliced> sliced_pool_) { sliced_pool = std::move(sliced_pool_); }
 
     void onFinish() const;
 
@@ -217,9 +220,12 @@ private:
 
     ChunkAndProgress buildVirtualRowFromIndex(const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const;
 
-    bool emit_slice_end_markers = false;
-    bool slice_end_marker_sent = false;
+    /// Set when the pool hands out slices on demand, see enableSliceEndMarkers.
+    std::shared_ptr<const MergeTreeReadPoolInOrderSliced> sliced_pool;
+    /// The query condition cache write and the slice-end marker of the current task are done.
+    bool current_task_finalized = false;
 
+    void updateQueryConditionCache(const MergeTreeReadTask & finished_task) const;
     ChunkAndProgress makeSliceEndMarker() const;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");

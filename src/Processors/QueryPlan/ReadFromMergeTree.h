@@ -392,6 +392,10 @@ public:
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
+    /// True if reading in order goes through MergeTreeReadPoolInOrderSliced and MergeTreeInOrderSliceRouter
+    /// rather than one stream per part. The optimizer asks so that SortingStep skips its buffering exactly
+    /// when the router, which buffers per part itself, is in the pipeline.
+    bool usesSlicedPool() const;
     const SortDescription & getSortDescription() const override { return result_sort_description; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
@@ -711,6 +715,11 @@ private:
         /// Index of this split when reading in-order with parallel replicas; nullopt means
         /// a single pool reads the whole table (no splitting).
         std::optional<size_t> split_index = std::nullopt);
+
+    /// Whether the streams of a read in order are merged in two levels, see read_in_order_two_level_merge_threshold.
+    bool needsPreliminaryMerge(size_t num_parts) const;
+    /// The conditions of usesSlicedPool that do not depend on the number of parts.
+    bool slicedPoolRequested() const;
 
     /// Reads in the order of the primary key with `pool_settings.threads` sources sharing all parts,
     /// see MergeTreeReadPoolInOrderSliced. Returns a pipe with one output per part.

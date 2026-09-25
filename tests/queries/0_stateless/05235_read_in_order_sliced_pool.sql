@@ -4,6 +4,7 @@
 SET optimize_read_in_order = 1;
 SET read_in_order_use_virtual_row = 1;
 SET read_in_order_use_sliced_pool = 1;
+SET read_in_order_two_level_merge_threshold = 100;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;

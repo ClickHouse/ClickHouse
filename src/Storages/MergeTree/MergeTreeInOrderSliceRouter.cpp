@@ -74,11 +74,7 @@ IProcessor::Status MergeTreeInOrderSliceRouter::prepare()
         pushToLane(lane);
 
     if (num_finished_lanes == lanes.size())
-    {
-        for (auto & input : inputs)
-            input.close();
-        return Status::Finished;
-    }
+        return finish();
 
     scheduleSlices();
 
@@ -86,6 +82,33 @@ IProcessor::Status MergeTreeInOrderSliceRouter::prepare()
         if (assignment)
             return Status::NeedData;
     return Status::PortFull;
+}
+
+IProcessor::Status MergeTreeInOrderSliceRouter::finish()
+{
+    /// A source still reading a slice is cut short: no lane wants its rows anymore.
+    for (const auto & assignment : assignments)
+    {
+        if (assignment)
+        {
+            for (auto & input : inputs)
+                input.close();
+            return Status::Finished;
+        }
+    }
+
+    /// Idle sources end their streams themselves once the pool has nothing more for them, so that
+    /// they finish the way every source does (onFinish: statistics and logs).
+    pool->finish();
+    bool all_sources_finished = true;
+    for (auto & input : inputs)
+    {
+        if (input.isFinished())
+            continue;
+        all_sources_finished = false;
+        input.setNeeded();
+    }
+    return all_sources_finished ? Status::Finished : Status::NeedData;
 }
 
 void MergeTreeInOrderSliceRouter::consumeInput(size_t source)

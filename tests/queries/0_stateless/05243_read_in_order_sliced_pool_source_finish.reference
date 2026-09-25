@@ -1,0 +1,6 @@
+router in pipeline	1
+no match	0
+no match again	0
+read rows	05243_sliced_pool_first_read	80000
+read rows	05243_sliced_pool_second_read	0
+predicate statistics logged	1

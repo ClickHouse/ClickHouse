@@ -85,6 +85,8 @@ private:
     std::optional<size_t> pickIdleSource(bool allow_rebinding) const;
     void assignSlice(size_t source, size_t lane);
     void scheduleSlices();
+    /// Called once every lane is finished; ends the sources.
+    Status finish();
 
     const std::shared_ptr<MergeTreeReadPoolInOrderSliced> pool;
     const ExpressionActionsPtr virtual_row_conversions;

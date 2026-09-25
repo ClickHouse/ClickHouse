@@ -25,6 +25,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Storages/MergeTree/MergeTreeReadPoolInOrderSliced.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSliceEndInfo.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
@@ -393,6 +394,52 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     return {std::move(chunk), 0, 0, false, {}};
 }
 
+void MergeTreeSelectProcessor::updateQueryConditionCache(const MergeTreeReadTask & finished_task) const
+{
+    /// Update the query condition cache for filters in PREWHERE stage.
+    /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
+    /// could have filtered marks before PREWHERE saw them, to avoid attributing those
+    /// marks to the PREWHERE predicate hash. See Issue #104781.
+    /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason.
+    /// A row-level security filter is also prepended before PREWHERE, yet this write keys
+    /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
+    /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
+    if (!reader_settings.use_query_condition_cache || !prewhere_info
+        || finished_task.readersChainCanSkipMarksBeforePrewhere()
+        || finished_task.appliesMutationsBeforePrewhere()
+        || row_level_filter
+        /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
+        || !finished_task.getInfo().data_part_info->getDataPart())
+        return;
+
+    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+    {
+        if (output->result_name != prewhere_info->prewhere_column_name)
+            continue;
+
+        if (!VirtualColumnUtils::isDeterministic(output))
+            continue;
+
+        auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+        const auto & data_part_info = finished_task.getInfo().data_part_info;
+
+        String part_name = data_part_info->isProjectionPart()
+            ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+            : data_part_info->getPartName();
+        query_condition_cache->write(
+            /// QueryConditionCache is a coordinator feature; concrete part present here.
+            data_part_info->getDataPart()->storage.getStorageID().uuid,
+            part_name,
+            queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt),
+            prewhere_info->prewhere_actions.getNames()[0],
+            finished_task.getPrewhereUnmatchedMarks(),
+            data_part_info->getIndexGranularity().getMarksCount(),
+            data_part_info->getIndexGranularity().hasFinalMark());
+
+        break;
+    }
+}
+
 ChunkAndProgress MergeTreeSelectProcessor::makeSliceEndMarker() const
 {
     Columns empty_columns;
@@ -420,65 +467,25 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         {
             if (!task || algorithm->needNewTask(*task))
             {
-                /// Tell the router that the slice is fully read before asking for the next one.
-                if (emit_slice_end_markers && task && !slice_end_marker_sent)
+                if (task && !current_task_finalized)
                 {
-                    slice_end_marker_sent = true;
-                    return makeSliceEndMarker();
-                }
+                    current_task_finalized = true;
+                    updateQueryConditionCache(*task);
 
-                /// Update the query condition cache for filters in PREWHERE stage.
-                /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
-                /// could have filtered marks before PREWHERE saw them, to avoid attributing those
-                /// marks to the PREWHERE predicate hash. See Issue #104781.
-                /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason.
-                /// A row-level security filter is also prepended before PREWHERE, yet this write keys
-                /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
-                /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
-                if (reader_settings.use_query_condition_cache && task && prewhere_info
-                    && !task->readersChainCanSkipMarksBeforePrewhere()
-                    && !task->appliesMutationsBeforePrewhere()
-                    && !row_level_filter
-                    /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
-                    && task->getInfo().data_part_info->getDataPart())
-                {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
-                    {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
-
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            const auto & data_part_info = task->getInfo().data_part_info;
-
-                            String part_name = data_part_info->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                                : data_part_info->getPartName();
-                            query_condition_cache->write(
-                                /// QueryConditionCache is a coordinator feature; concrete part present here.
-                                data_part_info->getDataPart()->storage.getStorageID().uuid,
-                                part_name,
-                                queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt),
-                                prewhere_info->prewhere_actions.getNames()[0],
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part_info->getIndexGranularity().getMarksCount(),
-                                data_part_info->getIndexGranularity().hasFinalMark());
-
-                            break;
-                        }
-                    }
+                    /// Tell the router that the slice is fully read before asking for the next one.
+                    if (sliced_pool)
+                        return makeSliceEndMarker();
                 }
 
                 auto new_task = algorithm->getNewTask(*pool, task.get());
 
                 /// Nothing is assigned to this source right now; the router wakes it up when there is.
-                /// The finished task is kept so that its readers can continue the segment.
-                if (!new_task && emit_slice_end_markers)
+                /// The finished task is kept so that its readers can continue the lane.
+                if (!new_task && sliced_pool && !sliced_pool->isFinished())
                     return makeSliceEndMarker();
 
                 task = std::move(new_task);
-                slice_end_marker_sent = false;
+                current_task_finalized = false;
             }
 
             if (!task)

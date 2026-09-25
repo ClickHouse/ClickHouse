@@ -1148,7 +1148,7 @@ Pipe ReadFromMergeTree::readInOrderSliced(
             &storage_snapshot->metadata->getColumns());
 
         processor->addPartLevelToChunk(isQueryWithFinal());
-        processor->enableSliceEndMarkers();
+        processor->enableSliceEndMarkers(pool);
         if (settings[Setting::read_in_order_use_virtual_row_per_block])
             processor->setVirtualRowConversions(virtual_row_conversion, pk_header, /*read_in_reverse_order_=*/ false);
 
@@ -2059,11 +2059,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         }
     }
 
-    bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
-
-    /// Preliminary MergingSortedTransform consumes virtual row, so it won't reach downstream sorting and optimization won't work.
-    if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
-        need_preliminary_merge = false;
+    const bool need_preliminary_merge = needsPreliminaryMerge(parts_with_ranges.size());
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
@@ -2082,15 +2078,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .total_query_nodes = total_query_nodes,
     };
 
-    /// The sliced pool needs the initial virtual rows to keep the merge from demanding every part at
-    /// once, and a merge that sees the parts directly, so it is not combined with preliminary merges.
-    const bool use_sliced_pool = settings[Setting::read_in_order_use_sliced_pool]
-        && read_type == ReadType::InOrder
-        && virtual_row_conversion
-        && !is_parallel_reading_from_replicas
-        && !need_preliminary_merge
-        && !output_each_partition_through_separate_port;
-
+    const bool use_sliced_pool = slicedPoolRequested() && !need_preliminary_merge;
     if (use_sliced_pool)
     {
         Pipe pipe = readInOrderSliced(std::move(parts_with_ranges), index_build_context, column_names, pool_settings, input_order_info->limit);
@@ -4129,6 +4117,35 @@ bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversi
 bool ReadFromMergeTree::readsInOrder() const
 {
     return reader_settings.read_in_order;
+}
+
+bool ReadFromMergeTree::needsPreliminaryMerge(size_t num_parts) const
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Preliminary MergingSortedTransform consumes virtual row, so it won't reach downstream sorting and optimization won't work.
+    if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
+        return false;
+
+    return num_parts > settings[Setting::read_in_order_two_level_merge_threshold];
+}
+
+bool ReadFromMergeTree::slicedPoolRequested() const
+{
+    const auto & input_order_info = query_info.input_order_info;
+
+    /// The sliced pool needs the initial virtual rows to keep the merge from demanding every part at
+    /// once, and a merge that sees the parts directly, so it is not combined with preliminary merges.
+    return context->getSettingsRef()[Setting::read_in_order_use_sliced_pool]
+        && input_order_info && input_order_info->direction == 1
+        && virtual_row_conversion
+        && !is_parallel_reading_from_replicas
+        && !output_each_partition_through_separate_port;
+}
+
+bool ReadFromMergeTree::usesSlicedPool() const
+{
+    return slicedPoolRequested() && !needsPreliminaryMerge(getAnalysisResult().parts_with_ranges.size());
 }
 
 void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)

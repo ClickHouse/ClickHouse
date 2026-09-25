@@ -161,6 +161,18 @@ void MergeTreeReadPoolInOrderSliced::releaseLaneReaders(size_t lane)
     lanes[lane].parked_readers.clear();
 }
 
+void MergeTreeReadPoolInOrderSliced::finish()
+{
+    std::lock_guard lock(mutex);
+    finished = true;
+}
+
+bool MergeTreeReadPoolInOrderSliced::isFinished() const
+{
+    std::lock_guard lock(mutex);
+    return finished;
+}
+
 void MergeTreeReadPoolInOrderSliced::bindSource(size_t source, size_t lane)
 {
     std::lock_guard lock(mutex);
@@ -174,6 +186,9 @@ void MergeTreeReadPoolInOrderSliced::bindSource(size_t source, size_t lane)
 MergeTreeReadPoolInOrderSliced::SliceDescription MergeTreeReadPoolInOrderSliced::assignSlice(size_t source)
 {
     std::lock_guard lock(mutex);
+
+    if (finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot assign a slice to source {}: the pool is finished", source);
 
     const auto & lane = bound_lane[source];
     if (!lane)

@@ -79,6 +79,11 @@ public:
     /// Drops the readers parked in a lane that is not going to be read anymore.
     void releaseLaneReaders(size_t lane);
 
+    /// No slice is going to be assigned anymore. A source that finds no task after this ends its stream
+    /// instead of waiting for the router.
+    void finish();
+    bool isFinished() const;
+
 private:
     struct Lane
     {
@@ -114,6 +119,7 @@ private:
     /// The lane of the last task each source got, i.e. the lane its current readers belong to.
     std::vector<std::optional<size_t>> last_task_lane TSA_GUARDED_BY(mutex);
     std::vector<std::optional<PendingSlice>> pending TSA_GUARDED_BY(mutex);
+    bool finished TSA_GUARDED_BY(mutex) = false;
 };
 
 }
