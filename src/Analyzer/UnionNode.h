@@ -43,8 +43,11 @@ using QueryNodePtr = std::shared_ptr<QueryNode>;
 class UnionNode final : public ITableExpressionNode
 {
 public:
-    /// Construct union node with context and normalized union mode
-    explicit UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_);
+    /// Construct union node with context, normalized operation mode, and column matching mode.
+    explicit UnionNode(
+        ContextMutablePtr context_,
+        SelectUnionMode union_mode_,
+        SetOperationColumnMatchMode column_match_mode_);
 
     /// Get context
     ContextPtr getContext() const
@@ -154,6 +157,21 @@ public:
         return union_mode;
     }
 
+    SetOperationColumnMatchMode getColumnMatchMode() const
+    {
+        return column_match_mode;
+    }
+
+    void setProjectionAliasesToOverride(Names projection_aliases)
+    {
+        projection_aliases_to_override = std::move(projection_aliases);
+    }
+
+    const Names & getProjectionAliasesToOverride() const
+    {
+        return projection_aliases_to_override;
+    }
+
     /// Get union node queries
     const ListNode & getQueries() const
     {
@@ -181,8 +199,11 @@ public:
     /// Returns true if union node is resolved, false otherwise
     bool isResolved() const;
 
-    /// Compute union node projection columns
-    NamesAndTypes computeProjectionColumns() const;
+    bool hasNameMatchedUnion() const;
+
+    /// Compute union node projection columns. When aliases are disabled, return the names used
+    /// while aligning this union's operands, before aliases applied to the union result itself.
+    NamesAndTypes computeProjectionColumns(bool apply_projection_aliases = true) const;
 
     /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
@@ -232,8 +253,10 @@ private:
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;
+    Names projection_aliases_to_override;
     ContextMutablePtr context;
     SelectUnionMode union_mode;
+    SetOperationColumnMatchMode column_match_mode;
 
     static constexpr size_t queries_child_index = 0;
     static constexpr size_t correlated_columns_list_index = 1;

@@ -84,7 +84,12 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_distinct_parser(Keyword::DISTINCT);
     ParserKeyword s_except_parser(Keyword::EXCEPT);
     ParserKeyword s_intersect_parser(Keyword::INTERSECT);
+    ParserKeyword s_by_parser(Keyword::BY);
+    ParserKeyword s_name_parser(Keyword::NAME);
     ASTs elements;
+
+    union_modes.clear();
+    union_column_match_modes.clear();
 
     auto parse_element = [&]
     {
@@ -102,12 +107,22 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (s_union_parser.ignore(pos, expected))
         {
+            SetOperationColumnMatchMode column_match_mode = SetOperationColumnMatchMode::Position;
             if (s_all_parser.check(pos, expected))
+            {
+                if (s_by_parser.ignore(pos, expected))
+                {
+                    if (!s_name_parser.ignore(pos, expected))
+                        return false;
+                    column_match_mode = SetOperationColumnMatchMode::Name;
+                }
                 union_modes.push_back(SelectUnionMode::UNION_ALL);
+            }
             else if (s_distinct_parser.check(pos, expected))
                 union_modes.push_back(SelectUnionMode::UNION_DISTINCT);
             else
                 union_modes.push_back(SelectUnionMode::UNION_DEFAULT);
+            union_column_match_modes.push_back(column_match_mode);
             return true;
         }
         if (s_except_parser.check(pos, expected))
@@ -118,6 +133,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 union_modes.push_back(SelectUnionMode::EXCEPT_DISTINCT);
             else
                 union_modes.push_back(SelectUnionMode::EXCEPT_DEFAULT);
+            union_column_match_modes.push_back(SetOperationColumnMatchMode::Position);
             return true;
         }
         if (s_intersect_parser.check(pos, expected))
@@ -128,6 +144,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 union_modes.push_back(SelectUnionMode::INTERSECT_DISTINCT);
             else
                 union_modes.push_back(SelectUnionMode::INTERSECT_DEFAULT);
+            union_column_match_modes.push_back(SetOperationColumnMatchMode::Position);
             return true;
         }
         return false;

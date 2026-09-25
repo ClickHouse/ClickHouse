@@ -88,6 +88,18 @@ namespace ErrorCodes
 namespace
 {
 
+Names collectProjectionAliases(const ASTPtr & aliases)
+{
+    Names collected_aliases;
+    const auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
+    collected_aliases.reserve(override_aliases_children.size());
+
+    for (const auto & child : override_aliases_children)
+        collected_aliases.push_back(child->as<ASTIdentifier &>().name());
+
+    return collected_aliases;
+}
+
 class QueryTreeBuilder
 {
 public:
@@ -203,7 +215,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     if (select_lists.children.size() == 1)
         return buildSelectOrUnionExpression(select_lists.children[0], is_subquery, cte_data, aliases, context);
 
-    auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), select_with_union_query_typed.union_mode);
+    auto union_node = std::make_shared<UnionNode>(
+        Context::createCopy(context),
+        select_with_union_query_typed.union_mode,
+        select_with_union_query_typed.column_match_mode);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
@@ -215,9 +230,16 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     for (size_t i = 0; i < select_lists_children_size; ++i)
     {
         auto & select_list_node = select_lists.children[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, context);
+        ASTPtr query_aliases;
+        if (aliases && select_with_union_query_typed.column_match_mode != SetOperationColumnMatchMode::Name)
+            query_aliases = aliases;
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(
+            select_list_node, false /*is_subquery*/, {} /*cte_name*/, query_aliases, context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
+
+    if (aliases)
+        union_node->setProjectionAliasesToOverride(collectProjectionAliases(aliases));
 
     return union_node;
 }
@@ -247,7 +269,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION type is not initialized");
 
-    auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), union_mode);
+    auto union_node = std::make_shared<UnionNode>(
+        Context::createCopy(context), union_mode, SetOperationColumnMatchMode::Position);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
@@ -259,9 +282,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     for (size_t i = 0; i < select_lists_size; ++i)
     {
         auto & select_list_node = select_lists[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, context);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
+
+    if (aliases)
+        union_node->setProjectionAliasesToOverride(collectProjectionAliases(aliases));
 
     return union_node;
 }
@@ -379,20 +405,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     // Apply the override aliases to the projection nodes
     if (aliases)
-    {
-        // Collect the aliases into a vector of strings
-        Names collected_aliases;
-        auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
-        collected_aliases.reserve(override_aliases_children.size());
-
-        for (const auto & child : override_aliases_children)
-        {
-            const auto & alias_ast = child->as<ASTIdentifier &>();
-            collected_aliases.push_back(alias_ast.name());
-        }
-
-        current_query_tree->setProjectionAliasesToOverride(collected_aliases);
-    }
+        current_query_tree->setProjectionAliasesToOverride(collectProjectionAliases(aliases));
 
     auto prewhere_expression = select_query_typed.prewhere();
     if (prewhere_expression)
@@ -1016,25 +1029,32 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     }
                     else if (auto * union_node = node->as<UnionNode>())
                     {
-                        /// for UNIONs, apply aliases to the first query in the union, projection column names come from the first query (see UnionNode::computeProjectionColumns)
-                        /// we find the first QueryNode in case of nested UNIONs
-                        const auto & queries = union_node->getQueries().getNodes();
-                        QueryTreeNodePtr current = queries.empty() ? nullptr : queries[0];
-                        while (current)
+                        if (union_node->hasNameMatchedUnion())
                         {
-                            if (auto * inner_query = current->as<QueryNode>())
+                            union_node->setProjectionAliasesToOverride(std::move(column_alias_names));
+                        }
+                        else
+                        {
+                            /// For positional UNIONs, keep the existing behavior: the output names
+                            /// come from the first query in the union.
+                            const auto & queries = union_node->getQueries().getNodes();
+                            QueryTreeNodePtr current = queries.empty() ? nullptr : queries[0];
+                            while (current)
                             {
-                                inner_query->setProjectionAliasesToOverride(std::move(column_alias_names));
-                                break;
-                            }
-                            else if (auto * inner_union = current->as<UnionNode>())
-                            {
-                                const auto & inner_queries = inner_union->getQueries().getNodes();
-                                current = inner_queries.empty() ? nullptr : inner_queries[0];
-                            }
-                            else
-                            {
-                                break;
+                                if (auto * inner_query = current->as<QueryNode>())
+                                {
+                                    inner_query->setProjectionAliasesToOverride(std::move(column_alias_names));
+                                    break;
+                                }
+                                else if (auto * inner_union = current->as<UnionNode>())
+                                {
+                                    const auto & inner_queries = inner_union->getQueries().getNodes();
+                                    current = inner_queries.empty() ? nullptr : inner_queries[0];
+                                }
+                                else
+                                {
+                                    break;
+                                }
                             }
                         }
                     }

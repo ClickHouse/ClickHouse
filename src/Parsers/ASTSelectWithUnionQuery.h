@@ -23,10 +23,20 @@ public:
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 
+    /// Edge descriptors are valid for an unnormalized AST. A missing column-match vector means
+    /// that every edge uses positional matching for backwards compatibility with older ASTs.
+    SetOperationDescriptors getSetOperations() const;
+    void setSetOperations(const SetOperationDescriptors & operations);
+
+    /// Check this AST and all nested set-operation ASTs for BY NAME metadata.
+    bool hasByNameSetOperation() const;
+
     QueryKind getQueryKind() const override { return QueryKind::Select; }
 
     SelectUnionMode union_mode{};
+    SetOperationColumnMatchMode column_match_mode = SetOperationColumnMatchMode::Position;
     SelectUnionModes list_of_modes;
+    SetOperationColumnMatchModes list_of_column_match_modes;
     bool is_normalized = false;
 
     ASTPtr list_of_selects;

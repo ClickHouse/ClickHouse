@@ -144,7 +144,7 @@ QUERY id: 0
       LEFT TABLE EXPRESSION
         TABLE id: 5, alias: __table1, table_name: default.t_func_to_subcolumns
       RIGHT TABLE EXPRESSION
-        UNION id: 7, alias: __table2, is_subquery: 1, union_mode: UNION_ALL
+        UNION id: 7, alias: __table2, is_subquery: 1, union_mode: UNION_ALL, column_match_mode: POSITION
           QUERIES
             LIST id: 16, nodes: 2
               QUERY id: 17, alias: __table3

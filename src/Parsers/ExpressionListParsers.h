@@ -117,12 +117,14 @@ public:
     }
 
     auto getUnionModes() const { return union_modes; }
+    auto getUnionColumnMatchModes() const { return union_column_match_modes; }
 
 protected:
     const char * getName() const override { return "list of union elements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 private:
     SelectUnionModes union_modes;
+    SetOperationColumnMatchModes union_column_match_modes;
 };
 
 

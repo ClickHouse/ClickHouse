@@ -41,6 +41,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
 }
 
@@ -55,6 +56,10 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
+    if (ast->hasByNameSetOperation())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "UNION ALL BY NAME is supported only with the analyzer");
+
     bool require_full_header = ast->hasNonDefaultUnionMode();
 
     /// INTERSECT/EXCEPT children always return their full header (they ignore

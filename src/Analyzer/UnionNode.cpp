@@ -24,10 +24,15 @@
 #include <Common/SettingsChanges.h>
 
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+
+#include <unordered_map>
+#include <unordered_set>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/QueryNode.h>
@@ -48,15 +53,22 @@ namespace Setting
     extern const SettingsBool use_variant_as_common_type;
 }
 
-UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
+UnionNode::UnionNode(
+    ContextMutablePtr context_,
+    SelectUnionMode union_mode_,
+    SetOperationColumnMatchMode column_match_mode_)
     : ITableExpressionNode(children_size)
     , context(std::move(context_))
     , union_mode(union_mode_)
+    , column_match_mode(column_match_mode_)
 {
     if (union_mode == SelectUnionMode::UNION_DEFAULT ||
         union_mode == SelectUnionMode::EXCEPT_DEFAULT ||
         union_mode == SelectUnionMode::INTERSECT_DEFAULT)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode));
+
+    if (column_match_mode == SetOperationColumnMatchMode::Name && union_mode != SelectUnionMode::UNION_ALL)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`BY NAME` is supported only with `UNION ALL`");
 
     children[queries_child_index] = std::make_shared<ListNode>();
     children[correlated_columns_list_index] = std::make_shared<ListNode>();
@@ -82,47 +94,139 @@ bool UnionNode::isResolved() const
     return true;
 }
 
-NamesAndTypes UnionNode::computeProjectionColumns() const
+bool UnionNode::hasNameMatchedUnion() const
+{
+    if (column_match_mode == SetOperationColumnMatchMode::Name)
+        return true;
+
+    for (const auto & query_node : getQueries().getNodes())
+        if (const auto * nested_union = query_node->as<UnionNode>())
+            if (nested_union->hasNameMatchedUnion())
+                return true;
+
+    return false;
+}
+
+NamesAndTypes UnionNode::computeProjectionColumns(bool apply_projection_aliases) const
 {
     if (recursive_cte_table)
         return recursive_cte_table->columns;
 
-    std::vector<NamesAndTypes> projections;
-
-    NamesAndTypes query_node_projection;
-
     const auto & query_nodes = getQueries().getNodes();
+    std::vector<NamesAndTypes> projections;
     projections.reserve(query_nodes.size());
 
     for (const auto & query_node : query_nodes)
     {
+        NamesAndTypes query_node_projection;
         if (auto * query_node_typed = query_node->as<QueryNode>())
             query_node_projection = query_node_typed->getProjectionColumns();
         else if (auto * union_node_typed = query_node->as<UnionNode>())
             query_node_projection = union_node_typed->computeProjectionColumns();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query tree node type in UNION node");
 
         projections.push_back(query_node_projection);
+    }
 
-        if (query_node_projection.size() != projections.front().size())
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "UNION different number of columns in queries");
+    if (column_match_mode == SetOperationColumnMatchMode::Position)
+    {
+        for (const auto & projection : projections)
+            if (projection.size() != projections.front().size())
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "UNION different number of columns in queries");
+
+        NamesAndTypes result_columns;
+        size_t projections_size = projections.size();
+        DataTypes projection_column_types(projections_size);
+
+        size_t columns_size = projections.front().size();
+        for (size_t column_index = 0; column_index < columns_size; ++column_index)
+        {
+            for (size_t projection_index = 0; projection_index < projections_size; ++projection_index)
+                projection_column_types[projection_index] = projections[projection_index][column_index].type;
+
+            auto result_type = getContext()->getSettingsRef()[Setting::use_variant_as_common_type]
+                ? getLeastSupertypeOrVariant(projection_column_types)
+                : getLeastSupertype(projection_column_types);
+            result_columns.emplace_back(projections.front()[column_index].name, std::move(result_type));
+        }
+
+        if (apply_projection_aliases && !projection_aliases_to_override.empty())
+        {
+            if (projection_aliases_to_override.size() != result_columns.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Number of aliases does not match number of UNION projection columns. Expected {}, got {}",
+                    result_columns.size(), projection_aliases_to_override.size());
+
+            for (size_t i = 0; i < result_columns.size(); ++i)
+                result_columns[i].name = projection_aliases_to_override[i];
+        }
+
+        return result_columns;
+    }
+
+    Names result_names;
+    std::vector<DataTypes> column_types;
+    std::vector<size_t> present_in_branches;
+    std::unordered_map<String, size_t> name_to_index;
+
+    for (const auto & projection : projections)
+    {
+        std::unordered_set<String> branch_names;
+        branch_names.reserve(projection.size());
+
+        for (const auto & column : projection)
+        {
+            if (!branch_names.insert(column.name).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Duplicate column name '{}' in UNION ALL BY NAME operand", column.name);
+
+            auto [it, inserted] = name_to_index.emplace(column.name, result_names.size());
+            if (inserted)
+            {
+                result_names.push_back(column.name);
+                column_types.emplace_back();
+                present_in_branches.push_back(0);
+            }
+
+            column_types[it->second].push_back(column.type);
+            ++present_in_branches[it->second];
+        }
     }
 
     NamesAndTypes result_columns;
-
-    size_t projections_size = projections.size();
-    DataTypes projection_column_types;
-    projection_column_types.resize(projections_size);
-
-    size_t columns_size = query_node_projection.size();
-    for (size_t column_index = 0; column_index < columns_size; ++column_index)
+    result_columns.reserve(result_names.size());
+    for (size_t column_index = 0; column_index < result_names.size(); ++column_index)
     {
-        for (size_t projection_index = 0; projection_index < projections_size; ++projection_index)
-            projection_column_types[projection_index] = projections[projection_index][column_index].type;
+        if (present_in_branches[column_index] != projections.size())
+        {
+            auto null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+            for (const auto & type : column_types[column_index])
+            {
+                if (!tryGetLeastSupertype(DataTypes{type, null_type}))
+                    throw Exception(ErrorCodes::TYPE_MISMATCH,
+                        "Column '{}' is absent in one UNION ALL BY NAME operand, but type '{}' cannot represent NULL",
+                        result_names[column_index], type->getName());
+            }
+
+            column_types[column_index].push_back(std::move(null_type));
+        }
 
         auto result_type = getContext()->getSettingsRef()[Setting::use_variant_as_common_type]
-            ? getLeastSupertypeOrVariant(projection_column_types)
-            : getLeastSupertype(projection_column_types);
-        result_columns.emplace_back(projections.front()[column_index].name, std::move(result_type));
+            ? getLeastSupertypeOrVariant(column_types[column_index])
+            : getLeastSupertype(column_types[column_index]);
+        result_columns.emplace_back(result_names[column_index], std::move(result_type));
+    }
+
+    if (apply_projection_aliases && !projection_aliases_to_override.empty())
+    {
+        if (projection_aliases_to_override.size() != result_columns.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Number of aliases does not match number of UNION projection columns. Expected {}, got {}",
+                result_columns.size(), projection_aliases_to_override.size());
+
+        for (size_t i = 0; i < result_columns.size(); ++i)
+            result_columns[i].name = projection_aliases_to_override[i];
     }
 
     return result_columns;
@@ -132,6 +236,67 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 {
     if (recursive_cte_table)
         return;
+
+    if (column_match_mode == SetOperationColumnMatchMode::Name)
+    {
+        const auto union_projection_columns = computeProjectionColumns(false);
+        std::unordered_set<String> used_projection_column_names;
+        used_projection_column_names.reserve(used_projection_columns_indexes.size());
+
+        for (const auto index : used_projection_columns_indexes)
+        {
+            if (index >= union_projection_columns.size())
+                return;
+            used_projection_column_names.insert(union_projection_columns[index].name);
+        }
+
+        std::vector<std::pair<QueryTreeNodePtr, std::unordered_set<size_t>>> children_projection_indexes;
+        children_projection_indexes.reserve(getQueries().getNodes().size());
+
+        for (const auto & query_node : getQueries().getNodes())
+        {
+            NamesAndTypes projection_columns;
+            if (const auto * query_node_typed = query_node->as<QueryNode>())
+                projection_columns = query_node_typed->getProjectionColumns();
+            else
+                projection_columns = query_node->as<UnionNode>()->computeProjectionColumns(false);
+
+            std::unordered_set<size_t> child_used_projection_indexes;
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+            {
+                if (used_projection_column_names.contains(projection_columns[i].name))
+                    child_used_projection_indexes.insert(i);
+            }
+
+            children_projection_indexes.emplace_back(query_node, std::move(child_used_projection_indexes));
+        }
+
+        for (auto & [query_node, child_used_projection_indexes] : children_projection_indexes)
+        {
+            if (auto * query_node_typed = query_node->as<QueryNode>())
+                query_node_typed->removeUnusedProjectionColumns(child_used_projection_indexes);
+            else if (auto * union_node_typed = query_node->as<UnionNode>())
+                union_node_typed->removeUnusedProjectionColumns(child_used_projection_indexes);
+        }
+
+        if (!projection_aliases_to_override.empty())
+        {
+            std::unordered_map<String, String> column_name_to_alias;
+            column_name_to_alias.reserve(union_projection_columns.size());
+            for (size_t i = 0; i < union_projection_columns.size(); ++i)
+                column_name_to_alias.emplace(union_projection_columns[i].name, projection_aliases_to_override[i]);
+
+            Names pruned_projection_aliases;
+            const auto pruned_projection_columns = computeProjectionColumns(false);
+            pruned_projection_aliases.reserve(pruned_projection_columns.size());
+            for (const auto & projection_column : pruned_projection_columns)
+                pruned_projection_aliases.push_back(column_name_to_alias.at(projection_column.name));
+
+            projection_aliases_to_override = std::move(pruned_projection_aliases);
+        }
+
+        return;
+    }
 
     /// We can't remove unused projections in the case of EXCEPT and INTERSECT
     /// because it can lead to incorrect query results. Example:
@@ -169,6 +334,18 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
             query_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);
         else if (auto * union_node_typed = query_node->as<UnionNode>())
             union_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);
+    }
+
+    if (!projection_aliases_to_override.empty())
+    {
+        Names pruned_projection_aliases;
+        pruned_projection_aliases.reserve(used_projection_columns_indexes.size());
+        for (size_t i = 0; i < projection_aliases_to_override.size(); ++i)
+        {
+            if (used_projection_columns_indexes.contains(i))
+                pruned_projection_aliases.push_back(std::move(projection_aliases_to_override[i]));
+        }
+        projection_aliases_to_override = std::move(pruned_projection_aliases);
     }
 }
 
@@ -208,7 +385,11 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
 
+    if (!projection_aliases_to_override.empty())
+        buffer << ", projection_aliases_to_override: " << projection_aliases_to_override;
+
     buffer << ", union_mode: " << toString(union_mode);
+    buffer << ", column_match_mode: " << toString(column_match_mode);
 
     if (isCorrelated())
     {
@@ -235,7 +416,9 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         && is_materialized == rhs_typed.is_materialized
         && is_recursive_cte == rhs_typed.is_recursive_cte
         && cte_name == rhs_typed.cte_name
-        && union_mode == rhs_typed.union_mode;
+        && union_mode == rhs_typed.union_mode
+        && column_match_mode == rhs_typed.column_match_mode
+        && projection_aliases_to_override == rhs_typed.projection_aliases_to_override;
 }
 
 void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -255,12 +438,20 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(cte_name.size());
     state.update(cte_name);
 
+    state.update(projection_aliases_to_override.size());
+    for (const auto & projection_alias : projection_aliases_to_override)
+    {
+        state.update(projection_alias.size());
+        state.update(projection_alias);
+    }
+
     state.update(static_cast<size_t>(union_mode));
+    state.update(static_cast<size_t>(column_match_mode));
 }
 
 QueryTreeNodePtr UnionNode::cloneImpl() const
 {
-    auto result_union_node = std::make_shared<UnionNode>(context, union_mode);
+    auto result_union_node = std::make_shared<UnionNode>(context, union_mode, column_match_mode);
 
     result_union_node->is_subquery = is_subquery;
     result_union_node->is_cte = is_cte;
@@ -268,6 +459,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
     result_union_node->cte_name = cte_name;
+    result_union_node->projection_aliases_to_override = projection_aliases_to_override;
 
     return result_union_node;
 }
@@ -276,6 +468,7 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;
+    select_with_union_query->column_match_mode = column_match_mode;
     select_with_union_query->is_normalized = true;
     select_with_union_query->children.push_back(getQueriesNode()->toAST(options));
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
