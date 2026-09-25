@@ -217,6 +217,12 @@ public:
         /// limit is checked against this running total.
         std::atomic<size_t> single_level_merged_rows = 0;
 
+        /// The convergence verdict of the top-K threshold merge, shared across the buckets: the
+        /// buckets partition the groups by hash, so their value distributions are alike, and the
+        /// first bucket's precheck decides for all of them (see `Aggregator::Params::threshold_top_k`).
+        /// -1 - undecided, 0 - take the ordinary merge, 1 - the threshold merge converges.
+        std::atomic<int> threshold_top_k_verdict{-1};
+
         /// Groups the two-level bucket merge has converted so far; a throw-mode group limit is
         /// checked against this running total, taken from the bucket tables rather than from
         /// the converted chunks, which the bucket-local Top-K conversion truncates. For the
@@ -289,7 +295,14 @@ protected:
         /// group-by limit must be enforced against the true cardinality.
         size_t full_group_count = 0;
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
-            *data, bucket_arena, params->final, bucket_num, shared_data->is_cancelled, updater, &full_group_count);
+            *data,
+            bucket_arena,
+            params->final,
+            bucket_num,
+            shared_data->is_cancelled,
+            updater,
+            &full_group_count,
+            &shared_data->threshold_top_k_verdict);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
 
         /// A throw-mode group limit is enforced against the merged totals for every run: the
