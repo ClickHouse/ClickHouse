@@ -52,6 +52,36 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
+    /// `array(x1, x2, ..., xN)` — N=0 yields `Array(Nothing)` (empty array literal);
+    /// non-empty yields `Array(leastSupertype{,OrVariant}(x1, ..., xN))`. The
+    /// `leastSupertypeOrVariant` branch is selected when `use_variant_as_common_type`
+    /// is enabled (the default).
+    String getSignatureString() const override
+    {
+        /// The zero-arg overload can't be folded into the variadic form: with
+        /// `[T1], ...` the "skip optional" branch leaves `T1` unbound and the
+        /// return expression `leastSupertype(T1, ...)` fails as "T1 was not
+        /// captured." Keep the two alternatives separate.
+        if (use_variant_as_common_type)
+            return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertypeOrVariant(T1, ...))";
+        return "() -> Array(Nothing) OR (T1, ...) -> Array(leastSupertype(T1, ...))";
+    }
+
+    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
+    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
+    /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!allow_lossy_numeric_supertype)
+            return IFunction::getReturnTypeImpl(arguments);
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (use_variant_as_common_type)

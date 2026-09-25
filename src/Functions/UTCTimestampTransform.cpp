@@ -24,7 +24,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -49,34 +48,51 @@ namespace
 
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+        String getSignatureString() const override
+        {
+            return
+                "(DateTime, const String) -> DateTime"
+                " OR (T : DateTime64, const String) -> DateTime64(scaleOf(T))";
+        }
+
+        /// Restore the legacy invariant that the first argument must not have an explicit
+        /// timezone. The DSL has no way to express "DateTime/DateTime64 without explicit tz",
+        /// so enforce it here before delegating to the DSL, on both resolution entry points.
+        /// Each entry point then delegates to its own base overload: the types-only path must
+        /// not be routed through the column-aware one, because the latter applies the signature
+        /// with the constness check enabled and would wrongly reject the `const String` position.
+        void checkFirstArgumentHasNoExplicitTimeZone(const IDataType * first_argument_type) const
+        {
+            if (const auto * mixin = dynamic_cast<const TimezoneMixin *>(first_argument_type))
+            {
+                if (mixin->hasExplicitTimeZone())
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {}'s 1st argument should not have explicit time zone.", function_name);
+            }
+        }
+
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        {
+            checkFirstArgumentHasNoExplicitTimeZone(arguments.empty() ? nullptr : arguments[0].get());
+            return IFunction::getReturnTypeImpl(arguments);
+        }
+
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            FunctionArgumentDescriptors mandatory_args{
-                {"datetime", &isDateTimeOrDateTime64, nullptr, "DateTime or DateTime64"},
-                {"timezone", &isString, nullptr, "String"}
-            };
-            validateFunctionArguments(function_name, arguments, mandatory_args);
-
-            if (dynamic_cast<const TimezoneMixin *>(arguments[0].type.get())->hasExplicitTimeZone())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument should not have explicit time zone.", function_name);
-
-            DataTypePtr date_time_type;
-            if (WhichDataType{arguments[0].type}.isDateTime())
-                date_time_type = std::make_shared<DataTypeDateTime>();
-            else
-            {
-                const DataTypeDateTime64 * date_time_64 = static_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-                date_time_type = std::make_shared<DataTypeDateTime64>(date_time_64->getScale());
-            }
-            return date_time_type;
+            checkFirstArgumentHasNoExplicitTimeZone(arguments.empty() ? nullptr : arguments[0].type.get());
+            return IFunction::getReturnTypeImpl(arguments);
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
-            if (arguments.size() != 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {}'s arguments number must be 2.", function_name);
             const ColumnWithTypeAndName & arg1 = arguments[0];
             const ColumnWithTypeAndName & arg2 = arguments[1];
+
+            /// Legacy enforced this in getReturnTypeImpl; mirror it at execute time so the
+            /// declarative signature doesn't have to encode \"DateTime without explicit timezone\".
+            if (dynamic_cast<const TimezoneMixin *>(arg1.type.get())->hasExplicitTimeZone())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument should not have explicit time zone.", function_name);
+
             const auto * time_zone_const_col = checkAndGetColumnConstData<ColumnString>(arg2.column.get());
             if (!time_zone_const_col)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of 2nd argument of function {}. Excepted const(String).", arg2.column->getName(), function_name);

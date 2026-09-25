@@ -56,6 +56,27 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
+    /// Three shapes:
+    /// 1. `ifNull(NULL, alt)`            -> alt's type (literal NULL always falls through).
+    /// 2. `ifNull(Nullable(T), alt)`     -> `leastSupertype{,OrVariant}(T, alt)`.
+    /// 3. `ifNull(non-nullable, alt)`    -> the non-nullable type unchanged.
+    /// The `OrVariant` form is selected by `use_variant_as_common_type`. The
+    /// runtime *also* uses the Variant supertype when either argument is itself
+    /// a Variant, regardless of the setting; the DSL doesn't model that
+    /// auto-detection, so when the setting is off the third alternative goes
+    /// through plain `leastSupertype` (and the runtime override stays
+    /// authoritative when a Variant slips in).
+    String getSignatureString() const override
+    {
+        if (use_variant_as_common_type)
+            return "(Nothing, T) -> T"
+                   " OR (Nullable(T), U) -> leastSupertypeOrVariant(T, U)"
+                   " OR (T, Any) -> T";
+        return "(Nothing, T) -> T"
+               " OR (Nullable(T), U) -> leastSupertype(T, U)"
+               " OR (T, Any) -> T";
+    }
+
     bool hasInformationAboutMonotonicity() const override { return true; }
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
@@ -72,6 +93,10 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
+    /// Override both entry points so this stays authoritative over the declarative signature:
+    /// the `(T, Any) -> T` signature alternative cannot express the Variant auto-expansion
+    /// below, where `ifNull(Variant(...), alt)` widens the Variant to include `alt`'s type.
+    /// The signature in `getSignatureString` is documentation-only.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments[0]->onlyNull())
@@ -85,6 +110,11 @@ public:
         if (use_variant_as_common_type || has_variant)
             return getLeastSupertypeOrVariant(args, allow_lossy_numeric_supertype);
         return getLeastSupertype(args, allow_lossy_numeric_supertype);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return getReturnTypeImpl(DataTypes{arguments[0].type, arguments[1].type});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

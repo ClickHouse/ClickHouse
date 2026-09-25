@@ -28,6 +28,6 @@ SELECT uniqExact(generateSnowflakeID('x')) > 1 FROM numbers(100);
 SELECT 'errors are still reported';
 SELECT fuzzBits('abc', 2.0); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT fuzzBits('abc', -1.0); -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT fuzzBits('abc', materialize(0.5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT fuzzBits('abc', materialize(0.5)); -- { serverError ILLEGAL_COLUMN } -- the declarative signature requires a constant ratio
 SELECT fuzzBits(1, 0.5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT generateULID(1, 2); -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
