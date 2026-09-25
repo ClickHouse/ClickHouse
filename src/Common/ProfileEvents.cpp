@@ -1933,7 +1933,7 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
             return;
         }
         const size_t cold_slot = slot - hot_counter_count;
-        Count * page;
+        Count * page = nullptr;
         if constexpr (allow_allocation)
             page = ensurePage(cold_slot / cold_page_size, allocation_level);
         else
