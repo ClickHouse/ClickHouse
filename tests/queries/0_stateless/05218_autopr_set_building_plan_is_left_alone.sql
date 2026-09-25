@@ -6,8 +6,10 @@
 --
 -- Considering such a plan is not free even when nothing comes of it: the probe plan AutoPR builds to
 -- price the switch runs index analysis. That extra round is what this test pins. A `GLOBAL IN` runs its
--- subquery as a plan of its own, so the three rounds below are the two reads of the query and the probe
--- built for the query itself; a fourth would mean a probe was built for the set-building plan too.
+-- subquery as a plan of its own, so the two rounds below are the two reads of the query. The query
+-- itself gets no probe: shipping it would materialize its `GLOBAL IN` subquery, so the probe is skipped
+-- (`shippingQueryMaterializesSubqueries`). A third round would mean a probe was built for the
+-- set-building plan.
 --
 -- Rounds, not wall time, so the count is the same under sanitizers.
 
