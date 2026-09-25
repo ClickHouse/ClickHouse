@@ -2227,17 +2227,23 @@ VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Obje
             /// Azure ADLS Gen2 vended credentials use SAS tokens.
             /// The config keys follow the pattern: adls.sas-token.<account_name>
             /// or adls.sas-token.<account_name>.dfs.core.windows.net
-            /// We look for any key starting with "adls.sas-token." and use the first one found.
+            /// Select the key matching the account of `location` (abfss://container@account.dfs.core.windows.net/path).
             String sas_token;
-            std::vector<std::string> names;
-            object->getNames(names);
-            for (const auto & name : names)
+            const auto authority_start = location.find("://") + std::strlen("://");
+            const auto authority = location.substr(authority_start, location.find('/', authority_start) - authority_start);
+            const auto at_pos = authority.find('@');
+            if (at_pos != String::npos)
             {
-                if (name.starts_with("adls.sas-token."))
+                const auto account_host = authority.substr(at_pos + 1);
+                const auto account_name = account_host.substr(0, account_host.find('.'));
+                for (const auto & key : {"adls.sas-token." + account_host, "adls.sas-token." + account_name})
                 {
-                    sas_token = object->get(name).extract<String>();
-                    LOG_DEBUG(log, "Found Azure SAS token with key: {}", name);
-                    break;
+                    if (object->has(key))
+                    {
+                        sas_token = object->get(key).extract<String>();
+                        LOG_DEBUG(log, "Found Azure SAS token with key: {}", key);
+                        break;
+                    }
                 }
             }
 
