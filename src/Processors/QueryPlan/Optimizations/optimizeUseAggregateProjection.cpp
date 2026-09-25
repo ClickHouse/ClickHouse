@@ -44,6 +44,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 
+#include <algorithm>
 #include <unordered_map>
 
 namespace DB

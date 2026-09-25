@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
+#include <ranges>
 #include <unordered_map>
 #include <vector>
 
@@ -376,16 +377,26 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         {
             /// `and` is evaluated left to right, so the conjuncts left in the predicate must keep the order
             /// they appear in it: a guard stays ahead of the conjunct it guards. `getConjunctsList`
-            /// de-duplicates shared nodes, so the order it reports cannot be turned into the written one by
-            /// reversing it, and the predicate itself is the only faithful source.
-            std::unordered_set<const ActionsDAG::Node *> rejected_set(rejected_conjuncts.begin(), rejected_conjuncts.end());
+            /// de-duplicates shared nodes and can also report one node twice through its ALIAS branch, so
+            /// its order is not reversible into the written one and its multiplicity has to be carried over.
+            std::unordered_map<const ActionsDAG::Node *, size_t> remaining_occurrences;
+            for (const auto * conjunct : rejected_conjuncts)
+                ++remaining_occurrences[conjunct];
+
             ActionsDAG::NodeRawConstPtrs ordered_conjuncts;
             ordered_conjuncts.reserve(rejected_conjuncts.size());
             for (const auto * conjunct : getConjunctsInWrittenOrder(predicate))
-                if (rejected_set.erase(conjunct) != 0)
+            {
+                auto it = remaining_occurrences.find(conjunct);
+                if (it != remaining_occurrences.end() && it->second != 0)
+                {
+                    --it->second;
                     ordered_conjuncts.push_back(conjunct);
+                }
+            }
 
-            /// Every rejected conjunct is an atom of `predicate`, so the walk above reaches all of them.
+            /// The walk has no `visited_nodes`, so it reports every conjunct at least as often as
+            /// `getConjunctsList` did: a shortfall here means the two walks have diverged.
             if (ordered_conjuncts.size() != rejected_conjuncts.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Reordering the residual filter lost {} of {} conjuncts. DAG:\n{}",
