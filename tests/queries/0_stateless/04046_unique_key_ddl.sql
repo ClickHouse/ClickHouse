@@ -6,7 +6,7 @@
 -- Runtime dedup is out of scope; this test only exercises parsing, metadata,
 -- round-trip, guards, and restart survival.
 
-SET allow_experimental_unique_key = 1;
+SET enable_unique_key = 1;
 SET async_insert = 0;
 
 DROP TABLE IF EXISTS uk_t;
@@ -31,14 +31,14 @@ SELECT unique_key FROM system.tables WHERE database = currentDatabase() AND name
 -- 4. Same CREATE fails without the experimental setting.
 DROP TABLE uk_t;
 
-SET allow_experimental_unique_key = 0;
+SET enable_unique_key = 0;
 
 CREATE TABLE uk_t (id UInt64, user_id UInt32, v String)
 ENGINE = MergeTree
 UNIQUE KEY (id)
 ORDER BY (id, user_id); -- { serverError SUPPORT_IS_DISABLED }
 
-SET allow_experimental_unique_key = 1;
+SET enable_unique_key = 1;
 
 -- 5. UNIQUE KEY not a prefix of ORDER BY: supported via the per-part
 -- dense-index SST, which gives probes efficient point-lookup independent

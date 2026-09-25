@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1156400",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1157335",
       "email": "support@clickhouse.com"
     }
   },
@@ -378,7 +378,7 @@
     "/v1/organizations/{organizationId}/prometheus": {
       "get": {
         "summary": "Get organization metrics",
-        "description": "Deprecated. Use the Prometheus service discovery endpoint (/v1/organizations/{organizationId}/prometheus/discovery) instead. This endpoint is not available for new organizations; contact ClickHouse support to request access. Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted.",
+        "description": "**Deprecated.** This endpoint is disabled on 1 January 2027. It is already disabled for new organizations.\n\nMigrate before then to the service discovery endpoint, `GET /v1/organizations/{organizationId}/prometheus/discovery`. It returns one scrape target per service in the [`http_sd`](https://prometheus.io/docs/prometheus/latest/http_sd/) format, and Prometheus picks up new and deleted services automatically. The [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) has a `prometheus.yml` example.\n\nIf you need this endpoint after 1 January 2027, contact ClickHouse support to have it enabled for your organization.\n\nReturns Prometheus metrics for the services in the organization. Only services the API key is authorized to view are included.",
         "operationId": "organizationPrometheusGet",
         "parameters": [
           {
@@ -26056,7 +26056,7 @@
           },
           "sortingKey": {
             "type": "array",
-            "description": "Sorting key of the destination table. List of columns.",
+            "description": "Sorting key of the destination table. An entry that matches the name of a column declared in `columns` is used as that column. Any other entry is used as a SQL expression, for example a JSON sub-path such as `payload.workspace_id`. Entries must not contain commas, and every component must be non-Nullable.",
             "items": {
               "type": "string"
             }
@@ -26850,6 +26850,10 @@
               "scim_group_update",
               "scim_group_delete",
               "organization_saml_connection_delete",
+              "organization_update_saml_query_ownership_migration",
+              "organization_approved_domain_verify",
+              "organization_approved_domain_update",
+              "organization_approved_domain_delete",
               "datadog_integration_create",
               "datadog_integration_delete",
               "organization_update_spend_alert",
@@ -26857,6 +26861,7 @@
               "organization_update_private_endpoints",
               "organization_update_pci_compliance",
               "organization_update_hipaa_status",
+              "organization_update_public_preview",
               "transfer_credits_in",
               "transfer_credits_out",
               "promo_code_claim",
