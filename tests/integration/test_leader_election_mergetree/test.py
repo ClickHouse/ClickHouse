@@ -4579,10 +4579,11 @@ def test_vanished_patch_parts_retired_on_refresh_and_takeover(started_cluster):
 
         # A full reload from the shared storage must agree with the reconciled in-memory state - in
         # particular, nothing deleted the merged part that carries the materialized update.
+        # `WHERE x > 0` excludes the `x = 0` probe rows inserted by `wait_for_leader`.
         follower.query(f"DETACH TABLE {table}")
         follower.query(f"ATTACH TABLE {table}")
         assert _active_patch_parts(follower, table) == []
-        assert follower.query(f"SELECT y FROM {table} ORDER BY x").split() == [
+        assert follower.query(f"SELECT y FROM {table} WHERE x > 0 ORDER BY x").split() == [
             "101", "2", "3", "4",
         ], "The reload from the shared storage disagrees with the reconciled state"
     finally:
