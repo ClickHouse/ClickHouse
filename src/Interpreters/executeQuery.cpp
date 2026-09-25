@@ -2926,10 +2926,6 @@ static BlockIO executeQueryImpl(
                 insert_query->tryFindInputFunction(input_function);
                 if (input_function)
                 {
-                    /// For input('auto'), make sure that Context::insertion_table_info is set.
-                    if (insert_table && !context->hasInsertionTableColumnsDescription())
-                        InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table);
-
                     const ASTSelectQuery * select_query_hint = insert_query->select->as<ASTSelectQuery>();
                     if (!select_query_hint)
                     {
@@ -2941,8 +2937,15 @@ static BlockIO executeQueryImpl(
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(context, false);
 
+                    auto sample_block = input_metadata_snapshot->getSampleBlock();
+                    Names column_names = sample_block.getNames();
+
+                    /// For input('auto'), make sure that Context::insertion_table_info is set.
+                    if (insert_table && !context->hasInsertionTableColumnsDescription())
+                        InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table, column_names);
+
                     auto pipe = getSourceFromASTInsertQuery(
-                        out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
+                        out_ast, true, sample_block, context, input_function);
 
                     input_storage.setPipe(std::move(pipe));
                 }
