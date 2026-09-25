@@ -1,0 +1,87 @@
+<test>
+    <settings>
+        <query_cache_min_query_runs>0</query_cache_min_query_runs>
+        <query_cache_min_query_duration>0</query_cache_min_query_duration>
+        <query_cache_ttl>600</query_cache_ttl>
+    </settings>
+
+    <create_query>
+        CREATE TABLE perf_cache_bl (
+            region String,
+            product String,
+            store_id UInt32,
+            quantity UInt64,
+            price Float64,
+            ts DateTime
+        ) ENGINE = MergeTree ORDER BY (region, store_id, ts)
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_cache_bl SELECT
+            arrayElement(['Europe', 'Asia', 'America', 'Africa', 'Oceania'], (number % 5) + 1),
+            arrayElement(['Laptop', 'Phone', 'Tablet', 'Watch', 'Camera', 'Speaker', 'Monitor', 'Keyboard'], (number % 8) + 1),
+            number % 200,
+            (number % 1000) + 1,
+            round(10 + (number % 500) * 0.1, 2),
+            toDateTime('2024-01-01') + number
+        FROM numbers(10000000)
+    </fill_query>
+
+    <!-- Populate cache for before-limit mode -->
+    <fill_query>SYSTEM DROP QUERY CACHE</fill_query>
+    <fill_query>
+        SELECT region, product, store_id, sum(quantity), avg(price), uniqExact(ts)
+        FROM perf_cache_bl
+        WHERE region IN ('Europe', 'Asia', 'America')
+        GROUP BY region, product, store_id
+        ORDER BY sum(quantity) DESC LIMIT 5
+        FORMAT Null
+        SETTINGS use_query_cache = 1, query_cache_before_limit_and_order_by = 1
+    </fill_query>
+
+    <!-- Baseline: no cache -->
+    <query>
+        SELECT region, product, store_id, sum(quantity), avg(price), uniqExact(ts)
+        FROM perf_cache_bl
+        WHERE region IN ('Europe', 'Asia', 'America')
+        GROUP BY region, product, store_id
+        ORDER BY sum(quantity) DESC LIMIT 5
+        FORMAT Null
+    </query>
+
+    <!-- Cache hit: same LIMIT -->
+    <query>
+        SELECT region, product, store_id, sum(quantity), avg(price), uniqExact(ts)
+        FROM perf_cache_bl
+        WHERE region IN ('Europe', 'Asia', 'America')
+        GROUP BY region, product, store_id
+        ORDER BY sum(quantity) DESC LIMIT 5
+        FORMAT Null
+        SETTINGS use_query_cache = 1, query_cache_before_limit_and_order_by = 1
+    </query>
+
+    <!-- Cache hit: different LIMIT, shared entry -->
+    <query>
+        SELECT region, product, store_id, sum(quantity), avg(price), uniqExact(ts)
+        FROM perf_cache_bl
+        WHERE region IN ('Europe', 'Asia', 'America')
+        GROUP BY region, product, store_id
+        ORDER BY sum(quantity) DESC LIMIT 20
+        FORMAT Null
+        SETTINGS use_query_cache = 1, query_cache_before_limit_and_order_by = 1
+    </query>
+
+    <!-- Cache hit: reversed sort, shared entry -->
+    <query>
+        SELECT region, product, store_id, sum(quantity), avg(price), uniqExact(ts)
+        FROM perf_cache_bl
+        WHERE region IN ('Europe', 'Asia', 'America')
+        GROUP BY region, product, store_id
+        ORDER BY sum(quantity) ASC LIMIT 5
+        FORMAT Null
+        SETTINGS use_query_cache = 1, query_cache_before_limit_and_order_by = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_cache_bl</drop_query>
+    <drop_query>SYSTEM DROP QUERY CACHE</drop_query>
+</test>

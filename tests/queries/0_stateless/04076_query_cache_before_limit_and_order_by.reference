@@ -1,0 +1,36 @@
+--- First query populates cache ---
+0	0
+1	1
+2	2
+3	3
+4	4
+--- Cache has one entry ---
+1
+--- Same query, different LIMIT — should use cache ---
+0	0
+1	1
+2	2
+3	3
+4	4
+5	5
+6	6
+7	7
+8	8
+9	9
+--- Cache still has exactly one entry ---
+1
+--- Same query, different ORDER BY direction — re-sorts cached data ---
+19	19
+18	18
+17	17
+16	16
+15	15
+--- Different ORDER BY direction may create a second cache entry ---
+1
+--- Verify mutual exclusion: normal cache path is disabled ---
+100
+0
+--- Correctness check: results match non-cached execution ---
+9	9
+8	8
+7	7
