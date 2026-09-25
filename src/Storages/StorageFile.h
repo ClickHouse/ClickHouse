@@ -311,12 +311,23 @@ private:
         String condition;
         std::unordered_map<String, String> file_version_tokens;
 
-        /// Set once a file of the query turns out to be read in another version than the one the key
-        /// was made for: the key then no longer describes the files whose rows make the threshold, so
-        /// it must neither be consulted nor written any more.
-        mutable std::atomic<bool> invalidated = false;
-        /// Set before an entry under the key is used to skip row groups.
-        mutable std::atomic<bool> consulted = false;
+        enum class State : uint8_t
+        {
+            /// No entry under the key has been used yet, and every file read so far is in the version
+            /// the key was made for.
+            Valid,
+            /// An entry under the key has been used to skip row groups.
+            Used,
+            /// A file of the query turned out to be read in another version than the one the key was made
+            /// for: the key no longer describes the files whose rows make the threshold, so it must
+            /// neither be consulted nor written any more.
+            Invalidated,
+        };
+        /// A single atomic, so that either an entry is used before the key is invalidated (and the query
+        /// fails), or it is not used at all.
+        mutable std::atomic<State> state = State::Valid;
+
+        bool isInvalidated() const { return state.load() == State::Invalidated; }
     };
     using TopKQueryConditionCacheKeyPtr = std::shared_ptr<const TopKQueryConditionCacheKey>;
 

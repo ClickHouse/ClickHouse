@@ -1777,7 +1777,7 @@ StorageFileSource::~StorageFileSource()
 void StorageFileSource::writePendingTopKQueryConditionCacheEntries() noexcept
 {
     /// A file changed during the query: the files read are not the ones the key describes.
-    if (pending_top_k_query_condition_cache_entries.empty() || top_k_query_condition_cache_key->invalidated.load())
+    if (pending_top_k_query_condition_cache_entries.empty() || top_k_query_condition_cache_key->isInvalidated())
         return;
 
     try
@@ -2134,11 +2134,12 @@ Chunk StorageFileSource::generate()
                         table_uuid, cache_file_key, *top_k_condition_hash, /*increment_profile_events=*/false);
                     if (marks)
                     {
-                        /// Paired with `checkTopKQueryConditionCacheKeyHolds` (both sequentially consistent):
-                        /// either this read sees the key invalidated and does not use the entry, or the
-                        /// invalidating one sees it consulted and fails the query.
-                        top_k_query_condition_cache_key->consulted.store(true);
-                        if (top_k_query_condition_cache_key->invalidated.load())
+                        /// Paired with `checkTopKQueryConditionCacheKeyHolds`: the entry is used only if the key
+                        /// has not been invalidated, and an invalidation after this point fails the query.
+                        using State = TopKQueryConditionCacheKey::State;
+                        auto expected = State::Valid;
+                        if (!top_k_query_condition_cache_key->state.compare_exchange_strong(expected, State::Used)
+                            && expected == State::Invalidated)
                             marks.reset();
                     }
                     merge_matching_marks(std::move(marks));
@@ -2446,7 +2447,7 @@ Chunk StorageFileSource::generate()
 std::optional<UInt64> StorageFileSource::getTopKConditionHashForCurrentFile() const
 {
     if (!top_k_query_condition_cache_key || !current_file_cache_version.has_value()
-        || top_k_query_condition_cache_key->invalidated.load())
+        || top_k_query_condition_cache_key->isInvalidated())
         return {};
 
     /// The key covers the version token each file had when the key was made. A file that has changed
@@ -2476,14 +2477,14 @@ void StorageFileSource::checkTopKQueryConditionCacheKeyHolds(bool still_holds) c
     /// Armed, this stands in for a file rewritten after the key was made and after an entry was used.
     fiu_do_on(FailPoints::file_top_k_query_condition_cache_inject_file_change,
     {
-        if (top_k_query_condition_cache_key->consulted.load())
+        if (top_k_query_condition_cache_key->state.load() == TopKQueryConditionCacheKey::State::Used)
             holds = false;
     });
     if (holds)
         return;
 
-    top_k_query_condition_cache_key->invalidated.store(true);
-    if (top_k_query_condition_cache_key->consulted.load())
+    if (top_k_query_condition_cache_key->state.exchange(TopKQueryConditionCacheKey::State::Invalidated)
+        == TopKQueryConditionCacheKey::State::Used)
         throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
             "File {} was modified while the query was running, after the query condition cache had been used for the "
             "`ORDER BY ... LIMIT` read of its files. Rerun the query",
