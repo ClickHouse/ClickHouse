@@ -1407,7 +1407,11 @@ void LocalServer::processConfig()
                     || getClientConfiguration().has("log-level")
                     || getClientConfiguration().has("logger.log"));
 
-    auto level = getClientConfiguration().getString("log-level", getClientConfiguration().getString("send_logs_level", "trace"));
+    /// `--log-level` and `--logger.level` are both accepted on the command line; the latter is also
+    /// what a config file sets. Without this lookup `--logger.level` was overwritten with `trace` below.
+    auto level = getClientConfiguration().getString(
+        "log-level",
+        getClientConfiguration().getString("logger.level", getClientConfiguration().getString("send_logs_level", "trace")));
 
     if (getClientConfiguration().has("server_logs_file"))
     {

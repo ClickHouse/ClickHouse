@@ -971,7 +971,7 @@ void TCPHandler::runImpl()
                     if (auto callback = query_state->query_context->getInteractiveCancelCallback();
                         !query_state->need_receive_data_for_input && callback)
                     {
-                        executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
+                        executor.setCancelCallback(std::move(callback), interactive_delay_ms);
                     }
 
                     executor.execute();
@@ -1242,6 +1242,9 @@ void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context
     poll_interval = settings[Setting::poll_interval];
     idle_connection_timeout = settings[Setting::idle_connection_timeout];
     interactive_delay = settings[Setting::interactive_delay];
+    /// The executors take milliseconds; a value below 1000 truncated to 0 made `pull` block for the whole
+    /// query, so a cancel packet was noticed only after it.
+    interactive_delay_ms = std::max<UInt64>(1, interactive_delay / 1000);
     sleep_in_send_tables_status = settings[Setting::sleep_in_send_tables_status_ms];
     unknown_packet_in_send_data = settings[Setting::unknown_packet_in_send_data];
     sleep_after_receiving_query = settings[Setting::sleep_after_receiving_query_ms];
@@ -1620,7 +1623,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         try
         {
             Block block;
-            while (executor.pull(block, interactive_delay / 1000))
+            while (executor.pull(block, interactive_delay_ms))
             {
                 bool stop_read_return_partial_result = false;
                 {

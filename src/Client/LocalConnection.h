@@ -85,6 +85,9 @@ struct LocalQueryState
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_send_progress;
     Stopwatch after_send_profile_events;
+    /// Progress and profile-event packets are only sent between attempts to pull a block, so that a tiny
+    /// `interactive_delay` (below the duration of one poll cycle) cannot starve the pulling forever.
+    bool pulled_since_progress = true;
 
     QueryScope query_scope_holder;
 };
@@ -197,6 +200,7 @@ public:
 
 private:
     bool pullBlock(Block & block);
+    UInt64 interactiveDelayMilliseconds() const;
 
     void finishQuery();
 

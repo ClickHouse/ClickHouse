@@ -491,7 +491,7 @@ void LocalConnection::sendQuery(
                     return false;
                 };
 
-                executor.setCancelCallback(callback, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+                executor.setCancelCallback(callback, interactiveDelayMilliseconds());
             }
             executor.execute();
         }
@@ -559,10 +559,17 @@ void LocalConnection::sendCancel()
         state->pushing_async_executor->cancel();
 }
 
+/// `interactive_delay` is in microseconds; the executors take milliseconds. Values below 1000 used to
+/// truncate to 0, a blocking pull that dropped the first `Ctrl+C` and delayed the logs until the end.
+UInt64 LocalConnection::interactiveDelayMilliseconds() const
+{
+    return std::max<UInt64>(1, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+}
+
 bool LocalConnection::pullBlock(Block & block)
 {
     if (state->executor)
-        return state->executor->pull(block, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+        return state->executor->pull(block, interactiveDelayMilliseconds());
 
     return false;
 }
@@ -753,9 +760,17 @@ bool LocalConnection::poll(size_t)
 
 bool LocalConnection::needSendProgressOrMetrics()
 {
+    /// With `interactive_delay` shorter than a poll cycle (e.g. `SETTINGS interactive_delay = 0`) the elapsed
+    /// time is always over the threshold, and returning a progress packet on every poll would never let
+    /// `pollImpl` run: `clickhouse local` spun at 100% CPU forever on `SELECT 1`. Send at most one progress
+    /// and one profile-events packet per pull attempt.
+    if (!state->pulled_since_progress)
+        return false;
+
     if (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay])
     {
         state->after_send_progress.restart();
+        state->pulled_since_progress = false;
         next_packet_type = Protocol::Server::Progress;
         return true;
     }
@@ -763,6 +778,7 @@ bool LocalConnection::needSendProgressOrMetrics()
     if (send_profile_events
         && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay]))
     {
+        state->pulled_since_progress = false;
         sendProfileEvents();
         return true;
     }
@@ -809,6 +825,7 @@ bool LocalConnection::pollImpl()
 {
     Block block;
     auto next_read = pullBlock(block);
+    state->pulled_since_progress = true;
 
     if (block.empty() && next_read)
     {
