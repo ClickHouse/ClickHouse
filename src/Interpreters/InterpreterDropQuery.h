@@ -56,6 +56,7 @@ private:
 
     BlockIO executeToTable(ASTDropQuery & query);
     BlockIO executeToTableImpl(const ContextPtr& context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait);
+    bool isTableEmpty(const StoragePtr & table) const;
 
     static void waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait, ContextPtr context_);
 

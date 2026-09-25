@@ -152,6 +152,22 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
     return res;
 }
 
+/// `IF EMPTY` must not drop a table whose contents it cannot vouch for. The row count a storage
+/// derives from its metadata is exact whenever it is reported, but many storages cannot report
+/// one, and some deliberately withhold it when their metadata is self-contradictory (see
+/// `IcebergMetadata::totalRows`). Treating an unknown count as zero would let `IF EMPTY` drop a
+/// table full of rows (and, for storages that remove their data on drop, delete the data), so an
+/// unknown count refuses the drop. The table is deliberately not read to find out: a read would
+/// see the caller's row policies rather than the table, and would consume messages from
+/// stream-like engines such as `Kafka`. A plain view stores no rows, so it is always empty.
+bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table) const
+{
+    if (table->isView() && !dynamic_cast<const StorageMaterializedView *>(table.get()))
+        return true;
+    auto rows = table->totalRows(getContext());
+    return rows && *rows == 0;
+}
+
 BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
     if (query.kind == ASTDropQuery::Kind::Detach && query.isTemporary())
@@ -182,11 +198,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     if (database && table)
     {
         const auto & settings = getContext()->getSettingsRef();
-        if (query.if_empty)
-        {
-            if (auto rows = table->totalRows(getContext()); rows > 0)
-                throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
-        }
         checkStorageSupportsTransactionsIfNeeded(table, context_);
 
         auto & ast_drop_query = query.as<ASTDropQuery &>();
@@ -200,6 +211,26 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
+
+        AccessFlags drop_storage;
+
+        if (table->isView())
+            drop_storage = AccessType::DROP_VIEW;
+        else if (table->isDictionary())
+            drop_storage = AccessType::DROP_DICTIONARY;
+        else
+            drop_storage = AccessType::DROP_TABLE;
+
+        if (query.if_empty)
+        {
+            /// Check the access first: otherwise `IF EMPTY` would tell a user who may not drop
+            /// the table whether it is empty.
+            context_->checkAccess(query.kind == ASTDropQuery::Kind::Truncate ? AccessFlags(AccessType::TRUNCATE) : drop_storage, table_id);
+            if (!isTableEmpty(table))
+                throw Exception(ErrorCodes::TABLE_NOT_EMPTY,
+                    "Table {} is not empty or its storage does not know how many rows it has",
+                    backQuoteIfNeed(table_id.table_name));
+        }
 
         bool secondary_query = getContext()->isDDLOrOnClusterInternal();
 
@@ -233,15 +264,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
         /// Now get UUID, so we can wait for table data to be finally dropped
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
-
-        AccessFlags drop_storage;
-
-        if (table->isView())
-            drop_storage = AccessType::DROP_VIEW;
-        else if (table->isDictionary())
-            drop_storage = AccessType::DROP_DICTIONARY;
-        else
-            drop_storage = AccessType::DROP_TABLE;
 
         auto new_query_ptr = query.clone();
         auto & query_to_send = new_query_ptr->as<ASTDropQuery &>();
