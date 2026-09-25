@@ -18,7 +18,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDataTypeFunctions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
@@ -114,10 +113,8 @@ Chunk SystemDatabaseReplicasSource::generate()
         {
             if (e.code() == ErrorCodes::ABORTED)
             {
-                tryLogCurrentException(
-                    getLogger("table logger"),
-                    "Received the ABORTED error while trying to get the status of a database, this is likely because it has been shut "
-                    "down");
+                /// The database has been shut down or dropped, so its row is skipped instead of being reported as an error.
+                LOG_DEBUG(getLogger("StorageSystemDatabaseReplicas"), "Cannot get the status of a database: {}", e.displayText());
                 continue;
             }
             throw;

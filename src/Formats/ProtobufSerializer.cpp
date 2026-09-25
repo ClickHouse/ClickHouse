@@ -140,7 +140,9 @@ namespace
     // Should we omit null values (zero for numbers / empty string for strings) while storing them.
     bool shouldSkipZeroOrEmpty(const FieldDescriptor & field_descriptor, bool google_wrappers_special_treatment = false)
     {
-        if (!field_descriptor.is_optional())
+        /// `FieldDescriptor::is_optional` was removed along with the rest of the label accessors;
+        /// a singular field is one that is neither repeated nor required.
+        if (field_descriptor.is_repeated() || field_descriptor.is_required())
             return false;
         if (field_descriptor.containing_type()->options().map_entry())
             return false;
@@ -1919,7 +1921,7 @@ namespace
                 aggregate_function->destroy(old_data);
             }
             else
-                column_af.getData().push_back(data);
+                pushBackOrDestroy(column_af, data);
         }
 
         void insertDefaults(size_t row_num) override
@@ -1930,7 +1932,7 @@ namespace
 
             Arena & arena = column_af.createOrGetArena();
             AggregateDataPtr data = stringToData(std::string(field_descriptor.default_value_string()), arena);
-            column_af.getData().push_back(data);
+            pushBackOrDestroy(column_af, data);
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -1940,6 +1942,21 @@ namespace
         }
 
     private:
+        /// `push_back` can throw, and until it succeeds nothing owns `data`: `destroy` walks only
+        /// the column container, so a stranded state could never be freed.
+        void pushBackOrDestroy(ColumnAggregateFunction & column_af, AggregateDataPtr data) const
+        {
+            try
+            {
+                column_af.getData().push_back(data);
+            }
+            catch (...)
+            {
+                aggregate_function->destroy(data);
+                throw;
+            }
+        }
+
         void dataToString(ConstAggregateDataPtr data, String & str) const
         {
             WriteBufferFromString buf{str};

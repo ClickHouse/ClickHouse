@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -63,6 +64,56 @@ public:
     bool storesDataOnDisk() const override { return false; }
     bool supportsReplication() const override { return false; }
 
+    /// A table function that has not been resolved yet holds no data and has started no background
+    /// activity, so size and lock queries have a correct answer that does not require resolving it.
+    ActionLock getActionLock(StorageActionBlockType action_type) override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->getActionLock(action_type) : ActionLock{};
+    }
+
+    Strings getDataPaths() const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->getDataPaths() : Strings{};
+    }
+
+    ColumnSizeByName getColumnSizes() const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->getColumnSizes() : ColumnSizeByName{};
+    }
+
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{};
+    }
+
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->totalRows(query_context) : std::nullopt;
+    }
+
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->totalBytes(query_context) : std::nullopt;
+    }
+
+    std::optional<UInt64> lifetimeRows() const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->lifetimeRows() : std::nullopt;
+    }
+
+    std::optional<UInt64> lifetimeBytes() const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->lifetimeBytes() : std::nullopt;
+    }
+
     void startup() override { }
     void shutdown(bool is_drop) override
     {
@@ -83,6 +134,45 @@ public:
         std::lock_guard lock{nested_mutex};
         if (nested)
             nested->drop();
+    }
+
+    /// File-like table functions rebuild the nested storage from the current external schema and
+    /// ignore the columns cached at DDL time, while `read()` below hands PREWHERE to the nested
+    /// storage and only converts types afterwards. `StorageProxy`'s forward is by name, so it
+    /// cannot catch a column whose cached type drifted: drop those columns from the contract.
+    std::optional<NameSet> supportedPrewhereColumns() const override
+    {
+        auto storage = getNested();
+        auto query_context = CurrentThread::tryGetQueryContext();
+        auto supported = storage->supportedPrewhereColumns();
+
+        auto actual_metadata = storage->getInMemoryMetadataPtr(query_context, false);
+        auto cached_metadata = getInMemoryMetadataPtr(query_context, false);
+        const auto & actual_columns = actual_metadata->getColumns();
+        auto cached_columns = cached_metadata->getColumns().getAllPhysical();
+
+        NameSet drifted;
+        for (const auto & cached : cached_columns)
+        {
+            auto actual = actual_columns.tryGetPhysical(cached.name);
+            if (!actual || !actual->type->equals(*cached.type))
+                drifted.insert(cached.name);
+        }
+
+        if (drifted.empty())
+            return supported;
+
+        if (!supported)
+        {
+            NameSet result;
+            for (const auto & cached : cached_columns)
+                if (!drifted.contains(cached.name))
+                    result.insert(cached.name);
+            return result;
+        }
+
+        std::erase_if(*supported, [&](const auto & name) { return drifted.contains(name); });
+        return supported;
     }
 
     void read(
@@ -155,6 +245,15 @@ public:
     void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override {}
 
 private:
+    /// The nested storage if the table function has already been resolved, otherwise null.
+    /// Never forward while holding `nested_mutex`: a nested size query can read remote metadata,
+    /// and every read and write of this table takes the same mutex.
+    StoragePtr nestedIfResolved() const
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
     mutable std::recursive_mutex nested_mutex;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;

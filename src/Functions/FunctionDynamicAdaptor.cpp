@@ -1,8 +1,8 @@
 #include <Functions/FunctionDynamicAdaptor.h>
-#include <Common/CurrentThread.h>
+#include <Functions/TypeMismatchStrictness.h>
+#include <Functions/castNestedResult.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -17,17 +17,9 @@
 namespace DB
 {
 
-namespace Setting
-{
-extern const SettingsBool dynamic_throw_on_type_mismatch;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TYPE_MISMATCH;
-    extern const int CANNOT_CONVERT_TYPE;
     extern const int NO_COMMON_TYPE;
 }
 
@@ -47,12 +39,8 @@ ExecutableFunctionDynamicAdaptor::ExecutableFunctionDynamicAdaptor(
     size_t dynamic_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
     , dynamic_argument_index(dynamic_argument_index_)
+    , throw_on_type_mismatch(shouldThrowOnDynamicTypeMismatch())
 {
-    if (CurrentThread::isInitialized())
-    {
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::dynamic_throw_on_type_mismatch];
-    }
 }
 
 ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t, bool dry_run) const
@@ -89,8 +77,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+            if (!isTypeMismatchError(e.code()))
                 throw;
             return nullptr;
         }
@@ -185,16 +172,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-            {
-                try
-                {
-                    return castColumn(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type);
-                }
-                catch (const Exception & e)
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), removeNullable(result_type)->getName(), removeNullable(nested_result_type)->getName(), e.message());
-                }
-            }
+                return castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type, getName());
 
             return makeNullableSafe(nested_result);
         }
@@ -297,16 +275,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
 
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!result_type->equals(*nested_result_type))
-            {
-                try
-                {
-                    return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
-                }
-                catch (const Exception & e)
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), result_type->getName(), nested_result_type->getName(), e.message());
-                }
-            }
+                return castNestedResult(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type, getName());
 
             return nested_result;
         }
@@ -525,20 +494,9 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-            {
-                try
-                {
-                    variants_results.push_back(castColumn(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type));
-                }
-                catch (const Exception & e)
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), result_type->getName(), nested_result_type->getName(), e.message());
-                }
-            }
+                variants_results.push_back(castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type, getName()));
             else
-            {
                 variants_results.push_back(makeNullableSafe(nested_result));
-            }
         }
         /// Otherwise cast this result to the resulting Dynamic type.
         else

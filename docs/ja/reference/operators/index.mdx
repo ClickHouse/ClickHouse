@@ -1,20 +1,24 @@
 ---
 description: '演算子のドキュメント'
-sidebarTitle: '演算子'
+sidebarTitle: '概要'
 slug: /sql-reference/operators/
 title: '演算子'
 doc_type: 'reference'
 ---
 
-ClickHouse では、クエリのパース時に、演算子の優先度・順位・結合性に応じて、演算子が対応する関数に変換されます。
+ClickHouse では、クエリのパース時に、演算子の優先度・優先順位・結合性に応じて、演算子が対応する関数に変換されます。
 
 <div id="access-operators">
   ## アクセス演算子
 </div>
 
-`a[N]` – 配列の要素にアクセスします。`arrayElement(a, N)` 関数。
+`a[N]` – 配列要素へのアクセス。`arrayElement(a, N)` 関数。
+`N` には整数の配列も指定でき、その場合はそれらすべての位置の要素が配列として返されます。
+これは `arrayMap(i -> a[i], N)` と同じです。位置は Nullable にできます。要素型を `Nullable` でラップできる場合、`NULL` の位置は `NULL` になります。
+`Nullable` に含められない要素型 (`Array`、`Map` など) の場合は、スカラーの `NULL` 索引と同様に、
+要素型のデフォルト値になります。
 
-`a.N` – タプルの要素にアクセスします。`tupleElement(a, N)` 関数。
+`a.N` – タプル要素へのアクセス。`tupleElement(a, N)` 関数。
 
 <div id="numeric-negation-operator">
   ## 数値の否定演算子
@@ -111,6 +115,32 @@ ClickHouse では、クエリのパース時に、演算子の優先度・順位
 </div>
 
 `a ILIKE b` – `ilike(a, b)` 関数と同等です。
+
+<div id="match-function">
+  ### match 関数
+</div>
+
+`a REGEXP b` – `match(a, b)` 関数。
+
+`a ~ b` – `match(a, b)` 関数 (PostgreSQL スタイルの正規表現マッチ) 。
+
+<div id="notmatch-function">
+  ### notMatch 関数
+</div>
+
+`a !~ b` – `notMatch(a, b)` 関数 (`a` が正規表現 `b` に一致しないかを確認します) 。
+
+<div id="matchcaseinsensitive-function">
+  ### matchCaseInsensitive 関数
+</div>
+
+`a ~* b` – `matchCaseInsensitive(a, b)` 関数 (大文字と小文字を区別しない正規表現に一致) 。
+
+<div id="notmatchcaseinsensitive-function">
+  ### notMatchCaseInsensitive 関数
+</div>
+
+`a !~* b` – `notMatchCaseInsensitive(a, b)` 関数 (`a` が正規表現 `b` に大文字と小文字を区別せずに一致しないかどうかを確認します) 。
 
 <div id="between-function">
   ### BETWEEN 関数
@@ -493,7 +523,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 | `Date32` | `Time64(s)` | `DateTime64(s)` |
 
 <Note>
-  結果には [session timezone](/ja/reference/settings/session-settings#session_timezone) が使用されます (session timezone が設定されていない場合は、server のデフォルトタイムゾーンが使用されます) 。結果が表現可能な範囲を超えた場合の動作は、[`date_time_overflow_behavior`](/ja/reference/settings/formats#date_time_overflow_behavior) 設定で制御されます。
+  結果には [session timezone](/ja/reference/settings/session-settings/other#session_timezone) が使用されます (session timezone が設定されていない場合は、server のデフォルトタイムゾーンが使用されます) 。結果が表現可能な範囲を超えた場合の動作は、[`date_time_overflow_behavior`](/ja/reference/settings/formats/date-time#date_time_overflow_behavior) 設定で制御されます。
 </Note>
 
 例:
@@ -540,9 +570,9 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 | `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
 | `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
 
-`zone` には、有効なタイムゾーン名として評価される任意の定数文字列表現を指定できます (例: `'America/Denver'`、`'UTC'`、`concat('America', '/', 'Denver')`) 。`AT TIME ZONE` は `toTimeZone` に展開されるため、タイムゾーン引数に関する同じルールが適用されます。カラム参照のような非定数式には、[`allow_nonconst_timezone_arguments = 1`](/ja/reference/settings/session-settings#allow_nonconst_timezone_arguments) が必要です。
+`zone` には、有効なタイムゾーン名として評価される任意の定数文字列表現を指定できます (例: `'America/Denver'`、`'UTC'`、`concat('America', '/', 'Denver')`) 。`AT TIME ZONE` は `toTimeZone` に展開されるため、タイムゾーン引数に関する同じルールが適用されます。カラム参照のような非定数式には、[`allow_nonconst_timezone_arguments = 1`](/ja/reference/settings/session-settings/allow#allow_nonconst_timezone_arguments) が必要です。
 
-`AT LOCAL` は現在の[session timezone](/ja/reference/settings/session-settings#session_timezone)を使用します (session timezone が設定されていない場合は server のデフォルトを使用します) 。`Distributed` 分散テーブルでは、`session_timezone` を明示的に設定する必要があります。これが空の場合、`timeZone()` は分片ごとのローカル値となり、定数の `toTimeZone` 引数としては使用できないため、`ILLEGAL_COLUMN` 例外が発生します。
+`AT LOCAL` は現在の[session timezone](/ja/reference/settings/session-settings/other#session_timezone)を使用します (session timezone が設定されていない場合は server のデフォルトを使用します) 。`Distributed` 分散テーブルでは、`session_timezone` を明示的に設定する必要があります。これが空の場合、`timeZone()` は分片ごとのローカル値となり、定数の `toTimeZone` 引数としては使用できないため、`ILLEGAL_COLUMN` 例外が発生します。
 
 <Note>
   PostgreSQL では、`timestamp without time zone AT TIME ZONE zone` は wall-clock 値をまず指定した zone の時刻として再解釈してから変換しますが、ClickHouse では常に同じ絶対時刻を保持し、表示に使用するタイムゾーンラベルだけを変更します。どちらの形式も `toTimeZone` と等価であり、基になる timestamp は変更されません。
@@ -682,7 +712,7 @@ ClickHouse は `IS NULL` および `IS NOT NULL` 演算子をサポートして�
   * それ以外の場合は `0`。
 * その他の値に対しては、`IS NULL` 演算子は常に `0` を返します。
 
-[optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns) 設定を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数はカラム全体のカラムデータを読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NULL FROM table` は `SELECT n.null FROM TABLE` に変換されます。
+[optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数はカラム全体のカラムデータを読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NULL FROM table` は `SELECT n.null FROM TABLE` に変換されます。
 
 {/* */}
 
@@ -717,7 +747,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-[optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns) 設定を有効にすると、最適化できます。`optimize_functions_to_subcolumns = 1` の場合、関数はカラムデータ全体を読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NOT NULL FROM table` は `SELECT NOT n.null FROM TABLE` に変換されます。
+[optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすると、最適化できます。`optimize_functions_to_subcolumns = 1` の場合、関数はカラムデータ全体を読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NOT NULL FROM table` は `SELECT NOT n.null FROM TABLE` に変換されます。
 
 <div id="checking-boolean-values">
   ## ブール値の確認

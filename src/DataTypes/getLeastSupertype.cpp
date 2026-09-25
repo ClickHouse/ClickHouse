@@ -252,7 +252,7 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
     {
         if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(type.get()))
         {
-            auto current_interval = interval_type->getKind().kind;
+            const IntervalKind::Kind current_interval = interval_type->getKind();
             if (current_interval > IntervalKind::Kind::Week)
                 is_higher_interval = true;
             if (current_interval < min_interval)
@@ -1049,6 +1049,15 @@ String getNumericVariantSupertypeHint(const DataTypePtr & type)
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)
 {
     return getLeastSupertype<LeastSupertypeOnError::Null>(types);
+}
+
+template<>
+DataTypePtr getLeastSupertype<LeastSupertypeOnError::Dynamic>(const DataTypes & types)
+{
+    auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types);
+    if (common_type)
+        return common_type;
+    return std::make_shared<DataTypeDynamic>();
 }
 
 template <LeastSupertypeOnError on_error>

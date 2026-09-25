@@ -196,7 +196,9 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
     switch (locality)
     {
         case JoinLocality::Unspecified:
+            break;
         case JoinLocality::Local:
+            ostr << "LOCAL ";
             break;
         case JoinLocality::Global:
             ostr << "GLOBAL ";
@@ -483,7 +485,7 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
     /// `table_function` is parser-owned as an `ASTFunction`; `formatImpl` downcasts it with
     /// `table_function->as<ASTFunction>()->preferSubqueryToFunctionFormatting()`, so a wrong
     /// node type from malformed `clickhouse_json` must be rejected here.
-    child = r.readChildOfType<ASTFunction>("table_function");
+    child = r.readScreenedChildOfType<ASTFunction>("table_function");
     if (child)
     {
         table_function = child;

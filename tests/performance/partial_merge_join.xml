@@ -16,8 +16,28 @@
     <fill_query>OPTIMIZE TABLE test_u64_left_{card} FINAL</fill_query>
     <fill_query>OPTIMIZE TABLE test_u64_right_{card} FINAL</fill_query>
 
+    <!-- Sparse match: the right table matches every 100th key and left keys repeat 5 times,
+         so the first-key run skip covers ~500 non-matching rows at once. -->
+    <create_query>CREATE TABLE pmj_u64_sparse_right (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO pmj_u64_sparse_right SELECT number * 100 FROM numbers(10000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pmj_u64_sparse_right FINAL</fill_query>
+
+    <!-- Interleaved keys (multiples of 2 vs multiples of 3): skip runs of 1-2 rows. -->
+    <create_query>CREATE TABLE pmj_u64_mult2 (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE pmj_u64_mult3 (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO pmj_u64_mult2 SELECT number * 2 FROM numbers_mt(8000000)</fill_query>
+    <fill_query>INSERT INTO pmj_u64_mult3 SELECT number * 3 FROM numbers_mt(5000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pmj_u64_mult2 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE pmj_u64_mult3 FINAL</fill_query>
+
     <query>SELECT count() FROM test_u64_left_{card} AS a JOIN test_u64_right_{card} AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
+
+    <query>SELECT count() FROM test_u64_left_1000000 AS a JOIN pmj_u64_sparse_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
+    <query>SELECT count() FROM pmj_u64_mult2 AS a JOIN pmj_u64_mult3 AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
 
     <drop_query>DROP TABLE IF EXISTS test_u64_left_{card}</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_u64_right_{card}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pmj_u64_sparse_right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pmj_u64_mult2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pmj_u64_mult3</drop_query>
 </test>

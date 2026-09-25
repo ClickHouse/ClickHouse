@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage
+# Tags: long, no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage, kills-processes-by-cmdline
 # long: The test inserts 4M+ rows across the initial setup, 20s parallel insert/select/cancel phase,
 #     and final verification. On the encrypted-S3 + ASan+UBSan + meta-in-keeper flaky-check variant
 #     it consistently exceeds the 180s default budget, so we use the 600s budget instead.
 # no-fasttest: The test is slow (too many small blocks)
 # no-azure-blob-storage: The test uploads many parts to Azure (5k+), and it runs in parallel with other tests.
 #     As a result, they may interfere, and some queries won't be able to finish in 30 seconds timeout leading to a test failure.
+# kills-processes-by-cmdline: `thread_cancel` signals every process matching $TEST_MARK in
+#     /proc/*/cmdline, which also hits sanitizer-internal forks that inherited the client's argv.
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -134,5 +136,8 @@ $CLICKHOUSE_CLIENT --implicit_transaction=1 -q 'select throwIf(count() % 1000000
 #   'Query was cancelled or a client has unexpectedly dropped the connection') or
 #   message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%')"
 
+# thread_cancel kills the client, not the query: once the HTTP body has been received the server has
+# nothing left to read from the socket, so an orphaned INSERT runs to completion (is_cancelled = 0).
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE '$TEST_MARK%' ASYNC FORMAT Null"
 wait_for_queries_to_finish 30
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 -q "drop table dedup_test"

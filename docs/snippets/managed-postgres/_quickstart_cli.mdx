@@ -28,7 +28,7 @@ Create the service and save the response; the password is shown only once:
 clickhousectl cloud postgres create \
   --name quickstart-pg \
   --region us-east-1 \
-  --size c6gd.large \
+  --size m6gd.large \
   --pg-version 18 \
   --json > pg.json
 ```
@@ -42,7 +42,7 @@ The response includes the service ID, hostname, and a ready-to-use connection st
   "provider": "aws",
   "region": "us-east-1",
   "postgresVersion": "18",
-  "size": "c6gd.large",
+  "size": "m6gd.large",
   "storageSize": 118,
   "haType": "none",
   "state": "creating",
@@ -161,7 +161,7 @@ INSERT 0 1000
 Time: 84.807 ms
 ```
 
-The 1M-row insert completes in about 7 seconds on `c6gd.large` (the smallest size) thanks to NVMe storage. Verify with a query; row counts vary between runs because the data is generated with `random()`:
+The 1M-row insert completes in about 7 seconds on `m6gd.large` (the smallest size) thanks to NVMe storage. Verify with a query; row counts vary between runs because the data is generated with `random()`:
 
 ```bash
 psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
@@ -281,7 +281,7 @@ SQL
 
 The heredoc is unquoted on purpose, so the shell substitutes `$CH_HOST` and `$CH_PASSWORD` before the SQL reaches Postgres. The replicated tables are now visible as foreign tables in the `organization` schema; queries against them execute in ClickHouse.
 
-Measured on `c6gd.large` with this dataset, analytical queries run 6-9x faster through the foreign tables (for example, a 5-aggregation GROUP BY: 176 ms via ClickHouse vs 1,133 ms locally; a JOIN with aggregations: 298 ms vs 2,764 ms).
+Measured on `m6gd.large` with this dataset, analytical queries run 6-9x faster through the foreign tables (for example, a 5-aggregation GROUP BY: 176 ms via ClickHouse vs 1,133 ms locally; a JOIN with aggregations: 298 ms vs 2,764 ms).
 
 ## Cleanup {#cleanup-resources}
 

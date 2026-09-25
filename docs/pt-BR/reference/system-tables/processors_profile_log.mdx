@@ -33,7 +33,7 @@ Esta tabela contém informações de profiling no nível dos processadores (que 
 * `plan_step_name` ([String](/pt-BR/reference/data-types/string)) — Nome do passo do plano de consulta que criou este processador. O valor fica vazio se o processador não foi adicionado a partir de nenhum passo.
 * `plan_step_description` ([String](/pt-BR/reference/data-types/string)) — Descrição do passo do plano de consulta que criou este processador. O valor fica vazio se o processador não foi adicionado a partir de nenhum passo.
 * `plan_group` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Grupo do processador, se ele foi criado por um passo do plano de consulta. Um grupo é um particionamento lógico de processadores adicionados a partir do mesmo passo do plano de consulta. O grupo é usado apenas para melhorar a apresentação do resultado de EXPLAIN PIPELINE.
-* `initial_query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta inicial (para execução distribuída de consultas).
+* `initial_query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta inicial na mesma cadeia de consultas.
 * `query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta.
 * `name` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Nome do processador.
 * `elapsed_us` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de microssegundos durante os quais este processador foi executado.

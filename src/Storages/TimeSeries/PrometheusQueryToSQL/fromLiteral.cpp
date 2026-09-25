@@ -7,7 +7,7 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-SQLQueryPiece fromLiteral(const PQT::Scalar * scalar_node, ConverterContext & context)
+SQLQueryPiece fromLiteral(const PrometheusQueryTree::Scalar * scalar_node, ConverterContext & context)
 {
     auto node_range = context.node_range_getter.get(scalar_node);
     if (node_range.empty())
@@ -23,7 +23,7 @@ SQLQueryPiece fromLiteral(const PQT::Scalar * scalar_node, ConverterContext & co
 }
 
 
-SQLQueryPiece fromLiteral(const PQT::StringLiteral * string_node, ConverterContext & context)
+SQLQueryPiece fromLiteral(const PrometheusQueryTree::StringLiteral * string_node, ConverterContext & context)
 {
     auto node_range = context.node_range_getter.get(string_node);
     if (node_range.empty())

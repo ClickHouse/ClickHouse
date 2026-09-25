@@ -90,6 +90,11 @@ a.betaBadge {
     margin-right: 8px;
 }
 
+a.cloudNotSupportedBadge {
+    color: #660099 !important;
+    text-decoration: none !important;
+}
+
 .cloudNotSupportedIcon svg path {
     stroke: #660099;
 }
@@ -97,6 +102,11 @@ a.betaBadge {
 .dark .cloudNotSupportedBadge {
     background-color: #33004D;
     color: #EECCFF;
+}
+
+.dark a.cloudNotSupportedBadge {
+    color: #EECCFF !important;
+    text-decoration: none !important;
 }
 
 .dark .cloudNotSupportedIcon svg path {

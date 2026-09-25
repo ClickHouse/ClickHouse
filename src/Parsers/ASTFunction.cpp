@@ -8,6 +8,7 @@
 
 
 #include <Common/quoteString.h>
+#include <Common/checkStackSize.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/SipHash.h>
@@ -39,7 +40,7 @@ namespace ErrorCodes
 }
 
 
-boost::intrusive_ptr<ASTFunction> makeASTLambda(std::initializer_list<String> param_names, ASTPtr && body)
+boost::intrusive_ptr<ASTFunction> makeASTLambda(const Strings & param_names, ASTPtr && body)
 {
     auto tuple = makeASTFunction("tuple");
     auto & tuple_args = tuple->arguments->children;
@@ -47,6 +48,11 @@ boost::intrusive_ptr<ASTFunction> makeASTLambda(std::initializer_list<String> pa
     for (const auto & param_name : param_names)
         tuple_args.emplace_back(make_intrusive<ASTIdentifier>(param_name));
     return makeASTFunction("lambda", std::move(tuple), std::move(body));
+}
+
+boost::intrusive_ptr<ASTFunction> makeASTLambda(std::initializer_list<String> param_names, ASTPtr && body)
+{
+    return makeASTLambda(Strings{param_names}, std::move(body));
 }
 
 
@@ -178,6 +184,27 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
     w.writeAlias(*this);
 }
 
+static bool containsBareSelectQuery(const IAST * node)
+{
+    checkStackSize();
+
+    const auto * list = node ? node->as<ASTExpressionList>() : nullptr;
+    if (!list)
+        return false;
+    for (const auto & child : list->children)
+        if (isBareSelectQuery(child.get()) || containsBareSelectQuery(child.get()))
+            return true;
+    return false;
+}
+
+static bool hasExpressionListChild(const IAST * node)
+{
+    const auto * list = node ? node->as<ASTExpressionList>() : nullptr;
+    if (!list)
+        return false;
+    return std::ranges::any_of(list->children, [](const ASTPtr & child) { return child->as<ASTExpressionList>() != nullptr; });
+}
+
 void ASTFunction::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
@@ -256,9 +283,46 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'kind' = 'LAMBDA_FUNCTION' requires 'is_lambda_function' to be true during AST JSON deserialization");
 
+    /// No parser producer of `is_lambda_function` sets it on a function of any other shape.
+    if (isLambdaFunction() && !isASTLambdaFunction(*this))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'is_lambda_function' requires the function to be of the form `lambda(tuple(...), body)` during AST JSON deserialization");
+
     if (isWindowFunction() && window_name.empty() && !window_definition)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
+
+    /// A bare select query argument is parser-producible only as `view(SELECT ...)` or
+    /// `viewIfPermitted(SELECT ... ELSE f(...))`, neither of which carries parameters, a window, a
+    /// NULLS action or query output options.
+    bool is_view = equalsCaseInsensitive(name, "view");
+    bool is_view_if_permitted = equalsCaseInsensitive(name, "viewIfPermitted");
+    if (containsBareSelectQuery(arguments.get()) || containsBareSelectQuery(parameters.get()))
+    {
+        const auto * view_select
+            = arguments && !arguments->children.empty() ? arguments->children[0]->as<ASTSelectWithUnionQuery>() : nullptr;
+        bool is_view_shape = is_view && arguments && arguments->children.size() == 1 && view_select;
+        bool is_view_if_permitted_shape = is_view_if_permitted && arguments && arguments->children.size() == 2 && view_select
+            && arguments->children[1]->as<ASTFunction>();
+        bool is_table_function_shape = (is_view_shape || is_view_if_permitted_shape) && !parameters && !isWindowFunction()
+            && getNullsAction() == NullsAction::EMPTY && !view_select->hasOutputOptions();
+        if (!is_table_function_shape)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "A select query argument is only allowed in 'view(SELECT ...)' or "
+                "'viewIfPermitted(SELECT ... ELSE f(...))' during AST JSON deserialization");
+
+        /// For the table function form the parser emits only the canonical spelling (`ViewLayer`
+        /// dispatches on the lowercased name but always produces `view` or `viewIfPermitted`), and
+        /// execution matches the name case-sensitively (e.g. `StorageView::replaceWithSubquery` and
+        /// the table function factory), so a non-canonical spelling that reaches the interpreter
+        /// through `clickhouse_json` would fail. Canonicalize it the way the parser does.
+        name = is_view ? "view" : "viewIfPermitted";
+    }
+
+    /// A child of `arguments` or `parameters` is an expression, and an expression list is not one.
+    if (hasExpressionListChild(arguments.get()) || hasExpressionListChild(parameters.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'arguments' and 'parameters' cannot have an expression list child during AST JSON deserialization");
 
     r.readAlias(*this);
 }
@@ -451,6 +515,14 @@ struct FunctionOperatorMapping
 
 }
 
+/// A bare `ANY` followed by a single subquery is the SQL quantifier, which the parser rewrites to `IN`, so a
+/// function actually named `any` (the aggregate) in that shape only survives a re-parse while quoted.
+static bool quantifierNameNeedsQuoting(const String & name, const ASTPtr & arguments)
+{
+    return equalsCaseInsensitive(name, "any") && arguments && arguments->children.size() == 1
+        && arguments->children[0]->as<ASTSubquery>();
+}
+
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
@@ -478,6 +550,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
         frame_nested.need_parens = false;
+        frame_nested.parent_has_trailing_settings = false;
         ++frame_nested.indent;
         query->format(ostr, settings, state, frame_nested);
         ostr << nl_or_nothing << indent_str;
@@ -485,7 +558,16 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    if (arguments && !parameters && arguments->children.size() == 2 && name == "viewIfPermitted"sv)
+    /// The `ELSE` form exists only for the table function `viewIfPermitted(SELECT ... ELSE table_function(...))`,
+    /// whose arguments are always a bare select query and a function call (`ViewLayer` in the parser).
+    /// In an expression context `viewIfPermitted` parses as an ordinary function (e.g. `viewIfPermitted(1, 2)`),
+    /// and formatting it with `ELSE` would produce text that cannot be parsed back
+    /// (inconsistent AST formatting, an exception in debug builds), so such shapes take the generic path below.
+    /// The name check is case-insensitive: the parser dispatches to the table function parser on the
+    /// lowercased name, so a non-canonical spelling (producible only through AST JSON deserialization)
+    /// with this shape must also be printed in the `ELSE` form to stay parseable.
+    if (arguments && !parameters && arguments->children.size() == 2 && equalsCaseInsensitive(name, "viewIfPermitted")
+        && arguments->children[0]->as<ASTSelectWithUnionQuery>() && arguments->children[1]->as<ASTFunction>())
     {
         /// viewIfPermitted() needs special formatting: ELSE instead of comma between arguments, and better indents too.
         const auto * nl_or_nothing = settings.one_line ? "" : "\n";
@@ -495,11 +577,17 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << name << "(" << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
         frame_nested.need_parens = false;
+        frame_nested.parent_has_trailing_settings = false;
         frame_nested.indent += 2;
         arguments->children[0]->format(ostr, settings, state, frame_nested);
         ostr << nl_or_nothing << indent1 << (settings.one_line ? " " : "")
              << "ELSE " << nl_or_nothing << indent2;
-        arguments->children[1]->format(ostr, settings, state, frame_nested);
+        /// The parser accepts only a function call after ELSE (it is a table function such as null('structure')),
+        /// so a function that would normally be formatted as an operator (e.g. `not`) must keep
+        /// the function-call form here, or the query could not be parsed back.
+        FormatStateStacked frame_else = frame_nested;
+        frame_else.allow_operators = false;
+        arguments->children[1]->format(ostr, settings, state, frame_else);
         ostr << nl_or_nothing << indent0 << ")";
         return;
     }
@@ -936,7 +1024,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
     if (!name.empty())
-        ostr << backQuoteIfNeed(name);
+        ostr << (quantifierNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
 
     if (parameters)
     {
@@ -1123,7 +1211,8 @@ bool isASTLambdaFunction(const ASTFunction & function)
     if (function.name == "lambda" && function.arguments && function.arguments->children.size() == 2)
     {
         const auto * lambda_args_tuple = function.arguments->children.at(0)->as<ASTFunction>();
-        return lambda_args_tuple && lambda_args_tuple->name == "tuple";
+        return lambda_args_tuple && lambda_args_tuple->name == "tuple" && lambda_args_tuple->arguments
+            && !lambda_args_tuple->parameters;
     }
 
     return false;

@@ -1,11 +1,15 @@
 #include <DataTypes/DataTypeMapHelpers.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/LowCardinalityValueIndex.h>
+#include <Core/CompareHelper.h>
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 
@@ -23,10 +27,7 @@ constexpr size_t KEY_NOT_FOUND = std::numeric_limits<size_t>::max();
 /// Phase 1: Find the position of the requested key in each row.
 ///
 /// Builds `matched_positions[i]` = flat index into the keys/values column
-/// where the key was found for row (start + i), or KEY_NOT_FOUND.
-/// Uses position prediction: if the key was at relative offset K in the
-/// previous row, we try offset K first in the current row before falling
-/// back to a linear scan.
+/// of the first key matching `key` in row (start + i), or KEY_NOT_FOUND.
 /// ---------------------------------------------------------------------------
 
 /// Generic key matcher that uses virtual compareAt. Used as a fallback
@@ -38,21 +39,30 @@ struct KeyMatcherGeneric
 
     bool match(size_t keys_row) const
     {
-        return keys_column.compareAt(keys_row, 0, key, 0) == 0;
+        /// The direction hint must not be zero. When exactly one side is a `NaN`, or a NULL of a
+        /// `Nullable` nested in the key, `compareAt` answers with the hint itself, so a zero hint
+        /// reports them as equal to every other value: a row holding such a key would match any
+        /// requested key, and requesting such a key would match any key.
+        return keys_column.compareAt(keys_row, 0, key, 1) == 0;
     }
 };
 
-/// Specialized key matcher for ColumnVector<T>. Compares values directly
-/// without virtual dispatch.
-template <typename T>
+/// Specialized key matcher for columns holding a flat array of values (ColumnVector,
+/// ColumnDecimal). Compares values directly without virtual dispatch.
+template <typename ColumnType>
 struct KeyMatcherVector
 {
-    const typename ColumnVector<T>::Container & data;
+    using T = typename ColumnType::ValueType;
+
+    const typename ColumnType::Container & data;
     T key_value;
 
     bool match(size_t keys_row) const
     {
-        return data[keys_row] == key_value;
+        /// `CompareHelper` is a plain `==` for every type but the floating point ones, where it
+        /// keeps the matcher in agreement with `KeyMatcherGeneric`: a `NaN` key is found by a
+        /// requested `NaN` and by nothing else.
+        return CompareHelper<T>::equals(data[keys_row], key_value, 1);
     }
 };
 
@@ -89,8 +99,31 @@ struct KeyMatcherFixedString
     }
 };
 
+/// Specialized key matcher for ColumnLowCardinality. The requested key is resolved to its dictionary
+/// position once, so a key is matched without comparing the key values.
+template <typename IndexType>
+struct KeyMatcherLowCardinality
+{
+    const IndexType * indexes;
+    IndexType key_index;
+
+    bool match(size_t keys_row) const
+    {
+        return indexes[keys_row] == key_index;
+    }
+};
+
 /// The core position-finding loop, parametrized by Matcher type.
 /// For each row in [start, end), finds the flat index of the matching key.
+///
+/// `m[key]` returns the value of the FIRST occurrence of the key in the row, so
+/// each row is scanned left to right and the first match is taken. Duplicate keys
+/// in a Map are a legal (if degenerate) state, so a position-prediction shortcut
+/// across rows is not used: it could accept a later duplicate at the predicted
+/// offset while an earlier occurrence exists, yielding a value that depends on the
+/// preceding rows in the block (see issue #111203). Ruling out an earlier duplicate
+/// still requires scanning from the start, so there is no correct constant-time
+/// shortcut to prefer over the scan.
 template <typename Matcher>
 void findKeyPositions(
     const ColumnArray::Offsets & offsets,
@@ -102,50 +135,75 @@ void findKeyPositions(
     size_t num_rows = end - start;
     matched_positions.resize(num_rows);
 
-    /// Relative offset of the key within the map from the previous row.
-    /// Used for position prediction.
-    size_t predicted_relative_pos = 0;
-    bool have_prediction = false;
-
     for (size_t i = start; i < end; ++i)
     {
         size_t positions_row_idx = i - start;
         size_t offset_start = offsets[ssize_t(i) - 1];
         size_t offset_end = offsets[i];
 
-        /// Try the predicted position first.
-        if (have_prediction)
-        {
-            size_t predicted_pos = offset_start + predicted_relative_pos;
-            if (predicted_pos < offset_end && matcher.match(predicted_pos))
-            {
-                matched_positions[positions_row_idx] = predicted_pos;
-                continue;
-            }
-        }
-
-        /// Prediction missed or not available. Fall back to linear scan.
-        bool found = false;
+        matched_positions[positions_row_idx] = KEY_NOT_FOUND;
         for (size_t j = offset_start; j < offset_end; ++j)
         {
             if (matcher.match(j))
             {
                 matched_positions[positions_row_idx] = j;
-                predicted_relative_pos = j - offset_start;
-                have_prediction = true;
-                found = true;
                 break;
             }
         }
-
-        if (!found)
-        {
-            /// Keep the prediction unchanged: if only this row is missing the key,
-            /// subsequent rows likely have the same key order, so the prediction
-            /// may still be valid. A wrong prediction costs only one extra match call.
-            matched_positions[positions_row_idx] = KEY_NOT_FOUND;
-        }
     }
+}
+
+/// The value of the single-row key column, if the key is a String or a FixedString,
+/// possibly wrapped in LowCardinality.
+std::optional<std::string_view> tryGetStringKey(const IColumn & key)
+{
+    const IColumn * key_values = &key;
+    if (const auto * key_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&key))
+        key_values = key_low_cardinality->getDictionary().getNestedNotNullableColumn().get();
+
+    if (!typeid_cast<const ColumnString *>(key_values) && !typeid_cast<const ColumnFixedString *>(key_values))
+        return {};
+
+    return key.getDataAt(0);
+}
+
+/// Finds the key positions by comparing dictionary positions when the keys are LowCardinality.
+/// Returns false if the key column types are not supported, leaving it to the generic matcher.
+bool tryFindKeyPositionsLowCardinality(
+    const IColumn & keys_column,
+    const ColumnArray::Offsets & offsets,
+    const IColumn & key,
+    size_t start,
+    size_t end,
+    PaddedPODArray<size_t> & matched_positions)
+{
+    const auto * keys_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&keys_column);
+    if (!keys_low_cardinality)
+        return false;
+
+    auto key_value = tryGetStringKey(key);
+    if (!key_value)
+        return false;
+
+    auto lookup_result = callWithLowCardinalityValueIndex(
+        *keys_low_cardinality,
+        *key_value,
+        [&](const auto * indexes, auto key_index)
+        {
+            KeyMatcherLowCardinality<decltype(key_index)> matcher{indexes, key_index};
+            findKeyPositions(offsets, matcher, start, end, matched_positions);
+        });
+
+    if (lookup_result == LowCardinalityValueLookupResult::Unsupported)
+        return false;
+
+    if (lookup_result == LowCardinalityValueLookupResult::NotFound)
+    {
+        matched_positions.clear();
+        matched_positions.resize_fill(end - start, KEY_NOT_FOUND);
+    }
+
+    return true;
 }
 
 /// Dispatches to the appropriate specialized matcher based on the key column type,
@@ -160,31 +218,47 @@ void findKeyPositionsDispatch(
 {
     TypeIndex type_id = keys_column.getDataType();
 
-    /// Try ColumnVector<T> specializations.
     switch (type_id)
     {
-#define DISPATCH_VECTOR(T) \
+#define DISPATCH_COLUMN(T, ColType) \
         case TypeIndex::T: \
         { \
-            using ColType = ColumnVector<T>; \
             const auto & typed_col = assert_cast<const ColType &>(keys_column); \
             const auto & key_col = assert_cast<const ColType &>(key); \
-            KeyMatcherVector<T> matcher{typed_col.getData(), key_col.getData()[0]}; \
+            KeyMatcherVector<ColType> matcher{typed_col.getData(), key_col.getData()[0]}; \
             findKeyPositions(offsets, matcher, start, end, matched_positions); \
             return; \
         }
+#define DISPATCH_VECTOR(T) DISPATCH_COLUMN(T, ColumnVector<T>)
+#define DISPATCH_DECIMAL(T) DISPATCH_COLUMN(T, ColumnDecimal<T>)
 
         DISPATCH_VECTOR(UInt8)
         DISPATCH_VECTOR(UInt16)
         DISPATCH_VECTOR(UInt32)
         DISPATCH_VECTOR(UInt64)
+        DISPATCH_VECTOR(UInt128)
+        DISPATCH_VECTOR(UInt256)
         DISPATCH_VECTOR(Int8)
         DISPATCH_VECTOR(Int16)
         DISPATCH_VECTOR(Int32)
         DISPATCH_VECTOR(Int64)
+        DISPATCH_VECTOR(Int128)
+        DISPATCH_VECTOR(Int256)
+        DISPATCH_VECTOR(BFloat16)
         DISPATCH_VECTOR(Float32)
         DISPATCH_VECTOR(Float64)
+        DISPATCH_VECTOR(UUID)
+        DISPATCH_VECTOR(IPv4)
+        DISPATCH_VECTOR(IPv6)
+        DISPATCH_DECIMAL(Decimal32)
+        DISPATCH_DECIMAL(Decimal64)
+        DISPATCH_DECIMAL(Decimal128)
+        DISPATCH_DECIMAL(Decimal256)
+        DISPATCH_DECIMAL(DateTime64)
+        DISPATCH_DECIMAL(Time64)
+#undef DISPATCH_DECIMAL
 #undef DISPATCH_VECTOR
+#undef DISPATCH_COLUMN
 
         case TypeIndex::String:
         {
@@ -203,13 +277,19 @@ void findKeyPositionsDispatch(
             findKeyPositions(offsets, matcher, start, end, matched_positions);
             return;
         }
-        default:
+        case TypeIndex::LowCardinality:
         {
-            /// Fallback: generic matcher using virtual compareAt.
-            KeyMatcherGeneric matcher{keys_column, key};
-            findKeyPositions(offsets, matcher, start, end, matched_positions);
+            if (tryFindKeyPositionsLowCardinality(keys_column, offsets, key, start, end, matched_positions))
+                return;
+            break;
         }
+        default:
+            break;
     }
+
+    /// Fallback: generic matcher using virtual compareAt.
+    KeyMatcherGeneric matcher{keys_column, key};
+    findKeyPositions(offsets, matcher, start, end, matched_positions);
 }
 
 /// ---------------------------------------------------------------------------
@@ -235,17 +315,20 @@ void extractValuesGeneric(
     }
 }
 
-/// Specialized value extractor for ColumnVector<T>, with optional Nullable support.
+/// Specialized value extractor for columns holding a flat array of values (ColumnVector,
+/// ColumnDecimal), with optional Nullable support.
 /// If src_null_map / dst_null_map are non-null, propagates null flags.
 /// For missing keys, inserts a default value and sets the null flag to 1.
-template <typename T>
+template <typename ColumnType>
 void extractValuesVector(
-    const ColumnVector<T> & values_column,
-    ColumnVector<T> & result,
+    const ColumnType & values_column,
+    ColumnType & result,
     const PaddedPODArray<size_t> & matched_positions,
     const NullMap * src_null_map = nullptr,
     NullMap * dst_null_map = nullptr)
 {
+    using T = typename ColumnType::ValueType;
+
     const auto & src_data = values_column.getData();
     auto & dst_data = result.getData();
     size_t old_size = dst_data.size();
@@ -396,28 +479,45 @@ void extractValuesDispatch(
 
     switch (type_id)
     {
-#define DISPATCH_VECTOR(T) \
+#define DISPATCH_COLUMN(T, ColType) \
         case TypeIndex::T: \
         { \
-            using ColType = ColumnVector<T>; \
-            extractValuesVector<T>( \
+            extractValuesVector( \
                 assert_cast<const ColType &>(*data_column), \
                 assert_cast<ColType &>(*result_data_column), \
                 matched_positions, src_null_map, dst_null_map); \
             return; \
         }
+#define DISPATCH_VECTOR(T) DISPATCH_COLUMN(T, ColumnVector<T>)
+#define DISPATCH_DECIMAL(T) DISPATCH_COLUMN(T, ColumnDecimal<T>)
 
         DISPATCH_VECTOR(UInt8)
         DISPATCH_VECTOR(UInt16)
         DISPATCH_VECTOR(UInt32)
         DISPATCH_VECTOR(UInt64)
+        DISPATCH_VECTOR(UInt128)
+        DISPATCH_VECTOR(UInt256)
         DISPATCH_VECTOR(Int8)
         DISPATCH_VECTOR(Int16)
         DISPATCH_VECTOR(Int32)
         DISPATCH_VECTOR(Int64)
+        DISPATCH_VECTOR(Int128)
+        DISPATCH_VECTOR(Int256)
+        DISPATCH_VECTOR(BFloat16)
         DISPATCH_VECTOR(Float32)
         DISPATCH_VECTOR(Float64)
+        DISPATCH_VECTOR(UUID)
+        DISPATCH_VECTOR(IPv4)
+        DISPATCH_VECTOR(IPv6)
+        DISPATCH_DECIMAL(Decimal32)
+        DISPATCH_DECIMAL(Decimal64)
+        DISPATCH_DECIMAL(Decimal128)
+        DISPATCH_DECIMAL(Decimal256)
+        DISPATCH_DECIMAL(DateTime64)
+        DISPATCH_DECIMAL(Time64)
+#undef DISPATCH_DECIMAL
 #undef DISPATCH_VECTOR
+#undef DISPATCH_COLUMN
 
         case TypeIndex::String:
         {
@@ -466,16 +566,30 @@ void extractKeyValueFromMap(
     extractValuesDispatch(values_column, result, matched_positions);
 }
 
-std::optional<std::pair<String, String>> tryParseMapSubcolumnName(const String & column_name)
+namespace
 {
-    static constexpr std::string_view key_marker = ".key_";
 
-    auto pos = column_name.find(key_marker);
+constexpr std::string_view map_key_marker = ".key_";
+
+}
+
+bool looksLikeMapSubcolumnName(const String & column_name)
+{
+    return column_name.contains(map_key_marker);
+}
+
+std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
+    const String & column_name, const NameSet & shadowing_columns)
+{
+    auto pos = column_name.find(map_key_marker);
     if (pos == String::npos)
         return std::nullopt;
 
+    if (shadowing_columns.contains(column_name))
+        return std::nullopt;
+
     auto map_column_name = column_name.substr(0, pos);
-    auto serialized_key = column_name.substr(pos + key_marker.size());
+    auto serialized_key = column_name.substr(pos + map_key_marker.size());
     return std::pair{std::move(map_column_name), std::move(serialized_key)};
 }
 

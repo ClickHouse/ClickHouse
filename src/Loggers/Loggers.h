@@ -34,6 +34,18 @@ public:
     DB::AsyncLogQueueSizes getAsynchronousMetricsFromAsyncLogs();
     void flushTextLogs();
 
+    /// Stop/restart the background logging threads. Used around remapExecutable, which rewrites the whole
+    /// code segment and requires that no other thread runs code meanwhile (the async threads poll, so they
+    /// must be joined for the duration). No-op for synchronous logging.
+    void stopAsyncLoggingThreads();
+    void startAsyncLoggingThreads();
+
+    /// Best-effort variant for destructors: stop and join only the asynchronous logging threads,
+    /// without shutting logging down for the synchronous path. Later destructors may still log,
+    /// and a closed asynchronous channel delivers their messages synchronously.
+    /// No-op for synchronous logging.
+    void closeAsyncLogging();
+
     virtual ~Loggers() = default;
 
     void stopLogging();

@@ -7,6 +7,8 @@ title: '精确与近似向量搜索'
 doc_type: 'guide'
 ---
 
+import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
 对于给定点，在多维 (向量) 空间中查找距离其最近的 N 个点，这个问题称为[最近邻搜索](https://en.wikipedia.org/wiki/Nearest_neighbor_search)，简称向量搜索。
 解决向量搜索通常有两种通用方法：
 
@@ -19,12 +21,13 @@ doc_type: 'guide'
 WITH [...] AS reference_vector
 SELECT [...]
 FROM table
-WHERE [...] -- WHERE 子句是可选的
+WHERE [...] -- a WHERE clause is optional
 ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
 
-向量空间中的点存储在名为 `vectors` 的数组类型列中，例如 [Array(Float64)](/zh/reference/data-types/array)、[Array(Float32)](/zh/reference/data-types/array) 或 [Array(BFloat16)](/zh/reference/data-types/array)。
+向量空间中的点存储在名为 `vectors` 的 [Array(Float64)](/zh/reference/data-types/array)、[Array(Float32)](/zh/reference/data-types/array) 或 [Array(BFloat16)](/zh/reference/data-types/array) 类型列中。
+在实际使用中，我们通常建议使用 [BFloat16](/zh/reference/data-types/float) 数组。
 参考向量是一个常量数组，通过公用表表达式给出。
 `<DistanceFunction>` 用于计算参考点与所有已存储点之间的距离。
 这里可以使用任意一种可用的[距离函数](/zh/reference/functions/regular-functions/distance-functions)。
@@ -35,15 +38,21 @@ LIMIT <N>
 </div>
 
 可以直接使用上述 SELECT 查询按原样执行精确向量搜索。
-这类查询的运行时间通常与已存储向量的数量及其维度 (即数组元素个数) 成正比。
-此外，由于 ClickHouse 会对所有向量执行暴力扫描，运行时间还取决于该查询使用的线程数 (请参见设置 [max&#95;threads](/zh/reference/settings/session-settings#max_threads)) 。
+这类查询的运行时间通常与已存储向量的数量、向量元素数量 (= 维度) 以及向量元素的位宽成正比。
+此外，由于 ClickHouse 会对所有向量执行穷举扫描，运行时间还取决于该查询使用的线程数 (请参见设置 [max&#95;threads](/zh/reference/settings/session-settings/max-threads#max_threads)) 。
 
 <div id="exact-nearest-neighbor-search-example">
   ### 示例
 </div>
 
 ```sql
-CREATE TABLE tab(id Int32, vec Array(Float32)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16)
+)
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
@@ -88,9 +97,9 @@ ClickHouse 提供了一种特殊的“向量相似度”索引，用于执行近
 ```sql
 CREATE TABLE table
 (
-  [...],
-  vectors Array(Float*),
-  INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
+    [...],
+    vectors Array([Float64|Float32|BFloat16]),
+    INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -139,9 +148,9 @@ ALTER TABLE table MATERIALIZE INDEX <index_name> SETTINGS mutations_sync = 2;
 ```sql
 CREATE TABLE table
 (
-  [...],
-  vectors Array(Float*),
-  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
+    [...],
+    vectors Array([Float64|Float32|BFloat16]),
+    INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY [...]
@@ -210,7 +219,7 @@ Memory consumption = 3072 + 512 = 3584 MB
 </div>
 
 <Note>
-  要使用向量相似度索引，[compatibility](/zh/reference/settings/session-settings) 设置必须为 `''` (默认值) ，或者为 `'25.1'` 或更高版本。
+  要使用向量相似度索引，[compatibility](/zh/reference/settings/session-settings/compatibility#compatibility) 设置必须为 `''` (默认值) ，或者为 `'25.1'` 或更高版本。
 </Note>
 
 向量相似度索引支持以下形式的 SELECT 查询：
@@ -219,7 +228,7 @@ Memory consumption = 3072 + 512 = 3584 MB
 WITH [...] AS reference_vector
 SELECT [...]
 FROM table
-WHERE [...] -- WHERE 子句是可选的
+WHERE [...] -- a WHERE clause is optional
 ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
@@ -227,12 +236,12 @@ LIMIT <N>
 ClickHouse 的查询优化器会尝试匹配上述查询模板，并利用可用的向量相似度索引。
 只有当 SELECT 查询中的距离函数与索引定义中的距离函数一致时，查询才能使用向量相似度索引。
 
-高级用户可以为设置项 [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/zh/reference/settings/session-settings#hnsw_candidate_list_size_for_search) (也称为 HNSW 超参数 &quot;ef&#95;search&quot;) 指定自定义值，以调整搜索过程中候选列表的大小 (例如 `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`) 。
+高级用户可以为设置项 [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/zh/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search) (也称为 HNSW 超参数 &quot;ef&#95;search&quot;) 指定自定义值，以调整搜索过程中候选列表的大小 (例如 `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`) 。
 该设置项的默认值 256 在绝大多数场景下均能满足需求。
 设置值越高，精度越好，但性能开销也越大。
 
 如果查询可以使用向量相似度索引，ClickHouse 会检查 SELECT 查询中提供的 LIMIT `<N>` 是否在合理范围内。
-更具体地说，如果 `<N>` 大于设置项 [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/zh/reference/settings/session-settings#max_limit_for_vector_search_queries) 的值 (默认值为 100) ，则会返回错误。
+更具体地说，如果 `<N>` 大于设置项 [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/zh/reference/settings/session-settings/max#max_limit_for_vector_search_queries) 的值 (默认值为 100) ，则会返回错误。
 过大的 LIMIT 值会降低搜索速度，通常意味着存在使用方式上的错误。
 
 要检查 SELECT 查询是否使用了向量相似度索引，可以在查询前添加 `EXPLAIN indexes = 1`。
@@ -251,7 +260,7 @@ LIMIT 10;
 可能返回
 
 ```result
-┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
+    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
  1. │ Expression (Project names)                                                                      │
  2. │   Limit (preliminary LIMIT (without OFFSET))                                                    │
  3. │     Sorting (Sorting for ORDER BY)                                                              │
@@ -270,14 +279,14 @@ LIMIT 10;
     └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-在此示例中，[dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) 中的 100 万个向量 (每个向量维度为 1536) 存储在 575 个粒度中，即每个粒度约 1.7k 行。该查询请求 10 个最近邻，向量相似度索引在 10 个独立粒度中找到这 10 个最近邻。查询执行期间将读取这 10 个粒度。
+在此示例中，[dbpedia 数据集](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) 中的 100 万个向量 (每个向量维度为 1536) 存储在 575 个粒度中，即每个粒度约 1.7k 行。该查询请求 10 个最近邻，向量相似度索引在 10 个独立粒度中找到这 10 个最近邻。查询执行期间将读取这 10 个粒度。
 
 如果输出中包含 `Skip` 以及向量索引的名称和类型 (在本示例中为 `idx` 和 `vector_similarity`) ，则表示向量相似度索引已生效。
 在本例中，向量相似度索引跳过了四个粒度中的两个，即 50% 的数据。
 可跳过的粒度越多，索引的使用效率就越高。
 
 <Tip>
-  要强制使用索引，你可以在运行 SELECT 查询时启用设置 [force&#95;data&#95;skipping&#95;indexes](/zh/reference/settings/session-settings#force_data_skipping_indices) (将索引名称作为该设置的值) 。
+  要强制使用索引，你可以在运行 SELECT 查询时启用设置 [force&#95;data&#95;skipping&#95;indices](/zh/reference/settings/session-settings/force#force_data_skipping_indices) (将索引名称作为该设置的值) 。
 </Tip>
 
 **后过滤与前过滤**
@@ -286,13 +295,13 @@ LIMIT 10;
 ClickHouse 将采用后过滤或前过滤策略对这些过滤条件进行求值。
 简而言之，两种策略的区别在于过滤条件的求值顺序：
 
-* 后过滤是指先评估向量相似度索引，然后 ClickHouse 再评估 `WHERE` 子句中指定的其他过滤条件。
-* 前过滤意味着过滤器的执行顺序正好相反。
+* 后过滤意味着会先评估向量相似度索引，随后 ClickHouse 再评估 `WHERE` 子句中指定的附加过滤条件。
+* 前过滤意味着过滤条件的评估顺序正好相反。
 
-这些策略各有其权衡取舍：
+这两种策略各有不同的权衡：
 
 * 后过滤的一个普遍问题是，返回的行数可能少于 `LIMIT <N>` 子句请求的数量。当向量相似度索引返回的一行或多行结果不满足附加过滤条件时，就会出现这种情况。
-* 前过滤通常仍是一个尚未解决的问题。某些专门的向量数据库提供了前过滤算法，但大多数关系型数据库 (包括 ClickHouse) 都会退回到精确近邻搜索，也就是不使用索引的暴力扫描。
+* 前过滤通常仍是一个尚未解决的问题。某些专门的向量数据库提供了前过滤算法，但大多数关系型数据库 (包括 ClickHouse) 都会退回到精确近邻搜索，也就是不使用索引的穷举扫描。
 
 采用哪种策略取决于过滤条件。
 
@@ -320,8 +329,8 @@ ClickHouse 会剪枝掉除 2025 年分区之外的所有分区。
 
 如果额外过滤条件可以通过[主键](/zh/reference/engines/table-engines/mergetree-family/mergetree#primary-key)评估 (即它们构成主键的前缀) ，并且
 
-* 如果过滤条件在某个 part 内至少排除一行，ClickHouse 将回退为对该 part 内“保留下来”的范围执行前过滤，
-* 如果过滤条件在某个 part 内没有排除任何行，ClickHouse 将对该 part 执行后过滤。
+* 如果过滤条件在某个分片内至少排除一行，ClickHouse 将回退为对该分片内“保留下来”的范围执行前过滤，
+* 如果过滤条件在某个分片内没有排除任何行，ClickHouse 将对该分片执行后过滤。
 
 在实际场景中，后一种情况通常不太可能发生。
 
@@ -332,7 +341,7 @@ ClickHouse 会剪枝掉除 2025 年分区之外的所有分区。
 
 若要更细致地控制后过滤与前过滤，可以使用两个设置：
 
-设置 [vector&#95;search&#95;filter&#95;strategy](/zh/reference/settings/session-settings#vector_search_filter_strategy) (默认值：`auto`，即实现上述启发式策略) 可以设为 `prefilter`。
+设置 [vector&#95;search&#95;filter&#95;strategy](/zh/reference/settings/session-settings/vector-search#vector_search_filter_strategy) (默认值：`auto`，即实现上述启发式策略) 可以设为 `prefilter`。
 这对于额外过滤条件选择性极高的场景很有用，可用于强制启用前过滤。
 例如，以下查询可能会从前过滤中受益：
 
@@ -345,9 +354,9 @@ LIMIT 10
 ```
 
 假设价格低于 2 美元的图书极少，后过滤可能会返回零行，因为向量索引返回的前 10 个匹配项价格都可能高于 2 美元。
-通过强制使用前过滤 (在查询中添加 `SETTINGS vector_search_filter_strategy = 'prefilter'`) ，ClickHouse 会先找出所有价格低于 2 美元的图书，然后对这些图书执行暴力穷举向量搜索。
+通过强制使用前过滤 (在查询中添加 `SETTINGS vector_search_filter_strategy = 'prefilter'`) ，ClickHouse 会先找出所有价格低于 2 美元的图书，然后对这些图书执行穷举向量搜索。
 
-作为解决上述问题的另一种方法，可以将 [vector&#95;search&#95;index&#95;fetch&#95;multiplier](/zh/reference/settings/session-settings#vector_search_index_fetch_multiplier) (默认值：`1.0`，最大值：`1000.0`) 配置为大于 `1.0` 的值 (例如 `2.0`) 。
+作为解决上述问题的另一种方法，可以将 [vector&#95;search&#95;index&#95;fetch&#95;multiplier](/zh/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier) (默认值：`1.0`，最大值：`1000.0`) 配置为大于 `1.0` 的值 (例如 `2.0`) 。
 从向量索引中拉取的最近邻数量会乘以该设置值，然后再对这些行应用额外的过滤条件，以返回 LIMIT 指定数量的行。
 例如，我们可以再次发起查询，但将 multiplier 设置为 `3.0`：
 
@@ -375,7 +384,7 @@ ClickHouse 中的跳过索引通常在粒度级别进行过滤。也就是说，
 如果附加过滤器移除了过多候选项，或者需要更高的召回率，请增大设置 `vector_search_index_fetch_multiplier`，以便向量索引返回更多候选行用于重评分。
 
 因此，ClickHouse 提供了一种优化，可禁用重评分，并直接从索引返回最相似的向量及其距离。
-该优化默认启用，参见设置 [vector&#95;search&#95;with&#95;rescoring](/zh/reference/settings/session-settings#vector_search_with_rescoring)。
+该优化默认启用，参见设置 [vector&#95;search&#95;with&#95;rescoring](/zh/reference/settings/session-settings/vector-search#vector_search_with_rescoring)。
 其大致工作方式是，ClickHouse 将最相似的向量及其距离通过虚拟列 `_distance` 提供出来。
 要查看这一点，请使用 `EXPLAIN header = 1` 运行向量搜索查询：
 
@@ -392,22 +401,22 @@ SETTINGS vector_search_with_rescoring = 0
 ```result
 Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 
-    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────────────┐
- 1. │ Expression (Project names)                                                                              │
- 2. │ Header: id Int32                                                                                        │
- 3. │   Limit (preliminary LIMIT (without OFFSET))                                                            │
- 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64     │
- 5. │           __table1.id Int32                                                                             │
- 6. │     Sorting (Sorting for ORDER BY)                                                                      │
- 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64   │
- 8. │             __table1.id Int32                                                                           │
- 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))         │
-10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64 │
-11. │               __table1.id Int32                                                                         │
-12. │         ReadFromMergeTree (default.tab)                                                                 │
-13. │         Header: id Int32                                                                                │
-14. │                 _distance Float32                                                                       │
-    └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression (Project names)                                                                                 │
+ 2. │ Header: id Int32                                                                                           │
+ 3. │   Limit (preliminary LIMIT (without OFFSET))                                                               │
+ 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16     │
+ 5. │           __table1.id Int32                                                                                │
+ 6. │     Sorting (Sorting for ORDER BY)                                                                         │
+ 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16   │
+ 8. │             __table1.id Int32                                                                              │
+ 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))            │
+10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(BFloat16), 'Array(BFloat16)'_String)) BFloat16 │
+11. │               __table1.id Int32                                                                            │
+12. │         ReadFromMergeTree (default.tab)                                                                    │
+13. │         Header: id Int32                                                                                   │
+14. │                 _distance BFloat16                                                                         │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <Note>
@@ -421,12 +430,18 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 **压缩调优**
 
 在几乎所有使用场景中，底层列中的向量都是稠密的，因此通常难以有效压缩。
-因此，[压缩](/zh/reference/statements/create/table#column_compression_codec)会降低对向量列执行插入和读取的性能。
+因此，[压缩](/zh/reference/statements/create/table/codec)会降低对向量列执行插入和读取的性能。
 因此，我们建议禁用压缩。
 为此，请像下面这样为向量列指定 `CODEC(NONE)`：
 
 ```sql
-CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16) CODEC(NONE),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)
+)
+ENGINE = MergeTree ORDER BY id;
 ```
 
 **调优索引创建**
@@ -440,14 +455,14 @@ CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE ve
 要加快索引创建，可以采用以下方法：
 
 首先，可以将索引创建并行化。
-可通过服务器设置 [max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/zh/reference/settings/server-settings/settings#max_build_vector_similarity_index_thread_pool_size) 配置用于创建索引的最大线程数。
+可通过服务器设置 [max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size) 配置用于创建索引的最大线程数。
 为获得最佳性能，建议将该设置值配置为 CPU 核心数。
 
-其次，为了加快 INSERT 语句的执行，用户可以通过会话设置 [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/zh/reference/settings/session-settings#materialize_skip_indexes_on_insert) 禁止在新插入的 parts 上创建跳过索引。
+其次，为了加快 INSERT 语句的执行，用户可以通过会话设置 [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/zh/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) 禁止在新插入的 parts 上创建跳过索引。
 对此类 parts 执行的 SELECT 查询将回退为精确搜索。
 由于新插入的 parts 相对于整个表通常较小，因此预计对性能的影响可以忽略不计。
 
-第三，为了加快合并，用户可以通过会话设置 [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/zh/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge) 禁止在已合并的 parts 上创建跳过索引。
+第三，为了加快合并，用户可以通过会话设置 [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/zh/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) 禁止在已合并的 parts 上创建跳过索引。
 配合语句 [ALTER TABLE [...] MATERIALIZE INDEX [...]](/zh/reference/statements/alter/skipping-index#materialize-index)，这可以显式控制向量相似度索引的生命周期。
 例如，可以将索引创建延后到所有数据都已摄取完成之后，或延后到系统负载较低的时段 (如周末) 再进行。
 
@@ -456,7 +471,7 @@ CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE ve
 SELECT 查询要使用向量相似度索引，需要先将其加载到主内存中。
 为避免重复将同一个向量相似度索引加载到主内存，ClickHouse 为这类索引提供了专用的内存缓存。
 缓存越大，不必要的加载就越少。
-可通过服务器设置 [vector&#95;similarity&#95;index&#95;cache&#95;size](/zh/reference/settings/server-settings/settings#vector_similarity_index_cache_size) 配置缓存的最大大小。
+可通过服务器设置 [vector&#95;similarity&#95;index&#95;cache&#95;size](/zh/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size) 配置缓存的最大大小。
 默认情况下，缓存最大可增长到 5 GB。
 
 以下日志消息 (`system.text_log`) 表明正在加载向量相似度索引。
@@ -516,14 +531,14 @@ ClickHouse 向量索引支持以下量化选项：
 不过，在大多数数据集上，半精度 brain float 量化 (`bf16`) 带来的精度损失微乎其微，因此向量相似度索引默认采用这种量化方式。
 四分之一精度 (`i8`) 和二进制 (`b1`) 量化会给向量搜索带来较明显的精度损失。
 只有在向量相似度索引的大小显著超过可用 DRAM 容量时，我们才建议使用这两种量化方式。
-在这种情况下，我们还建议启用重评分 ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/zh/reference/settings/session-settings#vector_search_index_fetch_multiplier)、[vector&#95;search&#95;with&#95;rescoring](/zh/reference/settings/session-settings#vector_search_with_rescoring)) 以提高准确性。
-只有在以下情况下才建议使用二进制量化：1) 嵌入向量已归一化 (即向量长度 = 1，OpenAI 模型通常是归一化的) ；2) 距离函数使用的是余弦距离。
+在这种情况下，我们还建议启用重评分 ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/zh/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier)、[vector&#95;search&#95;with&#95;rescoring](/zh/reference/settings/session-settings/vector-search#vector_search_with_rescoring)) 以提高准确性。
+只有在以下情况下才建议使用二进制量化：1) 嵌入向量已归一化 (即向量长度 = 1，OpenAI 模型通常是归一化的)；2) 距离函数使用的是余弦距离。
 二进制量化在内部使用 Hamming 距离来构建和搜索邻近图。
 重评分步骤会使用表中存储的原始全精度向量，通过余弦距离识别最近邻。
 
 **调整数据传输**
 
-向量搜索查询中的参考向量由用户提供，通常通过调用大型语言模型 (LLM) 获取。
+向量搜索查询中的参考向量由用户提供，通常通过调用大语言模型 (LLM) 获取。
 在 ClickHouse 中执行向量搜索的典型 Python 代码可能如下所示
 
 ```python
@@ -616,7 +631,14 @@ WHERE type = 'vector_similarity';
 查询：
 
 ```sql title="Query"
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab
+(
+    id Int32,
+    vec Array(BFloat16),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)
+)
+ENGINE = MergeTree
+ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
@@ -646,55 +668,64 @@ LIMIT 3;
   ### 使用量化编解码器进行向量搜索
 </div>
 
-<Note>
-  `Quantized` 编解码器属于 Experimental 功能。请使用 `SET allow_experimental_codecs = 1` 启用它。
-  如果你遇到问题，请在 [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues) 中提交 issue。
-</Note>
+<ExperimentalBadge />
+
+要启用 `Quantized` 编解码器，请先运行 `SET enable_quantized_codec = 1`。
+如果你遇到问题，请在 [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues) 中提交 issue。
 
 <div id="quantized-codecs-introduction">
-  #### 引言
+  #### 简介
 </div>
 
-[向量相似度索引](#vector-similarity-index)通过图遍历来响应最近邻查询，并且在图能够驻留内存时性能非常出色。
-但有两个因素限制了它的适用性：
+[向量相似度索引](#vector-similarity-index)通过遍历图来回答最近邻查询；当图可完全驻留于内存中时，其性能非常出色。
+但以下两个因素限制了它的适用性：
 
-* **规模。** 构建图所需的时间以及存储图所需的内存——还不包括向量本身——会成为主要成本。
-* **筛选。** 在选择性较强的 `WHERE` 过滤器下，图遍历会变得低效，因为它要么无法到达满足谓词条件的那一小部分行，要么必须检查数量明显偏多的候选项才能找到它们。
+* **构建成本高。** 构建向量相似度索引的成本很高。
+* **内存占用高。** 除向量本身外，向量相似度索引还会占用大量内存，成为主要成本。
+* **筛选。** 使用选择性较高的 `WHERE` 过滤器时，图遍历会变得低效：它要么无法到达满足谓词的少量行，要么必须检查数量严重失衡的候选项才能找到它们。
 
-穷举扫描不受这两种限制：它不需要任何辅助结构，parts 通过拼接进行合并，而过滤器只会减少需要扫描的行数。
-它唯一的缺点是必须读取的数据量：对于以全精度 `Float32` 存储的向量，扫描的开销主要受存储 I/O 限制，因为必须从磁盘 (或对象存储) 读取整个向量列——而对于稠密嵌入列，这通常是表中最大的列，并且压缩效果较差。
+穷尽扫描则不受这两种限制：它不需要辅助数据结构，parts 可通过拼接自然合并，筛选也只会减少需要扫描的行数。
+穷尽扫描最大的缺点是必须读取大量数据：扫描以完整 `Float32` 或 `BFloat16` 精度存储的向量时，由于必须从磁盘加载整个向量列，主要开销来自存储 I/O。
 
-`Quantized` 列编解码器正是为了解决这个问题。
-每个向量会存储两份：一份是保持不变的原始全精度值，另一份是存放在配套 stream 中的紧凑*量化编码*。
-向量搜索查询会先使用一种低成本、对 SIMD 友好的距离函数扫描这些编码，筛出一份最有希望的候选短名单，然后再基于全精度向量对这份短名单重新排序。
-由于编码的大小只是原始向量的一小部分，短名单扫描从存储中读取的字节数会少得多——并且只会为少数入围候选访问全精度列——同时最终排序仍能保持准确性。
+`Quantized` 列编解码器解决了这一问题。
+它将每个向量存储两次：一次为原始全精度值，另一次为紧凑的量化表示。
+向量搜索查询会先使用开销低且适合 SIMD 的距离函数扫描量化编码，生成由最有希望的结果候选项组成的候选列表。
+第二步会根据全精度向量重新对这些候选项进行排序。
+与扫描原始向量相比，初始扫描量化编码时从存储中读取的字节数要少得多。
+
+该编解码器非常适合 ClickHouse，因为开销最大的部分 (扫描) 正是 ClickHouse engine 擅长处理的任务：
+
+* **向量化。** 扫描内核利用 SIMD 指令降低 CPU 消耗。
+* **跨核心和 parts 并行。** 扫描很容易并行化：可同时在所有可用线程和表的所有 parts 上计算距离。
+* **分布式。** 在分片集群中，工作会分发到各台机器：每个分片并行扫描自己的数据部分，协调器再合并候选列表。
+* **无需额外构建成本。** 写入向量时会生成量化编码。无需构建、调优或重建额外索引，因此数据写入表后即可搜索。
 
 <div id="quantized-codecs-declaring">
-  #### 声明编解码器
+  #### 应用编解码器
 </div>
 
-将 `Quantized(...)` 编解码器应用于 `Array(Float32)` (或 `Array(Float64)` / `Array(BFloat16)`) 列。
-该编解码器属于实验性功能，因此请先启用 `allow_experimental_codecs`：
+为 `Array(Float32)` (或 `Array(Float64)` / `Array(BFloat16)`) 列指定 `Quantized(...)` 编解码器。
 
 ```sql
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 CREATE TABLE vectors
 (
     id UInt32,
-    vec Array(Float32) CODEC(Quantized('rabitq', 1536))
+    vec Array(BFloat16) CODEC(Quantized('rabitq', 1536))
 )
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree
+ORDER BY ...;
 ```
 
-全精度数据仍按常规方式存储；该编解码器只会额外添加配套的码流。
-编解码器在创建表时即已固定，无法通过 `ALTER TABLE` 添加或修改。
+无法在之后通过 `ALTER TABLE` 添加或修改该编解码器。
 
 <div id="quantized-codecs-methods">
   #### 量化方法
 </div>
 
-每种方法都对应着大小 / 准确性 / 指标之间权衡的不同取舍点。`dimensions` 参数表示向量长度。
+每种量化方法在大小和准确性之间各有不同的权衡。
+`dimensions` 参数表示向量长度。
 
 * `Quantized('rabitq', dimensions)` — 每个坐标使用一个符号位，再加上一个无偏余弦校正因子 (`dimensions/8 + 4` 字节) 。体积小、`popcount` 成本低，是一个很强的默认选择。仅支持 `cosineDistance`。
 * `Quantized('turboquant', dimensions)` — 每个坐标使用两位 (1 位 MSE 编码和 1 位残差编码) ，可获得保真度更高的候选结果 (`dimensions/4 + 4` 字节) 。仅支持 `cosineDistance`。
@@ -705,13 +736,13 @@ ENGINE = MergeTree ORDER BY id;
 `rabitq` 和 `turboquant` 要求 `dimensions` 必须是 8 的倍数。
 
 <div id="quantized-codecs-searching">
-  #### 无感搜索
+  #### 使用编解码器
 </div>
 
-无需特殊的查询语法——直接编写与[精确搜索](#exact-nearest-neighbor-search)相同的 top-`k` 查询即可：
+常规的 top-`k` 查询形态会自动使用该编解码器 (请参阅[精确搜索](#exact-nearest-neighbor-search)) ：
 
 ```sql
-WITH [/* reference vector of `dimensions` floats */] AS reference_vec
+WITH [...] AS reference_vec
 SELECT id
 FROM vectors
 ORDER BY cosineDistance(vec, reference_vec) ASC
@@ -719,31 +750,14 @@ LIMIT 10
 SETTINGS vector_search_use_quantized_codes = 1;
 ```
 
-使用 `vector_search_use_quantized_codes = 1` 时，优化器会自动将查询改写为两阶段执行计划：先扫描量化后的编码以生成候选短名单，然后再用全精度 `vec` 对候选短名单重新评分。
-该 setting 默认关闭，因此如果不启用它，同一查询就会作为普通的精确扫描运行——codec 绝不会改变结果；它只是在你选择启用时提供一条更快的执行路径。
-请使用所选 method 支持的距离函数：所有 method 都支持 `cosineDistance`，此外，`int8`、`prefix` 和 `product` 也支持 `L2Distance`。
+将 `vector_search_use_quantized_codes = 1` 设为启用后，优化器可将查询重写为两阶段扫描。
+该设置默认关闭。
+未启用此设置时，相同查询会对原始向量执行常规精确扫描。
+所有方法均支持距离函数 `cosineDistance`；其中 `int8`、`prefix` 和 `product` 方法还额外支持 `L2Distance` 距离函数。
 
-<div id="quantized-codecs-settings">
-  #### 设置
-</div>
-
-* `allow_experimental_codecs` — 必须启用后才能声明 `Quantized` 编解码器 (默认值：`0`) 。
-* `vector_search_use_quantized_codes` — 启用“两阶段候选短名单筛选与重评分重写” (默认值：`0`) 。关闭时，匹配查询会对全精度向量进行精确扫描。
-* `vector_search_index_fetch_multiplier` — 相对于查询 `LIMIT` 需要纳入候选短名单的候选数量：扫描会在重评分之前保留前 `LIMIT × multiplier` 个编码。该值越大，召回率越高，但重评分开销也越大。默认值为 `1` (不过采样) ，因此通常需要将其调高——例如调到 `10` 或更高——才能获得较好的召回率。
-
-<div id="quantized-codecs-built-for-scale">
-  #### 为大规模场景而构建
-</div>
-
-这种编解码器非常适合 ClickHouse，因为开销最高的部分——扫描——恰恰是 ClickHouse 引擎最擅长处理的工作：
-
-* **向量化。** 扫描内核专为 SIMD 编写，并会在运行时分派到 CPU 支持的最宽指令：对符号码方法 (`rabitq`、`turboquant`) 使用硬件 `popcount`，对其他方法则使用宽幅融合乘加。
-* **跨 CPU 核心和 parts 并行。** 平面扫描天然适合并行执行，而 ClickHouse 也正是这样处理的：会同时在所有可用线程以及表的所有 parts 上计算距离，只有最终的 top-`k` merge 是串行的。
-* **分布式。** 在分片集群上，这项工作会分散到多台机器上——每个分片并行扫描自己的那部分数据，再由协调器合并候选短名单。
-* **列式且便于过滤。** 量化编码存放在独立的列中，像其他列一样经过相同的 I/O 路径压缩和读取，因此有选择性的 `WHERE` 只会留下更少需要扫描的编码。
-* **无需单独构建。** 这些编码会在写入向量时生成，并通过拼接完成 merge——无需构建、调优或重建索引，因此数据一落表，就能立即执行搜索。
-
-这些编码始终只用于生成候选；原地保留的全精度列则提供最终的精确排序。
+设置 `vector_search_index_fetch_multiplier` 用于指定相对于查询 `LIMIT` 要入围的候选数量。
+较大的乘数可提高召回率，但会增加重评分开销。
+默认值为 `1` (不进行过采样) ；通常需要将其提高到 (例如) `10`，才能获得良好的召回率。
 
 <div id="approximate-nearest-neighbor-search-qbit">
   ### 量化位 (QBit)

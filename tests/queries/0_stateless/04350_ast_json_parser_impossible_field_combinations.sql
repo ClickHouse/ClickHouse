@@ -195,6 +195,24 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t ADD STATISTIC
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP STATISTICS a'), '"statistics_decl":{"type":"StatisticsDeclaration","columns":', '"statistics_decl":{"type":"StatisticsDeclaration","types":{"type":"ExpressionList","children":[{"type":"Function","name":"tdigest","no_empty_args":true}]},"columns":')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
+-- ALTER ... STATISTICS ALL: `ParserAlterCommand` reads `IF EXISTS` and `IN PARTITION` only in the
+-- branch that also requires a column-list declaration, so the `ALL` forms (null `statistics_decl`)
+-- never carry either. `MATERIALIZE STATISTICS` has nowhere to print them, so both are silently
+-- dropped, and an absent partition means every partition when the formatted text is reparsed for
+-- execution. `CLEAR STATISTICS` prints `CLEAR STATISTICS IF EXISTS ALL`, which reparses as the
+-- statistic on a column named `ALL`, and `CLEAR STATISTICS ALL IN PARTITION 1`, which does not
+-- reparse at all. The `ALL` forms round-trip without either field:
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS ALL'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS ALL'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS IF EXISTS a'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS IF EXISTS a IN PARTITION 1'));
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS ALL'), '"if_exists":false', '"if_exists":true')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS ALL'), '"if_exists":false', '"if_exists":true')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS ALL'), '"if_exists":false', '"if_exists":false,"partition":{"type":"Partition","value":{"type":"Literal","value":{"field_type":"UInt64","value":1}},"all":false,"fields_count":1}')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS ALL'), '"if_exists":false', '"if_exists":false,"partition":{"type":"Partition","value":{"type":"Literal","value":{"field_type":"UInt64","value":1}},"all":false,"fields_count":1}')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
 -- ALTER ... IN PARTITION: `partition` is parser-produced only for the `CLEAR`/`MATERIALIZE` forms of
 -- `DROP COLUMN`/`DROP INDEX`/`DROP STATISTICS`/`DROP PROJECTION` (where the corresponding `clear_*` flag
 -- is set). A plain `DROP COLUMN` carrying a `partition` would format `DROP COLUMN x IN PARTITION p`,
@@ -226,3 +244,15 @@ SELECT formatQueryFromJSON(parseQueryToJSON('INSERT INTO FUNCTION file(\'data.pa
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('INSERT INTO t SELECT 1'), '"table":{"type":"Identifier","name":"t"}', '"table":{"type":"Identifier","name":"t"},"partition_by":{"type":"Identifier","name":"x"}')); -- { serverError BAD_ARGUMENTS }
 -- More than one destination form (here both `table_function` and `table`) is parser-impossible.
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('INSERT INTO FUNCTION null(\'x UInt8\') SELECT 1 AS x'), '"table_function":', '"table":{"type":"Identifier","name":"t"},"table_function":')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ALTER ... MOVE: the destination is tied to the `part` form. `ParserAlterQuery` parses `TO SHARD` only
+-- in the `MOVE PART` branch and `TO TABLE` only in the `MOVE PARTITION` branch, so a crossed pair is
+-- parser-impossible: it formats SQL that cannot be parsed back, and `MOVE PART ... TO TABLE` reaches
+-- `getPartitionIDFromQuery`, which downcasts the part-name literal with `as<ASTPartition &>()`.
+-- The parser-produced pairings round-trip:
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MOVE PART \'all_1_1_0\' TO SHARD \'/clickhouse/tables/s2\''));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MOVE PARTITION 1 TO TABLE u'));
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MOVE PART \'all_1_1_0\' TO DISK \'d1\''), '"move_destination_type":"DISK","move_destination_name":"d1"', '"move_destination_type":"TABLE","to_table":"u"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MOVE PARTITION 1 TO VOLUME \'v\''), '"move_destination_type":"VOLUME"', '"move_destination_type":"SHARD"')); -- { serverError BAD_ARGUMENTS }

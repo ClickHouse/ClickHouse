@@ -1,0 +1,7 @@
+Nested(s AggregateFunction(1, sumMap, Array(UInt8), Array(UInt8)))
+SimpleAggregateFunction(anyLast, AggregateFunction(1, sumMap, Array(UInt8), Array(UInt8)))
+Nested(s AggregateFunction(sumMap, Array(UInt8), Array(UInt8)))
+([1],[2])
+nested subcolumn ok
+SimpleAggregateFunction(anyLast, AggregateFunction(1, sumMap, Array(UInt8), Array(UInt8)))
+([3],[4])
