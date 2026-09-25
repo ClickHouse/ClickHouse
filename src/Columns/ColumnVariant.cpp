@@ -13,6 +13,7 @@
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
 #include <Columns/MaskOperations.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -271,6 +272,31 @@ MutableColumnPtr ColumnVariant::cloneEmpty() const
     return ColumnVariant::create(std::move(new_variants), local_to_global_discriminators);
 }
 
+void ColumnVariant::checkSparseVariantState(bool allow_logical_error) const
+{
+    chassert(variants.size() == 1);
+    const auto & local_discriminators_data = getLocalDiscriminators();
+    const auto & offsets_data = getOffsets();
+    if (local_discriminators_data.size() != offsets_data.size())
+        throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Size of discriminators and offsets should be equal, but {} and {} were given", local_discriminators_data.size(), offsets_data.size());
+
+    size_t expected_variant_size = 0;
+    for (size_t i = 0; i != local_discriminators_data.size(); ++i)
+    {
+        auto local_discr = local_discriminators_data[i];
+        if (local_discr != NULL_DISCRIMINATOR)
+        {
+            checkDiscriminatorValue(local_discr, variants.size(), allow_logical_error);
+            ++expected_variant_size;
+            if (offsets_data[i] >= variants[0]->size())
+                throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Offset at position {} is {}, but variant {} ({}) has size {}", i, offsets_data[i], static_cast<UInt32>(local_discr), variants[0]->getName(), variants[0]->size());
+        }
+    }
+
+    if (variants[0]->size() != expected_variant_size)
+        throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Variant {} ({}) has size {}, but expected {}", 0, variants[0]->getName(), variants[0]->size(), expected_variant_size);
+}
+
 MutableColumnPtr ColumnVariant::cloneResized(size_t new_size) const
 {
     if (new_size == 0)
@@ -319,6 +345,21 @@ MutableColumnPtr ColumnVariant::cloneResized(size_t new_size) const
         }
 
         return ColumnVariant::create(local_discriminators->cloneResized(new_size), offsets->cloneResized(new_size), std::move(new_variants), local_to_global_discriminators);
+    }
+
+    if (num_variants == 1)
+    {
+        const auto & local_discriminators_data = getLocalDiscriminators();
+        /// With one sparse variant, truncating the outer column preserves only the first new_size
+        /// values of that variant. Scan the truncated discriminators once to get its new size.
+        size_t variant_size = 0;
+        for (size_t i = 0; i != new_size; ++i)
+            variant_size += local_discriminators_data[i] != NULL_DISCRIMINATOR;
+        MutableColumns new_variants;
+        new_variants.emplace_back(variants[0]->cloneResized(variant_size));
+        auto result = ColumnVariant::create(local_discriminators->cloneResized(new_size), offsets->cloneResized(new_size), std::move(new_variants), local_to_global_discriminators);
+        result->checkSparseVariantState();
+        return result;
     }
 
     const auto & local_discriminators_data = getLocalDiscriminators();
@@ -1994,7 +2035,10 @@ void ColumnVariant::validateState(bool allow_logical_error) const
     for (size_t i = 0; i != variants.size(); ++i)
     {
         if (variants[i]->size() != expected_variant_sizes[i])
+        {
+            chassert(false && "ColumnVariant invariant violation");
             throw Exception(allow_logical_error ? ErrorCodes::LOGICAL_ERROR : ErrorCodes::INCORRECT_DATA, "Variant {} ({}) has size {}, but expected {}", i, variants[i]->getName(), variants[i]->size(), expected_variant_sizes[i]);
+        }
     }
 }
 

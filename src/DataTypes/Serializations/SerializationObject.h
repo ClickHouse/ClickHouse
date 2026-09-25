@@ -72,7 +72,8 @@ public:
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,
-        const SerializationPtr & dynamic_serialization_);
+        const SerializationPtr & dynamic_serialization_,
+        const DataTypePtr & default_path_type_ = nullptr);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -179,6 +180,19 @@ protected:
     std::list<re2::RE2> path_regexps_to_skip;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
+    /// Type and serialization of runtime path columns and streams: Dynamic for ordinary JSON,
+    /// Variant(T) for JSON(DEFAULT PATH TYPE T) where the NULL discriminator marks a missing path.
+    DataTypePtr runtime_path_type;
+    SerializationPtr runtime_path_serialization;
+    /// Type and serialization used for the FLATTENED native serialization of runtime paths.
+    /// For plain JSON this matches runtime_path_serialization; for JSON(DEFAULT PATH TYPE T) the
+    /// runtime paths are sparse Variant(T) columns and the flattened format stores bare T values.
+    DataTypePtr flattened_path_type;
+    SerializationPtr flattened_path_serialization;
+    /// Default type of all non-typed paths (JSON(DEFAULT PATH TYPE T)). When set, values in shared
+    /// data are stored with this exact type (not Dynamic), so ADVANCED shared data serialization
+    /// serializes/deserializes path values as T instead of Dynamic.
+    DataTypePtr default_path_type;
 
 private:
     std::vector<String> sorted_typed_paths;

@@ -1,7 +1,8 @@
-#include <Columns/ColumnDynamic.h>
 #include <Common/SipHash.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
 #include <DataTypes/Serializations/SerializationObjectSharedDataPath.h>
@@ -21,13 +22,19 @@ SerializationObjectDynamicPath::SerializationObjectDynamicPath(
     const String & path_subcolumn_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
-    const DataTypePtr & subcolumn_type_)
-    : SerializationWrapper(nested_)
+    const DataTypePtr & subcolumn_type_,
+    const DataTypePtr & default_path_type_)
+    : SerializationWrapper(default_path_type_
+        /// With DEFAULT PATH TYPE the subcolumn result is a dense T, but the dynamic path
+        /// stream holds sparse Variant(T) (NULL discriminator = missing path); subcolumns of T
+        /// are read via the shared data path (whole path, extracted in memory).
+        ? DataTypeObject::getTypeOfRuntimePaths(default_path_type_)->getDefaultSerialization() : nested_)
     , path(path_)
     , path_subcolumn(path_subcolumn_)
     , dynamic_serialization(dynamic_serialization_)
     , dynamic_type(dynamic_type_)
     , subcolumn_type(subcolumn_type_)
+    , default_path_type(default_path_type_)
 {
 }
 
@@ -48,7 +55,7 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
 };
 
 
-UInt128 SerializationObjectDynamicPath::getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_)
+UInt128 SerializationObjectDynamicPath::getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, const DataTypePtr & default_path_type_)
 {
     SipHash hash;
     hash.update("ObjectDynamicPath");
@@ -64,14 +71,17 @@ UInt128 SerializationObjectDynamicPath::getHash(const SerializationPtr & nested_
     auto subcolumn_type_name = subcolumn_type_->getName();
     hash.update(subcolumn_type_name.size());
     hash.update(subcolumn_type_name);
+    auto default_path_type_name = default_path_type_ ? default_path_type_->getName() : "";
+    hash.update(default_path_type_name.size());
+    hash.update(default_path_type_name);
     return hash.get128();
 }
 
-SerializationPtr SerializationObjectDynamicPath::create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_)
+SerializationPtr SerializationObjectDynamicPath::create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, const DataTypePtr & default_path_type_)
 {
     if (!nested_->supportsPooling() || !dynamic_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_));
-    return ISerialization::pooled(getHash(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_), [&] { return new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_); });
+        return std::shared_ptr<ISerialization>(new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, default_path_type_));
+    return ISerialization::pooled(getHash(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, default_path_type_), [&] { return new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, default_path_type_); });
 }
 
 void SerializationObjectDynamicPath::enumerateStreams(
@@ -96,13 +106,17 @@ void SerializationObjectDynamicPath::enumerateStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        auto path_data = SubstreamData(nested_serialization)
-                             .withType(data.type)
+        const auto & stream_serialization = nested_serialization;
+        /// With DEFAULT PATH TYPE the subcolumn result is the declared T, but the dynamic path
+        /// stream holds sparse Variant(T); enumerate with the stream type.
+        auto stream_type = default_path_type ? DataTypeObject::getTypeOfRuntimePaths(default_path_type) : data.type;
+        auto path_data = SubstreamData(stream_serialization)
+                             .withType(stream_type)
                              .withColumn(data.column)
                              .withSerializationInfo(data.serialization_info)
                              .withDeserializeState(deserialize_state->nested_state);
         settings.path.back().data = path_data;
-        nested_serialization->enumerateStreams(settings, callback, path_data);
+        stream_serialization->enumerateStreams(settings, callback, path_data);
         settings.path.pop_back();
     }
     /// Otherwise we will have to read all shared data and try to find our path there.
@@ -143,15 +157,21 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
     /// Remember if we need to read from shared data or we have this path in dynamic paths.
     auto * object_structure_state = checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(dynamic_path_state->structure_state);
     dynamic_path_state->read_from_shared_data = !object_structure_state->dynamic_paths.contains(path);
+    /// Note: with DEFAULT PATH TYPE a subcolumn of T read from a dynamic path is densified in
+    /// memory from the sparse Variant(T) stream (see deserializeBinaryBulkWithMultipleStreams);
+    /// when the path is in shared data, the shared data path reads the whole path and extracts
+    /// the subcolumn in memory.
     settings.path.push_back(Substream::ObjectData);
     if (dynamic_path_state->read_from_shared_data)
     {
         settings.path.push_back(Substream::ObjectSharedData);
         /// The shared data stores each path as a separate column, so its subcolumns are resolved
         /// from that root, while `nested_serialization` was resolved inside the enclosing types.
+        /// With DEFAULT PATH TYPE the shared-data values are bare T, so resolve the subcolumn
+        /// against T (not Dynamic).
         auto shared_data_subcolumn_serialization = path_subcolumn.empty()
             ? nested_serialization
-            : dynamic_type->getSubcolumnSerialization(path_subcolumn, dynamic_serialization);
+            : (default_path_type ? default_path_type : dynamic_type)->getSubcolumnSerialization(path_subcolumn, default_path_type ? default_path_type->getDefaultSerialization() : dynamic_serialization);
         dynamic_path_state->shared_data_path_serialization = SerializationObjectSharedDataPath::create(
             shared_data_subcolumn_serialization,
             object_structure_state->shared_data_serialization_version,
@@ -160,7 +180,8 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
             dynamic_type,
             dynamic_serialization,
             subcolumn_type,
-            getSharedDataPathBucket(path, object_structure_state->shared_data_buckets));
+            getSharedDataPathBucket(path, object_structure_state->shared_data_buckets),
+            default_path_type);
         dynamic_path_state->shared_data_path_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
@@ -198,7 +219,29 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
+        if (default_path_type)
+        {
+            /// The stream holds sparse Variant(T) values (NULL discriminator = missing path);
+            /// read them and densify into the bare T result column (missing = default(T)).
+            /// Variant(T) is never exposed as the result of the subcolumn.
+            MutableColumns variants;
+            for (const auto & variant_type : assert_cast<const DataTypeVariant &>(*DataTypeObject::getTypeOfRuntimePaths(default_path_type)).getVariants())
+                variants.push_back(variant_type->createColumn());
+            auto variant_column = ColumnVariant::create(std::move(variants));
+            nested_serialization->deserializeBinaryBulkWithMultipleStreams(*variant_column, limit, settings, dynamic_path_state->nested_state, cache);
+            if (path_subcolumn.empty())
+                ColumnObject::densifyVariantInto(result_column, *variant_column);
+            else
+            {
+                /// A subcolumn of T is requested: densify and extract the subcolumn in memory.
+                auto dense = default_path_type->createColumn();
+                ColumnObject::densifyVariantInto(*dense, *variant_column);
+                auto subcolumn = default_path_type->getSubcolumn(path_subcolumn, std::move(dense));
+                result_column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
+            }
+        }
+        else
+            nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
     else

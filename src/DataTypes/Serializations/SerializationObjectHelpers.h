@@ -18,12 +18,18 @@ namespace DB
 std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObject & object_column);
 
 /// Flatten paths from shared data for a single bucket only.
-/// Only materializes ColumnDynamic columns for paths belonging to target_bucket.
+/// Only materializes path columns for paths belonging to target_bucket.
+/// If default_path_type is set (JSON with DEFAULT PATH TYPE T), values are decoded into dense
+/// bare T columns when for_shared_data_stream is set (the ADVANCED shared-data stream layout,
+/// matching Array(Tuple(String, T))), or sparse Variant(T) columns (the runtime representation,
+/// NULL discriminator = missing) otherwise. Without DEFAULT PATH TYPE values are decoded into
+/// Dynamic columns.
 /// IMPORTANT: returned string_views reference data inside shared_data_column,
 /// which must stay alive while the result is used.
 std::vector<std::pair<std::string_view, ColumnPtr>> flattenSharedDataPathsForBucket(
     const IColumn & shared_data_column, size_t start, size_t end,
-    const DataTypePtr & dynamic_type, size_t target_bucket, size_t num_buckets);
+    const DataTypePtr & dynamic_type, const DataTypePtr & default_path_type, bool for_shared_data_stream,
+    size_t target_bucket, size_t num_buckets);
 
 /// Scan shared data for path names belonging to a single bucket without materializing ColumnDynamic columns.
 /// Returns a sorted list of unique path names. Used by Compact serialization to write StructurePrefix
@@ -40,6 +46,10 @@ void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Mutabl
 /// Get the bucket number for a specific path.
 size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets);
 
+/// Deserialize a value stored with T serialization from `buf` and append it to a Variant(T)
+/// runtime path column of a JSON with DEFAULT PATH TYPE T.
+void deserializeValueIntoVariantPath(const SerializationPtr & serialization, IColumn & variant_column, ReadBuffer & buf);
+
 /// Splits the shared data of rows [start, end) into buckets, one bucket at a time, to reduce peak
 /// memory: instead of materializing all `num_buckets` buckets simultaneously, the caller builds/
 /// serializes/frees one bucket at a time. Two output shapes are supported, both driven by the same
@@ -52,7 +62,7 @@ size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets);
 class SharedDataBucketsSplitter
 {
 public:
-    SharedDataBucketsSplitter(const IColumn & shared_data_column_, size_t start_, size_t end_, size_t num_buckets_);
+    SharedDataBucketsSplitter(const IColumn & shared_data_column_, size_t start_, size_t end_, size_t num_buckets_, bool has_default_path_type_ = false);
 
     /// Build the shared data column for a single bucket.
     ColumnPtr extractBucket(size_t bucket) const;
@@ -61,13 +71,16 @@ public:
     /// per row (the stored value where the path is present, a default where it is absent), sorted by path.
     /// IMPORTANT: returned string_views reference path data inside the shared data column, which must
     /// stay alive while the result is used.
-    std::vector<std::pair<std::string_view, ColumnPtr>> flattenBucket(size_t bucket, const DataTypePtr & dynamic_type) const;
+    /// If default_path_type is set (JSON with DEFAULT PATH TYPE T), values are decoded into dense
+    /// T columns (default = path missing) instead of Dynamic columns.
+    std::vector<std::pair<std::string_view, ColumnPtr>> flattenBucket(size_t bucket, const DataTypePtr & dynamic_type, const DataTypePtr & default_path_type = nullptr, bool for_shared_data_stream = false) const;
 
 private:
     const IColumn & shared_data_column;
     size_t start;
     size_t end;
     size_t num_buckets;
+    bool has_default_path_type;
     /// Bucket index for each path, in the order paths are traversed (rows [start, end), paths within a row).
     PODArray<UInt8> path_buckets;
     std::vector<size_t> bucket_num_paths;
