@@ -6,9 +6,50 @@ stream, explicit structure
 \N	1
 \N	2
 \N	3
-schema inference skips the null column
+schema inference maps the null-typed column to Nullable(Nothing)
+x	Nullable(Nothing)					
+n	Nullable(Int64)					
+select * with the inferred schema
+\N	1
+\N	2
+\N	3
+a file whose only column is null-typed reads too
+\N	4
+the null-typed column stays Nullable(Nothing) even with make_columns_nullable = 0
+x	Nullable(Nothing)					
+n	Int64					
+a nested null-typed field stays Nullable(Nothing) too
+n	Int64					
+ln	Array(Nullable(Nothing))					
+1	[NULL]
+2	[NULL,NULL]
+3	[]
+a dictionary-encoded null-typed column materializes as all-null
+n	Nullable(Int64)					
+nd	Nullable(Nothing)					
+1	\N
+2	\N
+3	\N
+a union child carrying a nested null type reads too
+n	Nullable(Int64)					
+u	Variant(Array(Nullable(Nothing)), Int32)					
+ud	Variant(Int32)					
+1	1
+2	[NULL,NULL]
+3	3
+a dictionary-encoded null union child maps to NULL and does not desync the buffer walk
+1	7
+2	\N
+3	9
 1
 2
 3
-schema inference fails without the skip setting
+an out-of-range index in a dictionary-encoded null union child is still rejected
+INCORRECT_DATA
+the skip setting still drops null-typed columns, so CREATE TABLE AS file() keeps working
+n	Nullable(Int64)					
 1
+2
+3
+without the skip setting table creation reports the unusable type
+DATA_TYPE_CANNOT_BE_USED_IN_TABLES
