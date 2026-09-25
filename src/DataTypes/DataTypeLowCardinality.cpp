@@ -85,7 +85,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
     if (which.isTime())
         return creator(static_cast<ColumnVector<Int32> *>(nullptr));
-    if (which.isUUID())
+    if (which.isUUID() || which.isUUID2())
         return creator(static_cast<ColumnVector<UUID> *>(nullptr));
     if (which.isIPv4())
         return creator(static_cast<ColumnVector<IPv4> *>(nullptr));

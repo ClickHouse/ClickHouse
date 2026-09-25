@@ -1,0 +1,33 @@
+storage, index, constraint and projection expressions
+Row 1:
+──────
+partition_key:             (toYear(d), CAST(x, 'UUID2') = defaultValueOfTypeName('UUID2'))
+primary_key:               CAST(x, 'UUID2')
+sorting_key:               CAST(x, 'UUID2'), d
+constraint_and_projection: CONSTRAINT c_x CHECK CAST(x, 'UUID2') = x, PROJECTION p_x (SELECT CAST(x, 'UUID2') AS y ORDER BY y)
+ttl_expression:            TTL d + toIntervalYear(100) WHERE CAST(x, 'UUID2') != defaultValueOfTypeName('UUID2')
+idx_x	CAST(x, \'UUID2\')
+p_x	SELECT CAST(x, \'UUID2\') AS y ORDER BY y
+ALTER MODIFY ORDER BY, ADD INDEX, ADD PROJECTION, MODIFY TTL
+Row 1:
+──────
+sorting_key:    x, CAST(y, 'UUID2')
+ttl_expression: TTL d + toIntervalYear(100) WHERE CAST(x, 'UUID2') != defaultValueOfTypeName('UUID2')
+idx_x	CAST(x, \'UUID2\')
+p_x	SELECT CAST(x, \'UUID2\') AS y ORDER BY y
+mutation expressions
+(UPDATE x = CAST(\'00000000-0000-0000-0000-000000000001\', \'UUID2\') WHERE k = 1)
+00000000-0000-0000-0000-000000000001
+the query of a materialized view, including after MODIFY QUERY
+k	UInt8
+x	UUID2
+SELECT k, accurateCastOrNull(s, \'UUID2\') AS x FROM t_uuid2_mv_source
+a type declared by a function through a string literal
+x	UUID2
+x	UUID2
+x	UUID2
+x	UUID2
+x	Array(Tuple(String, UUID2))
+the historical type is unchanged under uuid_type_version = 1
+x	UUID
+x	UUID

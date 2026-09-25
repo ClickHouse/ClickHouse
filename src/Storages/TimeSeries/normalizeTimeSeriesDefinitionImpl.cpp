@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -31,6 +32,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Parsers/ParserDataType.h>
+#include <Parsers/TokenIterator.h>
+#include <Common/StringUtils.h>
+#include <Core/Defines.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -115,6 +120,80 @@ namespace
     {
         return (version >= TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN)
             ? TimeSeriesColumnNames::MetricFamilyName : TimeSeriesColumnNames::MetricFamily;
+    }
+
+    /// Materializes the `uuid_type_version` setting into the declared inner-column types: a bare `UUID` becomes
+    /// `UUID2` when the setting is 2 (mirroring how the outer columns are materialized in
+    /// InterpreterCreateQuery). Rewriting the AST here - before the types are resolved and before the inner
+    /// tables are created - keeps the samples and tags inner tables consistent about the `id` type and makes
+    /// any later normalization pass read the already-materialized types.
+    void materializeUUIDTypeVersionInInnerColumns(ASTCreateQuery & create_query, ViewTarget::Kind kind, UInt64 uuid_type_version)
+    {
+        auto * inner_columns = create_query.getTargetInnerColumns(kind);
+        if (!inner_columns || !inner_columns->columns)
+            return;
+        for (auto & column : inner_columns->columns->children)
+        {
+            if (auto * decl = column->as<ASTColumnDeclaration>())
+            {
+                if (auto type = decl->getType())
+                    decl->setType(applyUUIDTypeVersion(type, uuid_type_version));
+            }
+        }
+    }
+
+    /// Rewrites a bare `UUID` type name in an AST subtree to its explicit historical alias `UUID1`.
+    /// Called only under `uuid_type_version = 2`, after the setting has been materialized into the
+    /// declared inner columns and after the missing ones have been generated from the resolved types: every
+    /// bare `UUID` remaining at that point denotes a type that must stay historical (an explicitly declared
+    /// `UUID1`, a column generated from such an id, or a type copied from the table of the `AS <other_table>` clause).
+    /// Spelling it explicitly makes the normalized query stable under a second materialization pass -
+    /// `normalizeTimeSeriesDefinition` runs again over the already-normalized query (see `StorageTimeSeries`) and
+    /// `InterpreterCreateQuery` materializes the setting over the whole `CREATE` AST afterwards - which would
+    /// otherwise turn a generated `UUID` into `UUID2` and make the samples and tags inner tables disagree about the `id` type.
+    bool pinHistoricalUUIDTypeName(IAST & ast)
+    {
+        bool pinned = false;
+
+        if (auto * data_type = ast.as<ASTDataType>(); data_type && equalsCaseInsensitive(data_type->name, "UUID"))
+        {
+            data_type->name = "UUID1";
+            pinned = true;
+        }
+
+        for (const auto & child : ast.children)
+        {
+            if (child)
+                pinned |= pinHistoricalUUIDTypeName(*child);
+        }
+
+        return pinned;
+    }
+
+    /// Applies `rewrite` to the type named by the `id_type` setting of the SETTINGS clause, which is stored as a string.
+    /// The string is parsed to an AST, so the rewrite works on type names the same way as for the inner columns,
+    /// and the setting is rewritten only if the rewrite changed something. An unparsable type string is left as is:
+    /// it cannot contain a bare `UUID` type, and `TimeSeriesSettings::loadFromQuery` reports it properly later.
+    template <typename Rewrite>
+    void rewriteIdTypeSetting(ASTCreateQuery & create_query, Rewrite && rewrite)
+    {
+        if (!create_query.storage || !create_query.storage->settings)
+            return;
+
+        const Field * id_type_field = create_query.storage->settings->changes.tryGet("id_type");
+        if (!id_type_field || (id_type_field->getType() != Field::Types::String))
+            return;
+
+        const auto & id_type_name = id_type_field->safeGet<String>();
+        Tokens tokens(id_type_name.data(), id_type_name.data() + id_type_name.size());
+        IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        Expected expected;
+        ASTPtr type_ast;
+        if (!ParserDataType{}.parse(pos, type_ast, expected) || !type_ast || (pos->type != TokenType::EndOfStream))
+            return;
+
+        if (rewrite(*type_ast))
+            create_query.storage->settings->changes.setSetting("id_type", Field(type_ast->formatWithSecretsOneLine()));
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -407,11 +486,13 @@ namespace
     /// (the columns, the `id_type` setting, and the external target tables whose columns are in `external_target_columns`),
     /// then from `fallback_types` (the resolved types of the table from the clause `AS <other_table>`), then from the defaults.
     /// `need_inner_engine_family` is set if the family of the inner engines is needed to generate inner engines.
+    /// `uuid_type_version` chooses the `UUID` type of the default `id` type: `UUID2` under version 2, the historical `UUID` otherwise.
     ResolvedTimeSeriesTypes resolveTimeSeriesTypes(
         const ASTCreateQuery & create_query,
         const std::map<ViewTarget::Kind, ColumnsDescription> & external_target_columns,
         bool need_inner_engine_family,
-        const ResolvedTimeSeriesTypes * fallback_types)
+        const ResolvedTimeSeriesTypes * fallback_types,
+        UInt64 uuid_type_version)
     {
         StorageID table_id{create_query.getDatabase(), create_query.getTable()};
 
@@ -464,8 +545,16 @@ namespace
         if (!types.value_type)
             types.value_type = std::make_shared<DataTypeFloat64>();
         if (!types.id_type)
+        {
+            /// The default `id` type follows the `uuid_type_version` setting the same way a bare `UUID` declared
+            /// by the user does: a new table created under version 2 gets a properly sorted `UUID2` identifier.
+            DataTypePtr uuid_type = (uuid_type_version == 2)
+                ? DataTypePtr(std::make_shared<DataTypeUUID2>())
+                : DataTypePtr(std::make_shared<DataTypeUUID>());
             types.id_type = std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUUID>())});
+                DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::move(uuid_type))});
+        }
+
         /// Validate types.
         {
             WhichDataType ts_which{*types.timestamp_type};
@@ -2065,11 +2154,26 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         /// The types of the old table are in its outer columns, inner columns and the `id_type` setting,
         /// so its external target tables are not read. (A table with an external tags table created before the `id_type`
         /// setting existed doesn't declare its `id` type anywhere in its definition, then the default type is used.)
+        /// The old table was created earlier, so its unrecorded `id` type is the historical one whatever
+        /// `uuid_type_version` the new query is created under.
         old_types = resolveTimeSeriesTypes(
             *old_create_query,
             /* external_target_columns = */ {},
             /* need_inner_engine_family = */ true,
-            /* fallback_types = */ nullptr);
+            /* fallback_types = */ nullptr,
+            /* uuid_type_version = */ 1);
+    }
+
+    /// Bake the `uuid_type_version` setting into the types declared by the user before they are resolved,
+    /// so a bare `UUID` id declared in `TAGS`/`SAMPLES INNER COLUMNS` or in the `id_type` setting becomes `UUID2`
+    /// consistently. `params.uuid_type_version` is 2 only for a primary user CREATE (see `normalizeTimeSeriesDefinition`),
+    /// so the stored types of an existing table are never rewritten here.
+    const bool materialize_uuid2 = (params.uuid_type_version == 2);
+    if (materialize_uuid2)
+    {
+        for (auto kind : getTargetKinds())
+            materializeUUIDTypeVersionInInnerColumns(create_query, kind, params.uuid_type_version);
+        rewriteIdTypeSetting(create_query, [&](IAST & type_ast) { return applyUUIDTypeVersionInPlace(type_ast, params.uuid_type_version); });
     }
 
     /// Resolve types timestamp_type, value_type, id_type.
@@ -2078,7 +2182,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         create_query,
         params.external_target_columns,
         /* need_inner_engine_family = */ is_new_table,
-        old_types ? &*old_types : nullptr);
+        old_types ? &*old_types : nullptr,
+        params.uuid_type_version);
 
     /// Apply the clause `AS <other_table>` if any.
     /// This must happen before pinning the version below: the AS clause merges the SETTINGS clause
@@ -2158,7 +2263,12 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 auto inner_columns = create_query.getTargetInnerColumns(kind)
                     ? boost::static_pointer_cast<ASTColumns>(create_query.getTargetInnerColumns(kind)->clone())
                     : make_intrusive<ASTColumns>();
-                if (normalizeInnerColumns(*inner_columns, kind, settings, resolved_types, table_id))
+                bool inner_columns_changed = normalizeInnerColumns(*inner_columns, kind, settings, resolved_types, table_id);
+                /// A bare `UUID` left after the materialization above is a historical type (generated from a `UUID1` id
+                /// or copied from the `AS <other_table>` clause), pin its name so that a second pass doesn't flip it.
+                if (materialize_uuid2 && inner_columns->columns)
+                    inner_columns_changed |= pinHistoricalUUIDTypeName(*inner_columns->columns);
+                if (inner_columns_changed)
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
                 /// Validate the user-provided types of the inner columns the same way external targets are validated.
@@ -2191,6 +2301,12 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 tags_are_external ? &get_external_target_columns(ViewTarget::Tags) : nullptr,
                 table_id);
         }
+
+        /// The recorded `id_type` is the name of the resolved type, which spells the historical type as a bare `UUID`
+        /// (e.g. the type of the `id` column of an external tags table). Pin it the same way as the inner columns,
+        /// otherwise the materialization above would flip it to `UUID2` on a second pass.
+        if (materialize_uuid2)
+            rewriteIdTypeSetting(create_query, [](IAST & type_ast) { return pinHistoricalUUIDTypeName(type_ast); });
     }
 
     /// Regenerate the columns of TimeSeries table from the resolved types.

@@ -2,6 +2,7 @@
 
 #include <Common/checkStackSize.h>
 #include <Core/CaseAwareBlockNameMap.h>
+#include <Core/UUID.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
@@ -337,7 +338,7 @@ static void readAndInsertIPv6(ReadBuffer & in, IColumn & column, BSONType bson_t
 }
 
 
-static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_type)
+static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_type, bool is_uuid2 = false)
 {
     if (bson_type != BSONType::BINARY)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into UUID column", getBSONTypeName(bson_type));
@@ -358,7 +359,13 @@ static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_t
             sizeof(UUID));
 
     UUID value;
-    readBinaryLittleEndian(value, in);
+    /// UUID2's binary interchange representation is the canonical big-endian bytes, as in RowBinary and
+    /// Native - reading them big-endian yields the stored value directly. UUID keeps its historical raw
+    /// storage layout.
+    if (is_uuid2)
+        readBinaryBigEndian(value, in);
+    else
+        readBinaryLittleEndian(value, in);
     assert_cast<ColumnUUID &>(column).insertValue(value);
 }
 
@@ -675,6 +682,11 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
         case TypeIndex::UUID:
         {
             readAndInsertUUID(*in, column, bson_type);
+            return true;
+        }
+        case TypeIndex::UUID2:
+        {
+            readAndInsertUUID(*in, column, bson_type, /*is_uuid2=*/true);
             return true;
         }
         case TypeIndex::Array:

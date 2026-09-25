@@ -29,6 +29,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/validateColumnType.h>
 
@@ -1450,12 +1451,33 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
             return Field(buf.str());
         }
+        case TypeIndex::LowCardinality:
+        {
+            /// Recurse into the dictionary so that a wrapped type which needs a non-raw literal
+            /// (such as `LowCardinality(UUID2)` or `LowCardinality(Nullable(DateTime))`) takes
+            /// the same branch as its full-column counterpart.
+            const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*data_type);
+            const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(*column);
+            return getFieldFromColumnForASTLiteralImpl(
+                low_cardinality_column.getDictionary().getNestedColumn(),
+                low_cardinality_column.getIndexAt(row),
+                low_cardinality_data_type.getDictionaryType(),
+                is_inside_object,
+                datetime64_as_numbers,
+                date_time_as_numbers);
+        }
         case TypeIndex::DateTime:
             /// A `DateTime` is backed by a Unix timestamp, which its declared type reads back exactly, while
             /// local date-time text is shared by two instants across a DST overlap.
             if (date_time_as_numbers)
                 return (*column)[row];
             [[fallthrough]];
+        /// `UUID2` shares the `Field` representation with `UUID` (`Field::Types::UUID`) but keeps the two
+        /// 64-bit halves in the opposite order, and a literal is always formatted with `UUID` semantics.
+        /// Writing the raw field would therefore print - and a secondary server would parse back from
+        /// `_CAST(<literal>, 'UUID2')` - a different value, so serialize the canonical text instead, the
+        /// same way the date types below avoid a lossy literal round trip.
+        case TypeIndex::UUID2: [[fallthrough]];
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::Date32:
         {

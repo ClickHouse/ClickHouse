@@ -1,0 +1,8 @@
+map_subscript_lc_key	42
+map_subscript_lc_key_subcolumns	42
+map_lc_keys_plain_key	42
+has_lc_needle	1
+indexOf_lc_needle	1
+has_lc_array	1
+indexOf_lc_array	1
+remote_lc_constant	1

@@ -48,6 +48,7 @@ const std::unordered_map<TypeIndex, String> capn_proto_simple_type_names =
     {TypeIndex::String, "Data"},
     {TypeIndex::FixedString, "Data"},
     {TypeIndex::UUID, "Data"},
+    {TypeIndex::UUID2, "Data"},
     {TypeIndex::Date, "UInt16"},
     {TypeIndex::Date32, "Int32"},
     {TypeIndex::DateTime, "UInt32"},

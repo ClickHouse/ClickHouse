@@ -111,6 +111,7 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
             return false;
         }
         case TypeIndex::UUID:
+        case TypeIndex::UUID2:
         {
             if (to_which_type.isUInt128() || to_which_type.isString())
                 return true;

@@ -236,6 +236,17 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
     return ast->as<ASTSelectQuery &>();
 }
 
+/// True if a value of this type may contain a `UUID2` leaf, whose raw `Field` does not round trip
+/// through literal formatting (it shares `Field::Types::UUID` with the historical `UUID`).
+static bool typeMayContainUUID2(const IDataType & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & nested) { result |= WhichDataType(nested).isUUID2(); };
+    check(type);
+    type.forEachChild(check);
+    return result;
+}
+
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
 ASTPtr tryBuildAdditionalFilterAST(
@@ -334,6 +345,12 @@ ASTPtr tryBuildAdditionalFilterAST(
                 /// Serialize decimal-backed constants (`Decimal`/`DateTime64`/`Time64`, incl. nested) and the
                 /// active member of a `Variant` exactly, so the shard cannot re-parse either into another type.
                 literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type, /*date_time_as_numbers=*/true);
+            else if (typeMayContainUUID2(*node->result_type))
+                /// `UUID2` shares the `Field` representation with `UUID` but a literal is always formatted
+                /// with `UUID` semantics, so the remote shard would reparse a different value from
+                /// `_CAST(<literal>, 'UUID2')`. `getFieldFromColumnForASTLiteral` serializes such a value as
+                /// canonical text instead.
+                literal = make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node->column, 0, node->result_type, /*date_time_as_numbers=*/true));
             else
                 /// Other types keep their raw Field literal. In particular a DateTime serialized as local
                 /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants

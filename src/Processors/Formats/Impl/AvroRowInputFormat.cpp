@@ -10,6 +10,7 @@
 #include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -303,15 +304,18 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
     {
         case avro::AVRO_STRING: [[fallthrough]];
         case avro::AVRO_BYTES:
-            if (target.isUUID())
+            if (target.isUUID() || target.isUUID2())
             {
-                return [tmp = std::string()](IColumn & column, avro::Decoder & decoder) mutable
+                return [tmp = std::string(), is_uuid2 = target.isUUID2()](IColumn & column, avro::Decoder & decoder) mutable
                 {
                     decoder.decodeString(tmp);
                     if (tmp.length() != 36)
                         throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", tmp);
 
-                    const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.length()});
+                    UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.length()});
+                    /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+                    if (is_uuid2)
+                        uuid = UUIDHelpers::swapHalves(uuid);
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
                     return true;
                 };
@@ -805,15 +809,18 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     return true;
                 };
             }
-            if (target.isUUID())
+            if (target.isUUID() || target.isUUID2())
             {
-                return [tmp = std::vector<uint8_t>(), fixed_size](IColumn & column, avro::Decoder & decoder) mutable
+                return [tmp = std::vector<uint8_t>(), fixed_size, is_uuid2 = target.isUUID2()](IColumn & column, avro::Decoder & decoder) mutable
                 {
                     decoder.decodeFixed(fixed_size, tmp);
                     if (tmp.size() != 36)
                         throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse UUID from type Fixed, because it's size ({}) is not equal to the size of UUID (36)", fixed_size);
 
-                    const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()});
+                    UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()});
+                    /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+                    if (is_uuid2)
+                        uuid = UUIDHelpers::swapHalves(uuid);
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
                     return true;
                 };

@@ -124,6 +124,7 @@ private:
         static const String datetime_target = "DateTime64(7, 'UTC')";
         static const String decimal_target = "Decimal128(20)";
         static const String uuid_target = "UUID";
+        static const String uuid2_target = "UUID2";
 
         /// A `NULL` literal is a typed null of whatever the parameter declares.
         const bool nothing = isNothing(value_type);
@@ -165,8 +166,14 @@ private:
         }
         else if (kql_type == "guid" || kql_type == "uuid")
         {
+            /// `UUID` and `UUID2` are the same logical guid type; they differ only in the storage order of the
+            /// two 64-bit halves. A column declared as `UUID` under `uuid_type_version = 2` is stored as `UUID2`,
+            /// and a `guid` parameter must keep accepting it. The argument keeps its own flavor, so the function
+            /// body sees the type the caller passed and no cast between the two layouts is inserted.
             if (nothing || isUUID(value_type))
                 return uuid_target;
+            if (isUUID2(value_type))
+                return uuid2_target;
         }
         else
         {

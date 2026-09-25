@@ -5,6 +5,7 @@
 #include <base/sleep.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
+#include <Core/UUID.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
@@ -252,6 +253,15 @@ void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::Valu
             const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
             int len = sqlite3_column_bytes(compiled_statement.get(), idx);
             assert_cast<ColumnUUID &>(column).insert(parse<UUID>(data, len));
+            break;
+        }
+        case ValueType::vtUUID2:
+        {
+            const char * data = reinterpret_cast<const char *>(sqlite3_column_text(compiled_statement.get(), idx));
+            int len = sqlite3_column_bytes(compiled_statement.get(), idx);
+            /// `UUID2` stores the value in the canonical (big-endian) layout, while `parse<UUID>` produces the
+            /// half-swapped `UUID` layout, so swap the halves back (matching `SerializationUUID2::deserializeText`).
+            assert_cast<ColumnUUID &>(column).insert(UUIDHelpers::swapHalves(parse<UUID>(data, len)));
             break;
         }
         case ValueType::vtDateTime64:

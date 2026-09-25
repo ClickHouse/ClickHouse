@@ -1004,6 +1004,68 @@ R"(
         factory.registerFunction<FunctionDictGetUUIDOrDefault>(documentation);
     }
 
+    /// dictGetUUID2
+    {
+        const String type_name = "UUID2";
+
+        FunctionDocumentation::Description description = getDictGetDescription(type_name);
+        FunctionDocumentation::Syntax syntax = getDictGetSyntax(type_name);
+        FunctionDocumentation::Arguments arguments = getDictGetArguments();
+        FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
+        FunctionDocumentation::Examples examples = {
+            {"Usage example", R"(
+CREATE TABLE all_types_test (id UInt32, UUID2_value UUID2) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '123e4567-e89b-12d3-a456-426614174000');
+CREATE DICTIONARY all_types_dict (id UInt32, UUID2_value UUID2) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+SELECT dictGetUUID2('all_types_dict', 'UUID2_value', 1)
+)",
+R"(
+┌─dictGetUUID2('all_types_dict', 'UUID2_value', 1)─┐
+│ 123e4567-e89b-12d3-a456-426614174000             │
+└──────────────────────────────────────────────────┘
+)"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
+
+        factory.registerFunction<FunctionDictGetUUID2>(documentation);
+    }
+
+    /// dictGetUUID2OrDefault
+    {
+        const String type_name = "UUID2";
+
+        FunctionDocumentation::Description description = getDictGetOrDefaultDescription(type_name);
+        FunctionDocumentation::Syntax syntax = getDictGetOrDefaultSyntax(type_name);
+        FunctionDocumentation::Arguments arguments = getDictGetOrDefaultArguments();
+        FunctionDocumentation::ReturnedValue returned_value = getDictGetOrDefaultReturnedValue();
+        FunctionDocumentation::Examples examples = {
+            {"Usage example",
+R"(
+CREATE TABLE all_types_test (id UInt32, UUID2_value UUID2) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '550e8400-e29b-41d4-a716-446655440000');
+CREATE DICTIONARY all_types_dict (id UInt32, UUID2_value UUID2) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
+SELECT dictGetUUID2('all_types_dict', 'UUID2_value', 1);
+
+-- for key which does not exist, returns the provided default value
+SELECT dictGetUUID2OrDefault('all_types_dict', 'UUID2_value', 999, '00000000-0000-0000-0000-000000000000'::UUID2);
+)",
+R"(
+┌─dictGetUUID2('all_types_dict', 'UUID2_value', 1)─┐
+│ 550e8400-e29b-41d4-a716-446655440000             │
+└──────────────────────────────────────────────────┘
+┌─dictGetUUID2OrDefault('all_types_dict', 'UUID2_value', 999, CAST('00000000-0000-0000-0000-000000000000', 'UUID2'))─┐
+│ 00000000-0000-0000-0000-000000000000                                                                               │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+)"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
+
+        factory.registerFunction<FunctionDictGetUUID2OrDefault>(documentation);
+    }
+
     /// dictGetIPv4
     {
         const String type_name = "IPv4";

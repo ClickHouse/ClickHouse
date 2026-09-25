@@ -55,6 +55,9 @@ FIELDS = [
     Field(
         "UUID_", "UUID", default_value_for_get="550e8400-0000-0000-0000-000000000000"
     ),
+    Field(
+        "UUID2_", "UUID2", default_value_for_get="550e8400-0000-0000-0000-000000000000"
+    ),
     Field("Date_", "Date", default_value_for_get="2018-12-30"),
     Field("DateTime_", "DateTime", default_value_for_get="2018-12-30 00:00:00"),
     Field("String_", "String", default_value_for_get="hi"),
@@ -71,6 +74,7 @@ VALUES = [
     [-77, -8],
     [-888, -9],
     [-999, -10],
+    ["550e8400-e29b-41d4-a716-446655440003", "550e8400-e29b-41d4-a716-446655440002"],
     ["550e8400-e29b-41d4-a716-446655440003", "550e8400-e29b-41d4-a716-446655440002"],
     ["1973-06-28", "1978-06-28"],
     ["1985-02-28 23:43:25", "1986-02-28 23:42:25"],

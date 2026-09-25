@@ -1,0 +1,21 @@
+-- single key, constant typed as UUID2
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	a
+-- single key, constant typed as UUID
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	a
+-- single key, IN with constants typed as UUID
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	a
+00112233-4455-6677-8899-aabbccddeeff	b
+-- single key, IN with a subquery producing UUID
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	a
+-- single key, absent value stays absent
+0
+-- composite key, tuple equality with constants typed as UUID
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	00112233-4455-6677-8899-aabbccddeeff	a
+-- composite key, tuple IN with constants typed as UUID
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	00112233-4455-6677-8899-aabbccddeeff	a
+-- composite key, per-column equality with constants typed as UUID
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	00112233-4455-6677-8899-aabbccddeeff	a
+-- bare UUID materialized to UUID2
+UUID2
+-- bare UUID key, constant typed as UUID
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	a

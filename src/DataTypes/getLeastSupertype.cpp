@@ -20,6 +20,8 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -829,6 +831,29 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
 
             return std::make_shared<DataTypeDateTime64>(max_scale);
+        }
+    }
+
+    /// For UUID and UUID2, the common type is UUID2. No other types are compatible.
+    /// `UUID` and `UUID2` hold the same logical values, but in layouts that differ only by swapping the two
+    /// 64-bit halves (`UUID` keeps the historical layout, `UUID2` the big-endian, correctly-sorting one).
+    /// The dedicated `CAST` wrapper reconciles the two, so a mix of them can be promoted to a common type;
+    /// we promote to `UUID2` so that ordering follows the correct (lexicographic) semantics.
+    {
+        size_t have_uuid = type_ids.count(TypeIndex::UUID);
+        size_t have_uuid2 = type_ids.count(TypeIndex::UUID2);
+
+        if (have_uuid || have_uuid2)
+        {
+            bool all_uuid_family = type_ids.size() == (have_uuid + have_uuid2);
+            if (!all_uuid_family)
+                return throwOrReturn<on_error>(types,
+                    "because some of them are UUID/UUID2 and some of them are not",
+                    ErrorCodes::NO_COMMON_TYPE);
+
+            if (have_uuid2)
+                return std::make_shared<DataTypeUUID2>();
+            return std::make_shared<DataTypeUUID>();
         }
     }
 

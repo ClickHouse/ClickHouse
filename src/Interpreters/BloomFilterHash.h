@@ -115,7 +115,7 @@ struct BloomFilterHash
             return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         if (which.isFloat64())
             return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
-        if (which.isUUID())
+        if (which.isUUID() || which.isUUID2())
             return build_hash_column(getNumberTypeHash<UUID, UUID>(field));
         if (which.isIPv4())
             return build_hash_column(getNumberTypeHash<IPv4, IPv4>(field));
@@ -259,7 +259,7 @@ struct BloomFilterHash
         else if (which.isDateTime64()) getDecimalTypeHash<DateTime64, is_first>(column, vec, pos);
         else if (which.isFloat32()) getNumberTypeHash<Float32, is_first>(column, vec, pos);
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);
-        else if (which.isUUID()) getNumberTypeHash<UUID, is_first>(column, vec, pos);
+        else if (which.isUUID() || which.isUUID2()) getNumberTypeHash<UUID, is_first>(column, vec, pos);
         else if (which.isIPv4()) getNumberTypeHash<IPv4, is_first>(column, vec, pos);
         else if (which.isIPv6()) getNumberTypeHash<IPv6, is_first>(column, vec, pos);
         else if (which.isString()) getStringTypeHash<is_first>(column, vec, pos);
