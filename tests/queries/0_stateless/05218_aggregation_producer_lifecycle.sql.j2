@@ -1,0 +1,47 @@
+SET max_block_size = 8192;
+SET adaptive_aggregator_freeze_threshold = 128;
+SET adaptive_aggregator_freeze_threshold_bytes = 0;
+SET group_by_two_level_threshold = 128;
+SET group_by_two_level_threshold_bytes = 1024;
+SET collect_hash_table_stats_during_aggregation = 0;
+SET max_bytes_ratio_before_external_group_by = 0;
+
+-- Single-stream execution and aggregation without keys retain the ordinary result contract even
+-- when adaptive aggregation is enabled. Parallel keyed aggregation also exercises staging and
+-- final merging, with and without external aggregation.
+{% for threads in [1, 4] %}
+{% for adaptive in [0, 1] %}
+{% for external in [0, 1] %}
+SET max_threads = {{ threads }};
+SET enable_adaptive_aggregator = {{ adaptive }};
+SET max_bytes_before_external_group_by = {{ external }};
+SELECT 'threads={{ threads }}, adaptive={{ adaptive }}, external={{ external }}';
+
+SELECT count() = 16384, countIf(c != 4 OR s != 4 * k + 98304 OR mn != k OR mx != k + 49152) = 0
+FROM
+(
+    SELECT number % 16384 AS k, count() AS c, sum(number) AS s, min(number) AS mn, max(number) AS mx
+    FROM numbers_mt(65536)
+    GROUP BY k
+);
+
+SELECT count() = 16384, countIf(c != 4) = 0
+FROM (SELECT number % 16384 AS k, count() AS c FROM numbers_mt(65536) GROUP BY k);
+
+SELECT count() = 16384
+FROM (SELECT number % 16384 AS k FROM numbers_mt(65536) GROUP BY k);
+
+-- A small set of keys completes without freezing, while still producing the complete result.
+SELECT count() = 8, countIf(c != 8192) = 0
+FROM (SELECT number % 8 AS k, count() AS c FROM numbers_mt(65536) GROUP BY k);
+
+SELECT count(), sum(number) FROM numbers_mt(0)
+SETTINGS empty_result_for_aggregation_by_empty_set = 0;
+
+SELECT count(), sum(number) FROM numbers_mt(0)
+SETTINGS empty_result_for_aggregation_by_empty_set = 1;
+
+SELECT count() FROM (SELECT number FROM numbers_mt(0) GROUP BY number);
+{% endfor %}
+{% endfor %}
+{% endfor %}

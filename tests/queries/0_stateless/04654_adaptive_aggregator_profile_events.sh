@@ -5,12 +5,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Runs one query per adaptive control path and then asserts the path's ProfileEvents fired.
-# Each outer query consumes the inner aggregate on purpose: with `SELECT count() FROM (...)` the analyzer
-# prunes the unused aggregate, and a `GROUP BY` left with none uses a set method, which does not take the
-# adaptive path.
-# Everything runs in a single clickhouse-local process, so the counters in `system.events`
-# belong to these queries alone.
+# Runs one query per adaptive control path and then asserts that its profile events fired.
+# Each outer query consumes the inner aggregate so the analyzer retains its aggregate states.
+# Each invocation uses one `clickhouse-local` process, so its `system.events` counters belong
+# to these queries alone.
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET max_block_size = 8192;
