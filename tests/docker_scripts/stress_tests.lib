@@ -358,8 +358,13 @@ function start_server()
     # The client port opens only after the databases are loaded, so a running server is bounded
     # by time and only a server that exited is bounded by the number of starts.
     local wait_start=$SECONDS
-    until clickhouse-client --handshake_timeout_ms=30000 --receive_timeout 30 --query "SELECT 1"
+    local probes=0
+    # The probe has to measure the native port, the one the workload uses: with the transport
+    # unspecified the client races 9000 against 9440 and prefers TLS when both answer. And
+    # `--receive_timeout` is inert until Hello completes, so `timeout` is what bounds an attempt.
+    until timeout -s KILL 15 clickhouse-client --port 9000 --handshake_timeout_ms=10000 --receive_timeout=10 --query "SELECT 1"
     do
+        probes=$((probes + 1))
         # Only wait for ports and restart if the previous daemon actually exited.
         # If the process is still alive, the ports are bound by a healthy but
         # slow-starting server — just retry the readiness check.
@@ -373,11 +378,30 @@ function start_server()
             [ "$counter" -gt 0 ] && wait_server_ports_free
             clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
             counter=$((counter + 1))
-            # The deadline covers one daemon instance, so each start re-anchors it.
+            # The deadline and the probe count cover one daemon instance, so each start
+            # re-anchors both.
             wait_start=$SECONDS
+            probes=0
         elif [ "$SECONDS" -ge "$((wait_start + ready_timeout))" ]
         then
-            report_start_failure "a clickhouse-server process is running but did not become ready in $((SECONDS - wait_start))s after start attempt $counter completed"
+            # Both figures describe the moment the wait ended, so they are sampled before the
+            # evidence below, which takes tens of seconds. A server that is still starting keeps
+            # writing to its log, so log recency separates a slow start from a stalled one.
+            local waited=$((SECONDS - wait_start))
+            local log_mtime log_age="unknown"
+            log_mtime=$(stat -c %Y /var/log/clickhouse-server/clickhouse-server.log 2>/dev/null) \
+                && log_age="$(( $(date +%s) - log_mtime ))s ago"
+            {
+                echo "listeners at readiness give-up (all client ports are bound together in"
+                echo "createServers, so this separates a server that never got there from one that did):"
+                ss -ltnp | head -n40
+            } >> /test_output/gdb.log ||:
+            echo "thread apply all backtrace (on readiness give-up)" >> /test_output/gdb.log
+            # This capture runs before the failure is recorded, so it must not be able to
+            # replace the report with an error of its own.
+            timeout --verbose --signal=TERM --kill-after=60 10m gdb -batch -ex 'thread apply all backtrace' \
+                -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log ||:
+            report_start_failure "a clickhouse-server process is running but did not become ready in ${waited}s after start attempt $counter completed ($probes readiness probes on port 9000; server log last written $log_age; see gdb.log)"
             return 1
         fi
         sleep 10
@@ -391,7 +415,7 @@ function start_server()
 
 function check_server_start()
 {
-    clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+    clickhouse-client --port 9000 --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
         || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
         && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
         >> /test_output/test_results.tsv)
