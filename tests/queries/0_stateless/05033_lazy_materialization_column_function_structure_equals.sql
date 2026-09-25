@@ -8,9 +8,9 @@ INSERT INTO t_lazy_cf SELECT leftPad(toString(number), 8, '0'), toDateTime64('20
 SELECT count()
 FROM
 (
-    SELECT c1, arrayFirst(s -> endsWith(upperUTF8(c3), s), ['AB', 'CD']) AS c4
+    SELECT c1, arrayFirst(s -> endsWith(upper(c3), s), ['AB', 'CD']) AS c4
     FROM t_lazy_cf
-    WHERE arrayExists(s -> endsWith(upperUTF8(c3), s), ['AB', 'CD'])
+    WHERE arrayExists(s -> endsWith(upper(c3), s), ['AB', 'CD'])
     ORDER BY c2 DESC
     LIMIT 1000
 );
@@ -18,9 +18,9 @@ FROM
 SELECT count()
 FROM
 (
-    SELECT c1, arrayFirst(s -> endsWith(upperUTF8(c3), s), ['AB', 'CD']) AS c4
+    SELECT c1, arrayFirst(s -> endsWith(upper(c3), s), ['AB', 'CD']) AS c4
     FROM t_lazy_cf
-    WHERE arrayExists(s -> endsWith(upperUTF8(c3), s), ['AB', 'CD'])
+    WHERE arrayExists(s -> endsWith(upper(c3), s), ['AB', 'CD'])
     ORDER BY c2 DESC
     LIMIT 1000
     SETTINGS query_plan_optimize_lazy_materialization = 0
