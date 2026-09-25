@@ -69,4 +69,6 @@ class IDisk;
 /// (ciphertext at the backing path), and cached disks are NOT plain local.
 bool isPlainLocalDisk(const IDisk & disk);
 
+bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk);
+
 }

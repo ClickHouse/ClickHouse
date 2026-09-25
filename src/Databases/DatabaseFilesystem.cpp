@@ -261,7 +261,8 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
 
     if (!containsGlobs(table_path))
     {
-        const bool exists = disk ? disk->existsFileOrDirectory(disk_relative_path) : fs::exists(table_path);
+        const bool exists = disk ? disk->existsFileOrDirectory(disk_relative_path)
+                                 : existsOrFileNameTooLong([&] { return fs::exists(table_path); });
         if (!exists)
         {
             if (throw_on_error)
@@ -269,7 +270,8 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
             return false;
         }
 
-        const bool is_regular_file = disk ? disk->existsFile(disk_relative_path) : fs::is_regular_file(table_path);
+        const bool is_regular_file = disk ? disk->existsFile(disk_relative_path)
+                                          : existsOrFileNameTooLong([&] { return fs::is_regular_file(table_path); });
         if (!is_regular_file)
         {
             if (throw_on_error)
@@ -300,7 +302,7 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
         const auto user_files_volume = getContext()->getUserFilesVolume();
         const bool exists = user_files_volume
             ? userFilesPathExists(table_path, user_files_volume->getDisks())
-            : fs::exists(table_path);
+            : existsOrFileNameTooLong([&] { return fs::exists(table_path); });
         if (!exists)
         {
             std::lock_guard lock(mutex);

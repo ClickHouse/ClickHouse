@@ -1,7 +1,10 @@
 #include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
-#include <Poco/String.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+
 #include <Common/Exception.h>
+
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -96,6 +99,15 @@ bool isPlainLocalDisk(const IDisk & disk)
     /// object storage (including remote) reports `DataSourceType::ObjectStorage`.
     const auto description = disk.getDataSourceDescription();
     return description.type == DataSourceType::Local && !description.is_encrypted && !description.is_cached;
+}
+
+bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk)
+{
+    while (auto delegate_disk = disk->getDelegateDiskIfExists())
+        disk = delegate_disk;
+
+    return std::dynamic_pointer_cast<const DiskObjectStorage>(disk) != nullptr;
+
 }
 
 }

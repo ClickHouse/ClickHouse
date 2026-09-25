@@ -128,6 +128,7 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
@@ -277,7 +278,7 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
 
-    if (!fs::exists(prefix_without_globs))
+    if (!existsOrFileNameTooLong([&] { return fs::exists(prefix_without_globs); }))
         return;
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
@@ -788,8 +789,12 @@ void checkCreationIsAllowed(
 
     if (can_be_directory)
     {
-        auto table_path_stat = fs::status(table_path);
-        if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
+        const bool is_existing_directory = existsOrFileNameTooLong([&]
+        {
+            const auto table_path_stat = fs::status(table_path);
+            return fs::exists(table_path_stat) && fs::is_directory(table_path_stat);
+        });
+        if (is_existing_directory)
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
     }
 }
@@ -877,7 +882,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
     else if (pattern.find_first_of("*?{") == std::string::npos)
     {
-        if (!fs::exists(pattern) || !fs::is_directory(pattern))
+        if (!existsOrFileNameTooLong([&] { return fs::exists(pattern) && fs::is_directory(pattern); }))
         {
             std::error_code error;
             size_t size = fs::file_size(pattern, error);
@@ -2442,7 +2447,7 @@ Chunk StorageFileSource::generate()
                         if (archive.empty())
                             return {};
 
-                        if (!fs::exists(archive))
+                        if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
                         {
                             if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                 continue;
@@ -2489,7 +2494,7 @@ Chunk StorageFileSource::generate()
                                 if (archive.empty())
                                     return {};
 
-                                if (!fs::exists(archive))
+                                if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
                                 {
                                     if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                         continue;
@@ -2556,7 +2561,7 @@ Chunk StorageFileSource::generate()
                     /// existence probe has to go through `IDisk` as the read below does.
                     const bool current_path_exists = storage->user_files_volume
                         ? userFilesPathExists(current_path, storage->user_files_volume->getDisks())
-                        : fs::exists(current_path);
+                        : existsOrFileNameTooLong([&] { return fs::exists(current_path); });
                     if (!current_path_exists)
                     {
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
@@ -2718,10 +2723,15 @@ Chunk StorageFileSource::generate()
             /// bypassed entirely while the token has not settled and cannot prove a rewrite. Only
             /// formats that expose bucket splitting (Parquet) ever populate the cache, so other
             /// formats miss.
+            /// A TopN read consults the cache only while `use_query_condition_cache_for_top_k` is on:
+            /// the setting is documented to make TopK reads neither consult nor populate the query
+            /// condition cache, and the write side is already off for them unconditionally (see below).
             FileBucketInfoPtr buckets_to_read;
             QueryConditionCachePtr query_condition_cache;
             if (object_with_metadata.has_value() && current_file_version_settled
-                && format_filter_info && format_filter_info->condition_hash)
+                && format_filter_info && format_filter_info->condition_hash
+                && (!format_filter_info->top_k_filter
+                    || getContext()->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
                 query_condition_cache = getContext()->getQueryConditionCache();
 
             if (query_condition_cache)
@@ -2950,8 +2960,17 @@ Chunk StorageFileSource::generate()
         /// happens while this file was being read would otherwise let a version token, still valid
         /// at open time, get written together with row groups derived from bytes it no longer
         /// describes.
+        /// TopN dynamic filtering makes the matched buckets threshold-dependent rather than a
+        /// predicate-only verdict: a row group can end up empty (hence "unmatched") only because the
+        /// running `__topKFilter` threshold - established from the rows of *all* files this query
+        /// reads - had already excluded its rows. The cache key encodes just the predicate and the
+        /// single file's version, so such an entry would poison a later plain read, a read with a
+        /// different `LIMIT` or sort direction, or a read of only one file of the glob. Never write
+        /// cache entries for TopK reads. Reading the cache stays enabled while
+        /// `use_query_condition_cache_for_top_k` is on: entries are only ever written by
+        /// threshold-oblivious reads, so applying them to a TopK read is sound.
         if (input_format && current_file_cache_version.has_value() && current_file_version_settled
-            && format_filter_info && format_filter_info->condition_hash
+            && format_filter_info && format_filter_info->condition_hash && !format_filter_info->top_k_filter
             && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
             try
@@ -3041,6 +3060,33 @@ std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & p
     };
 
     return schema_cache.tryGetNumRows(key, get_last_mod_time);
+}
+
+bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
+{
+    if (!boost::iequals(storage->format_name, "Parquet"))
+        return false;
+
+    /// The output header of this step is broader than what the format reads: `prepareReadingFromFormat`
+    /// appends Hive partition columns (taken from the file path) and virtual columns (`_path`,
+    /// `_file`, ...) after the format has produced its chunk, while the Parquet reader is built on
+    /// `format_header` and only sees the physical file columns. Arming the filter for a sort key
+    /// the reader cannot see would give no pruning but still pay its side effects (offset-index
+    /// prefetches for every column, no query condition cache writes), so gate on `format_header`.
+    const auto * format_column = info.format_header.findByName(sort_column.name);
+    if (!format_column || !format_column->type->equals(*sort_column.type))
+        return false;
+
+    /// Being in `format_header` is still not the same as "what the reader read is what the query
+    /// sorts by": `format_header` lists the query-schema columns, and a column carrying a
+    /// `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed *above* the format by
+    /// `AddingDefaultsTransform` for every value the reader reported as missing - a column absent
+    /// from this particular file (the reader fills type defaults), or a `NULL` read into a
+    /// non-`Nullable` column. The threshold the sorting transforms publish then comes from the
+    /// recomputed values while the reader compares its own placeholders against it, which can drop
+    /// rows that belong to the top-K. A column with no default expression is never rewritten above
+    /// the reader, so for it the two values always agree.
+    return !info.columns_description.hasDefault(sort_column.name);
 }
 
 void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -3264,6 +3310,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -4102,6 +4149,8 @@ void registerStorageFile(StorageFactory & factory)
         "File",
         [](const StorageFactory::Arguments & factory_args)
         {
+            checkStorageSettingNames(factory_args);
+
             auto context = factory_args.getLocalContext();
             StorageFile::CommonArguments storage_args
             {
@@ -4133,7 +4182,7 @@ void registerStorageFile(StorageFactory & factory)
             {
                 Settings settings = factory_args.getContext()->getSettingsCopy();
 
-                // Apply changes from SETTINGS clause, with validation.
+                // Applying the changes validates the values, not the names.
                 settings.applyChanges(factory_args.storage_def->settings->changes);
 
                 storage_args.format_settings = getFormatSettings(factory_args.getContext(), settings);
