@@ -148,6 +148,10 @@ class DebianArtifactory:
         if lockfile.exists():
             print(f"WARNING: removing stale reprepro lock [{lockfile}]")
             lockfile.unlink()
+        # TODO: back under the lock check after the 26.8.11.7 recovery
+        if True:
+            # A killed run can leave references no package owns, which stop removefilter from deleting files
+            reprepro("rereference")
             # The killed run may have registered this version without its files, so includedeb would skip it
             for codename in {self.codename, RepoCodenames.STABLE}:
                 reprepro(f"removefilter {codename} 'Version (== {self.version})'")
