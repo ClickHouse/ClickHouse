@@ -86,7 +86,6 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.top_k_optimization_observation_rows,
         optimization_settings.is_explain,
         optimization_settings.max_block_size,
-        optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
@@ -358,10 +357,9 @@ void optimizeTreeSecondPass(
                 {
                     size_t changed_nodes = 0;
                     /// The rerun has to see the same `extra_settings` the main passes do. A
-                    /// default-constructed struct reads every field as zero: `parallel_replicas_filter_pushdown`
-                    /// comes out off, so the filter stops above the opaque `ReadFromLocalReplica` instead of
-                    /// entering the local plan, and `max_step_description_length` comes out 0, which truncates
-                    /// the description of every step merged here to the empty string.
+                    /// default-constructed struct reads every field as zero, and
+                    /// `max_step_description_length` coming out 0 truncates the description of every step
+                    /// merged here to the empty string.
                     if (rewrite_regardless_of_settings || optimization_settings.merge_expressions)
                         changed_nodes += tryMergeExpressions(&frame_node, nodes, extra_settings);
                     if (rewrite_regardless_of_settings || optimization_settings.merge_filters)

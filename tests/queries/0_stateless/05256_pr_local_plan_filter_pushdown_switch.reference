@@ -1,0 +1,11 @@
+on by default: the condition is in the fragment
+Read type: InOrder
+Prewhere filter column:  tenant = 5
+off: it stays above the read
+Read type: Default
+and the answer does not change either way
+100
+100
+the replicas were sent the condition only with the switch on
+05256_switch_off	1	0
+05256_switch_on	1	1

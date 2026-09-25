@@ -8,8 +8,10 @@ CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 CLICKHOUSE_CLIENT_TRACE=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"/"--send_logs_level=trace"}
 
 # Query-based parallel replicas only: this greps the log for the filter in the *text* of the query
-# sent to the replicas, and the plan-based implementation sends a plan fragment instead.
-PARALLEL_REPLICAS_SETTINGS="enable_parallel_replicas=1, automatic_parallel_replicas_mode = 0, max_parallel_replicas=2, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1, parallel_replicas_filter_pushdown=1, optimize_move_to_prewhere=1, query_plan_optimize_prewhere=1, parallel_replicas_allow_view_over_mergetree=0, parallel_replicas_plan_based=0"
+# sent to the replicas, so the replicas have to be sent a query - neither the plan-based
+# implementation nor `serialize_query_plan` sends one, and the distributed-plan CI jobs set the latter
+# in users.d.
+PARALLEL_REPLICAS_SETTINGS="enable_parallel_replicas=1, automatic_parallel_replicas_mode = 0, max_parallel_replicas=2, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1, optimize_move_to_prewhere=1, query_plan_optimize_prewhere=1, parallel_replicas_allow_view_over_mergetree=0, parallel_replicas_plan_based=0, serialize_query_plan=0"
 
 $CLICKHOUSE_CLIENT --query "
 drop table if exists t_03733;
@@ -64,9 +66,3 @@ SET ${PARALLEL_REPLICAS_SETTINGS};
 select trimLeft(explain) from
   (explain description=0, actions=1 select * from v1_03733 where c = 0 settings parallel_replicas_local_plan=1)
 where explain ilike '%Prewhere%' limit 1;"
-
-# check filter pushdown can be disabled by setting
-$CLICKHOUSE_CLIENT_TRACE --query "
-SET ${PARALLEL_REPLICAS_SETTINGS};
-SELECT * FROM v_03733 WHERE a = 0 SETTINGS parallel_replicas_local_plan=0, parallel_replicas_filter_pushdown=0;
-" |& grep 'executeQuery' | grep 'HAVING' | wc -l;

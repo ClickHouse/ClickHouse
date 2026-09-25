@@ -374,7 +374,10 @@ QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
     }
 
     auto query_plan = std::make_unique<QueryPlan>();
-    auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(plan_fragment), std::move(context));
+    /// The replicas get this fragment as a plan built alongside this one, not as a query they parse,
+    /// so nothing spliced into a query text reaches them.
+    auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
+        std::move(plan_fragment), std::move(context), /*replicas_get_pushed_conditions_=*/false);
     query_plan->addStep(std::move(read_from_local));
 
     return query_plan;

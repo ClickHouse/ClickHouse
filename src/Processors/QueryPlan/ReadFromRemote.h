@@ -20,6 +20,15 @@ using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
+/// Whether a condition pushed down on the initiator would be spliced into the query the remote side
+/// runs, asked before there is a condition to splice. Everything the splice needs is already known:
+/// the settings it answers to, and the shape of the query - it rewrites a single-table `SELECT` and
+/// refuses a union, a join, a `LIMIT BY`, and the rest of `subqueryAcceptsPushedPredicate`'s list. The
+/// initiator has to know the answer while it is still choosing how to read, so this is the same check
+/// the splice itself makes, asked early rather than a second statement of it.
+bool canSpliceFiltersIntoRemoteQuery(
+    const ASTPtr & query_ast, const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context, const ContextPtr & context);
+
 /// Reading step from remote servers.
 /// Unite query results from several shards.
 class ReadFromRemote final : public SourceStepWithFilterBase
@@ -99,6 +108,11 @@ public:
         SharedHeader header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,
+        /// The settings that decide whether a pushed-down condition is spliced into the query the
+        /// replicas run. This is the context the fragment carries, the same one the local copy of it
+        /// is optimized with - the two have to answer alike, or the initiator orders its read off a
+        /// condition the replicas were never given.
+        ContextPtr filter_rewrite_context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
@@ -142,6 +156,7 @@ private:
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
     ContextMutablePtr context;
+    ContextPtr filter_rewrite_context;
     ThrottlerPtr throttler;
     Scalars scalars;
     Tables external_tables;

@@ -986,6 +986,13 @@ public:
     void markReplicaAsUnavailable(size_t replica_number) override;
     bool isReadingCompleted() const override;
 
+    /// An in-order stream whose announcement carried no parts is as empty as a `Default` one. Saying
+    /// otherwise - the base class answers `false` for anything that does not override this - makes a
+    /// fragment whose streams were all pruned away look like it still had ranges to hand out, and the
+    /// release of the replicas that got nothing then trips over its own "someone must have been used"
+    /// check.
+    bool initializedWithEmptyRanges() const override { return state_initialized && all_parts_to_read.empty(); }
+
     RangesInDataPartsDescription getRegisteredParts() const override
     {
         RangesInDataPartsDescription result;

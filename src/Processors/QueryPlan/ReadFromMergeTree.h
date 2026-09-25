@@ -617,6 +617,14 @@ public:
     bool isSerializable() const override { return true; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// Hold read-in-order to these columns when it looks for what a filter fixes. A pushed condition
+    /// the replicas never saw may prune this read, but it must not order it: the coordination mode the
+    /// initiator announces has to follow only from what both sides know, or it announces `WithOrder`
+    /// against the replicas' `Default` and the read fails. Kept in `query_info` so that a rewrite
+    /// rebuilding this read carries it along with everything else it takes from there.
+    void restrictFixedColumns(NameSet columns) { query_info.fixed_columns_the_replicas_also_have = std::move(columns); }
+    const std::optional<NameSet> & getFixedColumnRestriction() const { return query_info.fixed_columns_the_replicas_also_have; }
+
 private:
     static void buildPartitionPruningIndexes(
         Indexes & indexes,
@@ -794,6 +802,7 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
+
     bool allow_query_condition_cache = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
