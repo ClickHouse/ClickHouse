@@ -235,7 +235,7 @@ void ArrayJoinResultIterator::initAnyArray()
     for (size_t row = 0; row < replicated_offsets.size(); ++row)
     {
         size_t index = indexes.getIndexAt(row);
-        accumulated += nested_offsets[index] - nested_offsets[index - 1];
+        accumulated += nested_offsets[index] - nested_offsets[static_cast<ssize_t>(index) - 1];
         replicated_offsets[row] = accumulated;
     }
 }
