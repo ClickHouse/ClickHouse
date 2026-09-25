@@ -204,6 +204,10 @@ namespace Net
         /// This method will only work if the blocking modes of
         /// the socket are changed via the setBlocking method!
 
+        bool needHandshake() const { return _needHandshake; }
+        /// Returns true while the handshake is still owed, so that a caller
+        /// can tell that any I/O it starts would run the handshake first.
+
 
         void setBioMethod(const BIO_METHOD * method);
         /// Optionally inject a custom BIO_METHOD for the SSL transport BIO.

@@ -34,6 +34,22 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
+namespace
+{
+
+/// Writing to such a socket would start the handshake over, on the much larger body timeouts.
+bool secureHandshakePending([[maybe_unused]] const Poco::Net::SocketImpl * socket)
+{
+#if USE_SSL
+    const auto * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+    return secure_socket && secure_socket->needHandshake();
+#else
+    return false;
+#endif
+}
+
+}
+
 HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & read_event)
     : max_uri_size(context->getMaxUriSize())
     , max_fields_number(context->getMaxFields())
@@ -71,7 +87,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
         }
         catch (const NetException & e)
         {
-            if (e.code() != ErrorCodes::SOCKET_TIMEOUT)
+            if (e.code() != ErrorCodes::SOCKET_TIMEOUT || secureHandshakePending(socket))
                 throw;
             /// `HTTPServerConnection` answers 400 to this; a `DB` exception escapes its handlers.
             throw Poco::Net::MessageException("Timeout exceeded while reading HTTP headers");

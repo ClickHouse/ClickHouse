@@ -8,9 +8,17 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     user_configs=["configs/users.xml"],
+    main_configs=[
+        "configs/https_port.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/dhparam.pem",
+    ],
 )
 
 HTTP_PORT = 8123
+HTTPS_PORT = 8443
 
 
 @pytest.fixture(scope="module")
@@ -240,6 +248,32 @@ def test_idle_after_partial_headers_gets_bad_request(started_cluster):
         body_part.decode(errors="replace").strip()
         == "Timeout exceeded while reading HTTP headers"
     )
+
+
+def test_stalled_tls_handshake_does_not_pin_the_worker(started_cluster):
+    """The error response must not be written over a socket still in the TLS handshake,
+    which would start a second handshake on the much larger `receive_timeout` budget."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(60)
+    sock.connect((node.ip_address, HTTPS_PORT))
+
+    # A TLS record header announcing a `ClientHello` that never arrives.
+    sock.sendall(b"\x16\x03\x01\x02\x00\x01")
+
+    started = time.monotonic()
+    timed_out = False
+    try:
+        while sock.recv(4096):
+            pass
+    except socket.timeout:
+        timed_out = True
+    except ConnectionResetError:
+        pass
+    elapsed = time.monotonic() - started
+    sock.close()
+
+    assert not timed_out, "the server held the connection open"
+    assert elapsed < 30, f"the connection was closed only after {elapsed:.1f}s"
 
 
 # -- query-string overrides must not bypass pre-auth limits --
