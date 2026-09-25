@@ -34,9 +34,7 @@ All functions are sharing a common infrastructure that provides:
 
 The requests are issued from a server-wide thread pool. Its size (`max_ai_request_thread_pool_size`, a server setting) caps how many AI provider requests the whole server has in flight at once, across every query.
 
-[`ai_function_max_concurrent_requests`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests) bounds a single function call's share of that pool.
-
-The `ai_function_max_concurrent_requests` limit is per AI function call per block, so a query whose pipeline runs several streams may have more requests in flight than the setting allows for a single stream. Where the per-query total matters, put a ceiling on the setting with a settings profile constraint, which a query setting cannot raise:
+[`ai_function_max_concurrent_requests`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests) bounds a single query's share of that pool: the requests the query has in flight at once, across all of its AI function calls and pipeline streams. To put a ceiling on it that a query setting cannot raise, use a settings profile constraint:
 
 ```xml
 <profiles>
@@ -53,7 +51,7 @@ The `ai_function_max_concurrent_requests` limit is per AI function call per bloc
 The default is `1`, one request at a time, because raising it loosens two guarantees:
 
 - A request's token usage is only known once its response arrives, so [`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) and [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) may overshoot by one request's worth per request in flight, rather than by one request's worth in total.
-- A wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, as many requests as the concurrency allows.
+- Requests are dispatched before the errors of earlier ones are seen, so a query that fails on its first row may still have issued, and been billed for, as many requests as the concurrency allows.
 
 [`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
 

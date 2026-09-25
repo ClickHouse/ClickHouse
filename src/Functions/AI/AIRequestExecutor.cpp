@@ -179,11 +179,16 @@ template <typename Response, typename Request>
 std::future<std::optional<Response>> submit(
     std::shared_ptr<IAIProvider> provider, Request request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
 {
+    /// Waits while the query has `ai_function_max_concurrent_requests` requests in flight. The task owns
+    /// the slot, so it is released when the request finishes or the task is dropped.
+    auto slot = quota->acquireRequestSlot();
+
     /// move everything into task scope so nothing dangles if another thread throws
     auto task = [my_provider = std::move(provider),
                  my_request = std::move(request),
                  my_policy = std::move(policy),
-                 my_quota = std::move(quota)]
+                 my_quota = std::move(quota),
+                 my_slot = std::move(slot)]
     {
         return runRequest<Response>(my_policy, *my_quota, [&]
         {

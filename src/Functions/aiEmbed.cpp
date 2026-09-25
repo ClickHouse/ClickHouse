@@ -38,7 +38,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 ai_function_embedding_max_batch_size;
-    extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests;
     extern const SettingsString ai_function_embedding_default_credentials;
 }
 
@@ -113,7 +112,6 @@ public:
             return result_type->createColumn();
 
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
-        size_t max_concurrent_requests = static_cast<size_t>(settings[Setting::ai_function_max_concurrent_requests].value);
 
         /// Shared across every AI function call in the query
         auto quota_tracker = getContext()->getAIQuotaTracker();
@@ -158,7 +156,7 @@ public:
         });
 
         FunctionBaseAI::embedTexts(
-            provider, model, dimensions, getName(), inputs, max_batch_size, max_concurrent_requests, policy,
+            provider, model, dimensions, getName(), inputs, max_batch_size, policy,
             quota_tracker, embedding_result);
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output

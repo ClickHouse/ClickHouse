@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ProfileEvents.h>
@@ -41,7 +42,6 @@ namespace Setting
 {
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
-    extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
     extern const SettingsString ai_function_text_default_credentials;
@@ -336,7 +336,6 @@ void FunctionBaseAI::embedTexts(
     const String & function_name,
     const VectorWithMemoryTracking<std::string_view> & inputs,
     size_t max_batch_size,
-    size_t max_concurrent_requests,
     const AIRequestPolicy & policy,
     const AIQuotaTrackerPtr & quota,
     EmbeddingResult & result)
@@ -345,79 +344,75 @@ void FunctionBaseAI::embedTexts(
 
     /// Equivalent to (n + max_batch_size - 1) / max_batch_size but can't overflow
     const size_t num_batches = inputs.empty() ? 0 : 1 + (inputs.size() - 1) / max_batch_size;
-    const size_t concurrency = std::min(max_concurrent_requests, num_batches);
 
-    /// Batches go out in waves of size `concurrency` and each completed wave is applied before the next
-    /// one starts, so at most that many of this call's requests are in flight at a time.
-    VectorWithMemoryTracking<std::future<std::optional<AIEmbeddingResponse>>> wave;
-    wave.reserve(concurrency);
+    /// Batches whose request is in flight, oldest first. At most `max_concurrent_requests` per call; the
+    /// query-wide cap is enforced by the slot `submitAIRequest` takes from `quota`.
+    const size_t max_in_flight = quota->getMaxConcurrentRequests();
+    DequeWithMemoryTracking<std::pair<size_t, std::future<std::optional<AIEmbeddingResponse>>>> in_flight;
 
-    /// Wait for all waves to complete on error, so that API-call and request counts are recorded
+    /// Wait for the requests in flight on error, so that API-call and request counts are recorded.
     /// They were already dispatched and billed either way.
     SCOPE_EXIT_SAFE({
-        for (auto & request : wave)
+        for (auto & [batch, request] : in_flight)
             if (request.valid())
                 request.wait();
     });
 
-    for (size_t wave_begin = 0; wave_begin < num_batches; wave_begin += concurrency)
+    auto collect_oldest = [&]
     {
-        const size_t wave_end = std::min(wave_begin + concurrency, num_batches);
+        auto [batch, request] = std::move(in_flight.front());
+        in_flight.pop_front();
 
-        wave.clear();
-        /// fire off `concurrency` batches at a time
-        for (size_t batch = wave_begin; batch < wave_end; ++batch)
+        const size_t begin = batch * max_batch_size;
+        const size_t end = std::min(begin + max_batch_size, inputs.size());
+
+        /// Nothing when the request failed and `ai_function_throw_on_error` is disabled, or when the
+        /// API-call quota was exhausted; either way its inputs stay empty.
+        std::optional<AIEmbeddingResponse> ai_embedding_response = request.get();
+        if (!ai_embedding_response)
         {
-            /// Once the quota is exhausted nothing more is issued, so the batch's slot stays an
-            /// empty future and its inputs stay empty.
-            if (quota->checkQuotas())
-            {
-                wave.emplace_back();
-                continue;
-            }
-
-            const size_t begin = batch * max_batch_size;
-            const size_t end = std::min(begin + max_batch_size, inputs.size());
-
-            AIEmbeddingRequest ai_embedding_request;
-            ai_embedding_request.model = model;
-            ai_embedding_request.dimensions = dimensions;
-            ai_embedding_request.function_name = function_name;
-            ai_embedding_request.inputs.reserve(end - begin);
-            for (size_t k = begin; k < end; ++k)
-                ai_embedding_request.inputs.emplace_back(inputs[k]);
-
-            wave.push_back(submitAIRequest(provider, std::move(ai_embedding_request), policy, quota));
+            result.texts_skipped += end - begin;
+            return;
         }
 
-        /// get the results for our `concurrency` batches
-        for (size_t k = 0; k < wave.size(); ++k)
+        chassert(ai_embedding_response->embeddings.size() == end - begin,
+            "Number of inputs does not match number of output embeddings");
+
+        for (size_t j = 0; j < ai_embedding_response->embeddings.size(); ++j)
         {
-            const size_t begin = (wave_begin + k) * max_batch_size;
-            const size_t end = std::min(begin + max_batch_size, inputs.size());
-
-            /// Nothing when no request was issued for this batch, or when it failed and
-            /// `ai_function_throw_on_error` is disabled; either way its inputs stay empty.
-            std::optional<AIEmbeddingResponse> ai_embedding_response;
-            if (wave[k].valid())
-                ai_embedding_response = wave[k].get();
-
-            if (!ai_embedding_response)
-            {
-                result.texts_skipped += end - begin;
-                continue;
-            }
-
-            chassert(ai_embedding_response->embeddings.size() == end - begin,
-                "Number of inputs does not match number of output embeddings");
-
-            for (size_t j = 0; j < ai_embedding_response->embeddings.size(); ++j)
-            {
-                result.embeddings[begin + j] = std::move(ai_embedding_response->embeddings[j]);
-                ++result.texts_embedded;
-            }
+            result.embeddings[begin + j] = std::move(ai_embedding_response->embeddings[j]);
+            ++result.texts_embedded;
         }
+    };
+
+    for (size_t batch = 0; batch < num_batches; ++batch)
+    {
+        const size_t begin = batch * max_batch_size;
+        const size_t end = std::min(begin + max_batch_size, inputs.size());
+
+        /// Once the quota is exhausted nothing more is issued, and the batch's inputs stay empty.
+        if (quota->checkQuotas())
+        {
+            result.texts_skipped += end - begin;
+            continue;
+        }
+
+        if (in_flight.size() == max_in_flight)
+            collect_oldest();
+
+        AIEmbeddingRequest ai_embedding_request;
+        ai_embedding_request.model = model;
+        ai_embedding_request.dimensions = dimensions;
+        ai_embedding_request.function_name = function_name;
+        ai_embedding_request.inputs.reserve(end - begin);
+        for (size_t k = begin; k < end; ++k)
+            ai_embedding_request.inputs.emplace_back(inputs[k]);
+
+        in_flight.emplace_back(batch, submitAIRequest(provider, std::move(ai_embedding_request), policy, quota));
     }
+
+    while (!in_flight.empty())
+        collect_oldest();
 }
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -472,79 +467,72 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
     });
 
-    const size_t concurrency = std::min<UInt64>(settings[Setting::ai_function_max_concurrent_requests].value, input_rows_count);
+    /// Rows whose request is in flight, oldest first. At most `max_concurrent_requests` per call; the
+    /// query-wide cap is enforced by the slot `submitAIRequest` takes from `quota_tracker`.
+    const size_t max_in_flight = quota_tracker->getMaxConcurrentRequests();
+    DequeWithMemoryTracking<std::pair<size_t, std::future<std::optional<AIResponse>>>> in_flight;
 
-    /// Requests go out in waves of `concurrency` rows, and each completed wave is applied to the
-    /// result column in row order. A wave waits for its slowest request before the next one starts,
-    /// which gives up a little throughput next to a sliding window, but keeps row ordering, quota
-    /// accounting and error propagation identical to issuing the requests one at a time.
-    VectorWithMemoryTracking<std::future<std::optional<AIResponse>>> wave;
-    wave.reserve(concurrency);
+    /// Nothing for a row when no request was issued (NULL prompt, or quota exhausted), or when the request
+    /// failed and `ai_function_throw_on_error` is disabled.
+    VectorWithMemoryTracking<std::optional<AIResponse>> responses(input_rows_count);
 
-    /// Wait for all waves to complete on error, so that API-call and request counts are recorded
+    /// Wait for the requests in flight on error, so that API-call and request counts are recorded.
     /// They were already dispatched and billed either way.
     SCOPE_EXIT_SAFE({
-        for (auto & request : wave)
+        for (auto & [row, request] : in_flight)
             if (request.valid())
                 request.wait();
     });
 
-    for (size_t wave_begin = 0; wave_begin < input_rows_count; wave_begin += concurrency)
+    auto collect_oldest = [&]
     {
-        const size_t wave_end = std::min(wave_begin + concurrency, input_rows_count);
+        auto [row, request] = std::move(in_flight.front());
+        in_flight.pop_front();
+        responses[row] = request.get();
+    };
 
-        wave.clear();
-        for (size_t row = wave_begin; row < wave_end; ++row)
+    for (size_t row = 0; row < input_rows_count; ++row)
+    {
+        /// A NULL prompt produces NULL, and once the quota is exhausted a row keeps its default value.
+        if ((prompt_nullable && prompt_nullable->getNullMapData()[row]) || quota_tracker->checkQuotas())
+            continue;
+
+        if (in_flight.size() == max_in_flight)
+            collect_oldest();
+
+        AIRequest ai_request;
+        ai_request.system_prompt = system_prompt;
+        ai_request.user_message = sanitizeForModel(buildUserMessage(arguments, row));
+        ai_request.response_format = response_format;
+        ai_request.model = model;
+        ai_request.temperature = temperature;
+        ai_request.max_tokens = max_tokens;
+        ai_request.function_name = getName();
+
+        in_flight.emplace_back(row, submitAIRequest(provider, std::move(ai_request), policy, quota_tracker));
+    }
+
+    while (!in_flight.empty())
+        collect_oldest();
+
+    for (size_t row = 0; row < input_rows_count; ++row)
+    {
+        if (prompt_nullable && prompt_nullable->getNullMapData()[row])
         {
-            /// A NULL prompt produces NULL, and once the quota is exhausted a row keeps its default
-            /// value. Neither issues a request, so the row's slot stays an empty future.
-            if ((prompt_nullable && prompt_nullable->getNullMapData()[row]) || quota_tracker->checkQuotas())
-            {
-                wave.emplace_back();
-                continue;
-            }
-
-            AIRequest ai_request;
-            ai_request.system_prompt = system_prompt;
-            ai_request.user_message = sanitizeForModel(buildUserMessage(arguments, row));
-            ai_request.response_format = response_format;
-            ai_request.model = model;
-            ai_request.temperature = temperature;
-            ai_request.max_tokens = max_tokens;
-            ai_request.function_name = getName();
-
-            wave.push_back(submitAIRequest(provider, std::move(ai_request), policy, quota_tracker));
+            result_col->insertDefault();
+            null_map_col->getData()[row] = 1;
+            continue;
         }
 
-        for (size_t k = 0; k < wave.size(); ++k)
+        if (!responses[row])
         {
-            const size_t row = wave_begin + k;
-
-            /// A NULL prompt produces NULL without a request.
-            if (prompt_nullable && prompt_nullable->getNullMapData()[row])
-            {
-                result_col->insertDefault();
-                null_map_col->getData()[row] = 1;
-                continue;
-            }
-
-            /// Nothing when no request was issued because the API-call quota was exhausted, or when
-            /// the request failed and `ai_function_throw_on_error` is disabled; either way the row
-            /// keeps its default value.
-            std::optional<AIResponse> ai_response;
-            if (wave[k].valid())
-                ai_response = wave[k].get();
-
-            if (!ai_response)
-            {
-                result_col->insertDefault();
-                ++rows_skipped;
-                continue;
-            }
-
-            insertProcessedResult(*result_col, postProcessResponse(ai_response->result));
-            ++rows_processed;
+            result_col->insertDefault();
+            ++rows_skipped;
+            continue;
         }
+
+        insertProcessedResult(*result_col, postProcessResponse(responses[row]->result));
+        ++rows_processed;
     }
 
     if (result_type->isNullable())

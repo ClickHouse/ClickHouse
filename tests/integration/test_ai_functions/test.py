@@ -2503,6 +2503,21 @@ def test_concurrent_responses_map_to_their_rows(started_cluster):
     assert result == "100\t100", f"expected every row to get its own response, got (matching, total) = {result}"
 
 
+def test_max_concurrent_requests_is_per_query(started_cluster):
+    """`ai_function_max_concurrent_requests` bounds the whole query, not each stream: four streams
+    running the function at once still have at most 4 requests in flight together."""
+    _reset_concurrency()
+    instance.query(
+        f"SELECT {SLOW_CHAT_CALL} FROM numbers_mt(64) FORMAT Null",
+        settings={"ai_function_max_concurrent_requests": 4, "max_block_size": 8, "max_threads": 4},
+    )
+    stats = _concurrency_stats()
+    assert stats["requests"] == 64
+    assert 2 <= stats["max_concurrency"] <= 4, (
+        f"expected at most 4 requests in flight across all streams, saw {stats['max_concurrency']}"
+    )
+
+
 MULTI_CALL_QUERY = (
     "SELECT countIf(a = pa), countIf(b = pb), count(), sum(cityHash64(pa, e)) FROM "
     "(SELECT concat('a-', toString(number)) AS pa, concat('b-', toString(number)) AS pb, "

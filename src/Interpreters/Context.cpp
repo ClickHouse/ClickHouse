@@ -306,6 +306,7 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
     extern const SettingsBool ai_function_throw_on_quota_exceeded;
+    extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -9101,6 +9102,7 @@ AIQuotaTrackerPtr Context::getAIQuotaTracker() const
             settings_ref[Setting::ai_function_max_output_tokens_per_query],
             settings_ref[Setting::ai_function_max_api_calls_per_query],
             settings_ref[Setting::ai_function_throw_on_quota_exceeded],
+            settings_ref[Setting::ai_function_max_concurrent_requests],
             query_context->process_list_elem);
     }
     return query_context->ai_quota_tracker;

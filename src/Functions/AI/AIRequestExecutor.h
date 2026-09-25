@@ -30,7 +30,8 @@ struct AIRequestPolicy
 
 /// Issue one chat-completion request on the AI request thread pool (`getAIRequestThreadPool`) and
 /// check that the model produced a complete answer. Also handles retries with backoff, API-call
-/// reservation, and token accounting.
+/// reservation, and token accounting. Waits while the query has `ai_function_max_concurrent_requests`
+/// requests in flight.
 std::future<std::optional<AIResponse>> submitAIRequest(
     std::shared_ptr<IAIProvider> provider, AIRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
 

@@ -93,6 +93,24 @@ bool AIQuotaTracker::recordApiCall()
     return false;
 }
 
+AIQuotaTracker::RequestSlot AIQuotaTracker::acquireRequestSlot()
+{
+    std::unique_lock lock(mutex);
+    request_slot_released.wait(lock, [this]() TSA_REQUIRES(mutex) { return requests_in_flight < max_concurrent_requests; });
+    /// `std::unique_lock` is not a thread safety analysis capability, but `mutex` is held here.
+    ++TSA_SUPPRESS_WARNING_FOR_WRITE(requests_in_flight);
+    return RequestSlot(shared_from_this());
+}
+
+void AIQuotaTracker::releaseRequestSlot()
+{
+    {
+        std::lock_guard lock(mutex);
+        --requests_in_flight;
+    }
+    request_slot_released.notify_one();
+}
+
 void AIQuotaTracker::recordTokens(UInt64 in_tokens, UInt64 out_tokens)
 {
     std::lock_guard lock(mutex);

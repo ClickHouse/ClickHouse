@@ -149,9 +149,8 @@ public:
     };
 
     /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching
-    /// and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call, and
-    /// up to `max_concurrent_requests` of those calls are in flight at once.
-    /// Accumulates into `result`, so the waves completed before a throw stay visible to the caller.
+    /// and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call.
+    /// Accumulates into `result`, so the batches completed before a throw stay visible to the caller.
     static void embedTexts(
         const std::shared_ptr<IAIProvider> & provider,
         const String & model,
@@ -159,7 +158,6 @@ public:
         const String & function_name,
         const VectorWithMemoryTracking<std::string_view> & inputs,
         size_t max_batch_size,
-        size_t max_concurrent_requests,
         const AIRequestPolicy & policy,
         const AIQuotaTrackerPtr & quota,
         EmbeddingResult & result);

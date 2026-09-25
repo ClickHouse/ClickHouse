@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 
@@ -22,19 +23,46 @@ class QueryStatus;
 ///
 /// `checkQuotas` and `recordApiCall` also throw once the query is killed or exceeds
 /// `max_execution_time`, so no new request is dispatched for it.
-class AIQuotaTracker
+///
+/// It also bounds the requests the query has in flight at once (`ai_function_max_concurrent_requests`),
+/// across all AI function calls and pipeline streams: a request holds a `RequestSlot` until it finishes.
+class AIQuotaTracker : public std::enable_shared_from_this<AIQuotaTracker>
 {
 public:
     AIQuotaTracker(
         UInt64 max_input_tokens_, UInt64 max_output_tokens_,
         UInt64 max_api_calls_, bool throw_on_quota_exceeded_,
+        size_t max_concurrent_requests_,
         std::weak_ptr<QueryStatus> query_status_)
         : max_input_tokens(max_input_tokens_)
         , max_output_tokens(max_output_tokens_)
         , max_api_calls(max_api_calls_)
         , throw_on_quota_exceeded(throw_on_quota_exceeded_)
+        , max_concurrent_requests(max_concurrent_requests_)
         , query_status(std::move(query_status_))
     {}
+
+    /// One of the query's `max_concurrent_requests` in-flight request slots. Released when destroyed.
+    class RequestSlot
+    {
+    public:
+        explicit RequestSlot(std::shared_ptr<AIQuotaTracker> tracker_) : tracker(std::move(tracker_)) {}
+        RequestSlot(RequestSlot &&) noexcept = default;
+        RequestSlot & operator=(RequestSlot &&) noexcept = delete;
+        ~RequestSlot()
+        {
+            if (tracker)
+                tracker->releaseRequestSlot();
+        }
+
+    private:
+        std::shared_ptr<AIQuotaTracker> tracker;
+    };
+
+    /// Take a request slot, waiting while all `max_concurrent_requests` are taken.
+    RequestSlot acquireRequestSlot();
+
+    size_t getMaxConcurrentRequests() const { return max_concurrent_requests; }
 
     /// Check the token quotas (and the sticky exceeded flag). Returns true if a limit is met or
     /// exceeded, false otherwise. Lets a caller skip building and submitting a request that
@@ -59,6 +87,7 @@ private:
     const UInt64 max_output_tokens;
     const UInt64 max_api_calls;
     const bool throw_on_quota_exceeded;
+    const size_t max_concurrent_requests;
     const std::weak_ptr<QueryStatus> query_status;
 
     std::mutex mutex;
@@ -66,6 +95,8 @@ private:
     UInt64 input_tokens TSA_GUARDED_BY(mutex) = 0;
     UInt64 output_tokens TSA_GUARDED_BY(mutex) = 0;
     UInt64 api_calls TSA_GUARDED_BY(mutex) = 0;
+    size_t requests_in_flight TSA_GUARDED_BY(mutex) = 0;
+    std::condition_variable request_slot_released;
 
     /// The sticky-flag + token-limit check, assuming `mutex` is held. Sets the sticky flag (or throws,
     /// per `throw_on_quota_exceeded`) when a token quota is met. Shared by `checkQuotas` and
@@ -74,6 +105,8 @@ private:
 
     /// Throws if the query was killed or exceeded its time limit.
     void throwIfCancelled() const;
+
+    void releaseRequestSlot();
 };
 
 }
