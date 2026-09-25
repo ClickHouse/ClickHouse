@@ -22,7 +22,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA="$CURDIR/data_parquet"
 
-opts="--enable_nullable_tuple_type=1 --allow_experimental_nullable_tuple_type=1"
+opts="--enable_nullable_tuple_type=1"
 
 echo "-- optional LIST wrapper, REQUIRED element group: Array(Nullable(Tuple)) accepted (always-defined)"
 $CLICKHOUSE_LOCAL $opts -q "SELECT a, toTypeName(a) FROM file('$DATA/04065_optional_list_wrapper_required_element.parquet', 'Parquet', 'a Array(Nullable(Tuple(x UInt32)))')"
