@@ -45,13 +45,18 @@ const SharedHeader & PullingPipelineExecutor::getSharedHeader() const
     return pulling_format->getPort(IOutputFormat::PortKind::Main).getSharedHeader();
 }
 
-bool PullingPipelineExecutor::pull(Chunk & chunk)
+void PullingPipelineExecutor::ensureExecutor()
 {
     if (!executor)
     {
         executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     }
+}
+
+bool PullingPipelineExecutor::pull(Chunk & chunk)
+{
+    ensureExecutor();
 
     if (!executor->checkTimeLimitSoft())
         return false;
