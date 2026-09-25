@@ -6,11 +6,14 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Common/isValidUTF8.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
+
+#include <type_traits>
 
 
 namespace DB
@@ -63,9 +66,15 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
     }
 }
 
+/// `NullOutput` discards everything and holds no state, so one shared instance is enough and is safe
+/// to share. A local one escapes into the readers, which puts a `-fstack-protector-strong` canary on
+/// this per-field function.
+static_assert(std::is_empty_v<NullOutput>);
+static NullOutput shared_null_output;
+
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
-    NullOutput out;
+    NullOutput & out = shared_null_output;
     constexpr const char * field_name = "<SKIPPED COLUMN>";
     constexpr size_t field_name_len = 16;
     switch (escaping_rule)
@@ -93,6 +102,19 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
     }
 }
 
+bool isCSVSeparateColumnsTuple(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    /// A non-empty `custom_delimiter` means the field boundary is that string rather than
+    /// `csv.delimiter`, which is then stale, so the tuple stays inside one field.
+    if (!format_settings.csv.custom_delimiter.empty())
+        return false;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    return tuple_type && !tuple_type->getElements().empty()
+        && format_settings.csv.deserialize_separate_columns_into_tuple
+        && format_settings.csv.tuple_delimiter == format_settings.csv.delimiter;
+}
+
 bool deserializeFieldByEscapingRule(
     const DataTypePtr & type,
     const SerializationPtr & serialization,
@@ -118,7 +140,7 @@ bool deserializeFieldByEscapingRule(
                 serialization->deserializeTextQuoted(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::CSV:
-            if (parse_as_nullable)
+            if (parse_as_nullable && !isCSVSeparateColumnsTuple(type, format_settings))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextCSV(column, buf, format_settings);
@@ -380,9 +402,9 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
 
             auto type = tryInferDataTypeForSingleField(field, format_settings);
 
-            /// An integer starting with 0 must stay a String, because readIntTextUnsafe (see
-            /// ReadHelpers.h) reads the leading '0' as the whole value.
-            /// allow_number_leading_zeros (hive partitioning) opts out.
+            /// A leading zero carries information in these formats (zip codes, phone numbers), so a field
+            /// that starts with one and infers an integer stays a `String`. `allow_number_leading_zeros`
+            /// (hive) opts out.
             if (type && field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros
                 && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
                 return std::make_shared<DataTypeString>();

@@ -39,7 +39,7 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 
     if (args.size() == 1)
     {
-        /// timeSeriesMetrics( [my_db.]my_time_series_table )
+        /// timeSeriesMetricFamilies( [my_db.]my_time_series_table )
         if (const auto * id = args[0]->as<ASTIdentifier>())
         {
             if (auto table_id = id->createTable())
@@ -54,12 +54,12 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 
         if (args.size() == 1)
         {
-            /// timeSeriesMetrics( 'my_time_series_table' )
+            /// timeSeriesMetricFamilies( 'my_time_series_table' )
             time_series_storage_id.table_name = checkAndGetLiteralArgument<String>(args[0], "table_name");
         }
         else
         {
-            /// timeSeriesMetrics( 'mydb', 'my_time_series_table' )
+            /// timeSeriesMetricFamilies( 'mydb', 'my_time_series_table' )
             time_series_storage_id.database_name = checkAndGetLiteralArgument<String>(args[0], "database_name");
             time_series_storage_id.table_name = checkAndGetLiteralArgument<String>(args[1], "table_name");
         }
@@ -163,29 +163,35 @@ SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 
-    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Metrics>>(
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::MetricFamilies>>(
         {.description = R"DOCS_MD(
-`timeSeriesMetrics(db_name.time_series_table)` - Returns the [metrics](/reference/engines/table-engines/integrations/time-series#metrics-table) table
+`timeSeriesMetricFamilies(db_name.time_series_table)` - Returns the [metric families](/reference/engines/table-engines/integrations/time-series#metric-families-table) table
 used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine:
 
 ```sql
-CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS metrics_table
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRIC FAMILIES metric_families_table
 ```
 
-The function also works if the _metrics_ table is inner:
+The function also works if the _metric families_ table is inner:
 
 ```sql
-CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRIC FAMILIES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
 ```
 
 The following queries are equivalent:
 
 ```sql
-SELECT * FROM timeSeriesMetrics(db_name.time_series_table);
-SELECT * FROM timeSeriesMetrics('db_name.time_series_table');
-SELECT * FROM timeSeriesMetrics('db_name', 'time_series_table');
+SELECT * FROM timeSeriesMetricFamilies(db_name.time_series_table);
+SELECT * FROM timeSeriesMetricFamilies('db_name.time_series_table');
+SELECT * FROM timeSeriesMetricFamilies('db_name', 'time_series_table');
 ```
+
+<Note>
+The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which is kept for backwards compatibility.
+</Note>
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
+    factory.registerAlias("timeSeriesMetrics", "timeSeriesMetricFamilies");
 
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
@@ -205,8 +211,11 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
 - `db_name` - The name of the database where a TimeSeries table is located.
 - `time_series_table` - The name of a TimeSeries table.
 - `instant_query` - An instant selector written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors), without `@` or `offset` modifiers.
-- `min_time - Start timestamp, inclusive.
-- `max_time - End timestamp, inclusive.
+- `min_time` - Start timestamp, inclusive.
+- `max_time` - End timestamp, inclusive.
+
+`min_time` and `max_time` can have fractions of a second even if the timestamps in the table are whole seconds:
+the function selects the samples with `min_time <= timestamp <= max_time` exactly, without rounding the bounds to the type of the timestamps.
 
 ## Returned value {#returned-value}
 
@@ -241,18 +250,24 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 - `db_name` - The name of the database where a TimeSeries table is located.
 - `time_series_table` - The name of a TimeSeries table.
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
-- `evaluation_time - The evaluation timestamp. To evaluate a query at the current time, use `now()` as `evaluation_time`.
+- `evaluation_time` - The evaluation timestamp, with millisecond or finer precision. To evaluate a query at the current time, use `now()` as `evaluation_time`.
 
 ## Returned value {#returned-value}
 
-The function can returns different columns depending on the result type of the query passed to parameter `promql_query`:
+The function returns different columns depending on the result type of the query passed to parameter `promql_query`:
 
 | Result Type | Result Columns | Example |
 |-------------|----------------|---------|
-| vector      | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType | prometheusQuery(mytable, 'up') |
-| matrix      | tags Array(Tuple(String, String)), time_series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, 'up[1m]') |
-| scalar      | scalar ValueType | prometheusQuery(mytable, '1h30m') |
-| string      | string String | prometheusQuery(mytable, '"abc"') |
+| vector      | tags Array(Tuple(String, String)), timestamp DateTime64(S, TZ), value Float64 | prometheusQuery(mytable, 'up') |
+| matrix      | tags Array(Tuple(String, String)), samples Array(Tuple(DateTime64(S, TZ), Float64)) | prometheusQuery(mytable, 'up[1m]') |
+| scalar      | timestamp DateTime64(S, TZ), value Float64 | prometheusQuery(mytable, '1h30m') |
+| string      | timestamp DateTime64(S, TZ), value String | prometheusQuery(mytable, '"abc"') |
+
+The values are always `Float64` regardless of the type of the values in the TimeSeries table. The scale `S` of the timestamps is the scale
+of the timestamps in the table, but not less than 3 (milliseconds). The time zone `TZ` is the time zone of `evaluation_time` if it has
+type `DateTime` or `DateTime64` with a time zone, otherwise it is the time zone of the timestamps in the table.
+
+The `samples` column is named `time_series` if the `TimeSeries` table has [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 2 or earlier.
 
 ## Supported PromQL Features {#supported-promql-features}
 
@@ -264,27 +279,30 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
-| Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
-| Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `first_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `predict_linear` |
+| Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
+| Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
-| Type     | `scalar`, `vector` |
+| Label | `label_replace`, `label_join` |
+| Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other    | `time`, `pi` |
+| Other | `time`, `pi`, `absent` |
 
-**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
+**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+
+**Note**: `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
-All arithmetic (`+`, `-`, `*`, `/`, `%`, `^`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`), and logical (`and`, `or`, `unless`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
+Arithmetic (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) and comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
+
+Logical set operators `and`, `or`, and `unless`, with `on()`/`ignoring()` modifiers.
 
 Unary operators `+` and `-`.
 
 ### Aggregation Operators {#aggregation-operators}
 
-`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
-
-Not yet supported: `count_values`.
+`sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
 
 ## Example {#example}
 
@@ -309,20 +327,26 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 - `db_name` - The name of the database where a TimeSeries table is located.
 - `time_series_table` - The name of a TimeSeries table.
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
-- `start_time` - The start time of the evaluation range.
-- `end_time` - The end time of the evaluation range.
+- `start_time` - The start time of the evaluation range, with millisecond or finer precision.
+- `end_time` - The end time of the evaluation range, with millisecond or finer precision.
 - `step` - The step used to iterate the evaluation time from `start_time` to `end_time` (inclusively).
 
 ## Returned value {#returned-value}
 
-The function can returns different columns depending on the result type of the query passed to parameter `promql_query`:
+The function returns different columns depending on the result type of the query passed to parameter `promql_query`:
 
 | Result Type | Result Columns | Example |
 |-------------|----------------|---------|
-| vector      | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType | prometheusQuery(mytable, 'up') |
-| matrix      | tags Array(Tuple(String, String)), time_series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, 'up[1m]') |
-| scalar      | scalar ValueType | prometheusQuery(mytable, '1h30m') |
-| string      | string String | prometheusQuery(mytable, '"abc"') |
+| vector      | tags Array(Tuple(String, String)), timestamp DateTime64(S, TZ), value Float64 | prometheusQuery(mytable, 'up') |
+| matrix      | tags Array(Tuple(String, String)), samples Array(Tuple(DateTime64(S, TZ), Float64)) | prometheusQuery(mytable, 'up[1m]') |
+| scalar      | timestamp DateTime64(S, TZ), value Float64 | prometheusQuery(mytable, '1h30m') |
+| string      | timestamp DateTime64(S, TZ), value String | prometheusQuery(mytable, '"abc"') |
+
+The values are always `Float64` regardless of the type of the values in the TimeSeries table. The scale `S` of the timestamps is the scale
+of the timestamps in the table, but not less than 3 (milliseconds). The time zone `TZ` is the time zone of `start_time` and `end_time`
+if they have type `DateTime` or `DateTime64` with the same time zone, otherwise it is the time zone of the timestamps in the table.
+
+The `samples` column is named `time_series` if the `TimeSeries` table has [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 2 or earlier.
 
 ## Supported PromQL Features {#supported-promql-features}
 
@@ -334,27 +358,30 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
-| Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
-| Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `first_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `predict_linear` |
+| Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
+| Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
-| Type     | `scalar`, `vector` |
+| Label | `label_replace`, `label_join` |
+| Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other    | `time`, `pi` |
+| Other | `time`, `pi`, `absent` |
 
-**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
+**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+
+**Note**: `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
-All arithmetic (`+`, `-`, `*`, `/`, `%`, `^`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`), and logical (`and`, `or`, `unless`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
+Arithmetic (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) and comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
+
+Logical set operators `and`, `or`, and `unless`, with `on()`/`ignoring()` modifiers.
 
 Unary operators `+` and `-`.
 
 ### Aggregation Operators {#aggregation-operators}
 
-`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
-
-Not yet supported: `count_values`.
+`sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
 
 ## Example {#example}
 

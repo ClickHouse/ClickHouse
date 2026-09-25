@@ -162,6 +162,26 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
+namespace
+{
+
+/// The query text comes from the dictionary definition (possibly a `CREATE DICTIONARY` written by a user
+/// who has no other privileges), and for a local source it is executed as an `internal` query on behalf
+/// of the configured user. So only a `SELECT` is allowed: any other statement (`CREATE TABLE`, ...)
+/// would run with the access checks of `internal` queries skipped.
+void checkQueryIsSelect(const String & query, const char * description, const char * error_message)
+{
+    const char * query_begin = query.data();
+    const char * query_end = query.data() + query.size();
+    ParserQuery parser(query_end);
+    ASTPtr ast = parseQuery(parser, query_begin, query_end, description, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    if (!ast || ast->getQueryKind() != IAST::QueryKind::Select)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
+}
+
+}
+
 BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 {
     BlockIO io;
@@ -173,13 +193,7 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
     auto context_copy = Context::createCopy(context);
     context_copy->makeQueryContext();
 
-    const char * query_begin = query.data();
-    const char * query_end = query.data() + query.size();
-    ParserQuery parser(query_end);
-    ASTPtr ast = parseQuery(parser, query_begin, query_end, "Query for ClickHouse dictionary", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    if (!ast || ast->getQueryKind() != IAST::QueryKind::Select)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT query can be used as a dictionary source");
+    checkQueryIsSelect(query, "Query for ClickHouse dictionary", "Only SELECT query can be used as a dictionary source");
 
     if (configuration.is_local)
     {
@@ -204,6 +218,8 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
 {
     LOG_TRACE(log, "Performing invalidate query");
+
+    checkQueryIsSelect(request, "Invalidate query for ClickHouse dictionary", "Only SELECT query can be used as a dictionary invalidate query");
 
     /// Copy context because results of scalar subqueries potentially could be cached
     auto context_copy = Context::createCopy(context);
@@ -329,14 +345,81 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         String dictionary_name = config.getString(".dictionary.name", "");
         String dictionary_database = config.getString(".dictionary.database", "");
 
-        if (dictionary_name == configuration->table && dictionary_database == configuration->db)
+        /// A dictionary must not read itself - it would recurse. That can only happen when the source is
+        /// this very server, so the name comparison is meaningful only for a local source: a table on
+        /// another server that merely happens to share the dictionary's database and table name is a
+        /// different object, and reading it is exactly what the dictionary is for.
+        if (configuration->is_local && dictionary_name == configuration->table && dictionary_database == configuration->db)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouseDictionarySource table cannot be dictionary table");
 
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context);
     };
 
     factory.registerSource("clickhouse", create_table_source, Documentation{
-        .description = "Reads dictionary data from a table on a local or remote ClickHouse server.",
+        .description = R"DOCS_MD(
+# ClickHouse dictionary source
+
+Example of settings:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+SOURCE(CLICKHOUSE(
+    host 'example01-01-1'
+    port 9000
+    user 'default'
+    password ''
+    db 'default'
+    table 'ids'
+    where 'id=10'
+    secure 1
+    query 'SELECT id, value_1, value_2 FROM default.ids'
+));
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<source>
+    <clickhouse>
+        <host>example01-01-1</host>
+        <port>9000</port>
+        <user>default</user>
+        <password></password>
+        <db>default</db>
+        <table>ids</table>
+        <where>id=10</where>
+        <secure>1</secure>
+        <query>SELECT id, value_1, value_2 FROM default.ids</query>
+    </clickhouse>
+</source>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+Setting fields:
+
+| Setting | Description |
+|---------|-------------|
+| `host` | The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](/reference/engines/table-engines/special/distributed) table and enter it in subsequent configurations. |
+| `port` | The port on the ClickHouse server. |
+| `user` | Name of the ClickHouse user. |
+| `password` | Password of the ClickHouse user. |
+| `db` | Name of the database. |
+| `table` | Name of the table. |
+| `where` | The selection criteria. Optional. |
+| `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](/reference/statements/create/dictionary/lifetime). |
+| `secure` | Use SSL for connection. |
+| `query` | The custom query. Optional. |
+
+<Note>
+The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
+</Note>
+)DOCS_MD",
         .syntax = "SOURCE(CLICKHOUSE(host 'host' port 9000 user 'default' password '' db 'db' table 'table'))",
         .related = {"mysql", "postgresql"}});
 }

@@ -44,9 +44,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 المعلمات الاختيارية:
 
-* `poll_timeout_ms` - مهلة عملية استطلاع واحدة من ملف السجل. القيمة الافتراضية: [stream&#95;poll&#95;timeout&#95;ms](/ar/reference/settings/session-settings#stream_poll_timeout_ms).
-* `poll_max_batch_size` — الحد الأقصى لعدد السجلات التي يمكن استطلاعها في عملية استطلاع واحدة. القيمة الافتراضية: [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size).
-* `max_block_size` — الحد الأقصى لحجم الدفعة (بعدد السجلات) لعملية الاستطلاع. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size).
+* `poll_timeout_ms` - مهلة عملية استطلاع واحدة من ملف السجل. القيمة الافتراضية: [stream&#95;poll&#95;timeout&#95;ms](/ar/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+* `poll_max_batch_size` — الحد الأقصى لعدد السجلات التي يمكن استطلاعها في عملية استطلاع واحدة. القيمة الافتراضية: [max&#95;block&#95;size](/ar/reference/settings/session-settings/max#max_block_size).
+* `max_block_size` — الحد الأقصى لحجم الدفعة (بعدد السجلات) لعملية الاستطلاع. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `max_threads` - الحد الأقصى لعدد الخيوط المستخدمة لتحليل الملفات، والقيمة الافتراضية هي 0، ما يعني أن العدد سيكون max(1, physical&#95;cpu&#95;cores / 4).
 * `poll_directory_watch_events_backoff_init` - مدة الانتظار الأولية لخيط مراقبة أحداث الدليل. القيمة الافتراضية: `500`.
 * `poll_directory_watch_events_backoff_max` - مدة الانتظار القصوى لخيط مراقبة أحداث الدليل. القيمة الافتراضية: `32000`.

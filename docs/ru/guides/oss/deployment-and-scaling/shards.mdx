@@ -109,7 +109,7 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 Остальное работает [так же](#select-forwarding), как и в конфигурациях без реплик, и на диаграмме выше не показано. Сервер ClickHouse, на котором размещена изначально выбранная distributed таблица, собирает все локальные результаты, объединяет их в итоговый глобальный результат и возвращает его отправителю запроса.
 
-Обратите внимание, что в ClickHouse можно настроить стратегию перенаправления запросов для ②. По умолчанию — в отличие от диаграммы выше — distributed таблица [предпочитает](/ru/reference/settings/session-settings#prefer_localhost_replica) локальную реплику, если она доступна, но можно использовать и другие [стратегии](/ru/reference/settings/session-settings#load_balancing) балансировки нагрузки.
+Обратите внимание, что в ClickHouse можно настроить стратегию перенаправления запросов для ②. По умолчанию — в отличие от диаграммы выше — distributed таблица [предпочитает](/ru/reference/settings/session-settings/prefer#prefer_localhost_replica) локальную реплику, если она доступна, но можно использовать и другие [стратегии](/ru/reference/settings/session-settings/load-balancing#load_balancing) балансировки нагрузки.
 
 <div id="where-to-find-more-information">
   ## Где найти дополнительную информацию

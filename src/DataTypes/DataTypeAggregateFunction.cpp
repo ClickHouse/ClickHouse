@@ -2,6 +2,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Core/ProtocolDefines.h>
 
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
@@ -9,6 +10,7 @@
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/transformTypesRecursively.h>
@@ -86,9 +88,26 @@ bool DataTypeAggregateFunction::isVersioned() const
     return function->isVersioned();
 }
 
-void DataTypeAggregateFunction::updateVersionFromRevision(size_t revision, bool if_empty) const
+String DataTypeAggregateFunction::formatParameters(const IAggregateFunction & function, const Array & parameters)
 {
-    setVersion(function->getVersionFromRevision(revision), if_empty);
+    if (parameters.empty())
+        return {};
+
+    const bool with_types = function.shouldPrintParametersWithTypes();
+
+    WriteBufferFromOwnString stream;
+    stream << '(';
+    for (size_t i = 0, size = parameters.size(); i < size; ++i)
+    {
+        if (i)
+            stream << ", ";
+        if (with_types)
+            stream << applyVisitor(FieldVisitorToCastedLiteral(), parameters[i]);
+        else
+            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+    }
+    stream << ')';
+    return stream.str();
 }
 
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
@@ -101,32 +120,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (with_version && data_type_version)
         stream << data_type_version << ", ";
     stream << function->getName();
-
-    if (!parameters.empty())
-    {
-        stream << '(';
-        if (function->shouldPrintParametersWithTypes())
-        {
-            FieldVisitorToCastedLiteral visitor;
-            for (size_t i = 0, size = parameters.size(); i < size; ++i)
-            {
-                if (i)
-                    stream << ", ";
-                stream << applyVisitor(visitor, parameters[i]);
-            }
-        }
-        else
-        {
-            FieldVisitorToString visitor;
-            for (size_t i = 0, size = parameters.size(); i < size; ++i)
-            {
-                if (i)
-                    stream << ", ";
-                stream << applyVisitor(visitor, parameters[i]);
-            }
-        }
-        stream << ')';
-    }
+    stream << formatParameters(*function, parameters);
 
     for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
@@ -198,6 +192,19 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
             return false;
 
     return true;
+}
+
+bool DataTypeAggregateFunction::nameMatchesState(const String & state_type_name, const AggregateFunctionPtr & function, size_t version)
+{
+    auto state_type = DataTypeFactory::instance().tryGet(state_type_name);
+    const auto * aggregate_state_type = typeid_cast<const DataTypeAggregateFunction *>(state_type.get());
+    if (!aggregate_state_type)
+        return false;
+
+    if (aggregate_state_type->getVersion() != version)
+        return false;
+
+    return strictEquals(aggregate_state_type->function->getNormalizedStateType(), function->getNormalizedStateType());
 }
 
 void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
@@ -335,21 +342,83 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 
-void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+/// `choose_version` returns the version to pin on a versioned aggregate function type, or nothing
+/// to leave the type untouched.
+static void setVersionToAggregateFunctionsImpl(
+    DataTypePtr & type, bool if_empty, const std::function<std::optional<size_t>(const AggregateFunctionPtr &)> & choose_version)
 {
-    auto callback = [revision, if_empty](DataTypePtr & column_type)
+    auto callback = [&choose_version, if_empty](DataTypePtr & column_type)
     {
         const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
-        if (aggregate_function_type && aggregate_function_type->isVersioned())
+        if (!aggregate_function_type || !aggregate_function_type->isVersioned())
+            return;
+
+        if (if_empty && aggregate_function_type->hasExplicitVersion())
+            return;
+
+        const auto function = aggregate_function_type->getFunction();
+        const std::optional<size_t> chosen_version = choose_version(function);
+        if (!chosen_version)
+            return;
+        const size_t new_version = *chosen_version;
+
+        if (aggregate_function_type->hasExplicitVersion() && aggregate_function_type->getVersion() == new_version)
+            return;
+
+        auto new_type = std::make_shared<DataTypeAggregateFunction>(
+            function, aggregate_function_type->getArgumentsDataTypes(), aggregate_function_type->getParameters(), new_version);
+
+        /// A custom name is part of the observable type and must survive the replacement. The only
+        /// custom name an `AggregateFunction` type can carry is `SimpleAggregateFunction` over an
+        /// `AggregateFunction` argument.
+        if (column_type->hasCustomName())
         {
-            if (revision)
-                aggregate_function_type->updateVersionFromRevision(*revision, if_empty);
-            else
-                aggregate_function_type->setVersion(0, if_empty);
+            const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column_type->getCustomName());
+            if (!simple)
+                return;
+
+            /// The custom name keeps its own copy of the argument types, and for
+            /// `SimpleAggregateFunction` over an `AggregateFunction` that argument is the state type
+            /// itself - both the printed name and the binary type encoding come from it. It has to be
+            /// given the same version as the storage type, otherwise the announced type and the payload
+            /// disagree: a downgraded state would still be announced as the newer version and the
+            /// receiver would read one version too many out of it.
+            DataTypes new_argument_types = simple->getArgumentsDataTypes();
+            for (auto & argument_type : new_argument_types)
+                setVersionToAggregateFunctionsImpl(argument_type, if_empty, choose_version);
+
+            new_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomSimpleAggregateFunction>(
+                simple->getFunction(), new_argument_types, simple->getParameters())));
         }
+
+        column_type = new_type;
     };
 
     callOnNestedSimpleTypes(type, callback);
+}
+
+void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+{
+    setVersionToAggregateFunctionsImpl(type, if_empty, [revision](const AggregateFunctionPtr & function)
+    {
+        return std::optional<size_t>(revision ? function->getVersionFromRevision(*revision) : 0);
+    });
+}
+
+void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type)
+{
+    setVersionToAggregateFunctionsImpl(type, /* if_empty= */ true, [](const AggregateFunctionPtr & function) -> std::optional<size_t>
+    {
+        /// Pin only a version that is newer than the default the function would fall back to anyway:
+        /// a function whose default version already covers the current revision keeps persisting the
+        /// unpinned type it always had, and a combinator that does not map revisions to versions
+        /// (`getVersionFromRevision` returning 0 while the default is higher) must not have its
+        /// storage format downgraded by the pin.
+        const size_t current_version = function->getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION);
+        if (current_version > function->getDefaultVersion())
+            return current_version;
+        return std::nullopt;
+    });
 }
 
 
@@ -425,11 +494,14 @@ formats.
 There is a special Session level setting `aggregate_function_input_format` that allows to build state from the input values.
 It supports the following formats:
 
-- `state` - binary string with the serialized state (the default).
+- `state` - the serialized state (the default).
 If you dump data into, for example, the `TabSeparated` format with a `SELECT`
 query, then this dump can be loaded back using the `INSERT` query.
-- `value` - the format will expect a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them; that will be deserialized to form the relevant state
-- `array` - the format will expect an Array of values, as described in the values option above; all the elements of the array will be aggregated to form the state
+- `value` - the format expects a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them; the value is aggregated to form the state.
+- `array` - the format expects an Array of values, as described in the `value` option above; all the elements of the array are aggregated to form the state.
+
+In the `value` and `array` modes, the column is read as if it had the type of the values (`T`, `Tuple(T1, T2)`, or an `Array` of them),
+in the representation the input format uses for that type. This works the same way in every input format, from `CSV` and `JSONEachRow` to `RowBinary` and `Parquet`.
 
 ### Data Selection {#data-selection}
 

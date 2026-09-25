@@ -1,15 +1,15 @@
 {
-  "group": "استخدم سحابتك الخاصة",
+  "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "نظرة عامة",
+      "group": "Overview",
       "pages": [
-        "ar/products/bring-your-own-cloud/overview/overview",
+        "ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "ar/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "التهيئة",
+      "group": "Configuration",
       "pages": [
         "ar/products/bring-your-own-cloud/configuration/configurations",
         "ar/products/bring-your-own-cloud/configuration/connect",
@@ -17,31 +17,50 @@
       ]
     },
     {
-      "group": "الإعداد",
+      "group": "Onboarding",
       "pages": [
-        "ar/products/bring-your-own-cloud/onboarding/aws",
         "ar/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "التخصيص",
+          "group": "Customization",
           "pages": [
             "ar/products/bring-your-own-cloud/onboarding/customization-aws",
             "ar/products/bring-your-own-cloud/onboarding/customization-gcp"
           ]
         },
         {
-          "group": "الشبكة",
+          "group": "Network",
           "pages": [
+            "ar/products/bring-your-own-cloud/onboarding/network",
             "ar/products/bring-your-own-cloud/onboarding/network-aws",
-            "ar/products/bring-your-own-cloud/onboarding/network-gcp"
-          ],
-          "root": "ar/products/bring-your-own-cloud/onboarding/network"
+            "ar/products/bring-your-own-cloud/onboarding/network-gcp",
+            "ar/products/bring-your-own-cloud/onboarding/network-azure"
+          ]
         },
-        "ar/products/bring-your-own-cloud/onboarding/new-region",
-        "ar/products/bring-your-own-cloud/onboarding/azure-private-preview"
+        "ar/products/bring-your-own-cloud/onboarding/new-region"
       ]
     },
     {
-      "group": "المرجع",
+      "group": "Connector",
+      "pages": [
+        "ar/products/bring-your-own-cloud/connector/overview",
+        "ar/products/bring-your-own-cloud/connector/onboarding",
+        "ar/products/bring-your-own-cloud/connector/architecture",
+        "ar/products/bring-your-own-cloud/connector/support-sessions",
+        "ar/products/bring-your-own-cloud/connector/configuration",
+        "ar/products/bring-your-own-cloud/connector/operations",
+        {
+          "group": "Reference",
+          "pages": [
+            "ar/products/bring-your-own-cloud/connector/reference/cli",
+            "ar/products/bring-your-own-cloud/connector/reference/configuration",
+            "ar/products/bring-your-own-cloud/connector/reference/faq",
+            "ar/products/bring-your-own-cloud/connector/reference/privilege-model"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Reference",
       "pages": [
         "ar/products/bring-your-own-cloud/reference/network-security",
         "ar/products/bring-your-own-cloud/reference/privilege",
@@ -50,8 +69,8 @@
         "ar/products/bring-your-own-cloud/reference/billable-aws-services",
         "ar/products/bring-your-own-cloud/reference/cost-model-aws",
         "ar/products/bring-your-own-cloud/reference/aws-service-limits",
-        "ar/products/bring-your-own-cloud/reference/faq",
-        "ar/products/bring-your-own-cloud/reference/faq-aws"
+        "ar/products/bring-your-own-cloud/reference/security-shared-responsibility",
+        "ar/products/bring-your-own-cloud/reference/faq"
       ]
     }
   ]

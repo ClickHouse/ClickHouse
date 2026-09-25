@@ -10,11 +10,13 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 
@@ -44,14 +46,6 @@ StorageAlias::StorageAlias(
     , target_database(target_database_)
     , target_table(target_table_)
 {
-    StorageID target_id(target_database, target_table);
-    if (table_id_ == target_id)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
-
-    // Disallow target is also an alias
-    auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, context_);
-    if (target_storage && target_storage->getName() == "Alias")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
 }
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
@@ -65,6 +59,63 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     }
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+}
+
+bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
+{
+    if (!query_context)
+        return false;
+
+    auto access = query_context->getAccess();
+    if (column_name.empty())
+        return access->isGranted(access_type, target_database, target_table);
+
+    return access->isGranted(access_type, target_database, target_table, column_name);
+}
+
+NameSet StorageAlias::filterColumnsGrantedThroughChain(
+    ContextPtr query_context, AccessType access_type, const Names & column_names) const
+{
+    /// `getInMemoryMetadataPtr` forwards through nested aliases, so a caller reads the metadata of the
+    /// chain's last table, and `read` authorizes every hop by re-entering `read` on each one.
+    NameSet granted(column_names.begin(), column_names.end());
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> authorized;
+    const StorageAlias * alias = this;
+    /// Owns the storage `alias` points into, from the second hop on.
+    StoragePtr alias_holder;
+
+    while (!granted.empty())
+    {
+        /// A table-level grant covers every column of that table, so one table-level question answers
+        /// the whole per-column pass. Asking it is only a saving where it replaces more than one check.
+        const bool whole_table_granted
+            = granted.size() > 1 && alias->isDeclaredTargetGranted(query_context, access_type, {});
+
+        if (!whole_table_granted)
+        {
+            std::erase_if(granted, [&](const String & column_name)
+            { return !alias->isDeclaredTargetGranted(query_context, access_type, column_name); });
+            if (granted.empty())
+                break;
+        }
+
+        /// A cyclic chain is loadable state, so a repeated name means there is no final table left to
+        /// reach, and every name in the chain is authorized.
+        if (!authorized.emplace(alias->target_database, alias->target_table).second)
+            break;
+
+        alias_holder = alias->tryGetTargetTable();
+        alias = alias_holder ? alias_holder->as<StorageAlias>() : nullptr;
+        if (!alias)
+            break;
+    }
+
+    return granted;
+}
+
+bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
+{
+    return !filterColumnsGrantedThroughChain(query_context, access_type, {column_name}).empty();
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline
@@ -247,17 +298,27 @@ SinkToStoragePtr StorageAlias::write(
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & /*table_lock_holder*/,
+    DDLGuardPtr & ddl_guard)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
 
-    /// ALTER through alias on a table in a Replicated database is not supported
-    /// when the alias and target are in different databases. This is because the
-    /// DDL worker path is bypassed and metadata changes won't be replicated to
-    /// other replicas in ZooKeeper. If both are in the same Replicated database,
-    /// the DDL worker handles the ALTER correctly.
+    /// Read under the alias guard: a concurrent RENAME of the alias can change it after the release.
+    auto alias_database_name = getStorageID().database_name;
+
+    /// The forwarded ALTER writes the target's metadata, so guard the target, not the alias.
+    /// Release the alias guard first to avoid stalling against a RENAME/EXCHANGE that locks both
+    /// names. The alias stays alive: the share lock from InterpreterAlterQuery blocks DROP.
+    ddl_guard.reset();
+    auto target_ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
+        target_storage, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    /// ALTER through alias on a table in a Replicated database is not supported when the alias
+    /// and target are in different databases, because the DDL worker path is bypassed and the
+    /// metadata change would not be replicated. Check under the target's guard, so a concurrent
+    /// RENAME cannot move the target into a Replicated database after the check.
     auto target_storage_id = target_storage->getStorageID();
-    if (getStorageID().database_name != target_storage_id.database_name)
+    if (alias_database_name != target_storage_id.database_name)
     {
         auto target_db = DatabaseCatalog::instance().tryGetDatabase(target_storage_id.database_name);
         if (target_db && target_db->getEngineName() == "Replicated")
@@ -270,18 +331,32 @@ void StorageAlias::alter(
         }
     }
 
-    target_storage->alter(params, local_context, table_lock_holder);
+    auto target_alter_lock = target_storage->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    target_storage->alter(params, local_context, target_alter_lock, target_ddl_guard);
 }
 
 void StorageAlias::truncate(
     const ASTPtr & query,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    TableExclusiveLockHolder & table_lock_holder)
+    TableExclusiveLockHolder & /*table_lock_holder*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
+
+    /// The target is what executes the truncate, so it carries the lock its own engine needs, and the
+    /// caller's holder is the alias's, not the target's. A MergeTree removes its data under its own
+    /// locks; every other engine needs its readers excluded while its data goes away.
+    TableExclusiveLockHolder target_excl_lock;
+    TableLockHolder target_shared_lock;
+    if (target_storage->isMergeTree())
+        target_shared_lock = target_storage->lockForShare(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    else
+        target_excl_lock = target_storage->lockExclusively(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
+    target_storage->truncate(query, target_metadata, local_context, target_excl_lock);
 }
 
 bool StorageAlias::optimize(
@@ -330,7 +405,20 @@ void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_co
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    return target_storage->updateLightweight(commands, local_context);
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    auto pipeline = target_storage->updateLightweight(commands, local_context);
+
+    /// The caller locks the alias, not the target, so the target needs its own share lock held
+    /// until the pipeline has committed the patch part.
+    QueryPlanResourceHolder target_resources;
+    target_resources.storage_holders.emplace_back(target_storage);
+    target_resources.table_locks.emplace_back(std::move(lock));
+    pipeline.addResources(std::move(target_resources));
+
+    return pipeline;
 }
 
 CancellationCode StorageAlias::killMutation(const String & mutation_id)
@@ -398,12 +486,61 @@ std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    return getTargetTable()->getStorageSnapshot(metadata_snapshot, query_context);
+    /// Bind the target to a named local so that one owning pointer spans both calls, and hand it to the
+    /// snapshot: getTargetTable resolves through DatabaseCatalog and returns a temporary, while our
+    /// caller owns and share-locks this alias rather than the target the snapshot refers to.
+    StoragePtr target = getTargetTable();
+    auto snapshot = target->getStorageSnapshot(metadata_snapshot, query_context);
+    return snapshot->withStorageHolder(std::move(target));
 }
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
+    StoragePtr target = getTargetTable();
+    auto snapshot = target->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
+    return snapshot->withStorageHolder(std::move(target));
+}
+
+bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    if (!storage_snapshot)
+        return false;
+
+    bool has_select_access = false;
+    for (const auto & column : storage_snapshot->metadata->getColumns())
+    {
+        if (isTargetTableGranted(query_context, AccessType::SELECT, column.name))
+        {
+            has_select_access = true;
+            break;
+        }
+    }
+
+    if (!has_select_access)
+        return false;
+
+    auto target = tryGetTargetTable();
+    return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
+}
+
+/// The delegation below re-enters this method on an Alias target, so each hop asks for its own declared
+/// target and the conjunction of those answers is the whole chain.
+std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
+{
+    if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+        return {};
+
+    auto target = tryGetTargetTable();
+    return target ? target->totalRows(query_context) : std::optional<UInt64>{};
+}
+
+std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
+{
+    if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+        return {};
+
+    auto target = tryGetTargetTable();
+    return target ? target->totalBytes(query_context) : std::optional<UInt64>{};
 }
 
 void StorageAlias::rename(const String & /* new_path_to_table_data */, const StorageID & new_table_id)
@@ -488,6 +625,26 @@ void registerStorageAlias(StorageFactory & factory)
                 "Storage Alias does not support explicit column definitions");
         }
 
+        if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+            local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
+
+        /// The restrictions below read the catalog, so they may only judge freshly supplied input:
+        /// an already accepted definition must stay loadable, because a rejection while loading
+        /// metadata fails the whole load rather than the one table. They run after the access check
+        /// so that a caller without access to the target cannot learn its engine from the message.
+        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        if (fresh_user_definition)
+        {
+            StorageID target_id(target_database, target_table);
+            if (args.table_id == target_id)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
+
+            auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, local_context);
+            if (target_storage && target_storage->getName() == "Alias")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
+        }
+
         return std::make_shared<StorageAlias>(
             args.table_id,
             local_context,
@@ -517,18 +674,18 @@ CREATE TABLE [db_name.]alias_name
 ENGINE = Alias(target_db, target_table)
 ```
 
-:::note
+<Note>
 The `Alias` table does not support explicit column definitions. Columns are automatically inherited from the target table. This ensures that the alias always matches the target table's schema.
-:::
+</Note>
 
 ## Engine Parameters {#engine-parameters}
 
 - **`target_db (optional)`** — Name of the database containing the target table.
 - **`target_table`** — Name of the target table.
 
-:::note
+<Note>
 When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
-:::
+</Note>
 
 ## Supported Operations {#supported-operations}
 
