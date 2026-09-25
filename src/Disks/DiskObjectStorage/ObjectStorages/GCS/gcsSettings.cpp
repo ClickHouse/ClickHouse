@@ -601,10 +601,10 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     options.set<gc::rest_internal::DownloadStallTimeoutOption>(request_timeout);
     options.set<::ClickHouse::PocoRestConnectTimeoutOption>(std::chrono::milliseconds(settings.connect_timeout_ms));
 
-    /// `max_connections` of the shared argument grammar. The S3-compatibility path hands it to
-    /// `maxConnections` of the AWS client configuration; the native transport bounds its per-endpoint
-    /// session pool with it. Accepting the key and then keeping the transport's own default would let
-    /// switching `use_native_gcs` on silently drop an operator's connection cap.
+    /// `max_connections` of the shared argument grammar. It is obsolete for the S3-compatibility path,
+    /// whose connections come from the global pool bounded by the `disk_connections_*` and
+    /// `storage_connections_*` server settings, but the native transport keeps its own per-client
+    /// session pool, and this bounds it.
     if (settings.max_connections)
         options.set<gc::rest_internal::ConnectionPoolSizeOption>(static_cast<std::size_t>(settings.max_connections));
 

@@ -39,7 +39,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsUInt64 connect_timeout_ms;
     extern const S3AuthSettingsUInt64 request_timeout_ms;
-    extern const S3AuthSettingsUInt64 max_connections;
+    /// Obsolete for the S3-compatibility client, which ignores it, but the native client still sizes
+    /// its session pool with it. The settings style check does not see `MAKE_OBSOLETE` declarations.
+    extern const S3AuthSettingsUInt64 max_connections; // NOLINT
     extern const S3AuthSettingsUInt64 http_keep_alive_timeout;
     extern const S3AuthSettingsUInt64 http_keep_alive_max_requests;
 }
