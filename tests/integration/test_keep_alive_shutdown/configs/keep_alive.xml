@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- Large value so a regression (shutdown blocking for the whole timeout)
+         is clearly distinguishable from a fast shutdown. -->
+    <keep_alive_timeout>50</keep_alive_timeout>
+    <interserver_http_port>9009</interserver_http_port>
+</clickhouse>
