@@ -78,13 +78,14 @@ TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
     ExecutingGraph graph(processors, /* profile_processors_ = */ false);
     ExecutingGraph::Queue queue;
     ExecutingGraph::Queue async_queue;
+    Processors removed;
 
     /// The initialization prepares both childless expanders and expands the first of them; recording
     /// its new sink fails. The expander's output is connected to that sink by then.
     FailPointInjection::enableFailPoint("executing_graph_add_node_fail");
     try
     {
-        graph.initializeExecution(queue, async_queue);
+        graph.initializeExecution(queue, async_queue, removed);
         FailPointInjection::disableFailPoint("executing_graph_add_node_fail");
         FAIL() << "the injected failure did not propagate";
     }
@@ -99,6 +100,6 @@ TEST(ExecutingGraphFailedExpansion, LaterExpansionBailsOutInsteadOfLogicalError)
     auto & not_expanded = first->expanded ? *second : *first;
 
     /// The other expansion must not walk the inconsistent graph; the query is being cancelled anyway.
-    EXPECT_EQ(graph.updateNode(not_expanded, queue, async_queue), ExecutingGraph::UpdateNodeStatus::Cancelled);
+    EXPECT_EQ(graph.updateNode(not_expanded, queue, async_queue, removed), ExecutingGraph::UpdateNodeStatus::Cancelled);
     EXPECT_TRUE(queue.empty());
 }
