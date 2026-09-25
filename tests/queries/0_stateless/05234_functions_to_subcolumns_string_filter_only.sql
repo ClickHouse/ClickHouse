@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET optimize_empty_string_comparisons = 1;
 
 DROP TABLE IF EXISTS test_string_filter_only;
 CREATE TABLE test_string_filter_only
@@ -57,6 +58,59 @@ PREWHERE notEmpty(s)
 ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0;
 
+-- Keep the default comparison rewrite enabled: comparisons must compose with
+-- the size-subcolumn rewrite even though the query still needs the full String.
+SELECT 'empty-string equality uses String size with full column';
+SELECT countIf(explain ILIKE '%s.size%') > 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s
+    FROM test_string_filter_only
+    PREWHERE s = ''
+    SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
+SELECT s, id
+FROM test_string_filter_only
+PREWHERE s = ''
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0;
+
+SELECT 'empty-string inequality uses String size with full column';
+SELECT countIf(explain ILIKE '%s.size%') > 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s
+    FROM test_string_filter_only
+    PREWHERE s != ''
+    SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
+SELECT s, id
+FROM test_string_filter_only
+PREWHERE s != ''
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0;
+
+SELECT 'reversed comparison in WHERE keeps the full String';
+SELECT s, id
+FROM test_string_filter_only
+WHERE '' <> s
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 1;
+
+SELECT 'comparisons without the subcolumn rewrite keep the same results';
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s
+    FROM test_string_filter_only
+    PREWHERE s != ''
+    SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0);
+SELECT s, id
+FROM test_string_filter_only
+PREWHERE s = ''
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0;
+SELECT s, id
+FROM test_string_filter_only
+PREWHERE s != ''
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0, optimize_move_to_prewhere = 0;
+
 DROP TABLE test_string_filter_only;
 
 DROP TABLE IF EXISTS test_string_filter_mixed;
@@ -103,6 +157,18 @@ PREWHERE notEmpty(s)
 ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0;
 
+SELECT 'empty-string comparisons on mixed legacy and size-stream parts';
+SELECT s, id
+FROM test_string_filter_mixed
+PREWHERE '' != s
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0;
+SELECT s, id
+FROM test_string_filter_mixed
+PREWHERE s = ''
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0;
+
 DROP TABLE test_string_filter_mixed;
 
 DROP TABLE IF EXISTS test_string_filter_multistep;
@@ -122,7 +188,7 @@ SETTINGS
 
 INSERT INTO test_string_filter_multistep VALUES (0, ''), (1, 'foo'), (2, 'bar'), (3, 'foo'), (4, '');
 
-SELECT 'legacy String size before full String in multi-step PREWHERE';
+SELECT 'legacy String size predicate written first in multi-step PREWHERE';
 SELECT id, s
 FROM test_string_filter_multistep
 PREWHERE notEmpty(s) AND id > 0 AND like(s, '%foo%')
@@ -132,7 +198,7 @@ SETTINGS
     optimize_functions_to_subcolumns = 1,
     optimize_move_to_prewhere = 0;
 
-SELECT 'legacy String full String before size in multi-step PREWHERE';
+SELECT 'legacy String full-String predicate written first in multi-step PREWHERE';
 SELECT id, s
 FROM test_string_filter_multistep
 PREWHERE like(s, '%foo%') AND id > 0 AND notEmpty(s)

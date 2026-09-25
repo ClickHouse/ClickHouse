@@ -11,14 +11,44 @@ optimization disabled keeps the original filter
 1
 1	hello
 3	world
+empty-string equality uses String size with full column
+1
+	0
+	2
+empty-string inequality uses String size with full column
+1
+hello	1
+world	3
+reversed comparison in WHERE keeps the full String
+hello	1
+world	3
+comparisons without the subcolumn rewrite keep the same results
+1
+	0
+	2
+hello	1
+world	3
 mixed table has sparse legacy and size-stream parts
 1	1	1
 mixed sparse legacy and size-stream parts remain correct
 9	legacy
 11	modern
-legacy String size before full String in multi-step PREWHERE
+empty-string comparisons on mixed legacy and size-stream parts
+legacy	9
+modern	11
+	0
+	1
+	2
+	3
+	4
+	5
+	6
+	7
+	8
+	10
+legacy String size predicate written first in multi-step PREWHERE
 1	foo
 3	foo
-legacy String full String before size in multi-step PREWHERE
+legacy String full-String predicate written first in multi-step PREWHERE
 1	foo
 3	foo

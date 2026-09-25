@@ -18,6 +18,14 @@ Unicode "code points" and it is not the same as the number of Unicode "grapheme 
 (what we usually call "characters") and it is not the same as the visible string width.
 
 It is ok to have ASCII NULL bytes in strings, and they will be counted as well.
+
+<Note>
+With [`optimize_functions_to_subcolumns = 1`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), `length(s)` for a `String` column can be rewritten to read `s.size`.
+This also applies in `WHERE` and `PREWHERE` when the query needs the full String column elsewhere, for example `SELECT s FROM t PREWHERE length(s) > 0`.
+
+On MergeTree parts written with `string_serialization_version = 'with_size_stream'`, PREWHERE can filter on the size stream before reading String data for surviving rows.
+On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. When both `s` and `s.size` are needed, they are read together to avoid scanning that stream twice.
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "length(x)";
     FunctionDocumentation::Arguments arguments = {{"x", "Value for which to calculate the number of bytes (for String/FixedString), elements (for Array), or the dimension (for QBit).", {"String", "FixedString", "Array(T)", "QBit"}}};
