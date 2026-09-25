@@ -38,6 +38,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
 }
@@ -206,15 +207,29 @@ private:
                 }
                 catch (const Exception & e)
                 {
-                    /// These two say the query is over rather than that this table failed, so they are not
-                    /// swallowed: a scan that eats a memory limit would run on and hit it again on the next
-                    /// table, and one that eats a cancellation would keep reading after the query asked it to
-                    /// stop. Everything else is this table's own failure. `const Exception &` rather than `...`
-                    /// for the same reason `system.tables` catches that: a `std::bad_alloc` is not a table's
-                    /// problem either.
+                    /// Three kinds of failure are not this table's own and are not swallowed.
+                    ///
+                    /// The query is over: a scan that ate a memory limit would run on and meet it again on the
+                    /// next table, and one that ate a cancellation would keep reading after being asked to stop.
                     if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                         throw;
 
+                    /// The server has a bug. Logging one and answering the query hides it from the tests that
+                    /// exist to find it, which is why other catch sites that otherwise swallow re-raise it too -
+                    /// `StorageReplicatedMergeTree.cpp` and `UndoWithRetries.cpp` among them.
+                    if (e.code() == ErrorCodes::LOGICAL_ERROR)
+                        throw;
+
+                    /// The reader asked to be told. `resolveTable` re-raises a lake catalog's error on purpose
+                    /// when `database_datalake_require_metadata_access` is set, which is its default, and says
+                    /// in the message how to ask for the opposite. Swallowing it here would leave that setting
+                    /// meaning nothing, its message untrue, and the rows of a table the catalog cannot describe
+                    /// quietly missing - which is the outcome `resolveTable` exists to prevent.
+                    if (require_datalake_metadata_access && databases_cursor.getDatabase()->isDatalakeCatalog())
+                        throw;
+
+                    /// `const Exception &` rather than `...` for the reason `system.tables` catches that: a
+                    /// `std::bad_alloc` is not a table's problem either.
                     tryLogCurrentException(
                         "StorageSystemTableSettings",
                         fmt::format("Cannot read the settings of table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name)));
