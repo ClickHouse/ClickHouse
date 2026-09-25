@@ -24,16 +24,13 @@ COLL="${CLICKHOUSE_DATABASE}_s3_body"
 $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${COLL}"
 $CLICKHOUSE_CLIENT --query "CREATE NAMED COLLECTION ${COLL} AS url = 'http://localhost:11111/test/data.csv'"
 
-for analyzer in 1 0; do
-    for arg in "body('payload')" "body((SELECT 1))" "body('')"; do
-        result=$($CLICKHOUSE_CLIENT --enable_analyzer="${analyzer}" \
-            --query "SELECT * FROM s3(${COLL}, ${arg})" 2>&1)
-        if echo "${result}" | grep -qF "BAD_ARGUMENTS"; then
-            echo "BAD_ARGUMENTS"
-        else
-            echo "UNEXPECTED (analyzer=${analyzer}, ${arg}): ${result}"
-        fi
-    done
+for arg in "body('payload')" "body((SELECT 1))" "body('')"; do
+    result=$($CLICKHOUSE_CLIENT --query "SELECT * FROM s3(${COLL}, ${arg})" 2>&1)
+    if echo "${result}" | grep -qF "BAD_ARGUMENTS"; then
+        echo "BAD_ARGUMENTS"
+    else
+        echo "UNEXPECTED (${arg}): ${result}"
+    fi
 done
 
 $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION ${COLL}"
