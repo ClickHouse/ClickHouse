@@ -1,4 +1,5 @@
 #include <Common/HTTPConnectionPool.h>
+#include <Common/HTTPConnectionPoolDetail.h>
 #include <Common/HostResolvePool.h>
 
 #include <Common/ProfileEvents.h>
@@ -48,6 +49,7 @@ namespace ProfileEvents
     extern const Event StorageConnectionsReused;
     extern const Event StorageConnectionsReset;
     extern const Event StorageConnectionsPreserved;
+    extern const Event StorageConnectionsDrained;
     extern const Event StorageConnectionsExpired;
     extern const Event StorageConnectionsErrors;
     extern const Event StorageConnectionsElapsedMicroseconds;
@@ -56,6 +58,7 @@ namespace ProfileEvents
     extern const Event DiskConnectionsReused;
     extern const Event DiskConnectionsReset;
     extern const Event DiskConnectionsPreserved;
+    extern const Event DiskConnectionsDrained;
     extern const Event DiskConnectionsExpired;
     extern const Event DiskConnectionsErrors;
     extern const Event DiskConnectionsElapsedMicroseconds;
@@ -64,6 +67,7 @@ namespace ProfileEvents
     extern const Event HTTPConnectionsReused;
     extern const Event HTTPConnectionsReset;
     extern const Event HTTPConnectionsPreserved;
+    extern const Event HTTPConnectionsDrained;
     extern const Event HTTPConnectionsExpired;
     extern const Event HTTPConnectionsErrors;
     extern const Event HTTPConnectionsElapsedMicroseconds;
@@ -105,7 +109,6 @@ namespace ErrorCodes
     extern const int HTTP_CONNECTION_LIMIT_REACHED;
 }
 
-
 static const char * connectionGroupTypeToString(HTTPConnectionGroupType type)
 {
     switch (type)
@@ -124,6 +127,7 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForStorageConnectionPoo
         .reused = ProfileEvents::StorageConnectionsReused,
         .reset = ProfileEvents::StorageConnectionsReset,
         .preserved = ProfileEvents::StorageConnectionsPreserved,
+        .drained = ProfileEvents::StorageConnectionsDrained,
         .expired = ProfileEvents::StorageConnectionsExpired,
         .errors = ProfileEvents::StorageConnectionsErrors,
         .elapsed_microseconds = ProfileEvents::StorageConnectionsElapsedMicroseconds,
@@ -140,6 +144,7 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
         .reused = ProfileEvents::DiskConnectionsReused,
         .reset = ProfileEvents::DiskConnectionsReset,
         .preserved = ProfileEvents::DiskConnectionsPreserved,
+        .drained = ProfileEvents::DiskConnectionsDrained,
         .expired = ProfileEvents::DiskConnectionsExpired,
         .errors = ProfileEvents::DiskConnectionsErrors,
         .elapsed_microseconds = ProfileEvents::DiskConnectionsElapsedMicroseconds,
@@ -156,6 +161,7 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
         .reused = ProfileEvents::HTTPConnectionsReused,
         .reset = ProfileEvents::HTTPConnectionsReset,
         .preserved = ProfileEvents::HTTPConnectionsPreserved,
+        .drained = ProfileEvents::HTTPConnectionsDrained,
         .expired = ProfileEvents::HTTPConnectionsExpired,
         .errors = ProfileEvents::HTTPConnectionsErrors,
         .elapsed_microseconds = ProfileEvents::HTTPConnectionsElapsedMicroseconds,
@@ -501,14 +507,14 @@ private:
             {
                 request_stream->flush();
 
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthOutputStream *>(request_stream))
+                if (auto * fixed_stream = dynamic_cast<Poco::Net::HTTPFixedLengthOutputStream *>(request_stream))
                 {
-                    request_stream_completed = fixed_steam->isComplete();
+                    request_stream_completed = fixed_stream->isComplete();
                 }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedOutputStream *>(request_stream))
+                else if (auto * chunked_stream = dynamic_cast<Poco::Net::HTTPChunkedOutputStream *>(request_stream))
                 {
-                    chunked_steam->rdbuf()->close();
-                    request_stream_completed = chunked_steam->isComplete();
+                    chunked_stream->rdbuf()->close();
+                    request_stream_completed = chunked_stream->isComplete();
                 }
                 else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPOutputStream *>(request_stream))
                 {
@@ -574,15 +580,44 @@ private:
 
         ~PooledConnection() override
         {
+            auto connection_pool = pool.lock();
+
             if (bool(response_stream))
             {
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
+                if (auto * fixed_stream = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
                 {
-                    response_stream_completed = fixed_steam->isComplete();
+                    const bool can_attempt_drain = Session::connected()
+                        && !Session::mustReconnect()
+                        && request_stream_completed
+                        && !isExpired
+                        && connection_pool
+                        && Session::getKeepAliveRequest() < Session::getKeepAliveMaxRequests();
+
+                    response_stream_completed = fixed_stream->isComplete();
+                    if (!response_stream_completed && can_attempt_drain)
+                    {
+                        try
+                        {
+                            response_stream_completed
+                                = HTTPConnectionPoolDetail::tryCompleteBufferedFixedLengthResponse(
+                                    *fixed_stream, [this] { return Session::buffered(); });
+                            if (response_stream_completed)
+                            {
+                                /// This records response completion. Trailing bytes, expiration, or
+                                /// pool capacity can still prevent preserving the connection below.
+                                ProfileEvents::increment(metrics.drained);
+                            }
+                        }
+                        catch (...)
+                        {
+                            response_stream_completed = false;
+                            tryLogCurrentException(log, "while draining a buffered HTTP response before releasing the connection", LogsLevel::debug);
+                        }
+                    }
                 }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
+                else if (auto * chunked_stream = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
                 {
-                    response_stream_completed = chunked_steam->isComplete();
+                    response_stream_completed = chunked_stream->isComplete();
                 }
                 else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
                 {
@@ -603,9 +638,8 @@ private:
             Session::setSendThrottler();
             Session::setReceiveThrottler();
 
-            if (!isExpired)
-                if (auto lock = pool.lock())
-                    lock->atConnectionDestroy(*this);
+            if (!isExpired && connection_pool)
+                connection_pool->atConnectionDestroy(*this);
 
             CurrentMetrics::sub(metrics.active_count);
         }

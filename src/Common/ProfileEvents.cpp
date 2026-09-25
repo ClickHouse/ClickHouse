@@ -1550,6 +1550,7 @@ The server successfully detected this situation and will download merged part fr
     M(StorageConnectionsReused, "Number of reused connections for storages", ValueType::Number) \
     M(StorageConnectionsReset, "Number of reset connections for storages", ValueType::Number) \
     M(StorageConnectionsPreserved, "Number of preserved connections for storages", ValueType::Number) \
+    M(StorageConnectionsDrained, "Number of fixed-length storage responses completed from already buffered data before releasing the connection. Does not imply that the connection was preserved.", ValueType::Number) \
     M(StorageConnectionsExpired, "Number of expired connections for storages", ValueType::Number) \
     M(StorageConnectionsErrors, "Number of cases when creation of a connection for storage is failed", ValueType::Number) \
     M(StorageConnectionsElapsedMicroseconds, "Total time spend on creating connections for storages", ValueType::Microseconds) \
@@ -1558,6 +1559,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskConnectionsReused, "Number of reused connections for disk", ValueType::Number) \
     M(DiskConnectionsReset, "Number of reset connections for disk", ValueType::Number) \
     M(DiskConnectionsPreserved, "Number of preserved connections for disk", ValueType::Number) \
+    M(DiskConnectionsDrained, "Number of fixed-length disk responses completed from already buffered data before releasing the connection. Does not imply that the connection was preserved.", ValueType::Number) \
     M(DiskConnectionsExpired, "Number of expired connections for disk", ValueType::Number) \
     M(DiskConnectionsErrors, "Number of cases when creation of a connection for disk is failed", ValueType::Number) \
     M(DiskConnectionsElapsedMicroseconds, "Total time spend on creating connections for disk", ValueType::Microseconds) \
@@ -1566,6 +1568,7 @@ The server successfully detected this situation and will download merged part fr
     M(HTTPConnectionsReused, "Number of reused client HTTP connections", ValueType::Number) \
     M(HTTPConnectionsReset, "Number of reset client HTTP connections", ValueType::Number) \
     M(HTTPConnectionsPreserved, "Number of preserved client HTTP connections", ValueType::Number) \
+    M(HTTPConnectionsDrained, "Number of fixed-length client HTTP responses completed from already buffered data before releasing the connection. Does not imply that the connection was preserved.", ValueType::Number) \
     M(HTTPConnectionsExpired, "Number of expired client HTTP connections", ValueType::Number) \
     M(HTTPConnectionsErrors, "Number of cases when creation of a client HTTP connection failed", ValueType::Number) \
     M(HTTPConnectionsElapsedMicroseconds, "Total time spend on creating client HTTP connections", ValueType::Microseconds) \
