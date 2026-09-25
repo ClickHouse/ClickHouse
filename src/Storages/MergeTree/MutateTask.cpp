@@ -1565,6 +1565,7 @@ static void processStatisticsChanges(
     const ColumnsStatistics & stats_to_recalc,
     const MutationCommands & commands_for_renames,
     const IMergeTreeDataPart & source_part,
+    const NamesAndTypesList & new_part_columns,
     StorageMetadataPtr metadata_snapshot)
 {
     auto storage_settings = source_part.storage.getSettings();
@@ -1615,6 +1616,10 @@ static void processStatisticsChanges(
         for (const auto & [stat_name, stat] : stats_to_recalc)
             all_statistics[stat_name] = stat->cloneEmpty();
     }
+
+    /// A statistic is keyed by a column name, and both statistics loaders resolve a persisted entry
+    /// against the part's own column list, so one for a column this part does not store is unreadable.
+    std::erase_if(all_statistics, [&](const auto & entry) { return !new_part_columns.contains(entry.first); });
 
     /// Remove old statistics files.
     if (isFullPartStorage(source_part.getDataPartStorage()))
@@ -2848,6 +2853,7 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
+            new_part_columns,
             ctx->metadata_snapshot);
 
         /// This task rewrites every column, so all statistics objects were created empty from the
@@ -2973,6 +2979,7 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
+            ctx->new_data_part->getColumns(),
             ctx->metadata_snapshot);
 
         /// This task rewrites only some of the columns and carries the rest over from the source
