@@ -89,6 +89,8 @@ SELECT 'and it reads the underlying column when the subquery renames it';
 SELECT count() > 0 FROM (EXPLAIN header = 1 SELECT tup.a FROM (SELECT other AS tup FROM t_subcolumn_pushdown)) WHERE explain LIKE '%other.a String%';
 
 SELECT 'the setting turns it off';
-SELECT count() = 0 FROM (EXPLAIN header = 1 WITH foo AS (SELECT * FROM t_subcolumn_pushdown) SELECT tup.a FROM foo SETTINGS optimize_push_subcolumns_into_subqueries = 0) WHERE explain LIKE '%tup.a String%';
+-- The subquery reads the whole column. Checking for the absence of `tup.a String` is not enough: with parallel replicas
+-- the header of the plan contains the result column of the outer query under that name.
+SELECT count() > 0 FROM (EXPLAIN header = 1 WITH foo AS (SELECT * FROM t_subcolumn_pushdown) SELECT tup.a FROM foo SETTINGS optimize_push_subcolumns_into_subqueries = 0) WHERE explain LIKE '%tup Tuple%';
 
 DROP TABLE t_subcolumn_pushdown;
