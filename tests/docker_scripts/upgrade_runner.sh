@@ -145,7 +145,15 @@ mkdir tmp_stress_output
 # are ignored and incompatible tests run on an unsupported backend: --s3-storage (object storage is the
 # default MergeTree policy above) covers no-object-storage/no-s3-storage; --encrypted-storage mirrors the
 # coin flip above and covers no-encrypted-storage (stress.py forwards it to clickhouse-test).
-stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
+# Older `05079` fixtures persist a decimal `quantile` level as an unreadable string. With `--fake-drop`,
+# that metadata survives the upgrade and blocks `system.mutations`. Skip only the old spelling;
+# the fixed reference automatically restores coverage. See https://github.com/ClickHouse/ClickHouse/pull/121506.
+skip_func_tests=()
+previous_release_05079=previous_release_repository/tests/queries/0_stateless/05079_parse_aggregate_function_typed_param.reference
+if [ -f "$previous_release_05079" ] && grep -qF "quantile(\\'0.5\\'), Float64" "$previous_release_05079"; then
+    skip_func_tests=(--skip-func-tests="--skip 05079_parse_aggregate_function_typed_param")
+fi
+stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" "${skip_func_tests[@]}" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
