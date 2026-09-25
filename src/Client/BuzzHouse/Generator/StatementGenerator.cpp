@@ -2544,10 +2544,11 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
         att->set_uuid(rg.nextUUID());
     }
     setClusterClause(rg, cluster, att->mutable_cluster());
+    /* Not generating AS REPLICATED because it's not well supported
     if (att->sobject() != SQLObject::DATABASE && rg.nextSmallNumber() < 3)
     {
         att->set_as_replicated(rg.nextBool());
-    }
+    }*/
     if (rg.nextMediumNumber() < 6)
     {
         generateSettingValues(rg, formatSettings, att->mutable_setting_values());
