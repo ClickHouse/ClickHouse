@@ -2540,6 +2540,9 @@ def test_structure_only_restores_access_entities_and_udfs():
     )
 
     assert instance.query("EXISTS test.table") == "1\n"
+    # The restored row policy is for u1 and applies at once, and this config enables
+    # throw_on_unmatched_row_policies, so drop it before reading as `default`.
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
     assert instance.query("SELECT count() FROM test.table") == "0\n"
     assert (
         instance.query("SHOW CREATE USER u1")
@@ -2548,7 +2551,6 @@ def test_structure_only_restores_access_entities_and_udfs():
     assert instance.query("SELECT linear_equation(2, 3, 1)") == "7\n"
 
     instance.query("DROP FUNCTION linear_equation")
-    instance.query("DROP ROW POLICY rowpol1 ON test.table")
     instance.query("DROP DATABASE test")
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")
@@ -2605,9 +2607,8 @@ def test_structure_only_restores_access_entities_and_udfs():
         f" SETTINGS structure_only=true, restore_access_entities='true', restore_functions='1'"
     )
 
-    # Table exists but has no data
+    # Table exists; emptiness is asserted below, after the row policy is dropped.
     assert instance.query("EXISTS test.table") == "1\n"
-    assert instance.query("SELECT count() FROM test.table") == "0\n"
 
     # All access entity types were restored
     assert (
@@ -2631,7 +2632,10 @@ def test_structure_only_restores_access_entities_and_udfs():
 
     instance.query("DROP FUNCTION linear_equation")
 
+    # As in phase 4, drop the restored policy before reading the table as `default`.
     instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
     instance.query("DROP DATABASE test")
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")
