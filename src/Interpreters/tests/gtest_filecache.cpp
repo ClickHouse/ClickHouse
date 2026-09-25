@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 
 
@@ -3867,6 +3868,67 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
     auto reloaded_holder = reloaded->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
     ASSERT_EQ(reloaded_holder->size(), 1u);
     ASSERT_EQ((*reloaded_holder->begin())->state(), State::DOWNLOADED);
+}
+
+TEST_F(FileCacheTest, ReserveUndoneWhenKeyDirectoryCannotBeCreated)
+{
+    /// A reservation whose key directory cannot be created must leave the cache as it found it: no size held
+    /// in the main queue, and a segment that is `EMPTY` without a queue entry, which `complete` asserts.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reserve_key_directory_failure");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 16;
+    settings[FileCacheSetting::max_elements] = 4;
+    settings[FileCacheSetting::max_file_segment_size] = 8;
+    settings[FileCacheSetting::boundary_alignment] = 8;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reserve_key_directory_failure", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = DB::FileCacheKey::fromPath("reserve_key_directory_failure_key");
+
+    /// A regular file where the key directory must go makes `create_directories` fail, even as root.
+    const fs::path key_path = cache->getKeyPath(key, user);
+    fs::create_directories(key_path.parent_path());
+    std::ofstream(key_path) << "x";
+
+    auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/16, {}, 0, user);
+    ASSERT_EQ(holder->size(), 1u);
+    auto seg = *holder->begin();
+    ASSERT_EQ(seg->getOrSetDownloader(), FileSegment::getCallerId());
+
+    std::string failure_reason;
+    ASSERT_FALSE(seg->reserve(8, 1000, failure_reason));
+    ASSERT_TRUE(failure_reason.contains("base directory")) << failure_reason;
+    ASSERT_EQ(seg->getReservedSize(), 0u);
+    ASSERT_EQ(cache->getUsedCacheSize(), 0u);
+
+    FileSegment::complete(FileSegmentPtr(seg), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
+
+    /// Once the directory can be created, the key caches normally: the failure did not mark it created.
+    fs::remove(key_path);
+    auto next_holder = cache->getOrSet(key, 8, 8, /*file_size=*/16, {}, 0, user);
+    ASSERT_EQ(next_holder->size(), 1u);
+    download(*next_holder->begin());
+    ASSERT_EQ(cache->getUsedCacheSize(), 8u);
 }
 
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
