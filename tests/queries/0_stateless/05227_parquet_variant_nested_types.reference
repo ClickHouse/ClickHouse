@@ -1,0 +1,11 @@
+1	['Int8','String']
+2	['Date32','Bool']
+3	['Decimal(9, 2)','DateTime64(6, \'UTC\')']
+4	['UUID','DateTime64(6)']
+5	['String','Int8']
+6	['String','Map(String, Dynamic)']
+--- values ---
+2	{'d':'2026-08-28','t':true}
+3	{'dec':123.45,'ts':'2025-09-04 12:34:56.789012'}
+4	{'u':'00010203-0405-0607-0809-0a0b0c0d0e0f','dt':'2025-09-04 12:34:56.789012'}
+6	{'a':'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz','b':{'c':'2026-08-28'}}

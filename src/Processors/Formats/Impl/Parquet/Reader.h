@@ -243,6 +243,9 @@ struct Reader
         /// null map equals the group null map. `needs_cast` (if any) is applied after wrapping.
         bool nullable_group = false;
 
+        bool variant_has_value = false;
+        bool variant_has_typed_value = false;
+
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
         UInt8 rep = 0;

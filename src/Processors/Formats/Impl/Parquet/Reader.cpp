@@ -1,12 +1,14 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
@@ -23,6 +25,7 @@
 #include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
@@ -3531,6 +3534,32 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             res = ColumnTuple::create(num_rows);
         else
             res = ColumnTuple::create(std::move(columns));
+    }
+    else if (kind == TypeIndex::Dynamic)
+    {
+        chassert(output_info.nested_columns.size()
+            == 1 + size_t(output_info.variant_has_value) + size_t(output_info.variant_has_typed_value));
+        size_t nested_idx = 0;
+        MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[nested_idx++], num_rows);
+
+        MutableColumnPtr value;
+        if (output_info.variant_has_value)
+            value = formOutputColumn(row_subgroup, output_info.nested_columns[nested_idx++], num_rows);
+
+        MutableColumnPtr typed_value;
+        DataTypePtr typed_value_type;
+        if (output_info.variant_has_typed_value)
+        {
+            size_t typed_value_idx = output_info.nested_columns[nested_idx++];
+            typed_value = formOutputColumn(row_subgroup, typed_value_idx, num_rows);
+            typed_value_type = output_columns.at(typed_value_idx).output_type;
+        }
+
+        res = output_info.input_type->createColumn();
+        res->reserve(num_rows);
+        decodeVariantColumn(
+            *metadata, value.get(), typed_value.get(), typed_value_type,
+            assert_cast<ColumnDynamic &>(*res), num_rows, options.format.max_parser_depth);
     }
     else
     {
