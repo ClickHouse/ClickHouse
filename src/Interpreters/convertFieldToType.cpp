@@ -299,8 +299,7 @@ Field rescaleDecimal64Field(const Field & src, const ToDataType & to_type, bool 
     return DecimalField<T>(DecimalUtils::decimalFromComponentsWithMultiplier<T>(value, 0, 1), scale_to);
 }
 
-/// Splits a decimal integer literal into a sign and a magnitude, returning false if it is not one.
-/// `magnitude_overflowed` means the digits do not fit `UInt256`, so only the sign is meaningful.
+/// Splits a decimal integer literal into sign and magnitude; `magnitude_overflowed` leaves only the sign meaningful.
 bool parseDecimalIntegerLiteral(std::string_view literal, bool & negative, UInt256 & magnitude, bool & magnitude_overflowed)
 {
     negative = false;
@@ -316,8 +315,7 @@ bool parseDecimalIntegerLiteral(std::string_view literal, bool & negative, UInt2
     if (literal.empty() || literal.find_first_not_of("0123456789") != std::string_view::npos)
         return false;
 
-    /// `common::mulOverflow` does not report overflow for the widest integers, so room for the next digit
-    /// is checked instead; the test holds exactly when the digit would not fit.
+    /// `common::mulOverflow` does not report overflow for the widest integers, so room is checked instead.
     const UInt256 max_magnitude = std::numeric_limits<UInt256>::max();
     for (char c : literal)
     {
@@ -342,8 +340,7 @@ IntegerLiteralRange classifyAgainstIntegerType(bool negative, const UInt256 & ma
             return IntegerLiteralRange::NotApplicable;
         else
         {
-            /// In two's complement the magnitude of the minimum is `max + 1`, which fits `UInt256` for every
-            /// integer type, while the minimum itself fits no unsigned type - so compare magnitudes.
+            /// The minimum of an integer type fits no unsigned type, but its magnitude `max + 1` fits `UInt256`.
             const UInt256 min_magnitude = static_cast<UInt256>(std::numeric_limits<T>::max()) + 1;
             if (magnitude_overflowed || accurate::greaterOp(magnitude, min_magnitude))
                 return IntegerLiteralRange::BelowMin;
@@ -1137,8 +1134,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     /// Conversion from string by parsing.
     if (src.getType() == Field::Types::String)
     {
-        /// Integer text deserialization does not check for overflow, so a literal that does not fit the type
-        /// wraps around into an unrelated value of it, which the range check below then accepts.
+        /// Integer text deserialization does not check for overflow: a literal too large wraps into an unrelated value.
         const auto literal_range = classifyIntegerLiteralRange(src.safeGet<String>(), type);
         if (literal_range == IntegerLiteralRange::BelowMin || literal_range == IntegerLiteralRange::AboveMax)
             return {};

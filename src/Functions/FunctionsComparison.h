@@ -1218,16 +1218,14 @@ private:
             if constexpr (IsOperation<Op>::less || IsOperation<Op>::less_or_equals
                        || IsOperation<Op>::greater || IsOperation<Op>::greater_or_equals)
             {
-                /// An integer constant outside the type's range has every value of the type on one known side
-                /// of it, so an ordering comparison against it is decided by that side. False for both
-                /// `x <= C` and `x > C` would break the complementarity an inverting rewrite relies on.
+                /// Every value of the type is on one known side of an out-of-range integer constant.
+                /// `x <= C` and `x > C` must stay complementary: an inverting rewrite relies on it.
                 const auto range = string_value.getType() == Field::Types::String
                     ? classifyIntegerLiteralRange(string_value.safeGet<String>(), *type_to_compare)
                     : IntegerLiteralRange::NotApplicable;
 
                 if (range == IntegerLiteralRange::AboveMax || range == IntegerLiteralRange::BelowMin)
                 {
-                    /// With `left_const` the constant is the left operand, which mirrors the operator.
                     const bool left_is_less
                         = left_const ? range == IntegerLiteralRange::BelowMin : range == IntegerLiteralRange::AboveMax;
                     const bool result = left_is_less
