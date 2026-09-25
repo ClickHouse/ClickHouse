@@ -16,7 +16,7 @@ SELECT count() FROM system.mutations WHERE database = currentDatabase() AND tabl
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_lightweight_mut_2' FORMAT Null;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_lightweight_mut_2' AND NOT is_done AND NOT is_killed;
 
-ALTER TABLE t_lightweight_mut_2 UPDATE v = (SELECT sum(number) FROM numbers(100)) WHERE 1;
+ALTER TABLE t_lightweight_mut_2 UPDATE v = assumeNotNull( (SELECT sum(number) FROM numbers(100)) ) WHERE 1;
 
 SELECT * FROM t_lightweight_mut_2; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM t_lightweight_mut_2 SETTINGS apply_mutations_on_fly = 0;
