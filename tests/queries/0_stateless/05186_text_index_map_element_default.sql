@@ -35,6 +35,12 @@ SELECT '-- an error only the substituted default raises declines the index inste
 SELECT count() FROM tab_ip WHERE m[if(intDiv(1, length(toString(m)) - 2) = 0, 'abc', 'zzz')] = '2001:db8:1:2:3:4:5:6';
 SELECT count() FROM tab_ip WHERE m[if(intDiv(1, length(toString(m)) - 2) = 0, 'abc', 'zzz')] = '2001:db8:1:2:3:4:5:6' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
+-- The row count depends on where the pipeline stopped, so only the absence of that error is asserted.
+-- The 'throw' arm below is the control: it shows the deadline really is crossed during analysis here.
+SELECT '-- a passed deadline under `break` does not surface that error either';
+SELECT count() FROM tab_ip WHERE m[if(intDiv(1, length(toString(m)) - 2) = 0, 'abc', 'zzz')] = '2001:db8:1:2:3:4:5:6' SETTINGS max_execution_time = 0.000001, timeout_overflow_mode = 'break' FORMAT Null;
+SELECT count() FROM tab_ip WHERE m[if(intDiv(1, length(toString(m)) - 2) = 0, 'abc', 'zzz')] = '2001:db8:1:2:3:4:5:6' SETTINGS max_execution_time = 0.000001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+
 DROP TABLE tab_ip;
 
 DROP TABLE IF EXISTS tab_str;

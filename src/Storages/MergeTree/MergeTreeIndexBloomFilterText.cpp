@@ -638,11 +638,10 @@ bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG
     }
     catch (const Exception &)
     {
-        /// A killed or timed-out query must report that, not an index it could not use: the check throws
-        /// for a killed one and returns false once the deadline passed under `break`.
+        /// The check throws for a killed query and for the 'throw' overflow mode; under 'break' it
+        /// returns false instead, and that mode asks for a partial result rather than an error.
         if (auto process_list_element = context->getProcessListElementSafe())
-            if (!process_list_element->checkTimeLimit())
-                throw;
+            process_list_element->checkTimeLimit();
         return true;
     }
 

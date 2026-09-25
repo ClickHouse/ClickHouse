@@ -14,6 +14,7 @@
 -- evaluating the predicate raises what the scan raises
 -- an error only the substituted default raises declines the index instead
 1
+-- a passed deadline under `break` does not surface that error either
 -- the whole predicate decides, not equality with the default
 1
 1
