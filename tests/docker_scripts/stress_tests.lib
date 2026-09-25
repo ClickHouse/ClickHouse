@@ -135,9 +135,8 @@ function configure()
     }
 
     if [[ -n "$RANDOMIZE_KEEPER_FEATURE_FLAGS" ]] && [[ "$RANDOMIZE_KEEPER_FEATURE_FLAGS" -eq 1 ]]; then
-        # Randomize all Keeper feature flags
-        randomize_config_boolean_value filtered_list keeper_port
-        randomize_config_boolean_value multi_read keeper_port
+        # transactions.xml is always installed here, and transactions require Keeper to advertise
+        # FILTERED_LIST, MULTI_READ, LIST_WITH_STAT_AND_DATA and CHECK_STAT (see TransactionManager).
         randomize_config_boolean_value check_not_exists keeper_port
         randomize_config_boolean_value create_if_not_exists keeper_port
         randomize_config_boolean_value remove_recursive keeper_port
@@ -411,8 +410,12 @@ function check_logs_for_critical_errors()
     #    exceptions printed internally by a buffer, exception will be rethrown and handled correctly
     #  - "Error during background download" printed by the filesystem cache background download worker (CacheMetadata):
     #    the prefetched object may be concurrently removed (DROP/mutation/part removal), the download is just marked failed and the data is re-read directly
+    # The matched keys' upload and delete lines are appended to the artifact. The status of the
+    # group is the trailing echo's, so a failed collection cannot turn a real failure into "No lost s3 keys".
     rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "ReadBuffer is canceled by the exception" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "Error during background download" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
-        && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
+        && { python3 /repo/ci/jobs/scripts/s3_key_lifecycle.py /test_output/no_such_key_errors.txt /var/log/clickhouse-server >> /test_output/no_such_key_errors.txt \
+                 || echo "--- lifecycle collection FAILED, see the runner log for the traceback ---" >> /test_output/no_such_key_errors.txt ; \
+             echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv ; } \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 
     rg -Fa "it is lost forever" /var/log/clickhouse-server/clickhouse-server*.log | grep 'SharedMergeTreePartCheckThread' > /dev/null \
