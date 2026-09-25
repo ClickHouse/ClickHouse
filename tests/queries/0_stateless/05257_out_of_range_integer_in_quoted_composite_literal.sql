@@ -16,7 +16,7 @@ SELECT [toUInt8(44)] != '[300]';
 SELECT [toUInt8(43)] < '[300]'; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT (toUInt8(43), toUInt8(1)) >= '(300,1)'; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT '[300]' > [toUInt8(43)]; -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT map(toUInt8(1), toUInt8(1)) < '{300:1}'; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT map(toUInt8(1), toUInt8(1)) <= '{300:1}'; -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 SELECT * FROM values('x Array(UInt64)', '[18446744073709551616]'); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT * FROM values('x Array(UInt8)', '[300]'); -- { serverError ARGUMENT_OUT_OF_BOUND }

@@ -1223,7 +1223,7 @@ private:
 
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
-        /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
+        /// If not possible to convert, = yields false and != true; ordering yields false, or throws for an Array, Tuple or Map.
         if (converted.isNull())
         {
             if constexpr (IsOperation<Op>::less || IsOperation<Op>::less_or_equals
