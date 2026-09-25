@@ -38,6 +38,21 @@ ALTER TABLE t_pending_rename_dotted DELETE WHERE 0 SETTINGS mutations_sync = 2;
 SELECT 'after it materialized', id, `n.a`, `n.x.y`, `n.x.y.size0`, `n.b` FROM t_pending_rename_dotted;
 DROP TABLE t_pending_rename_dotted;
 
+SELECT 'an unchanged longer leaf next to a renamed shorter one';
+-- `n.x.y` is an unchanged leaf, and it must not be taken for the subcolumn `y` of the leaf `n.x`,
+-- which is the new name of `n.b` while the rename is pending.
+DROP TABLE IF EXISTS t_pending_rename_prefix;
+CREATE TABLE t_pending_rename_prefix (id UInt8, `n.x.y` Array(String), `n.b` Array(UInt8))
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_pending_rename_prefix VALUES (1, ['p', 'q'], [3, 4]);
+SYSTEM STOP MERGES t_pending_rename_prefix;
+ALTER TABLE t_pending_rename_prefix RENAME COLUMN `n.b` TO `n.x` SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT 'while the rename is pending', id, `n.x.y`, `n.x.y.size0`, `n.x` FROM t_pending_rename_prefix;
+SYSTEM START MERGES t_pending_rename_prefix;
+ALTER TABLE t_pending_rename_prefix DELETE WHERE 0 SETTINGS mutations_sync = 2;
+SELECT 'after it materialized', id, `n.x.y`, `n.x.y.size0`, `n.x` FROM t_pending_rename_prefix;
+DROP TABLE t_pending_rename_prefix;
+
 SELECT 'a subcolumn of the renamed leaf';
 DROP TABLE IF EXISTS t_pending_rename_subcolumn;
 CREATE TABLE t_pending_rename_subcolumn (id UInt8, `n.a` Array(UInt8), `n.b` Array(Nullable(UInt8)))

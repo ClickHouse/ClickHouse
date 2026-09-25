@@ -411,29 +411,35 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
           * and the values are read as defaults while the mutation is pending.
           */
         /// The leaf name may itself contain dots (`n.b.c` is the leaf `b.c` of `n`, see `Nested::splitName`),
-        /// and it may be followed by a real subcolumn of the leaf (`.size0`, `.null`), so every prefix of the
-        /// subcolumn name is a candidate for the leaf. Try them from the longest, which prefers the leaf `b.c`
-        /// over the leaf `b` with the subcolumn `c`, in the same way as the column lookup in the part does.
-        for (size_t leaf_length = subcolumn_name.size();;)
+        /// and it may be followed by a real subcolumn of the leaf (`.size0`, `.null`), so the leaf is found
+        /// among the elements of the Nested type in the current metadata. The longest matching element wins:
+        /// the leaves `x` and `x.y` may coexist, and a read of `x.y` must not be taken for the subcolumn `y`
+        /// of the leaf `x`, which could have a pending rename of its own.
+        const auto & nested_names = typeid_cast<const DataTypeNestedCustomName &>(*required_column.getTypeInStorage()->getCustomName()).getNames();
+
+        std::optional<size_t> leaf_length;
+        for (const auto & element_name : nested_names)
         {
-            auto leaf_name = Nested::concatenateName(name_in_storage, subcolumn_name.substr(0, leaf_length));
+            bool is_prefix = subcolumn_name.starts_with(element_name)
+                && (subcolumn_name.size() == element_name.size() || subcolumn_name[element_name.size()] == '.');
+
+            if (is_prefix && (!leaf_length || element_name.size() > *leaf_length))
+                leaf_length = element_name.size();
+        }
+
+        if (leaf_length)
+        {
+            auto leaf_name = Nested::concatenateName(name_in_storage, subcolumn_name.substr(0, *leaf_length));
 
             if (alter_conversions->isColumnRenamed(leaf_name))
             {
                 /// A rename cannot move a leaf to another Nested column, so the parent stays the same.
                 auto old_leaf_split = Nested::splitName(alter_conversions->getColumnOldName(leaf_name));
-                auto leaf_subcolumn_name = leaf_length < subcolumn_name.size() ? subcolumn_name.substr(leaf_length + 1) : String{};
+                auto leaf_subcolumn_name = *leaf_length < subcolumn_name.size() ? subcolumn_name.substr(*leaf_length + 1) : String{};
 
                 name_in_storage = old_leaf_split.first;
                 subcolumn_name = Nested::concatenateName(old_leaf_split.second, leaf_subcolumn_name);
-                break;
             }
-
-            auto previous_dot = subcolumn_name.rfind('.', leaf_length - 1);
-            if (previous_dot == std::string::npos || previous_dot == 0)
-                break;
-
-            leaf_length = previous_dot;
         }
     }
 
