@@ -254,17 +254,21 @@ public:
             if (!derived.precomputed_hashes_initialized) [[unlikely]]
                 derived.initPrecomputedHashes(data, row);
 
-            if (derived.can_precompute_hashes)
+            /// Only the rows a method has actually prepared have a hash: the region prepares one
+            /// chunk at a time, so `precomputed_hashes` holds live values for that chunk alone and
+            /// the rest of it is whatever `resize` left there. Both the row's own hash and the one
+            /// the look-ahead reaches for have to stay inside that range.
+            if (derived.can_precompute_hashes && row < derived.precomputed_hashes_end)
             {
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
                 const auto & hashes = derived.precomputed_hashes;
-                if (row + derived.prefetch_look_ahead < hashes.size())
+                if (row + derived.prefetch_look_ahead < derived.precomputed_hashes_end)
                     data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
-                return emplaceImpl<false>(key_holder, data, hashes[row]);
+                return emplaceImpl<false>(key_holder, data, hashes[row], row);
             }
         }
-        return emplaceImpl<true>(key_holder, data, 0);
+        return emplaceImpl<true>(key_holder, data, 0, row);
     }
 
     template <typename Data>
@@ -300,12 +304,15 @@ public:
             if (!derived.precomputed_hashes_initialized) [[unlikely]]
                 derived.initPrecomputedHashes(data, row);
 
-            if (derived.can_precompute_hashes)
+            /// See `emplaceKey`: a hash exists only for the rows the method has prepared. `findKey`
+            /// asks before it has taken a key holder, so with the region on there may be no chunk
+            /// yet at all - then this is skipped and the ordinary path computes the hash.
+            if (derived.can_precompute_hashes && row < derived.precomputed_hashes_end)
             {
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
                 const auto & hashes = derived.precomputed_hashes;
-                if (row + derived.prefetch_look_ahead < hashes.size())
+                if (row + derived.prefetch_look_ahead < derived.precomputed_hashes_end)
                     data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
 
                 if (data.isEmptyCell(hashes[row]))
@@ -328,12 +335,18 @@ public:
                 else
                     return FindResult(false, 0);
             }
-            return findKeyImpl(keyHolderGetKey(key_holder), data);
+            auto result = findKeyImpl(keyHolderGetKey(key_holder), data);
+            /// Nothing is inserted here, so a holder that took the key out of the arena has to give
+            /// it back - the same contract `emplace` follows for a key it does not keep.
+            keyHolderDiscardKey(key_holder);
+            return result;
         }
         else
         {
             auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-            return findKeyImpl(keyHolderGetKey(key_holder), data);
+            auto result = findKeyImpl(keyHolderGetKey(key_holder), data);
+            keyHolderDiscardKey(key_holder);
+            return result;
         }
     }
 
@@ -380,6 +393,18 @@ public:
             return false;
         }
     }
+
+    /// Called by a loop that goes through the rows of a block in order, with the size of the table
+    /// those rows are about to be probed against. A method that can prepare their keys ahead of the
+    /// loop overrides this to turn that on - it is off by default, because a caller that visits rows
+    /// in any other order would make it prepare them over and over.
+    void enableKeyRegion(size_t /*table_bytes*/) {}
+
+    /// Called for every row that goes through `emplaceKey`. A method that materialises the block's
+    /// keys upfront overrides this to learn which row ended up owning which cell. `key` is the
+    /// snapshot `EmplaceResult` carries, and a method that moves the key's bytes has to re-point it.
+    template <typename Data, typename LookupResult, typename Key>
+    void ALWAYS_INLINE onEmplaced(size_t, Data &, LookupResult, bool, Key &) {}
 
 protected:
     Cache cache;
@@ -447,7 +472,8 @@ protected:
     }
 
     template <bool compute_hash, typename Data, typename KeyHolder>
-    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data, [[maybe_unused]] size_t hash_value)
+    ALWAYS_INLINE EmplaceResult emplaceImpl(
+        KeyHolder & key_holder, Data & data, [[maybe_unused]] size_t hash_value, [[maybe_unused]] size_t row)
     {
         if constexpr (consecutive_keys_optimization)
         {
@@ -463,6 +489,8 @@ protected:
             data.emplace(key_holder, it, inserted);
         else
             data.emplace(key_holder, it, inserted, hash_value);
+
+        static_cast<Derived &>(*this).onEmplaced(row, data, it, inserted, key);
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
@@ -503,6 +531,17 @@ protected:
             return EmplaceResult(inserted, std::move(key));
     }
 
+    /// Whether a key this state hands out keeps its bytes once the row is done with it. Most
+    /// methods point into the block's own columns, which outlive it; the serialized ones say for
+    /// themselves, because a key serialized a row at a time lives only until its holder is let go.
+    bool ALWAYS_INLINE keyOutlivesRow()
+    {
+        if constexpr (requires { static_cast<Derived &>(*this).keyViewsAreBlockStable(); })
+            return static_cast<Derived &>(*this).keyViewsAreBlockStable();
+        else
+            return true;
+    }
+
     template <typename Data, typename Key>
     ALWAYS_INLINE FindResult findKeyImpl(Key key, Data & data)
     {
@@ -519,20 +558,43 @@ protected:
 
         if constexpr (consecutive_keys_optimization)
         {
-            cache.onNewValue(it != nullptr);
-
-            if constexpr (nullable)
-                cache.is_null = false;
-
-            if constexpr (has_mapped)
+            /// The cache outlives the key holder, and a holder that borrowed the arena hands those
+            /// bytes back when it is discarded - the next row of the same size is then serialized
+            /// over them, and a cached view would answer for it. A cell's key stays wherever the
+            /// table keeps it, so a hit is remembered through the cell; a miss has only the row's
+            /// own key to remember, and may be remembered only where that key outlives the row.
+            if (it)
             {
-                cache.value.first = key;
-                if (it)
+                cache.onNewValue(true);
+
+                if constexpr (nullable)
+                    cache.is_null = false;
+
+                if constexpr (has_mapped)
+                {
+                    cache.value.first = it->getKey(it->getValue());
                     cache.value.second = it->getMapped();
+                }
+                else
+                {
+                    cache.value = it->getValue();
+                }
+            }
+            else if (keyOutlivesRow())
+            {
+                cache.onNewValue(false);
+
+                if constexpr (nullable)
+                    cache.is_null = false;
+
+                if constexpr (has_mapped)
+                    cache.value.first = key;
+                else
+                    cache.value = key;
             }
             else
             {
-                cache.value = key;
+                cache.empty = true;
             }
         }
 
