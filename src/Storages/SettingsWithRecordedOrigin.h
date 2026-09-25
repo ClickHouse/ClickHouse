@@ -3,7 +3,6 @@
 #include <Core/BaseSettings.h>
 #include <Storages/SettingDescription.h>
 #include <Common/CompactArray.h>
-#include <base/EnumReflection.h>
 
 #include <string_view>
 
@@ -99,6 +98,7 @@ struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
     {
         BaseSettings<TTraits>::resetToDefault();
         recorded = {};
+        named_collection.clear();
     }
 
     /// The source recorded for the setting, or `Default` when none is, or the name is not a setting.
@@ -108,8 +108,10 @@ struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
     }
 
 private:
-    static_assert(static_cast<size_t>(magic_enum::enum_values<SettingOrigin>().back()) < 16,
-                  "a recorded origin is stored in 4 bits");
+    /// `Other` is the last of them, which its own comment states, so checking it checks the enum. Spelled out
+    /// rather than taken from `magic_enum`, which would pull `EnumReflection.h` into a header that two dozen
+    /// settings translation units include, for this one check.
+    static_assert(static_cast<size_t>(SettingOrigin::Other) < 16, "a recorded origin is stored in 4 bits");
     static_assert(static_cast<UInt8>(SettingOrigin::Default) == 0,
                   "a zeroed `CompactArray` must mean nothing recorded");
 

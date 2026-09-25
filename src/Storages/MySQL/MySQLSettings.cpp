@@ -114,6 +114,11 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
         {
             changes.push_back(SettingChange{setting_name, settings[Setting::mysql_datatypes_support_level].toString()});
         }
+
+        /// Written into the clause just above, so the table's definition states it from now on - and states it
+        /// again to `loadFromQuery` when the server restarts and reads the stored query back. Recorded here so
+        /// that the same table does not report `other` before a restart and `definition` after it.
+        impl->recordOrigin(setting_name, SettingOrigin::Definition);
     }
 }
 

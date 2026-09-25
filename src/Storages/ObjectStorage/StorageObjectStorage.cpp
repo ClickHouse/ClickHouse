@@ -1255,8 +1255,12 @@ SettingDescriptions StorageObjectStorage::getTableSettings(ContextPtr query_cont
     /// them; plain object storage - `S3`, `GCS`, `AzureBlobStorage`, `HDFS` - never builds a
     /// `StorageObjectStorageSettings` at all, since `createStorageObjectStorage` applies the `SETTINGS` clause to
     /// a copy of `Settings` and converts the result to `FormatSettings`, which carries no setting names.
+    ///
+    /// Which of the two it is is asked of the configuration, not inferred from an empty enumeration: every data
+    /// lake settings struct happens to be non-empty today, so the two agree, but a lake that enumerated nothing
+    /// would otherwise fall to the definition-only path without anything saying so.
     auto settings = configuration->enumerateSettings();
-    if (settings.empty())
+    if (!configuration->isDataLakeConfiguration())
     {
         /// What the clause states is still in the stored `CREATE` query, so report that, as `File` and `URL` do,
         /// with the metadata the engine's registered settings give it. What the clause does not state cannot be
