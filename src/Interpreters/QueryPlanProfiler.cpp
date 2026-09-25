@@ -496,7 +496,9 @@ String QueryPlanProfiler::render()
         }
         catch (...)
         {
-            /// Empty rather than invalid: the column takes its default, an empty JSON object.
+            /// Ok to swallow: rendering the error itself failed, and this runs on the logging path
+            /// of a query that already returned its result. Empty rather than invalid, so the
+            /// column takes its default of an empty JSON object.
             return {};
         }
     }
