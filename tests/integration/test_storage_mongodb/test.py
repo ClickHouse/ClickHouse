@@ -755,6 +755,73 @@ def test_dates_casting(started_cluster):
         == "1999-02-28 11:23:16\t1999-02-28 11:23:16.000\t1999-02-28\t1999-02-28\n"
     )
 
+    # An `IN` list is pushed down as `$in`; the list's type has to reach each element.
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16', 3))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime NOT IN (toDateTime64('1999-02-28 11:23:16', 3))"
+        )
+        == "0\n"
+    )
+    # A list is converted element by element.
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16', 3), toDateTime64('2000-01-01 00:00:00', 3))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date NOT IN (toDateTime('1999-02-28 00:00:00'), toDateTime('2000-01-01 00:00:00'))"
+        )
+        == "0\n"
+    )
+    # A sub-second bound is not pushed down truncated: the query is refused like any other predicate MongoDB
+    # cannot take, and evaluated in ClickHouse when allowed to.
+    assert "NOT_IMPLEMENTED" in node.query_and_get_error(
+        "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3)"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3) SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "0\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date32 < toDateTime('1999-02-28 12:00:00') SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "1\n"
+    )
+
+    # A member converts as `IN` converts it: a time of day is the day of a `Date` column, and a sub-second
+    # member matches nothing. The stored dates carry a time of day, so a `Date` can only match a document
+    # stored at midnight.
+    dates_mongo_table.insert_one({k: datetime.datetime(2000, 1, 1) for k in data})
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 12:00:00'))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16.5', 3))"
+        )
+        == "0\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime NOT IN (toDateTime64('1999-02-28 11:23:16.5', 3))"
+        )
+        == "2\n"
+    )
+
     node.query("DROP TABLE dates_table")
     dates_mongo_table.drop()
 
@@ -872,6 +939,7 @@ def test_where(started_cluster):
     assert node.query("SELECT id FROM where_table WHERE id IN ['11']") == "11\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ('11', 100)") == "11\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ('11', '22') ORDER BY keyFloat") == "11\n22\n"
+    assert node.query("SELECT id FROM where_table WHERE keyInt IN (1.0, 2.0) ORDER BY id") == "11\n12\n21\n22\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ['11', '22'] ORDER BY keyFloat") == "11\n22\n"
 
     assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11') ORDER BY keyFloat") == "12\n21\n22\n"

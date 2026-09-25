@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -372,23 +373,64 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     if (func_name == "$in" || func_name == "$nin")
     {
-        if (const_value.getType() == Field::Types::Array)
+        /// A list of one member arrives as a plain constant.
+        Array elements;
+        if (const_value.getType() == Field::Types::Tuple)
         {
-            column_type = std::make_shared<DataTypeArray>(column_type);
+            const auto & value_tuple = const_value.safeGet<Tuple>();
+            elements.assign(value_tuple.begin(), value_tuple.end());
         }
-        else if (const_value.getType() == Field::Types::Tuple)
+        else if (const_value.getType() == Field::Types::Array)
+            elements = const_value.safeGet<Array>();
+        else
+            elements.push_back(const_value);
+
+        /// The list is a `Tuple` type over an `Array` value, so the elements are converted one by one.
+        /// A member converts as `IN` converts it, strictly but to the column's type: a `DateTime` with a time
+        /// of day is the day of a `Date` column, and a member the type cannot hold matches nothing.
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
+        Array converted_elements;
+        converted_elements.reserve(elements.size());
+        for (size_t i = 0; i < elements.size(); ++i)
         {
-            auto & value_tuple = const_value.safeGet<Tuple>();
-            const_value = Array(value_tuple.begin(), value_tuple.end());
-            column_type = std::make_shared<DataTypeArray>(column_type);
+            DataTypePtr element_type;
+            if (tuple_type && i < tuple_type->getElements().size())
+                element_type = tuple_type->getElements()[i];
+            else if (array_type)
+                element_type = array_type->getNestedType();
+            else if (!tuple_type)
+                element_type = const_type;
+
+            /// Every element is converted: the list is written with the column's type, so a `Float64`
+            /// element under an integer column would be read back as an integer.
+            if (element_type && element_type->equals(*column_type))
+            {
+                converted_elements.push_back(elements[i]);
+                continue;
+            }
+
+            auto converted = tryConvertFieldToType(elements[i], *column_type, element_type.get(), {}, /*strict=*/ true);
+            if (converted.isNull())
+            {
+                auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
+                continue;
+            }
+            converted_elements.push_back(std::move(converted));
         }
+
+        const_value = std::move(converted_elements);
+        column_type = std::make_shared<DataTypeArray>(column_type);
+        const_type = column_type;
     }
 
     /// Conversion is required because MongoDB cannot perform implicit cast and the result of WHERE clause may be incorrect.
     /// But implicit conversion between numbers works well and doesn't affect the result of WHERE clause.
     if (!const_type->equals(*column_type) && (!is_const_number || !is_column_number))
     {
-        auto converted_value = convertFieldToType(const_value, *column_type, const_type.get());
+        /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
+        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, const_type.get());
 
         if (converted_value.isNull())
         {
