@@ -1589,7 +1589,8 @@ static NameToNameVector collectFilesForRenames(
   * columns dropped both, each collector being then typed for the other column - while the metadata
   * they were built from had already accounted for every rename and drop. A `CLEAR STATISTICS`
   * (`DROP_STATISTICS`) applies to both kinds: the metadata still declares the statistics it clears,
-  * so a collector built from it has to be removed here.
+  * so a collector built from it has to be removed here. It names the columns by their current names,
+  * so on the source-part path it is applied once the renames have been resolved.
   */
 static void processStatisticsChanges(
     NameSet & files_to_skip,
@@ -1613,6 +1614,7 @@ static void processStatisticsChanges(
       * until every command has been read, and a command looks for its source in both maps.
       */
     std::map<String, ColumnStatisticsPtr> renamed_statistics;
+    NameSet statistics_to_clear;
 
     auto process_rename = [&](const String & from_name, const String & to_name)
     {
@@ -1644,7 +1646,18 @@ static void processStatisticsChanges(
             auto removed_stats = MutationHelpers::getRemovedStatistics(metadata_snapshot, command);
 
             for (const auto & stats_name : removed_stats)
-                process_rename(stats_name, "");
+            {
+                /// A name the table has now is a current name, and on the source-part path the entry it
+                /// clears may still be keyed by the name the column had in the part: the renames that
+                /// bring the part up to date (`alter_conversions`' rename map) come after the user's
+                /// commands. Such a name is cleared once every rename has been resolved. A name the
+                /// table no longer has can only be a name the column had before a later rename, so it
+                /// is cleared in place, before that rename moves the entry.
+                if (statistics_are_from_source_part && metadata_snapshot->getColumns().has(stats_name))
+                    statistics_to_clear.insert(stats_name);
+                else
+                    process_rename(stats_name, "");
+            }
         }
         else if (!statistics_are_from_source_part)
         {
@@ -1684,6 +1697,9 @@ static void processStatisticsChanges(
 
         all_statistics.emplace(name, std::move(statistics));
     }
+
+    for (const auto & name : statistics_to_clear)
+        all_statistics.erase(name);
 
     if (!stats_to_recalc.empty())
     {
