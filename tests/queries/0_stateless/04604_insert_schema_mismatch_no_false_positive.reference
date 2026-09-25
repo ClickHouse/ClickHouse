@@ -1,0 +1,6 @@
+-- narrower numeric column (UInt8): compatible with the sampled numeric input, fails only on a fractional value
+insert failed as expected
+explanation missing
+-- LowCardinality(String) plus a narrower numeric column: both compatible, fails only on the fractional number
+insert failed as expected
+explanation missing

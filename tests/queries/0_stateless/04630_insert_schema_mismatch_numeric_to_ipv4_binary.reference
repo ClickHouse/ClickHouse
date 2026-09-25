@@ -1,0 +1,4 @@
+-- BSONEachRow: an int32 value for an IPv4 column is valid (no false positive)
+explanation missing
+-- BSONEachRow: an int32 value for an IPv6 column stays a genuine structure mismatch
+explanation present

@@ -1,0 +1,12 @@
+-- JSONEachRow, a bare number into a UUID column is a genuine structure mismatch
+insert failed as expected
+explanation present
+-- JSONEachRow, a bare number into an IPv4 column is a genuine structure mismatch
+insert failed as expected
+explanation present
+-- JSONEachRow, a bare number into an IPv6 column is a genuine structure mismatch
+insert failed as expected
+explanation present
+-- TSV, a number into a FixedString column is read verbatim; a bad numeric column elsewhere must not add a false positive
+insert failed as expected
+explanation missing

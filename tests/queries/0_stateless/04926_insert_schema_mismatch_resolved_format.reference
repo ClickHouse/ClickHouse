@@ -1,0 +1,4 @@
+-- client --input-format override for inline data
+explanation present
+-- async INSERT SETTINGS input_format override
+explanation present

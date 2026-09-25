@@ -466,7 +466,11 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
     }
 
     if (!with_names && !with_types && try_detect_header)
+    {
         tryDetectHeader(column_names, data_type_names);
+        names_detected_from_data = !column_names.empty();
+        types_detected_from_data = !data_type_names.empty();
+    }
 
     if (!data_type_names.empty())
     {
