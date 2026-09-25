@@ -1,0 +1,17 @@
+<test>
+    <!-- Writing Parquet bloom filters used to deduplicate the value hashes in a hash set first, and a value distribution
+         that is a worst case for that hash set made the export orders of magnitude slower than for generic data.
+         See https://github.com/ClickHouse/ClickHouse/issues/105295 -->
+
+    <create_query>CREATE TABLE dat_fast (number UInt64) ENGINE = MergeTree ORDER BY number</create_query>
+    <create_query>CREATE TABLE dat_slow (number UInt64) ENGINE = MergeTree ORDER BY number</create_query>
+
+    <fill_query>INSERT INTO dat_fast SELECT number FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO dat_slow SELECT number FROM numbers_mt(50000000) WHERE kostikConsistentHash(xxHash64(number), 20) = 19 LIMIT 2000000</fill_query>
+
+    <query>INSERT INTO FUNCTION file('parquet_write_bloom_filter_fast.parquet', Parquet) SELECT number FROM dat_fast ORDER BY number SETTINGS max_threads = 1, output_format_parquet_write_bloom_filter = 1, engine_file_truncate_on_insert = 1</query>
+    <query>INSERT INTO FUNCTION file('parquet_write_bloom_filter_slow.parquet', Parquet) SELECT number FROM dat_slow ORDER BY number SETTINGS max_threads = 1, output_format_parquet_write_bloom_filter = 1, engine_file_truncate_on_insert = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS dat_fast</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dat_slow</drop_query>
+</test>

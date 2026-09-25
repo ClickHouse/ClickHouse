@@ -24,7 +24,7 @@
 #include <Common/config_version.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
-#include <Common/HashTable/HashSet.h>
+#include <bit>
 #include <DataTypes/DataTypeEnum.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -856,44 +856,93 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
     addToEncodingStats(s, header);
 }
 
-void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkIndexes & indexes, const WriteOptions & options)
+/// Folds the oversized bloom filter built by `writeColumnImpl` down to the smallest size that still meets the requested
+/// false positive probability, and fills in its header. See the comment at the construction of the filter in
+/// `writeColumnImpl` for why it starts oversized.
+void foldBloomFilter(ColumnChunkIndexes & indexes, BloomFilterData && unfolded_data, const WriteOptions & options)
 {
     /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/
+    const size_t num_blocks = unfolded_data.size() / 8;
 
-    if (hashes.empty())
+    if (num_blocks == 0)
         return;
 
-    static constexpr UInt32 salt[8] = {
-        0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U};
+    /// The number of blocks is a power of two by construction (see `writeColumnImpl`), so the filter can be halved
+    /// exactly `countr_zero(num_blocks)` times and every fold below leaves a power of two.
+    chassert(std::has_single_bit(num_blocks));
 
-    /// There appear to be undocumented requirements:
-    ///  * number of blocks must be a power of two,
-    ///  * bloom filter size must be at most 128 MiB.
-    /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
-    /// requires this.
-    double requested_num_blocks = static_cast<double>(hashes.size()) * options.bloom_filter_bits_per_value / 256;
-    size_t num_blocks = 1;
-    while (static_cast<double>(num_blocks) < requested_num_blocks)
+    /// The false positive probability (fpp) that the bloom filter parameters ask for. A split block bloom filter sets
+    /// k = 8 bits per inserted value (one in each of the 8 words of its block), and the filter is sized to spend
+    /// c = `bits_per_value` bits per value, so its expected fpp is given by the classic bloom filter approximation
+    ///     f = (1 - e^(-k / c))^k
+    /// (the probability that a bit is still unset after inserting n values into m bits is about e^(-k * n / m), and an
+    /// absent value passes only if all k bits it checks are set), see http://tfk.mit.edu/pdf/bloom.pdf, section 2,
+    /// and https://parquet.apache.org/docs/file-format/bloomfilter/#sizing-an-sbbf.
+    const double fpp = std::pow(1 - std::exp(-8 / options.bloom_filter_bits_per_value), 8);
+
+    /// The fpp of the concrete filter follows from the fraction of set bits (the fill rate): a membership check tests
+    /// 8 bits, so an absent value passes with probability about fill_rate^8.
+    size_t total_set_bits = 0;
+    for (size_t i = 0; i < num_blocks * 8; ++i)
+        total_set_bits += std::popcount(unfolded_data[i]);
+    if (total_set_bits == 0)
+        return;
+
+    const double fill_rate = static_cast<double>(total_set_bits) / (static_cast<double>(num_blocks) * 256);
+
+    indexes.bloom_filter_data = std::move(unfolded_data);
+    BloomFilterData & data = indexes.bloom_filter_data;
+
+    /// Folding merges neighboring blocks by OR-ing them, which halves the filter and yields exactly the filter that
+    /// would have been built with half the blocks (see the merge loop below for why). Every fold increases the fill
+    /// rate and with it the fpp: OR-ing two blocks with fill rate p leaves a bit unset with probability (1 - p)^2, so
+    /// the fill rate of the merged block is 1 - (1 - p)^2. Fold as often as the fpp estimated that way stays within
+    /// the requested one. A filter sized for all values of the column chunk is at or below the requested fpp before
+    /// the first fold, so at least the unfolded filter is always kept.
+    const int max_folds = std::countr_zero(num_blocks);
+    double one_minus_fill_rate = 1.0 - fill_rate;
+    UInt32 folds = 0;
+    for (int i = 0; i < max_folds; ++i)
     {
-        if (num_blocks >= 4 * 1024 * 1024)
-            return;
-        num_blocks *= 2;
+        one_minus_fill_rate = one_minus_fill_rate * one_minus_fill_rate;
+        const double folded_fill_rate = 1.0 - one_minus_fill_rate;
+        if (std::pow(folded_fill_rate, 8) > fpp)
+            break;
+        ++folds;
     }
-    PODArray<UInt32> & data = indexes.bloom_filter_data;
-    data.reserve_exact(num_blocks * 8);
-    data.resize_fill(num_blocks * 8);
-    for (const auto & cell : hashes)
+
+    if (folds > 0)
     {
-        size_t h = cell.key;
-        size_t block_idx = ((h >> 32) * num_blocks) >> 32;
-        chassert(block_idx < num_blocks);
-        UInt32 x = UInt32(h); // overflow to take the lower 32 bits
-        for (size_t word_idx = 0; word_idx < 8; ++word_idx)
+        /// Merge each group of 2^folds consecutive blocks into one block. A value goes to block
+        /// `((h >> 32) * num_blocks) >> 32` (see the hashing in `writeColumnImpl`), i.e. the block index is taken from
+        /// the top bits of the hash, so a filter with half the blocks puts a value into block `i / 2` where this filter
+        /// put it into block `i`: blocks `2 * i` and `2 * i + 1` together hold exactly the values that block `i` of the
+        /// smaller filter would hold, and OR-ing them gives that block bit for bit. The same holds for 2^folds
+        /// consecutive blocks after several halvings. The reader derives the block index from the number of blocks in
+        /// the file and thus finds every value where the folded filter put it.
+        /// The merge is done in place: group `i` lands in block `i`, which is at or before the first block of the
+        /// group, so no block that is still to be read is overwritten.
+        const size_t group_size = size_t(1) << folds;
+        const size_t new_num_blocks = num_blocks >> folds;
+        for (size_t i = 0; i < new_num_blocks; ++i)
         {
-            UInt32 y = x * salt[word_idx]; // overflow to take the lower 32 bits
-            size_t bit_idx = y >> 27;
-            data[block_idx * 8 + word_idx] |= 1u << bit_idx;
+            UInt32 * dst = &data[i * 8];
+            const UInt32 * src = &data[i * group_size * 8];
+            /// For i = 0 the destination is the first block of the group itself, so there is nothing to move
+            /// (and `memcpy` is not allowed on identical or overlapping regions).
+            if (dst != src)
+                memcpy(dst, src, 8 * sizeof(UInt32));
+            for (size_t j = 1; j < group_size; ++j)
+            {
+                const UInt32 * block = src + j * 8;
+                for (size_t w = 0; w < 8; ++w)
+                    dst[w] |= block[w];
+            }
         }
+        /// `resize` only moves the logical end; also release the capacity of the unfolded filter, because the folded
+        /// filters of completed row groups stay in memory until `flushBloomFilters`.
+        data.resize(new_num_blocks * 8);
+        data.shrink_to_fit();
     }
 
     /// Fill out the paperwork.
@@ -976,12 +1025,56 @@ void writeColumnImpl(
     PODArray<char> encoded;
     PODArray<char> compressed_maybe;
 
-    /// Hash set to deduplicate the values before calculating bloom filter size.
+    /// Bloom filter of this column chunk, if requested.
+    ///
+    /// Why the filter starts sized for all values and is folded afterwards: a bloom filter has to be sized for the
+    /// number of distinct values it will hold, which is not known when the column chunk is started. The writer used
+    /// to find it by deduplicating the hashes of all values in a hash set first, which costs a hash set the size of
+    /// the column chunk and, for unlucky value distributions, degenerates into an excessive number of collisions
+    /// (https://github.com/ClickHouse/ClickHouse/issues/105295). Instead, the filter is sized under the assumption
+    /// that all values are distinct, the largest size it can ever need, so it meets the requested false positive
+    /// probability for any data. Once all values are hashed into it, its fill rate reveals how many distinct values
+    /// it actually received, and `foldBloomFilter` halves it as long as the requested false positive probability holds.
+    /// Folding a split block bloom filter yields exactly the filter that would have been built with fewer blocks,
+    /// so nothing is lost compared to knowing the right size upfront, and the cost is a larger temporary buffer
+    /// instead of a hash set. The same approach was adopted by arrow-rs: https://github.com/apache/arrow-rs/pull/9628
+    ///
     /// Possible future optimization: if using dictionary encoding, take already-deduplicated values
     /// from the dictionary instead.
-    std::optional<HashSet<UInt64, TrivialHash>> hashes_for_bloom_filter;
+    std::optional<BloomFilterData> bloom_data;
     if (options.write_bloom_filter)
-        hashes_for_bloom_filter.emplace(); // allocates memory for initial size
+    {
+        /// There appear to be undocumented requirements:
+        ///  * number of blocks must be a power of two,
+        ///  * bloom filter size must be at most 128 MiB.
+        /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
+        /// requires this. A column chunk that would need a bigger filter gets none.
+        /// Only the entries at the maximum definition level are hashed into the filter, so size it for the number of
+        /// leaf values in the primitive column, not for `num_values`, which also counts the null and empty-array
+        /// placeholders of a repeated or nullable leaf (a sparse `Array(Nullable(T))` may have hundreds of
+        /// placeholders per value).
+        const double requested_num_blocks
+            = static_cast<double>(s.primitive_column->size()) * options.bloom_filter_bits_per_value / 256;
+        size_t num_blocks = 1;
+        bool too_many_blocks = false;
+        while (static_cast<double>(num_blocks) < requested_num_blocks)
+        {
+            if (num_blocks >= 4 * 1024 * 1024)
+            {
+                too_many_blocks = true;
+                break;
+            }
+            num_blocks *= 2;
+        }
+        if (!too_many_blocks)
+        {
+            bloom_data.emplace();
+            bloom_data->reserve_exact(num_blocks * 8);
+            /// `BloomFilterData` zeroes freshly allocated memory in the allocator, so plain `resize` is
+            /// enough here; `resize_fill` would `memset` the whole buffer on top of that.
+            bloom_data->resize(num_blocks * 8);
+        }
+    }
 
     /// Start of current page.
     size_t def_offset = 0; // index in def and rep
@@ -1171,12 +1264,20 @@ void writeColumnImpl(
                 for (size_t i = 0; i < data_count; ++i)
                     page_statistics.add(converted[i]);
 
-            if (hashes_for_bloom_filter.has_value())
+            if (bloom_data.has_value())
             {
 /// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
 /// so any actual use triggers this warning.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
+                /// Hash the value into its block of the split block bloom filter: 8 bits per value, one in each
+                /// of the 8 words of the block, at positions derived from the lower 32 bits of the hash and the salt.
+                /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/
+                auto & bd = *bloom_data;
+                const size_t num_blocks = bd.size() / 8;
+                static constexpr UInt32 salt[8] = {
+                    0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U};
+
                 for (size_t i = 0; i < data_count; ++i)
                 {
                     UInt64 h = 0;
@@ -1190,7 +1291,15 @@ void writeColumnImpl(
                         static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
                         h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
                     }
-                    hashes_for_bloom_filter->insert(h);
+                    const size_t block_idx = ((h >> 32) * num_blocks) >> 32;
+                    chassert(block_idx < num_blocks);
+                    const UInt32 x = UInt32(h); // overflow to take the lower 32 bits
+                    for (size_t word_idx = 0; word_idx < 8; ++word_idx)
+                    {
+                        const UInt32 y = x * salt[word_idx]; // overflow to take the lower 32 bits
+                        const size_t bit_idx = y >> 27;
+                        bd[block_idx * 8 + word_idx] |= 1u << bit_idx;
+                    }
                 }
 #pragma clang diagnostic pop
             }
@@ -1278,8 +1387,8 @@ void writeColumnImpl(
         addToEncodingsUsed(s, encoding);
     }
 
-    if (hashes_for_bloom_filter.has_value())
-        makeBloomFilter(*hashes_for_bloom_filter, s.indexes, options);
+    if (bloom_data.has_value())
+        foldBloomFilter(s.indexes, *std::move(bloom_data), options);
 }
 
 }
@@ -1677,6 +1786,9 @@ size_t ColumnChunkWriteState::allocatedBytes() const
     size_t r = def.allocated_bytes() + rep.allocated_bytes();
     if (primitive_column)
         r += primitive_column->allocatedBytes();
+    /// The folded bloom filter is held here until the row group is written out, so it is part of the
+    /// memory a completed column chunk keeps alive.
+    r += indexes.bloom_filter_data.allocated_bytes();
     return r;
 }
 
