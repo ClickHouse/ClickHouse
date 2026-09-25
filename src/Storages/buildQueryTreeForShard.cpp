@@ -293,9 +293,17 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<DistributedProductModeRewriteInJoinVisitor>;
     using Base::Base;
 
-    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_, bool allow_global_join_for_right_table_)
+    /// `enforce_distributed_product_mode` is false when the visitor is only asked what shipping would
+    /// do, rather than driving it. `distributed_product_mode = 'deny'` - the default - makes a local
+    /// IN/JOIN over a distributed table an error, which is a policy the real shipping path has to
+    /// apply but a prediction must not: it would fail a query that the caller was only considering.
+    /// A denied query ships nothing, so it also materializes nothing, which is the answer the
+    /// prediction wants.
+    explicit DistributedProductModeRewriteInJoinVisitor(
+        const ContextPtr & context_, bool allow_global_join_for_right_table_, bool enforce_distributed_product_mode_ = true)
         : Base(context_)
         , allow_global_join_for_right_table(allow_global_join_for_right_table_)
+        , enforce_distributed_product_mode(enforce_distributed_product_mode_)
     {}
 
     struct InFunctionOrJoin
@@ -441,6 +449,9 @@ private:
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {
+            if (!enforce_distributed_product_mode)
+                return;
+
             throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
                 "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
                 "You may rewrite query to use local tables "
@@ -455,6 +466,7 @@ private:
     IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
     bool allow_global_join_for_right_table = false;
+    bool enforce_distributed_product_mode = true;
 };
 
 /** Replaces large constant values with `__getScalar` function calls to avoid
@@ -923,6 +935,28 @@ void rejectUnshippableJoinUsingKeys(const QueryTreeNodePtr & root)
 void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
 {
     inlineAliasColumnsImpl(query_tree_to_modify);
+}
+
+bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+{
+    /// Fixed rather than a parameter: this predicts the parallel-replicas path, and both of its
+    /// `buildQueryTreeForShard` call sites - `findParallelReplicasQuery` and
+    /// `ClusterProxy::executeQuery` - pass true. `StorageDistributed` passes false, but nothing here
+    /// predicts that path, and letting a caller choose would let it predict the wrong one.
+    static constexpr bool allow_global_join_for_right_table = true;
+
+    /// Both rewrites below modify the tree as they walk it - `in` becomes `globalIn`, a join's
+    /// locality becomes `Global` - so they get a clone. Handing them the caller's tree would convert
+    /// the real query to its shipped form behind its back.
+    auto query_tree_copy = query_tree->clone();
+
+    /// `ClusterProxy::executeQuery` makes joins global before shipping, so predict that first:
+    /// without it a plain `JOIN` that ships as a `GLOBAL JOIN` goes unnoticed. Then ask the visitor
+    /// `buildQueryTreeForShard` itself uses to decide what to ship.
+    rewriteJoinToGlobalJoin(query_tree_copy, context);
+    DistributedProductModeRewriteInJoinVisitor visitor(context, allow_global_join_for_right_table, /*enforce_distributed_product_mode*/ false);
+    visitor.visit(query_tree_copy);
+    return !visitor.getGlobalInOrJoinNodes().empty();
 }
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
