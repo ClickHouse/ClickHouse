@@ -841,9 +841,6 @@ private:
         const auto & arg_column = arguments[1].column;
         const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(&*arg_column);
 
-        if (col_array)
-            nullable = checkAndGetColumn<ColumnNullable>(&col_array->getData());
-
         if (!nullable && !arg_nullable)
         {
             return executeOnNonNullable(arguments, result_type);
