@@ -98,7 +98,7 @@ public:
     /// `table_readonly` is not supported for `ReplicatedMergeTree`, so both conversion entrypoints
     /// (the `convert_to_replicated` flag and `ATTACH TABLE ... AS REPLICATED`) have to refuse such a
     /// table before their side effects.
-    static bool isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr context);
+    static bool isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context);
 
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.

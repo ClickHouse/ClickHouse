@@ -147,7 +147,7 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
         );
 }
 
-bool DatabaseOrdinary::isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr context)
+bool DatabaseOrdinary::isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context)
 {
     /// Resolved the way `registerStorageMergeTree` resolves the settings of a `ReplicatedMergeTree`:
     /// the definition's own `SETTINGS` over the `merge_tree` and `replicated_merge_tree` config defaults.
@@ -157,7 +157,7 @@ bool DatabaseOrdinary::isTableReadonlyAsReplicated(const ASTCreateQuery & create
             return SettingFieldBool{*readonly_setting}.value;
     }
 
-    return context->getReplicatedMergeTreeSettings()[MergeTreeSetting::table_readonly];
+    return local_context->getReplicatedMergeTreeSettings()[MergeTreeSetting::table_readonly];
 }
 
 void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
