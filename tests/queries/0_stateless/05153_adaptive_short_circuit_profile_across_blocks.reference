@@ -1,0 +1,3 @@
+pipeline_filter	1	1
+hash_join_residual	1	1
+parquet_prewhere	1	1

@@ -10,7 +10,9 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/MaskOperations.h>
+#include <Common/Stopwatch.h>
 #include <Core/Settings.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1314,13 +1316,43 @@ private:
         return nullptr;
     }
 
-    static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments)
+    /// When `with_profile` is set, the execution of every lazily executed branch is measured and reported
+    /// through `profile->argument_profiles`, so that the adaptive short-circuit heuristic learns how much
+    /// the branches of this `if` cost. Without it, `enable_adaptive_short_circuit_lazy_execution` would
+    /// never see the cost of a branch and could not revisit its decision.
+    template <bool with_profile>
+    static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments, FunctionExecutionProfile * profile)
     {
         int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
         if (last_short_circuit_argument_index == -1)
             return;
 
+        /// The condition is never lazily executed, so it is not profiled.
         executeColumnIfNeeded(arguments[0]);
+
+        auto argument_profile = [&] (size_t index) -> FunctionExecutionProfile *
+        {
+            if constexpr (with_profile)
+            {
+                if (checkAndGetShortCircuitArgument(arguments[index].column))
+                {
+                    profile->argument_profiles.emplace_back(index, FunctionExecutionProfile());
+                    return &profile->argument_profiles.back().second;
+                }
+            }
+            return nullptr;
+        };
+
+        auto accumulate_arguments_elapsed = [&]
+        {
+            if constexpr (with_profile)
+            {
+                size_t side_elapsed = 0;
+                for (const auto & [_, arg_profile] : profile->argument_profiles)
+                    side_elapsed += arg_profile.lazy_executed_additional_elapsed;
+                profile->lazy_executed_additional_elapsed = side_elapsed;
+            }
+        };
 
         /// Check if condition is const or null to not create full mask from it.
         if ((isColumnConst(*arguments[0].column) || arguments[0].column->onlyNull()) && !arguments[0].column->empty())
@@ -1328,16 +1360,20 @@ private:
             /// `onlyNull` columns (e.g. `Const(Nullable(Nothing))`) are treated as the false branch:
             /// `getBool` would throw on the dummy nested column, but `if(NULL, then, else)` returns `else`.
             const bool value = !arguments[0].column->onlyNull() && arguments[0].column->getBool(0);
-            executeColumnIfNeeded(arguments[1], !value);
-            executeColumnIfNeeded(arguments[2], value);
+            auto * then_profile = argument_profile(1);
+            executeColumnIfNeeded(arguments[1], !value, then_profile);
+            auto * else_profile = argument_profile(2);
+            executeColumnIfNeeded(arguments[2], value, else_profile);
+            accumulate_arguments_elapsed();
             return;
         }
 
         IColumn::Filter mask(arguments[0].column->size(), 1);
         auto mask_info = extractMask(mask, arguments[0].column);
-        maskedExecute(arguments[1], mask, mask_info);
+        maskedExecute(arguments[1], mask, mask_info, argument_profile(1));
         inverseMask(mask, mask_info);
-        maskedExecute(arguments[2], mask, mask_info);
+        maskedExecute(arguments[2], mask, mask_info, argument_profile(2));
+        accumulate_arguments_elapsed();
     }
 
 public:
@@ -1384,7 +1420,32 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName arguments = args;
-        executeShortCircuitArguments(arguments);
+        executeShortCircuitArguments<false>(arguments, nullptr);
+        return executeWithPreparedArguments(arguments, result_type, input_rows_count);
+    }
+
+    ColumnPtr executeImplWithProfile(
+        const ColumnsWithTypeAndName & args,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecutionProfile * profile) const override
+    {
+        if (!profile)
+            return executeImpl(args, result_type, input_rows_count);
+
+        /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+        Stopwatch watch;
+        ColumnsWithTypeAndName arguments = args;
+        executeShortCircuitArguments<true>(arguments, profile);
+        auto res = executeWithPreparedArguments(arguments, result_type, input_rows_count);
+        profile->executed_rows = input_rows_count;
+        profile->execution_elapsed = watch.elapsed();
+        return res;
+    }
+
+    ColumnPtr executeWithPreparedArguments(
+        ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
         ColumnPtr res;
         if (   (res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count))
             || (res = executeForNullThenElse(arguments, result_type, input_rows_count))

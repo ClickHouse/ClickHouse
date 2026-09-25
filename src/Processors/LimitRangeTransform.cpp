@@ -86,7 +86,7 @@ LimitRangeTransform::BoundaryEvaluation::BoundaryEvaluation(
     const std::optional<String> & start_column_name,
     const std::optional<String> & end_column_name,
     const ExpressionActionsSettings & actions_settings)
-    : actions(std::make_shared<ExpressionActions>(std::move(conditions), actions_settings))
+    : actions(ExpressionActions::create(std::move(conditions), actions_settings))
 {
     for (const auto & column : actions->getRequiredColumnsWithTypes())
     {
