@@ -39,6 +39,7 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
+#include <Storages/StorageMerge.h>
 
 namespace ProfileEvents
 {
@@ -903,7 +904,13 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     if (effective_settings.remove_redundant_sorting)
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
+    const bool collect_neutral_sum_proofs = effective_settings.optimize_plan && effective_settings.optimize_projection
+        && effective_settings.optimize_merge_neutral_sum_children && !effective_settings.make_distributed_plan;
+    if (collect_neutral_sum_proofs)
+        ReadFromMerge::collectNeutralSumProofs(*root);
     QueryPlanOptimizations::optimizeTreeFirstPass(effective_settings, *root, nodes);
+    if (collect_neutral_sum_proofs)
+        ReadFromMerge::collectNeutralSumProofs(*root);
     QueryPlanOptimizations::optimizeTreeSecondPass(effective_settings, *root, nodes, *this);
 
     /// Defer set/CTE expansion: a distributed plan builds the sets on the initiator and ships

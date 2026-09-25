@@ -1,8 +1,10 @@
 #include <cmath>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <Access/ContextAccess.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -26,6 +28,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -59,7 +62,11 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -97,15 +104,28 @@
 #include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char merge_neutral_sum_late_filter[];
+}
+
 namespace Setting
 {
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
+    extern const SettingsBool optimize_merge_neutral_sum_children;
+    extern const SettingsUInt64 optimize_merge_neutral_sum_children_max_rows;
+    extern const SettingsFloat optimize_merge_neutral_sum_children_max_rows_ratio;
+    extern const SettingsBool optimize_use_projections;
+    extern const SettingsBool query_plan_enable_optimizations;
+    extern const SettingsBool make_distributed_plan;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
     extern const SettingsBool parallel_replicas_allow_merge_tables;
     extern const SettingsBool parallel_replicas_plan_based;
@@ -142,6 +162,217 @@ extern const int INCOMPATIBLE_COLUMNS;
 
 namespace
 {
+
+/// A deliberately narrow proof that row multiplicity is unobservable for a child
+/// which fills the only measure with NULL. Do not infer this from required columns:
+/// an expression containing another aggregate could need the original multiplicity.
+struct NeutralSumKeys
+{
+    String measure;
+    Names keys;
+};
+
+std::optional<NeutralSumKeys> getNeutralSumKeys(const SelectQueryInfo & info)
+{
+    const auto * query = info.query_tree ? info.query_tree->as<QueryNode>() : nullptr;
+    if (!query || !info.table_expression || query->getJoinTreeNode().get() != info.table_expression.get()
+        || info.isFinal() || info.isStream() || !query->hasGroupBy()
+        || query->hasHaving() || query->hasWindow()
+        || query->hasQualify() || query->hasWith() || query->hasOrderBy() || query->hasLimit()
+        || query->hasOffset() || query->hasLimitBy() || query->hasLimitAfter() || query->hasLimitUntil()
+        || query->isDistinct() || query->isGroupByWithTotals() || query->isGroupByWithRollup()
+        || query->isGroupByWithCube() || query->isGroupByWithGroupingSets()
+        || info.additional_filter_ast || info.row_level_filter)
+        return {};
+
+    auto direct_column = [&](const QueryTreeNodePtr & node) -> const ColumnNode *
+    {
+        const auto * column = node->as<ColumnNode>();
+        if (!column || column->hasExpression() || column->getColumnSource().get() != info.table_expression.get())
+            return nullptr;
+        return column;
+    };
+
+    NeutralSumKeys result;
+    for (const auto & key : query->getGroupBy().getNodes())
+    {
+        const auto * column = direct_column(key);
+        if (!column)
+            return {};
+        result.keys.push_back(column->getColumnName());
+    }
+
+    for (const auto & expression : query->getProjection().getNodes())
+    {
+        if (const auto * column = direct_column(expression))
+        {
+            if (!std::ranges::contains(result.keys, column->getColumnName()))
+                return {};
+            continue;
+        }
+        const auto * function = expression->as<FunctionNode>();
+        if (!function || !function->isAggregateFunction() || function->getFunctionName() != "sum"
+            || !result.measure.empty() || function->getArguments().getNodes().size() != 1
+            || !function->getParameters().getNodes().empty())
+            return {};
+        const auto * argument = direct_column(function->getArguments().getNodes().front());
+        if (!argument || !argument->getColumnType()->isNullable())
+            return {};
+        result.measure = argument->getColumnName();
+    }
+    if (result.measure.empty() || std::ranges::contains(result.keys, result.measure))
+        return {};
+
+    /// Only deterministic predicates on grouping keys commute with this reduction.
+    /// Row-level predicates require a separate projection-coverage proof, not just
+    /// the presence of an aggregate over the predicate's input column.
+    for (const auto & predicate : {query->getWhere(), query->getPrewhere()})
+    {
+        if (!predicate)
+            continue;
+        bool supported = true;
+        traverseQueryTree(predicate, [&](const auto &, const auto &) { return supported; }, [&](const QueryTreeNodePtr & node)
+        {
+            if (node->as<ColumnNode>())
+            {
+                const auto * column = direct_column(node);
+                supported &= column && std::ranges::contains(result.keys, column->getColumnName());
+            }
+            else if (const auto * function = node->as<FunctionNode>())
+            {
+                const auto base = function->getFunction();
+                supported &= base && base->isDeterministic() && !base->isStateful();
+            }
+            else if (!node->as<ConstantNode>() && !node->as<ListNode>())
+                supported = false;
+        });
+        if (!supported)
+            return {};
+    }
+    return result;
+}
+
+/// A deterministic, row-preserving expression on an unchanged header commutes
+/// with duplicate removal. Inspect every node, including non-output side effects.
+bool canCrossNeutralReduction(const ActionsDAG & actions)
+{
+    if (actions.hasNonDeterministicOrStatefulFunctions())
+        return false;
+    for (const auto & node : actions.getNodes())
+        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN || node.type == ActionsDAG::ActionType::PLACEHOLDER
+            || !node.isDeterministic() || (node.function_base && node.function_base->isStateful()))
+            return false;
+    return true;
+}
+
+/// Accept only a unary chain of row-preserving expressions/filters over one read.
+ReadFromMergeTree * findMergeTreeRead(QueryPlan::Node * node)
+{
+    while (node)
+    {
+        if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+            return node->children.empty() ? reading : nullptr;
+        const ActionsDAG * actions = nullptr;
+        if (const auto * expression = typeid_cast<ExpressionStep *>(node->step.get()))
+            actions = &expression->getExpression();
+        else if (const auto * filter = typeid_cast<FilterStep *>(node->step.get()))
+            actions = &filter->getExpression();
+        if (!actions || !canCrossNeutralReduction(*actions) || node->children.size() != 1)
+            return nullptr;
+        node = node->children.front();
+    }
+    return nullptr;
+}
+
+/// Try projection selection before a competing read-in-order strategy is selected.
+/// Rejected candidates leave the original read and its analyzed ranges untouched.
+
+bool tryReduceNeutralSumChild(
+    QueryPlan & plan, const NeutralSumKeys & info, ContextPtr context,
+    std::unique_ptr<QueryPlan> & unreduced_plan, std::optional<std::pair<StorageID, String>> & used_projection)
+{
+    auto * original_reading = findMergeTreeRead(plan.getRootNode());
+    if (!original_reading || !original_reading->getStorageMetadata()->hasProjections())
+        return false;
+    const auto & original_header = plan.getCurrentHeader();
+    if (original_header->columns() != info.keys.size())
+        return false;
+    for (const auto & key : info.keys)
+        if (!original_header->has(key))
+            return false;
+    if (!QueryPlanOptimizations::canUseProjectionForReadingStep(original_reading))
+        return false;
+    const auto & read_info = original_reading->getQueryInfo();
+    if (read_info.row_level_filter
+        || (read_info.prewhere_info && !canCrossNeutralReduction(read_info.prewhere_info->prewhere_actions))
+        || (read_info.filter_actions_dag && !canCrossNeutralReduction(*read_info.filter_actions_dag)))
+        return false;
+
+    UInt64 base_rows = 0;
+    for (const auto & part : original_reading->getParts())
+    {
+        if (part.data_part->hasLightweightDelete()
+            || part.data_part->rows_count > std::numeric_limits<UInt64>::max() - base_rows)
+            return false;
+        base_rows += part.data_part->rows_count;
+    }
+
+    /// Clone before projection analysis. Projection optimization mutates the read's
+    /// analyzed ranges; a rejected candidate must not damage the original child plan.
+    auto candidate_plan = QueryPlan::cloneSubtree(plan.getRootNode(), plan);
+    const auto & header = candidate_plan.getCurrentHeader();
+    candidate_plan.addStep(std::make_unique<ExpressionStep>(header, ActionsDAG(header->getNamesAndTypesList())));
+    DistinctStep::Settings distinct_settings(context->getSettingsRef());
+    distinct_settings.set_size_limits.overflow_mode = OverflowMode::THROW;
+    candidate_plan.addStep(std::make_unique<DistinctStep>(
+        candidate_plan.getCurrentHeader(), distinct_settings, 0, info.keys, false));
+
+    auto optimization_settings = QueryPlanOptimizationSettings(context);
+    /// The internal `DISTINCT` exists to expose an aggregate-projection candidate,
+    /// not to choose a base-table read-in-order strategy.
+    optimization_settings.distinct_in_order = false;
+    optimization_settings.record_projection_usage = false;
+    candidate_plan.optimize(optimization_settings);
+
+    std::vector<ReadFromMergeTree *> projection_reads;
+    std::function<void(QueryPlan::Node *)> collect_reads = [&](QueryPlan::Node * node)
+    {
+        if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+            projection_reads.push_back(reading);
+        for (auto * child : node->children)
+            collect_reads(child);
+    };
+    collect_reads(candidate_plan.getRootNode());
+    if (projection_reads.size() != 1)
+        return false;
+    auto * projection_reading = projection_reads.front();
+    const auto analyzed = projection_reading->getAnalyzedResult();
+    if (!analyzed || !analyzed->readFromProjection())
+        return false;
+
+    UInt64 projection_rows = 0;
+    for (const auto & part : analyzed->parts_with_ranges)
+    {
+        if (!part.data_part->isProjectionPart()
+            || part.data_part->rows_count > std::numeric_limits<UInt64>::max() - projection_rows)
+            return false;
+        projection_rows += part.data_part->rows_count;
+    }
+    const auto & settings = context->getSettingsRef();
+    if (projection_rows > settings[Setting::optimize_merge_neutral_sum_children_max_rows]
+        || static_cast<Float64>(projection_rows) > static_cast<Float64>(base_rows)
+            * static_cast<Float64>(settings[Setting::optimize_merge_neutral_sum_children_max_rows_ratio]))
+        return false;
+
+    const auto & selected_part = analyzed->parts_with_ranges.front().data_part;
+    if (!read_info.is_internal)
+        for (const auto & [name, part] : selected_part->getParentPart()->getProjectionParts())
+            if (part.get() == selected_part.get())
+                used_projection.emplace(original_reading->getMergeTreeData().getStorageID(), name);
+    unreduced_plan = std::make_unique<QueryPlan>(std::move(plan));
+    plan = std::move(candidate_plan);
+    return true;
+}
 
 bool queryHasOrderBy(const SelectQueryInfo & query_info)
 {
@@ -825,8 +1056,195 @@ static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
     return optimization_settings;
 }
 
+void ReadFromMerge::setNeutralSumProof(String measure, Names keys)
+{
+    if (!context->getSettingsRef()[Setting::optimize_merge_neutral_sum_children] || keys.empty())
+        return;
+    if (const auto * query = query_info.query_tree ? query_info.query_tree->as<QueryNode>() : nullptr;
+        query && query->hasGroupBy())
+        return;
+    auto physical_name = [&](String & column_name)
+    {
+        if (merge_storage_snapshot->metadata->getColumns().hasPhysical(column_name))
+            return true;
+        if (query_info.planner_context && query_info.table_expression)
+        {
+            const auto & data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
+            if (const auto * resolved = data.getColumnNameOrNull(column_name))
+            {
+                column_name = *resolved;
+                return true;
+            }
+        }
+        return false;
+    };
+    if (!physical_name(measure) || !std::ranges::all_of(keys, physical_name)
+        || std::ranges::contains(keys, measure))
+        return;
+    for (const auto & filter : pushed_down_filters)
+    {
+        std::vector<const ActionsDAG::Node *> predicate_nodes{&filter.actions.findInOutputs(filter.column_name)};
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        while (!predicate_nodes.empty())
+        {
+            const auto * node = predicate_nodes.back();
+            predicate_nodes.pop_back();
+            if (!visited.insert(node).second)
+                continue;
+            if (node->type == ActionsDAG::ActionType::INPUT)
+            {
+                String column_name = node->result_name;
+                if (!physical_name(column_name) || !std::ranges::contains(keys, column_name))
+                    return;
+            }
+            predicate_nodes.insert(predicate_nodes.end(), node->children.begin(), node->children.end());
+        }
+    }
+    /// View subplans may already have prepared their children while the outer
+    /// aggregation was still being planned. Rebuild before execution, but never
+    /// invalidate an ordering contract already promised to another step.
+    if (order_info)
+        return;
+    if (neutral_sum_proof && neutral_sum_proof->first == measure && neutral_sum_proof->second == keys)
+        return;
+    neutral_sum_proof.emplace(std::move(measure), std::move(keys));
+    LOG_TRACE(getLogger("StorageMerge"), "Propagated neutral SUM proof for {}", neutral_sum_proof->first);
+    child_plans.reset();
+    expandable_reads.reset();
+}
+
+void ReadFromMerge::collectNeutralSumProofs(QueryPlan::Node & root)
+{
+    std::vector<QueryPlan::Node *> pending{&root};
+    while (!pending.empty())
+    {
+        auto * node = pending.back();
+        pending.pop_back();
+        pending.insert(pending.end(), node->children.begin(), node->children.end());
+        const auto * aggregate = typeid_cast<AggregatingStep *>(node->step.get());
+        if (!aggregate || aggregate->isGroupingSets() || node->children.size() != 1)
+            continue;
+        const auto params = aggregate->getAggregatorParameters();
+        if (params.aggregates.size() != 1 || params.keys.empty() || params.only_merge)
+            continue;
+        const auto & description = params.aggregates.front();
+        if (description.function->getName() != "sum" || description.argument_names.size() != 1)
+            continue;
+        Names required = params.keys;
+        required.push_back(description.argument_names.front());
+        auto * source = node->children.front();
+        bool supported = true;
+        while (source && supported)
+        {
+            if (auto * merge = typeid_cast<ReadFromMerge *>(source->step.get()))
+            {
+                const auto & header = source->step->getOutputHeader();
+                if (header->has(required.back()) && header->getByName(required.back()).type->isNullable())
+                {
+                    auto measure = required.back();
+                    required.pop_back();
+                    merge->setNeutralSumProof(std::move(measure), std::move(required));
+                }
+                break;
+            }
+            const ActionsDAG * actions = nullptr;
+            if (const auto * expression = typeid_cast<ExpressionStep *>(source->step.get()))
+                actions = &expression->getExpression();
+            else if (const auto * filter = typeid_cast<FilterStep *>(source->step.get()))
+                actions = &filter->getExpression();
+            if (!actions || source->children.size() != 1 || !canCrossNeutralReduction(*actions))
+                break;
+            if (const auto * filter = typeid_cast<FilterStep *>(source->step.get()))
+            {
+                std::vector<const ActionsDAG::Node *> predicate_nodes{&actions->findInOutputs(filter->getFilterColumnName())};
+                std::unordered_set<const ActionsDAG::Node *> visited;
+                while (!predicate_nodes.empty())
+                {
+                    const auto * predicate_node = predicate_nodes.back();
+                    predicate_nodes.pop_back();
+                    if (!visited.insert(predicate_node).second)
+                        continue;
+                    if (predicate_node->type == ActionsDAG::ActionType::INPUT && predicate_node->result_name == required.back())
+                        supported = false;
+                    predicate_nodes.insert(predicate_nodes.end(), predicate_node->children.begin(), predicate_node->children.end());
+                }
+                if (!supported)
+                    break;
+            }
+            Names mapped_keys;
+            for (size_t index = 0; index < required.size(); ++index)
+            {
+                const auto & outputs = actions->getOutputs();
+                const auto it = std::ranges::find_if(outputs, [&](const auto * output) { return output->result_name == required[index]; });
+                if (it == outputs.end())
+                {
+                    supported = false;
+                    break;
+                }
+                const auto * output = *it;
+                while (output->type == ActionsDAG::ActionType::ALIAS)
+                    output = output->children.front();
+                if (index + 1 == required.size())
+                {
+                    /// Only a direct nullable input proves a neutral measure.
+                    if (output->type != ActionsDAG::ActionType::INPUT)
+                        supported = false;
+                    else
+                        mapped_keys.push_back(output->result_name);
+                    break;
+                }
+                /// Deterministic grouping expressions may collapse several base
+                /// keys. Keeping the finer base grouping still preserves NULL sums.
+                std::vector<const ActionsDAG::Node *> inputs{output};
+                std::unordered_set<const ActionsDAG::Node *> visited;
+                while (!inputs.empty())
+                {
+                    const auto * input = inputs.back();
+                    inputs.pop_back();
+                    if (!visited.insert(input).second)
+                        continue;
+                    if (input->type == ActionsDAG::ActionType::INPUT)
+                    {
+                        if (!std::ranges::contains(mapped_keys, input->result_name))
+                            mapped_keys.push_back(input->result_name);
+                    }
+                    else
+                        inputs.insert(inputs.end(), input->children.begin(), input->children.end());
+                }
+            }
+            required = std::move(mapped_keys);
+            source = source->children.front();
+        }
+    }
+}
+
 void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
+    bool can_keep_reduction = canCrossNeutralReduction(filter.actions);
+    if (neutral_sum_proof)
+    {
+        std::vector<const ActionsDAG::Node *> pending{&filter.actions.findInOutputs(filter.column_name)};
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        while (!pending.empty())
+        {
+            const auto * node = pending.back();
+            pending.pop_back();
+            if (!visited.insert(node).second)
+                continue;
+            if (node->type == ActionsDAG::ActionType::INPUT)
+            {
+                String column_name = node->result_name;
+                if (query_info.planner_context && query_info.table_expression)
+                    if (const auto * physical = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression)
+                        .getColumnNameOrNull(column_name))
+                        column_name = *physical;
+                can_keep_reduction &= std::ranges::contains(neutral_sum_proof->second, column_name);
+            }
+            pending.insert(pending.end(), node->children.begin(), node->children.end());
+        }
+        if (!can_keep_reduction)
+            neutral_sum_proof.reset();
+    }
     output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
             *output_header,
             &filter.actions,
@@ -847,6 +1265,19 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
                 filter.column_name,
                 filter.do_remove_column);
 
+            if (child.unreduced_plan)
+            {
+                child.unreduced_plan->addStep(std::make_unique<FilterStep>(
+                    child.unreduced_plan->getCurrentHeader(), filter.actions.clone(), filter.column_name, filter.do_remove_column));
+                if (!can_keep_reduction)
+                {
+                    child.plan = std::move(*child.unreduced_plan);
+                    child.unreduced_plan.reset();
+                    child.neutral_projection.reset();
+                    child.plan.optimize(getChildPlanOptimizationSettings(context, query_info, child.plan));
+                    continue;
+                }
+            }
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
@@ -898,6 +1329,25 @@ static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<Quer
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     filterTablesAndCreateChildrenPlans();
+
+    /// Exercise restoration after reduction with a stateful filter. With one
+    /// duplicated key, filtering its first row must not remove the entire group.
+    fiu_do_on(FailPoints::merge_neutral_sum_late_filter,
+    {
+        if (std::ranges::any_of(*child_plans, [](const auto & child) { return child.unreduced_plan != nullptr; }))
+        {
+            ActionsDAG actions(output_header->getNamesAndTypesList());
+            const auto & row_number = actions.addFunction(
+                FunctionFactory::instance().get("rowNumberInAllBlocks", context), {}, "__neutral_row_number");
+            const auto & zero = actions.addColumn(
+                std::make_shared<DataTypeUInt64>()->createColumnConst(1, UInt64(0)),
+                std::make_shared<DataTypeUInt64>(), "__neutral_zero");
+            const auto & predicate = actions.addFunction(
+                FunctionFactory::instance().get("greater", context), {&row_number, &zero}, "__neutral_late_filter");
+            actions.getOutputs().push_back(&predicate);
+            addFilter(FilterDAGInfo{std::move(actions), "__neutral_late_filter", true});
+        }
+    });
 
     if (selected_tables.empty())
     {
@@ -1109,6 +1559,12 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
     /// A `FINAL` read is never distributed, so leave its children exactly as before.
     const auto & settings = context->getSettingsRef();
+    const auto neutral_sum = settings[Setting::optimize_merge_neutral_sum_children]
+        && settings[Setting::query_plan_enable_optimizations]
+        && settings[Setting::optimize_use_projections] && !settings[Setting::make_distributed_plan]
+        && !settings[Setting::allow_experimental_parallel_reading_from_replicas] && !queryHasSubquerySets(query_info)
+        ? (neutral_sum_proof ? std::optional<NeutralSumKeys>{{neutral_sum_proof->first, neutral_sum_proof->second}}
+                             : getNeutralSumKeys(query_info_)) : std::nullopt;
     const bool keep_parallel_replicas_for_children = settings[Setting::parallel_replicas_plan_based]
         && settings[Setting::parallel_replicas_allow_merge_tables] && !InterpreterSelectQuery::isQueryWithFinal(query_info);
 
@@ -1382,11 +1838,34 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             child.plan.addInterpreterContext(modified_context);
 
+            if (neutral_sum && child.plan.isInitialized() && !row_policy_data_opt && !sampling_requested
+                && storage->getName() == "MergeTree" && aliases.empty()
+                && common_processed_stage == QueryProcessingStage::FetchColumns
+                && !storage_metadata_snapshot->getColumns().has(neutral_sum->measure)
+                && !merge_storage_snapshot->metadata->getColumns().getDefault(neutral_sum->measure)
+                && std::ranges::all_of(pushed_down_filters, [](const auto & filter) { return canCrossNeutralReduction(filter.actions); })
+                && std::ranges::all_of(neutral_sum->keys, [&](const auto & key)
+                {
+                    const auto & columns = storage_metadata_snapshot->getColumns();
+                    return columns.hasPhysical(key)
+                        && columns.getPhysical(key).type->equals(*merge_storage_snapshot->metadata->getColumns().getPhysical(key).type);
+                }))
+            {
+                tryReduceNeutralSumChild(child.plan, *neutral_sum, modified_context, child.unreduced_plan, child.neutral_projection);
+            }
+
             if (child.plan.isInitialized())
             {
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
                 convertAndFilterSourceStream(*common_header, query_info, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
+                if (child.unreduced_plan)
+                {
+                    ChildPlan original{std::move(*child.unreduced_plan), child.stage, {}, {}};
+                    convertAndFilterSourceStream(*common_header, query_info, modified_query_info, nested_storage_snapshot,
+                        aliases, row_policy_data_opt, context, original, is_smallest_column_requested);
+                    *child.unreduced_plan = std::move(original.plan);
+                }
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1397,6 +1876,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                         filter_info.do_remove_column);
 
                     child.plan.addStep(std::move(filter_step));
+                    if (child.unreduced_plan)
+                        child.unreduced_plan->addStep(std::make_unique<FilterStep>(
+                            child.unreduced_plan->getCurrentHeader(), filter_info.actions.clone(),
+                            filter_info.column_name, filter_info.do_remove_column));
                 }
 
                 removeDelayedMaterializingCTEsStepFor(child.plan, outer_materialized_ctes);
@@ -1774,6 +2257,10 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     auto optimization_settings = getChildPlanOptimizationSettings(context, query_info, child.plan);
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
+    child.unreduced_plan.reset();
+    if (child.neutral_projection && context->hasQueryContext())
+        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName{
+            .storage_id = child.neutral_projection->first, .projection_name = child.neutral_projection->second});
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
     if (!builder->initialized())
@@ -1880,7 +2367,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         plan = std::move(planner).extractQueryPlan();
     }
 
-    return ChildPlan{std::move(plan), storage_stage};
+    return ChildPlan{std::move(plan), storage_stage, {}, {}};
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
@@ -2326,6 +2813,11 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit)
 {
     filterTablesAndCreateChildrenPlans();
+
+    /// A later read-order promise cannot be honored by a restored raw plan.
+    /// Keep the neutral reduction unordered instead of promising an order here.
+    if (std::ranges::any_of(*child_plans, [](const auto & child) { return child.unreduced_plan != nullptr; }))
+        return false;
 
     /// Disable read-in-order optimization for reverse order with final.
     /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).

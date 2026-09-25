@@ -2236,6 +2236,19 @@ Enable the bulk filtering algorithm for indices. It is expected to be always bet
     DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
 )", 0) \
+    DECLARE(Bool, optimize_merge_neutral_sum_children, false, R"(
+Use aggregate projections to read distinct grouping keys from local `MergeTree` children of a `Merge` table that lack the nullable argument of a single `sum` aggregate. Preserves groups unique to those children and the original typed NULL measure.
+
+Supported filters are deterministic `WHERE` and `PREWHERE` expressions on grouping columns. Automatic movement of `WHERE` predicates into `PREWHERE` is supported. The grouping proof can pass through row-preserving view expressions and aliases when the nullable measure remains a direct input and the projection covers the required base grouping columns. Row-level predicates requiring other columns, explicit measure defaults, row policies, sampling, `FINAL`, and unsupported query shapes keep the original read.
+
+Requires a suitable materialized aggregate projection and both projection-row cost limits to be satisfied. Disabled by default; does not redistribute Merge child stream budgets.
+)", SettingsTierType::EXPERIMENTAL) \
+    DECLARE(UInt64, optimize_merge_neutral_sum_children_max_rows, 1000000, R"(
+Maximum physical rows across the selected projection parts for `optimize_merge_neutral_sum_children`. This is a conservative part-row estimate, not post-filter cardinality. Zero rejects nonempty candidates.
+)", SettingsTierType::EXPERIMENTAL) \
+    DECLARE(Float, optimize_merge_neutral_sum_children_max_rows_ratio, 0.1f, R"(
+Maximum ratio of selected projection-part rows to rows in the original child read's parts for `optimize_merge_neutral_sum_children`. This is physical part-row accounting, not a selectivity-aware estimate of rows surviving a filter.
+)", SettingsTierType::EXPERIMENTAL) \
     DECLARE(Float, max_streams_multiplier_for_merge_tables, 5, R"(
 Ask more streams when reading from Merge table. Streams will be spread across tables that Merge table will use. This allows more even distribution of work across threads and is especially helpful when merged tables differ in size.
 

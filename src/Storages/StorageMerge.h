@@ -223,7 +223,12 @@ public:
 
     void addFilter(FilterDAGInfo filter);
 
+    /// Supply the aggregate's column dependencies after view expansion into the plan.
+    void setNeutralSumProof(String measure, Names keys);
+    static void collectNeutralSumProofs(QueryPlan::Node & root);
+
 private:
+    std::optional<std::pair<String, Names>> neutral_sum_proof;
     const size_t required_max_block_size;
     const size_t requested_num_streams;
     SharedHeader common_header;
@@ -292,6 +297,9 @@ private:
     {
         QueryPlan plan;
         QueryProcessingStage::Enum stage;
+        /// Retain the unreduced plan until execution in case a late filter observes multiplicity.
+        std::unique_ptr<QueryPlan> unreduced_plan;
+        std::optional<std::pair<StorageID, String>> neutral_projection;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first

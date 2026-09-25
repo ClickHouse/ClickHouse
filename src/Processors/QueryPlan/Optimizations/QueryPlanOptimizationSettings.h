@@ -36,6 +36,10 @@ struct QueryPlanOptimizationSettings
 
     void keepOnlyExplicitlyEnabled(const Settings & from);
 
+    /// Speculative plans must not report projection usage until their caller accepts them.
+    bool record_projection_usage = true;
+    bool optimize_merge_neutral_sum_children = false;
+
     /// Allows to globally disable all plan-level optimizations.
     /// Note: Even if set to 'true', individual optimizations may still be disabled via below settings.
     bool optimize_plan;
