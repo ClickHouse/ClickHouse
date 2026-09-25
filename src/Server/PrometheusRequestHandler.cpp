@@ -32,6 +32,12 @@
 #include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/checkHTTPHeader.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
+#include <IO/CascadeWriteBuffer.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
+#include <IO/copyData.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
@@ -47,6 +53,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 http_response_buffer_size;
+    extern const SettingsSeconds max_execution_time;
 }
 
 namespace ErrorCodes
@@ -59,6 +66,12 @@ namespace ErrorCodes
     extern const int SNAPPY_UNCOMPRESS_FAILED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
     extern const int ZSTD_DECODER_FAILED;
+}
+
+namespace
+{
+constexpr UInt32 PROMETHEUS_TIMEOUT_SCALE = 6;
+constexpr Float64 MICROSECONDS_PER_SECOND = 1'000'000.0;
 }
 
 /// Base implementation of a prometheus protocol.
@@ -469,7 +482,7 @@ public:
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "timeout", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -487,6 +500,99 @@ public:
                             "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
                             limit_param);
         return static_cast<UInt64>(parsed_limit);
+    }
+
+    void applyTimeout()
+    {
+        const String timeout = params->get("timeout", "");
+        if (timeout.empty())
+            return;
+
+        if (timeout.find_first_of("ywdhms") != String::npos
+            && (timeout.starts_with('+') || timeout.starts_with('-')))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'timeout' query parameter is not a valid Prometheus duration");
+
+        const auto timeout_value = parseTimeSeriesDuration(timeout, PROMETHEUS_TIMEOUT_SCALE);
+        if (timeout_value <= 0)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Prometheus query timeout exceeded");
+
+        const auto current_max_execution_time = context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
+        Int64 effective_max_execution_time = current_max_execution_time;
+        if (effective_max_execution_time <= 0 || timeout_value.value < effective_max_execution_time)
+            effective_max_execution_time = timeout_value.value;
+
+        if (effective_max_execution_time != current_max_execution_time)
+            context->setSetting("max_execution_time", Field(static_cast<Float64>(effective_max_execution_time) / MICROSECONDS_PER_SECOND));
+
+        context->setSetting("timeout_overflow_mode", Field("throw"));
+        context->setSetting("timeout_overflow_mode_leaf", Field("throw"));
+    }
+
+    bool hasTimeoutParam() const
+    {
+        return !params->get("timeout", "").empty();
+    }
+
+    void executePromQLQueryWithTimeout(
+        PrometheusHTTPProtocolAPI & protocol,
+        HTTPServerResponse & response,
+        const PrometheusHTTPProtocolAPI::Params & query_params)
+    {
+        auto query_finish_callback = [&]()
+        {
+            getOutputStream(response).finalize();
+        };
+
+        if (!hasTimeoutParam())
+        {
+            protocol.executePromQLQuery(getOutputStream(response), query_params, query_finish_callback);
+            return;
+        }
+
+        CascadeWriteBuffer::WriteBufferPtrs buffered_outputs;
+        buffered_outputs.emplace_back(std::make_shared<MemoryWriteBuffer>(parent().http_response_buffer_size));
+
+        CascadeWriteBuffer::WriteBufferConstructors lazy_buffered_outputs;
+        auto tmp_data = server().context()->getTempDataOnDisk();
+        lazy_buffered_outputs.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
+        {
+            return std::make_unique<TemporaryDataBuffer>(tmp_data);
+        });
+
+        CascadeWriteBuffer buffered_output(std::move(buffered_outputs), std::move(lazy_buffered_outputs));
+        auto buffered_query_finish_callback = [&]()
+        {
+            buffered_output.finalize();
+        };
+
+        protocol.executePromQLQuery(
+            buffered_output,
+            query_params,
+            buffered_query_finish_callback,
+            [&]() { applyTimeout(); });
+
+        auto write_buffers = buffered_output.getResultBuffers();
+        ConcatReadBuffer::Buffers read_buffers;
+        for (auto & write_buffer : write_buffers)
+        {
+            if (auto * temporary_buffer = dynamic_cast<TemporaryDataBuffer *>(write_buffer.get()))
+            {
+                if (auto read_buffer = temporary_buffer->read())
+                    read_buffers.emplace_back(std::move(read_buffer));
+            }
+            else if (auto * readable_buffer = dynamic_cast<IReadableWriteBuffer *>(write_buffer.get()))
+            {
+                if (auto read_buffer = readable_buffer->tryGetReadBuffer())
+                    read_buffers.emplace_back(std::move(read_buffer));
+            }
+        }
+
+        if (!read_buffers.empty())
+        {
+            ConcatReadBuffer concat_read_buffer(std::move(read_buffers));
+            copyData(concat_read_buffer, getOutputStream(response));
+        }
+        getOutputStream(response).finalize();
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -531,7 +637,6 @@ public:
                 String lookback_delta = params->get("lookback_delta", "");
 
                 /// TODO: Support the following **optional** query parameters:
-                /// - timeout=<duration>: Evaluation timeout
                 /// - limit=<number>: Maximum number of returned series
 
                 PrometheusHTTPProtocolAPI::Params params
@@ -545,7 +650,7 @@ public:
                     .lookback_delta_param = lookback_delta,
                 };
 
-                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+                executePromQLQueryWithTimeout(protocol, response, params);
             }
             else if (uri_path.ends_with("/query"))
             {
@@ -553,7 +658,7 @@ public:
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
 
-                /// TODO: Support optional parameters same as for the range query.
+                /// TODO: Support limit=<number>: Maximum number of returned series
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -566,7 +671,7 @@ public:
                     .lookback_delta_param = lookback_delta,
                 };
 
-                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+                executePromQLQueryWithTimeout(protocol, response, params);
             }
             else if (uri_path.ends_with("/parse_query"))
             {
@@ -627,16 +732,24 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
-            /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
-            /// not with the query: report it as an internal error so that clients don't attribute it
-            /// to the PromQL expression.
-            bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
-            response.setStatusAndReason(
-                server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
-                                          : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED && hasTimeoutParam())
+            {
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+                writeString(R"({"status":"error","errorType":"timeout","error":)", error_buf);
+            }
+            else
+            {
+                /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
+                /// not with the query: report it as an internal error so that clients don't attribute it
+                /// to the PromQL expression.
+                bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+                response.setStatusAndReason(
+                    server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+                writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
+                                              : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            }
             writeJSONString(e.message(), error_buf, FormatSettings{});
             writeString("}", error_buf);
             error_buf.finalize();

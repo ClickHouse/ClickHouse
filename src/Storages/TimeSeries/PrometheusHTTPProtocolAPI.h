@@ -47,7 +47,8 @@ public:
     void executePromQLQuery(
         WriteBuffer & response,
         const Params & params,
-        QueryFinishCallback query_finish_callback = {});
+        QueryFinishCallback query_finish_callback = {},
+        QueryFinishCallback query_start_callback = {});
 
     /// Get series metadata (/api/v1/series): the union of the series matched by the `match[]` selectors, capped by `limit` (0 means no limit).
     void getSeries(
