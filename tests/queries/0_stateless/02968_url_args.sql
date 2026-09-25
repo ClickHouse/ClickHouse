@@ -17,3 +17,13 @@ create view g (x Int64) as select count() from s3('https://example.s3.amazonaws.
 show create g;
 create view h (x Int64) as select count() from s3('https://example.s3.amazonaws.com/a.csv', headers('foo' = 'bar'));
 show create h;
+
+-- A key-value argument next to headers(...) must parse in either written order, and the table must
+-- survive the metadata-load path (DETACH/ATTACH), which is what a server restart runs.
+create table i (x Int64) engine S3('https://example.s3.amazonaws.com/a.csv', NOSIGN, CSV, headers('foo' = 'bar'), partition_strategy = 'none');
+show create i;
+detach table i;
+attach table i;
+show create i;
+create table j (x Int64) engine S3('https://example.s3.amazonaws.com/a.csv', NOSIGN, CSV, partition_strategy = 'none', headers('foo' = 'bar'));
+show create j;
