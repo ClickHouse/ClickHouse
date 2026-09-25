@@ -3487,6 +3487,11 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         }
     }
 
+    /// Without a transaction `getVisibleDataPartsVector*` does no MVCC filtering, so the source parts
+    /// can include one whose creating transaction is still running and may still roll back.
+    if (!local_context->getCurrentTransaction())
+        src_data.checkPartsCanBeRepublishedNonTransactionally(src_parts);
+
     /// Reject when the source partition has unapplied patches (assertNoPatchesForParts is a no-op
     /// when there are none, so this is free for tables without lightweight updates). The check is
     /// per partition because patches and parts are matched by partition id.

@@ -996,6 +996,10 @@ public:
     /// Those callers check here first, under the same parts lock they commit with.
     void checkPartsCanBeRemovedNonTransactionally(const DataPartsVector & parts, NonTransactionalRemovalKind kind) const;
 
+    /// Throws `SERIALIZATION_ERROR` if the creation of any of `parts` is not committed: republishing such
+    /// data outside the transaction that created it commits it where a rollback cannot reach.
+    void checkPartsCanBeRepublishedNonTransactionally(const DataPartsVector & parts) const;
+
     /// This wrapper is required to restrict access to parts in Deleting state
     class PartToRemoveFromZooKeeper
     {

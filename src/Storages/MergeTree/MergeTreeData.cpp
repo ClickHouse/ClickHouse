@@ -7481,20 +7481,29 @@ void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn,
     removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock, /*create_empty_part*/ true);
 }
 
-void MergeTreeData::checkPartsCanBeRemovedNonTransactionally(const DataPartsVector & parts, NonTransactionalRemovalKind kind) const
+void MergeTreeData::checkPartsCanBeRepublishedNonTransactionally(const DataPartsVector & parts) const
 {
     for (const auto & part : parts)
     {
         auto & version = *part->version;
 
-        if (kind == NonTransactionalRemovalKind::Republish)
-        {
-            if (!version.isCreationCommitted())
-                throw Exception(ErrorCodes::SERIALIZATION_ERROR,
-                    "Cannot non-transactionally move object {} whose creation_tid {} is not committed",
-                    version.getObjectName(), version.getInfo().creation_tid);
-        }
-        else if (version.isCreatedByUncommittedTransaction())
+        if (!version.isCreationCommitted())
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally republish object {} whose creation_tid {} is not committed",
+                version.getObjectName(), version.getInfo().creation_tid);
+    }
+}
+
+void MergeTreeData::checkPartsCanBeRemovedNonTransactionally(const DataPartsVector & parts, NonTransactionalRemovalKind kind) const
+{
+    if (kind == NonTransactionalRemovalKind::Republish)
+        checkPartsCanBeRepublishedNonTransactionally(parts);
+
+    for (const auto & part : parts)
+    {
+        auto & version = *part->version;
+
+        if (kind == NonTransactionalRemovalKind::Discard && version.isCreatedByUncommittedTransaction())
         {
             throw Exception(ErrorCodes::SERIALIZATION_ERROR,
                 "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
