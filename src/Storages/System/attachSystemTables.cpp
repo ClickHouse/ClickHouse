@@ -15,6 +15,7 @@
 #include <Storages/System/StorageSystemHypotheticalIndexes.h>
 #include <Storages/System/StorageSystemHypotheticalProjections.h>
 #include <Storages/System/StorageSystemInstrumentation.h>
+#include <Storages/System/StorageSystemChangelog.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/System/StorageSystemColumns.h>
@@ -3989,6 +3990,10 @@ description:            Extremely fast; good compression; balanced speed and eff
 .description
 Contains a list of completion tokens.
 )DOCS_MD");
+    attach<StorageSystemChangelog>(context, system_database, "changelog", R"DOCS_MD(
+.description
+Contains the ClickHouse changelog, fetched dynamically from a remote or local source.
+)DOCS_MD", context);
 
     attach<StorageSystemFailPoints>(context, system_database, "fail_points", R"DOCS_MD(
 .description
