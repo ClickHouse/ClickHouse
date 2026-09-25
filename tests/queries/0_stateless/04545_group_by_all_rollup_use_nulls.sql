@@ -46,7 +46,7 @@ SELECT k, sum(v) FROM (SELECT number % 3 AS k, number AS v FROM numbers(9)) GROU
 -- A correlated subquery reading the key sees it as Nullable as well, so the return type of a
 -- function applied to it stays consistent with the decorrelated expression. The explicit-GROUP-BY
 -- spelling is covered by 04516_correlated_subquery_return_type_group_by_use_nulls.
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SELECT '-- correlated subquery over the key --';
 SELECT number, (SELECT toString(number)) FROM numbers(3) GROUP BY ALL WITH ROLLUP ORDER BY number ASC NULLS LAST;
 SELECT '----';
