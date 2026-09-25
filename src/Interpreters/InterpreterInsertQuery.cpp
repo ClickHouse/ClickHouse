@@ -511,9 +511,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         select_reads_destination = selectPipelineReadsDestinationTable(pipeline, table);
     }
 
-    if (pipeline.getNumStreams() != 1)
-        pipeline.resize(1);
-
     auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(
         select_query_sorted, context->getSettingsRef(),
         context->getSettingsRef()[Setting::insert_deduplication_token].value, logger);
@@ -572,6 +569,10 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         /// Only callers that hand the destination lock over may ask for this route.
         chassert(destination_lock);
 
+        /// Only the main stream may divert a block and take the lock over; collapse to it first.
+        if (pipeline.getNumStreams() != 1)
+            pipeline.resize(1);
+
         pipeline.addSimpleTransform([&](const SharedHeader & in_header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             /// Only the main stream carries rows to divert, and only it may take the lock over. A
@@ -607,6 +608,10 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
 
         return counting;
     });
+
+    /// Count on the parallel SELECT streams, then collapse: dedup info and squashing need one stream.
+    if (pipeline.getNumStreams() != 1)
+        pipeline.resize(1);
 
     bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
 
