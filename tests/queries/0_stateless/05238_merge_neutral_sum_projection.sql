@@ -3,6 +3,8 @@ DROP TABLE IF EXISTS merge_neutral_sum_no_projection;
 DROP TABLE IF EXISTS merge_neutral_sum;
 
 SET max_threads = 2;
+-- Exercise rewrite semantics on small fixtures independently of the default cost gate.
+SET optimize_merge_neutral_sum_children_min_read_bytes = 0;
 SET optimize_merge_neutral_sum_children = 1;
 SET optimize_use_projections = 1;
 SET optimize_distinct_in_order = 0;

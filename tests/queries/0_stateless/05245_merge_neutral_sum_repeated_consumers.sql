@@ -3,6 +3,8 @@ DROP TABLE IF EXISTS t05245_merge;
 DROP TABLE IF EXISTS t05245_keys;
 DROP TABLE IF EXISTS t05245_values;
 SET max_threads=2;
+-- Exercise rewrite semantics on small fixtures independently of the default cost gate.
+SET optimize_merge_neutral_sum_children_min_read_bytes = 0;
 SET optimize_merge_neutral_sum_children=1;
 SET enable_materialized_cte=1;
 CREATE TABLE t05245_values (k UInt64,pnl Nullable(Float64)) ENGINE=MergeTree ORDER BY k;

@@ -3,6 +3,8 @@ DROP TABLE IF EXISTS t05244_keys;
 DROP TABLE IF EXISTS t05244_values;
 
 SET max_threads=2;
+-- Exercise rewrite semantics on small fixtures independently of the default cost gate.
+SET optimize_merge_neutral_sum_children_min_read_bytes = 0;
 SET optimize_merge_neutral_sum_children=1;
 CREATE TABLE t05244_values (k Nullable(Int32), pnl Nullable(Float64)) ENGINE=MergeTree ORDER BY tuple();
 CREATE TABLE t05244_keys (k Nullable(Int32), d Float64, PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY tuple();

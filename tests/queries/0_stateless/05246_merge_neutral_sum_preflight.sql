@@ -8,6 +8,10 @@ DROP TABLE IF EXISTS t05246_string_small;
 DROP TABLE IF EXISTS t05246_string_large;
 SET log_queries=1;
 SET log_queries_min_type='QUERY_FINISH';
+-- This fixture tests rollout defaults, unlike the small semantics fixtures.
+SET optimize_merge_neutral_sum_children_min_read_bytes = DEFAULT;
+SELECT value = '3145728' FROM system.settings
+WHERE name = 'optimize_merge_neutral_sum_children_min_read_bytes';
 SET max_threads=2;
 CREATE TABLE t05246_measure (k UInt64,pnl Nullable(Float64)) ENGINE=MergeTree ORDER BY k;
 CREATE TABLE t05246_small (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k;
@@ -21,7 +25,7 @@ SELECT groupArray(tuple(k,isNull(s),ifNull(s,0))) FROM (SELECT k,sum(pnl) s FROM
 SETTINGS optimize_merge_neutral_sum_children=0;
 SELECT arraySort(groupArray(tuple(k,isNull(s),ifNull(s,0)))) FROM
 (SELECT k,sum(pnl) s FROM t05246_merge GROUP BY k)
-SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=3145728,log_comment='t05246_gate';
+SETTINGS optimize_merge_neutral_sum_children=1,log_comment='t05246_gate';
 SYSTEM FLUSH LOGS;
 SELECT arraySort(arrayMap(x -> substring(x,position(x,'.')+1),projections)) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05246_gate'
@@ -42,13 +46,13 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 -- A large raw part with a selective key predicate must not pass the
 -- whole-part-byte gate before the final selected marks are known.
 SELECT k,sum(pnl) FROM t05246_merge WHERE k=20 GROUP BY k
-SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=3145728,log_comment='t05246_selective';
+SETTINGS optimize_merge_neutral_sum_children=1,log_comment='t05246_selective';
 SYSTEM FLUSH LOGS;
 SELECT empty(projections) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05246_selective'
 ORDER BY event_time_microseconds DESC LIMIT 1;
--- Compact String parts have no per-column sizes. A small part can still be
--- rejected using total uncompressed column bytes as a whole-part upper bound.
+-- Neither compact String part has reliable key-only byte metadata. The
+-- default policy must not accept a candidate using unrelated payload bytes.
 CREATE TABLE t05246_string_measure (k String,pnl Nullable(Float64)) ENGINE=MergeTree ORDER BY k;
 CREATE TABLE t05246_string_small (k String,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k;
 CREATE TABLE t05246_string_large AS t05246_string_small;
@@ -61,8 +65,7 @@ SELECT arraySort(groupArray(tuple(k,isNull(s)))) FROM
 SETTINGS optimize_merge_neutral_sum_children=0;
 SELECT arraySort(groupArray(tuple(k,isNull(s)))) FROM
 (SELECT k,sum(pnl) s FROM t05246_string_merge GROUP BY k)
-SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=3145728,
-log_comment='t05246_string_gate';
+SETTINGS optimize_merge_neutral_sum_children=1,log_comment='t05246_string_gate';
 SYSTEM FLUSH LOGS;
 SELECT arraySort(arrayMap(x -> substring(x,position(x,'.')+1),projections)) FROM system.user_query_log
 WHERE current_database=currentDatabase() AND type='QueryFinish' AND log_comment='t05246_string_gate'

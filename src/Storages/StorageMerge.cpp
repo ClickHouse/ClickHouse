@@ -197,6 +197,7 @@ std::optional<UInt64> estimateNeutralKeyReadBytes(
 {
     const auto & parts = reading.getParts();
     UInt64 whole_bytes = 0;
+    bool whole_bytes_is_upper_bound = false;
     for (const auto & part : parts)
     {
         UInt64 part_bytes = 0;
@@ -228,6 +229,7 @@ std::optional<UInt64> estimateNeutralKeyReadBytes(
         }
         if (use_whole_part_size)
         {
+            whole_bytes_is_upper_bound = true;
             part_bytes = part.data_part->getTotalColumnsSize().data_uncompressed;
             if (!part_bytes)
                 return std::nullopt;
@@ -246,7 +248,14 @@ std::optional<UInt64> estimateNeutralKeyReadBytes(
     /// in that case the candidate can be rejected without range analysis.
     const auto analysis = reading.getAnalyzedResult();
     if (!analysis)
-        return std::nullopt;
+    {
+        /// The caller has excluded unanalysed filtered reads. Known key bytes
+        /// can price an unfiltered scan; an upper bound including unrelated
+        /// columns can reject a small read, but cannot justify accepting one.
+        if (whole_bytes_is_upper_bound)
+            return std::nullopt;
+        return whole_bytes;
+    }
 
     UInt64 selected_bytes = 0;
     for (const auto & part : analysis->parts_with_ranges)
@@ -328,7 +337,7 @@ bool tryReduceNeutralSumChild(
                 return false;
         }
         const auto selected_raw_bytes = estimateNeutralKeyReadBytes(*original_reading, info.keys, minimum_bytes);
-        if (selected_raw_bytes && *selected_raw_bytes < minimum_bytes)
+        if (!selected_raw_bytes || *selected_raw_bytes < minimum_bytes)
             return false;
     }
 

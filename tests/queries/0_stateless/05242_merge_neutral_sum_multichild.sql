@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS t05242_left;
 DROP TABLE IF EXISTS t05242_values;
 
 SET max_threads = 2;
+-- Exercise rewrite semantics on small fixtures independently of the default cost gate.
+SET optimize_merge_neutral_sum_children_min_read_bytes = 0;
 SET log_queries = 1;
 SET log_queries_min_type = 'QUERY_FINISH';
 SET optimize_merge_neutral_sum_children = 1;
