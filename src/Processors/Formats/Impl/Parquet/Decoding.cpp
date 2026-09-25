@@ -1682,6 +1682,19 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
     if (!input_signed && field_signed && val > UInt64(INT64_MAX))
         return std::nullopt;
 
+    /// A day number outside the requested date type's window is saturated or rejected in the column,
+    /// so it is not a bound for the values that do arrive. `field_signed` is false for a `Date` target,
+    /// hence this cannot live in the signed branch below.
+    if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
+    {
+        const auto [min_day, max_day] = dateTargetDayRange();
+        const bool out_of_window = field_signed
+            ? Int64(val) > Int64(max_day) || Int64(val) < Int64(min_day)
+            : val > UInt64(max_day);
+        if (out_of_window)
+            return std::nullopt;
+    }
+
     if (field_ipv4)
     {
         if (val > UInt64(UINT32_MAX))
@@ -1711,16 +1724,7 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
         }
     }
     else if (field_signed)
-    {
-        if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
-        {
-            const auto [min_day, max_day] = dateTargetDayRange();
-            if (Int64(val) > Int64(max_day) || Int64(val) < Int64(min_day))
-                return std::nullopt;
-        }
-
         return Field(Int64(val));
-    }
     else
         return Field(val);
 }

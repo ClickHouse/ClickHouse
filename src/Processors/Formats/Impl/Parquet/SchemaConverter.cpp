@@ -961,17 +961,48 @@ void SchemaConverter::processPrimitiveColumn(
     chassert(!out_inferred_type && !out_decoded_type);
     out_decoder.physical_type = type;
 
-    auto get_output_type_index = [&]
+    auto get_output_type = [&]() -> const IDataType &
     {
         chassert(out_inferred_type);
-        return type_hint ? type_hint->getTypeId() : out_inferred_type->getTypeId();
+        return type_hint ? *type_hint : *out_inferred_type;
+    };
+
+    auto get_output_type_index = [&]
+    {
+        return get_output_type().getTypeId();
+    };
+
+    /// Statistics endpoints are ordered as the stored type, so they bound the output column only
+    /// if the cast to it preserves that order for every stored value, not just the ones present.
+    /// `Date` and an Enum order by their underlying integer, which is what getSizeOfValueInMemory
+    /// and `converter.field_signed` describe.
+    auto stats_order_preserved = [&](const IntConverter & converter)
+    {
+        const size_t stored_bits = type == parq::Type::BOOLEAN
+            ? 1 : converter.output_size.value_or(converter.input_size) * 8;
+        const size_t output_bits = get_output_type().getSizeOfValueInMemory() * 8;
+        return converter.input_signed == converter.field_signed
+            ? output_bits >= stored_bits
+            : !converter.input_signed && output_bits > stored_bits;
     };
 
     auto dispatch_int_stats_converter = [&](bool allow_datetime_and_ipv4, IntConverter & converter) -> bool
     {
         WhichDataType which(get_output_type_index());
-        if (which.isNativeInteger())
-            converter.field_signed = which.isNativeInt();
+        /// An Enum orders and compares by its underlying signed integer, so it belongs with the
+        /// native integers of that width rather than with the reinterpreting types below.
+        const bool which_is_enum = which.isEnum();
+        /// A day number outside the target's window is reinterpreted rather than carried over. When
+        /// `date_overflow_behavior` is set (parquet `DATE`), convertField drops every endpoint
+        /// outside that window, and inside it the day number is the output value.
+        const bool date_range_checked
+            = converter.date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore;
+        if (which.isNativeInteger() || which_is_enum)
+        {
+            converter.field_signed = which.isNativeInt() || which_is_enum;
+            if (!stats_order_preserved(converter))
+                return false;
+        }
         else switch (which.idx)
         {
             case TypeIndex::IPv4:
@@ -985,15 +1016,22 @@ void SchemaConverter::processPrimitiveColumn(
                 break;
             case TypeIndex::Date:
                 converter.field_signed = false;
+                /// The `Date` window is the whole UInt16 domain (DATE_LUT_MAX_DAY_NUM is 0xFFFF), so
+                /// passing the order test already means no stored value leaves it.
+                if (!date_range_checked && !stats_order_preserved(converter))
+                    return false;
                 break;
             case TypeIndex::DateTime:
                 if (!allow_datetime_and_ipv4)
                     return false;
                 converter.field_signed = false;
                 break;
-            case TypeIndex::Enum8:
-            case TypeIndex::Enum16:
             case TypeIndex::Date32:
+                /// `Date32` stops at day 2932896 and reads a larger number as seconds instead, so its
+                /// window is narrower than Int32 and matching widths prove nothing; only the range
+                /// check does.
+                if (!date_range_checked)
+                    return false;
                 break;
             /// Not supported: DateTime64, Decimal*, Float*
             /// Not possible (in most cases): String, FixedString
