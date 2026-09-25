@@ -2243,6 +2243,9 @@ Supported filters are deterministic `WHERE` and `PREWHERE` expressions on groupi
 
 Requires a suitable materialized aggregate projection and both projection-row cost limits to be satisfied. Disabled by default; does not redistribute Merge child stream budgets.
 )", SettingsTierType::EXPERIMENTAL) \
+    DECLARE(UInt64, optimize_merge_neutral_sum_children_min_read_bytes, 0, R"(
+Optional early cost gate for projection-backed neutral SUM reduction. If the estimated uncompressed bytes of grouping-key columns in the raw child read are below this limit, skip speculative projection planning. Compact parts without per-column sizes use fixed-width values or total part column bytes as a whole-part upper bound; partial reads with unknown sizes are not scaled. For queries with filters, unknown selected ranges are rejected conservatively rather than treating a large part as a large read. Zero disables this gate. No threshold guarantees a speedup for every workload; benchmark your query shapes before enabling it.
+)", SettingsTierType::EXPERIMENTAL) \
     DECLARE(UInt64, optimize_merge_neutral_sum_children_max_rows, 1000000, R"(
 Maximum physical rows across the selected projection parts for `optimize_merge_neutral_sum_children`. This is a conservative part-row estimate, not post-filter cardinality. Zero rejects nonempty candidates.
 )", SettingsTierType::EXPERIMENTAL) \

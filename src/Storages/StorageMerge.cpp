@@ -120,6 +120,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
     extern const SettingsBool optimize_merge_neutral_sum_children;
+    extern const SettingsUInt64 optimize_merge_neutral_sum_children_min_read_bytes;
     extern const SettingsUInt64 optimize_merge_neutral_sum_children_max_rows;
     extern const SettingsFloat optimize_merge_neutral_sum_children_max_rows_ratio;
     extern const SettingsBool optimize_use_projections;
@@ -187,6 +188,96 @@ ReadFromMergeTree * findMergeTreeRead(QueryPlan::Node * node)
     return nullptr;
 }
 
+/// This gate is intentionally biased toward retaining the original scan.
+/// Part column sizes are loaded from metadata; missing/compact size information
+/// is unknown rather than zero. Selected mark rows are only used for types
+/// whose stored bytes can safely be scaled by a row fraction.
+std::optional<UInt64> estimateNeutralKeyReadBytes(
+    ReadFromMergeTree & reading, const Names & keys, UInt64 threshold)
+{
+    const auto & parts = reading.getParts();
+    UInt64 whole_bytes = 0;
+    for (const auto & part : parts)
+    {
+        UInt64 part_bytes = 0;
+        bool use_whole_part_size = false;
+        for (const auto & key : keys)
+        {
+            const auto column = part.data_part->tryGetColumn(key);
+            if (!column)
+                return std::nullopt;
+            UInt64 size = part.data_part->getColumnSize(key).data_uncompressed;
+            if (!size)
+            {
+                if (!column->type->haveMaximumSizeOfValue() || column->type->lowCardinality())
+                {
+                    /// Compact parts share a data stream. Their total column
+                    /// bytes bound all requested key columns, without assuming
+                    /// variable-width values are uniform across marks.
+                    use_whole_part_size = true;
+                    break;
+                }
+                const UInt64 width = column->type->getMaximumSizeOfValueInMemory();
+                if (width && part.data_part->rows_count > std::numeric_limits<UInt64>::max() / width)
+                    return std::nullopt;
+                size = width * part.data_part->rows_count;
+            }
+            if (size > std::numeric_limits<UInt64>::max() - part_bytes)
+                return std::nullopt;
+            part_bytes += size;
+        }
+        if (use_whole_part_size)
+        {
+            part_bytes = part.data_part->getTotalColumnsSize().data_uncompressed;
+            if (!part_bytes)
+                return std::nullopt;
+        }
+        if (part_bytes > std::numeric_limits<UInt64>::max() - whole_bytes)
+            return std::nullopt;
+        whole_bytes += part_bytes;
+        if (whole_bytes >= threshold)
+            break;
+    }
+    if (whole_bytes < threshold)
+        return whole_bytes;
+
+    /// Whole-part bytes cannot cost a filtered query if its selected marks
+    /// are unknown. Even the upper-bound size may be below the threshold;
+    /// in that case the candidate can be rejected without range analysis.
+    const auto analysis = reading.getAnalyzedResult();
+    if (!analysis)
+        return std::nullopt;
+
+    UInt64 selected_bytes = 0;
+    for (const auto & part : analysis->parts_with_ranges)
+    {
+        if (!part.data_part->rows_count)
+            continue;
+        const UInt64 rows = part.getRowsCount();
+        const UInt64 total_rows = part.data_part->rows_count;
+        for (const auto & key : keys)
+        {
+            const auto column = part.data_part->tryGetColumn(key);
+            if (!column)
+                return std::nullopt;
+            UInt64 size = part.data_part->getColumnSize(key).data_uncompressed;
+            /// Variable-width and LowCardinality columns can concentrate bytes
+            /// in selected marks or carry a whole-part dictionary.
+            if (rows < total_rows && (!column->type->haveMaximumSizeOfValue() || column->type->lowCardinality()))
+                return std::nullopt;
+            if (!size)
+                return std::nullopt;
+            const auto estimated = (static_cast<UInt128>(size) * std::min(rows, total_rows) + total_rows - 1) / total_rows;
+            if (estimated > std::numeric_limits<UInt64>::max() - selected_bytes)
+                return std::nullopt;
+            selected_bytes += static_cast<UInt64>(estimated);
+        }
+        if (selected_bytes >= threshold)
+            return selected_bytes;
+    }
+    return selected_bytes;
+}
+
 /// Try projection selection before a competing read-in-order strategy is selected.
 /// Rejected candidates leave the original read and its analyzed ranges untouched.
 
@@ -214,6 +305,32 @@ bool tryReduceNeutralSumChild(
     for (const auto & part : original_reading->getParts())
         if (part.data_part->hasLightweightDelete())
             return false;
+
+    /// Even a full scan may be too small to repay speculative projection
+    /// planning. Unknown key sizes must not be mistaken for zero.
+    const UInt64 minimum_bytes = context->getSettingsRef()[Setting::optimize_merge_neutral_sum_children_min_read_bytes];
+    if (minimum_bytes)
+    {
+        /// Until all filters have been pushed into the read, whole-part bytes
+        /// cannot price a selective query. In particular a large primary-key
+        /// part may contribute only one mark. Do not speculate when the selected
+        /// ranges are unknown and a predicate may prune rows or marks.
+        if (!original_reading->getAnalyzedResult())
+        {
+            const auto & query = original_reading->getQueryInfo();
+            const auto * query_node = query.query_tree ? query.query_tree->as<QueryNode>() : nullptr;
+            bool has_filter = query.prewhere_info || query.filter_actions_dag || original_reading->getFilterActionsDAG()
+                || (query_node && (query_node->hasWhere() || query_node->hasPrewhere()));
+            for (auto * node = plan.getRootNode(); !has_filter && node && node->children.size() == 1;
+                 node = node->children.front())
+                has_filter = typeid_cast<const FilterStep *>(node->step.get()) != nullptr;
+            if (has_filter)
+                return false;
+        }
+        const auto selected_raw_bytes = estimateNeutralKeyReadBytes(*original_reading, info.keys, minimum_bytes);
+        if (selected_raw_bytes && *selected_raw_bytes < minimum_bytes)
+            return false;
+    }
 
     /// Clone before projection analysis. Projection optimization mutates the read's
     /// analyzed ranges; a rejected candidate must not damage the original child plan.

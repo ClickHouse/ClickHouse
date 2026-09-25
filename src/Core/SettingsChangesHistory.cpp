@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.10",
         {
             {"optimize_merge_neutral_sum_children", false, false, "New setting: use aggregate projections for neutral children of grouped SUM queries through Merge."},
+            {"optimize_merge_neutral_sum_children_min_read_bytes", 0, 0, "New setting: optional early cost gate for small neutral SUM child reads."},
             {"optimize_merge_neutral_sum_children_max_rows", 0, 1000000, "New setting limiting estimated rows in a neutral child aggregate projection."},
             {"optimize_merge_neutral_sum_children_max_rows_ratio", 0., 0.1, "New setting limiting the estimated projection-to-base row ratio for neutral Merge children."},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
