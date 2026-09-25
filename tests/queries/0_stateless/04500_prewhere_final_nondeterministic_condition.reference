@@ -13,7 +13,6 @@
 0
 = condition over a float sorting key column is not moved =
 0
-1	-0	2
 = filter with now is still moved =
 1
 = join runtime filter on the sorting key is still moved =

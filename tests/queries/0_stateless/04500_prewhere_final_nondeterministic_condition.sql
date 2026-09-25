@@ -47,7 +47,7 @@ INSERT INTO t_prewhere_final_float VALUES (1, 0.0, 1);
 INSERT INTO t_prewhere_final_float VALUES (1, -0.0, 2);
 
 SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_float FINAL WHERE toString(f) = '0') WHERE explain LIKE '%Prewhere filter%';
-SELECT a, f, v FROM t_prewhere_final_float FINAL WHERE toString(f) = '-0';
+SELECT a, f, v FROM t_prewhere_final_float FINAL WHERE toString(f) = '0';
 
 DROP TABLE t_prewhere_final_float;
 
