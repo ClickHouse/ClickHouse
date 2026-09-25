@@ -5,6 +5,9 @@ after it materialized	1	[7,8]	['x','y']
 a leaf name may itself contain dots
 while the rename is pending	1	[7,8]	['x','y']	2	[3,4]
 after it materialized	1	[7,8]	['x','y']	2	[3,4]
+an unchanged longer leaf next to a renamed shorter one
+while the rename is pending	1	['p','q']	2	[3,4]
+after it materialized	1	['p','q']	2	[3,4]
 a subcolumn of the renamed leaf
 while the rename is pending	1	[NULL,5]	[1,0]	2
 after it materialized	1	[NULL,5]	[1,0]	2
