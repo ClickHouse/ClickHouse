@@ -3578,6 +3578,14 @@ void Changelog::spliceChangelog(ChangelogFileDescriptionPtr source_changelog, Ch
 namespace
 {
 
+struct DiskInventory
+{
+    DiskPtr disk;
+    size_t precedence = 0;
+    std::vector<ChangelogFileDescriptionPtr> files;
+    std::vector<std::pair<String, String>> markers; /// target basename, marker path
+};
+
 struct ChangelogRecoveryMarker
 {
     DiskPtr disk;
@@ -3591,6 +3599,320 @@ struct ChangelogRecoveryCandidate
     std::optional<ChangelogRecoveryMarker> marker;
     bool has_unknown_marker_version = false;
 };
+
+/// Rank old/current/latest changelog disks by precedence and list changelog files and move markers on
+/// each.
+std::vector<DiskInventory> inventoryDisks(
+    const LoggerPtr & log,
+    const String & changelogs_detached_dir,
+    uint64_t startup_read_max_streams,
+    const std::vector<DiskPtr> & old_disks,
+    const DiskPtr & main_disk,
+    const DiskPtr & latest_disk)
+{
+    /// Inventory every distinct configured disk without reading contents or mutating storage.
+    std::vector<DiskInventory> inventories;
+    const auto add_disk = [&](const DiskPtr & candidate, size_t precedence)
+    {
+        auto it = std::ranges::find(inventories, candidate, &DiskInventory::disk);
+        if (it == inventories.end())
+            inventories.push_back({.disk = candidate, .precedence = precedence, .files = {}, .markers = {}});
+        else
+            it->precedence = std::max(it->precedence, precedence);
+    };
+    size_t precedence = 0;
+    for (const auto & old_disk : old_disks)
+        add_disk(old_disk, precedence++);
+    add_disk(main_disk, precedence++);
+    add_disk(latest_disk, precedence++);
+
+    const auto inventory_disk = [&](DiskInventory & inventory)
+    {
+        LOG_TRACE(log, "Inventorying changelog disk {}", inventory.disk->getName());
+        for (auto it = inventory.disk->iterateDirectory(""); it->isValid(); it->next())
+        {
+            const auto & name = it->name();
+            if (name == changelogs_detached_dir)
+                continue;
+            if (name.starts_with(tmp_keeper_file_prefix))
+            {
+                LOG_TRACE(log, "Found changelog move marker {} on disk {}", it->path(), inventory.disk->getName());
+                inventory.markers.emplace_back(name.substr(tmp_keeper_file_prefix.size()), it->path());
+                continue;
+            }
+            if (!name.starts_with(DEFAULT_PREFIX))
+            {
+                LOG_WARNING(log, "Unknown file found in log directory: {}", name);
+                continue;
+            }
+            auto description = Changelog::getChangelogFileDescription(it->path());
+            description->disk = inventory.disk;
+            LOG_TRACE(log, "Found changelog {} on disk {}", description->path, inventory.disk->getName());
+            inventory.files.push_back(std::move(description));
+        }
+    };
+
+    if (inventories.size() == 1)
+    {
+        inventory_disk(inventories.front());
+    }
+    else
+    {
+        const size_t pool_size = std::min<size_t>(startup_read_max_streams, inventories.size() - 1);
+        ThreadPool pool(
+            CurrentMetrics::KeeperChangelogStartupReadThreads,
+            CurrentMetrics::KeeperChangelogStartupReadThreadsActive,
+            CurrentMetrics::KeeperChangelogStartupReadThreadsScheduled,
+            pool_size,
+            /*max_free_threads_*/ 0,
+            /*queue_size_*/ 0);
+        for (auto & inventory : inventories | std::views::drop(1))
+            pool.scheduleOrThrowOnError([&inventory, &inventory_disk] { inventory_disk(inventory); });
+        inventory_disk(inventories.front());
+        pool.wait();
+    }
+
+    return inventories;
+}
+
+/// Pair changelog files with their move markers and group same-start-index candidates; markers left
+/// over after pairing are orphaned.
+std::pair<std::map<uint64_t, std::vector<ChangelogRecoveryCandidate>>, std::vector<std::pair<DiskPtr, String>>> groupRecoveryCandidates(
+    std::vector<DiskInventory> inventories)
+{
+    /// Group changelog files based on the starting index
+    std::map<uint64_t, std::vector<ChangelogRecoveryCandidate>> groups;
+    std::vector<std::pair<DiskPtr, String>> orphan_markers;
+    for (auto & inventory : inventories)
+    {
+        std::unordered_map<String, String> markers;
+        for (auto & [target_name, marker_path] : inventory.markers)
+            markers.emplace(target_name, marker_path);
+
+        for (auto & description : inventory.files)
+        {
+            ChangelogRecoveryCandidate candidate{
+                .description = description,
+                .precedence = inventory.precedence,
+                .marker = std::nullopt};
+            const String basename = fs::path(description->path).filename();
+            if (auto marker_it = markers.find(basename); marker_it != markers.end())
+            {
+                candidate.marker = ChangelogRecoveryMarker{.disk = inventory.disk, .path = marker_it->second};
+                markers.erase(marker_it);
+            }
+            groups[description->from_log_index].push_back(std::move(candidate));
+        }
+        for (auto & [name, marker_path] : markers)
+            orphan_markers.emplace_back(inventory.disk, marker_path);
+    }
+
+    return {std::move(groups), std::move(orphan_markers)};
+}
+
+/// Resolve one starting-index group down to a single candidate, validating move markers and disk
+/// precedence; `duplicates` collects the losing copies to keep as recovery backups. Returns nullptr if
+/// every candidate in the group was removed.
+ChangelogFileDescriptionPtr selectRecoveryCandidate(
+    const LoggerPtr & log, std::vector<ChangelogRecoveryCandidate> & candidates, std::vector<ChangelogFileDescriptionPtr> & duplicates)
+{
+    for (auto it = candidates.begin(); it != candidates.end();)
+    {
+        if (!it->marker)
+        {
+            ++it;
+            continue;
+        }
+
+        const auto marker = readKeeperMoveMarker(it->marker->disk, it->marker->path);
+        if (!marker)
+        {
+            switch (marker.error())
+            {
+                case KeeperMoveMarkerParseError::UnknownVersion:
+                    /// Only a newer server writes other marker versions, so this can only happen after a downgrade.
+                    it->has_unknown_marker_version = true;
+                    ++it;
+                    continue;
+                case KeeperMoveMarkerParseError::LegacyEmpty:
+                    /// Unlike snapshots, changelogs have no writer that creates an empty marker,
+                    /// so treat it as malformed, i.e. as a mismatch below.
+                    [[fallthrough]];
+                case KeeperMoveMarkerParseError::Malformed:
+                    break; /// handled as a mismatch below
+            }
+        }
+        else if (it->description->disk->getFileSize(it->description->path) == marker->size
+            && computeKeeperFileDigest(it->description->disk, it->description->path) == *marker)
+        {
+            LOG_TRACE(
+                log,
+                "Changelog {} on disk {} matches move marker {}, removing the marker",
+                it->description->path,
+                it->description->disk->getName(),
+                it->marker->path);
+            removeKeeperFileIfExists(it->marker->disk, it->marker->path);
+            it->marker.reset();
+            ++it;
+            continue;
+        }
+
+        if (candidates.size() == 1)
+        {
+            LOG_WARNING(
+                log,
+                "Changelog {} on disk {} does not match move marker {}; removing the marker and keeping the only recovery candidate",
+                it->description->path,
+                it->description->disk->getName(),
+                it->marker->path);
+            removeKeeperFileIfExists(it->marker->disk, it->marker->path);
+            it->marker.reset();
+            ++it;
+            continue;
+        }
+
+        LOG_TRACE(
+            log,
+            "Changelog {} on disk {} does not match move marker {}, removing the changelog and marker",
+            it->description->path,
+            it->description->disk->getName(),
+            it->marker->path);
+        removeKeeperFileIfExists(it->description->disk, it->description->path);
+        removeKeeperFileIfExists(it->marker->disk, it->marker->path);
+        it = candidates.erase(it);
+    }
+
+    if (candidates.empty())
+        return nullptr;
+
+    /// This can only happen after a downgrade (a newer server wrote the markers).
+    /// Keep the highest-precedence copy instead of dropping the last one.
+    if (std::ranges::all_of(candidates, &ChangelogRecoveryCandidate::has_unknown_marker_version))
+    {
+        const auto fallback = std::ranges::max_element(candidates, {}, &ChangelogRecoveryCandidate::precedence);
+        LOG_WARNING(
+            log,
+            "All changelog recovery candidates for index {} have an unknown marker version; removing marker {} and using {} on disk {}",
+            fallback->description->from_log_index,
+            fallback->marker->path,
+            fallback->description->path,
+            fallback->description->disk->getName());
+        removeKeeperFileIfExists(fallback->marker->disk, fallback->marker->path);
+        fallback->marker.reset();
+        fallback->has_unknown_marker_version = false;
+    }
+
+    std::erase_if(candidates, [&](const auto & candidate)
+    {
+        if (!candidate.has_unknown_marker_version)
+            return false;
+
+        LOG_WARNING(
+            log,
+            "Keeping changelog {} and unknown-version marker {} on disk {} as a recovery copy; excluding it from replay selection",
+            candidate.description->path,
+            candidate.marker->path,
+            candidate.description->disk->getName());
+        candidate.description->recovery_marker_path = candidate.marker->path;
+        duplicates.push_back(candidate.description);
+        return true;
+    });
+
+    const auto selected = std::ranges::max_element(candidates, {}, &ChangelogRecoveryCandidate::precedence);
+    for (const auto & candidate : candidates)
+    {
+        if (&candidate != &*selected)
+        {
+            LOG_WARNING(
+                log,
+                "Keeping duplicate changelog {} on disk {} as a recovery copy; using {} on disk {}",
+                candidate.description->path,
+                candidate.description->disk->getName(),
+                selected->description->path,
+                selected->description->disk->getName());
+            duplicates.push_back(candidate.description);
+        }
+    }
+    LOG_TRACE(
+        log,
+        "Using changelog {} from disk {}",
+        selected->description->path,
+        selected->description->disk->getName());
+    return selected->description;
+}
+
+/// One entry per recovered start index: the changelog to use and the duplicate copies kept as
+/// recovery copies (empty for a single copy).
+struct RecoveredChangelog
+{
+    uint64_t index = 0;
+    ChangelogFileDescriptionPtr changelog;
+    std::vector<ChangelogFileDescriptionPtr> duplicates;
+};
+
+/// Use a single copy without a move marker directly, and resolve the other groups in a thread pool.
+std::vector<RecoveredChangelog> resolveRecoveryGroups(
+    const LoggerPtr & log, std::map<uint64_t, std::vector<ChangelogRecoveryCandidate>> groups, uint64_t startup_read_max_streams)
+{
+    std::vector<RecoveredChangelog> recovered;
+
+    /// Process independent logical groups concurrently. Markers are resolved before disk precedence.
+    std::vector<std::pair<uint64_t, std::vector<ChangelogRecoveryCandidate> *>> unresolved_groups;
+    for (auto & [index, candidates] : groups)
+    {
+        if (candidates.size() == 1 && !candidates.front().marker)
+        {
+            const auto & candidate = candidates.front();
+            LOG_TRACE(log, "Using changelog {} from disk {}", candidate.description->path, candidate.description->disk->getName());
+            recovered.push_back({.index = index, .changelog = candidate.description, .duplicates = {}});
+        }
+        else
+            unresolved_groups.emplace_back(index, &candidates);
+    }
+
+    /// Reserve the unresolved slots up front so the thread pool below can write into `recovered`
+    /// without triggering a reallocation.
+    const size_t first_unresolved = recovered.size();
+    recovered.resize(first_unresolved + unresolved_groups.size());
+    for (size_t i = 0; i < unresolved_groups.size(); ++i)
+        recovered[first_unresolved + i].index = unresolved_groups[i].first;
+
+    if (!unresolved_groups.empty())
+    {
+        const size_t pool_size = std::min<size_t>(startup_read_max_streams, unresolved_groups.size());
+        ThreadPool pool(
+            CurrentMetrics::KeeperChangelogStartupReadThreads,
+            CurrentMetrics::KeeperChangelogStartupReadThreadsActive,
+            CurrentMetrics::KeeperChangelogStartupReadThreadsScheduled,
+            pool_size,
+            /*max_free_threads_*/ 0,
+            /*queue_size_*/ 0);
+        for (size_t group_index = 0; group_index < unresolved_groups.size(); ++group_index)
+        {
+            pool.scheduleOrThrowOnError(
+                [&, group_index]
+                {
+                    auto & entry = recovered[first_unresolved + group_index];
+                    entry.changelog = selectRecoveryCandidate(log, *unresolved_groups[group_index].second, entry.duplicates);
+                });
+        }
+        pool.wait();
+    }
+
+    /// `selectRecoveryCandidate` returns nullptr only when it removed every candidate in the group,
+    /// before any duplicate could have been recorded.
+    std::erase_if(recovered, [](const auto & entry) { return !entry.changelog; });
+    return recovered;
+}
+
+void removeOrphanMarkers(const LoggerPtr & log, const std::vector<std::pair<DiskPtr, String>> & orphan_markers)
+{
+    for (const auto & marker : orphan_markers)
+    {
+        LOG_TRACE(log, "Removing orphaned changelog move marker {} from disk {}", marker.second, marker.first->getName());
+        removeKeeperFileIfExists(marker.first, marker.second);
+    }
+}
 
 }
 
@@ -3632,280 +3954,18 @@ Changelog::Changelog(
                 latest_log_disk->getName());
         }
 
-        /// Inventory every distinct configured disk without reading contents or mutating storage.
-        struct DiskInventory
-        {
-            DiskPtr disk;
-            size_t precedence = 0;
-            std::vector<ChangelogFileDescriptionPtr> files;
-            std::vector<std::pair<String, String>> markers; /// target basename, marker path
-        };
-
-        std::vector<DiskInventory> inventories;
-        const auto add_disk = [&](const DiskPtr & candidate, size_t precedence)
-        {
-            auto it = std::ranges::find(inventories, candidate, &DiskInventory::disk);
-            if (it == inventories.end())
-                inventories.push_back({.disk = candidate, .precedence = precedence, .files = {}, .markers = {}});
-            else
-                it->precedence = std::max(it->precedence, precedence);
-        };
-        size_t precedence = 0;
-        for (const auto & old_disk : keeper_context->getOldLogDisks())
-            add_disk(old_disk, precedence++);
         auto disk = getDisk();
-        add_disk(disk, precedence++);
-        auto latest_log_disk = getLatestLogDisk();
-        add_disk(latest_log_disk, precedence++);
+        auto inventories = inventoryDisks(
+            log, changelogs_detached_dir, startup_read_max_streams, keeper_context->getOldLogDisks(), disk, getLatestLogDisk());
+        auto [groups, orphan_markers] = groupRecoveryCandidates(std::move(inventories));
 
-        const auto inventory_disk = [&](DiskInventory & inventory)
+        for (auto & entry : resolveRecoveryGroups(log, std::move(groups), startup_read_max_streams))
         {
-            LOG_TRACE(log, "Inventorying changelog disk {}", inventory.disk->getName());
-            for (auto it = inventory.disk->iterateDirectory(""); it->isValid(); it->next())
-            {
-                const auto & name = it->name();
-                if (name == changelogs_detached_dir)
-                    continue;
-                if (name.starts_with(tmp_keeper_file_prefix))
-                {
-                    LOG_TRACE(log, "Found changelog move marker {} on disk {}", it->path(), inventory.disk->getName());
-                    inventory.markers.emplace_back(name.substr(tmp_keeper_file_prefix.size()), it->path());
-                    continue;
-                }
-                if (!name.starts_with(DEFAULT_PREFIX))
-                {
-                    LOG_WARNING(log, "Unknown file found in log directory: {}", name);
-                    continue;
-                }
-                auto description = getChangelogFileDescription(it->path());
-                description->disk = inventory.disk;
-                LOG_TRACE(log, "Found changelog {} on disk {}", description->path, inventory.disk->getName());
-                inventory.files.push_back(std::move(description));
-            }
-        };
-
-        if (inventories.size() == 1)
-        {
-            inventory_disk(inventories.front());
+            existing_changelogs.emplace(entry.index, entry.changelog);
+            if (!entry.duplicates.empty())
+                retained_duplicate_changelogs.emplace(entry.index, std::move(entry.duplicates));
         }
-        else
-        {
-            const size_t pool_size = std::min<size_t>(startup_read_max_streams, inventories.size() - 1);
-            ThreadPool pool(
-                CurrentMetrics::KeeperChangelogStartupReadThreads,
-                CurrentMetrics::KeeperChangelogStartupReadThreadsActive,
-                CurrentMetrics::KeeperChangelogStartupReadThreadsScheduled,
-                pool_size,
-                /*max_free_threads_*/ 0,
-                /*queue_size_*/ 0);
-            for (auto & inventory : inventories | std::views::drop(1))
-                pool.scheduleOrThrowOnError([&inventory, &inventory_disk] { inventory_disk(inventory); });
-            inventory_disk(inventories.front());
-            pool.wait();
-        }
-
-        /// Group changelog files based on the starting index
-        std::map<uint64_t, std::vector<ChangelogRecoveryCandidate>> groups;
-        std::vector<std::pair<DiskPtr, String>> orphan_markers;
-        for (auto & inventory : inventories)
-        {
-            std::unordered_map<String, String> markers;
-            for (auto & [target_name, marker_path] : inventory.markers)
-                markers.emplace(target_name, marker_path);
-
-            for (auto & description : inventory.files)
-            {
-                ChangelogRecoveryCandidate candidate{
-                    .description = description,
-                    .precedence = inventory.precedence,
-                    .marker = std::nullopt};
-                const String basename = fs::path(description->path).filename();
-                if (auto marker_it = markers.find(basename); marker_it != markers.end())
-                {
-                    candidate.marker = ChangelogRecoveryMarker{.disk = inventory.disk, .path = marker_it->second};
-                    markers.erase(marker_it);
-                }
-                groups[description->from_log_index].push_back(std::move(candidate));
-            }
-            for (auto & [name, marker_path] : markers)
-                orphan_markers.emplace_back(inventory.disk, marker_path);
-        }
-
-        /// Process independent logical groups concurrently. Markers are resolved before disk precedence.
-        std::vector<std::vector<ChangelogRecoveryCandidate> *> unresolved_group_refs;
-        for (auto & [index, candidates] : groups)
-        {
-            if (candidates.size() == 1 && !candidates.front().marker)
-            {
-                const auto & candidate = candidates.front();
-                LOG_TRACE(log, "Using changelog {} from disk {}", candidate.description->path, candidate.description->disk->getName());
-                existing_changelogs.emplace(index, candidate.description);
-            }
-            else
-                unresolved_group_refs.emplace_back(&candidates);
-        }
-        std::vector<ChangelogFileDescriptionPtr> selected_changelogs(unresolved_group_refs.size());
-        std::vector<std::vector<ChangelogFileDescriptionPtr>> duplicate_changelogs(unresolved_group_refs.size());
-
-        if (!unresolved_group_refs.empty())
-        {
-            const size_t pool_size = std::min<size_t>(startup_read_max_streams, unresolved_group_refs.size());
-            ThreadPool pool(
-                CurrentMetrics::KeeperChangelogStartupReadThreads,
-                CurrentMetrics::KeeperChangelogStartupReadThreadsActive,
-                CurrentMetrics::KeeperChangelogStartupReadThreadsScheduled,
-                pool_size,
-                /*max_free_threads_*/ 0,
-                /*queue_size_*/ 0);
-            for (size_t group_index = 0; group_index < unresolved_group_refs.size(); ++group_index)
-            {
-                pool.scheduleOrThrowOnError(
-                    [&, group_index]
-                    {
-                        auto & candidates = *unresolved_group_refs[group_index];
-                        for (auto it = candidates.begin(); it != candidates.end();)
-                        {
-                            if (!it->marker)
-                            {
-                                ++it;
-                                continue;
-                            }
-
-                            const auto marker = readKeeperMoveMarker(it->marker->disk, it->marker->path);
-                            if (!marker)
-                            {
-                                switch (marker.error())
-                                {
-                                    case KeeperMoveMarkerParseError::UnknownVersion:
-                                        /// Only a newer server writes other marker versions, so this can only happen after a downgrade.
-                                        it->has_unknown_marker_version = true;
-                                        ++it;
-                                        continue;
-                                    case KeeperMoveMarkerParseError::LegacyEmpty:
-                                        /// Unlike snapshots, changelogs have no writer that creates an empty marker,
-                                        /// so treat it as malformed, i.e. as a mismatch below.
-                                        [[fallthrough]];
-                                    case KeeperMoveMarkerParseError::Malformed:
-                                        break; /// handled as a mismatch below
-                                }
-                            }
-                            else if (it->description->disk->getFileSize(it->description->path) == marker->size
-                                && computeKeeperFileDigest(it->description->disk, it->description->path) == *marker)
-                            {
-                                LOG_TRACE(
-                                    log,
-                                    "Changelog {} on disk {} matches move marker {}, removing the marker",
-                                    it->description->path,
-                                    it->description->disk->getName(),
-                                    it->marker->path);
-                                removeKeeperFileIfExists(it->marker->disk, it->marker->path);
-                                it->marker.reset();
-                                ++it;
-                                continue;
-                            }
-
-                            if (candidates.size() == 1)
-                            {
-                                LOG_WARNING(
-                                    log,
-                                    "Changelog {} on disk {} does not match move marker {}; removing the marker and keeping the only recovery candidate",
-                                    it->description->path,
-                                    it->description->disk->getName(),
-                                    it->marker->path);
-                                removeKeeperFileIfExists(it->marker->disk, it->marker->path);
-                                it->marker.reset();
-                                ++it;
-                                continue;
-                            }
-
-                            LOG_TRACE(
-                                log,
-                                "Changelog {} on disk {} does not match move marker {}, removing the changelog and marker",
-                                it->description->path,
-                                it->description->disk->getName(),
-                                it->marker->path);
-                            removeKeeperFileIfExists(it->description->disk, it->description->path);
-                            removeKeeperFileIfExists(it->marker->disk, it->marker->path);
-                            it = candidates.erase(it);
-                        }
-
-                        if (candidates.empty())
-                            return;
-
-                        /// This can only happen after a downgrade (a newer server wrote the markers).
-                        /// Keep the highest-precedence copy instead of dropping the last one.
-                        if (std::ranges::all_of(candidates, &ChangelogRecoveryCandidate::has_unknown_marker_version))
-                        {
-                            const auto fallback = std::ranges::max_element(candidates, {}, &ChangelogRecoveryCandidate::precedence);
-                            LOG_WARNING(
-                                log,
-                                "All changelog recovery candidates for index {} have an unknown marker version; removing marker {} and using {} on disk {}",
-                                fallback->description->from_log_index,
-                                fallback->marker->path,
-                                fallback->description->path,
-                                fallback->description->disk->getName());
-                            removeKeeperFileIfExists(fallback->marker->disk, fallback->marker->path);
-                            fallback->marker.reset();
-                            fallback->has_unknown_marker_version = false;
-                        }
-
-                        std::erase_if(candidates, [&](const auto & candidate)
-                        {
-                            if (!candidate.has_unknown_marker_version)
-                                return false;
-
-                            LOG_WARNING(
-                                log,
-                                "Keeping changelog {} and unknown-version marker {} on disk {} as a recovery copy; excluding it from replay selection",
-                                candidate.description->path,
-                                candidate.marker->path,
-                                candidate.description->disk->getName());
-                            candidate.description->recovery_marker_path = candidate.marker->path;
-                            duplicate_changelogs[group_index].push_back(candidate.description);
-                            return true;
-                        });
-
-                        const auto selected = std::ranges::max_element(candidates, {}, &ChangelogRecoveryCandidate::precedence);
-                        for (const auto & candidate : candidates)
-                        {
-                            if (&candidate != &*selected)
-                            {
-                                LOG_WARNING(
-                                    log,
-                                    "Keeping duplicate changelog {} on disk {} as a recovery copy; using {} on disk {}",
-                                    candidate.description->path,
-                                    candidate.description->disk->getName(),
-                                    selected->description->path,
-                                    selected->description->disk->getName());
-                                duplicate_changelogs[group_index].push_back(candidate.description);
-                            }
-                        }
-                        LOG_TRACE(
-                            log,
-                            "Using changelog {} from disk {}",
-                            selected->description->path,
-                            selected->description->disk->getName());
-                        selected_changelogs[group_index] = selected->description;
-                    });
-            }
-            pool.wait();
-        }
-
-        for (size_t group_index = 0; group_index < selected_changelogs.size(); ++group_index)
-        {
-            const auto & selected = selected_changelogs[group_index];
-            if (selected)
-            {
-                existing_changelogs.emplace(selected->from_log_index, selected);
-                if (!duplicate_changelogs[group_index].empty())
-                    retained_duplicate_changelogs.emplace(selected->from_log_index, std::move(duplicate_changelogs[group_index]));
-            }
-        }
-        for (const auto & marker : orphan_markers)
-        {
-            LOG_TRACE(log, "Removing orphaned changelog move marker {} from disk {}", marker.second, marker.first->getName());
-            removeKeeperFileIfExists(marker.first, marker.second);
-        }
+        removeOrphanMarkers(log, orphan_markers);
 
         if (existing_changelogs.empty())
             LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", disk->getPath());
