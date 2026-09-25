@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace ErrorCodes
@@ -232,6 +233,96 @@ static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, con
     visitor.visit(query);
 
     return query->cloneAndReplace(visitor.replacement_map);
+}
+
+/// Does the tree hold anything the walk below cannot answer for, evaluating the whole tree against
+/// one context and one branch of every `UNION`?
+///
+/// - A `UNION`: the walk descends into its first branch and stops, so it says nothing about the
+///   others, and the planner does read a later branch with replicas when the first one is not
+///   readable - `SELECT a FROM log_table UNION ALL SELECT a FROM mt_table` plans a
+///   `ReadFromRemoteParallelReplicas` under its second arm.
+/// - A `SETTINGS` clause on a subquery: that subquery is planned with its own context, so it can
+///   re-enable what the outer query turned off, and the read below it is then made with replicas
+///   although the outer context forbids it. The root's own clause is not a problem - it is in the
+///   context the walk is handed.
+/// - A `View`: the walk stops at the view unless `parallel_replicas_allow_view_over_mergetree` lets it
+///   unwrap one, but the body is planned by its own interpreter either way, and `getViewContext`
+///   disables replicas inside it only in the case the walk does unwrap. With the setting at its
+///   default, `SELECT sum(a) FROM view_over_mergetree` reads the view's body with replicas.
+///   A `MaterializedView` reads its target table rather than planning a body, so it needs none of
+///   this: with `parallel_replicas_allow_materialized_views = 0` that read is not parallelized
+///   either, which is what the walk says.
+static bool walkCannotAnswerFor(const IQueryTreeNode * root)
+{
+    std::vector<const IQueryTreeNode *> stack{root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->getNodeType() == QueryTreeNodeType::UNION)
+            return true;
+
+        if (node != root)
+            if (const auto * query_node = node->as<QueryNode>(); query_node && query_node->hasSettingsChanges())
+                return true;
+
+        if (const auto * table_node = node->as<TableNode>())
+            if (typeid_cast<const StorageView *>(table_node->getStorage().get()))
+                return true;
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                stack.push_back(child.get());
+    }
+    return false;
+}
+
+bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_node, const ContextPtr & context)
+{
+    /// The walk below reports the `QUERY` nodes it descended through, so a tree that is a bare table
+    /// expression comes back empty however readable that table is, and would be reported ineligible.
+    /// The root of a query tree is always a query or a union - `findQueryForParallelReplicas`, the
+    /// planner's own entry into the same walk, rejects anything else outright - so state that here
+    /// rather than have the answer quietly depend on it.
+    chassert(query_tree_node->as<QueryNode>() || query_tree_node->as<UnionNode>());
+
+    /// The plan-based implementation decides where to read with replicas by analyzing the query plan
+    /// rather than the query tree, so the walk below does not describe what it will do. Report every
+    /// query as possibly eligible there instead of risking a rejection of one it could parallelize.
+    if (context->getSettingsRef()[Setting::parallel_replicas_plan_based])
+        return true;
+
+    /// Everything below reads one context, so it can only answer for a tree that is planned against
+    /// one. Report the rest as possibly eligible - including against the settings check right after,
+    /// which a subquery's own `SETTINGS` clause defeats just as well.
+    if (walkCannotAnswerFor(query_tree_node.get()))
+        return true;
+
+    if (!context->canUseParallelReplicasOnInitiator())
+        return false;
+
+    /// The walk returns an empty stack when nothing in the join tree can be read with replicas: a
+    /// non-MergeTree storage, a table function, a `FINAL` modifier, a view that does not resolve to a
+    /// MergeTree table, a refreshable materialized view, a non-replicated MergeTree without
+    /// `parallel_replicas_for_non_replicated_merge_tree`, or a join the walk cannot descend one side
+    /// of - `CROSS`, `FULL`, an `INNER` that is not `ALL`, a `RIGHT` with `RightAny` strictness, and a
+    /// `RIGHT` whose left side is not a table, query or union. Note that `RIGHT ANY JOIN` is none of
+    /// those: it carries strictness `Any`, not `RightAny` (the old ANY JOIN, see `JoinStrictness`), so
+    /// it is admitted here and rejected later, if at all.
+    ///
+    /// In practice the storage-shaped cases above rarely reach this function: a plan that reads from
+    /// them fails `plan_is_simple_enough` in `considerEnablingParallelReplicas` first. What this check
+    /// actually saves a candidate plan on is the join-kind and settings cases.
+    ///
+    /// It is deliberately only the query-tree half of the eligibility rules. The planner disables
+    /// parallel replicas for a few more reasons that are not visible here - a correlated subquery
+    /// (`DisableParallelReplicasPass`), `IN` with a subquery under
+    /// `parallel_replicas_allow_in_with_subquery = 0`, `additional_table_filters` without
+    /// `serialize_query_plan`, a `STREAM` modifier - and each of those only costs a missed skip, never a
+    /// wrong one.
+    return !getSupportingParallelReplicasQueries(query_tree_node.get(), context).empty();
 }
 
 #ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
