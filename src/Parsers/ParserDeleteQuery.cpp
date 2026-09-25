@@ -136,44 +136,13 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 ## Lightweight `DELETE` does not delete data immediately {#lightweight-delete-does-not-delete-data-immediately}
 
-Lightweight `DELETE` marks rows as deleted without immediately removing them from storage. By default, it uses a [mutation](/reference/statements/alter/index#mutations). It can also use patch parts, depending on the [`lightweight_delete_mode`](#lightweight-delete-mode) setting.
+Lightweight `DELETE` is implemented as a [mutation](/reference/statements/alter/index#mutations) that marks rows as deleted but does not immediately physically delete them.
 
-With the default mutation-based mode, `DELETE` statements wait until marking the rows as deleted is completed before returning. This can take a long time if the amount of data is large. Alternatively, you can run it asynchronously in the background using the setting [`lightweight_deletes_sync`](/reference/settings/session-settings/lightweight#lightweight_deletes_sync). If disabled, the `DELETE` statement is going to return immediately, but the data can still be visible to queries until the background mutation is finished.
+By default, `DELETE` statements wait until marking the rows as deleted is completed before returning. This can take a long time if the amount of data is large. Alternatively, you can run it asynchronously in the background using the setting [`lightweight_deletes_sync`](/reference/settings/session-settings/lightweight#lightweight_deletes_sync). If disabled, the `DELETE` statement is going to return immediately, but the data can still be visible to queries until the background mutation is finished.
 
-In both modes, deleted rows remain in storage until cleanup. Background merges normally remove them from the affected data parts. To explicitly apply the deletion mask, use [`ALTER TABLE ... APPLY DELETED MASK`](/reference/statements/alter/apply-deleted-mask), which performs a heavyweight mutation.
+The mutation does not physically delete the rows that have been marked as deleted, this will only happen during the next merge. As a result, it is possible that for an unspecified period, data is not actually deleted from storage and is only marked as deleted.
 
 If you need to guarantee that your data is deleted from storage in a predictable time, consider using the table setting [`min_age_to_force_merge_seconds`](/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds). Or you can use the [ALTER TABLE ... DELETE](/reference/statements/alter/delete) command. Note that deleting data using `ALTER TABLE ... DELETE` may consume significant resources as it recreates all affected parts.
-
-## Choose the delete mode {#lightweight-delete-mode}
-
-The [`lightweight_delete_mode`](/reference/settings/session-settings/lightweight#lightweight_delete_mode) setting controls how ClickHouse marks rows as deleted:
-
-| Value | Behavior |
-| --- | --- |
-| `alter_update` (default) | Runs an `ALTER TABLE ... UPDATE` mutation to update the `_row_exists` mask. |
-| `lightweight_update` | Uses a lightweight `UPDATE` with patch parts when supported; otherwise, uses an `ALTER TABLE ... UPDATE` mutation. |
-| `lightweight_update_force` | Uses a lightweight `UPDATE` with patch parts when supported; otherwise, throws an exception. |
-
-With patch parts, ClickHouse writes `_row_exists = 0` only for the deleted rows, together with metadata that identifies those rows. It avoids rewriting the entire mask column in the affected parts. Subsequent `SELECT` queries apply these patches to exclude the deleted rows before physical cleanup.
-
-The patch-part path waits for patch creation on the executing replica before returning, rather than submitting a background mutation controlled by `lightweight_deletes_sync`. It does not need to wait for existing merges and mutations to finish. Applying patches adds work to reads; see [lightweight update performance considerations](/reference/statements/update#performance-considerations).
-
-On `ReplicatedMergeTree` tables, patch creation completes on the executing replica; other replicas may continue returning deleted rows until they receive the patch. `lightweight_deletes_sync` does not make this path wait for other replicas. To wait for deletion on all replicas, use `lightweight_delete_mode = 'alter_update'` with `lightweight_deletes_sync = 2`.
-
-To use this path, [`enable_lightweight_update`](/reference/settings/session-settings/enable-lightweight#enable_lightweight_update) must be enabled, and the table must meet the [lightweight update requirements](/reference/statements/update#lightweight-update-requirements), including the `enable_block_number_column` and `enable_block_offset_column` table settings. For example, for a supported `hits` table:
-
-```sql
-ALTER TABLE hits MODIFY SETTING
-    enable_block_number_column = 1,
-    enable_block_offset_column = 1;
-
-SET enable_lightweight_update = 1;
-SET lightweight_delete_mode = 'lightweight_update_force';
-
-DELETE FROM hits WHERE Title LIKE '%hello%';
-```
-
-This example uses `lightweight_update_force` so that an unsupported configuration produces an exception instead of a mutation-based delete.
 
 ## Deleting large amounts of data {#deleting-large-amounts-of-data}
 
@@ -194,9 +163,9 @@ By default, `DELETE` does not work for tables with projections. This is because 
 The following can also negatively impact lightweight `DELETE` performance:
 
 - A heavy `WHERE` condition in a `DELETE` query.
-- When using mutation-based deletes, if the mutations queue is filled with many other mutations, this can possibly lead to performance issues as all mutations on a table are executed sequentially.
+- If the mutations queue is filled with many other mutations, this can possibly lead to performance issues as all mutations on a table are executed sequentially.
 - The affected table has a very large number of data parts.
-- When using mutation-based deletes, having a lot of data in compact parts. In a compact part, all columns are stored in one file and must be rewritten together.
+- Having a lot of data in compact parts. In a Compact part, all columns are stored in one file.
 
 ## Delete permissions {#delete-permissions}
 
@@ -210,7 +179,7 @@ GRANT ALTER DELETE ON db.table to username;
 
 1. **A "mask" is applied to affected rows**
 
-   When a `DELETE FROM table ...` query is executed, ClickHouse saves a mask where each row is marked as either "existing" or as "deleted". Those "deleted" rows are omitted for subsequent queries. However, rows are physically removed later, normally during background merges. Writing this mask is much more lightweight than what is done by an `ALTER TABLE ... DELETE` query.
+   When a `DELETE FROM table ...` query is executed, ClickHouse saves a mask where each row is marked as either "existing" or as "deleted". Those "deleted" rows are omitted for subsequent queries. However, rows are actually only removed later by subsequent merges. Writing this mask is much more lightweight than what is done by an `ALTER TABLE ... DELETE` query.
 
    The mask is implemented as a hidden `_row_exists` system column that stores `True` for all visible rows and `False` for deleted ones. This column is only present in a part if some rows in the part were deleted. This column does not exist when a part has all values equal to `True`.
 
@@ -222,11 +191,9 @@ GRANT ALTER DELETE ON db.table to username;
    ```
    At execution time, the column `_row_exists` is read to determine which rows should not be returned. If there are many deleted rows, ClickHouse can determine which granules can be fully skipped when reading the rest of the columns.
 
-3. **`DELETE` queries update the mask using the selected mode**
+3. **`DELETE` queries are transformed to `ALTER TABLE ... UPDATE` queries**
 
-   With patch parts, `DELETE FROM table WHERE condition` is translated into `UPDATE table SET _row_exists = 0 WHERE condition`. The resulting patch parts store the mask changes for the deleted rows and are applied when reading and merging data.
-
-   With the default `alter_update` mode, `DELETE FROM table WHERE condition` is translated into an `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` mutation.
+   The `DELETE FROM table WHERE condition` is translated into an `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` mutation.
 
    Internally, this mutation is executed in two steps:
 
@@ -239,7 +206,6 @@ GRANT ALTER DELETE ON db.table to username;
 ## Related content {#related-content}
 
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
-- Blog: [Lightweight deletes are now even lighter](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#lightweight-deletes-are-now-even-lighter)
 )DOCS_MD",
         .syntax = R"(
 DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE expr

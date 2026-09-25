@@ -36,7 +36,7 @@ If you need to guarantee that your data is deleted from storage in a predictable
 
 The [`lightweight_delete_mode`](/reference/settings/session-settings/lightweight#lightweight_delete_mode) setting selects mutation-based deletes (the default) or lightweight updates that write patch parts containing `_row_exists = 0` for deleted rows. Queries apply these patches before physical cleanup.
 
-See [the `DELETE` reference](/reference/statements/delete) for the available modes, prerequisites, a configuration example, and differences in visibility across replicas.
+See the setting reference for the available modes and the [lightweight update requirements](/reference/statements/update#lightweight-update-requirements) for prerequisites. With patch parts, `lightweight_deletes_sync` does not wait for other replicas; on `ReplicatedMergeTree`, other replicas may still return deleted rows until they receive the patch.
 
 ## Deleting large amounts of data {#deleting-large-amounts-of-data}
 
@@ -57,7 +57,7 @@ By default, `DELETE` does not work for tables with projections. This is because 
 The following can also negatively impact lightweight `DELETE` performance:
 
 - A heavy `WHERE` condition in a `DELETE` query.
-- When using mutation-based deletes, if the mutations queue is filled with many other mutations, this can possibly lead to performance issues as all mutations on a table are executed sequentially.
+- For mutation-based deletes, a large mutation queue: mutations on a table are executed sequentially.
 - The affected table has a very large number of data parts.
 - When using mutation-based deletes, having a lot of data in compact parts. In a compact part, all columns are stored in one file and must be rewritten together.
 
