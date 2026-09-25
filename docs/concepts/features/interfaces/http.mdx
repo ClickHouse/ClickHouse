@@ -227,21 +227,21 @@ Path interpretation is gated at two levels:
 </clickhouse>
 ```
 
-2. The per-user settings below decide how a routed path is interpreted. All of them are enabled by default and can be disabled per user, role, or profile:
+2. The per-user settings below decide how a routed path is interpreted. All of them except `http_allow_filters_as_unrecognized_url_parameters` are enabled by default, and each can be enabled or disabled per user, role, or profile:
 
 | Setting | Effect |
 |---------|--------|
 | `http_allow_table_as_file` | Interprets the last path component as `table`, `table.format`, or `table.format.compression`. |
 | `http_allow_database_as_path` | Interprets a leading `/database/` path component as the current database. |
 | `http_allow_filters_as_path` | Interprets Hive-style `/name=value/` path components as `WHERE` filters. |
-| `http_allow_filters_as_unrecognized_url_parameters` | Interprets unrecognized URL parameters as `WHERE` filters. |
+| `http_allow_filters_as_unrecognized_url_parameters` | Interprets unrecognized URL parameters as `WHERE` filters. Disabled by default. |
 
 <Note>
-Routing occurs before authentication, so it cannot depend on a per-user setting. When `http_allow_path_requests` is disabled, an unknown path returns a pre-authentication `404`. After routing and authentication, the per-user settings determine how the path is interpreted, allowing you to disable the feature selectively for a user, role, or profile.
+Routing occurs before authentication, so it cannot depend on a per-user setting. When `http_allow_path_requests` is disabled, an unknown path returns a pre-authentication `404`. After routing and authentication, the per-user settings determine how the path is interpreted, allowing you to enable or disable the feature selectively for a user, role, or profile.
 </Note>
 
 <Note>
-Because `http_allow_filters_as_unrecognized_url_parameters` is enabled, a misspelt setting name in the URL is no longer reported as `UNKNOWN_SETTING`. It becomes a filter instead, so the query fails with `UNKNOWN_IDENTIFIER` — or, when the misspelt name happens to match a column of the queried table, silently filters the result. Disable the setting to get the stricter diagnostics back.
+`http_allow_filters_as_unrecognized_url_parameters` stays disabled by default because it applies to every request of the HTTP interface, including the `/?query=...` endpoint: when it is enabled, any unrecognized URL parameter a client appends becomes a filter of the query. A misspelt setting name is then no longer reported as `UNKNOWN_SETTING`, but fails with `UNKNOWN_IDENTIFIER` — or, when the name happens to match a column of the queried table, silently filters the result.
 </Note>
 
 ### Access tables as files {#table-as-file-examples}

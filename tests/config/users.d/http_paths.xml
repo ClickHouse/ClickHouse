@@ -3,8 +3,8 @@
          for the previous-release server of the upgrade check (see `install.sh`), which runs that
          release's tests against a server where the features are still off by default.
 
-         Notably we do NOT enable `http_allow_filters_as_unrecognized_url_parameters` here: on those
-         older releases it is off by default and their tests expect that. -->
+         Notably we do NOT enable `http_allow_filters_as_unrecognized_url_parameters` here: it is off
+         by default on every release, and the tests expect that. -->
     <profiles>
         <default>
             <http_allow_database_as_path>1</http_allow_database_as_path>

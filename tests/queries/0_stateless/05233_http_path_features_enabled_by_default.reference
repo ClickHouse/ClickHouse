@@ -8,7 +8,9 @@ two
 three
 -- filters as path
 2,"two"
--- filters as unrecognized URL parameters
+-- filters as unrecognized URL parameters are off by default
+UNKNOWN_SETTING
+-- filters as unrecognized URL parameters can be switched on per request
 3,"three"
 -- the features can still be switched off per request
 UNKNOWN_TABLE
