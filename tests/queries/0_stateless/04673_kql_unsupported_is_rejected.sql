@@ -6,7 +6,7 @@
 -- failed as "Function series_fir does not exist" and `search 'x'` as "Unknown table
 -- expression identifier 'search'".
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 -- Unsupported operators.

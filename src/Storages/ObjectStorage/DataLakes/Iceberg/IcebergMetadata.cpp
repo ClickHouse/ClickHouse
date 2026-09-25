@@ -141,12 +141,12 @@ extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
-extern const SettingsBool allow_experimental_expire_snapshots;
+extern const SettingsBool allow_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
 extern const SettingsSeconds lock_acquire_timeout;
 extern const SettingsSeconds iceberg_compaction_delay_bias;
 extern const SettingsSeconds iceberg_compaction_data_cleanup;
-extern const SettingsBool allow_experimental_cleanup_old_data_files_compaction;
+extern const SettingsBool enable_cleanup_old_data_files_compaction;
 extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
 extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 extern const SettingsUInt64 iceberg_max_number_datafiles_to_compact;
@@ -847,12 +847,12 @@ Pipe IcebergMetadata::executeCommand(
 
     if (command_name == "expire_snapshots")
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_expire_snapshots].value)
+        if (!context->getSettingsRef()[Setting::allow_expire_snapshots].value)
         {
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Iceberg expire_snapshots is experimental. "
-                "To allow its usage, enable setting allow_experimental_expire_snapshots");
+                "To allow its usage, enable setting allow_expire_snapshots");
         }
 
         checkTableRootIsQueriedPath("expire_snapshots");

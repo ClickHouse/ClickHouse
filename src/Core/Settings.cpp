@@ -133,9 +133,9 @@ Which dialect will be used to parse query.
 
 Supported values:
 - `clickhouse` (default) — standard ClickHouse SQL.
-- `kusto` — Kusto Query Language. Requires the experimental setting `allow_experimental_kusto_dialect`.
-- `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
-- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
+- `kusto` — Kusto Query Language. Requires the experimental setting `enable_kusto_dialect`.
+- `prql` — PRQL. Requires the experimental setting `enable_prql_dialect`.
+- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `enable_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 - `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `enable_trino_dialect`.
@@ -9278,9 +9278,9 @@ Intersections of 256 or more tokens always use leapfrog.
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
-Allow to create database with Engine=MaterializedPostgreSQL(...).
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_database_materialized_postgresql, false, R"(
+Allow to create databases with `Engine = MaterializedPostgreSQL(...)`.
+)", EXPERIMENTAL, allow_experimental_database_materialized_postgresql) \
     \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, true, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
@@ -9296,18 +9296,18 @@ Changes made with `SET` or query-level `SETTINGS` do not change extracted subcol
 To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
 )", 0) \
     \
-    DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_database_hms_catalog, false, R"(
+Allow database engine `DataLakeCatalog` with `catalog_type = 'hms'`
+)", EXPERIMENTAL, allow_experimental_database_hms_catalog) \
+    DECLARE_WITH_ALIAS(Bool, enable_kusto_dialect, false, R"(
 Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
+)", EXPERIMENTAL, allow_experimental_kusto_dialect) \
+    DECLARE_WITH_ALIAS(Bool, enable_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
+)", EXPERIMENTAL, allow_experimental_prql_dialect) \
+    DECLARE_WITH_ALIAS(Bool, enable_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_polyglot_dialect) \
     DECLARE(Bool, enable_json_ast_dialect, false, R"(
 Enable the `clickhouse_json` value of the `dialect` setting.
 
@@ -9353,9 +9353,9 @@ Allow creating a new DeltaLake table using delta-kernel-rs or registering an exi
     DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg) \
-    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
 Allow to clean up old data files during Iceberg compaction.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_cleanup_old_data_files_compaction) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
@@ -9373,9 +9373,9 @@ Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
     DECLARE(UInt64, iceberg_orphan_files_older_than_seconds, 259200, R"(
 Default age threshold in seconds for orphan file removal in Iceberg tables. Files newer than this are not considered orphans. Used when the older_than argument is omitted from the remove_orphan_files() procedure call. Default is 259200 (3 days).
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
-Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, allow_expire_snapshots, false, R"(
+Allow to execute the Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
+)", EXPERIMENTAL, allow_experimental_expire_snapshots) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files.
 )", EXPERIMENTAL) \
@@ -9440,15 +9440,15 @@ order. Only shapes where no exchange survives between the read and the sort are 
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW) \
-    DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
-Experimental table engine for integration with YTsaurus.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
-Experimental table engine for integration with YTsaurus.
-)", EXPERIMENTAL) \
-DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
-Experimental dictionary source for integration with YTsaurus.
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_engine, false, R"(
+Enable the `YTsaurus` table engine for integration with YTsaurus.
+)", EXPERIMENTAL, allow_experimental_ytsaurus_table_engine) \
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_function, false, R"(
+Enable the `ytsaurus` table function for integration with YTsaurus.
+)", EXPERIMENTAL, allow_experimental_ytsaurus_table_function) \
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_dictionary_source, false, R"(
+Enable the `ytsaurus` dictionary source for integration with YTsaurus.
+)", EXPERIMENTAL, allow_experimental_ytsaurus_dictionary_source) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 Ignored where the Shuffle strategy cannot produce a correct result, for example for `GROUPING SETS` or when the aggregation must produce results in bucket order.
@@ -9517,9 +9517,9 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", PRIVATE_PREVIEW, evaluation_time) \
-    DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
-Allow to create tables with Paimon* table engines.
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_paimon_storage_engine, false, R"(
+Allow to create tables with `Paimon*` table engines.
+)", EXPERIMENTAL, allow_experimental_paimon_storage_engine) \
     DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
 Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
 for the specified snapshot_id without advancing the committed watermark.
@@ -9531,9 +9531,9 @@ Maximum number of Paimon snapshots to consume per incremental read. 0 means no l
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
-Allow to use hive partitioning with S3Queue/AzureQueue engines
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_object_storage_queue_hive_partitioning, false, R"(
+Allow to use hive partitioning with `S3Queue`/`AzureQueue` engines
+)", EXPERIMENTAL, allow_experimental_object_storage_queue_hive_partitioning) \
 DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
  - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
@@ -9549,9 +9549,9 @@ decide which join reorderings are valid. The following values are available:
  - `'a'` - the CD-A conflict detector, which is correct but incomplete
  - `'c'` - the CD-C conflict detector, which is correct and complete
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_database_paimon_rest_catalog, false, R"(
+Allow database engine `DataLakeCatalog` with `catalog_type = 'paimon_rest'`
+)", EXPERIMENTAL, allow_experimental_database_paimon_rest_catalog) \
     DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
 Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. The value is scaled by 1024 before being passed to the runtime, so `webassembly_udf_max_fuel = 1` corresponds to approximately 1024 fuel units. Set to 0 for no finite limit. Applies only to functions whose per-function setting `webassembly_udf_enable_fuel` is true, which is the default.
 )", EXPERIMENTAL) \
@@ -9577,9 +9577,9 @@ Set to 0 to leave the input unsplit: the whole pipeline block is passed in one c
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
-Enable experimental table function `eval`.
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_eval_table_function, false, R"(
+Enable table function `eval`.
+)", EXPERIMENTAL, allow_experimental_eval_table_function) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

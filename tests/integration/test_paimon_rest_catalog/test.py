@@ -56,7 +56,7 @@ def test_paimon_rest_catalog(started_cluster):
         f"CREATE DATABASE paimon_rest_db ENGINE = DataLakeCatalog('http://{bearer_ip}:{BEARER_PORT}')"
         f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
         f" catalog_credential='bearer-token-xxx-xxx-xxx';",
-        settings={"allow_experimental_database_paimon_rest_catalog": 1},
+        settings={"enable_database_paimon_rest_catalog": 1},
     )
 
     assert (
@@ -100,7 +100,7 @@ def test_paimon_rest_catalog(started_cluster):
         f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
         f" dlf_access_key_id='accessKeyId', dlf_access_key_secret='accessKeySecret',"
         f" region='cn-hangzhou';",
-        settings={"allow_experimental_database_paimon_rest_catalog": 1},
+        settings={"enable_database_paimon_rest_catalog": 1},
     )
     assert (
         node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
@@ -152,7 +152,7 @@ def test_paimon_rest_catalog(started_cluster):
             f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
             f" dlf_access_key_id='accessKeyIdxx', dlf_access_key_secret='accessKeySecret',"
             f" region='cn-hangzhou';",
-            settings={"allow_experimental_database_paimon_rest_catalog": 1},
+            settings={"enable_database_paimon_rest_catalog": 1},
         )
     message = str(exc_info.value)
     assert "Code: 86" in message, message

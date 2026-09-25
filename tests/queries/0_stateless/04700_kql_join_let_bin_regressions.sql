@@ -1,6 +1,6 @@
 -- Regressions for KQL join kinds, join key qualification, `let` rebinding and `bin_at`.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- the default join is innerunique: one left row per key --';

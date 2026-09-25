@@ -75,7 +75,7 @@ def test_postgresql_database_engine_respects_remote_host_filter(started_cluster)
         ENGINE = MaterializedPostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')
         SETTINGS materialized_postgresql_tables_list = 'mat_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
     assert "UNACCEPTABLE_URL" in error
 
@@ -150,7 +150,7 @@ def test_materialized_postgresql_named_collection_addresses_expr(started_cluster
         ENGINE = MaterializedPostgreSQL(mpg_nc_blocked)
         SETTINGS materialized_postgresql_tables_list = 'test_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
     assert "UNACCEPTABLE_URL" in error
 
@@ -164,7 +164,7 @@ def test_materialized_postgresql_named_collection_addresses_expr(started_cluster
         ENGINE = MaterializedPostgreSQL(mpg_nc_multiple)
         SETTINGS materialized_postgresql_tables_list = 'test_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
     assert "BAD_ARGUMENTS" in error
 
@@ -178,7 +178,7 @@ def test_materialized_postgresql_named_collection_addresses_expr(started_cluster
         ENGINE = MaterializedPostgreSQL(mpg_nc_allowed)
         SETTINGS materialized_postgresql_tables_list = 'test_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
     assert_eq_with_retry(node, "SELECT count() FROM mpg_nc_allowed_db.test_table", "10", retry_count=120)
     node.query("DROP DATABASE mpg_nc_allowed_db SYNC")
@@ -244,7 +244,7 @@ def test_user_attach_respects_remote_host_filter(started_cluster):
     node.query("DROP DATABASE IF EXISTS mpg_user_attach")
     error = node.query_and_get_error(
         f"ATTACH DATABASE mpg_user_attach UUID '00001111-2222-3333-4444-555566667777' ENGINE = MaterializedPostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')",
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
     assert "UNACCEPTABLE_URL" in error
 
@@ -304,7 +304,7 @@ def test_startup_metadata_replay_skips_remote_host_filter_materialized(started_c
         ENGINE = MaterializedPostgreSQL(mpg_nc_allowed)
         SETTINGS materialized_postgresql_tables_list = 'test_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
     assert_eq_with_retry(node, "SELECT count() FROM mpg_db_host_persisted.test_table", "10", retry_count=120)
 
@@ -335,7 +335,7 @@ def test_startup_metadata_replay_skips_multi_address_validation(started_cluster)
         ENGINE = MaterializedPostgreSQL(mpg_nc_allowed)
         SETTINGS materialized_postgresql_tables_list = 'test_table'
         """,
-        settings={"allow_experimental_database_materialized_postgresql": 1},
+        settings={"enable_database_materialized_postgresql": 1},
     )
     assert_eq_with_retry(node, "SELECT count() FROM mpg_db_persisted.test_table", "10", retry_count=120)
 

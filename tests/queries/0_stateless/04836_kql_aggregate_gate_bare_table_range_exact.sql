@@ -3,7 +3,7 @@
 -- outside the aggregation list of `summarize`, and a `let` may bind a bare physical table
 -- name (`let T = Events;`), also through a parameterless function body.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- range counts long bounds exactly above 2^53 --';

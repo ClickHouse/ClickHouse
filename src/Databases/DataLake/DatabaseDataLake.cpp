@@ -105,8 +105,8 @@ namespace Setting
     extern const SettingsBool allow_database_iceberg;
     extern const SettingsBool allow_database_unity_catalog;
     extern const SettingsBool allow_database_glue_catalog;
-    extern const SettingsBool allow_experimental_database_hms_catalog;
-    extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
+    extern const SettingsBool enable_database_hms_catalog;
+    extern const SettingsBool enable_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool log_queries;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
@@ -1685,11 +1685,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_hms_catalog])
+                    && !args.context->getSettingsRef()[Setting::enable_database_hms_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Hive catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_hms_catalog");
+                                    "To allow its usage, enable setting enable_database_hms_catalog");
                 }
 
                 break;
@@ -1697,11 +1697,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::PAIMON_REST:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_paimon_rest_catalog])
+                    && !args.context->getSettingsRef()[Setting::enable_database_paimon_rest_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Paimon Rest catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_paimon_rest_catalog");
+                                    "To allow its usage, enable setting enable_database_paimon_rest_catalog");
                 }
 
                 break;
@@ -1778,8 +1778,8 @@ You will need to enable the relevant settings below to use the `DataLakeCatalog`
 SET allow_database_iceberg = 1;
 SET allow_database_unity_catalog = 1;
 SET allow_database_glue_catalog = 1;
-SET allow_experimental_database_hms_catalog = 1;
-SET allow_experimental_database_paimon_rest_catalog = 1;
+SET enable_database_hms_catalog = 1;
+SET enable_database_paimon_rest_catalog = 1;
 ```
 
 Databases with the `DataLakeCatalog` engine can be created using the following syntax:

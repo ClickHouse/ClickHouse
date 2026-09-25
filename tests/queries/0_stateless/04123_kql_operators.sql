@@ -11,7 +11,7 @@ INSERT INTO kql_op_t VALUES
     ('foo bar', 3, ['e']),
     ('HELLO', 4, ['f']);
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '--- contains (case-insensitive) ---';
