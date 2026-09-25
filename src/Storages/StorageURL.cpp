@@ -77,7 +77,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
+    extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsBool enable_url_encoding;
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
@@ -135,13 +135,13 @@ namespace
 {
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
+        if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
             return;
 
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Wildcard expansion for `ENGINE = URL` from HTTP index pages is experimental. "
-            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
+            "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
     }
 }
 
@@ -1738,7 +1738,7 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     {
         Settings settings = args.getContext()->getSettingsCopy();
 
-        // Apply changes from SETTINGS clause, with validation.
+        // Applying the changes validates the values, not the names.
         settings.applyChanges(args.storage_def->settings->changes);
 
         format_settings = getFormatSettings(args.getContext(), settings);
@@ -2029,8 +2029,9 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     }
 
     auto scheme_end = base.find("://");
+    /// Not echoed back: the value can carry a credential, and password masking anchors on the `://` it lacks.
     if (scheme_end == String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://), got: {}", base_setting_name, base);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://)", base_setting_name);
 
     /// Find the boundary of the path component in the base URL (before '?' or '#').
     auto authority_start = scheme_end + 3; /// skip "://"
@@ -2705,6 +2706,8 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
+            checkStorageSettingNames(args);
+
             /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
             if (auto dispatched = tryDispatchURLEngineByScheme(args))
                 return dispatched;
@@ -2874,7 +2877,7 @@ You can limit the maximum number of HTTP GET redirect hops using the [max_http_g
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
-When [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
+When [allow_url_wildcard_from_index_pages](/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
 This is the same mechanism as the [`url`](/reference/functions/table-functions/url#wildcards-with-http-index-pages) table function.
 
 Expansion always reads with `GET`, so an explicit `http_method` cannot be combined with wildcards: the engine chooses its backend once, when the table is defined, and rejects such a definition.

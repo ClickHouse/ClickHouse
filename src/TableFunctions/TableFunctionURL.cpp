@@ -33,7 +33,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
+    extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -51,13 +51,13 @@ namespace
 {
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
+        if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
             return;
 
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Wildcard expansion for `url` from HTTP index pages is experimental. "
-            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
+            "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
     }
 
     ASTs makeWebObjectStorageEngineArgs(
@@ -289,15 +289,25 @@ StoragePtr TableFunctionURL::executeImpl(
     /// reports the delegate's engine name and access URI, so the outer check (or the caller that
     /// explicitly disabled it and took over) has already covered exactly the delegate's source.
     if (delegate)
+    {
+        /// The query text still names `url`, while the delegate is a different backend. If the delegate
+        /// created its `*Cluster` storage for `parallel_replicas_for_cluster_engines`, the forwarded query
+        /// would be rewritten from the surface AST name into `urlCluster(...)` - a function that rejects
+        /// every non-HTTP scheme - and with the argument grammar of the delegate rather than of `url`.
+        /// Scheme dispatch is therefore resolved on this node: the delegate builds its plain storage.
+        ContextMutablePtr delegate_context = Context::createCopy(context);
+        delegate_context->setSetting("parallel_replicas_for_cluster_engines", false);
+
         return delegate->execute(
             ast_function,
-            context,
+            delegate_context,
             table_name,
             std::move(cached_columns),
             /*use_global_context=*/false,
             is_insert_query,
             /*check_create_temporary_table=*/false,
             /*check_source_access=*/false);
+    }
 
     /// Stored columns accompany a table definition rather than an ad-hoc query, so creation and
     /// replay must resolve to the same storage.
@@ -597,6 +607,8 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 
 Scheme dispatch is not yet wired through [`urlCluster`](/reference/functions/table-functions/urlCluster): a non-`http(s)` scheme passed to `urlCluster` is rejected with an error. Use the corresponding cluster function (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) for those backends instead.
 
+For the same reason, a dispatched `url` call is read on the node that received the query: the [parallel_replicas_for_cluster_engines](/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) fan-out is not applied to it. Use the corresponding cluster function directly when you want the read distributed across replicas.
+
 ## Globs in URL {#globs-in-url}
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](/reference/functions/table-functions/remote#globs-in-addresses) function.
@@ -624,7 +636,7 @@ Example:
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 ```
 
 ## Virtual Columns {#virtual-columns}
