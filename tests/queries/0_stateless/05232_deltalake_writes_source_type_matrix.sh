@@ -46,6 +46,7 @@ i UInt64, s String, f Float64, a Array(String)|9223372036854775808, 'UInt64 too 
 i Int128, s String, f Float64, a Array(String)|-9223372036854775808, 'Int128 min long', 0, []
 i Int128, s String, f Float64, a Array(String)|170141183460469231731687303715884105727, 'Int128 too large', 0, []
 i UInt256, s String, f Float64, a Array(String)|1, 'UInt256 small', 0, []
+i UInt256, s String, f Float64, a Array(String)|9223372036854775808, 'UInt256 too large', 0, []
 EOF
 versions
 
