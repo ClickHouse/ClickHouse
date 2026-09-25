@@ -111,8 +111,41 @@ void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
 
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
 {
+    /// The bound that is already in effect: nothing changes, and the download is kept.
+    if (static_cast<off_t>(position) == read_until_position)
+        return;
+
     read_until_position = position;
+
+    /// The current download was opened under the previous bound, so it is closed here, releasing
+    /// the response, and the next read opens one under the new bound. Where the new download
+    /// starts depends on what is buffered: `offset` is the end of the buffered bytes, and the
+    /// download is reopened there.
     initialized = false;
+    data_stream.reset();
+
+    /// The buffered bytes are reconciled with the new bound even when the download was already
+    /// closed by an earlier bound change: that change may have kept bytes the new bound excludes.
+
+    /// The buffered bytes all lie within the new bound (or the bound was lifted): they are kept.
+    if (position == 0 || static_cast<off_t>(position) >= offset)
+        return;
+
+    /// The bound was lowered below the end of the buffered bytes. The bytes past it must not be
+    /// handed out - a right-bounded read promises to end exactly at the bound - so they are cut off
+    /// the working buffer, and the next download, if any, starts at the bound. Leaving them in place
+    /// delivered them and then failed the following read with `Attempt to read beyond right offset`,
+    /// because the download was reopened past the bound.
+    if (static_cast<off_t>(position) >= getPosition())
+    {
+        working_buffer.resize(working_buffer.size() - (offset - position));
+        offset = position;
+        return;
+    }
+
+    /// The caller has already consumed bytes past the new bound; nothing buffered is usable.
+    offset = getPosition();
+    resetWorkingBuffer();
 }
 
 bool ReadBufferFromAzureBlobStorage::nextImpl()
