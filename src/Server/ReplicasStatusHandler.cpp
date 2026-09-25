@@ -12,6 +12,7 @@
 #include <Server/IServer.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTableProxy.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
@@ -68,7 +69,11 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             // If they have some lag it will be reflected as soon as they are load.
             for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
             {
-                const auto & table = iterator->table();
+                /// A lazily loaded table's stand-in is not a `StorageReplicatedMergeTree`, so its delay
+                /// would never be reported here and a load balancer that reads this endpoint would keep
+                /// routing to an arbitrarily stale replica. Resolve the stand-ins whose tables are
+                /// already loaded; loading the rest of the catalog is what this endpoint must not do.
+                const auto table = resolveLazyTableIfLoaded(iterator->table());
                 if (!table)
                     continue;
 

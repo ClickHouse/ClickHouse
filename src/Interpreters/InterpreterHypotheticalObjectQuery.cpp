@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageTableProxy.h>
 #include <Disks/IDisk.h>
 
 #include <fmt/ranges.h>
@@ -228,7 +229,8 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
             AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
-    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    /// Resolve a `lazy_load_tables` stand-in, which is not the `MergeTree` it stands in for.
+    auto table = resolveLazyTable(DatabaseCatalog::instance().getTable(table_id, context));
 
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
     if (!merge_tree)
