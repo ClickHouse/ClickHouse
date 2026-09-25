@@ -273,7 +273,7 @@ TEST(FindSymbols, CompileTimeMatchOrder)
 TEST(FindSymbols, EmptyRange)
 {
     const std::string storage = "a";
-    for (const auto haystack : {std::string_view{}, std::string_view(storage.data(), 0)})
+    for (const auto haystack : {std::string_view{}, std::string_view(storage).substr(0, 0)})
     {
         const char * begin = haystack.data();
         EXPECT_EQ(find_first_symbols<'a'>(begin, begin), begin);
