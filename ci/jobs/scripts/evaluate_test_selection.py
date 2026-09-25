@@ -45,7 +45,10 @@ def evaluate_case(case, cidb=None):
     ]
     hunks = Targeting._parse_diff_hunk_ranges(case["diff"])
     snapshots = (
-        load_snapshots(lambda query: cidb.query(query, log_level=""), cutoff)
+        load_snapshots(
+            lambda query, timeout: cidb.query(query, log_level="", timeout=timeout),
+            cutoff,
+        )
         if cidb
         else case["snapshots"]
     )

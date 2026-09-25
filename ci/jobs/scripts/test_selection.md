@@ -59,7 +59,9 @@ These temporary keys are **not** workflow-run IDs; shards can start in different
 hours. New exports retain second-resolution timestamps. Selecting complete
 workflow runs directly in CIDB remains dependent on that schema migration.
 
-Snapshots are found by listing the distinct `check_start_time` values in the window and counting exported tests only for the newest few timestamps at a time, because counting over the whole window reads tens of GB of `test_name` and times out when CIDB is busy.
+Snapshots are found by listing the distinct `check_start_time` values in the window and counting exported tests only for the newest five timestamps at a time, because counting over the whole window reads tens of GB of `test_name` and times out when CIDB is busy. These queries use a 180 s timeout and the query cache, as they only read settled exports and return the same result for every job and pull request.
+
+If a CIDB request of the selection still times out on every attempt, the targeted job is `SKIPPED` instead of failing, so it does not skip the jobs that wait for it. It adds a workflow warning and a comment that is shown in the summary table of the pull request comment, and it is not cached, so a rerun or the next commit selects again. Any other selection failure is still an `ERROR`.
 
 ## Validation and rollout
 

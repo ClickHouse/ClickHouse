@@ -19,6 +19,7 @@ from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.praktika.cidb import CIDBTimeoutError
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -876,6 +877,21 @@ def main():
             )
             selection_result.files = [str(SELECTION_MANIFEST)]
             results.append(selection_result)
+        except CIDBTimeoutError as ex:
+            # CIDB is overloaded (typically while the coverage export inserts).
+            # Skip rather than fail: an ERROR here would skip every job that
+            # waits for the core blocking jobs. Not cached, so a rerun or the
+            # next commit selects again.
+            message = f"Targeted tests were not run: test selection timed out in CIDB: {ex}"
+            print(f"WARNING: {message}")
+            info.add_workflow_warning(message)
+            skipped = Result.create_from(
+                status=Result.Status.SKIPPED,
+                info=f"{message}\n{traceback.format_exc()}",
+                results=results,
+            )
+            skipped.set_comment("CIDB timeout in test selection, rerun to test")
+            skipped.complete_job(do_not_cache=True)
         except Exception as ex:
             Result.create_from(
                 status=Result.Status.ERROR,

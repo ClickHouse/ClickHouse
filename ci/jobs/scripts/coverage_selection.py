@@ -49,6 +49,13 @@ def snapshot_predicate(snapshots):
     return f"(check_start_time, check_name) IN ({keys})"
 
 
+def snapshot_query_settings(config=SELECTION_CONFIG):
+    return (
+        f"SETTINGS use_query_cache = 1, "
+        f"query_cache_ttl = {config.snapshot_query_cache_ttl_sec}"
+    )
+
+
 def snapshot_times_query(cutoff, config=SELECTION_CONFIG):
     # Reads only `check_start_time`, which compresses to almost nothing (about
     # 0.3 s for the 14-day window). It deliberately does not filter by
@@ -59,6 +66,7 @@ def snapshot_times_query(cutoff, config=SELECTION_CONFIG):
         WHERE check_start_time <= toDateTime({sql_string(cutoff)}, 'UTC')
           AND check_start_time > toDateTime({sql_string(cutoff)}, 'UTC')
               - INTERVAL {config.coverage_search_days} DAY
+        {snapshot_query_settings(config)}
         FORMAT JSONEachRow
     """
 
@@ -78,6 +86,7 @@ def snapshot_query(times, config=SELECTION_CONFIG):
         GROUP BY check_start_time, check_name
         HAVING exported_tests >= {config.min_exported_tests_per_shard}
         ORDER BY check_start_time DESC, check_name
+        {snapshot_query_settings(config)}
         FORMAT JSONEachRow
     """
 
@@ -85,19 +94,20 @@ def snapshot_query(times, config=SELECTION_CONFIG):
 def load_snapshots(query, cutoff, config=SELECTION_CONFIG):
     """Return the newest `coverage_run_count` healthy snapshots per shard.
 
-    `query` runs SQL and returns the raw `JSONEachRow` response. Timestamps are
+    `query(sql, timeout)` runs SQL and returns the raw `JSONEachRow` response. Timestamps are
     walked newest first, a few at a time, until every shard seen has enough
     healthy snapshots, so only the exports actually used are read.
     """
     times = sorted(
-        {row["check_start_time"] for row in parse_rows(query(snapshot_times_query(cutoff, config)))},
+        {row["check_start_time"] for row in parse_rows(query(snapshot_times_query(cutoff, config), config.snapshot_query_timeout_sec))},
         reverse=True,
     )
     per_shard = defaultdict(list)
-    # A nightly run exports its shards under two or three timestamps.
-    batch = config.coverage_run_count
+    batch = config.snapshot_batch_timestamps
     for start in range(0, len(times), batch):
-        for row in parse_rows(query(snapshot_query(times[start : start + batch], config))):
+        for row in parse_rows(
+            query(snapshot_query(times[start : start + batch], config), config.snapshot_query_timeout_sec)
+        ):
             per_shard[row["check_name"]].append(row)
         if len(per_shard) >= config.coverage_shards and all(
             len(rows) >= config.coverage_run_count for rows in per_shard.values()

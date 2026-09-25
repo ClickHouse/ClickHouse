@@ -214,7 +214,7 @@ class SelectionSmoke(unittest.TestCase):
         days = [f"2026-09-{day:02d} 03:00:00" for day in range(1, 11)]
         queries = []
 
-        def query(sql):
+        def query(sql, timeout):
             queries.append(sql)
             if "SELECT DISTINCT check_start_time" in sql:
                 return "\n".join(json.dumps({"check_start_time": t}) for t in days)
@@ -234,9 +234,25 @@ class SelectionSmoke(unittest.TestCase):
             by_shard.setdefault(row["check_name"], []).append(row["check_start_time"])
         self.assertEqual(by_shard[shards[0]], days[-4:-1][::-1])
         self.assertEqual(by_shard[shards[1]], days[-3:][::-1])
-        # The oldest day is never read.
+        # The oldest days are never read.
         self.assertTrue(all(f"'{days[0]}'" not in sql for sql in queries[1:]))
+        self.assertTrue(all("use_query_cache = 1" in sql for sql in queries))
         validate_snapshots(snapshots, "2026-09-11 00:00:00")
+
+    def test_cidb_timeout_is_distinguishable(self):
+        # The targeted job skips instead of failing only on this exception.
+        import requests
+
+        from ci.praktika.cidb import CIDB, CIDBTimeoutError
+
+        cidb = CIDB(url="http://cidb.invalid", user="", passwd="")
+        with patch("requests.post", side_effect=requests.exceptions.ReadTimeout("slow")):
+            with self.assertRaises(CIDBTimeoutError):
+                cidb.query("SELECT 1", retries=1)
+        with patch("requests.post", side_effect=requests.exceptions.ConnectionError("down")):
+            with self.assertRaises(RuntimeError) as error:
+                cidb.query("SELECT 1", retries=1)
+            self.assertNotIsInstance(error.exception, CIDBTimeoutError)
 
     def test_failing_canary_propagates(self):
         target = Targeting(SimpleNamespace(job_name="Stateless tests"))

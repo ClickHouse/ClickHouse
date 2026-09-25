@@ -538,7 +538,9 @@ class Targeting:
                 - timedelta(hours=self.config.coverage_settle_hours)
             ).strftime("%Y-%m-%d %H:%M:%S")
             snapshots = load_snapshots(
-                lambda query: self._ci_db().query(query, log_level=""),
+                lambda query, timeout: self._ci_db().query(
+                    query, log_level="", timeout=timeout
+                ),
                 cutoff,
                 self.config,
             )
