@@ -24,5 +24,5 @@ FROM
         (1, 64, 0, 31), (1, 64, 0, 32), (65, 65, 64, 33), (65, 65, 64, 32),
         (65, 64, 64, 33), (65, 64, 64, 32)
     ]) AS p
-)
-CROSS JOIN (SELECT arrayJoin(['\0', '\xff']) AS c);
+) AS cases
+CROSS JOIN (SELECT arrayJoin(['\0', '\xff']) AS c) AS bytes;
