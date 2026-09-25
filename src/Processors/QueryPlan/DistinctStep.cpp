@@ -285,7 +285,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
             return std::make_shared<DistinctTransform>(
                 header, settings.set_size_limits, limit_hint, columns,
-                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold);
+                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold,
+                abandon_observation_chunk_count ? abandon_observation_chunk_count : DeduplicationAbandonController::DEFAULT_OBSERVATION_CHUNK_COUNT);
         });
 }
 

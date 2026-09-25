@@ -100,6 +100,11 @@ public:
     void preserveInputOrder() { preserve_input_order = true; }
     bool preservesInputOrder() const { return preserve_input_order; }
 
+    /// A preliminary step decides after the first chunk of a stream whether to give up, instead of after the usual
+    /// few. This suits a step that only pays off on a stream of a few distinct rows, which shows at once, and
+    /// that costs more per row than the consumer it spares, so that it has little to gain from a closer look.
+    void abandonAfterFirstChunk() { abandon_observation_chunk_count = 1; }
+
 private:
     void updateOutputHeader() override;
 
@@ -110,6 +115,8 @@ private:
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
     bool preserve_input_order = false;
+    /// Zero stands for the default of `DeduplicationAbandonController`.
+    size_t abandon_observation_chunk_count = 0;
 };
 
 }
