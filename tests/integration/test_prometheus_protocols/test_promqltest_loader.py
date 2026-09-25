@@ -325,7 +325,7 @@ def test_compare_scalar_requires_unlabeled_row():
     status, _ = loader.compare_eval(case, "1970-01-01 00:00:00.000\t1\n", None)
     assert status == "passed"
     status, _ = loader.compare_eval(case, "[]\t1970-01-01 00:00:00.000\t1\n", None)
-    assert status == "passed"
+    assert status == "failed"
     status, reason = loader.compare_eval(
         case, "[('__name__','m')]\t1970-01-01 00:00:00.000\t1\n", None
     )

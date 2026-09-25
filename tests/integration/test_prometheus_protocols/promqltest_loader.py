@@ -827,6 +827,8 @@ def compare_eval(case: EvalCase, tsv: str, error: Optional[str]) -> tuple[str, s
             return "failed", f"scalar expected, got {len(rows)} rows"
         if rows[0]["metric"]:
             return "failed", f"scalar expected, got labels {rows[0]['metric']}"
+        if not rows[0].get("scalar"):
+            return "failed", "scalar expected, got vector row"
         if not values_approx_equal(float(rows[0]["value"]), float(case.expected_scalar)):
             return "failed", f"scalar mismatch: {rows[0]['value']} vs {case.expected_scalar}"
         return "passed", ""
