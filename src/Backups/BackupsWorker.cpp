@@ -736,9 +736,9 @@ void BackupsWorker::doBackup(
 
         /// Send the BACKUP query to other hosts.
         backup_settings.copySettingsToQuery(*backup_query);
-        sendQueryToOtherHosts(*backup_query, cluster, backup_settings.shard_num, backup_settings.replica_num,
-                              context, required_access, backup_coordination->getOnClusterInitializationKeeperRetriesInfo());
-        backup_coordination->setBackupQueryIsSentToOtherHosts();
+        String ddl_entry_path = sendQueryToOtherHosts(*backup_query, cluster, backup_settings.shard_num, backup_settings.replica_num,
+                                                      context, required_access, backup_coordination->getOnClusterInitializationKeeperRetriesInfo());
+        backup_coordination->setBackupQueryIsSentToOtherHosts(ddl_entry_path);
 
         /// Wait until all the hosts have written their backup entries.
         backup_coordination->waitOtherHostsFinish(/* throw_if_error = */ true);
@@ -1208,9 +1208,9 @@ void BackupsWorker::doRestore(
     {
         /// Send the RESTORE query to other hosts.
         restore_settings.copySettingsToQuery(*restore_query);
-        sendQueryToOtherHosts(*restore_query, cluster, restore_settings.shard_num, restore_settings.replica_num,
-                              context, {}, restore_coordination->getOnClusterInitializationKeeperRetriesInfo());
-        restore_coordination->setRestoreQueryIsSentToOtherHosts();
+        String ddl_entry_path = sendQueryToOtherHosts(*restore_query, cluster, restore_settings.shard_num, restore_settings.replica_num,
+                                                      context, {}, restore_coordination->getOnClusterInitializationKeeperRetriesInfo());
+        restore_coordination->setRestoreQueryIsSentToOtherHosts(ddl_entry_path);
 
         /// Wait until all the hosts have done with their restoring work.
         restore_coordination->waitOtherHostsFinish(/* throw_if_error = */ true);
@@ -1242,7 +1242,7 @@ void BackupsWorker::doRestore(
 }
 
 
-void BackupsWorker::sendQueryToOtherHosts(const ASTBackupQuery & backup_or_restore_query, const ClusterPtr & cluster,
+String BackupsWorker::sendQueryToOtherHosts(const ASTBackupQuery & backup_or_restore_query, const ClusterPtr & cluster,
     size_t only_shard_num, size_t only_replica_num, ContextMutablePtr context, const AccessRightsElements & access_to_check,
     const ZooKeeperRetriesInfo & retries_info) const
 {
@@ -1255,6 +1255,11 @@ void BackupsWorker::sendQueryToOtherHosts(const ASTBackupQuery & backup_or_resto
     params.access_to_check = access_to_check;
     params.retries_info = retries_info;
 
+    /// The per-host statuses under this node are how the coordination learns about a host which failed
+    /// before it could report anything to the coordination itself. See `cancelQueryIfHostFailedToStart()`.
+    String ddl_entry_path;
+    params.out_node_path = &ddl_entry_path;
+
     context->setSetting("distributed_ddl_task_timeout", Field{0});
     context->setSetting("distributed_ddl_output_mode", Field{"never_throw"});
 
@@ -1262,6 +1267,8 @@ void BackupsWorker::sendQueryToOtherHosts(const ASTBackupQuery & backup_or_resto
     executeDDLQueryOnCluster(backup_or_restore_query.clone(), context, params);
 
     maybeSleepForTesting();
+
+    return ddl_entry_path;
 }
 
 

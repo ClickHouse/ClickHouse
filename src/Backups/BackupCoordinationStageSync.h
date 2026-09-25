@@ -32,7 +32,7 @@ public:
     void startup();
 
     /// Sets that the BACKUP or RESTORE query was sent to other hosts.
-    void setQueryIsSentToOtherHosts();
+    void setQueryIsSentToOtherHosts(const String & ddl_entry_path);
     bool isQuerySentToOtherHosts() const;
 
     /// Sets the stage of the current host and signal other hosts if there were other hosts waiting for that.
@@ -123,6 +123,11 @@ private:
     /// Checks if some host was disconnected for too long, and if so then the function generates an error and pass it to the query status
     /// to cancel the current BACKUP or RESTORE command.
     void cancelQueryIfDisconnectedTooLong();
+
+    /// Checks if the distributed DDL queue says that some host failed to start working on this operation,
+    /// and if so then the function passes that host's own error to the query status to cancel the current
+    /// BACKUP or RESTORE command.
+    void cancelQueryIfHostFailedToStart(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
 
     /// Used by waitForHostsToReachStage() to check if everything is ready to return.
     bool checkIfHostsReachStage(const Strings & hosts, const String & stage_to_wait, Strings & results) const TSA_REQUIRES(mutex);
@@ -228,6 +233,10 @@ private:
     bool should_stop_watching_thread TSA_GUARDED_BY(mutex) = false;
 
     bool query_is_sent_to_other_hosts TSA_GUARDED_BY(mutex) = false;
+
+    /// The path of the node this operation was queued under in the distributed DDL queue.
+    /// Set together with `query_is_sent_to_other_hosts`, empty until then.
+    String ddl_entry_path TSA_GUARDED_BY(mutex);
     bool tried_to_finish[2] TSA_GUARDED_BY(mutex) = {false, false};
     bool tried_to_set_error TSA_GUARDED_BY(mutex) = false;
 

@@ -516,6 +516,9 @@ void BackupCoordinationStageSync::watchingThread()
 
             /// Reads the current state from nodes in ZooKeeper.
             readCurrentState(zookeeper);
+
+            /// Cancel the query if a host reported to the distributed DDL queue that it couldn't start.
+            cancelQueryIfHostFailedToStart(zookeeper);
         }
         catch (...)
         {
@@ -779,25 +782,41 @@ void BackupCoordinationStageSync::cancelQueryIfDisconnectedTooLong()
         {
             if (!host_info.connected && !host_info.finished && (host != current_host))
             {
-                auto disconnected_duration = std::chrono::duration_cast<std::chrono::seconds>(monotonic_now - host_info.last_connection_time_monotonic);
-                if (disconnected_duration > failure_after_host_disconnected_for_seconds)
+                /// For a host that never created its 'alive' node the duration is counted from the start of
+                /// the operation: there was no connection to lose, the host never showed up.
+                auto unresponsive_duration = std::chrono::duration_cast<std::chrono::seconds>(monotonic_now - host_info.last_connection_time_monotonic);
+                if (unresponsive_duration > failure_after_host_disconnected_for_seconds)
                 {
-                    /// Host `host` was disconnected too long.
                     /// We can't just throw an exception here because readCurrentState() is called from a background thread.
                     /// So here we're writingh the error to the `process_list_element` and let it to be thrown later
                     /// from `process_list_element->checkTimeLimit()`.
-                    String message = fmt::format("The 'alive' node hasn't been updated in ZooKeeper for {} for {} "
-                                                 "which is more than the specified timeout {}. Last time the 'alive' node was detected at {}",
-                                                 getHostDesc(host), disconnected_duration, failure_after_host_disconnected_for_seconds,
-                                                 host_info.last_connection_time);
-                    LOG_WARNING(log, "Lost connection to {}: {}", getHostDesc(host), message);
-                    exception = std::make_exception_ptr(Exception{ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Lost connection to {}: {}", getHostDesc(host), message});
+                    if (host_info.started)
+                    {
+                        /// Host `host` was disconnected too long.
+                        String message = fmt::format("The 'alive' node hasn't been updated in ZooKeeper for {} for {} "
+                                                     "which is more than the specified timeout {}. Last time the 'alive' node was detected at {}",
+                                                     getHostDesc(host), unresponsive_duration, failure_after_host_disconnected_for_seconds,
+                                                     host_info.last_connection_time);
+                        LOG_WARNING(log, "Lost connection to {}: {}", getHostDesc(host), message);
+                        exception = std::make_exception_ptr(Exception{ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Lost connection to {}: {}", getHostDesc(host), message});
+                    }
+                    else
+                    {
+                        /// Host `host` never created its 'alive' node, so there was no connection to lose:
+                        /// it never picked the query up, or it failed before it could report anything here.
+                        /// The reason is recorded in the distributed DDL queue on that host.
+                        String message = fmt::format("{} hasn't started working on this {} within {}, and never created its 'alive' node "
+                                                     "in ZooKeeper. Look for the reason in the distributed DDL queue on that host",
+                                                     getHostDesc(host), operation_name, failure_after_host_disconnected_for_seconds);
+                        LOG_WARNING(log, "{}", message);
+                        exception = std::make_exception_ptr(Exception{ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "{}", message});
+                    }
                     break;
                 }
 
-                if ((disconnected_duration >= std::chrono::seconds{1}) && !info_shown)
+                if ((unresponsive_duration >= std::chrono::seconds{1}) && !info_shown)
                 {
-                    LOG_TRACE(log, "The 'alive' node hasn't been updated in ZooKeeper for {} for {}", getHostDesc(host), disconnected_duration);
+                    LOG_TRACE(log, "The 'alive' node hasn't been updated in ZooKeeper for {} for {}", getHostDesc(host), unresponsive_duration);
                     info_shown = true;
                 }
             }
@@ -818,10 +837,69 @@ void BackupCoordinationStageSync::cancelQueryIfDisconnectedTooLong()
 }
 
 
-void BackupCoordinationStageSync::setQueryIsSentToOtherHosts()
+/// A host which fails before it can create anything in the coordination -- on a setting it doesn't know,
+/// a table it can't see, a privilege it lacks -- has no way to report that failure here. The distributed DDL
+/// queue does record it, per host, within moments. Without reading it the initiator has no idea such a host
+/// is never coming, and can only give up on it after `failure_after_host_disconnected_for_seconds`.
+void BackupCoordinationStageSync::cancelQueryIfHostFailedToStart(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper)
+{
+    String finished_path;
+
+    {
+        std::lock_guard lock{mutex};
+        if (ddl_entry_path.empty() || state.host_with_error)
+            return;
+        finished_path = ddl_entry_path + "/finished";
+    }
+
+    Strings hosts_with_status;
+    if (zookeeper->tryGetChildren(finished_path, hosts_with_status) != Coordination::Error::ZOK)
+        return;
+
+    std::exception_ptr exception;
+
+    for (const String & host : hosts_with_status)
+    {
+        {
+            std::lock_guard lock{mutex};
+            auto it = state.hosts.find(host);
+            /// Only a host we're still waiting for is interesting. One that started has its own 'error' node
+            /// to speak through, and one that finished has nothing left to say.
+            if ((it == state.hosts.end()) || it->second.started || it->second.finished || (host == current_host))
+                continue;
+        }
+
+        String status_text;
+        if (!zookeeper->tryGet(fs::path{finished_path} / host, status_text))
+            continue;
+
+        auto status = ExecutionStatus::fromText(status_text);
+        if (status.code == 0)
+            continue;
+
+        String message = fmt::format("{} failed to start working on this {}: {}",
+                                     getHostDesc(host), operation_name, status.message);
+        LOG_WARNING(log, "{}", message);
+        exception = std::make_exception_ptr(Exception{status.code, "{}", message});
+        break;
+    }
+
+    if (!exception)
+        return;
+
+    /// As in cancelQueryIfDisconnectedTooLong(): this runs in the watching thread, so we only hand the error
+    /// to `process_list_element` and let it be thrown later from `process_list_element->checkTimeLimit()`.
+    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_ERROR, exception);
+
+    state_changed.notify_all();
+}
+
+
+void BackupCoordinationStageSync::setQueryIsSentToOtherHosts(const String & ddl_entry_path_)
 {
     std::lock_guard lock{mutex};
     query_is_sent_to_other_hosts = true;
+    ddl_entry_path = ddl_entry_path_;
 }
 
 bool BackupCoordinationStageSync::isQuerySentToOtherHosts() const
