@@ -7,4 +7,4 @@ SELECT countResampleIfResample(0, 2048, 1, 0, 2048, 1)(number, 1, number) FROM n
 SELECT countResampleIfResample(0, 3, 1, 0, 2, 1)(number, 1, number) FROM numbers(10);
 SELECT sumResampleIfResampleIfResample(0, 2, 1, 0, 2, 1, 0, 2, 1)(number, number, 1, number, 1, number) FROM numbers(4);
 SELECT length(countResample(0, 1048576, 1)(number)) FROM numbers(1);
-SELECT countResampleIfResample(0, 0, 1, 0, 1024, 1)(number, 1, number) FROM numbers(1);
+SELECT countResampleIfResample(0, 0, 1, 0, 1024, 1)(number, 1, number) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
