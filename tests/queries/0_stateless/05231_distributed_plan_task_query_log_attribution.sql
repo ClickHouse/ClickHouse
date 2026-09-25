@@ -25,6 +25,10 @@ SELECT 'active parts', count()
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_dp_task_metrics' AND active;
 
+-- The lookups below are bounded by the time this attempt started, so rows an earlier run left behind
+-- cannot satisfy them when that run shared this database (`clickhouse-test --database`).
+CREATE TEMPORARY TABLE start_ts AS (SELECT now() AS ts);
+
 -- max_rows_to_group_by must be pinned to 0: the stateless profile sets it to 10G, which makes the
 -- aggregation fall back to non-distributed execution and leaves no task at all.
 SELECT count() FROM t_dp_task_metrics WHERE k < 150000
@@ -47,12 +51,10 @@ SYSTEM FLUSH LOGS query_log;
 -- own row reports neither the parts nor the rows its tasks read. Where the tasks are not rows of
 -- their own, each of them logs one that claims to be the initial query and reports the whole query's
 -- read_rows instead (measured: 300185 against 1).
--- A failed test run is retried in the same database, so the initiator columns are aggregates over
--- every matching row: `count() > 0` is what proves such a row is there at all, and a maximum holds
--- for all of them.
 SELECT 'dispatched initiator', count() > 0, max(ProfileEvents['SelectedParts']), max(read_rows) < 1000
 FROM system.query_log
-WHERE event_date >= yesterday() AND current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
+  AND current_database = currentDatabase()
   AND log_comment = '05231_dispatched' AND is_initial_query AND type = 'QueryFinish';
 
 -- A dispatched task's row carries the worker's own default database, so the task rows of a query are
@@ -62,7 +64,8 @@ WHERE event_date >= yesterday() AND current_database = currentDatabase()
 WITH (
     SELECT query_id
     FROM system.query_log
-    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
+      AND current_database = currentDatabase()
       AND log_comment = '05231_dispatched' AND is_initial_query AND type = 'QueryFinish'
     ORDER BY event_time_microseconds DESC
     LIMIT 1
@@ -76,7 +79,8 @@ SELECT 'dispatched tasks', uniqExact(query_id) = count(),
 FROM system.query_log
 -- An initiator that was not found leaves a filter matching unrelated traffic, so it is excluded here
 -- and the empty counts below are what fail the test.
-WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
+WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
+  AND type = 'QueryFinish' AND is_initial_query = 0
   AND initiator != '' AND initial_query_id = initiator
 -- The rows being counted are the measurement, so they are read locally rather than through a
 -- distributed reader over a concurrently written system table.
@@ -84,13 +88,15 @@ SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SELECT 'in-process initiator', count() > 0, max(ProfileEvents['SelectedParts']), max(read_rows) < 1000
 FROM system.query_log
-WHERE event_date >= yesterday() AND current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
+  AND current_database = currentDatabase()
   AND log_comment = '05231_in_process' AND is_initial_query AND type = 'QueryFinish';
 
 WITH (
     SELECT query_id
     FROM system.query_log
-    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
+      AND current_database = currentDatabase()
       AND log_comment = '05231_in_process' AND is_initial_query AND type = 'QueryFinish'
     ORDER BY event_time_microseconds DESC
     LIMIT 1
@@ -102,7 +108,8 @@ SELECT 'in-process tasks', uniqExact(query_id) = count(),
     sum(ProfileEvents['DistributedPlanWorkerPartsScanned']),
     sum(ProfileEvents['DistributedPlanWorkerPartsPruned'])
 FROM system.query_log
-WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
+WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
+  AND type = 'QueryFinish' AND is_initial_query = 0
   AND initiator != '' AND initial_query_id = initiator
 SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
