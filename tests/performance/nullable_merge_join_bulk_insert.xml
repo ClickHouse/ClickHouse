@@ -1,0 +1,89 @@
+<test>
+    <!--
+        Compare unique keys and repeated right values with and without Nullable
+        output. ANY LEFT JOIN keeps the left rows in place and isolates repeated
+        right-column expansion instead of also copying the left duplicate range.
+        Explicit Nullable payloads exercise the already-Nullable source path.
+        Select the payload directly so aggregation does not obscure insertion.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>65536</max_block_size>
+        <join_algorithm>partial_merge</join_algorithm>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>fanout</name>
+            <values>
+                <value>1</value>
+                <value>256</value>
+                <value>65536</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>use_nulls</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE nullable_bulk_left_{fanout}
+        (
+            k UInt64
+        ) ENGINE = MergeTree ORDER BY k
+    </create_query>
+    <create_query>
+        CREATE TABLE nullable_bulk_right_{fanout}
+        (
+            k UInt64,
+            value_number UInt64,
+            value_string String,
+            value_nullable_number Nullable(UInt64),
+            value_nullable_string Nullable(String)
+        ) ENGINE = MergeTree ORDER BY k
+    </create_query>
+
+    <fill_query>
+        INSERT INTO nullable_bulk_left_{fanout}
+        SELECT intDiv(number, {fanout}) FROM numbers(262144)
+    </fill_query>
+    <fill_query>
+        INSERT INTO nullable_bulk_right_{fanout}
+        SELECT
+            number,
+            number + 42,
+            repeat('x', 64),
+            if(number % 2 = 0, NULL, number + 42),
+            if(number % 2 = 0, NULL, repeat('y', 64))
+        FROM numbers(intDiv(262144, {fanout}))
+    </fill_query>
+
+    <query>
+        SELECT r.value_number
+        FROM nullable_bulk_left_{fanout} AS l
+        ANY LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
+        SETTINGS join_use_nulls = {use_nulls}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT r.value_string
+        FROM nullable_bulk_left_{fanout} AS l
+        ANY LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
+        SETTINGS join_use_nulls = {use_nulls}
+        FORMAT Null
+    </query>
+    <query>
+        SELECT r.value_nullable_number, r.value_nullable_string
+        FROM nullable_bulk_left_{fanout} AS l
+        ANY LEFT JOIN nullable_bulk_right_{fanout} AS r ON l.k = r.k
+        SETTINGS join_use_nulls = {use_nulls}
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS nullable_bulk_left_{fanout}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS nullable_bulk_right_{fanout}</drop_query>
+</test>

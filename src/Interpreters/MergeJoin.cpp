@@ -520,8 +520,13 @@ void copyRightRange(const Columns & columns_to_add, MutableColumns & columns, si
         auto & dst_column = columns[i];
         auto * dst_nullable = typeid_cast<ColumnNullable *>(dst_column.get());
 
-        if (dst_nullable && !isColumnNullable(*src_column))
-            dst_nullable->insertManyFromNotNullable(*src_column, row_position, rows_to_add);
+        if (dst_nullable)
+        {
+            if (const auto * src_nullable = typeid_cast<const ColumnNullable *>(src_column.get()))
+                dst_nullable->insertManyFrom(*src_nullable, row_position, rows_to_add);
+            else
+                dst_nullable->insertManyFromNotNullable(*src_column, row_position, rows_to_add);
+        }
         else
             dst_column->insertManyFrom(*src_column, row_position, rows_to_add);
     }

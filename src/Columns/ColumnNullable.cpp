@@ -34,6 +34,67 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+bool canInsertManyWithoutCheckpoint(const IColumn & column)
+{
+    /// Fixed-size columns mutate one backing buffer, and ColumnString reserves offsets before
+    /// growing chars in its bulk path. Their logical size therefore stays unchanged on allocation failure.
+    return column.isFixedAndContiguous() || column.getDataType() == TypeIndex::String;
+}
+
+void insertOneWithRollbackIfNeeded(IColumn & dst, const IColumn & src, size_t position)
+{
+    if (dst.isFixedAndContiguous())
+    {
+        dst.insertFrom(src, position);
+        return;
+    }
+
+    if (dst.getDataType() == TypeIndex::String)
+    {
+        /// ColumnString grows chars before appending its offset. Reserving the offset first makes
+        /// the scalar insert strongly exception-safe without allocating a checkpoint.
+        dst.reserve(dst.size() + 1);
+        dst.insertFrom(src, position);
+        return;
+    }
+
+    auto checkpoint = dst.getCheckpoint();
+    try
+    {
+        dst.insertFrom(src, position);
+    }
+    catch (...)
+    {
+        dst.rollback(*checkpoint);
+        throw;
+    }
+}
+
+void insertManyWithRollbackIfNeeded(IColumn & dst, const IColumn & src, size_t position, size_t length)
+{
+    if (canInsertManyWithoutCheckpoint(dst))
+    {
+        dst.insertManyFrom(src, position, length);
+        return;
+    }
+
+    auto checkpoint = dst.getCheckpoint();
+    try
+    {
+        dst.insertManyFrom(src, position, length);
+    }
+    catch (...)
+    {
+        dst.rollback(*checkpoint);
+        throw;
+    }
+}
+
+}
+
 
 ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_)
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
@@ -309,15 +370,40 @@ void ColumnNullable::insertManyFrom(const IColumn & src, size_t position, size_t
 void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 #endif
 {
+    if (length == 0)
+        return;
+
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
-    getNestedColumn().insertManyFrom(src_concrete.getNestedColumn(), position, length);
-    getNullMapColumn().insertManyFrom(src_concrete.getNullMapColumn(), position, length);
+    auto & null_map_data = getNullMapData();
+
+    if (length == 1)
+    {
+        null_map_data.reserve(null_map_data.size() + 1);
+        insertOneWithRollbackIfNeeded(getNestedColumn(), src_concrete.getNestedColumn(), position);
+        null_map_data.push_back(src_concrete.getNullMapData()[position]);
+        return;
+    }
+
+    const UInt8 null_value = src_concrete.getNullMapData()[position];
+    const size_t old_size = null_map_data.size();
+    const size_t new_size = old_size + length;
+
+    /// Reserve the null map before touching the nested column so completing the insert cannot throw.
+    null_map_data.reserve(new_size);
+    insertManyWithRollbackIfNeeded(getNestedColumn(), src_concrete.getNestedColumn(), position, length);
+
+    null_map_data.resize_assume_reserved(new_size);
+    memset(null_map_data.data() + old_size, null_value, length);
 }
 
 void ColumnNullable::insertFromNotNullable(const IColumn & src, size_t n)
 {
-    getNestedColumn().insertFrom(src, n);
-    getNullMapData().push_back(false);
+    auto & null_map_data = getNullMapData();
+
+    /// Reserve the null marker first so it cannot allocate after the nested insert succeeds.
+    null_map_data.reserve(null_map_data.size() + 1);
+    insertOneWithRollbackIfNeeded(getNestedColumn(), src, n);
+    null_map_data.push_back(false);
 }
 
 void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length)
@@ -328,8 +414,25 @@ void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t star
 
 void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t position, size_t length)
 {
-    for (size_t i = 0; i < length; ++i)
+    if (length == 0)
+        return;
+
+    if (length == 1)
+    {
         insertFromNotNullable(src, position);
+        return;
+    }
+
+    auto & null_map_data = getNullMapData();
+    const size_t old_size = null_map_data.size();
+    const size_t new_size = old_size + length;
+
+    /// Reserve the null map before touching the nested column so completing the insert cannot throw.
+    null_map_data.reserve(new_size);
+    insertManyWithRollbackIfNeeded(getNestedColumn(), src, position, length);
+
+    null_map_data.resize_assume_reserved(new_size);
+    memset(null_map_data.data() + old_size, 0, length);
 }
 
 void ColumnNullable::popBack(size_t n)
