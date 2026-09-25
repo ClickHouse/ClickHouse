@@ -177,6 +177,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First global query-plan version that writes version 1 of `Join`, carrying the mark of the semi or anti join
+/// an `INTERSECT DISTINCT` or `EXCEPT DISTINCT` is executed as, and version 2 of `Distinct` and `PreDistinct`,
+/// carrying the observation window of a preliminary step that gives up on a mostly unique stream. Anchored at
+/// the current global version, which no release has shipped yet.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_JOIN = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

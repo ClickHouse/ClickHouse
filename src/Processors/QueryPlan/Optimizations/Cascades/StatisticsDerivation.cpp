@@ -343,6 +343,33 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     statistics.max_row_count = clampJoinMaxRowCount(join_operator.kind, join_operator.strictness,
         statistics.max_row_count, left_statistics.max_row_count, right_statistics.max_row_count);
 
+    /// A left semi or anti join emits a subset of the left rows, so it has no more distinct rows than the left
+    /// side. When every output column of a semi join is also an equality key, each distinct output row matches
+    /// a distinct right row as well. This is the bound of `INTERSECT DISTINCT`, which is executed as such a join.
+    if (join_operator.kind == JoinKind::Left
+        && (join_operator.strictness == JoinStrictness::Semi || join_operator.strictness == JoinStrictness::Anti))
+    {
+        statistics.estimated_distinct_bound = left_statistics.estimated_distinct_bound;
+
+        std::unordered_set<String> left_keys;
+        for (const auto & predicate_expression : join_operator.expression)
+        {
+            auto [op, lhs, rhs] = predicate_expression.asBinaryPredicate();
+            if ((op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals) || !lhs || !rhs)
+                continue;
+            if (lhs.fromRight() && rhs.fromLeft())
+                std::swap(lhs, rhs);
+            if (lhs.fromLeft() && rhs.fromRight())
+                left_keys.insert(lhs.getColumnName());
+        }
+
+        const auto & output_names = join_step.getOutputHeader()->getNames();
+        if (join_operator.strictness == JoinStrictness::Semi
+            && std::ranges::all_of(output_names, [&](const auto & name) { return left_keys.contains(name); }))
+            statistics.estimated_distinct_bound = std::min(
+                {statistics.estimated_distinct_bound, right_statistics.estimated_row_count, right_statistics.estimated_distinct_bound});
+    }
+
     /// Column equivalences: both inputs' classes survive (the sides do not share column names).
     /// An inner join also makes its equality keys equal on every output row, so each key pair
     /// links the two classes; other kinds keep unmatched rows, where the equality does not hold.

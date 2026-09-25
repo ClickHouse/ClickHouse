@@ -1679,6 +1679,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto table_join = std::make_shared<TableJoin>(join_settings, logical_lookup && logical_lookup->useNulls(),
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
         Context::getGlobalContextInstance()->getTempDataOnDisk());
+    table_join->setReadsLeftWhileFillingRight(logical_join_info.is_set_operation);
 
     PreparedJoinStorage prepared_join_storage;
     if (logical_lookup)
@@ -2246,7 +2247,8 @@ void JoinStepLogical::buildPhysicalJoin(
         .readable_relation_name = join_step->getReadableRelationName(),
         .estimation = join_step->getEstimation(),
         .locality = join_step->join_operator.locality,
-        .cluster_id = join_step->getClusterId()
+        .cluster_id = join_step->getClusterId(),
+        .is_set_operation = join_step->isSetOperation()
     };
 
     auto new_node = buildPhysicalJoinImpl(
@@ -2546,7 +2548,10 @@ static void serializeNodeList(
 
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
+    /// The mark of a set operation goes in the flags from step version 1 on; a reader at version 0 ignores the byte.
     UInt8 flags = 0;
+    if (ctx.step_version >= 1 && is_set_operation)
+        flags |= 1;
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(1, ctx.out);
@@ -2641,6 +2646,9 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
     }
 
+    if (ctx.step_version >= 1)
+        step->is_set_operation = bool(flags & 1);
+
     return step;
 }
 
@@ -2696,6 +2704,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->is_set_operation = is_set_operation;
 
     return result_step;
 }
@@ -2720,7 +2729,8 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    registry.registerStep(
+        "Join", JoinStepLogical::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_JOIN}});
 }
 
 
