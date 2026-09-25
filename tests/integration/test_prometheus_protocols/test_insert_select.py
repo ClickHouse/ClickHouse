@@ -10,10 +10,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    user_configs=[
-        "configs/allow_experimental_time_series_table.xml",
-        "configs/select_join_settings.xml",
-    ],
+    user_configs=["configs/allow_experimental_time_series_table.xml"],
 )
 
 
@@ -37,7 +34,7 @@ def cleanup_after_test():
 
 def test_insert_basic():
     node.query(
-        "INSERT INTO prometheus (metric_name, tags, samples) VALUES"
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
         " ('cpu_usage', {'job': 'test', 'instance': 'localhost:9090'}, [(toDateTime64(1000, 3), 0.5), (toDateTime64(2000, 3), 0.7)])"
     )
 
@@ -64,14 +61,14 @@ def test_insert_basic():
 
 def test_insert_with_metrics_metadata():
     node.query(
-        "INSERT INTO prometheus (metric_name, tags, samples, metric_family, type, unit, help) VALUES"
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type, unit, help) VALUES"
         " ('http_requests', {'method': 'GET'}, [(toDateTime64(1000, 3), 100.0)], 'http_requests', 'counter', 'requests', 'Total HTTP requests')"
     )
 
     # Check inner tables.
     assert node.query(
-        "SELECT metric_family, type, unit, help"
-        " FROM timeSeriesMetricFamilies(prometheus)"
+        "SELECT metric_family_name, type, unit, help"
+        " FROM timeSeriesMetrics(prometheus)"
     ) == TSV([["http_requests", "counter", "requests", "Total HTTP requests"]])
 
     assert node.query(
@@ -79,15 +76,45 @@ def test_insert_with_metrics_metadata():
     ) == TSV([["100"]])
 
 
+def test_promql_at_timestamp_with_supported_timestamp_types():
+    timestamp_types = [
+        ("u32", "UInt32", "4294967196", "0", "0"),
+        ("datetime", "DateTime", "toDateTime(4294967196)", "toDateTime(0)", "0"),
+        ("datetime64", "DateTime64(3)", "toDateTime64(-100, 3)", "toDateTime64(0, 3)", "1"),
+    ]
+
+    for suffix, timestamp_type, wrapped_timestamp, epoch_timestamp, expected_negative_count in timestamp_types:
+        table_name = f"prometheus_{suffix}"
+        try:
+            node.query(
+                f"CREATE TABLE {table_name} (time_series Array(Tuple({timestamp_type}, Float64))) ENGINE=TimeSeries"
+            )
+            node.query(
+                f"INSERT INTO {table_name} (metric_name, tags, time_series) VALUES"
+                f" ('metric', {{'job': 'test'}}, [({wrapped_timestamp}, 1), ({epoch_timestamp}, 2)])"
+            )
+
+            assert node.query(
+                f"SELECT count() FROM prometheusQuery({table_name}, 'metric @ -100', 0)"
+            ) == TSV([[expected_negative_count]])
+
+            # The default five-minute lookback crosses the Unix epoch at @ 100.
+            assert node.query(
+                f"SELECT count() FROM prometheusQuery({table_name}, 'metric @ 100', 0)"
+            ) == TSV([["1"]])
+        finally:
+            node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
 def insert_time_series():
     """Helper for the SELECT tests: a series with its family's metadata, a series whose family has no
     metadata, and a metadata-only family with no series."""
     node.query(
-        "INSERT INTO prometheus (metric_name, tags, samples, metric_family, type, unit, help) VALUES"
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type, unit, help) VALUES"
         " ('http_requests_total', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0), (toDateTime64(2000, 3), 2.0)], 'http_requests', 'counter', 'requests', 'Total HTTP requests')"
     )
     node.query(
-        "INSERT INTO prometheus (metric_name, tags, samples) VALUES"
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
         " ('cpu_usage', {'host': 'h1'}, [(toDateTime64(3000, 3), 0.5)])"
     )
     node.query(
@@ -97,11 +124,11 @@ def insert_time_series():
 
 
 ALL_COLUMNS_QUERY = (
-    "SELECT metric_name, tags, samples, metric_family, type, unit, help"
+    "SELECT metric_name, tags, time_series, metric_family, type, unit, help"
     " FROM prometheus ORDER BY metric_name, metric_family"
 )
 
-# Columns: metric_name, tags, samples, metric_family, type, unit, help.
+# Columns: metric_name, tags, time_series, metric_family, type, unit, help.
 # A family emits one member name per suffix of its type; the counter family emits 'http_requests'
 # and 'http_requests_total', and the bare member has no series, so it shows up as an unmatched row,
 # same as the metadata-only family.
@@ -114,8 +141,8 @@ ALL_COLUMNS_EXPECTED = TSV([
 
 
 def test_select_all_columns():
-    """Reads all three target tables using `INNER ANY JOIN` for samples/tags and `FULL JOIN` for metadata:
-    a series with metadata, a series whose family has no metadata
+    """Reads all three target tables at once (the aggregated samples SEMI-joined to the "tags" table, the
+    "metrics" table FULL-joined on top): a series with metadata, a series whose family has no metadata
     (kept, with empty metadata columns), and a metadata-only family (kept, with empty series columns)."""
     insert_time_series()
 
@@ -128,7 +155,7 @@ def test_select_time_series():
     insert_time_series()
 
     assert node.query(
-        "SELECT samples FROM prometheus ORDER BY length(samples)"
+        "SELECT time_series FROM prometheus ORDER BY length(time_series)"
     ) == TSV([
         ["[('1970-01-01 00:50:00.000',0.5)]"],
         ["[('1970-01-01 00:16:40.000',1),('1970-01-01 00:33:20.000',2)]"],
@@ -190,7 +217,7 @@ def test_select_time_series_and_metric_name_and_tags():
     insert_time_series()
 
     assert node.query(
-        "SELECT metric_name, tags, length(samples) AS n FROM prometheus ORDER BY metric_name"
+        "SELECT metric_name, tags, length(time_series) AS n FROM prometheus ORDER BY metric_name"
     ) == TSV([
         ["cpu_usage",           "{'__name__':'cpu_usage','host':'h1'}",           "1"],
         ["http_requests_total", "{'__name__':'http_requests_total','job':'api'}", "2"],
@@ -208,18 +235,18 @@ def test_select_metric_name_and_tags_and_metric_family():
     # A second series of the same family, and the family's metadata inserted once more
     # (must not multiply the series).
     node.query(
-        "INSERT INTO prometheus (metric_name, tags, samples, metric_family, type) VALUES"
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type) VALUES"
         " ('http_requests_total', {'job': 'web'}, [(toDateTime64(2000, 3), 2.0)], 'http_requests', 'counter')"
     )
     # A gauge whose name genuinely ends in '_count' and a real histogram's '_bucket' series.
     node.query(
-        "INSERT INTO prometheus (metric_name, tags, samples, metric_family, type) VALUES"
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type) VALUES"
         " ('queue_count', {'q': 'jobs'}, [(toDateTime64(4000, 3), 7.0)], 'queue_count', 'gauge'),"
         " ('http_request_duration_bucket', {'le': '0.5'}, [(toDateTime64(5000, 3), 3.0)], 'http_request_duration', 'histogram')"
     )
     # A counter whose family name already includes '_total' and equals the series name.
     node.query(
-        "INSERT INTO prometheus (metric_name, tags, samples, metric_family, type) VALUES"
+        "INSERT INTO prometheus (metric_name, tags, time_series, metric_family, type) VALUES"
         " ('errors_total', {'app': 'web'}, [(toDateTime64(6000, 3), 1.0)], 'errors_total', 'counter')"
     )
 
@@ -256,7 +283,7 @@ def test_select_time_series_and_metric_family():
     insert_time_series()
 
     assert node.query(
-        "SELECT length(samples) AS n, type, unit FROM prometheus ORDER BY n, type"
+        "SELECT length(time_series) AS n, type, unit FROM prometheus ORDER BY n, type"
     ) == TSV([
         ["0", "counter", "requests"],
         ["0", "gauge",   "bytes"],
@@ -295,7 +322,7 @@ def test_select_tags_with_separate_column():
     insert_time_series()
     # A series using both tags with dedicated columns and a tag without one.
     node.query(
-        "INSERT INTO prometheus (metric_name, tags, samples) VALUES"
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
         " ('mem_free', {'job': 'web', 'instance': 'host1', 'region': 'eu'}, [(toDateTime64(4000, 3), 3.0)])"
     )
     # A row written directly into the inner table: `job` is only in its column, not in the Map.
@@ -354,7 +381,7 @@ def test_select_with_row_policy():
     )
     insert_time_series()
     node.query(
-        "INSERT INTO prometheus (metric_name, tags, samples) VALUES"
+        "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
         " ('mem_free', {'job': 'web', 'region': 'eu'}, [(toDateTime64(4000, 3), 3.0)])"
     )
 
@@ -408,11 +435,11 @@ def test_select_final():
     try:
         # Two separate inserts of the SAME series -> two unmerged tags parts sharing one id.
         node.query(
-            "INSERT INTO prometheus (metric_name, tags, samples) VALUES"
+            "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
             " ('http_requests', {'job': 'api'}, [(toDateTime64(1000, 3), 1.0)])"
         )
         node.query(
-            "INSERT INTO prometheus (metric_name, tags, samples) VALUES"
+            "INSERT INTO prometheus (metric_name, tags, time_series) VALUES"
             " ('http_requests', {'job': 'api'}, [(toDateTime64(2000, 3), 2.0)])"
         )
 
@@ -423,7 +450,7 @@ def test_select_final():
             [["http_requests", "{'__name__':'http_requests','job':'api'}"]]
         )
         # The single series' samples from both parts are still gathered into one array.
-        assert node.query("SELECT metric_name, length(samples) FROM prometheus FINAL") == TSV(
+        assert node.query("SELECT metric_name, length(time_series) FROM prometheus FINAL") == TSV(
             [["http_requests", "2"]]
         )
     finally:
@@ -436,10 +463,10 @@ def test_select_final():
 
 
 def test_select_pin_settings():
-    """The internal read pins `join_use_nulls`,
-    `aggregate_functions_null_for_empty` and `optimize_aggregation_in_order` on its own context.
-    Selecting all the columns with those settings set to wrong values and a caller-selected merge
-    join must return exactly the same result."""
+    """The internal read must not depend on the caller's settings: it pins `join_use_nulls`,
+    `aggregate_functions_null_for_empty`, `join_algorithm` and `optimize_aggregation_in_order` on its
+    own context. Selecting all the columns with all of those settings set to wrong values must return
+    exactly the same result."""
     insert_time_series()
 
     wrong_settings = (

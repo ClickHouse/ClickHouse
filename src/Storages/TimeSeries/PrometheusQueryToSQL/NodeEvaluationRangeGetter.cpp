@@ -2,6 +2,7 @@
 
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/IDataType.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/alignTimestampWithStep.h>
 
@@ -28,25 +29,26 @@ namespace
 NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
                                                      const PrometheusQueryEvaluationSettings & settings_)
     : promql_tree(promql_tree_)
-    , time_scale(settings_.time_scale)
+    , timestamp_data_type(settings_.timestamp_data_type)
+    , timestamp_scale(tryGetDecimalScale(*timestamp_data_type).value_or(0))
 {
-    if (promql_tree->getTimeScale() != time_scale)
+    if (promql_tree->getTimestampScale() != timestamp_scale)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PromQL query was parsed with time scale {} but the evaluation settings use time scale {}",
-                        promql_tree->getTimeScale(), time_scale);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got two different timestamp scales: {} and {}",
+                        promql_tree->getTimestampScale(), timestamp_scale);
     }
 
     /// By default the lookback period is 5 minutes.
     if (settings_.instant_selector_window)
         instant_selector_window = *settings_.instant_selector_window;
     else
-        instant_selector_window = DEFAULT_INSTANT_SELECTOR_WINDOW_SECONDS * DecimalUtils::scaleMultiplier<DurationType>(time_scale);
+        instant_selector_window = DEFAULT_INSTANT_SELECTOR_WINDOW_SECONDS * DecimalUtils::scaleMultiplier<DurationType>(timestamp_scale);
 
     /// The default subquery step is 15 seconds.
     if (settings_.default_subquery_step)
         default_subquery_step = *settings_.default_subquery_step;
     else
-        default_subquery_step = DEFAULT_SUBQUERY_STEP_SECONDS * DecimalUtils::scaleMultiplier<DurationType>(time_scale);
+        default_subquery_step = DEFAULT_SUBQUERY_STEP_SECONDS * DecimalUtils::scaleMultiplier<DurationType>(timestamp_scale);
 
     const auto * root = promql_tree->getRoot();
     if (!root)
@@ -56,7 +58,7 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
 
     if (settings_.use_current_time)
     {
-        range.start_time = DecimalUtils::getCurrentDateTime64(time_scale);
+        range.start_time = DecimalUtils::getCurrentDateTime64(timestamp_scale);
         range.end_time = range.start_time;
         range.step = 0;
     }
@@ -151,6 +153,12 @@ void NodeEvaluationRangeGetter::visitChildren(const Node * node, const NodeEvalu
             expression_range.start_time = alignTimestampWithStep(range.start_time - subquery_range + step, step);
             expression_range.end_time = alignTimestampWithStep(range.end_time, step);
             expression_range.step = step;
+
+            /// Clip before visiting children, which can materialize the grid even without a selector.
+            /// Zero is aligned with every subquery step. A wholly pre-epoch range becomes empty.
+            WhichDataType which_data_type{timestamp_data_type};
+            if ((which_data_type.isDateTime() || which_data_type.isUInt32()) && expression_range.start_time < 0)
+                expression_range.start_time = 0;
 
             visitNode(expression, expression_range);
             break;
