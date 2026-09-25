@@ -302,6 +302,8 @@ private:
     mutable std::atomic<bool> read_failed = false;
 };
 
+void stampMTimeAfterReplacedVersion(const String & path, const struct stat & replaced_stat);
+
 /// Wrapper around WriteBufferFromFile that adds blob storage logging on finalize.
 /// Inherits from WriteBufferFromFileDecorator to follow the established pattern.
 class WriteBufferFromFileWithLogging final : public WriteBufferFromFileDecorator
@@ -310,10 +312,12 @@ public:
     WriteBufferFromFileWithLogging(
         const String & file_path_,
         size_t buf_size,
+        std::optional<struct stat> replaced_stat_,
         const String & bucket_,
         BlobStorageLogWriterPtr blob_log_)
         : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_path_, buf_size))
         , file_path(file_path_)
+        , replaced_stat(std::move(replaced_stat_))
         , bucket(bucket_)
         , blob_log(std::move(blob_log_))
     {
@@ -325,6 +329,11 @@ private:
     void finalizeImpl() override
     {
         WriteBufferFromFileDecorator::finalizeImpl();
+
+        /// The file was rewritten in place, keeping its inode and possibly its size, so without
+        /// this the new version could keep the etag of the version it replaced.
+        if (replaced_stat)
+            stampMTimeAfterReplacedVersion(file_path, *replaced_stat);
 
         if (blob_log)
         {
@@ -341,6 +350,7 @@ private:
     }
 
     const String file_path;
+    const std::optional<struct stat> replaced_stat;
     const String bucket;
     BlobStorageLogWriterPtr blob_log;
 };
@@ -365,17 +375,21 @@ private:
 /// incoming version past the one it replaces makes the mtime - and therefore the
 /// etag - strictly increase across the whole version history of the path, which is
 /// exactly the uniqueness the compare-and-swap needs.
-void stampMTimeAfterReplacedVersion(const String & temp_path, const struct stat & replaced_stat)
+///
+/// An unconditional write rewrites the file in place, so it keeps the inode of the
+/// replaced version and gets the same stamp: otherwise a same-size rewrite within one
+/// tick would keep the etag, and a reader that trusts it would miss the new content.
+void stampMTimeAfterReplacedVersion(const String & path, const struct stat & replaced_stat)
 {
     const struct timespec replaced_mtime = getMTime(replaced_stat);
 
-    struct stat temp_stat{};
-    if (0 != ::stat(temp_path.c_str(), &temp_stat))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, temp_path, "Cannot stat file {}", temp_path);
+    struct stat new_stat{};
+    if (0 != ::stat(path.c_str(), &new_stat))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, path, "Cannot stat file {}", path);
 
     /// The payload was written after the replaced version had been published, so a
     /// clock of any usable resolution already separates the two on its own.
-    if (isLaterThan(getMTime(temp_stat), replaced_mtime))
+    if (isLaterThan(getMTime(new_stat), replaced_mtime))
         return;
 
     /// A nanosecond is enough on every filesystem that keeps sub-second inode times
@@ -400,25 +414,25 @@ void stampMTimeAfterReplacedVersion(const String & temp_path, const struct stat 
         times[0].tv_nsec = UTIME_OMIT; /// Leave the access time alone.
         times[1] = candidate;
 
-        if (0 != ::utimensat(AT_FDCWD, temp_path.c_str(), times, 0))
+        if (0 != ::utimensat(AT_FDCWD, path.c_str(), times, 0))
             ErrnoException::throwFromPath(
-                ErrorCodes::SYSTEM_ERROR, temp_path, "Cannot set the modification time of {}", temp_path);
+                ErrorCodes::SYSTEM_ERROR, path, "Cannot set the modification time of {}", path);
 
         /// The filesystem is free to store a coarser time than the one requested,
         /// so read back what it actually kept instead of assuming the stamp landed.
-        if (0 != ::stat(temp_path.c_str(), &temp_stat))
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, temp_path, "Cannot stat file {}", temp_path);
+        if (0 != ::stat(path.c_str(), &new_stat))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, path, "Cannot stat file {}", path);
 
-        if (isLaterThan(getMTime(temp_stat), replaced_mtime))
+        if (isLaterThan(getMTime(new_stat), replaced_mtime))
             return;
     }
 
     throw Exception(
         ErrorCodes::SYSTEM_ERROR,
         "Cannot advance the modification time of {} past {}.{:09} of the object it replaces: the filesystem does not keep "
-        "modification times precisely enough to tell two versions of an object apart, so a conditional write cannot be "
-        "performed safely on it",
-        temp_path,
+        "modification times precisely enough to tell two versions of an object apart, so the new version would keep the "
+        "etag of the replaced one",
+        path,
         static_cast<Int64>(replaced_mtime.tv_sec),
         static_cast<Int64>(replaced_mtime.tv_nsec));
 }
@@ -628,9 +642,17 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
             std::move(blob_storage_log));
     }
 
+    /// The existing version is truncated when the file is opened, so remember its modification time now.
+    std::optional<struct stat> replaced_stat;
+    if (struct stat file_stat{}; 0 == ::stat(resolved_path.c_str(), &file_stat))
+        replaced_stat = file_stat;
+    else if (errno != ENOENT)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, resolved_path, "Cannot stat file {}", resolved_path);
+
     return std::make_unique<WriteBufferFromFileWithLogging>(
         resolved_path,
         buf_size,
+        std::move(replaced_stat),
         settings.key_prefix,
         std::move(blob_storage_log));
 }

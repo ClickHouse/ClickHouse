@@ -769,6 +769,37 @@ TEST(LocalObjectStorage, ConditionalWritePublishesStrictlyIncreasingMTime)
     EXPECT_EQ(listDirectory(path.parent_path()), std::vector<std::string>{"version-hint.text"});
 }
 
+/// The unconditional counterpart of the test above. An unconditional write rewrites the
+/// file in place, so the new version keeps the inode of the replaced one, and a payload of
+/// the same length keeps its size: only the modification time is left to tell them apart.
+/// A reader that trusts the etag, such as the refresh of a `plain_rewritable` disk, would
+/// otherwise never see the new content.
+TEST(LocalObjectStorage, UnconditionalWritePublishesStrictlyIncreasingMTime)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_unconditional_mtime");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto path = root / "__meta" / "directory" / "prefix.path";
+
+    writeObject(storage, path, "A/", {});
+
+    /// Well past any tick of any clock, and past the runtime of this test.
+    std::error_code ec;
+    fs::last_write_time(path, fs::last_write_time(path) + std::chrono::hours(1), ec);
+    ASSERT_FALSE(ec) << "Failed to set the modification time: " << ec.message();
+
+    const auto mtime_before = fs::last_write_time(path);
+    const auto etag_before = readObject(storage, path).metadata.etag;
+    ASSERT_FALSE(etag_before.empty());
+
+    writeObject(storage, path, "C/", {});
+
+    EXPECT_GT(fs::last_write_time(path), mtime_before);
+    EXPECT_NE(readObject(storage, path).metadata.etag, etag_before) << "two versions of an object must never share an etag";
+    EXPECT_EQ(readObject(storage, path).data, "C/");
+}
+
 /// Every etag this storage hands out has to be the same kind of token, because a
 /// caller feeds the etag it read straight back into `If-Match`. `getObjectMetadata`
 /// used to build a differently shaped one, which could then only ever compare unequal
