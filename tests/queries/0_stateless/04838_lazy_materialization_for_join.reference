@@ -75,6 +75,14 @@
 200	l200		0
 297	l297	r297	10
 394	l394		0
+-- the build side of a join with a runtime filter is read lazily too
+6	l6	r6
+297	l297	r297
+588	l588	r588
+2	1
+6	l6
+103	l103
+200	l200
 -- the same results without the optimization
 6	l6	r6!	3
 103	l103	\N	\N

@@ -53,7 +53,7 @@ struct LazyFrontier
 };
 
 /// `eager_output_positions` are the outputs of `merged` a caller needs below the `LIMIT` anyway, i.e. the
-/// sort description. Filters and join conditions are taken from `merged` itself.
+/// sort description. Filters, join conditions and the values steps read are taken from `merged` itself.
 /// `lazy_sources` says which sources support a second, row-addressed read; a value reading one that does
 /// not is computed below the `LIMIT` and crosses instead.
 ///

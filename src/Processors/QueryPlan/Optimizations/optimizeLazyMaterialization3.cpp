@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -439,11 +440,12 @@ public:
 
         /// A crossing value is computed below the `LIMIT`, but what reads it there is only its export, under
         /// its crossing name. The steps between keep a value under its own name only where a filter, a join
-        /// condition, the sort order or the computation of a crossing value reads it, so that a crossing
+        /// condition, a runtime filter, the sort order or the computation of a crossing value reads it, so that a crossing
         /// column does not travel up twice, and a join does not keep two copies of it.
         {
             ActionsDAG::NodeRawConstPtrs roots = merged.filter_nodes;
             roots.append_range(merged.join_condition_nodes);
+            roots.append_range(merged.step_read_nodes);
             roots.append_range(sort_key_nodes);
             for (const auto & crossing : crossings)
                 roots.append_range(crossing.node->children);
@@ -614,6 +616,11 @@ private:
             return true;
 
         auto * step = node->step.get();
+
+        /// Passes its input through, and reads its key by name, which the merged DAG has made sure is there once.
+        if (typeid_cast<BuildRuntimeFilterStep *>(step))
+            return node->children.size() == 1 && checkSteps(node->children.front(), joins);
+
         if (auto * join = typeid_cast<JoinStepLogical *>(step))
         {
             if (node->children.size() != 2 || !join->canRemoveUnusedColumns())
@@ -724,6 +731,14 @@ private:
 
         if (typeid_cast<JoinStepLogical *>(node->step.get()))
             return rebuildJoin(node, nodes);
+
+        if (typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
+        {
+            auto plan = rebuild(node->children.front(), nodes);
+            node->step->updateInputHeader(plan.getCurrentHeader());
+            plan.addStep(std::move(node->step));
+            return plan;
+        }
 
         const auto crossing_here = nameCrossingsOf(node);
         const auto & to_merged = merged.step_mappings.at(node);
