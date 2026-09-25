@@ -198,12 +198,10 @@ struct NgramsTokenizer final : public ITokenizerHelper<NgramsTokenizer>
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     /// Hot-path tokenizer used by the free `forEachToken` (index build, search, the `tokens` function).
-    /// Emits the same tokens in the same order as `nextInString`, including a last code point that the
-    /// end of the buffer truncates.
+    /// Emits the same tokens in the same order as `nextInString`, including a last code point cut off by the end of the string.
     template <Fn<bool(const char *, size_t)> Callback>
     void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
     {
-        /// Both cursors walk the one chain of `UTF8::seqLength` steps from the start of the string:
         /// `begin` is the start of the current n-gram, `last` the start of its n-th code point.
         size_t begin = 0;
         size_t last = 0;
