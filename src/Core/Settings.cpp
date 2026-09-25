@@ -9686,7 +9686,6 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, query_plan_read_in_order, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_prewhere, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_aggregation_in_order, true) \
-    MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1)
     MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1) \
     MAKE_OBSOLETE(M, Float, text_index_lazy_intersection_density_threshold, 0.2f) \
     MAKE_OBSOLETE(M, Float, text_index_density_threshold, 0.2f)
