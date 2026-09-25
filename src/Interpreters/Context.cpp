@@ -2230,25 +2230,6 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-namespace
-{
-
-/// A dotted current database selects a namespace ("db.ns") unless a database with that exact name exists
-CurrentDatabaseInfo validateCurrentDatabaseName(const String & name, bool allow_table_namespaces, ContextPtr context)
-{
-    const auto info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name);
-    if (!info.hasTablePrefix())
-        return info;
-    if (!allow_table_namespaces)
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(name));
-    Names parts;
-    splitInto<'.'>(parts, info.getTablePrefixPart());
-    DatabaseCatalog::instance().getDatabase(info.getDatabasePart())->validateTableNamespace(parts, context);
-    return info;
-}
-
-}
-
 void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
@@ -3822,12 +3803,7 @@ void Context::setCurrentDatabaseWithLock(const CurrentDatabaseInfo & database_in
 
 void Context::setCurrentDatabase(const String & name)
 {
-    setCurrentDatabase(name, getSettingsRef()[Setting::allow_experimental_table_namespaces]);
-}
-
-void Context::setCurrentDatabase(const String & name, bool allow_table_namespaces)
-{
-    const auto info = validateCurrentDatabaseName(name, allow_table_namespaces, shared_from_this());
+    const auto info = CurrentDatabaseInfo(name);
 
     /// a quoted spelling resolved to another name: constraints on `database` must see what is selected
     if (info.getFullName() != name)
@@ -3837,7 +3813,7 @@ void Context::setCurrentDatabase(const String & name, bool allow_table_namespace
         checkSettingsConstraints(std::as_const(database_change), SettingSource::QUERY);
     }
 
-    DatabaseCatalog::instance().assertDatabaseExists(String{info.getDatabasePart()});
+    DatabaseCatalog::instance().assertDatabaseAndNamespacesExist(info);
 
     std::lock_guard lock(mutex);
     setCurrentDatabaseWithLock(info, lock);
@@ -3845,7 +3821,7 @@ void Context::setCurrentDatabase(const String & name, bool allow_table_namespace
 
 void Context::setCurrentDatabase(const CurrentDatabaseInfo & database_info)
 {
-    DatabaseCatalog::instance().assertDatabaseExists(String{database_info.getDatabasePart()});
+    DatabaseCatalog::instance().assertDatabaseAndNamespacesExist(database_info);
 
     std::lock_guard lock(mutex);
     setCurrentDatabaseWithLock(database_info, lock);

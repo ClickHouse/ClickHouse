@@ -19,6 +19,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 
@@ -226,7 +227,7 @@ public:
 
     /// Throws if the namespace does not exist. `namespace_parts` are separate path
     /// components, ["a.b"] and ["a", "b"] are different namespaces
-    virtual void validateTableNamespace(const Names & namespace_parts, ContextPtr context) const;
+    virtual void validateTableNamespace(std::string_view namespace_parts, ContextPtr context) const;
 
     /// Canonical stored table name for a namespace-qualified path
     virtual String resolveTableNamePath(const Names & path_parts) const;

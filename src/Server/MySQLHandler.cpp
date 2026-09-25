@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Server/MySQLHandler.h>
 
 #include <algorithm>
@@ -790,15 +791,13 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
-    /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery):
-    /// a namespace selection ("db.ns") is checked against the physical database.
-    const auto database_info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(database);
+    const auto database_info = CurrentDatabaseInfo(database);
     session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database_info.getDatabasePart());
     /// ... and its settings-constraint check on the `database` setting.
     SettingsChanges database_change;
     database_change.setSetting("database", database);
     session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
-    session->sessionContext()->setCurrentDatabase(database);
+    session->sessionContext()->setCurrentDatabase(database_info);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }
 

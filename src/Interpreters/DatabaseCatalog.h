@@ -153,11 +153,7 @@ public:
 
 
     void assertDatabaseExists(const String & database_name) const;
-
-    /// An existing database always wins, so real dotted-named databases keep working,
-    /// otherwise first component is the database and rest is table-name prefix.
-    /// Only used when a current database is being set, the result is frozen after that.
-    CurrentDatabaseInfo splitTablePrefixFromDatabaseName(const String & name) const;
+    void assertDatabaseAndNamespacesExist(const CurrentDatabaseInfo & database_info) const;
 
     /// Apply the frozen split to a StorageID carrying the logical name: {"db.ns", "t"} -> {"db", "ns.t"}
     static StorageID foldNamespaceIntoTableName(

@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/CurrentThread.h>
 
@@ -674,28 +675,6 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
     return check_database_and_table_name(table_id.getDatabaseName(), table_id.getTableName());
 }
 
-CurrentDatabaseInfo DatabaseCatalog::splitTablePrefixFromDatabaseName(const String & name) const
-{
-    /// dot-less names (the overwhelmingly common case) cost nothing
-    CurrentDatabaseInfo info(name);
-    if (!info.hasTablePrefix() && info.getFullName() == name)
-        return info;
-
-    /// an existing database always wins, also over a quoted spelling; quoting makes the name one literal component
-    if (isDatabaseExist(name))
-        return CurrentDatabaseInfo(doubleQuoteString(name));
-
-    /// a quoted single component with no such literal database is the unquoted name
-    if (!info.hasTablePrefix())
-        return info;
-
-    auto database = tryGetDatabase(info.getDatabasePart());
-    if (!database || database->getTableNamespaceSupport() == TableNamespaceSupport::None)
-        return CurrentDatabaseInfo(doubleQuoteString(name));
-
-    return info;
-}
-
 StorageID DatabaseCatalog::foldNamespaceIntoTableName(
     StorageID storage_id, const CurrentDatabaseInfo & current_database_info, std::optional<Exception> * exception)
 {
@@ -751,6 +730,12 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
             backQuoteIfNeed(database_name),
             backQuoteIfNeed(names[0]));
     }
+}
+
+void DatabaseCatalog::assertDatabaseAndNamespacesExist(const CurrentDatabaseInfo & database_info) const
+{
+    assertDatabaseExists(String(database_info.getDatabasePart()));
+    getDatabase(database_info.getDatabasePart())->validateTableNamespace(database_info.getTablePrefixPart(), getContext());
 }
 
 bool DatabaseCatalog::hasDatalakeCatalogs() const

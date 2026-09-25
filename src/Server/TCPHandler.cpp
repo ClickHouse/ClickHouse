@@ -29,6 +29,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Session.h>
@@ -429,8 +430,8 @@ void TCPHandler::runImpl()
 
         if (!default_database.empty())
         {
-            const auto database_info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(default_database);
-            DatabaseCatalog::instance().assertDatabaseExists(String{database_info.getDatabasePart()});
+            const auto database_info = CurrentDatabaseInfo(default_database);
+            DatabaseCatalog::instance().assertDatabaseAndNamespacesExist(database_info);
         }
 
         /// In interserver mode queries are executed without a session context.

@@ -1,3 +1,4 @@
+#include <string_view>
 #include <Access/Common/AccessFlags.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
@@ -190,7 +191,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     /// With no FROM, the session scope applies, including `USE db.namespace` prefix
     const auto database_info = getFromInfo();
     const String database{database_info.getDatabasePart()};
-    const String table_namespace{database_info.getTablePrefixPart()};
+    const std::string_view table_namespace = database_info.getTablePrefixPart();
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     /// dictionaries have no namespaces
@@ -201,9 +202,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     /// validate explicit FROM names like USE does
     if (!query.getFrom().empty() && !table_namespace.empty())
     {
-        Names namespace_parts;
-        splitInto<'.'>(namespace_parts, table_namespace);
-        DatabaseCatalog::instance().getDatabase(database)->validateTableNamespace(namespace_parts, getContext());
+        DatabaseCatalog::instance().getDatabase(database)->validateTableNamespace(database_info.getTablePrefixPart(), getContext());
     }
 
     WriteBufferFromOwnString rewritten_query;
@@ -240,7 +239,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         if (scoped)
         {
             /// tables of the namespace itself, not of nested namespaces
-            rewritten_query << " AND startsWith(name, " << DB::quote << (table_namespace + ".")
+            rewritten_query << " AND startsWith(name, " << DB::quote << (String(table_namespace) + ".")
                             << ") AND position(name, '.', " << (table_namespace.size() + 2) << ") = 0";
         }
     }

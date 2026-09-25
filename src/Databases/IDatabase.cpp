@@ -298,13 +298,13 @@ String IDatabase::resolveTableNamePath(const Names & path_parts) const
     return result;
 }
 
-void IDatabase::validateTableNamespace(const Names & namespace_parts, ContextPtr context) const
+void IDatabase::validateTableNamespace(std::string_view namespace_parts, ContextPtr context) const
 {
     if (getTableNamespaceSupport() != TableNamespaceSupport::Lexical)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Database {} does not support table namespaces", backQuoteIfNeed(getDatabaseName()));
 
-    const String prefix = resolveTableNamePath(namespace_parts) + ".";
+    const String prefix = String(namespace_parts) + ".";
     for (const auto & details : getLightweightTablesIterator(context, {}, /*skip_not_loaded*/ true))
         if (details.name.starts_with(prefix))
             return;

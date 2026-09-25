@@ -22,6 +22,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_DATABASE;
 }
 
 BlockIO InterpreterUseQuery::execute()
@@ -55,14 +56,23 @@ BlockIO InterpreterUseQuery::execute()
     database_change.setSetting("database", logical_name);
     session_context->checkSettingsConstraints(database_change, SettingSource::QUERY);
 
+    CurrentDatabaseInfo current_database_info(logical_name);
+
+    if (current_database_info.hasTablePrefix() && !getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_DATABASE,
+            "Table namespaces are not allowed, but {} specified. Enable 'allow_experimental_table_namespaces' setting to allow it.",
+            current_database_info.getTablePrefixPart());
+    }
+
     /// `setCurrentDatabase` also keeps the `database` setting in sync with the session's current
     /// database; without that, an earlier `SET database = ...` would be re-applied on the next query
     /// and silently override the database just selected by this `USE`. A query's own
     /// `SETTINGS database = ...` is applied later and still takes precedence.
     /// The current database stores the logical name ("db.ns"), setCurrentDatabase
     /// validates that the namespace exists and resolution folds it into table names.
-    session_context->setCurrentDatabase(
-        logical_name, getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces]);
+    session_context->setCurrentDatabase(current_database_info);
     return {};
 }
 
