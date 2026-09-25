@@ -1168,16 +1168,16 @@ void StorageTimeSeriesSelector::readImpl(
             samples_table_id,
             makeSamplesProjection(/* with_histograms = */ true),
             /* select_query_from_tags_table = */ nullptr,
-            config.min_time,
-            config.max_time,
+            table_min_time,
+            table_max_time,
             config.table_timestamp_type,
             make_whole_metric_id_range_conditions(samples_table_id)));
         selects.push_back(makeSelectQueryFromDataTable(
             *histograms_table_id,
             makeHistogramsProjection(config.table_value_type),
             /* select_query_from_tags_table = */ nullptr,
-            config.min_time,
-            config.max_time,
+            table_min_time,
+            table_max_time,
             config.table_timestamp_type,
             make_whole_metric_id_range_conditions(*histograms_table_id)));
 
@@ -1189,8 +1189,8 @@ void StorageTimeSeriesSelector::readImpl(
             samples_table_id,
             makeSamplesProjection(/* with_histograms = */ false),
             std::move(select_query_from_tags_table),
-            config.min_time,
-            config.max_time,
+            table_min_time,
+            table_max_time,
             config.table_timestamp_type,
             make_whole_metric_id_range_conditions(samples_table_id));
 

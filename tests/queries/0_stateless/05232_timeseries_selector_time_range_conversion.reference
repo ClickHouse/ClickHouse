@@ -2,9 +2,11 @@
 id	Tuple(UInt64, LowCardinality(UUID))					
 timestamp	DateTime(\'UTC\')					
 value	Float64					
+histogram	Array(Tuple(\n    is_float Bool,\n    counter_reset_hint UInt8,\n    schema Int8,\n    zero_threshold Float64,\n    sum Float64,\n    positive_spans Array(Tuple(\n        offset Int32,\n        length UInt32)),\n    negative_spans Array(Tuple(\n        offset Int32,\n        length UInt32)),\n    custom_values Array(Float64),\n    count_int UInt64,\n    zero_count_int UInt64,\n    positive_values_int Array(UInt64),\n    negative_values_int Array(UInt64),\n    count_float Float64,\n    zero_count_float Float64,\n    positive_values_float Array(Float64),\n    negative_values_float Array(Float64)))					
 id	Tuple(UInt64, LowCardinality(UUID))					
 timestamp	UInt32					
 value	Float32					
+histogram	Array(Tuple(\n    is_float Bool,\n    counter_reset_hint UInt8,\n    schema Int8,\n    zero_threshold Float64,\n    sum Float64,\n    positive_spans Array(Tuple(\n        offset Int32,\n        length UInt32)),\n    negative_spans Array(Tuple(\n        offset Int32,\n        length UInt32)),\n    custom_values Array(Float64),\n    count_int UInt64,\n    zero_count_int UInt64,\n    positive_values_int Array(UInt64),\n    negative_values_int Array(UInt64),\n    count_float Float64,\n    zero_count_float Float64,\n    positive_values_float Array(Float64),\n    negative_values_float Array(Float64)))					
 -- [1000.5, 1002.5] selects the samples at 1001 and 1002
 1970-01-01 00:16:41	2
 1970-01-01 00:16:42	3

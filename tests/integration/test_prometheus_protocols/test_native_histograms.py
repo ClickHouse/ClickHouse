@@ -351,7 +351,7 @@ def test_max_buckets_setting():
 
 
 def test_table_without_histograms_drops_them():
-    # A table of a version before 6 has no histograms table. The histograms of a request are dropped with a warning,
+    # A table of a version before 7 has no histograms table. The histograms of a request are dropped with a warning,
     # the float samples of the same request are written and the request succeeds: rejecting it would lose the samples too.
     node.query("DROP TABLE prometheus SYNC")
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 5")
@@ -364,7 +364,7 @@ def test_table_without_histograms_drops_them():
     assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "1\n"
     assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + 1
     assert events_after["PrometheusRemoteWriteDroppedHistograms"] == events_before["PrometheusRemoteWriteDroppedHistograms"] + 1
-    assert node.contains_in_log("Dropped 1 native histogram samples: the table has no histograms table because its version 5 is older than 6")
+    assert node.contains_in_log("Dropped 1 native histogram samples: the table has no histograms table because its version 5 is older than 7")
 
 
 def remote_read(start_ms, end_ms):
