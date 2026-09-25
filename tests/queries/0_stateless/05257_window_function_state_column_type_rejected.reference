@@ -1,7 +1,11 @@
 alter
+select
+Nullable(String)
 ordinary aggregate state
 1	6
 1
+6
+0
 window functions
 1
 2
