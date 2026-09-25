@@ -929,8 +929,7 @@ void IcebergMetadata::createInitial(
 
     String location_path = configuration_ptr->getRawPath().path;
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
-        location_path = Iceberg::makeIcebergLocationURI(
-            configuration_ptr->getTypeName(), configuration_ptr->getNamespace(), location_path);
+        location_path = configuration_ptr->getMetadataLocationURI();
     else if (!location_path.contains("://") && !location_path.starts_with('/'))
         location_path = "/" + location_path;
 

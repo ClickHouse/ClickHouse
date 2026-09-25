@@ -386,6 +386,26 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     }
 }
 
+std::optional<std::string> UnityCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    checkNamespaceExists(namespace_name);
+
+    auto [json, json_str] = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + namespace_name));
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
+    /// and then the table engine arguments have to name the location explicitly.
+    if (!hasValueAndItsNotNone("storage_location", object))
+    {
+        LOG_DEBUG(log, "Schema {}.{} has no storage location", warehouse, namespace_name);
+        return std::nullopt;
+    }
+
+    return std::string(std::filesystem::path(object->get("storage_location").extract<String>()) / table_name);
+}
+
 void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const
 {
     try

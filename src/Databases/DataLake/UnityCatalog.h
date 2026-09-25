@@ -53,6 +53,10 @@ public:
 
     DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::DELTA; }
 
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
     /// Register a freshly created external DELTA table with Unity; `metadata_content` holds the Delta schema from `createInitial`.
     /// The shared `ICatalog` parameter (a `vN.metadata.json` path for Iceberg) is the table's storage location for DeltaLake/Unity.
     void createTable(
