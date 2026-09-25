@@ -1,5 +1,6 @@
 #include <sys/types.h>
 
+#include <algorithm>
 #include <optional>
 
 #include <Common/Exception.h>
@@ -10,6 +11,7 @@
 
 #include <Core/Settings.h>
 
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -26,8 +28,12 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/addMissingDefaults.h>
 
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageLogSettings.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -65,6 +71,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int INCORRECT_INDEX;
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
 }
@@ -72,6 +79,119 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char stripe_log_sink_write_fallpoint[];
+}
+
+using StripeLogSchemaHistory = std::vector<std::pair<size_t, size_t>>;
+
+static std::chrono::seconds getLockTimeout(ContextPtr local_context);
+
+static StripeLogSchemaHistory readSchemaHistory(ReadBuffer & in)
+{
+    StripeLogSchemaHistory result;
+    while (!in.eof())
+    {
+        UInt64 block_end = 0;
+        UInt64 column_count = 0;
+        readVarUInt(block_end, in);
+        readVarUInt(column_count, in);
+
+        if (block_end == 0 || column_count == 0)
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "StripeLog schema history contains an invalid zero boundary");
+        if (!result.empty() && block_end <= result.back().first)
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "StripeLog schema history block boundaries are not increasing");
+
+        result.emplace_back(static_cast<size_t>(block_end), static_cast<size_t>(column_count));
+    }
+    return result;
+}
+
+static size_t expectedColumnCountForBlock(
+    size_t block_number,
+    size_t current_column_count,
+    const StripeLogSchemaHistory & schema_history)
+{
+    for (const auto & [block_end, column_count] : schema_history)
+        if (block_number < block_end)
+            return column_count;
+
+    return current_column_count;
+}
+
+static bool isValidHistoricalBlock(
+    const IndexOfBlockForNativeFormat & block,
+    size_t block_number,
+    const NamesAndTypesList & current_columns,
+    const StripeLogSchemaHistory & schema_history)
+{
+    const size_t expected_column_count =
+        expectedColumnCountForBlock(block_number, current_columns.size(), schema_history);
+
+    if (expected_column_count > current_columns.size()
+        || block.num_columns != expected_column_count
+        || block.num_columns != block.columns.size())
+        return false;
+
+    auto current_column = current_columns.begin();
+    for (const auto & column : block.columns)
+    {
+        if (current_column == current_columns.end()
+            || column.name != current_column->name
+            || column.type != current_column->type->getName())
+            return false;
+
+        ++current_column;
+    }
+
+    return true;
+}
+
+static IndexForNativeFormat extractIndexForColumnsOrKeepAll(
+    const IndexForNativeFormat & index,
+    const NameSet & required_columns,
+    const NamesAndTypesList & current_columns,
+    const StripeLogSchemaHistory & schema_history,
+    bool & read_blocks_individually)
+{
+    IndexForNativeFormat res;
+    res.blocks.reserve(index.blocks.size());
+    read_blocks_individually = false;
+
+    for (size_t block_number = 0; block_number < index.blocks.size(); ++block_number)
+    {
+        const auto & block = index.blocks[block_number];
+        if (block.num_columns != block.columns.size())
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contains an invalid number of columns");
+
+        IndexOfBlockForNativeFormat selected_block;
+        selected_block.columns.reserve(required_columns.size());
+
+        for (const auto & column : block.columns)
+        {
+            if (required_columns.contains(column.name))
+                selected_block.columns.emplace_back(column);
+        }
+
+        if (selected_block.columns.size() > required_columns.size())
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contains duplicate columns");
+
+        if (selected_block.columns.size() < required_columns.size())
+        {
+            /// A missing requested column is valid only for an older append-only schema.
+            if (!isValidHistoricalBlock(block, block_number, current_columns, schema_history))
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contains a block with an invalid schema");
+
+            read_blocks_individually = true;
+            res.blocks.emplace_back(block);
+        }
+        else
+        {
+            selected_block.num_columns = selected_block.columns.size();
+            selected_block.num_rows = block.num_rows;
+            res.blocks.emplace_back(std::move(selected_block));
+        }
+    }
+
+    return res;
 }
 
 /// NOTE: The lock `StorageStripeLog::rwlock` is NOT kept locked while reading,
@@ -97,7 +217,10 @@ public:
         std::shared_ptr<const IndexForNativeFormat> indices_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_,
-        size_t file_size_)
+        size_t file_size_,
+        StorageMetadataPtr metadata_snapshot_,
+        ContextPtr context_,
+        bool read_blocks_individually_)
         : ISource(std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
         , physical_columns(std::move(physical_columns_))
         , virtual_columns(std::move(virtual_columns_))
@@ -106,7 +229,11 @@ public:
         , indices(indices_)
         , index_begin(index_begin_)
         , index_end(index_end_)
+        , next_index(index_begin_)
         , file_size(file_size_)
+        , metadata_snapshot(std::move(metadata_snapshot_))
+        , context(std::move(context_))
+        , read_blocks_individually(read_blocks_individually_)
     {
     }
 
@@ -135,7 +262,11 @@ private:
     std::shared_ptr<const IndexForNativeFormat> indices;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
+    IndexForNativeFormat::Blocks::const_iterator next_index;
     size_t file_size;
+    const StorageMetadataPtr metadata_snapshot;
+    const ContextPtr context;
+    const bool read_blocks_individually;
 
     /** optional - to create objects only on first reading
       *  and delete objects (release buffers) after the source is exhausted
@@ -144,6 +275,16 @@ private:
     bool started = false;
     std::optional<CompressedReadBufferFromFile> data_in;
     std::optional<NativeReader> block_in;
+
+    void readNextBlock()
+    {
+        if (next_index == index_end)
+            return;
+
+        auto block_end = next_index;
+        ++block_end;
+        block_in.emplace(*data_in, 0, next_index, block_end);
+    }
 
     void start()
     {
@@ -163,7 +304,10 @@ private:
             /// but we must not read beyond the snapshotted range that the index covers.
             data_in->setReadUntilPosition(file_size);
 
-            block_in.emplace(*data_in, 0, index_begin, index_end);
+            if (read_blocks_individually)
+                readNextBlock();
+            else
+                block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
 
@@ -172,7 +316,11 @@ private:
         start();
 
         if (!block_in)
+        {
+            data_in.reset();
+            indices.reset();
             return;
+        }
 
         Block res = block_in->read();
 
@@ -183,6 +331,34 @@ private:
             data_in.reset();
             indices.reset();
             return;
+        }
+
+        if (read_blocks_individually)
+        {
+            ++next_index;
+            block_in.reset();
+            readNextBlock();
+        }
+
+        if (read_blocks_individually)
+        {
+            bool has_missing_columns = std::any_of(physical_columns.begin(), physical_columns.end(), [&](const auto & column)
+            {
+                return !res.has(column.name);
+            });
+
+            if (has_missing_columns)
+            {
+                auto actions_dag = addMissingDefaults(
+                    res,
+                    physical_columns,
+                    metadata_snapshot->getColumns(),
+                    context);
+                ExpressionActions actions(
+                    std::move(actions_dag),
+                    ExpressionActionsSettings(context->getSettingsRef()));
+                actions.execute(res);
+            }
         }
 
         for (const auto & col : physical_columns)
@@ -308,6 +484,7 @@ StorageStripeLog::StorageStripeLog(
     , table_path(relative_path_)
     , data_file_path(table_path + "data.bin")
     , index_file_path(table_path + "index.mrk")
+    , schema_history_file_path(table_path + "schema_history.bin")
     , file_checker(disk, table_path + "sizes.json")
     , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
     , log(getLogger("StorageStripeLog"))
@@ -327,6 +504,7 @@ StorageStripeLog::StorageStripeLog(
     {
         file_checker.setEmpty(data_file_path);
         file_checker.setEmpty(index_file_path);
+        file_checker.setEmpty(schema_history_file_path);
     }
 
     if (mode < LoadingStrictnessLevel::ATTACH)
@@ -346,7 +524,7 @@ StorageStripeLog::StorageStripeLog(
         }
     }
 
-    total_bytes = file_checker.getTotalSize();
+    total_bytes = file_checker.getFileSize(data_file_path) + file_checker.getFileSize(index_file_path);
 }
 
 
@@ -363,9 +541,91 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
         table_path = new_path_to_table_data;
         data_file_path = table_path + "data.bin";
         index_file_path = table_path + "index.mrk";
+        schema_history_file_path = table_path + "schema_history.bin";
         file_checker.setPath(table_path + "sizes.json");
     }
     renameInMemory(new_table_id);
+}
+
+
+void StorageStripeLog::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
+{
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::Type::ADD_COLUMN && (command.first || !command.after_column.empty()))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "ALTER TABLE ... ADD COLUMN with FIRST or AFTER is not supported by storage {}",
+                getName());
+
+        if (command.type != AlterCommand::Type::ADD_COLUMN && !command.isCommentAlter())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
+    }
+}
+
+
+void StorageStripeLog::alter(
+    const AlterCommands & params,
+    ContextPtr local_context,
+    AlterLockHolder & table_lock_holder,
+    DDLGuardPtr & ddl_guard)
+{
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    params.apply(new_metadata, local_context);
+
+    const size_t old_column_count = metadata_snapshot->getColumns().getAllPhysical().size();
+    const size_t new_column_count = new_metadata.getColumns().getAllPhysical().size();
+    if (new_column_count < old_column_count)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StripeLog append-only ALTER unexpectedly removed physical columns");
+
+    if (new_column_count == old_column_count)
+    {
+        IStorage::alter(params, local_context, table_lock_holder, ddl_guard);
+        return;
+    }
+
+    WriteLock lock{rwlock, getLockTimeout(local_context)};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    loadIndices(lock);
+
+    const size_t block_end = indices.blocks.size();
+    if (block_end != 0 && (schema_history.empty() || schema_history.back().first != block_end))
+    {
+        /// Persist the old file sizes first, so an interrupted history append is rolled back on attach.
+        saveFileSizes(lock);
+        const size_t history_size_before_append = schema_history.size();
+        try
+        {
+            /// Seal every block written with the old schema. Blocks after this boundary use the
+            /// current metadata schema until another ALTER or RESTORE seals that tail.
+            appendSchemaHistoryBoundary(block_end, old_column_count, lock);
+            /// Commit the boundary before the metadata ALTER. If the ALTER itself later fails,
+            /// the boundary only confirms the schema those existing blocks already have.
+            saveFileSizes(lock);
+        }
+        catch (...)
+        {
+            file_checker.repair();
+            schema_history.resize(history_size_before_append);
+            throw;
+        }
+    }
+
+    IStorage::alter(params, local_context, table_lock_holder, ddl_guard);
+}
+
+
+std::optional<NameAndTypePair> StorageStripeLog::getColumnForRowCount(const StorageSnapshotPtr & storage_snapshot) const
+{
+    const auto & all_physical = storage_snapshot->metadata->getColumns().getAllPhysical();
+    if (all_physical.empty())
+        return {};
+
+    return all_physical.front();
 }
 
 
@@ -421,8 +681,13 @@ Pipe StorageStripeLog::read(
         return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
 
     /// Filter out virtual columns - they are not stored on disk and not in the index.
-    auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
-    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
+    auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(
+        column_names, storage_snapshot, getColumnForRowCount(storage_snapshot));
+    const NameSet required_columns{physical_column_names.begin(), physical_column_names.end()};
+    const auto current_columns = storage_snapshot->metadata->getColumns().getAllPhysical();
+    bool read_blocks_individually = false;
+    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(extractIndexForColumnsOrKeepAll(
+        indices, required_columns, current_columns, schema_history, read_blocks_individually));
     auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
     auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
@@ -444,7 +709,13 @@ Pipe StorageStripeLog::read(
             physical_columns, virtual_columns,
             std::static_pointer_cast<const StorageStripeLog>(shared_from_this()),
             read_settings,
-            indices_for_selected_columns, begin, end, data_file_size));
+            indices_for_selected_columns,
+            begin,
+            end,
+            data_file_size,
+            storage_snapshot->metadata,
+            local_context,
+            read_blocks_individually));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -489,13 +760,16 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     auto clear_tx = disk->createTransaction();
     clear_tx->removeFileIfExists(data_file_path);
     clear_tx->removeFileIfExists(index_file_path);
+    clear_tx->removeFileIfExists(schema_history_file_path);
     clear_tx->removeFileIfExists(file_checker.getPath());
     clear_tx->commit();
 
     indices.clear();
     file_checker.setEmpty(data_file_path);
     file_checker.setEmpty(index_file_path);
+    file_checker.setEmpty(schema_history_file_path);
 
+    schema_history.clear();
     indices_loaded = true;
     num_indices_saved = 0;
     total_rows = 0;
@@ -532,11 +806,62 @@ void StorageStripeLog::loadIndices(const WriteLock & lock /* already locked excl
         indices.read(index_in);
     }
 
+    loadSchemaHistory(lock);
+
     indices_loaded = true;
     num_indices_saved = indices.blocks.size();
 
     /// We need indices to calculate the number of rows, and now we have the indices.
     updateTotalRows(lock);
+}
+
+
+void StorageStripeLog::loadSchemaHistory(const WriteLock & /* already locked for writing */)
+{
+    schema_history.clear();
+    if (!disk->existsFile(schema_history_file_path))
+        return;
+
+    auto in = disk->readFile(
+        schema_history_file_path,
+        getContext()->getReadSettings().adjustBufferSize(4096));
+    schema_history = readSchemaHistory(*in);
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const size_t current_column_count = metadata_snapshot->getColumns().getAllPhysical().size();
+    for (const auto & [block_end, column_count] : schema_history)
+    {
+        if (block_end > indices.blocks.size() || column_count > current_column_count)
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "StripeLog schema history is inconsistent with the current table");
+    }
+}
+
+
+void StorageStripeLog::appendSchemaHistoryBoundary(
+    size_t block_end,
+    size_t column_count,
+    const WriteLock & /* already locked for writing */)
+{
+    if (block_end == 0)
+        return;
+    if (column_count == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot record a zero-column StripeLog schema");
+
+    if (!schema_history.empty())
+    {
+        if (block_end < schema_history.back().first)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "StripeLog schema history block boundary moved backwards");
+        if (block_end == schema_history.back().first)
+            return;
+    }
+
+    auto out = disk->writeFile(schema_history_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    writeVarUInt(block_end, *out);
+    writeVarUInt(column_count, *out);
+    out->sync();
+    out->finalize();
+
+    schema_history.emplace_back(block_end, column_count);
 }
 
 
@@ -569,8 +894,8 @@ void StorageStripeLog::removeUnsavedIndices(const WriteLock & /* already locked 
 
 void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    file_checker.updateAndSave({data_file_path, index_file_path});
-    total_bytes = file_checker.getTotalSize();
+    file_checker.updateAndSave({data_file_path, index_file_path, schema_history_file_path});
+    total_bytes = file_checker.getFileSize(data_file_path) + file_checker.getFileSize(index_file_path);
 }
 
 
@@ -679,6 +1004,13 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
 
+    if (disk->existsFile(schema_history_file_path))
+    {
+        backup_entries_collector.addBackupEntry(
+            data_path_in_backup_fs / fileName(schema_history_file_path),
+            std::make_unique<BackupEntryFromSmallFile>(disk, schema_history_file_path, read_settings, copy_encrypted));
+    }
+
     /// columns.txt
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     backup_entries_collector.addBackupEntry(
@@ -719,10 +1051,28 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 
     /// If there were no files, save zero file sizes to be able to rollback in case of error.
     saveFileSizes(lock);
+    const auto schema_history_before_restore = schema_history;
+    const size_t restored_block_offset = indices.blocks.size();
+
+    fs::path data_path_in_backup_fs = data_path_in_backup;
+    StripeLogSchemaHistory restored_schema_history;
+    String schema_history_path_in_backup = data_path_in_backup_fs / fileName(schema_history_file_path);
+    if (backup->fileExists(schema_history_path_in_backup))
+    {
+        auto history_in = backup->readFile(schema_history_path_in_backup);
+        restored_schema_history = readSchemaHistory(*history_in);
+    }
+
+    String columns_path_in_backup = data_path_in_backup_fs / "columns.txt";
+    if (!backup->fileExists(columns_path_in_backup))
+        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", columns_path_in_backup);
+
+    String restored_columns_text;
+    readStringUntilEOF(restored_columns_text, *backup->readFile(columns_path_in_backup));
+    const auto restored_current_columns = NamesAndTypesList::parse(restored_columns_text);
 
     try
     {
-        fs::path data_path_in_backup_fs = data_path_in_backup;
 
         /// Append the data file.
         auto old_data_size = file_checker.getFileSize(data_file_path);
@@ -747,6 +1097,54 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             CompressedReadBuffer index_compressed_in{*index_in, /* allow_different_codecs = */ true};
             extra_indices.read(index_compressed_in);
 
+            const size_t restored_block_count = extra_indices.blocks.size();
+            if (!restored_schema_history.empty() && restored_schema_history.back().first > restored_block_count)
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "StripeLog schema history exceeds the restored index");
+
+            const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+            const auto current_columns = metadata_snapshot->getColumns().getAllPhysical();
+            const size_t current_column_count = current_columns.size();
+            const size_t restored_current_column_count = restored_current_columns.size();
+
+            if (restored_block_count != 0 && restored_current_column_count == 0)
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "StripeLog backup has data but no columns");
+            if (restored_current_column_count > current_column_count)
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "StripeLog backup schema is newer than the destination");
+
+            auto current_column = current_columns.begin();
+            for (const auto & restored_column : restored_current_columns)
+            {
+                if (current_column == current_columns.end()
+                    || restored_column.name != current_column->name
+                    || restored_column.type->getName() != current_column->type->getName())
+                    throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "StripeLog backup schema is incompatible with the destination");
+                ++current_column;
+            }
+
+            for (const auto & boundary : restored_schema_history)
+            {
+                if (boundary.second > restored_current_column_count)
+                    throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "StripeLog schema history is newer than the backup schema");
+            }
+
+            if (restored_block_count != 0
+                && (!restored_schema_history.empty() || restored_current_column_count != current_column_count))
+            {
+                /// Close the destination tail before translating the source's historical boundaries.
+                appendSchemaHistoryBoundary(restored_block_offset, current_column_count, lock);
+                for (const auto & [block_end, column_count] : restored_schema_history)
+                    appendSchemaHistoryBoundary(restored_block_offset + block_end, column_count, lock);
+
+                /// schema_history.bin does not contain the source's current tail schema. Preserve it
+                /// explicitly when the restored tail is older than the destination's current schema.
+                if (restored_current_column_count != current_column_count
+                    && (restored_schema_history.empty() || restored_schema_history.back().first < restored_block_count))
+                    appendSchemaHistoryBoundary(
+                        restored_block_offset + restored_block_count,
+                        restored_current_column_count,
+                        lock);
+            }
+
             /// Adjust the offsets.
             for (auto & block : extra_indices.blocks)
             {
@@ -766,6 +1164,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         /// Rollback partial writes.
         file_checker.repair();
         removeUnsavedIndices(lock);
+        schema_history = schema_history_before_restore;
         throw;
     }
 }
@@ -833,7 +1232,8 @@ For each table ClickHouse writes the files:
 - `data.bin` — Data file.
 - `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
 
-The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
+The `StripeLog` engine supports append-only `ALTER TABLE ... ADD COLUMN`. Existing data blocks are read with default values for the new column.
+The engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 
 ## Reading the data {#table_engines-stripelog-reading-the-data}
 

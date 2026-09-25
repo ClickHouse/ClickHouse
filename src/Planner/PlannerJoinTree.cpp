@@ -167,13 +167,13 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsUInt64 parallel_replica_offset;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
-    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsBool enable_lazy_columns_replication;
@@ -413,7 +413,7 @@ bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
     return false;
 }
 
-NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select)
+NameAndTypePair chooseColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const NameSet & column_names_allowed_to_select)
 {
     /** We need to read at least one column to find the number of rows.
       * We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
@@ -443,9 +443,23 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     };
 
     std::vector<ColumnWithSize> columns_with_sizes;
+    auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
+
+    bool has_allowed_physical_column = false;
+    if (!column_names_allowed_to_select.empty())
+    {
+        has_allowed_physical_column = std::any_of(
+            column_names_and_types.begin(),
+            column_names_and_types.end(),
+            [&](const auto & column) { return column_names_allowed_to_select.contains(column.name); });
+    }
+
+    /// This column is only an internal row-count carrier. Its values are not exposed to the user,
+    /// so it does not need to be one of the columns granted by a column-level SELECT privilege.
+    if (auto column_for_row_count = storage->getColumnForRowCount(storage_snapshot))
+        return *column_for_row_count;
 
     auto column_sizes = storage->getColumnSizes();
-    auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
 
     if (!column_names_allowed_to_select.empty())
     {
@@ -456,11 +470,6 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         /// physical columns: reading any of them just to determine the number of rows for a trivial query
         /// (such as `SELECT count()`) is allowed, because computing an accessible ALIAS column requires
         /// reading its physical source columns anyway and no column values are exposed to the user.
-        bool has_allowed_physical_column = std::any_of(
-            column_names_and_types.begin(),
-            column_names_and_types.end(),
-            [&](const auto & column) { return column_names_allowed_to_select.contains(column.name); });
-
         if (has_allowed_physical_column)
         {
             auto it = column_names_and_types.begin();
@@ -810,7 +819,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         {
             const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot, columns_names_allowed_to_select);
+            additional_column_to_read = chooseColumnToReadFromStorage(storage, storage_snapshot, columns_names_allowed_to_select);
         }
         else if (query_node || union_node)
         {
@@ -837,7 +846,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         {
             const auto & column_identifier = global_planner_context->createColumnIdentifierOrGet(additional_column_to_read, table_expression);
             columns_names.push_back(additional_column_to_read.name);
-            table_expression_data.addColumn(additional_column_to_read, column_identifier);
+            table_expression_data.addColumn(additional_column_to_read, column_identifier, /* is_selected_column */ false);
             table_expression_data.setRowCountOnlyColumnIdentifier(column_identifier);
         }
     }
@@ -2881,19 +2890,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
             auto subquery_options = select_query_options.subquery();
-
-            /// When `parallel_replicas_for_queries_with_multiple_tables` is disabled, the outer query
-            /// has already turned off parallel replicas in the planner context (see `buildJoinTreeQueryPlan`).
-            /// A subquery is planned by an independent `Planner` using its own context, so this decision
-            /// would not reach it, and a single-table subquery of a multi-table query could still be read
-            /// with parallel replicas. Propagate only the parallel replicas switch (not the whole context,
-            /// which would clobber the subquery's own settings and bound resources) to the subquery.
-            if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
-                && !settings[Setting::allow_experimental_parallel_reading_from_replicas])
-            {
-                disableParallelReplicasForSubqueries(table_expression);
-            }
-
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);

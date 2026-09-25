@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -250,6 +251,8 @@ public:
 
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
+
+    virtual std::optional<NameAndTypePair> getColumnForRowCount(const StorageSnapshotPtr & /*storage_snapshot*/) const { return {}; }
 
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.

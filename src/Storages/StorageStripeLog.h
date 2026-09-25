@@ -2,8 +2,11 @@
 
 #include <map>
 #include <shared_mutex>
+#include <utility>
+#include <vector>
 
 #include <Core/Defines.h>
+#include <Core/NamesAndTypes.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/IndexForNativeFormat.h>
@@ -56,6 +59,10 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
+    std::optional<NameAndTypePair> getColumnForRowCount(const StorageSnapshotPtr & storage_snapshot) const override;
+
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
@@ -81,6 +88,12 @@ private:
     /// It is done lazily, so that with a large number of tables, the server starts quickly.
     void loadIndices(std::chrono::seconds lock_timeout);
     void loadIndices(const WriteLock &);
+
+    /// Loads the persisted append-only block/schema boundaries.
+    void loadSchemaHistory(const WriteLock &);
+
+    /// Seals all blocks before block_end as having column_count physical columns.
+    void appendSchemaHistoryBoundary(size_t block_end, size_t column_count, const WriteLock &);
 
     /// Saves the index file.
     void saveIndices(const WriteLock &);
@@ -120,9 +133,12 @@ private:
 
     String data_file_path;
     String index_file_path;
+    String schema_history_file_path;
     FileChecker file_checker;
 
     IndexForNativeFormat indices;
+    /// (exclusive block end, physical column count) segments written before the current schema.
+    std::vector<std::pair<size_t, size_t>> schema_history;
     std::atomic<bool> indices_loaded = false;
     size_t num_indices_saved = 0;
 
