@@ -92,10 +92,6 @@ public:
     /// Access the insides.
     SetPtr getSet() const;
 
-    /// `IN` consumes the prebuilt set as a whole, so require `SELECT` on every column before checking
-    /// its row policy. The engine has no read path that could apply a non-trivial policy.
-    void checkNoRowPolicy(const ContextPtr & context) const;
-
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
