@@ -1351,6 +1351,19 @@ One `ALTER TABLE` accepts several comma-separated actions, so work that would ot
 ALTER TABLE visits DROP COLUMN browser, DROP COLUMN referrer;
 ```
 
+The actions do not have to be of the same type, and they are applied from left to right, so a later action can use what an earlier one added:
+
+```sql
+-- a new column and an index over it
+ALTER TABLE visits ADD COLUMN duration UInt32, ADD INDEX idx_duration duration TYPE minmax GRANULARITY 4;
+
+-- a type change together with a new column
+ALTER TABLE visits MODIFY COLUMN browser LowCardinality(String), ADD COLUMN page_id UInt64;
+
+-- three actions in one statement
+ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUMN region_id UInt32;
+```
+
 When a client waits for an `ALTER` to finish, one combined statement means one wait instead of one wait per action. See [Synchronicity of ALTER Queries](#synchronicity-of-alter-queries) for what that wait covers, and [Combining `MATERIALIZE INDEX` clauses](#combining-materialize-index-clauses) for the restriction that applies when one statement mixes actions of different kinds on a `Replicated` database.
 
 ## Mutations {#mutations}
