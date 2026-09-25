@@ -49,6 +49,7 @@ public:
 
     bool isRemote() const override;
     bool readsFromOtherTables() const override { return true; }
+    bool supportsTruncate() const override { return false; }
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
@@ -84,7 +85,7 @@ public:
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     /// Evaluate database name or regexp for StorageMerge and TableFunction merge
     static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
@@ -275,13 +276,15 @@ private:
 
         /// Create explicit filter transform to exclude
         /// rows that are not conform to row level policy
-        void addFilterTransform(QueryPlan &) const;
+        void addFilterTransform(QueryPlan &, ContextPtr) const;
 
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
         ActionsDAG actions_dag;
         ExpressionActionsPtr filter_actions;
         StorageMetadataPtr storage_metadata_snapshot;
+        /// Owns the policy predicate's IN-subqueries, which stay unbuilt until a set-building step is planted.
+        PreparedSetsPtr prepared_sets;
     };
 
     using RowPolicyDataOpt = std::optional<RowPolicyData>;
