@@ -440,11 +440,9 @@ void textIndexValidator(const IndexDescription & index, bool attach, const Merge
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
-/// Parse `<map>.key_<key>` for a predicate on a table with these columns, refusing the shape when a
-/// column or a readable static subcolumn of the table claims that exact name. Subcolumn names are
-/// flat, so a physical column, a Tuple element or a typed JSON path can claim `<map>.key_<k>`, and a
-/// predicate on the name reads that claimant. A genuine Map key subcolumn is generated per key on
-/// demand, so it is not among the table's columns and stays parseable.
+/// Parse `<map>.key_<key>`, refusing the shape when a column or a readable static subcolumn of the table claims that
+/// exact name: subcolumn names are flat, so a Tuple element or a typed JSON path can claim it and a predicate then
+/// reads the claimant. A Map key subcolumn is generated per key on demand, so it is absent here and stays parseable.
 std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
     const String & column_name, const ColumnsDescription & columns);
 
