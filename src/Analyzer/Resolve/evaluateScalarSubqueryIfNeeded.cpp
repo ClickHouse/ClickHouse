@@ -477,6 +477,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
 
+    /// The value is too large to fold in, so what stays behind is this hash and a `__getScalar`
+    /// reading it back. The hash is the only thing left of the subquery, so it carries the id, as
+    /// the folded value does above.
+    if (scalar_subquery_id)
+        scalar_query_hash_constant_node->addScalarSubqueryId(*scalar_subquery_id);
+
     auto get_scalar_function_node = std::make_shared<FunctionNode>(get_scalar_function_name);
     get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
 
