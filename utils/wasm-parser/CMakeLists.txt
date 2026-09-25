@@ -76,6 +76,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/KnownObjectNames.cpp"
     "${CH}/src/Common/PODArray.cpp"
     "${CH}/src/Common/StackfulCoroutine.cpp"
+    "${CH}/src/Common/Stopwatch.cpp"
     "${CH}/src/Common/StringUtils.cpp"
     "${CH}/src/Common/UTF8Helpers.cpp"
     "${CH}/src/Common/ZooKeeper/ZooKeeperPathUtils.cpp"

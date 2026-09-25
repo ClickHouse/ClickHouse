@@ -6526,26 +6526,70 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    for (const auto & part : getDataPartsVectorForInternalUsage())
+    if (!dropped_columns.empty())
     {
-        bool at_least_one_column_rest = false;
-        for (const auto & column : part->getColumns())
+        auto parts = getDataPartsVectorForInternalUsage();
+        auto parts_info = getPartsSnapshotInfo(parts);
+
+        /// A part can carry a column under a name the table does not know, because a rename this part
+        /// has not applied yet is recorded in the mutations, not in the part. Resolve those names, so a
+        /// pending rename is not mistaken for a column the table has lost.
+        IMutationsSnapshot::Params params
         {
-            if (!dropped_columns.contains(column.name))
+            .metadata_version = old_metadata.getMetadataVersion(),
+            .min_part_metadata_version = parts_info.min_metadata_version,
+            .min_part_data_versions = nullptr,
+            .max_mutation_versions = nullptr,
+            .need_data_mutations = false,
+            .need_alter_mutations = true,
+            .need_patch_parts = false,
+            .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+        };
+
+        auto mutations_snapshot = getMutationsSnapshot(params);
+
+        for (const auto & part : parts)
+        {
+            auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, local_context
+#if CLICKHOUSE_CLOUD
+                , nullptr
+#endif
+                );
+
+            bool at_least_one_column_rest = false;
+            for (const auto & column : part->getColumns())
             {
-                at_least_one_column_rest = true;
-                break;
+                auto name_in_table = alter_conversions->columnHasNewName(column.name)
+                    ? alter_conversions->getColumnNewName(column.name)
+                    : column.name;
+
+                /// A column the table no longer has does not keep the part alive: the mutation does not
+                /// carry it over into the new part either (`splitAndModifyMutationCommands` skips a column
+                /// absent from the table), so the part would be left with no columns at all. That is not a
+                /// loadable part - `loadColumns` and `loadIndexGranularity` reject it, and
+                /// `calculateColumnsSizesOnDisk` throws - so the mutation must not be allowed to produce
+                /// one. A partition detached before a `DROP COLUMN` and re-attached after it, or a
+                /// `KILL MUTATION` of a `RENAME COLUMN`, leaves a part in that state. The condition
+                /// mirrors the one `splitAndModifyMutationCommands` applies, virtual columns included:
+                /// a part written by a lightweight delete keeps its `_row_exists` through the mutation.
+                if (!dropped_columns.contains(name_in_table)
+                    && (old_metadata.columns.has(name_in_table) || old_metadata.virtuals.has(name_in_table)))
+                {
+                    at_least_one_column_rest = true;
+                    break;
+                }
             }
-        }
-        if (!at_least_one_column_rest)
-        {
-            std::string postfix;
-            if (dropped_columns.size() > 1)
-                postfix = "s";
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Cannot drop or clear column{} '{}', because all columns "
-                            "in part '{}' will be removed from disk. Empty parts are not allowed",
-                            postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
+
+            if (!at_least_one_column_rest)
+            {
+                std::string postfix;
+                if (dropped_columns.size() > 1)
+                    postfix = "s";
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot drop or clear column{} '{}', because all columns "
+                                "in part '{}' will be removed from disk. Empty parts are not allowed",
+                                postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
+            }
         }
     }
 }
@@ -10610,7 +10654,14 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         if (analyzed_partition_ids)
             analyzed_partition_ids->insert(part->info.getPartitionId());
 
-        if (!partition_pruner.canBePruned(*part))
+        /** The partition value decides, not the part: an empty part - the state a delete-all
+          * mutation or a `TTL` expiry leaves behind until the cleanup thread removes it - would
+          * otherwise prune its whole partition out of the mutation while ruling it analyzed, which
+          * also keeps `allocateBlockNumbersInAffectedPartitions` from widening the scope with the
+          * partitions only ZooKeeper knows. Rows another replica acknowledged in that partition
+          * would then survive the mutation on every replica.
+          */
+        if (!partition_pruner.canPartitionBePruned(*part))
             affected_partition_ids.insert(part->info.getPartitionId());
     }
 
