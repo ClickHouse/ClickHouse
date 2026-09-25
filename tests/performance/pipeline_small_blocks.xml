@@ -1,0 +1,37 @@
+<test>
+    <!-- A wide pipeline passing small blocks with almost no work per row: the
+         source is cheap enough that what is left is port handoffs, executor
+         scheduling and the per-block accounting around them. This shape is
+         what exposes contention on state shared by every executor thread, and
+         it does not show up in tests that pass default sized blocks, where the
+         per-block cost is amortised over 65536 rows.
+
+         The filter is there to make the pipeline a stage wider, so that each
+         block crosses more ports.
+
+         max_threads is pinned rather than left to the machine, both so the
+         shapes are comparable across runners and because the pipeline the
+         planner builds depends on it: from 48 streams onwards a resize becomes
+         eligible for splitting, which is a different plan from 16 streams, so
+         both are measured. 48 is a real threshold rather than an arbitrary
+         number (it is twice min_outstreams_per_resize_after_split) and it does
+         not scale with core count, so it is reachable on any runner.
+
+         The free-memory limiter is pinned off for the same reason: it lowers
+         the thread count from available memory, and a run that lands below 48
+         streams silently stops measuring the shape this test exists for. -->
+
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(20000000) WHERE number != 0) SETTINGS max_block_size = 64, max_threads = 48, max_threads_min_free_memory_per_thread = 0 FORMAT Null</query>
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(20000000) WHERE number != 0) SETTINGS max_block_size = 64, max_threads = 16, max_threads_min_free_memory_per_thread = 0 FORMAT Null</query>
+    <query>SELECT count() FROM (SELECT number FROM numbers_mt(100000000) WHERE number != 0) SETTINGS max_block_size = 1024, max_threads = 48, max_threads_min_free_memory_per_thread = 0 FORMAT Null</query>
+
+    <!-- Aggregation with a key, so the per-block path also carries a real hash
+         table probe rather than only a counter. -->
+    <query>SELECT number % 16 AS k, count() FROM numbers_mt(20000000) GROUP BY k SETTINGS max_block_size = 64, max_threads = 48, max_threads_min_free_memory_per_thread = 0 FORMAT Null</query>
+
+    <!-- Control. The same query at the default block size, where per-block
+         overhead is amortised away, so this one must not move. It is here so
+         that a change which speeds up the small block shapes by making the
+         normal path slower cannot pass unnoticed. -->
+    <query>SELECT number % 1000 AS k, count() FROM numbers_mt(300000000) GROUP BY k SETTINGS max_threads = 16, max_threads_min_free_memory_per_thread = 0 FORMAT Null</query>
+</test>

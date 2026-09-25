@@ -356,9 +356,18 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue)
 {
     Processors delayed_destruction;
-    boost::container::devector<Edge *> updated_edges;
-    boost::container::devector<Node *> updated_processors;
-    std::vector<Node *> pending_expansion;
+    /// These are scratch space for one traversal, but updateNode is called once
+    /// per scheduling step, so allocating them per call shows up as a steady
+    /// stream of malloc/free once blocks are small. updateNode has a single
+    /// call site and never re-enters on a thread (the expansion path unlocks
+    /// rather than recursing), so a thread can keep its buffers and reuse the
+    /// capacity.
+    thread_local boost::container::devector<Edge *> updated_edges;
+    thread_local boost::container::devector<Node *> updated_processors;
+    thread_local std::vector<Node *> pending_expansion;
+    updated_edges.clear();
+    updated_processors.clear();
+    pending_expansion.clear();
 
     std::shared_lock read_lock(nodes_mutex);
 
