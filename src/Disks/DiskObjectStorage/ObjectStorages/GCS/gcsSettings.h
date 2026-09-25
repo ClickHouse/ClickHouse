@@ -95,8 +95,8 @@ struct GCSObjectStorageSettings
     /// Send / receive timeout of a request.
     UInt64 request_timeout_ms = DEFAULT_GCS_REQUEST_TIMEOUT_MS;
     /// Upper bound on the connections the transport keeps pooled per endpoint, from the
-    /// `max_connections` key of the shared argument grammar (the same key that is obsolete for the
-    /// S3-compatibility path, which does not pool per client). Sessions are opened on demand and
+    /// `max_connections` key of a `gcs` disk section (the key is obsolete in `S3AuthSettings`, so the
+    /// `gcs` table function and named collections always leave the default). Sessions are opened on demand and
     /// only pooled on release, so this bounds the retained ones rather than the concurrent ones —
     /// the same meaning `ConnectionPoolSizeOption` has for the upstream transports.
     UInt64 max_connections = DEFAULT_GCS_MAX_CONNECTIONS;

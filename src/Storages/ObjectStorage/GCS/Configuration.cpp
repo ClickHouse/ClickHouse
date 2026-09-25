@@ -39,9 +39,6 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsUInt64 connect_timeout_ms;
     extern const S3AuthSettingsUInt64 request_timeout_ms;
-    /// Obsolete for the S3-compatibility client, which ignores it, but the native client still sizes
-    /// its session pool with it. The settings style check does not see `MAKE_OBSOLETE` declarations.
-    extern const S3AuthSettingsUInt64 max_connections; // NOLINT
     extern const S3AuthSettingsUInt64 http_keep_alive_timeout;
     extern const S3AuthSettingsUInt64 http_keep_alive_max_requests;
 }
@@ -211,8 +208,9 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
 
     /// The transport knobs of the shared argument grammar are honoured by the native client too:
     /// `headers(...)` plus the `<header>` / `<access_header>` entries of the endpoint configuration
-    /// (`getHeaders` decides which of them apply), the HTTP timeouts, `max_connections` and the
-    /// keep-alive policy of the pooled connections.
+    /// (`getHeaders` decides which of them apply), the HTTP timeouts and the keep-alive policy of the
+    /// pooled connections. `max_connections` is not among them: it is obsolete in `S3AuthSettings`
+    /// (accepted, but always reset to its default), so only a `gcs` disk section can set it.
     /// Accepting them and then
     /// talking to the endpoint with the transport's own defaults would silently change behavior of a
     /// configuration that switching `use_native_gcs` on is not supposed to affect.
@@ -221,7 +219,6 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     gcs_settings.headers.insert(gcs_settings.headers.end(), headers_from_ast.begin(), headers_from_ast.end());
     gcs_settings.connect_timeout_ms = auth[S3AuthSetting::connect_timeout_ms];
     gcs_settings.request_timeout_ms = auth[S3AuthSetting::request_timeout_ms];
-    gcs_settings.max_connections = auth[S3AuthSetting::max_connections];
     gcs_settings.http_keep_alive_timeout = auth[S3AuthSetting::http_keep_alive_timeout];
     gcs_settings.http_keep_alive_max_requests = auth[S3AuthSetting::http_keep_alive_max_requests];
 

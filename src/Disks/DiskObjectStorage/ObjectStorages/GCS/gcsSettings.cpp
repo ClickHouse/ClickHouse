@@ -601,10 +601,8 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     options.set<gc::rest_internal::DownloadStallTimeoutOption>(request_timeout);
     options.set<::ClickHouse::PocoRestConnectTimeoutOption>(std::chrono::milliseconds(settings.connect_timeout_ms));
 
-    /// `max_connections` of the shared argument grammar. It is obsolete for the S3-compatibility path,
-    /// whose connections come from the global pool bounded by the `disk_connections_*` and
-    /// `storage_connections_*` server settings, but the native transport keeps its own per-client
-    /// session pool, and this bounds it.
+    /// `max_connections` of a `gcs` disk section bounds the per-endpoint session pool of the native
+    /// transport.
     if (settings.max_connections)
         options.set<gc::rest_internal::ConnectionPoolSizeOption>(static_cast<std::size_t>(settings.max_connections));
 
