@@ -462,6 +462,17 @@ static bool isSameGeneration([[maybe_unused]] ObjectStorageType type, const Stri
     return lhs == rhs;
 }
 
+/// The version of `source` that was read; only S3 records one, so anything else has none to look up.
+static std::optional<ObjectMetadata>
+tryGetIngestedVersionMetadata([[maybe_unused]] const IObjectStorage & object_storage, [[maybe_unused]] const StoredObject & source)
+{
+#if USE_AWS_S3
+    if (const auto * s3_storage = dynamic_cast<const S3ObjectStorage *>(&object_storage))
+        return s3_storage->tryGetObjectVersionMetadata(source.remote_path, source.version_id, /*with_tags=*/false);
+#endif
+    return {};
+}
+
 void ObjectStorageQueuePostProcessor::moveWithinBucket(
     const StoredObjects & objects,
     const String & move_prefix,
@@ -544,6 +555,17 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                                         "Object {} was not moved: it changed after it was ingested "
                                         "(its `ETag` is {} instead of {})",
                                         source_object.remote_path, source_metadata->etag, source_object.etag);
+                                /// A same-byte re-upload keeps the `ETag`, so on a versioned bucket everything below
+                                /// takes the version that was read, not the one the key points at now.
+                                if (!source_object.version_id.empty() && source_metadata->version_id != source_object.version_id)
+                                {
+                                    source_metadata = tryGetIngestedVersionMetadata(*object_storage, source_object);
+                                    if (!source_metadata)
+                                        throw Exception(
+                                            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                                            "Object {} was not moved: its version {} that was ingested is gone",
+                                            source_object.remote_path, source_object.version_id);
+                                }
                                 consumed.version_id = source_metadata->version_id;
                                 /// Only a guarded move re-uploads the object, so only it stamps provenance for a
                                 /// later attempt to recognise its own copy by.

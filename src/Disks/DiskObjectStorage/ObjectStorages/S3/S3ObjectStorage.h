@@ -128,6 +128,9 @@ public:
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
+    /// Like `tryGetObjectMetadata`, but for one version of the object; an empty `version_id` means the current one.
+    std::optional<ObjectMetadata> tryGetObjectVersionMetadata(const std::string & path, const String & version_id, bool with_tags) const;
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,

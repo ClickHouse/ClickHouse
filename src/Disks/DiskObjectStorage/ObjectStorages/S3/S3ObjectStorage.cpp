@@ -624,9 +624,14 @@ void S3ObjectStorage::tagObjects( /// NOLINT
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
 {
+    return tryGetObjectVersionMetadata(path, /*version_id=*/{}, with_tags);
+}
+
+std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectVersionMetadata(const std::string & path, const String & version_id, bool with_tags) const
+{
     auto settings_ptr = s3_settings.get();
     const auto [bucket, key] = splitBucketAndKey(path);
-    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, {}, /* with_metadata= */ true, with_tags);
+    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, version_id, /* with_metadata= */ true, with_tags);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
