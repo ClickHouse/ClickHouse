@@ -266,6 +266,17 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 }
 
 
+bool StoragePolicy::isReadOnly() const
+{
+    /// Mirrors the volume filter in `reserve`: a policy where every volume is read-only
+    /// cannot satisfy any reservation and fails with READONLY.
+    for (const auto & volume : volumes)
+        if (!volume->isReadOnly())
+            return false;
+    return true;
+}
+
+
 ReservationPtrOrError StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
 {
     bool all_volumes_read_only = true;
