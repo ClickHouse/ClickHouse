@@ -20,9 +20,12 @@ cleanup()
 }
 trap cleanup EXIT
 
-${CLICKHOUSE_LOCAL} --path "$local_path" --progress=err --interactive_delay=1000 --multiquery \
-    --query="CREATE TABLE t (x UInt64) ENGINE=MergeTree ORDER BY x;
-             INSERT INTO t SELECT number FROM system.numbers
+${CLICKHOUSE_LOCAL} --path "$local_path" \
+    --query="CREATE TABLE t (x UInt64) ENGINE=MergeTree ORDER BY x" \
+    >/dev/null
+
+${CLICKHOUSE_LOCAL} --path "$local_path" --progress=err --interactive_delay=1000 \
+    --query="INSERT INTO t SELECT number FROM system.numbers
              SETTINGS max_rows_to_read=0, max_bytes_to_read=0" \
     >/dev/null 2>"$stderr_file" &
 local_pid=$!

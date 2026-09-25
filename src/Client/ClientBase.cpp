@@ -195,6 +195,7 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -1968,11 +1969,12 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
     {
         /// A local format error is the first failure. `sendCancel` above only drains the query, but
         /// `LocalConnection` also propagates it to `QueryStatus`, so the drain can report a synthetic
-        /// `QUERY_WAS_CANCELLED`. Do not let that cleanup exception hide the original formatting error.
+        /// cancellation exception. Do not let that cleanup exception hide the original formatting error.
         /// Preserve any other server exception, which may describe an independent query failure.
         if (connection->getConnectionType() == IServerConnection::Type::LOCAL
             && server_exception
-            && server_exception->code() == ErrorCodes::QUERY_WAS_CANCELLED)
+            && (server_exception->code() == ErrorCodes::QUERY_WAS_CANCELLED
+                || server_exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT))
             server_exception.reset();
 
         std::rethrow_exception(local_format_error);
@@ -2016,6 +2018,11 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             return true;
 
         case Protocol::Server::Exception:
+            if (cancelled_ && packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+            {
+                onEndOfStream();
+                return false;
+            }
             onReceiveExceptionFromServer(std::move(packet.exception));
             return false;
 

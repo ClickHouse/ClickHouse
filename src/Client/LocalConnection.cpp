@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int SYNTAX_ERROR;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
@@ -545,7 +546,12 @@ void LocalConnection::sendCancel()
 {
     state->is_cancelled = true;
     if (auto elem = query_context->getProcessListElementSafe())
-        elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+    {
+        auto exception = std::make_exception_ptr(Exception(
+            ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT,
+            "Received 'Cancel' packet from the client, canceling the query."));
+        elem->cancelQuery(CancelReason::CANCELLED_BY_USER, std::move(exception));
+    }
 
     if (state->executor)
         state->executor->cancel();
