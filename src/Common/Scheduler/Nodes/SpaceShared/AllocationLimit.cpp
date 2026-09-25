@@ -419,8 +419,8 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
 
                 }
                 else if (!suspended_growth
-                    || (new_increase->kind == IncreaseRequest::Kind::Regular
-                        && !new_increase->allocation.canRecoverFromGrowthPressure()))
+                    || new_increase->kind != IncreaseRequest::Kind::Regular
+                    || !new_increase->allocation.canRecoverFromGrowthPressure())
                 {
                     /// A request without recovery enabled only yields once to let the current recovery search
                     /// advance. If it still cannot fit when it resurfaces, retain the old eviction

@@ -122,6 +122,12 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
 {
     chassert(&allocation.queue == this);
 
+    /// Recovery is opt-in and applies only to growth of an already admitted allocation.
+    /// `Initial` and `Pending` requests, and unprotected queries, retain the legacy eviction path.
+    if (allocation.increase.kind != IncreaseRequest::Kind::Regular
+        || !allocation.canRecoverFromGrowthPressure())
+        return false;
+
     /// Suction is terminal. Once selected, the request must run or drive eviction; it cannot
     /// return to the spilling queue.
     if (allocation.memory_growth_suction_priority)

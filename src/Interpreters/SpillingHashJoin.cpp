@@ -315,28 +315,39 @@ bool SpillingHashJoin::spillForMemoryReservation()
         return false;
 
     if (current_state == State::COLLECTING)
-        switchToGraceHashJoin();
+        switchToGraceHashJoin(/*spill_immediately=*/true);
 
+    /// `switchToGraceHashJoin` publishes `grace_join` while holding `switch_mutex`.
+    /// Keep the pointer and state check under the same lock for worker-side recovery hooks.
+    std::shared_lock lock(switch_mutex);
     if (state.load(std::memory_order_acquire) != State::GRACE_HASH_JOIN || !grace_join)
         return false;
+    auto active_grace_join = grace_join;
+    lock.unlock();
 
     /// Finish converting all concurrent slots before asking GraceHashJoin to rehash the active
     /// bucket; otherwise conversion could immediately refill memory that the forced spill released.
     if (concurrent_join)
         tryConvertSlots();
-    return grace_join->spillForMemoryReservation();
+    return active_grace_join->spillForMemoryReservation();
 }
 
 bool SpillingHashJoin::hasPendingMemoryReservationSpill() const
 {
-    return grace_join && grace_join->hasPendingSpill();
+    std::shared_lock lock(switch_mutex);
+    auto active_grace_join = grace_join;
+    lock.unlock();
+    return active_grace_join && active_grace_join->hasPendingSpill();
 }
 
 bool SpillingHashJoin::forceSpill()
 {
+    std::shared_lock lock(switch_mutex);
     if (state.load(std::memory_order_acquire) != State::GRACE_HASH_JOIN || !grace_join)
         return false;
-    grace_join->forceSpill();
+    auto active_grace_join = grace_join;
+    lock.unlock();
+    active_grace_join->forceSpill();
     return true;
 }
 

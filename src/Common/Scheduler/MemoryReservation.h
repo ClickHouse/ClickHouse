@@ -104,7 +104,7 @@ private:
     bool isGrowthRecoveryActive() override;
     bool canRecoverFromGrowthPressure() const override
     {
-        return settings.force_spill_before_eviction || isProtectedFromEviction();
+        return isProtectedFromEviction();
     }
     ResourceCost reconcilePendingIncrease(ResourceCost scheduler_allocated_size, ResourceCost requested_size) override;
     void increaseCancelled() override;

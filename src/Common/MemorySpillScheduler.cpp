@@ -188,6 +188,7 @@ void MemorySpillScheduler::executeForcedSpill(UInt64 epoch)
     while (true)
     {
         IProcessor * processor = nullptr;
+        IProcessor * expired_processor = nullptr;
         std::shared_ptr<IProcessor> lifetime;
         {
             std::lock_guard lock(mutex);
@@ -205,7 +206,8 @@ void MemorySpillScheduler::executeForcedSpill(UInt64 epoch)
                     if (!lifetime)
                     {
                         completeForcedSpillProcessor(epoch, state);
-                        continue;
+                        expired_processor = candidate;
+                        break;
                     }
                 }
                 processor = candidate;
@@ -213,7 +215,15 @@ void MemorySpillScheduler::executeForcedSpill(UInt64 epoch)
                 state.dedicated_spill_in_progress = true;
                 break;
             }
+
+            if (expired_processor)
+            {
+                processor_states.erase(expired_processor);
+                updateTopProcessor();
+            }
         }
+        if (expired_processor)
+            continue;
         if (!processor)
             return;
 
