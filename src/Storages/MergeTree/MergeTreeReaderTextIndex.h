@@ -91,6 +91,10 @@ private:
         size_t offset,
         size_t num_rows) const;
 
+    /// Evaluates the same default expression over a whole physical block. The returned column is full
+    /// (never sparse or const) and holds one UInt8 per row of `physical_block`.
+    ColumnPtr evaluateFallback(const String & column_name, const Block & physical_block) const;
+
     PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
 
     /// Fills a phrase virtual column from positional data (.pos), computing matching documents
@@ -119,6 +123,8 @@ private:
     /// Per-virtual-column compiled expression of the original search predicate.
     /// Executed on the physical columns when use_fallback[i] is true.
     absl::flat_hash_map<String, ExpressionActionsPtr> fallback_expressions;
+    /// If true, fallback columns are filled by one evaluation per read instead of one per mark.
+    bool evaluate_fallback_per_read = false;
     /// Per-virtual-column flag: true if this column's query was abandoned during the scan
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
