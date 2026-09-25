@@ -1016,10 +1016,14 @@ void HTTPHandler::processQuery(
         /// `implicit_table_at_top_level` (only applied to FROM-less queries). Forcing the path
         /// table to exist would reject valid requests like `/foo.CSV?query=SELECT+1+FROM+other`
         /// or `POST /db/path_table` with body `SELECT ... FROM other_table`.
+        ///
+        /// Skip it for path uploads as well: this check runs before access control, so an upload - a write - to a
+        /// missing table would reveal its non-existence (and the names of similar tables) to a caller without the
+        /// `INSERT` privilege. The generated `INSERT` reports a missing table through the normal checks instead.
         const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
         const bool table_name_is_simple = !path_info.table.contains('.');
         if (table_name_is_simple && !table_db.empty() && raw_query.empty()
-            && (is_path_table_upload || !request_body_is_framed))
+            && !is_path_table_upload && !request_body_is_framed)
         {
             StorageID table_id(table_db, path_info.table);
             if (!DatabaseCatalog::instance().isTableExist(table_id, context))
@@ -2087,6 +2091,9 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     /// particular a `DELETE`, which is otherwise presented to the handler as an empty body stream) must be
     /// rejected with `411 Length Required` instead of running the query with a silently dropped body. Parse the
     /// configured query once and use the resulting AST for both body analysis and receive-parameter analysis.
+    /// The query text is server-owned, so parse it without depth and backtrack limits, like the stored query of
+    /// an SQL-defined handler: the user's `max_parser_depth` / `max_parser_backtracks` still apply when the query
+    /// is executed, and a handler that works under raised limits must not prevent startup or config reload.
     const char * query_begin = predefined_query.data();
     const char * query_end = query_begin + predefined_query.size();
     ParserQuery parser(query_end);
@@ -2095,9 +2102,9 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         query_begin,
         query_end,
         "predefined_query_handler query",
-        0,
-        DBMS_DEFAULT_MAX_PARSER_DEPTH,
-        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        /* max_query_size */ 0,
+        /* max_parser_depth */ 0,
+        /* max_parser_backtracks */ 0);
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query_ast);
 
     /// Keep config-defined handlers subject to the same body-input checks as SQL-defined handlers. A wrapped
@@ -2132,6 +2139,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     /// value. Config-defined rules do not have the SQL-defined handler's default GET restriction at this point.
     const auto methods_path = config_prefix + ".methods";
     bool has_only_body_carrying_methods = false;
+    bool has_post_method = false;
     if (query_may_consume_request_body && config.has(methods_path))
     {
         Poco::StringTokenizer methods(config.getString(methods_path), ",", Poco::StringTokenizer::TOK_TRIM);
@@ -2145,6 +2153,9 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
                         || normalized_method == Poco::Net::HTTPRequest::HTTP_PUT
                         || normalized_method == Poco::Net::HTTPRequest::HTTP_DELETE;
                 });
+        has_post_method = std::any_of(
+            methods.begin(), methods.end(),
+            [](const auto & method) { return Poco::toUpper(method) == Poco::Net::HTTPRequest::HTTP_POST; });
     }
 
     if (query_may_consume_request_body && !has_only_body_carrying_methods)
@@ -2153,6 +2164,19 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
             ErrorCodes::BAD_ARGUMENTS,
             "Configured predefined query handler `{}` may consume the HTTP request body, so its <methods> must list "
             "only POST, PUT, or DELETE.",
+            config_prefix);
+    }
+
+    /// Config-defined handlers run `PUT` and `DELETE` in `readonly` mode (see `setReadOnlyIfHTTPMethodIdempotent`),
+    /// so a body-consuming handler whose query needs to write (for example an `INSERT` of the uploaded data) could
+    /// never succeed over those methods. Reject such a rule unless it also accepts `POST`.
+    if (query_may_consume_request_body && !has_post_method && queryRequiresMutatingHTTPMethod(*predefined_query_ast))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Configured predefined query handler `{}` runs a query that modifies data, but its <methods> do not "
+            "include POST. Configured handlers execute PUT and DELETE requests in readonly mode, so the query "
+            "could never succeed. Add POST to <methods>.",
             config_prefix);
     }
 

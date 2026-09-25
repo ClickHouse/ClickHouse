@@ -29,6 +29,9 @@ BAD_PREDEFINED_REQUEST_BODY_METHODS_CONFIG_IN_CONTAINER = (
 BAD_PREDEFINED_REQUEST_BODY_SAFE_METHOD_CONFIG_IN_CONTAINER = (
     "/etc/clickhouse-server/config.d/bad_predefined_request_body_safe_method.xml"
 )
+BAD_PREDEFINED_INSERT_WITHOUT_POST_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/bad_predefined_insert_without_post.xml"
+)
 GOOD_PREDEFINED_REQUEST_BODY_METHODS_CONFIG_IN_CONTAINER = (
     "/etc/clickhouse-server/config.d/good_predefined_request_body_methods.xml"
 )
@@ -166,6 +169,15 @@ def test_predefined_handler_rejects_body_query_with_safe_method(start_cluster):
         "bad_predefined_request_body_safe_method.xml",
         BAD_PREDEFINED_REQUEST_BODY_SAFE_METHOD_CONFIG_IN_CONTAINER,
         "its <methods> must list only POST, PUT, or DELETE",
+    )
+
+
+def test_predefined_handler_rejects_mutating_query_without_post(start_cluster):
+    # Config-defined handlers run PUT and DELETE in readonly mode, so an INSERT handler needs POST.
+    _assert_predefined_handler_config_error(
+        "bad_predefined_insert_without_post.xml",
+        BAD_PREDEFINED_INSERT_WITHOUT_POST_CONFIG_IN_CONTAINER,
+        "runs a query that modifies data, but its <methods> do not include POST",
     )
 
 

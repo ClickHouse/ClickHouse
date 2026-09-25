@@ -42,7 +42,7 @@
             </handler>
         </rule>
         <rule>
-            <methods>DELETE</methods>
+            <methods>POST,DELETE</methods>
             <url>/test_predefined_handler_delete_insert_body</url>
             <handler>
                 <type>predefined_query_handler</type>

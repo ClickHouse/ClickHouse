@@ -379,6 +379,11 @@ bool queryConsumesRequestBody(const IAST & query)
     return input_function != nullptr;
 }
 
+bool queryRequiresMutatingHTTPMethod(const IAST & query)
+{
+    return queryRequiresMutatingMethod(query);
+}
+
 /// Whether the query wraps - inside `EXECUTE AS` or `PARALLEL WITH` - a statement that takes the HTTP request
 /// body as its data. Such a handler can never work: both wrappers re-format their statements and run them
 /// through `executeQuery(String, ...)` (see `InterpreterExecuteAsQuery::execute` and

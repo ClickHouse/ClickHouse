@@ -15,6 +15,11 @@ class IAST;
 /// knows whether an unframed body-carrying request can be accepted (see `HTTPHandler::handleRequest`).
 bool queryConsumesRequestBody(const IAST & query);
 
+/// Whether the query cannot run under `readonly` and therefore needs a mutating HTTP method. Used both for
+/// SQL-defined handlers and for the config-defined `predefined_query_handler`: the latter runs `PUT` and `DELETE`
+/// in `readonly` mode (see `setReadOnlyIfHTTPMethodIdempotent`), so only `POST` can execute such a query.
+bool queryRequiresMutatingHTTPMethod(const IAST & query);
+
 /// Whether the query wraps a statement that reads the HTTP request body inside `EXECUTE AS` or `PARALLEL WITH`.
 /// Those wrappers execute their child statements without the request body, so such a handler would silently lose
 /// its uploaded data.

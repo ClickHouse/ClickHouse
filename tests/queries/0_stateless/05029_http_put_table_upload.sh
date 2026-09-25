@@ -191,7 +191,7 @@ curl --path-as-is -sS -o /dev/null -w 'HTTP %{http_code}\n' -X PUT --data-binary
 echo "-- a missing table is rejected"
 printf '4,"four"\n' \
     | curl -sS -X PUT -H 'Content-Type: text/csv' --data-binary @- "${BASE_URL}/${DB}/missing_table_05029.CSV" 2>&1 \
-    | grep -oE "which does not exist"
+    | grep -oE "UNKNOWN_TABLE" | head -n1
 
 echo "-- an unknown format after a quoted table is rejected"
 printf '46,"quoted-unknown"\n' \
