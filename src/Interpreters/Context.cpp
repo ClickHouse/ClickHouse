@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <set>
@@ -121,6 +122,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
@@ -164,7 +166,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -384,6 +385,7 @@ namespace Setting
     extern const SettingsBool reader_executor_use_long_connections;
     extern const SettingsUInt64 reader_executor_window_size;
     extern const SettingsUInt64 reader_executor_block_size;
+    extern const SettingsUInt64 reader_executor_plan_look_ahead;
     extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
     extern const SettingsUInt64 reader_executor_max_tail_for_drain;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
@@ -394,7 +396,6 @@ namespace Setting
     extern const SettingsString workload;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
@@ -750,11 +751,6 @@ struct ContextSharedPart : boost::noncopyable
     size_t max_pending_mutations_execution_time_to_warn = 86400lu;
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
-
-    /// Optional server-wide override for the analyzer in mutations.
-    /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
-    /// Refreshed on config reload.
-    std::atomic<int8_t> mutations_use_analyzer_override = -1;
 
     double min_os_cpu_wait_time_ratio_to_drop_connection = 15.0;
     double max_os_cpu_wait_time_ratio_to_drop_connection = 30.0;
@@ -1469,8 +1465,10 @@ ContextData::ContextData(const ContextData &o) :
     partition_id_to_max_block(o.partition_id_to_max_block),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
     query_factories_info(o.query_factories_info),
+    distributed_plan_local_object(o.distributed_plan_local_object),
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
+    query_execution_counters(o.query_execution_counters),
     view_source(o.view_source),
     /// `table_function_results` is copied in the body under `o.table_function_results_mutex`
     /// to avoid a data race with `Context::executeTableFunction` and other writers
@@ -3095,6 +3093,22 @@ Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
     suppress_query_factories_info = prev;
 }
 
+void Context::addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const
+{
+    /// Reading `system.functions` creates the resolver of every function to list its properties, which for `regionTo*`
+    /// touches the embedded dictionaries; that enumeration is not a use by the query, so it runs under
+    /// `SuppressQueryFactoriesInfoScope`, the same guard that keeps it out of `query_log.used_functions`. A context that
+    /// was not copied from a query context has no record.
+    if (suppress_query_factories_info || !distributed_plan_local_object)
+        return;
+    distributed_plan_local_object->add(kind, name);
+}
+
+std::shared_ptr<const DistributedPlanLocalObject> Context::getDistributedPlanLocalObject() const
+{
+    return distributed_plan_local_object;
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     if (suppress_query_factories_info)
@@ -3208,9 +3222,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
-            auto sample_block = getSettingsRef()[Setting::allow_experimental_analyzer]
-                ? InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context)
-                : InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
+            auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
@@ -3530,6 +3542,41 @@ Settings Context::getSettingsCopy() const
     return *settings;
 }
 
+namespace
+{
+bool isProfileChange(const SettingChange & change)
+{
+    return change.name == "profile";
+}
+
+/// Enforces the constraints on `changes` the way `applySettingsChanges` applies them: a `profile` change
+/// installs a new constraint set for the changes after it. Each run of changes up to the next `profile`
+/// change is enforced against the constraints in force before it, then applied together with that `profile`
+/// change to a scratch copy of `context`, so a rejected list leaves `context` untouched. Returns the enforced list.
+template <typename Enforce>
+SettingsChanges enforceConstraintsAlongProfileChanges(const ContextPtr & context, const SettingsChanges & changes, Enforce && enforce)
+{
+    auto scratch_context = Context::createCopy(context);
+    SettingsChanges enforced;
+    for (auto begin = changes.begin(); begin != changes.end();)
+    {
+        auto profile = std::find_if(begin, changes.end(), isProfileChange);
+        SettingsChanges segment(begin, profile);
+        enforce(*scratch_context, segment);
+        begin = profile;
+        if (profile != changes.end())
+        {
+            segment.push_back(*profile);
+            ++begin;
+        }
+        /// `setCurrentProfile` checks the profile's own settings against the constraints in force before it.
+        scratch_context->applySettingsChanges(segment);
+        enforced.insert(enforced.end(), segment.begin(), segment.end());
+    }
+    return enforced;
+}
+}
+
 void Context::setSettings(const Settings & settings_)
 {
     std::lock_guard lock(mutex);
@@ -3690,6 +3737,15 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(std::as_const(segment), source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
@@ -3702,14 +3758,46 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
 }
 
+void Context::checkSettingsConstraintsForSettingsReset(
+    const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source)
+{
+    if (std::ranges::none_of(changes_applied_first, isProfileChange))
+    {
+        checkSettingsConstraintsForSettingsReset(names, source);
+        return;
+    }
+    /// The resets take effect after the rest of the statement, so a `profile` change in it decides the constraints.
+    auto scratch_context = Context::createCopy(shared_from_this());
+    scratch_context->applySettingsChanges(changes_applied_first);
+    scratch_context->checkSettingsConstraintsForSettingsReset(names, source);
+}
+
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(segment, source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(changes, source);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.clampToSettingsConstraints(segment, source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
 }
@@ -3989,6 +4077,7 @@ ContextMutablePtr Context::getBufferContext() const
 void Context::makeQueryContext()
 {
     query_context = shared_from_this();
+    distributed_plan_local_object = std::make_shared<DistributedPlanLocalObject>();
 
     /// Throttling should not be inherited, otherwise if you will set
     /// throttling for default profile you will not able to overwrite it
@@ -4014,6 +4103,7 @@ void Context::makeQueryContext()
     /// from unrelated earlier queries into `system.query_log.used_privileges`. See issue #105983.
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
+    query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
 
     /// A context that becomes a query context without going through a client-facing handshake -
@@ -4045,6 +4135,15 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
+
+    /// A mutation runs in the background, from a context built out of the background one rather
+    /// than from the query that submitted it, so the normalization in `executeQuery` never sees it
+    /// and a `0` written in a settings profile of the server configuration survives. The analyzer
+    /// analyzes the mutation either way, so leaving it would only make `getSetting` inside an
+    /// `UPDATE` expression report an analysis that did not happen. Every context a mutation is
+    /// analyzed and executed in comes through here.
+    if (!(*settings)[Setting::allow_experimental_analyzer])
+        (*settings)[Setting::allow_experimental_analyzer] = true;
 }
 
 void Context::makeSessionContext()
@@ -4089,11 +4188,14 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
+    /// The `region*` functions take them here when they are created, i.e. while the query is analyzed.
+    addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 
 EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 {
+    addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 
@@ -7798,20 +7900,6 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
 
-void Context::setMutationsUseAnalyzerOverride(std::optional<bool> value)
-{
-    int8_t encoded = !value.has_value() ? int8_t{-1} : (*value ? int8_t{1} : int8_t{0});
-    shared->mutations_use_analyzer_override.store(encoded, std::memory_order_relaxed);
-}
-
-std::optional<bool> Context::getMutationsUseAnalyzerOverride() const
-{
-    int8_t encoded = shared->mutations_use_analyzer_override.load(std::memory_order_relaxed);
-    if (encoded < 0)
-        return std::nullopt;
-    return encoded != 0;
-}
-
 void Context::setConfigReloaderInterval(size_t value_ms)
 {
     shared->config_reload_interval_ms.store(value_ms, std::memory_order_relaxed);
@@ -8907,14 +8995,30 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
     res.reader_executor.window_size = settings_ref[Setting::reader_executor_window_size];
     res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
-    /// Below this the executor would serve near-empty windows / stall on tiny source reads.
+    res.reader_executor.plan_look_ahead = settings_ref[Setting::reader_executor_plan_look_ahead];
+    /// Below the floor the executor serves near-empty windows and stalls on tiny source reads; above
+    /// the ceiling one reader holds that much in buffers and cache pins. One band for the three sizes
+    /// keeps `plan_look_ahead >= block_size` satisfiable at every legal `block_size`.
     static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
-    if (res.reader_executor.window_size < min_reader_executor_size)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",
-            res.reader_executor.window_size, min_reader_executor_size);
-    if (res.reader_executor.block_size < min_reader_executor_size)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_block_size: must be at least {} bytes",
-            res.reader_executor.block_size, min_reader_executor_size);
+    static constexpr UInt64 max_reader_executor_size = MAX_READER_EXECUTOR_SIZE;
+    auto validate_reader_executor_size = [](std::string_view name, UInt64 value)
+    {
+        if (value < min_reader_executor_size)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for {}: must be at least {} bytes",
+                value, name, min_reader_executor_size);
+        if (value > max_reader_executor_size)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for {}: must be at most {} bytes",
+                value, name, max_reader_executor_size);
+    };
+    validate_reader_executor_size("reader_executor_window_size", res.reader_executor.window_size);
+    validate_reader_executor_size("reader_executor_block_size", res.reader_executor.block_size);
+    validate_reader_executor_size("reader_executor_plan_look_ahead", res.reader_executor.plan_look_ahead);
+    /// Looking ahead less than one source block is meaningless, so reject the combination rather than
+    /// silently run at `block_size` and let the setting report a value the executor ignores.
+    if (res.reader_executor.plan_look_ahead < res.reader_executor.block_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} for reader_executor_plan_look_ahead: must be at least reader_executor_block_size ({} bytes)",
+            res.reader_executor.plan_look_ahead, res.reader_executor.block_size);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass
@@ -8994,12 +9098,14 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
+QueryExecutionCountersPtr Context::getQueryExecutionCounters() const
+{
+    return query_execution_counters;
+}
+
 bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
-
-    if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
-        return false;
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
