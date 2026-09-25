@@ -33,11 +33,26 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsWithRecordedOrigin<T
         described.comment = setting.getDescription();
         described.tier = setting.getTier();
 
+        if (const auto it = settings_to_aliases.find(described.name); it != settings_to_aliases.end())
+            described.aliases.assign(it->second.begin(), it->second.end());
+
         /// While the `Field` is still here: a setting whose value is an AST cannot be masked from
         /// the rendered string alone. A value equal to the compiled-in default holds no credential, and
         /// masking it would make an unset password claim to hide one.
+        ///
+        /// Every name of the setting is asked, not only the one it is declared under: a registry keys its rules
+        /// by the names its engine happened to list, so a secret registered under an alias alone would render in
+        /// clear here while `SHOW CREATE TABLE` still hid it, the clause stating whichever name the user wrote.
         if (described.value != described.default_value)
+        {
             described.masked_value = maskEngineSettingValue(described.name, setting.getValue(), described.value);
+            for (const auto & alias : described.aliases)
+            {
+                if (!described.masked_value.empty())
+                    break;
+                described.masked_value = maskEngineSettingValue(String{alias}, setting.getValue(), described.value);
+            }
+        }
         described.origin = setting.isValueChanged() ? SettingOrigin::Other : SettingOrigin::Default;
 
         /// A recorded value that merely equals the default is still changed, and keeps its source.
@@ -46,8 +61,6 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsWithRecordedOrigin<T
                 described.origin = recorded;
         if (described.origin == SettingOrigin::NamedCollection)
             described.named_collection = impl.recordedNamedCollection();
-        if (const auto it = settings_to_aliases.find(described.name); it != settings_to_aliases.end())
-            described.aliases.assign(it->second.begin(), it->second.end());
         result.push_back(std::move(described));
     }
     return result;
