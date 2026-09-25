@@ -14,6 +14,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/iceberg_rest_catalog.xml"],
+    user_configs=["configs/users.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
@@ -286,6 +287,41 @@ def test_authentication(started_cluster):
         )
         if not is_ok:
             assert_error_shape(response, "NotAuthorizedException")
+
+
+def test_create_namespace_rejects_readonly(started_cluster):
+    ns = f"forbidden_{uuid.uuid4().hex[:8]}"
+    body = {"namespace": [ns]}
+
+    # Reading is allowed for everyone who can log in.
+    catalog_request("GET", "/v1/my_warehouse/namespaces", auth=("readonly_user", ""))
+
+    response = catalog_request(
+        "POST",
+        "/v1/my_warehouse/namespaces",
+        json=body,
+        auth=("readonly_user", ""),
+        expected_code=403,
+    )
+    assert_error_shape(response, "ForbiddenException")
+    assert "readonly" in response.json()["error"]["message"]
+    assert [ns] not in list_namespaces()
+
+    # `allow_ddl = 0` permits writes but not structural changes, and a namespace is structure.
+    catalog_request("GET", "/v1/my_warehouse/namespaces", auth=("no_ddl_user", ""))
+    response = catalog_request(
+        "POST",
+        "/v1/my_warehouse/namespaces",
+        json=body,
+        auth=("no_ddl_user", ""),
+        expected_code=403,
+    )
+    assert_error_shape(response, "ForbiddenException")
+    assert "DDL" in response.json()["error"]["message"]
+    assert [ns] not in list_namespaces()
+
+    create_namespace([ns])
+    assert [ns] in list_namespaces()
 
 
 def test_auth_failure_does_not_poison_connection(started_cluster):

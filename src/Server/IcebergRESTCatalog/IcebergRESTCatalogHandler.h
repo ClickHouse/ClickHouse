@@ -33,8 +33,13 @@ private:
 
     void handleGetConfig(const Poco::URI & uri, HTTPServerResponse & response) const;
     void handleListNamespaces(const IcebergRESTCatalogWarehouse & warehouse, const Poco::URI & uri, HTTPServerResponse & response) const;
-    void handleCreateNamespace(const IcebergRESTCatalogWarehouse & warehouse, HTTPServerRequest & request, HTTPServerResponse & response) const;
+    /// Rejects `readonly` and `allow_ddl = 0` profiles.
+    void handleCreateNamespace(const IcebergRESTCatalogWarehouse & warehouse, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const;
     void handleNamespaceExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const;
+
+    /// V1 has no privilege model, so mirror the settings that `ContextAccess` enforces for SQL DDL.
+    /// Throws `READONLY` or `QUERY_IS_PROHIBITED`. `action` names the operation for the message, e.g. "create namespace".
+    static void checkDDLAllowed(const Context & context, const String & action);
 
     /// Reads the whole request body. Returns nullopt after answering 413 if the body exceeds max_size.
     static std::optional<String> readRequestBody(HTTPServerRequest & request, HTTPServerResponse & response, size_t max_size);

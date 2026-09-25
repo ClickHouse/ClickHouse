@@ -28,12 +28,20 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool allow_ddl;
+    extern const SettingsUInt64 readonly;
+}
+
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
     extern const int KEEPER_EXCEPTION;
     extern const int NO_ZOOKEEPER;
+    extern const int QUERY_IS_PROHIBITED;
+    extern const int READONLY;
     extern const int REQUIRED_PASSWORD;
 }
 
@@ -220,7 +228,7 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
                 handleListNamespaces(*warehouse, uri, response);
                 return;
             case IcebergRESTOperation::CreateNamespace:
-                handleCreateNamespace(*warehouse, request, response);
+                handleCreateNamespace(*warehouse, request, response, *context);
                 return;
             case IcebergRESTOperation::NamespaceExists:
                 handleNamespaceExists(*warehouse, *match, response);
@@ -248,7 +256,7 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             type = "NotAuthorizedException";
             message = getCurrentExceptionMessage(false);
         }
-        else if (code == ErrorCodes::ACCESS_DENIED)
+        else if (code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::READONLY || code == ErrorCodes::QUERY_IS_PROHIBITED)
         {
             status = Poco::Net::HTTPResponse::HTTP_FORBIDDEN;
             type = "ForbiddenException";
@@ -360,8 +368,19 @@ void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTCatalogWa
     response.send();
 }
 
-void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWarehouse & warehouse, HTTPServerRequest & request, HTTPServerResponse & response) const
+void IcebergRESTCatalogHandler::checkDDLAllowed(const Context & context, const String & action)
 {
+    const auto & settings = context.getSettingsRef();
+    if (settings[Setting::readonly])
+        throw Exception(ErrorCodes::READONLY, "Cannot {} in readonly mode", action);
+    if (!settings[Setting::allow_ddl])
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Cannot {}. DDL queries are prohibited for the user", action);
+}
+
+void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWarehouse & warehouse, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const
+{
+    checkDDLAllowed(context, "create namespace");
+
     const auto body = readRequestBody(request, response, MAX_NAMESPACE_CREATE_BODY_SIZE);
     if (!body)
         return;
