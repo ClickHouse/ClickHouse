@@ -2,11 +2,11 @@ test1_rows	1	1	101	201	301
 test1_rows	3	1	113	213	313
 test1_rows	4	-1	104	204	304
 test1_rows	6	-1	106	206	306
-test1_rows	6	1	116	216	316
 test1_rows	7	0	107	207	307
 test1_rows	7	1	127	227	327
 test1_rows	8	-1	108	208	308
 test1_rows	8	0	118	218	318
+test1_rows	9	1	109	209	309
 test1_rows	10	1	120	220	320
 test1_rows	11	1	111	211	311
 test1_rows	11	0	121	221	321
@@ -14,7 +14,7 @@ test1_control_same_rows	1
 test1_algo	Vertical
 test1_control_algo	Horizontal
 test2_rows	1	1	1	101	201	301
-test2_rows	4	1	2	114	214	314
+test2_rows	3	1	1	103	203	303
 test2_control_same_rows	1
 test2_algo	Vertical
 test2_control_algo	Horizontal

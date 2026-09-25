@@ -40,7 +40,12 @@ public:
         time_t current_time,
         bool force);
 
-    TTLDeleteFilterTransform(const SharedHeader & header_, std::shared_ptr<const SharedState> shared_state_);
+    /// `preexist_filter_column`, when set, names a `UInt8` column the mask starts from instead of
+    /// all-ones (see `MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream`).
+    TTLDeleteFilterTransform(
+        const SharedHeader & header_,
+        std::shared_ptr<const SharedState> shared_state_,
+        const std::optional<String> & preexist_filter_column);
 
     String getName() const override { return "TTLDeleteFilter"; }
 
@@ -49,6 +54,7 @@ protected:
 
 private:
     std::shared_ptr<const SharedState> shared_state;
+    ssize_t preexist_filter_column_position = -1;
     const DateLUTImpl & date_lut;
     PaddedPODArray<Int64> timestamps;
 

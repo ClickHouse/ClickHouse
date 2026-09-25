@@ -10,6 +10,7 @@
 SET alter_sync = 2;
 SET optimize_throw_if_noop = 0;
 SET optimize_on_insert = 0;
+SET lightweight_delete_mode = 'alter_update';
 
 -- Test 1: an expired winning version drops the key; the older live version is not resurrected.
 DROP TABLE IF EXISTS t_ttl_vert_repl_win;
@@ -45,6 +46,7 @@ ALTER TABLE t_ttl_vert_repl_off MODIFY SETTING vertical_merge_optimize_ttl_delet
 -- must disappear. Keys 100..199 hold an expired version 1 and a live version 2, so they survive.
 -- A background TTL merge would delete rows before the control copies them.
 SYSTEM STOP TTL MERGES t_ttl_vert_repl_win;
+SYSTEM STOP TTL MERGES t_ttl_vert_repl_off;
 
 INSERT INTO t_ttl_vert_repl_win
 SELECT
@@ -55,14 +57,19 @@ SELECT
 FROM numbers(400);
 
 INSERT INTO t_ttl_vert_repl_off SELECT * FROM t_ttl_vert_repl_win;
+
+-- Deleting version 2 of keys 0..9 lets their live version 1 win; keys 100..109 fall back to an expired one.
+DELETE FROM t_ttl_vert_repl_win WHERE ver = 2 AND id % 100 < 10;
+DELETE FROM t_ttl_vert_repl_off WHERE ver = 2 AND id % 100 < 10;
 SYSTEM START TTL MERGES t_ttl_vert_repl_win;
+SYSTEM START TTL MERGES t_ttl_vert_repl_off;
 
 OPTIMIZE TABLE t_ttl_vert_repl_win FINAL;
 OPTIMIZE TABLE t_ttl_vert_repl_off FINAL;
 
 SELECT 'test1_count', count() FROM t_ttl_vert_repl_win;
 SELECT 'test1_id_range', min(id), max(id) FROM t_ttl_vert_repl_win;
-SELECT 'test1_versions', groupUniqArray(ver) FROM t_ttl_vert_repl_win;
+SELECT 'test1_versions', arraySort(groupUniqArray(ver)) FROM t_ttl_vert_repl_win;
 SELECT 'test1_cols', sum(c1), sum(c2), sum(c3) FROM t_ttl_vert_repl_win;
 SELECT 'test1_expired_left', count() FROM t_ttl_vert_repl_win WHERE d + INTERVAL 1 DAY <= now();
 SELECT 'test1_parts', count() FROM system.parts

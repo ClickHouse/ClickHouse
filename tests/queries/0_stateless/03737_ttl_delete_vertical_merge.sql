@@ -1,5 +1,6 @@
 SET alter_sync = 2;
 SET optimize_throw_if_noop = 0;
+SET lightweight_delete_mode = 'alter_update';
 
 -- Test 1: Basic TTL delete with vertical merge (mix of expired and non-expired rows)
 DROP TABLE IF EXISTS t_ttl_vert_1;
@@ -25,18 +26,21 @@ SETTINGS
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
     merge_with_ttl_timeout = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1,
     ratio_of_defaults_for_sparse_serialization = 1.0;
 
 SYSTEM STOP TTL MERGES t_ttl_vert_1;
 SYSTEM STOP MERGES t_ttl_vert_1;
 
 INSERT INTO t_ttl_vert_1 SELECT number, '2000-01-01 00:00:00', number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
-INSERT INTO t_ttl_vert_1 SELECT number + 1000, now() + INTERVAL 1 YEAR, number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
+INSERT INTO t_ttl_vert_1 SELECT number + 1000, if(number < 10, toDateTime('2000-01-01 00:00:00'), now() + INTERVAL 1 YEAR), number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
 
 SELECT 'test1_before', count() FROM t_ttl_vert_1;
 
-SYSTEM START TTL MERGES t_ttl_vert_1;
+-- A lightweight delete of expired and live rows in the second part only; the first stores no `_row_exists`.
 SYSTEM START MERGES t_ttl_vert_1;
+DELETE FROM t_ttl_vert_1 WHERE id BETWEEN 1005 AND 1014;
+SYSTEM START TTL MERGES t_ttl_vert_1;
 OPTIMIZE TABLE t_ttl_vert_1 FINAL;
 
 SELECT 'test1_after', count() FROM t_ttl_vert_1;
@@ -218,6 +222,8 @@ SETTINGS
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
     merge_with_ttl_timeout = 0,
+    vertical_merge_optimize_lightweight_delete = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1,
     ratio_of_defaults_for_sparse_serialization = 1.0;
 
 SYSTEM STOP TTL MERGES t_ttl_vert_5;
@@ -225,10 +231,12 @@ SYSTEM STOP MERGES t_ttl_vert_5;
 
 -- Expired rows (d = 2000-01-01) and non-expired rows (d = future)
 INSERT INTO t_ttl_vert_5 SELECT number, '2000-01-01 00:00:00', number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
-INSERT INTO t_ttl_vert_5 SELECT number + 1000, '2100-01-01 00:00:00', number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
+INSERT INTO t_ttl_vert_5 SELECT number + 1000, if(number < 10, '2000-01-01 00:00:00', '2100-01-01 00:00:00'), number * 10, number * 100, number * 1000, number * 10000 FROM numbers(1000);
 
-SYSTEM START TTL MERGES t_ttl_vert_5;
+-- With the lightweight-delete optimization off, the delete is applied when the parts are read.
 SYSTEM START MERGES t_ttl_vert_5;
+DELETE FROM t_ttl_vert_5 WHERE id BETWEEN 1005 AND 1014;
+SYSTEM START TTL MERGES t_ttl_vert_5;
 OPTIMIZE TABLE t_ttl_vert_5 FINAL;
 
 SELECT 'test5_after', count() FROM t_ttl_vert_5;
@@ -242,6 +250,12 @@ SELECT 'test5_ttl_info',
     delete_ttl_info_min = delete_ttl_info_max
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_ttl_vert_5' AND active;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT 'test5_algo', merge_algorithm FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_vert_5' AND event_type = 'MergeParts'
+    AND merge_reason != 'TTLDropMerge'
+    ORDER BY event_time_microseconds LIMIT 1;
 
 DROP TABLE IF EXISTS t_ttl_vert_5;
 
