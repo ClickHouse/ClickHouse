@@ -32,13 +32,6 @@ ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, si
         hash_input_types.push_back(header->getByPosition(column_number).type);
 }
 
-std::shared_ptr<ScatterByPartitionTransform> ScatterByPartitionTransform::createRoundRobin(SharedHeader header, size_t output_size_, size_t start_bucket)
-{
-    auto transform = std::make_shared<ScatterByPartitionTransform>(std::move(header), output_size_, ColumnNumbers{});
-    transform->round_robin_bucket = start_bucket % output_size_;
-    return transform;
-}
-
 IProcessor::Status ScatterByPartitionTransform::prepare()
 {
     auto & input = getInputs().front();
@@ -60,10 +53,17 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
         return Status::Finished;
     }
 
-    /// work() runs without the executor's graph lock, so it must not change port state; that happens here.
-    if (has_output_chunks && !pushOutputChunks())
-        return Status::PortFull;
-
+    if (!all_outputs_processed)
+    {
+        auto output_it = outputs.begin();
+        bool can_push = false;
+        for (size_t i = 0; i < output_size; ++i, ++output_it)
+            if (!was_output_processed[i] && output_it->canPush())
+                can_push = true;
+        if (!can_push)
+            return Status::PortFull;
+        return Status::Ready;
+    }
     /// Try get chunk from input.
 
     if (input.isFinished())
@@ -79,20 +79,17 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
         return Status::NeedData;
 
     chunk = input.pull();
-    was_output_processed.assign(output_size, false);
+    has_data = true;
+    was_output_processed.assign(outputs.size(), false);
 
     return Status::Ready;
 }
 
 void ScatterByPartitionTransform::work()
 {
-    generateOutputChunks();
-    has_output_chunks = true;
-}
-
-bool ScatterByPartitionTransform::pushOutputChunks()
-{
-    bool all_outputs_processed = true;
+    if (all_outputs_processed)
+        generateOutputChunks();
+    all_outputs_processed = true;
 
     size_t chunk_number = 0;
     for (auto & output : outputs)
@@ -104,8 +101,6 @@ bool ScatterByPartitionTransform::pushOutputChunks()
         if (was_processed)
             continue;
 
-        /// A finished output never becomes pushable again, so waiting for one would wedge the
-        /// pipeline forever.
         if (output.isFinished())
             continue;
 
@@ -126,12 +121,11 @@ bool ScatterByPartitionTransform::pushOutputChunks()
         was_processed = true;
     }
 
-    if (!all_outputs_processed)
-        return false;
-
-    has_output_chunks = false;
-    output_chunks.clear();
-    return true;
+    if (all_outputs_processed)
+    {
+        has_data = false;
+        output_chunks.clear();
+    }
 }
 
 void ScatterByPartitionTransform::generateOutputChunks()
@@ -140,14 +134,6 @@ void ScatterByPartitionTransform::generateOutputChunks()
     const auto & columns = chunk.getColumns();
 
     output_chunks.resize(output_size);
-
-    if (round_robin_bucket)
-    {
-        /// The chunk is moved whole so its ChunkInfo (e.g. aggregation metadata) survives.
-        output_chunks[*round_robin_bucket] = std::move(chunk);
-        *round_robin_bucket = (*round_robin_bucket + 1) % output_size;
-        return;
-    }
 
     /// Special case for 0 key columns. It is an unlikely but still valid case.
     if (key_columns.empty())

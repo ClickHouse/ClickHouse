@@ -8,9 +8,11 @@ CREATE MATERIALIZED VIEW v_view_target TO v_table_target AS SELECT a FROM src;
 INSERT INTO v_view_target VALUES (1); -- { serverError NOT_IMPLEMENTED }
 INSERT INTO v_view_target SELECT 1; -- { serverError NOT_IMPLEMENTED }
 
--- CREATE ... POPULATE reaches the same hop through the population insert, not a user INSERT.
+-- On master this reaches the same hop through the population insert and is refused there, but this
+-- branch still rejects `TO` together with `POPULATE` while parsing, so the client fails before the
+-- query is ever sent and the hop is never reached. Parse errors are always client errors.
 INSERT INTO src VALUES (2);
-CREATE MATERIALIZED VIEW v_populate TO v_table_target POPULATE AS SELECT a FROM src; -- { serverError NOT_IMPLEMENTED }
+CREATE MATERIALIZED VIEW v_populate TO v_table_target POPULATE AS SELECT a FROM src; -- { clientError SYNTAX_ERROR }
 
 -- A refreshable view is a materialized view too, so it is refused as a target on the same edge.
 -- It refreshes into a table of its own, so its initial refresh cannot disturb the counts below.
@@ -28,8 +30,7 @@ SELECT 'insert into the source table still succeeds', count() FROM src ORDER BY 
 INSERT INTO v_table_target VALUES (4);
 SELECT 'table target still works', count() FROM tgt;
 
--- The population insert throws after the view is created on the database engines that populate
--- non-atomically, so `v_populate` survives there and not on the others.
+-- `v_populate` is never created here, since the statement above is rejected while it is parsed.
 DROP VIEW IF EXISTS v_populate;
 DROP VIEW v_refreshable_target;
 DROP VIEW v_refreshable;

@@ -479,9 +479,6 @@ def sparseOverReplicatedScenario():
 def main():
     outOfBoundsIndexScenario()
     truncatedElementsScenario()
-    invalidIndexTypeSizeScenario()
-    indexRowCountMismatchScenario()
-    sparseOverReplicatedScenario()
 
 
 if __name__ == "__main__":

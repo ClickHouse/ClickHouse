@@ -8,11 +8,7 @@ title: 마이그레이션 가이드
 
 [Amazon Redshift](https://aws.amazon.com/redshift/)는 Amazon Web Services에서 제공하는 대표적인 클라우드 데이터 웨어하우징 솔루션입니다. 이 가이드에서는 Redshift 인스턴스에서 ClickHouse로 데이터를 마이그레이션하는 다양한 접근 방식을 소개합니다. 여기서는 다음 3가지 옵션을 살펴봅니다:
 
-<div className="ch-image-md">
-  <Frame>
-    <img src="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" alt="Redshift에서 ClickHouse로 마이그레이션하는 옵션" />
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" size="md" alt="Redshift에서 ClickHouse로 마이그레이션하는 옵션" />
 
 ClickHouse 인스턴스 기준으로는 다음 중 하나를 선택할 수 있습니다:
 
@@ -20,7 +16,7 @@ ClickHouse 인스턴스 기준으로는 다음 중 하나를 선택할 수 있�
 
 2. **[PULL](#pull-data-from-redshift-to-clickhouse)** ClickHouse JDBC Bridge를 활용해 Redshift에서 데이터를 가져옵니다
 
-3. **[피벗](#pivot-data-from-redshift-to-clickhouse-using-s3)** S3 객체 스토리지를 사용해 &quot;언로드 후 로드&quot; 방식으로 데이터를 이동합니다
+3. **[PIVOT](#pivot-data-from-redshift-to-clickhouse-using-s3)** S3 객체 스토리지를 사용해 &quot;언로드 후 로드&quot; 방식으로 데이터를 이동합니다
 
 <Note>
   이 튜토리얼에서는 데이터 소스로 Redshift를 사용했습니다. 하지만 여기서 소개하는 마이그레이션 방식은 Redshift에만 국한되지 않으며, 호환되는 모든 데이터 소스에도 유사하게 적용할 수 있습니다.
@@ -32,11 +28,7 @@ ClickHouse 인스턴스 기준으로는 다음 중 하나를 선택할 수 있�
 
 Push 시나리오에서는 타사 도구나 서비스(사용자 지정 코드 또는 [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT))를 활용해 데이터를 ClickHouse 인스턴스로 전송합니다. 예를 들어, [Airbyte](https://www.airbyte.com/)와 같은 소프트웨어를 사용해 Redshift 인스턴스를 소스로, ClickHouse를 대상으로 하여 데이터를 이동할 수 있습니다([Airbyte 통합 가이드 보기](/ko/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
 
-<div className="ch-image-md">
-  <Frame>
-    <img src="/images/integrations/data-ingestion/redshift/push.webp" alt="Push 방식으로 Redshift에서 ClickHouse로 데이터 전송" />
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/redshift/push.webp" size="md" alt="Push 방식으로 Redshift에서 ClickHouse로 데이터 전송" />
 
 <div id="pros">
   ### 장점
@@ -57,13 +49,9 @@ Push 시나리오에서는 타사 도구나 서비스(사용자 지정 코드 �
   ## Redshift에서 ClickHouse로 데이터 가져오기
 </div>
 
-Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스턴스에서 Redshift 클러스터에 직접 연결하고 `INSERT INTO ... SELECT` 쿼리를 수행합니다:
+Pull 시나리오에서는 ClickHouse JDBC Bridge를 사용하여 ClickHouse 인스턴스에서 Redshift 클러스터에 직접 연결한 뒤 `INSERT INTO ... SELECT` 쿼리를 수행합니다:
 
-<div className="ch-image-md">
-  <Frame>
-    <img src="/images/integrations/data-ingestion/redshift/pull.webp" alt="Redshift에서 ClickHouse로 PULL" />
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="Redshift에서 ClickHouse로 PULL" />
 
 <div id="pros">
   ### 장점
@@ -89,7 +77,9 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
 이 옵션을 사용하려면 ClickHouse JDBC Bridge를 설정해야 합니다. ClickHouse JDBC Bridge는 JDBC 연결을 처리하고 ClickHouse 인스턴스와 데이터 소스 사이에서 프록시 역할을 하는 독립형 Java 애플리케이션입니다. 이 튜토리얼에서는 [샘플 데이터베이스](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html)가 미리 구성된 Redshift 인스턴스를 사용했습니다.
 
 <Steps>
-  <Step title="ClickHouse JDBC Bridge 배포" id="deploy-clickhouse-jdbc-bridge">
+  <Step>
+    #### ClickHouse JDBC Bridge 배포
+
     ClickHouse JDBC Bridge를 배포합니다. 자세한 내용은 [외부 데이터 소스용 JDBC](/ko/integrations/connectors/data-ingestion/jdbc-with-clickhouse) 사용자 가이드를 참조하십시오.
 
     <Note>
@@ -97,7 +87,9 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     </Note>
   </Step>
 
-  <Step title="Redshift 데이터 소스 구성" id="configure-your-redshift-datasource">
+  <Step>
+    #### Redshift 데이터 소스 구성
+
     ClickHouse JDBC Bridge에서 사용할 Redshift 데이터 소스를 구성합니다. 예: `/etc/clickhouse-jdbc-bridge/config/datasources/redshift.json `
 
     ```json
@@ -119,7 +111,9 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     ```
   </Step>
 
-  <Step title="ClickHouse에서 Redshift 인스턴스 쿼리" id="query-your-redshift-instance-from-clickhouse">
+  <Step>
+    #### ClickHouse에서 Redshift 인스턴스 쿼리
+
     ClickHouse JDBC Bridge가 배포되어 실행 중이면 ClickHouse에서 Redshift 인스턴스를 쿼리할 수 있습니다.
 
     ```sql
@@ -157,7 +151,9 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     ```
   </Step>
 
-  <Step title="Redshift에서 ClickHouse로 데이터 가져오기" id="import-data-from-redshift-to-clickhouse">
+  <Step>
+    #### Redshift에서 ClickHouse로 데이터 가져오기
+
     다음에서는 `INSERT INTO ... SELECT` 문을 사용해 데이터를 가져오는 방법을 보여줍니다.
 
     ```sql
@@ -201,11 +197,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
 
 이 시나리오에서는 데이터를 중간 피벗 포맷으로 S3에 내보내고, 두 번째 단계에서 S3의 데이터를 ClickHouse로 적재합니다.
 
-<div className="ch-image-md">
-  <Frame>
-    <img src="/images/integrations/data-ingestion/redshift/pivot.webp" alt="S3를 사용한 Redshift 피벗" />
-  </Frame>
-</div>
+<Image img="/images/integrations/data-ingestion/redshift/pivot.webp" size="md" alt="S3를 사용한 Redshift PIVOT" />
 
 <div id="pros">
   ### 장점
@@ -227,25 +219,21 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
 </div>
 
 <Steps>
-  <Step title="UNLOAD를 사용해 데이터를 S3 버킷으로 내보내기" id="export-data-into-an-s3-bucket-using-unload">
+  <Step>
+    #### UNLOAD를 사용해 데이터를 S3 버킷으로 내보내기
+
     Redshift의 [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) 기능을 사용하여 데이터를 기존의 비공개 S3 버킷으로 내보내십시오:
 
-    <div className="ch-image-md">
-      <Frame>
-        <img src="/images/integrations/data-ingestion/redshift/s3-1.webp" alt="Redshift에서 S3로 UNLOAD" style={{ backgroundColor: "white" }} />
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="Redshift에서 S3로 UNLOAD" background="white" />
 
-    그러면 S3에 원시 데이터가 포함된 part 파일이 생성됩니다.
+    그러면 S3에 원시 데이터가 들어 있는 part 파일이 생성됩니다.
 
-    <div className="ch-image-md">
-      <Frame>
-        <img src="/images/integrations/data-ingestion/redshift/s3-2.webp" alt="S3의 데이터" style={{ backgroundColor: "white" }} />
-      </Frame>
-    </div>
+    <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="S3의 데이터" background="white" />
   </Step>
 
-  <Step title="ClickHouse에 테이블 생성하기" id="create-the-table-in-clickhouse">
+  <Step>
+    #### ClickHouse에 테이블 생성하기
+
     ClickHouse에 테이블을 생성하십시오:
 
     ```sql
@@ -271,7 +259,9 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     이 방법은 Parquet처럼 데이터 타입 정보가 포함된 포맷에서 특히 잘 작동합니다.
   </Step>
 
-  <Step title="S3 파일을 ClickHouse로 로드하기" id="load-s3-files-into-clickhouse">
+  <Step>
+    #### S3 파일을 ClickHouse로 로드하기
+
     `INSERT INTO ... SELECT` 문을 사용하여 S3 파일을 ClickHouse로 로드하십시오:
 
     ```sql
