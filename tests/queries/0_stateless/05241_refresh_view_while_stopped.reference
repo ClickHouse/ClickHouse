@@ -1,0 +1,10 @@
+<1: refresh while stopped runs now>	1
+<1: three refreshes run three times>	4
+<1: refresh while paused runs now>	5
+<1: nothing pending after start>	5	Scheduled
+<2: failed refresh while stopped is reported>	1	Disabled
+<3: stop cancels only the running refresh>	20	Disabled
+<4: wait is silent about a cancelled refresh>	Disabled
+<5: stale scheduled failure not reported after stop>	1	Disabled
+<6: wait is silent after cancel>	1
+<7: failure is reported after a later stop>	1	Disabled

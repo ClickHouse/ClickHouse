@@ -9,3 +9,6 @@ refresh_failed
 1000
 -- a user DROP is still skipped: the setting keeps doing what it is for
 1
+-- a refresh requested while stopped: SYSTEM WAIT VIEW checks the target table
+1
+stale_target_reported

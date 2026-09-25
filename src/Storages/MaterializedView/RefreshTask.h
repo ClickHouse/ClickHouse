@@ -92,6 +92,8 @@ public:
         std::string last_attempt_replica;
         std::string last_attempt_error;
         bool last_attempt_succeeded = false;
+        /// Whether the last attempt was a `SYSTEM REFRESH VIEW`: `wait` on a stopped replica reports only such a failure.
+        bool last_attempt_out_of_schedule = false;
         /// If an attempt is in progress, this contains error from the previous attempt.
         /// Useful if we keep retrying and failing, and each attempt takes a while - we want to see an error message
         /// without having to catch the brief time window between attempts.
@@ -177,11 +179,11 @@ public:
 
     /// Methods to pause/unpause refreshing on this replica or all replicas.
     /// The per-replica pause and global pause are two separate flags; if either of them is set,
-    /// no refreshes will run.
+    /// no scheduled refreshes will run, and the global one also holds back `SYSTEM REFRESH VIEW`.
     void start();
     void stop();
     /// Like `stop`, but does not interrupt the currently running refresh; only prevents future
-    /// refreshes from starting. Resumed by `start`.
+    /// scheduled refreshes from starting. Resumed by `start`.
     void pause();
     void startReplicated();
     void stopReplicated(const String & reason);
@@ -238,7 +240,7 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
-        /// ├── ["requested-<replica>"] (persistent; a pending `SYSTEM REFRESH VIEW` made on that replica, see `run`)
+        /// ├── ["requested-<replica>"] (persistent; counts that replica's `SYSTEM REFRESH VIEW`s not started yet, see `run`)
         /// └── ["paused"]
 
         struct WatchState
@@ -253,6 +255,8 @@ private:
         struct PendingRequest
         {
             Int64 czxid = 0;
+            UInt64 count = 0;
+            int32_t version = -1;
             std::optional<std::chrono::system_clock::time_point> pending_since {};
         };
         std::map<String, PendingRequest> pending_requests;
@@ -325,14 +329,16 @@ private:
         /// State of dependencies that was used for triggering this refresh.
         /// Should be writtent to zookeeper only if the refresh succeeds.
         AllDependenciesInfo dependencies;
-        bool out_of_schedule = false;
     };
 
     struct SchedulingState
     {
         /// Refreshes are stopped, e.g. by SYSTEM STOP VIEW or SYSTEM PAUSE VIEW.
-        /// We shouldn't start new refreshes, but pre-existing refresh attempt may keep going.
+        /// We shouldn't start new scheduled refreshes, but pre-existing refresh attempt may keep going.
         bool stop_requested = false;
+        /// Held back even from `SYSTEM REFRESH VIEW`: an uncoordinated restore until finalized or started, a shutdown for good.
+        bool not_ready = false;
+        bool shutdown_requested = false;
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
 
@@ -372,7 +378,7 @@ private:
     bool isIncremental() const { return refresh_mode == RefreshMode::AppendIncremental; }
     /// Start with refreshing paused. Used for the temporary view of CREATE OR REPLACE, which is
     /// resumed after the rename so it cannot refresh the target before the replacement is committed.
-    const bool start_paused;
+    bool start_paused;
 
     RefreshSet::Handle set_handle;
 
@@ -454,7 +460,7 @@ private:
     /// If version number doesn't match, schedules a doScheduling() call
     /// with should_reread_znodes = true, and returns false.
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
-    /// If `request_znode` is given, that "requested-*" znode is removed in the same multi: the started refresh consumes it.
+    /// If `request_znode` is given, the started refresh consumes one statement of that "requested-*" znode in the same multi.
     bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false, const String & request_znode = {});
 
     /// Enter the permanent, non-resumable "coordination unavailable" state (sets
