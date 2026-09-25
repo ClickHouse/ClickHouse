@@ -95,6 +95,7 @@
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
 #include <Storages/buildQueryTreeForShard.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/IStorageCluster.h>
 
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -310,6 +311,23 @@ bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
     return true;
 }
 
+/// Weaker than `isExpressionActionsDeterministic`: it also accepts a function whose result can change
+/// between queries as long as it is fixed within one, `dictGet` being the motivating case. Such a sharding
+/// key still describes where a row belongs — `allow_nondeterministic_optimize_skip_unused_shards` exists
+/// precisely so that reads can prune by it — whereas `rand()`, which is not deterministic even within a
+/// query, describes nothing.
+bool isExpressionActionsDeterministicInScopeOfQuery(const ExpressionActionsPtr & actions)
+{
+    for (const auto & action : actions->getActions())
+    {
+        if (action.node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+        if (!action.node->function_base->isDeterministicInScopeOfQuery())
+            return false;
+    }
+    return true;
+}
+
 /// Find the sharding key output node in `sharding_key_dag`.
 /// `sharding_key_column_name` is the name of the unanalyzed sharding key AST and can differ from the
 /// analyzed DAG output name: the analyzer may const-fold or otherwise rewrite the expression, so a name
@@ -442,6 +460,7 @@ StorageDistributed::StorageDistributed(
         if (const ActionsDAG::Node * node = tryFindShardingKeyOutput(sharding_key_expr->getActionsDAG(), sharding_key_column_name))
             sharding_key_column_name = node->result_name;
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
+        sharding_key_is_deterministic_in_scope_of_query = isExpressionActionsDeterministicInScopeOfQuery(sharding_key_expr);
     }
 
     if (!relative_data_path.empty())
@@ -1254,7 +1273,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
 
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
-    const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
+    IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -1263,8 +1282,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     if (filter)
         predicate = filter->getOutputs().at(0);
 
-    auto dst_cluster = getCluster();
-
     auto new_query = boost::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
     if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
     {
@@ -1272,6 +1289,62 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         /// Reset table function for INSERT INTO remote()/cluster()
         new_query->reset(new_query->table_function);
     }
+
+    /// With `parallel_distributed_insert_select = 2` the forwarded INSERT was retargeted at the shard's own
+    /// local table just above, so a row stays on whichever shard happened to read it. For a `Distributed`
+    /// source that is sound — the rows a shard reads are already the rows placed there — but a cluster table
+    /// function hands out files by rendezvous hashing over their paths, which has nothing to do with the
+    /// destination's sharding key. A sharding key that is fixed within a query states where a row must live,
+    /// and `optimize_skip_unused_shards` later prunes shards by it, so scattering rows against it would
+    /// silently produce wrong results. Skip the distributed execution and let the ordinary
+    /// `INSERT ... SELECT` place the rows through `DistributedSink`; the `SELECT` still reads the source
+    /// cluster in parallel.
+    ///
+    /// The check is `isDeterministicInScopeOfQuery` rather than `isDeterministic` on purpose: a `dictGet`
+    /// sharding key is not deterministic across queries, yet it does state where a row belongs and
+    /// `allow_nondeterministic_optimize_skip_unused_shards` lets reads prune by it. Only a key that is not
+    /// even fixed within one query (`rand()`) describes no placement at all, and for those the fast path
+    /// stays.
+    if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL
+        && hasShardingKeyForReads() && sharding_key_is_deterministic_in_scope_of_query)
+    {
+        LOG_INFO(
+            log,
+            "Parallel distributed INSERT SELECT into {} is not possible: the rows read from {} cannot satisfy "
+            "its deterministic sharding key ({}); falling back to the ordinary INSERT SELECT",
+            getStorageID().getNameForLogs(),
+            src_storage_cluster.getName(),
+            sharding_key_column_name);
+        return {};
+    }
+
+    /// `distributedWrite` only gets here for a single `SELECT` over a single table expression.
+    auto & select_to_send = new_query->select->as<ASTSelectWithUnionQuery &>();
+    chassert(select_to_send.list_of_selects->children.size() == 1);
+    auto & source_to_send = select_to_send.list_of_selects->children.at(0);
+
+    /// The source storage may have been created by `parallel_replicas_for_cluster_engines` from a plain table
+    /// function (`url`, `s3`, ...), while the query text still names that plain function. A shard that runs the
+    /// forwarded query as a secondary query does not convert it again: it creates a plain storage that expands
+    /// the globs and reads every file on its own instead of taking its share of the read tasks from the
+    /// initiator, so N shards insert the data N times. Rewrite the source into its `*Cluster` variant, the same
+    /// way `IStorageCluster::read` does for a `SELECT`.
+    ///
+    /// The cluster to name in the rewritten function is this `Distributed` table's own cluster, because its
+    /// shards are the ones that run the forwarded query and consume the read tasks — the source's
+    /// `cluster_for_parallel_replicas` plays no part in this fan-out and need not even exist on those shards.
+    /// A `remote()` / `cluster()` destination owns an ad-hoc cluster that is absent from `remote_servers`
+    /// (`cluster_name` is empty), so there is no name a shard could resolve; skip the distributed execution
+    /// altogether rather than forward a query that every shard would answer with the whole source.
+    const auto * source_table_function = extractTableFunctionFromSelectQuery(source_to_send);
+    const bool needs_cluster_function = source_table_function && !endsWith(source_table_function->name, "Cluster");
+    if (needs_cluster_function && cluster_name.empty())
+        return {};
+
+    src_storage_cluster.updateExternalDynamicMetadataIfExists(local_context);
+    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
+    const auto src_snapshot = src_storage_cluster.getStorageSnapshot(storage_metadata, local_context);
+    src_storage_cluster.updateQueryToSendIfNeeded(source_to_send, src_snapshot, local_context, cluster_name);
 
     /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
     /// packet is stripped separately, on `query_context` below).
@@ -1306,7 +1379,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
-    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
     auto extension = src_storage_cluster.getTaskIteratorExtension(
         predicate, filter.get(), local_context, cluster, storage_metadata);
 

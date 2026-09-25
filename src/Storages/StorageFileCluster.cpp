@@ -6,6 +6,9 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -105,7 +108,11 @@ void StorageFileCluster::updateBeforeRead(const ContextPtr & context)
     checkWriteAccessIfFilesAreRenamed(context);
 }
 
-void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
+void StorageFileCluster::updateQueryToSendIfNeeded(
+    DB::ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const DB::ContextPtr & context,
+    const String & target_cluster_name)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -117,6 +124,17 @@ void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const Sto
         format_name,
         context
     );
+
+    /// `fileCluster` has no plain counterpart that `parallel_replicas_for_cluster_engines` could convert, so
+    /// the function is always already the `*Cluster` variant and carries a cluster name the user wrote.
+    /// Replace it with the cluster whose nodes will actually run the query: the two differ when the
+    /// destination drives the fan-out (`INSERT INTO <Distributed table> SELECT`), and the nodes reject a name
+    /// their own `remote_servers` does not define (`ITableFunctionCluster::parseArgumentsImpl`) even though
+    /// they never dispatch by it - they take their share of the work from the initiator's task iterator.
+    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
+    if (!expression_list || expression_list->children.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatForErrorMessage());
+    expression_list->children.front() = make_intrusive<ASTLiteral>(target_cluster_name);
 }
 
 RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(

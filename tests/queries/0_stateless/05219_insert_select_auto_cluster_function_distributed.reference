@@ -1,0 +1,24 @@
+--- url ---
+60	30
+--- s3 ---
+60	30
+--- forwarded queries of url ---
+2	2	60
+--- forwarded queries of s3 ---
+2	2	60
+--- deterministic sharding key, parallel_distributed_insert_select = 2 ---
+60	30
+--- deterministic sharding key, parallel_distributed_insert_select = 1 ---
+60	30
+--- forwarded cluster-function queries with parallel_distributed_insert_select = 2 ---
+0
+--- forwarded cluster-function queries with parallel_distributed_insert_select = 1 ---
+2
+--- dictGet sharding key, parallel_distributed_insert_select = 2 ---
+60	30
+--- explicitly written s3Cluster with a different cluster ---
+60	30
+--- forwarded cluster-function queries of dict ---
+0	0
+--- forwarded cluster-function queries of explicit ---
+2	0

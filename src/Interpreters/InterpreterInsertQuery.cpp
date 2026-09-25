@@ -1130,7 +1130,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// structure and format arguments are added so that the nodes do not infer the schema again.
     {
         auto & select_to_send = query_to_send->as<ASTInsertQuery &>().select->as<ASTSelectWithUnionQuery &>();
-        src_storage_cluster->updateQueryToSendIfNeeded(select_to_send.list_of_selects->children.at(0), src_snapshot, local_context);
+        /// The query is forwarded to the nodes of `src_cluster`, which is the source storage's own cluster.
+        src_storage_cluster->updateQueryToSendIfNeeded(
+            select_to_send.list_of_selects->children.at(0), src_snapshot, local_context, src_storage_cluster->getClusterName());
     }
 
     String query_str;

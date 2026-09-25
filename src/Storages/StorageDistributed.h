@@ -221,7 +221,7 @@ private:
     void delayInsertOrThrowIfNeeded() const;
 
     std::optional<QueryPipeline>
-    distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
+    distributedWriteFromClusterStorage(IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
     static VirtualColumnsDescription createVirtuals();
@@ -242,6 +242,9 @@ private:
     bool has_sharding_key;
     ASTPtr sharding_key;
     bool sharding_key_is_deterministic = false;
+    /// Fixed within a query but possibly not across queries (`dictGet`); see the INSERT SELECT guard
+    /// in `distributedWriteFromClusterStorage`.
+    bool sharding_key_is_deterministic_in_scope_of_query = false;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
 

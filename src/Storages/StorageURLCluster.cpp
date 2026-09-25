@@ -109,7 +109,11 @@ StorageURLCluster::StorageURLCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
+void StorageURLCluster::updateQueryToSendIfNeeded(
+    ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    const String & target_cluster_name)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -130,11 +134,20 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
     /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
     /// (`urlCluster`) and prepend the cluster name argument. This ensures that on the shard,
     /// `TableFunctionURLCluster` is used, which correctly handles `distributed_processing`.
+    ASTs & args = expression_list->children;
     if (!endsWith(table_function->name, "Cluster"))
     {
-        ASTs & args = expression_list->children;
-        args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
+        args.insert(args.begin(), make_intrusive<ASTLiteral>(target_cluster_name));
         table_function->name += "Cluster";
+    }
+    else
+    {
+        /// The function is already `urlCluster`, so it carries a cluster name the user wrote. Replace it with
+        /// the cluster whose nodes will actually run the query: the two differ when the destination drives the
+        /// fan-out (`INSERT INTO <Distributed table> SELECT`), and the nodes reject a name their own
+        /// `remote_servers` does not define (`ITableFunctionCluster::parseArgumentsImpl`) even though they
+        /// never dispatch by it - they take their share of the work from the initiator's task iterator.
+        args.front() = make_intrusive<ASTLiteral>(target_cluster_name);
     }
 }
 
