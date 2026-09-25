@@ -590,11 +590,11 @@ Expression (Project names)
                                                             ReadFromMergeTree (ParallelRead default.orders)
 -- Q22
 Expression (Project names)
-  GatherExchange
-    Expression ((Before ORDER BY + Projection))
-      Sorting
-        Aggregating
-          ShuffleExchange
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      MergingAggregated
+        GatherExchange
+          Aggregating
             Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + WHERE)))))
               JoinLogical (Shuffle HashJoin )
                 Expression (Create result for always true EXISTS expression)
