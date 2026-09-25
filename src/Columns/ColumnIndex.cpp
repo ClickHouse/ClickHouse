@@ -1,5 +1,6 @@
 #include <Columns/ColumnIndex.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/NumberTraits.h>
 #include <base/demangle.h>
 #include <Common/HashTable/Hash.h>
@@ -150,9 +151,11 @@ void ColumnIndex::expandType()
 
 size_t ColumnIndex::getMaxIndexForCurrentType() const
 {
-    size_t value = 0;
-    callForType([&](auto type) { value = std::numeric_limits<decltype(type)>::max(); }, size_of_type);
-    return value;
+    chassert(size_of_type == 1 || size_of_type == 2 || size_of_type == 4 || size_of_type == 8);
+    /// Shifting by 64 is undefined, and this is called per inserted value, so no `callForType` here.
+    if (size_of_type == sizeof(UInt64))
+        return std::numeric_limits<UInt64>::max();
+    return (1ULL << (8 * size_of_type)) - 1;
 }
 
 size_t ColumnIndex::getIndexAt(size_t row) const
@@ -199,12 +202,16 @@ void ColumnIndex::insertIndex(size_t index)
 
     auto insert = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
     {
-        getIndexesData<CurIndexType>().push_back(static_cast<CurIndexType>(index));
+        /// `size_of_type` tracks the type of `indexes` and `expandType` keeps the two in sync, so
+        /// this is `static_cast` in release. `getIndexesData` would run a `typeid_cast` instead, and
+        /// this is the per-value path.
+        assert_cast<ColumnVector<CurIndexType> *>(indexes.get())->getData().push_back(static_cast<CurIndexType>(index));
     };
 
     callForType(std::move(insert), size_of_type);
 
-    checkSizeOfType();
+    /// Same invariant, so re-deriving it from `indexes` is a debug-only check here.
+    chassert(size_of_type == getSizeOfIndexType(*indexes, size_of_type));
 }
 
 void ColumnIndex::insertManyIndexes(size_t index, size_t length)
