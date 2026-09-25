@@ -2205,6 +2205,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "allow_no_password",
         "allow_plaintext_password",
 
+        /// BPE vocabularies of `tokenizeBPE` and `detokenizeBPE`
+        "bpe_vocabularies",
+
         /// Named collections
         "named_collections",
         "named_collections_storage",
