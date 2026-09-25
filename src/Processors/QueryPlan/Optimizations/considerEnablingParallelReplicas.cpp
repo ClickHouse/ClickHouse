@@ -793,7 +793,8 @@ void considerEnablingParallelReplicas(
     /// the parallel-replicas plan cannot be relied on to reproduce.
     if (analysis->readFromProjection())
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "The read is served from a projection. Skipping optimization");
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+        LOG_TRACE(getLogger("AutoParallelReplicas"), "The read is served from a projection. Skipping optimization");
         return;
     }
     const auto rows_to_read = analysis->selected_rows;
@@ -895,7 +896,13 @@ void considerEnablingParallelReplicas(
                 /// Every read of the candidate has to be given its analysis. One that is not would read
                 /// every mark, so the candidate is worse than the plan it replaces; decline rather than run it.
                 if (!transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode()))
+                {
+                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
+                    LOG_TRACE(
+                        getLogger("AutoParallelReplicas"),
+                        "Cannot give every read of the plan with parallel replicas its index analysis. Skipping optimization");
                     return;
+                }
                 /// The candidate's reads have their filter actions only now, so the pass that tags a filter
                 /// step for the query condition cache - which runs early in this same optimization and gives
                 /// up when a read has none - saw nothing to tag, and the cache would never be populated by a
