@@ -175,6 +175,17 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
     return std::make_pair(std::move(matched), reader->reader.file_metadata.row_groups.size());
 }
 
+std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValuesOfBuckets() const
+{
+    std::vector<std::pair<size_t, Field>> res;
+    if (!reader)
+        return res;
+    for (const auto & row_group : reader->reader.row_groups)
+        if (row_group.need_to_process && row_group.top_k_best_value)
+            res.emplace_back(row_group.row_group_idx, (*row_group.top_k_best_value)[0]);
+    return res;
+}
+
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
 {
     if (reader)

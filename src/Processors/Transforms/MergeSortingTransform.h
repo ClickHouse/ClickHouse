@@ -68,6 +68,9 @@ private:
     ProcessorPtr external_merging_sorted;
 
     TopKThresholdTrackerPtr threshold_tracker;
+    /// Rows of the sorted result generated so far, until the one at `limit` is published to `threshold_tracker`.
+    UInt64 rows_generated = 0;
+    bool generated_threshold_published = false;
 };
 
 }
