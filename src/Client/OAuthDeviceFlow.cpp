@@ -70,30 +70,23 @@ std::vector<std::string> buildOAuthDiscoveryURLs(const std::string & issuer)
     appendUnique(urls, normalized + "/.well-known/oauth-authorization-server");
 
     /// RFC 8414 insertion style: place `/.well-known/...` between host and issuer path.
-    try
+    Poco::URI uri(normalized);
+    std::string path = uri.getPath();
+    if (path == "/")
+        path.clear();
+
+    if (!path.empty())
     {
-        Poco::URI uri(normalized);
-        std::string path = uri.getPath();
-        if (path == "/")
-            path.clear();
+        if (!startsWith(path, "/"))
+            path = "/" + path;
 
-        if (!path.empty())
-        {
-            if (!startsWith(path, "/"))
-                path = "/" + path;
+        Poco::URI oauth_inserted = uri;
+        oauth_inserted.setPath("/.well-known/oauth-authorization-server" + path);
+        appendUnique(urls, oauth_inserted.toString());
 
-            Poco::URI oauth_inserted = uri;
-            oauth_inserted.setPath("/.well-known/oauth-authorization-server" + path);
-            appendUnique(urls, oauth_inserted.toString());
-
-            Poco::URI oidc_inserted = uri;
-            oidc_inserted.setPath("/.well-known/openid-configuration" + path);
-            appendUnique(urls, oidc_inserted.toString());
-        }
-    }
-    catch (const Poco::Exception &)
-    {
-        /// Issuer was not a valid URI; keep the append-style candidates above.
+        Poco::URI oidc_inserted = uri;
+        oidc_inserted.setPath("/.well-known/openid-configuration" + path);
+        appendUnique(urls, oidc_inserted.toString());
     }
 
     return urls;
