@@ -2209,7 +2209,8 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     const QueryNode & query_node,
     const SelectQueryOptions & select_query_options,
-    PlannerContextPtr & planner_context
+    PlannerContextPtr & planner_context,
+    UsefulSets & useful_sets
 )
 {
     if (select_query_options.subquery_depth != 0)
@@ -2267,6 +2268,7 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.column_name,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
+    appendSetsFromActionsDAG(filter_step->getExpression(), useful_sets);
     query_plan.addStep(std::move(filter_step));
 }
 
@@ -3180,7 +3182,7 @@ void Planner::buildPlanForQueryNode()
         }
 
         // For additional_result_filter setting
-        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
+        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context, useful_sets);
     }
 
     /// A header carrying nothing but row-count-only columns cannot express "N rows" across a
