@@ -41,6 +41,11 @@ public:
 
     bool isExtendedStorageDefinition() const;
 
+    /// True when the node carries no part of a storage definition at all. This happens after
+    /// `InterpreterSetQuery::applySettingsFromQuery` moves every setting of a `SETTINGS` clause that
+    /// came without an `ENGINE` onto the query context and drops the now-empty clause.
+    bool isEmpty() const;
+
     /// Rebuild `children` in canonical order (engine, partition_by, primary_key, order_by, ...).
     /// Needed after moving primary_key from columns_list because `set()` always appends.
     void normalizeChildrenOrder();

@@ -22,6 +22,10 @@ echo "$PAGE" | grep -oF 'ClickHouse <span class="accent">Reference</span>' | hea
 # Mintlify admonition components are mapped onto the `:::` admonition syntax ...
 echo "$PAGE" | grep -oF "':::' + name.toLowerCase()" | head -n1
 
+# ... and a custom `title` attribute is carried into that syntax so the browser viewer keeps the
+# label instead of stripping the titled opening tag as an unknown component ...
+echo "$PAGE" | grep -oF "(title ? ' ' + title[1] : '')" | head -n1
+
 # ... `Tab`/`TabItem`/`Card` titles survive as bold lines ...
 echo "$PAGE" | grep -oF "(?:title|label)=" | head -n1
 
@@ -35,7 +39,8 @@ echo "$PAGE" | grep -oF "replace(/<[A-Z][A-Za-z0-9]*(?:\s[^>]*)?\/>/g" | head -n
 
 # The regression targets exist in the corpus (all registered unconditionally, so they are present
 # even in the minimal `Fast test` build): the `JSON` data type opens with a `<Card title="...">`
-# and uses the `<WhenToUseJson />` snippet, and the `file` table function wraps a caveat in `<Note>`.
+# and uses the `<WhenToUseJson />` snippet, the `file` table function wraps a caveat in `<Note>`, and
+# the `Redis` table engine has a titled `<Note>` whose label must survive browser preprocessing.
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0
     FROM system.documentation
@@ -47,3 +52,8 @@ $CLICKHOUSE_CLIENT --query "
     FROM system.documentation
     WHERE type = 'Table Function' AND name = 'file'
       AND description LIKE '%<Note>%'"
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() > 0
+    FROM system.documentation
+    WHERE type = 'Table Engine' AND name = 'Redis'
+      AND description LIKE '%<Note title=\"Serialization\">%'"

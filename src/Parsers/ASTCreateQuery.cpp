@@ -24,6 +24,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Core/UUID.h>
+#include <Parsers/getTimeSeriesSettingVersion.h>
 
 
 namespace DB
@@ -146,19 +147,19 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     /// `engine` (`ASTFunction`) and `settings` (`ASTSetQuery`) are concrete typed members; a wrong node
     /// type from malformed `clickhouse_json` would otherwise reach `set` as a `LOGICAL_ERROR` cast
     /// failure instead of a user-facing `BAD_ARGUMENTS`. The remaining slots are arbitrary expressions.
-    auto child = r.readChildOfType<ASTFunction>("engine");
+    auto child = r.readFunctionChildWithExpressionArguments("engine");
     if (child)
         set(engine, child);
 
-    child = r.readChild("partition_by");
+    child = r.readExpressionChild("partition_by");
     if (child)
         set(partition_by, child);
 
-    child = r.readChild("primary_key");
+    child = r.readExpressionChild("primary_key");
     if (child)
         set(primary_key, child);
 
-    child = r.readChild("order_by");
+    child = r.readExpressionChild("order_by");
     if (child)
         set(order_by, child);
 
@@ -166,7 +167,7 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(unique_key, child);
 
-    child = r.readChild("sample_by");
+    child = r.readExpressionChild("sample_by");
     if (child)
         set(sample_by, child);
 
@@ -177,6 +178,11 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTExpressionList>("ttl_table");
     if (child)
     {
+        /// `ParserTTLExpressionList` reads at least one element, and an empty list formats as a bare
+        /// `TTL` clause that the metadata reparse rejects.
+        if (child->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`ttl_table` must not be an empty list during AST JSON deserialization");
         for (const auto & ttl_element : child->children)
             if (!ttl_element || !ttl_element->as<ASTTTLElement>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -269,6 +275,11 @@ void ASTStorage::normalizeChildrenOrder()
     if (settings) children.emplace_back(settings);
 }
 
+
+bool ASTStorage::isEmpty() const
+{
+    return !engine && !partition_by && !primary_key && !order_by && !sample_by && !ttl_table && !unique_key && !settings;
+}
 
 bool ASTStorage::isExtendedStorageDefinition() const
 {
@@ -564,7 +575,16 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("storage", storage);
     w.writeChild("as_table_function", as_table_function);
     w.writeChild("select", select);
-    w.writeChild("targets", targets);
+
+    if (targets)
+    {
+        std::optional<UInt64> time_series_version;
+        if (is_time_series_table)
+            time_series_version = getTimeSeriesSettingVersion(*this);
+        w.writeKey("targets");
+        targets->writeJSON(out, time_series_version);
+    }
+
     w.writeChild("comment", comment);
     w.writeChild("sql_security", sql_security);
     w.writeChild("table_overrides", table_overrides);
@@ -710,7 +730,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
     /// `as_table_function` is parser-produced as an `ASTFunction` (`AS table_function(...)`);
     /// `InterpreterCreateQuery::setEngine` does `as_table_function->as<ASTFunction>()->name`.
-    child = r.readChildOfType<ASTFunction>("as_table_function");
+    child = r.readScreenedChildOfType<ASTFunction>("as_table_function");
     if (child)
         set(as_table_function, child);
 
@@ -720,7 +740,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` declares both 'storage' and 'as_table_function' during AST JSON deserialization");
 
-    child = r.readChildOfType<ASTSelectWithUnionQuery>("select");
+    child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("select");
     if (child)
         set(select, child);
 
@@ -800,7 +820,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
     /// The parser attaches each of these clause families only to specific `CREATE` variants:
     /// `refresh_strategy` only to materialized views; `targets` (`ASTViewTargets`) to materialized
-    /// views (`TO`/`TO INNER UUID`), `TimeSeries` tables (`DATA`/`TAGS`/`METRICS`) and plain tables
+    /// views (`TO`/`TO INNER UUID`), `TimeSeries` tables (`SAMPLES`/`TAGS`/`METRIC FAMILIES`) and plain tables
     /// with an explicit `TO INNER UUID` clause (`SharedSet`/`SharedJoin`). Malformed `clickhouse_json`
     /// could attach them to other variants; `formatQueryImpl` would then emit SQL the parser never
     /// accepts (e.g. `CREATE TABLE t REFRESH ...` or `CREATE TABLE t TO dst ...`) while execution
@@ -910,6 +930,33 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` declares 'is_populate' or 'is_create_empty' without a source to fill from "
             "during AST JSON deserialization");
+
+    /// `CLONE` is owned by `ParserCreateTableQuery` alone: it is set only there, and only after an
+    /// `AS` that must be followed by a source. `formatQueryImpl` prints ` CLONE` for every shape that
+    /// carries a source, so a `clickhouse_json` payload that puts the flag on a view / dictionary form,
+    /// or on a source-less table, would format into SQL that no SQL parser can read back. The
+    /// interpreter also branches on the flag (`InterpreterCreateQuery` attaches the source partitions),
+    /// so reject the impossible combinations at the JSON boundary.
+    ///
+    /// The parser sets at most one of `EMPTY` / `CLONE` (an `if`/`else if` over the two keywords, and it
+    /// bails out entirely once either is set).
+    if (is_clone_as && is_create_empty)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` sets both 'is_clone_as' and 'is_create_empty' during AST JSON deserialization, "
+            "but they are mutually exclusive");
+
+    /// Views and dictionaries have their own parsers, which never accept `CLONE`.
+    if (is_clone_as && (is_ordinary_view || is_materialized_view || is_dictionary))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'is_clone_as' set on a view or a dictionary during AST JSON "
+            "deserialization, but the parser accepts `CLONE` only for tables");
+
+    /// `CLONE` requires an `AS` clause, so one of `AS SELECT` / `AS table` / `AS table function` is
+    /// always present. Without one, formatting emits a trailing ` CLONE` that cannot be reparsed.
+    if (is_clone_as && !select && !as_table_function && as_table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` declares 'is_clone_as' without a source to clone from during AST JSON "
+            "deserialization");
 
     readOutputOptionsJSON(r);
 }
@@ -1142,11 +1189,14 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (targets)
     {
+        std::optional<UInt64> time_series_version;
+        if (is_time_series_table)
+            time_series_version = getTimeSeriesSettingVersion(*this);
         for (const auto & target : targets->targets)
         {
             /// `To` and `Inner` are formatted separately above (for materialized views).
             if ((target.kind != ViewTarget::To) && (target.kind != ViewTarget::Inner))
-                ASTViewTargets::formatTarget(target, ostr, settings, state, frame);
+                ASTViewTargets::formatTarget(target, ostr, settings, state, frame, time_series_version);
         }
     }
 
@@ -1172,6 +1222,8 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (select)
     {
+        /// Emit CLONE for `CLONE AS SELECT`; the other CLONE shapes are handled in the branches above.
+        add_clone_if_needed();
         ostr << settings.nl_or_ws;
         ostr << "AS ";
 
