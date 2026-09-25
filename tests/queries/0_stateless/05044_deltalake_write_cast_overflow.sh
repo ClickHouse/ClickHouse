@@ -16,7 +16,7 @@ rm -rf "$TABLE_PATH"
 # type on the ClickHouse side while the write schema stays `Int8`, so an INSERT casts `Int32` -> `Int8`.
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 
 DROP TABLE IF EXISTS t_dl_cast;
@@ -28,7 +28,7 @@ DROP TABLE t_dl_cast;
 # being silently truncated.
 if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_cast (id Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 INSERT INTO t_dl_cast VALUES (1000);
@@ -40,7 +40,7 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_dl_cast"
 # truncated, so the INSERT succeeds (the row is written).
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 SET delta_lake_accurate_write_cast = 0;
 CREATE TABLE t_dl_cast (id Int32) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
@@ -57,14 +57,14 @@ COMPAT_PATH="${CLICKHOUSE_USER_FILES_UNIQUE}_cast_overflow_compat"
 rm -rf "$COMPAT_PATH"
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_cast_compat (id Int8) ENGINE = DeltaLakeLocal('${COMPAT_PATH}', Parquet);
 DROP TABLE t_dl_cast_compat;
 "
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 SET compatibility = '25.8';
 CREATE TABLE t_dl_cast_compat (id Int32) ENGINE = DeltaLakeLocal('${COMPAT_PATH}', Parquet);
