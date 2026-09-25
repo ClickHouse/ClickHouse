@@ -299,6 +299,7 @@ This function is in private preview, enable it by setting `enable_time_series_ta
         "Usage example",
         R"(
 SELECT timeSeriesSliceSortedArray([(100, 1.), (110, 2.), (120, 3.), (130, 4.)]::Array(Tuple(UInt32, Float64)), 105, 120) AS result
+SETTINGS enable_time_series_table = 1
         )",
         R"(
 ┌─result────────────┐
@@ -312,6 +313,7 @@ SELECT timeSeriesSliceSortedArray([(100, 1.), (110, 2.), (120, 3.), (130, 4.)]::
 SELECT timeSeriesSliceSortedArray(
     [('2025-06-01 00:00:00'::DateTime64(3), 1.), ('2025-06-01 00:00:30'::DateTime64(3), 2.), ('2025-06-01 00:01:00'::DateTime64(3), 3.)],
     '2025-06-01 00:00:15'::DateTime64(3), '2025-06-01 00:01:00'::DateTime64(3)) AS result
+SETTINGS enable_time_series_table = 1
         )",
         R"(
 ┌─result────────────────────────────────────────────────────────┐
