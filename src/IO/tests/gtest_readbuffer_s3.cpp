@@ -89,10 +89,10 @@ public:
     static int OustandingObjects() { return total; }
 
 private:
-    static int total;
+    static std::atomic<int> total;
 };
 
-int CountedSession::total = 0;
+std::atomic<int> CountedSession::total = 0;
 
 using CountedSessionPtr = std::shared_ptr<CountedSession>;
 
