@@ -12,6 +12,7 @@
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
+#include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
 
@@ -257,7 +258,11 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
         try
         {
             if (!response.sent())
+            {
+                /// Consume an unread POST body, so the connection can be reused for the next request.
+                drainRequestIfNeeded(request, response);
                 sendError(response, status, type, message);
+            }
         }
         catch (...)
         {
