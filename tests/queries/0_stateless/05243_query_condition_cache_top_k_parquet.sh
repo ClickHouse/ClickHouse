@@ -96,6 +96,12 @@ run file_b_2 "SELECT k FROM t_05243 WHERE _file = 'b.parquet' ORDER BY k DESC LI
 touch -d '2020-01-03 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/a.parquet"
 run file_b_after_a_changed "SELECT k FROM t_05243 WHERE _file = 'b.parquet' ORDER BY k DESC LIMIT 3"
 
+echo "--- external sorting"
+# With external sorting the sorted result comes out of the merge of the spilled blocks.
+EXTERNAL_SORT="max_bytes_before_external_sort = 1, max_bytes_ratio_before_external_sort = 0"
+run external_1 "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 4" ", ${EXTERNAL_SORT}"
+run external_2 "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 4" ", ${EXTERNAL_SORT}"
+
 echo "--- a file changes after the cache was used"
 # The entries under the key may only be used while every file the query reads is in the version the
 # key was made for. The failpoint stands in for a file rewritten after an entry was used for another
@@ -112,7 +118,7 @@ run gate_1 "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 5" ", use_query_conditio
 run gate_2 "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 5" ", use_query_condition_cache_for_top_k = 0"
 
 echo "--- query condition cache lookups"
-events nowhere_1 nowhere_2 nowhere_limit nowhere_asc where_1 where_2 rewritten_nowhere rewritten_where file_b_1 file_b_2 file_b_after_a_changed gate_1 gate_2
+events nowhere_1 nowhere_2 nowhere_limit nowhere_asc where_1 where_2 rewritten_nowhere rewritten_where file_b_1 file_b_2 file_b_after_a_changed external_1 external_2 gate_1 gate_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05243"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}"

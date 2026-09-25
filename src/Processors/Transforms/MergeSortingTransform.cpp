@@ -177,6 +177,12 @@ void MergeSortingTransform::consume(Chunk chunk)
                         /*virtual_row_prefetch_window=*/ 0,
                         have_all_inputs);
 
+                /// With external sorting this merge produces the sorted result of the stream, so it
+                /// publishes the value at the limit instead of `generate` (see there).
+                if (threshold_tracker && limit)
+                    static_cast<MergingSortedTransform &>(*external_merging_sorted).setTopKThresholdTracker(
+                        threshold_tracker, description.front().column_name, limit);
+
                 processors.emplace_back(external_merging_sorted);
             }
 

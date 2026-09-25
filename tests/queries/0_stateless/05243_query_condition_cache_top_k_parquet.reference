@@ -38,6 +38,15 @@
 100999
 100998
 100997
+--- external sorting
+100999
+100998
+100997
+100996
+100999
+100998
+100997
+100996
 --- a file changes after the cache was used
 FILE_CHANGED_DURING_READ
 100999
@@ -66,5 +75,7 @@ rewritten_where	1	0
 file_b_1	1	0
 file_b_2	1	1
 file_b_after_a_changed	1	1
+external_1	1	0
+external_2	1	1
 gate_1	0	0
 gate_2	0	0
