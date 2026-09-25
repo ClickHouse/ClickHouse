@@ -618,6 +618,9 @@ public:
     void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
+    /// The columns `keepOnlyRequiredColumnsAndCreateLazyReadStep` would move to the lazy read, without moving
+    /// them: the read keeps more than it is asked to, such as the inputs of PREWHERE and virtual columns.
+    Names getLazilyReadColumns(const NameSet & required_outputs) const;
     /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
     /// their part offsets. Reading a projection instead would address other rows.
     bool hasLazilyReadColumns() const { return has_lazily_read_columns; }

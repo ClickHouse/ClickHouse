@@ -118,6 +118,7 @@ MergedPlanDAG startDAGFromSource(QueryPlan::Node & node)
         merged.origins.emplace(input, MergedPlanDAG::Origin{&node, nullptr});
     }
 
+    merged.step_outputs.emplace(&node, source.inputs);
     merged.sources.push_back(std::move(source));
     return merged;
 }
@@ -231,6 +232,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
         if (!outputsMatchHeader(built.dag.getOutputs(), *step->getOutputHeader()))
             return {};
 
+        built.dag.step_outputs.emplace(&node, built.dag.getOutputs());
         return built;
     }
 
@@ -250,6 +252,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
         if (!outputsMatchHeader(outputs, *step->getOutputHeader()))
             return {};
 
+        built.dag.step_outputs.emplace(&node, outputs);
         return built;
     }
 
@@ -280,6 +283,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
         if (!outputsMatchHeader(built.dag.getOutputs(), *step->getOutputHeader()))
             return {};
 
+        built.dag.step_outputs.emplace(&node, built.dag.getOutputs());
         return built;
     }
 
@@ -315,6 +319,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     built.dag.nearest_stuffing.merge(right.dag.nearest_stuffing);
     built.dag.origins.merge(right.dag.origins);
     built.dag.step_mappings.merge(right.dag.step_mappings);
+    built.dag.step_outputs.merge(right.dag.step_outputs);
     built.pre_join_nodes.append_range(right.pre_join_nodes);
 
     /// This join sits above everything either side computed, and above everything the joins below them
@@ -427,6 +432,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     if (!outputsMatchHeader(built.dag.getOutputs(), *step->getOutputHeader()))
         return {};
 
+    built.dag.step_outputs.emplace(&node, built.dag.getOutputs());
     return built;
 }
 

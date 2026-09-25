@@ -83,6 +83,14 @@
 6	l6
 103	l103
 200	l200
+-- a column the read keeps for PREWHERE crosses under the name the plan gives it
+0	0	0	p0	q0
+291	291	291	p291	q291
+582	582	582	p582	q582
+2
+-- a random value the filter used is not drawn again after the LIMIT
+3	0
+3	1
 -- the same results without the optimization
 6	l6	r6!	3
 103	l103	\N	\N

@@ -74,6 +74,22 @@ SELECT l.k, l.heavy, r.rheavy FROM l JOIN r ON l.k = r.k WHERE l.a > 5 ORDER BY 
 SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%'), countIf(explain LIKE '%BuildRuntimeFilter%') FROM (EXPLAIN compact = 0 SELECT l.k, l.heavy, r.rheavy FROM l JOIN r ON l.k = r.k WHERE l.a > 5 ORDER BY l.a, l.k LIMIT 3 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0);
 SELECT l.k, l.heavy FROM l LEFT ANTI JOIN r ON l.k = r.k AND l.a = r.b WHERE l.a > 5 ORDER BY l.a, l.k LIMIT 3 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
+SELECT '-- a column the read keeps for PREWHERE crosses under the name the plan gives it';
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+CREATE TABLE t1 (k UInt64, a UInt64, heavy String, payload String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
+CREATE TABLE t2 (k UInt64, b UInt64, heavy String, payload String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 64;
+INSERT INTO t1 SELECT number, number % 97, toString(number), concat('p', toString(number)) FROM numbers(10000);
+INSERT INTO t2 SELECT number * 3, number % 89, toString(number * 3), concat('q', toString(number * 3)) FROM numbers(4000);
+SELECT t1.k, t1.heavy, t2.heavy, t1.payload, t2.payload FROM t1 JOIN t2 ON t1.k = t2.k WHERE t1.heavy != '5' AND t2.heavy != '6' ORDER BY t1.a, t1.k LIMIT 3;
+SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') FROM (EXPLAIN compact = 0 SELECT t1.k, t1.heavy, t2.heavy, t1.payload, t2.payload FROM t1 JOIN t2 ON t1.k = t2.k WHERE t1.heavy != '5' AND t2.heavy != '6' ORDER BY t1.a, t1.k LIMIT 3);
+
+SELECT '-- a random value the filter used is not drawn again after the LIMIT';
+SELECT count(), sum(d) FROM (SELECT x.r - x.r2 AS d, t1.payload FROM t1 JOIN (SELECT k, rand() AS r, r AS r2, payload FROM t2 WHERE rand() % 2 = 0) AS x ON t1.k = x.k ORDER BY t1.a, t1.k LIMIT 3);
+SELECT count(), min(p) FROM (SELECT x.r > 0 AS p, rand() AS z, t1.payload FROM t1 JOIN (SELECT k, rand() + 1 AS r FROM t2 WHERE rand() % 2 = 0) AS x ON t1.k = x.k ORDER BY t1.a, t1.k LIMIT 3 SETTINGS query_plan_execute_functions_after_sorting = 0);
+DROP TABLE t1;
+DROP TABLE t2;
+
 SELECT '-- the same results without the optimization';
 SELECT l.k, l.heavy, concat(r.rheavy, '!'), r.b + 1 FROM l LEFT JOIN r ON l.k = r.k WHERE l.a > 5 ORDER BY l.a, l.k LIMIT 5 SETTINGS join_use_nulls = 1, query_plan_lazy_materialization_for_join = 0;
 SELECT l.k, l.heavy, r.rheavy, r2.rheavy FROM l LEFT JOIN r ON l.k = r.k LEFT JOIN r AS r2 ON r2.k = r.k + 3 WHERE l.a > 10 ORDER BY l.a DESC, l.k LIMIT 6 SETTINGS join_use_nulls = 1, query_plan_lazy_materialization_for_join = 0;

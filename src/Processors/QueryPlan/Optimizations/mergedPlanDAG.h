@@ -97,6 +97,10 @@ struct MergedPlanDAG
     /// this stays valid only while those steps are not changed.
     std::unordered_map<const QueryPlan::Node *, ActionsDAG::NodeMapping> step_mappings;
 
+    /// Per plan node of the subtree, sources included: the value of each column of its output header, in
+    /// order. What a step passes through without reading is only here.
+    std::unordered_map<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> step_outputs;
+
     const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
 
     /// Nodes for the columns of the subtree's output header, in order.
