@@ -1662,9 +1662,8 @@ void SchemaConverter::processPrimitiveColumn(
 
             /// Stats are only allowed for FixedString if the output is actually a string.
             const bool output_is_string = WhichDataType(get_output_type_index()).isString();
-            /// A `String` output reaches the query with its trailing zero bytes removed, and that
-            /// removal preserves the byte order of the whole `FixedString(N)` range, so the bounds
-            /// stay bounds only if they get the same treatment.
+            /// A `String` output reaches the query with trailing zero bytes stripped, and that
+            /// strip preserves byte order, so a bound is only a bound after the same strip.
             converter->field_strip_trailing_zeros = output_is_string;
             out_decoder.allow_stats = output_is_string;
             out_decoder.fixed_size_converter = std::move(converter);
