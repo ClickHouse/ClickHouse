@@ -497,8 +497,14 @@ struct AggregatedDataVariants : private boost::noncopyable
     static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
     bool isLowCardinality() const;
+    /// Serialized hash methods; `Aggregator` passes non-nullable `LowCardinality` key columns
+    /// to them without materializing full columns first.
+    bool isSerialized() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
     bool topKHeapEverRejected() const;
+    /// Whether the active method's top-K heap has frozen. The plan-level `top_k` flag stays set after
+    /// the freeze, so this is the runtime state callers have to consult.
+    bool topKHeapFrozen() const;
 
     /** Select the aggregation method based on the number and types of keys. */
     static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);
