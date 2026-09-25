@@ -524,7 +524,7 @@ For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the tex
 Without `support_phrase_search`, `hasPhrase` uses the index only as a hint and verifies each surviving row with the original predicate; a postprocessor additionally normalizes both the phrase and the haystack tokens the same way, so the result is independent of the read path, and tokens the postprocessor drops do not break phrase adjacency. With `support_phrase_search = 1`, `hasPhrase` uses exact direct reads (still applying the postprocessor, if any). This postprocessor support does not extend to the `splitByRegexp` tokenizer: `hasPhrase` on a `splitByRegexp` index combined with a postprocessor is rejected (see footnote ³ below).
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
-| Function | Supports a preprocessor | Compatible tokenizers⁶ | Supports a postprocessor |
+| Function | Supports a preprocessor | Compatible tokenizers⁵ | Supports a postprocessor |
 |---|---|---|---|
 | `=` | yes | all | yes |
 | `IN` | yes | all | yes |
@@ -546,9 +546,10 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [has](/reference/functions/regular-functions/array-functions#has)                                     | yes | `array` | yes |
 | [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                               | yes | `array` | yes |
 | [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
-| [hasTokenPrefix](/reference/functions/regular-functions/string-search-functions#hasTokenPrefix)       | no⁵ | all⁵ | no⁵ |
-| [hasTokenLike](/reference/functions/regular-functions/string-search-functions#hasTokenLike)           | no⁵ | all⁵ | no⁵ |
-| [hasTokenMatch](/reference/functions/regular-functions/string-search-functions#hasTokenMatch)         | no⁵ | all⁵ | no⁵ |
+| [hasAnyTokenPrefix](/reference/functions/regular-functions/string-search-functions)                   | no⁶ | all⁶ | no⁶ |
+| [hasAnyTokenLike](/reference/functions/regular-functions/string-search-functions)                     | no⁶ | all⁶ | no⁶ |
+| [hasAllTokenLike](/reference/functions/regular-functions/string-search-functions)                     | no⁶ | all⁶ | no⁶ |
+| [hasAnyTokenRegexp](/reference/functions/regular-functions/string-search-functions)                   | no⁶ | all⁶ | no⁶ |
 
 ¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
 `LIKE` additionally supports evaluation by a dictionary scan (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for the `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor, see section [LIKE/ILIKE queries](#like-ilike-queries-perf) below.
@@ -564,10 +565,10 @@ Some needles are additionally not eligible, see [LIKE/ILIKE queries](#like-ilike
 The latter is instead evaluated by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer, no preprocessor or postprocessor), which is also the path taken by `col LIKE 'ClickHouse%'` because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) rewrites it into `startsWith`.
 See [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
-⁵ `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` are evaluated by a dictionary scan, see [below](#functions-example-hastokenprefix-hastokenlike-hastokenmatch).
-With the tokenizer argument, their result depends neither on settings nor on the query plan; without it, see below. With a preprocessor or a postprocessor, the functions are evaluated on the raw column values and the index is not used.
+⁵ The *compatible tokenizers* column ignores the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, which is a specialized tokenizer for `Map` columns.
 
-⁶ The *compatible tokenizers* column ignores the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, which is a specialized tokenizer for `Map` columns.
+⁶ `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp` are evaluated by a dictionary scan, see [below](#functions-example-token-patterns).
+With the tokenizer argument, their result depends neither on settings nor on the query plan; without it, see below. With a preprocessor or a postprocessor, the functions are evaluated on the raw column values and the index is not used.
 
 **Experimental: Support phrase search argument (optional)**.
 
@@ -848,14 +849,19 @@ SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 -- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
 ```
 
-#### `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` {#functions-example-hastokenprefix-hastokenlike-hastokenmatch}
+#### `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp` {#functions-example-token-patterns}
 
-Functions [`hasTokenPrefix`](/reference/functions/regular-functions/string-search-functions#hasTokenPrefix), [`hasTokenLike`](/reference/functions/regular-functions/string-search-functions#hasTokenLike) and [`hasTokenMatch`](/reference/functions/regular-functions/string-search-functions#hasTokenMatch) return true if any token of the column starts with a prefix, matches a `LIKE` pattern, or matches a regular expression.
+Functions [`hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp`](/reference/functions/regular-functions/string-search-functions) return true if any token of the column starts with a prefix, matches a `LIKE` pattern, or matches a regular expression.
+Their second argument is one pattern (a `String`, which is not split into tokens) or an `Array(String)` of patterns.
+`hasAnyTokenPrefix`, `hasAnyTokenLike` and `hasAnyTokenRegexp` return true if some token matches any of the patterns, `hasAllTokenLike` if each pattern matches some token.
 
 Unlike `LIKE`, `startsWith` and `match`, which apply the pattern to the whole value, these functions apply it to each token separately.
-The tokens of the index dictionary that match the pattern are therefore exactly the tokens the function looks for:
-ClickHouse finds them by a scan of the dictionary (a seek to the range of matching tokens for `hasTokenPrefix`), reads their posting lists, and answers the query with a [direct read](#direct-read).
-If too many tokens match (see settings [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index#text_index_like_max_matched_tokens) and [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)), the functions are evaluated on the column instead.
+The tokens of the index dictionary that match the patterns are therefore exactly the tokens the function looks for:
+ClickHouse finds them by a scan of the dictionary, reads their posting lists, and answers the query with a [direct read](#direct-read).
+A prefix, or a pattern that is an anchored literal such as `charg%`, is found by a seek to its range of the dictionary.
+Other patterns need a scan of the whole dictionary, which checks only the tokens that contain a literal part of the patterns (for example `harg` in `%harg%`), or every token if a pattern has no literal part.
+`hasAllTokenLike` with several patterns uses the index to select the rows where some pattern matches a token, and checks these rows with the function; `hasAnyTokenLike(col, p1) AND hasAnyTokenLike(col, p2)` is answered from the index alone.
+If too many tokens match (see settings [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index) and [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)), the functions are evaluated on the column instead, and so is a `LIKE` on the same index in the same query.
 
 Like `hasAnyTokens`, the functions use the tokenizer of the index if their optional third argument is omitted; an explicit tokenizer argument must match the index tokenizer for the index to be used.
 Without the argument, whether a call gets the tokenizer of the index depends on the query plan: filters and projections directly over the table get it, and so does a condition pushed down to the table, such as `HAVING` on a grouping key.
@@ -868,9 +874,11 @@ Example:
 
 ```sql
 -- Instead of: arrayExists(t -> startsWith(t, 'charg'), tokens(comment))
-SELECT count() FROM table WHERE hasTokenPrefix(comment, 'charg');
-SELECT count() FROM table WHERE hasTokenLike(comment, 'ch%ed');
-SELECT count() FROM table WHERE hasTokenMatch(comment, '^err[0-9]+$');
+SELECT count() FROM table WHERE hasAnyTokenPrefix(comment, 'charg');
+SELECT count() FROM table WHERE hasAnyTokenPrefix(comment, ['charg', 'refund']);
+SELECT count() FROM table WHERE hasAnyTokenLike(comment, 'ch%ed');
+SELECT count() FROM table WHERE hasAllTokenLike(comment, ['charg%', 'twice']);
+SELECT count() FROM table WHERE hasAnyTokenRegexp(comment, '^err[0-9]+$');
 ```
 
 #### `has` {#functions-example-has}
@@ -1370,7 +1378,7 @@ Direct read is controlled by two settings:
 
 **Supported functions**
 
-The direct read optimization supports functions `hasToken`, `hasAllTokens`, `hasAnyTokens`, `hasTokenPrefix`, `hasTokenLike`, and `hasTokenMatch`.
+The direct read optimization supports functions `hasToken`, `hasAllTokens`, `hasAnyTokens`, `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` (with several patterns as a hint), and `hasAnyTokenRegexp`.
 If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
 If the text index is defined with a `keyValuePairs` tokenizer, direct read is supported for `equals` on a map element (`map['key'] = 'value'`) and for `mapContainsKeyValue`.
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.
@@ -1505,9 +1513,9 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-For `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`, [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index#text_index_like_max_matched_tokens) takes the place of `text_index_like_min_pattern_length`.
+For `hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp`, [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index) takes the place of `text_index_like_min_pattern_length`.
 
-This optimization supports functions `like`, `ilike`, `startsWith`, and `endsWith`, as well as [`hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`](#functions-example-hastokenprefix-hastokenlike-hastokenmatch).
+This optimization supports functions `like`, `ilike`, `startsWith`, and `endsWith`, as well as [`hasAnyTokenPrefix`, `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp`](#functions-example-token-patterns).
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
 
 For `ilike`, the search falls back to full-table scan in two special cases, for both the `splitByNonAlpha` and the `array` tokenizer:
