@@ -1755,8 +1755,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             allow_server_credentials_in_user_queries,
             is_loading_from_existing_metadata,
             /// Only a user `CREATE DATABASE` supplies a fresh table engine definition; `ATTACH DATABASE`
-            /// (server startup or by hand) and internal creates (`RESTORE DATABASE`) replay an accepted one.
-            /*table_definition_mode=*/(args.create_query.attach || args.internal) ? LoadingStrictnessLevel::ATTACH : LoadingStrictnessLevel::CREATE,
+            /// (server startup or by hand) and `RESTORE DATABASE` replay an accepted one. `args.internal` is not
+            /// used here: it is also set for user statements run by `PARALLEL WITH` or `EXECUTE AS`.
+            /*table_definition_mode=*/(args.create_query.attach || args.is_restore_from_backup) ? LoadingStrictnessLevel::ATTACH : LoadingStrictnessLevel::CREATE,
             /// Internal creates (`RESTORE DATABASE`) shouldn't do network I/O.
             /// We don't want an unreachable or unauthorized catalog to block replica startup.
             /*lazy_init=*/args.create_query.attach || args.internal);

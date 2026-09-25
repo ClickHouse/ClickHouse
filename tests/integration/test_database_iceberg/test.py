@@ -2657,6 +2657,16 @@ SETTINGS catalog_type = 'rest', warehouse = 'demo', storage_endpoint = 'http://m
     error = node.query_and_get_error(select_query)
     assert "not supported by data lake engines" in error, error
 
+    # The same fresh definition run by a wrapper that executes user statements as internal ones
+    # (`PARALLEL WITH`, `EXECUTE AS`) must be rejected as well.
+    node.query(f"DROP DATABASE {db_name}")
+    node.query(
+        f"{create_query} PARALLEL WITH DROP TABLE IF EXISTS default.{db_name}_nonexistent",
+        settings={"allow_database_iceberg": 1},
+    )
+    error = node.query_and_get_error(select_query)
+    assert "not supported by data lake engines" in error, error
+
     # A user `ATTACH DATABASE` replays the persisted definition: no rejection, and the reads work.
     node.query(f"DETACH DATABASE {db_name}")
     node.query(f"ATTACH DATABASE {db_name}")
