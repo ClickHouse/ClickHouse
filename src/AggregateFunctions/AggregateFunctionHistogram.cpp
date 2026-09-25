@@ -437,7 +437,7 @@ void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation documentation = {
-        .description = R"DOC(Calculates an adaptive histogram with up to the specified number of bins over the input values, returning an array of (lower, upper, height) tuples. Bins are merged while data arrives, so once a single aggregation state has received more than twice the requested number of bins, the result depends on the order in which the values are processed.)DOC",
+        .description = R"DOC(Calculates an adaptive histogram with up to the specified number of bins over the input values, returning an array of (lower, upper, height) tuples. Bins are merged while data arrives, so once a single aggregation state has received more than twice as many values as the requested number of bins, the result can depend on the order in which the values are processed.)DOC",
         .category = FunctionDocumentation::Category::AggregateFunction};
 
     AggregateFunctionProperties properties = {.is_order_dependent = true};
