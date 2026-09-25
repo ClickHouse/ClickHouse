@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -135,7 +136,7 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         "2) Data parts information represented as a list: "
         "\n parts(\n\tWide(path='<part_relative_path>', marks_count=n, ranges=[(x1, y1), (x2, y2), ...], has_lightweight_delete=0)\n\t...\n)\n"
         "3) Disk configuration: `disk(type=s3, endpoint='<endpoint>', ...)`\n"
-        "4) Settings: `table_settings(index_granularity_bytes=x, index_granularity=y, share_nested_offsets=z)`, "
+        "4) Settings: `table_settings(index_granularity_bytes=x, index_granularity=y, share_nested_offsets=z, format_version=v)`, "
         "of which only `index_granularity_bytes` is required",
         getName(), arguments_num);
 
@@ -349,7 +350,7 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         {
             const auto & settings_function_args = get_function_args(arg_num, arg, {"table_settings"});
             static const UnorderedSetWithMemoryTracking<std::string_view> settings = {
-                "index_granularity_bytes", "index_granularity", "share_nested_offsets"};
+                "index_granularity_bytes", "index_granularity", "share_nested_offsets", "format_version"};
             /// Everything else is left at its default, but these have no default that is right for
             /// every part: they decide how the marks and the streams of the part are laid out.
             static const UnorderedSetWithMemoryTracking<std::string_view> required_settings = {"index_granularity_bytes"};
@@ -379,6 +380,14 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
 
             if (auto it = parsed_settings.find("share_nested_offsets"); it != parsed_settings.end())
                 read_from_parts_info.share_nested_offsets = parse<UInt64>(it->second) != 0;
+
+            if (auto it = parsed_settings.find("format_version"); it != parsed_settings.end())
+            {
+                auto format_version = parse<UInt64>(it->second);
+                if (format_version > MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
+                    throw_bad_argument(arg_num, fmt::format("setting `format_version` must be `0` or `1`, got `{}`", format_version));
+                read_from_parts_info.format_version = MergeTreeDataFormatVersion(static_cast<UInt32>(format_version));
+            }
         }
 
         ++arg_num;
@@ -428,12 +437,17 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         /// from the description itself: the `type` (and `object_storage_type`) must be given literally.
         /// A substitution (`from_env`, `from_zk`, `include`) or a wrapper disk cannot tell what kind of
         /// source the query is going to read, so they are rejected here, before any of it is resolved.
-        /// The `endpoint` is taken along the way: it is what a filtered source grant is matched against.
-        std::string type;
-        std::string object_storage_type;
-        std::string endpoint;
-        bool seen_endpoint = false;
-        bool has_endpoint_subpath = false;
+        /// The location keys are taken along the way: they are what a filtered source grant is matched
+        /// against.
+        ///
+        /// Every key that decides the source or its location may be given only once: the first
+        /// occurrence of a key in the configuration wins when the disk is created, so a repeated key
+        /// would let the check look at one value while the disk uses another.
+        static constexpr std::array<std::string_view, 8> source_keys = {
+            "type", "object_storage_type", "endpoint", "endpoint_subpath",
+            "storage_account_url", "connection_string", "container_name", "container"};
+        /// The keys that were given, with their value if it is a plain literal.
+        UnorderedMapWithMemoryTracking<std::string, std::optional<std::string>> source_args;
         for (const auto & disk_arg : disk_args)
         {
             const auto * equals = disk_arg->as<ASTFunction>();
@@ -450,51 +464,40 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
             if (key->name() == "include")
                 throw_bad_argument(disk_arg_num, "`include` is not allowed in the disk description");
 
-            /// `endpoint_subpath` moves what the disk reads below the `endpoint`, so the `endpoint` alone
-            /// is not the URI to check then.
-            if (key->name() == "endpoint_subpath")
-            {
-                has_endpoint_subpath = true;
+            if (std::ranges::find(source_keys, key->name()) == source_keys.end())
                 continue;
-            }
 
-            if (key->name() != "type" && key->name() != "object_storage_type" && key->name() != "endpoint")
-                continue;
+            if (source_args.contains(key->name()))
+                throw_bad_argument(disk_arg_num, fmt::format("`{}` is given more than once in the disk description", key->name()));
 
             const auto & value_ast = equals->arguments->children[1];
-            const bool is_literal = value_ast->as<ASTLiteral>() || value_ast->as<ASTIdentifier>();
-
-            /// An `endpoint` that is not written literally simply is not used for the check: the query
-            /// is then held to the unfiltered grant on the source, which is the stricter outcome. A
-            /// repeated `endpoint` is rejected: the check must not trust one while the disk uses the other.
-            if (key->name() == "endpoint")
+            std::optional<std::string> value;
+            if (value_ast->as<ASTLiteral>() || value_ast->as<ASTIdentifier>())
             {
-                if (seen_endpoint)
-                    throw_bad_argument(disk_arg_num, "`endpoint` is given more than once in the disk description");
-                seen_endpoint = true;
-
-                if (is_literal)
-                {
-                    auto value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(value_ast, context);
-                    endpoint = checkAndGetLiteralArgument<String>(value_literal, key->name());
-                }
-                continue;
+                auto value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(value_ast, context);
+                auto literal_value = checkAndGetLiteralArgument<String>(value_literal, key->name());
+                if (!literal_value.starts_with("from_env") && !literal_value.starts_with("from_zk") && !literal_value.contains('{'))
+                    value = std::move(literal_value);
             }
 
-            if (!is_literal)
-                throw_bad_argument(disk_arg_num, fmt::format("expected the `{}` of the disk to be a literal", key->name()));
-
-            auto value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(value_ast, context);
-            auto value = checkAndGetLiteralArgument<String>(value_literal, key->name());
-            if (value.starts_with("from_env") || value.starts_with("from_zk"))
+            /// A location that is not written as a plain literal simply is not used for the check: the
+            /// query is then held to the unfiltered grant on the source, which is the stricter outcome.
+            /// The kind of the source cannot be left open like that.
+            if ((key->name() == "type" || key->name() == "object_storage_type") && !value)
                 throw_bad_argument(disk_arg_num, fmt::format(
                     "the `{}` of the disk must be a literal value, not a substitution", key->name()));
 
-            if (key->name() == "type")
-                type = value;
-            else
-                object_storage_type = value;
+            source_args.emplace(key->name(), std::move(value));
         }
+
+        auto get_source_arg = [&](const std::string & key) -> std::string
+        {
+            auto it = source_args.find(key);
+            return it != source_args.end() && it->second ? *it->second : std::string{};
+        };
+
+        const auto type = get_source_arg("type");
+        const auto object_storage_type = get_source_arg("object_storage_type");
 
         if (type.empty())
             throw_bad_argument(disk_arg_num, "the disk description requires an explicit `type`");
@@ -528,17 +531,32 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
                 "table function `{}` cannot read from a disk of type `{}`",
                 getName(), object_storage_type.empty() ? type : type + ", object_storage_type = " + object_storage_type));
 
-        /// An object storage disk reads under its `endpoint`, so that is the URI a filtered source
-        /// grant is matched against. Only a plain literal is trusted: a substitution or a macro would
-        /// make the created disk read from somewhere else than what was checked. A local disk has no
-        /// URI, as `file` has none.
-        if (*source_access != AccessTypeObjects::Source::FILE
-            && !endpoint.empty()
-            && !has_endpoint_subpath
-            && !endpoint.contains('{')
-            && !endpoint.starts_with("from_env")
-            && !endpoint.starts_with("from_zk"))
-            function_uri = endpoint;
+        /// An object storage disk reads under its location, so that is the URI a filtered source grant
+        /// is matched against. Only plain literals are trusted: a substitution or a macro would make the
+        /// created disk read from somewhere else than what was checked, and an `endpoint_subpath` moves
+        /// the data below the location. The keys are looked at in the order the disk creators prefer
+        /// them: an `endpoint` wins over everything else, and for Azure a `connection_string` wins over
+        /// a `storage_account_url`. A local disk has no URI, as `file` has none.
+        if (*source_access != AccessTypeObjects::Source::FILE && !source_args.contains("endpoint_subpath"))
+        {
+            if (source_args.contains("endpoint"))
+            {
+                function_uri = get_source_arg("endpoint");
+            }
+            else if (*source_access == AccessTypeObjects::Source::AZURE
+                && !source_args.contains("connection_string")
+                && source_args.contains("storage_account_url"))
+            {
+                auto storage_account_url = get_source_arg("storage_account_url");
+                auto container = source_args.contains("container_name") ? get_source_arg("container_name") : get_source_arg("container");
+                if (!storage_account_url.empty() && !container.empty())
+                {
+                    if (!storage_account_url.ends_with('/'))
+                        storage_account_url += '/';
+                    function_uri = storage_account_url + container + "/";
+                }
+            }
+        }
     }
 }
 
@@ -600,6 +618,7 @@ parts themselves:
 | `index_granularity_bytes` | Required. The `index_granularity_bytes` of the table. `0` means the parts have non-adaptive marks, and then `index_granularity` is what the granule size is taken from. |
 | `index_granularity`       | The `index_granularity` of the table, `8192` by default. It is only used for parts with non-adaptive marks. |
 | `share_nested_offsets`    | The `share_nested_offsets` of the table, `1` by default. It decides the names of the offsets streams of a `Nested` column, so a part written with `share_nested_offsets = 0` cannot be read without passing it here. |
+| `format_version`          | The format version of the table, `1` by default. A table created with the deprecated syntax `MergeTree(date, ...)` has format version `0`, and the names of its parts (`20150101_20150131_1_1_0`) can only be parsed with `format_version = 0`. |
 
 ## Returned value {#returned-value}
 
@@ -613,9 +632,11 @@ The `type` of the disk (and `object_storage_type` when `type = object_storage`) 
 value: it decides what kind of source the access of the query is checked for (`READ ON S3`,
 `READ ON FILE`, ...), and the disk is only created after that check passes. A filtered grant, such as
 `GRANT READ ON S3('https://mybucket.s3.amazonaws.com/data/.*')`, is matched against the `endpoint` of
-the disk description, which then has to be a literal value as well; a local disk needs the unfiltered
-`READ ON FILE` grant, as the `file` table function does. The disk is local to the query and is not
-registered on the server.
+the disk description - or, for an Azure disk described with `storage_account_url`, against
+`<storage_account_url>/<container_name>/` - which then has to be a literal value as well; a local disk
+needs the unfiltered `READ ON FILE` grant, as the `file` table function does. The keys that decide the
+source and its location (`type`, `object_storage_type`, `endpoint`, `storage_account_url`, ...) can be
+given only once. The disk is local to the query and is not registered on the server.
 
 ## Usage example {#usage-example}
 

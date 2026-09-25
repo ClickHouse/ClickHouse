@@ -2,6 +2,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 namespace DB
 {
@@ -48,6 +49,10 @@ public:
         /// The `share_nested_offsets` of the table that wrote the parts: it decides the names of the
         /// offsets streams of a `Nested` column, so a part cannot be read without it.
         bool share_nested_offsets = true;
+
+        /// The format version of the table that wrote the parts: `0` for a table created with the
+        /// old syntax (`MergeTree(date, ...)`), whose part names have a layout of their own.
+        MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
 
         /// The settings of the table that wrote the parts, as far as they are known here: the defaults
         /// with the carried settings applied. Everything that sizes reads by granularity must use these.

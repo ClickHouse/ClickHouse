@@ -39,12 +39,16 @@ public:
         size_t marks_count_,
         MergeTreeSettingsPtr storage_settings_,
         ContextPtr context_,
+        MergeTreeDataFormatVersion format_version_,
         bool share_nested_offsets_ = true)
         : IMergeTreeDataPartInfoForReader(context_)
         , type(type_)
         , data_part_storage(std::move(data_part_storage_))
         , part_name(data_part_storage->getPartDirectory())
-        , part_info(MergeTreePartInfo::fromPartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
+        /// The name of a part of an old-syntax table (`MergeTree(date, ...)`) has its own layout
+        /// (`20150101_20150131_0_0_0`), and it cannot be told apart from a custom-partitioning name by
+        /// its looks alone, so the format version comes from the description of the parts.
+        , part_info(MergeTreePartInfo::fromPartName(part_name, format_version_))
         , columns(columns_)
         , columns_substreams(std::move(columns_substreams_))
         , invalidated_system_columns(std::move(invalidated_system_columns_))

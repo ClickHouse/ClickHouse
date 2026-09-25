@@ -357,6 +357,7 @@ MergeTreeDataPartInfoForReaderPtr MergeTreeReadPoolStatelessParts::buildReaderIn
         part.type, data_part_storage, serialization_columns, std::move(columns_substreams), std::move(invalidated_system_columns),
         index_granularity_info, index_granularity, checksums, serialization_infos,
         table_name, part.marks_count, storage_settings, getContext(),
+        read_from_parts_info.format_version,
         (*storage_settings)[MergeTreeSetting::share_nested_offsets]);
 }
 
