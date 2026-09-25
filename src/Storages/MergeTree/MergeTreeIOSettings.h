@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <optional>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
@@ -65,6 +66,14 @@ struct MergeTreeReaderSettings
     bool use_query_condition_cache = false;
     /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
     UInt64 query_condition_cache_settings_salt = 0;
+    /// Set only for a TopK read whose PREWHERE carries the dynamic `__topKFilter` (`ORDER BY ... LIMIT n`
+    /// served by TopK dynamic filtering): the query condition cache key under which the granules that
+    /// PREWHERE empties are recorded. It covers the query's whole filter and is salted with the TopK plan
+    /// parameters and the part set, because `__topKFilter` alone hashes the same across queries that
+    /// select different rows. See `ReadFromMergeTree::getQueryConditionCacheConditionHash`. For any other
+    /// read (including a TopK read that only uses a skip index) this is empty and PREWHERE-emptied
+    /// granules are recorded under the PREWHERE predicate's own hash instead.
+    std::optional<UInt64> top_k_condition_hash;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;
