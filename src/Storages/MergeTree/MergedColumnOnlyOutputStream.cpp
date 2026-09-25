@@ -18,7 +18,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     size_t part_uncompressed_bytes,
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
-    PackedFilesWriter * external_packed_skip_indices_writer)
+    PackedFilesWriter * external_packed_skip_indices_writer,
+    SerializationByName serializations_override)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -49,7 +50,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
-        data_part->name, data_part->storage.getLogName(), data_part->getSerializations().toSerializationByName(),
+        data_part->name, data_part->storage.getLogName(),
+        serializations_override.empty() ? data_part->getSerializations().toSerializationByName() : std::move(serializations_override),
         data_part_storage, data_part->index_granularity_info,
         storage_settings,
         columns_list_,
@@ -106,6 +108,18 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
     }
 
     new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+    return checksums;
+}
+
+MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksumsWithoutUpdatingPart(MergeTreeDataPartChecksums & all_checksums)
+{
+    MergeTreeData::DataPart::Checksums checksums;
+    NameSet checksums_to_remove;
+    writer->fillChecksums(checksums, checksums_to_remove);
+
+    for (const auto & filename : checksums_to_remove)
+        all_checksums.files.erase(filename);
+
     return checksums;
 }
 

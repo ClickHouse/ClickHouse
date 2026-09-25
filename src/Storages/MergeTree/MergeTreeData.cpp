@@ -382,6 +382,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsBool write_marks_for_substreams_in_compact_parts;
+    extern const MergeTreeSettingsUInt64 max_bytes_for_compact_map_key_columns;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
@@ -1390,6 +1392,20 @@ void MergeTreeData::checkProperties(
     /// (pre-`ALTER`) value, while `effective_settings` is the post-`ALTER` value; the difference
     /// lets us detect an `ALTER` that flips a gate from enabled to disabled.
     const MergeTreeSettings & live_settings = *getSettings();
+
+    if (!attach)
+    {
+        const bool uses_with_key_columns
+            = effective_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
+            || effective_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
+                == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        if (uses_with_key_columns && !effective_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts])
+        {
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Map serialization version 'with_key_columns' requires write_marks_for_substreams_in_compact_parts = 1");
+        }
+    }
 
     for (const auto & projection : new_metadata.projections)
     {
@@ -6792,6 +6808,25 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     auto part_type = PartType::Wide;
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
+
+    /// `with_key_columns` freezes the key set from the first written block. Compact
+    /// is only safe for small zero-level inserts; merge output is always Wide.
+    if (part_type == PartType::Compact)
+    {
+        const bool zero_level_with_key_columns
+            = (*settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
+                == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        const bool merged_with_key_columns
+            = (*settings)[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        const bool writing_with_key_columns
+            = (part_level == 0) ? zero_level_with_key_columns : (zero_level_with_key_columns || merged_with_key_columns);
+        if (writing_with_key_columns)
+        {
+            const UInt64 max_bytes_for_compact = (*settings)[MergeTreeSetting::max_bytes_for_compact_map_key_columns];
+            if (part_level != 0 || max_bytes_for_compact == 0 || bytes_uncompressed >= max_bytes_for_compact)
+                part_type = PartType::Wide;
+        }
+    }
 
     auto storage_type = PartStorageType::Full;
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_full_part_storage], (*settings)[MergeTreeSetting::min_rows_for_full_part_storage], (*settings)[MergeTreeSetting::min_level_for_full_part_storage]))

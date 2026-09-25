@@ -1,5 +1,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Common/typeid_cast.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
@@ -21,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace FailPoints
@@ -94,7 +97,21 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
         /// object, so they must not be shared between streams. Make the key unique per stream so that
         /// every such stream gets its own codec instance, while still being tracked for finalize/cancel.
-        if (compression_codec->needsVectorDimensionUpfront())
+        /// `with_key_columns` Map keys must also stay unshared: Compact puts every
+        /// stream in `data.bin`, and a shared compressor would fold all keys into
+        /// one frame so a single-key read decompresses the whole Map.
+        bool isolate_map_key_columns_stream = false;
+        for (const auto & elem : substream_path)
+        {
+            if (elem.type == ISerialization::Substream::MapKey
+                || elem.type == ISerialization::Substream::MapKeyPresence
+                || elem.type == ISerialization::Substream::MapKeysInfo)
+            {
+                isolate_map_key_columns_stream = true;
+                break;
+            }
+        }
+        if (compression_codec->needsVectorDimensionUpfront() || isolate_map_key_columns_stream)
         {
             SipHash codec_hash;
             codec_hash.update(codec_id);
@@ -127,6 +144,13 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.map_buckets_min_avg_size = settings.map_buckets_min_avg_size;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
     auto serialization = getSerialization(name_and_type.name);
+    if (typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get())
+        && !index_granularity_info.mark_type.with_substreams)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Map serialization version 'with_key_columns' requires write_marks_for_substreams_in_compact_parts = 1");
+    }
     auto substream_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     serialization->enumerateStreams(enumerate_settings, callback, substream_data);
 }

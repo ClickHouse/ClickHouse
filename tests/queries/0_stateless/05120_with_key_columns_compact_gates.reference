@@ -1,0 +1,14 @@
+compact part type
+Compact
+1	{'a':1,'b':2}	1	2	0	1	0
+1
+empty map compact
+Compact
+1	{}	0	0
+1	0	0
+optimize final -> wide
+Wide
+1	{'a':1,'b':2}	1	2
+byte threshold forces wide
+Wide
+write marks required

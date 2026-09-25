@@ -18,9 +18,12 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/PackedFilesWriter.h>
@@ -652,7 +655,14 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             if (column.column->hasDynamicStructure())
                 mutable_column->takeExactDynamicStructureFrom(*column.column);
             if (column.column->hasStatistics())
+            {
+                if (auto * map_column = typeid_cast<ColumnMap *>(mutable_column.get()))
+                {
+                    if (typeid_cast<const SerializationMapWithKeyColumns *>(getSerialization(column.name).get()))
+                        map_column->enableKeyCollection();
+                }
                 mutable_column->takeOrCalculateStatisticsFrom({column.column});
+            }
             sample_column.column = std::move(mutable_column);
             block_sample.insert(std::move(sample_column));
         }

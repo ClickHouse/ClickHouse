@@ -445,6 +445,28 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     if (!column_in_part)
     {
         const auto & infos = data_part_info_for_read->getSerializationInfos();
+
+        /// Dynamic Map subcolumns (`key_*` / `exists_*`) are not in the part's static
+        /// columns list. Resolve them through the parent so Compact (and Wide) keep
+        /// the part's `with_key_columns` serialization instead of the type default.
+        if (!name_pair.second.empty())
+        {
+            auto parent_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_pair.first);
+            if (parent_in_part && parent_in_part->type->hasSubcolumn(name_pair.second))
+            {
+                NameAndTypePair dynamic_subcolumn{
+                    name_pair.first,
+                    name_pair.second,
+                    parent_in_part->type,
+                    parent_in_part->type->getSubcolumnType(name_pair.second)};
+
+                if (auto it = infos.find(parent_in_part->getNameInStorage()); it != infos.end())
+                    return IDataType::getSerialization(dynamic_subcolumn, *it->second);
+
+                return IDataType::getSerialization(dynamic_subcolumn, infos.getSettings());
+            }
+        }
+
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
         {
             auto type_in_part = DataTypeFactory::instance().get(missing->type_name);

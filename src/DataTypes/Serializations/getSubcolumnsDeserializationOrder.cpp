@@ -47,7 +47,16 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
                 }
 
                 if (it == substream_to_pos.end())
+                {
+                    /// Dynamic Map key streams are enumerated from the requested subcolumn name.
+                    /// A part may not have that key; Compact reader then sets
+                    /// check_stream_exists_callback and the stream must be skipped.
+                    if (enumerate_settings.check_stream_exists_callback
+                        && !enumerate_settings.check_stream_exists_callback(substream_path))
+                        return;
+
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected substream {} for column {}", substream_name, column_name);
+                }
             }
 
             substreams_positions.push_back(it->second);

@@ -403,14 +403,33 @@ Possible values:
 
 - basic — Use the standard serialization for `Map`.
 - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
+- with_key_columns — Store each key as an independent set of streams, plus a shared presence stream. Reading a single key opens only that key's files.
 
 The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
+Reading one key from `with_key_columns` opens only that key's files. A full map comes back in key comparison order, and a repeated key in a row is stored once. [map_max_key_columns](#map_max_key_columns) reserves a bound on the number of independent key streams.
 )", 0) \
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version_for_zero_level_parts, "basic", R"(
 This setting allows to specify a different serialization version of
 `Map` columns for zero level parts that are created during inserts.
 It can be useful to keep `basic` serialization for zero level parts to avoid
-performance degradation during inserts, while using `with_buckets` for merged parts.
+performance degradation during inserts, while using `with_buckets` or `with_key_columns` for merged parts.
+)", 0) \
+    DECLARE(UInt64, map_max_key_columns, 0, R"(
+Reserved bound on the number of distinct keys that `with_key_columns` `Map` serialization stores as independent streams.
+A value of `0` means no limit. The writer does not apply this bound yet: every distinct key is stored in its own streams.
+)", 0) \
+    DECLARE(UInt64, map_key_columns_per_key_merge_min_keys, 32, R"(
+When a `with_key_columns` `Map` column's distinct key union across the source parts is at least this many,
+merge uses Vertical merge and gathers one key at a time so the merge does not open every key file together.
+Below the threshold the column is still merged as a single logical `Map`.
+A value of `0` disables the per-key gather path.
+Merges that cannot use Vertical (for example `OPTIMIZE ... DEDUPLICATE`) fail if the key union meets this threshold.
+)", 0) \
+    DECLARE(UInt64, max_bytes_for_compact_map_key_columns, 64ull * 1024 * 1024, R"(
+If `map_serialization_version` (or `map_serialization_version_for_zero_level_parts`) is `with_key_columns`,
+zero-level Compact parts are allowed only when the estimated uncompressed size is below this limit.
+A value of `0` disables Compact for `with_key_columns` and always writes Wide parts.
+Merge output (`part_level >= 1`) is always Wide regardless of this setting.
 )", 0) \
     DECLARE(NonZeroUInt64, max_buckets_in_map, 32, R"(
 The maximum number of buckets for `Map` serialization. Works with `with_buckets` `Map` serialization.

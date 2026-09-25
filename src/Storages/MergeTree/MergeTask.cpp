@@ -6,8 +6,10 @@
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <algorithm>
 #include <memory>
 #include <fmt/format.h>
+#include <Columns/IColumn.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
@@ -54,6 +56,17 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MapWithKeyColumnsMerge.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationMapKeyPresenceMerge.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnsNumber.h>
+#include <Processors/ISimpleTransform.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumnsValue.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
@@ -163,6 +176,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_statistics_on_merge;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsUInt64 map_key_columns_per_key_merge_min_keys;
 }
 
 namespace ErrorCodes
@@ -376,6 +390,60 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
+}
+
+static void stampMapKeyUnionsOnBlock(Block & block, const std::unordered_map<String, MapKeyManifest> & unions)
+{
+    for (const auto & [name, manifest] : unions)
+    {
+        if (!block.has(name))
+            continue;
+
+        auto & column = block.getByName(name);
+        column.column = column.column->convertToFullColumnIfSparse();
+        auto mutable_column = IColumn::mutate(std::move(column.column));
+        if (auto * map_column = typeid_cast<ColumnMap *>(mutable_column.get()))
+            stampMapKeyUnion(*map_column, manifest);
+        column.column = std::move(mutable_column);
+    }
+}
+
+static MapKeyManifest scanMapKeysFromPart(
+    const MergeTreeData & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeData::DataPartPtr & part,
+    const AlterConversionsPtr & alter_conversions,
+    const String & column_name,
+    size_t part_num)
+{
+    if (part->rows_count == 0)
+        return {};
+
+    auto pipe = createMergeTreeSequentialSource(
+        MergeTreeSequentialSourceType::Merge,
+        storage,
+        storage_snapshot,
+        RangesInDataPart(part, nullptr, part_num, 0),
+        alter_conversions,
+        /*merged_part_offsets=*/ nullptr,
+        Names{column_name},
+        /*mark_ranges=*/ std::nullopt,
+        /*filtered_rows_count=*/ nullptr,
+        /*apply_deleted_mask=*/ false,
+        /*read_with_direct_io=*/ false,
+        /*prefetch=*/ false);
+
+    QueryPipeline pipeline(std::move(pipe));
+    PullingPipelineExecutor executor(pipeline);
+    Block block;
+    std::vector<MapKeyManifest> manifests;
+    while (executor.pull(block))
+    {
+        if (!block.has(column_name) || !block.rows())
+            continue;
+        manifests.push_back(SerializationMapWithKeyColumns::collectManifestFromColumn(*block.getByName(column_name).column));
+    }
+    return unionMapKeyManifests(manifests);
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
@@ -1077,6 +1145,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// above interleaved with merge-only scratch, so they were allocated in the default arenas.
     /// Re-home them into the dedicated arena; the interleaved scratch stays out.
     global_ctx->new_data_part->moveMetadataToDedicatedArena();
+
+    collectMapKeyUnions();
 
     ctx->sum_input_rows_upper_bound = global_ctx->merge_list_element_ptr->total_rows_count;
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
@@ -1914,6 +1984,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         size_t starting_offset = global_ctx->rows_written;
         global_ctx->rows_written += block.rows();
         ProfileEvents::increment(ProfileEvents::MergeWrittenRows, block.rows());
+        stampMapKeyUnionsOnBlock(block, global_ctx->map_key_unions);
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
         if (global_ctx->merge_may_reduce_rows)
@@ -2004,11 +2075,108 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     bool all_parts_on_remote_disks = std::ranges::all_of(global_ctx->future_part->parts, [](const auto & part) { return part->isStoredOnRemoteDisk(); });
     ctx->use_prefetch = all_parts_on_remote_disks && storage_settings[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
 
-    if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end())
+    if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end()
+        && !global_ctx->per_key_vertical_map_columns.contains(ctx->it_name_and_type->name))
         ctx->prepared_pipeline = createPipelineForReadingOneColumn(ctx->it_name_and_type->name);
 
     return false;
 }
+
+class RemapMapKeyPresenceTransform final : public ISimpleTransform
+{
+public:
+    RemapMapKeyPresenceTransform(SharedHeader header_, std::vector<ssize_t> remap_, size_t source_size_)
+        : ISimpleTransform(header_, header_, false)
+        , remap(std::move(remap_))
+        , source_size(source_size_)
+    {
+    }
+
+    String getName() const override { return "RemapMapKeyPresence"; }
+
+    void transform(Chunk & chunk) override
+    {
+        auto column = chunk.getColumns()[0];
+        const auto & array = assert_cast<const ColumnArray &>(*column);
+        const auto & nested = assert_cast<const ColumnUInt8 &>(array.getData());
+        const auto & offsets = array.getOffsets();
+
+        auto dest_nested = ColumnUInt8::create();
+        auto dest_offsets = ColumnArray::ColumnOffsets::create();
+        auto & dest_data = dest_nested->getData();
+        auto & dest_offs = dest_offsets->getData();
+
+        const size_t rows = array.size();
+        dest_data.reserve(rows * remap.size());
+        dest_offs.reserve(rows);
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
+            const size_t end = offsets[row];
+            const size_t row_source_size = end - begin;
+            if (source_size != 0 && row_source_size != source_size)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Map key presence row has {} values, expected {}",
+                    row_source_size,
+                    source_size);
+
+            remapPresenceRow(nested.getData().data() + begin, row_source_size, remap, dest_data);
+            dest_offs.push_back(dest_data.size());
+        }
+
+        Columns columns;
+        columns.emplace_back(ColumnArray::create(std::move(dest_nested), std::move(dest_offsets)));
+        chunk.setColumns(std::move(columns), rows);
+    }
+
+private:
+    std::vector<ssize_t> remap;
+    size_t source_size;
+};
+
+class RemapMapKeyPresenceStep : public ITransformingStep
+{
+public:
+    RemapMapKeyPresenceStep(SharedHeader input_header_, std::vector<ssize_t> remap_, size_t source_size_)
+        : ITransformingStep(input_header_, input_header_, getTraits())
+        , remap(std::move(remap_))
+        , source_size(source_size_)
+    {
+    }
+
+    String getName() const override { return "RemapMapKeyPresence"; }
+
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    {
+        pipeline.addTransform(std::make_shared<RemapMapKeyPresenceTransform>(pipeline.getSharedHeader(), remap, source_size));
+    }
+
+    void updateOutputHeader() override
+    {
+        output_header = input_headers.front();
+    }
+
+private:
+    static Traits getTraits()
+    {
+        return ITransformingStep::Traits
+        {
+            {
+                .returns_single_stream = false,
+                .preserves_number_of_streams = true,
+                .preserves_sorting = true,
+            },
+            {
+                .preserves_number_of_rows = true,
+            }
+        };
+    }
+
+    std::vector<ssize_t> remap;
+    size_t source_size;
+};
 
 /// Gathers values from all parts for one column using rows sources temporary file
 class ColumnGathererStep : public ITransformingStep
@@ -2152,7 +2320,9 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
-        bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
+        bool is_result_sparse = false;
+        if (auto serialization = global_ctx->new_data_part->tryGetSerialization(column_name))
+            is_result_sparse = ISerialization::hasKind(serialization->getKindStack(), ISerialization::Kind::SPARSE);
         auto merge_step = std::make_unique<ColumnGathererStep>(
             merge_column_query_plan.getCurrentHeader(),
             RowsSourcesTemporaryFile::FILE_ID,
@@ -2206,7 +2376,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
         /// Prepare next column pipeline to initiate prefetching
         auto next_column_it = std::next(ctx->it_name_and_type);
-        if (next_column_it != global_ctx->gathering_columns.end())
+        if (next_column_it != global_ctx->gathering_columns.end()
+            && !global_ctx->per_key_vertical_map_columns.contains(next_column_it->name))
             ctx->prepared_pipeline = createPipelineForReadingOneColumn(next_column_it->name);
     }
     else
@@ -2276,7 +2447,19 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
         }
 
         ctx->column_elems_written += block.rows();
-        ctx->column_to->write(block);
+        if (ctx->per_key_map)
+        {
+            Block renamed;
+            auto column = block.getByPosition(0);
+            column.name = ctx->per_key_map->map_column_name;
+            renamed.insert(std::move(column));
+            ctx->column_to->write(renamed);
+        }
+        else
+        {
+            stampMapKeyUnionsOnBlock(block, global_ctx->map_key_unions);
+            ctx->column_to->write(block);
+        }
     } while (watch.elapsedMilliseconds() < step_time_ms);
 
     /// Need execute again
@@ -2333,6 +2516,291 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 
     /// This is the external loop increment.
     ++ctx->it_name_and_type;
+}
+
+bool MergeTask::VerticalMergeStage::isPerKeyMapGatheringColumn() const
+{
+    return global_ctx->per_key_vertical_map_columns.contains(ctx->it_name_and_type->name);
+}
+
+void MergeTask::VerticalMergeStage::preparePerKeyMapPresence() const
+{
+    const auto & column_name = ctx->it_name_and_type->name;
+
+    if (!ctx->per_key_map)
+    {
+        VerticalMergeRuntimeContext::PerKeyMapMergeState state;
+        state.map_column_name = column_name;
+        state.map_type = ctx->it_name_and_type->type;
+        const auto & map_type = assert_cast<const DataTypeMap &>(*state.map_type);
+        state.value_type = map_type.getValueType();
+        state.map_serialization = global_ctx->new_data_part->getSerialization(column_name);
+        const auto * with_key_columns = typeid_cast<const SerializationMapWithKeyColumns *>(state.map_serialization.get());
+        if (!with_key_columns)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Per-key merge expected with_key_columns serialization for column {}", column_name);
+        state.value_serialization = with_key_columns->getValueSerialization();
+        state.union_manifest = global_ctx->map_key_unions.at(column_name);
+        state.part_manifests.resize(global_ctx->future_part->parts.size());
+        for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
+        {
+            const auto & part = global_ctx->future_part->parts[part_num];
+            if (partUsesMapWithKeyColumns(*part, column_name) && isWidePart(part))
+                state.part_manifests[part_num] = readMapKeyManifestFromWidePart(*part, *ctx->it_name_and_type);
+            else if (partUsesMapWithKeyColumns(*part, column_name))
+                state.part_manifests[part_num] = scanMapKeysFromPart(
+                    *global_ctx->data,
+                    global_ctx->storage_snapshot,
+                    part,
+                    global_ctx->alter_conversions[part_num],
+                    column_name,
+                    part_num);
+        }
+        state.phase = VerticalMergeRuntimeContext::PerKeyMapMergeState::Phase::Presence;
+        ctx->per_key_map = std::move(state);
+    }
+
+    ctx->progress_before = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
+    global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(column_name));
+
+    auto column_pipeline = createPipelineForMapPresence();
+    ctx->build_statistics_transforms.clear();
+    ctx->column_parts_pipeline = std::move(column_pipeline.pipeline);
+    ctx->column_parts_pipeline.setProgressCallback(MergeProgressCallback(
+        global_ctx->merge_list_element_ptr,
+        global_ctx->watch_prev_elapsed,
+        *global_ctx->column_progress,
+        [&my_ctx = *global_ctx]() { my_ctx.checkOperationIsNotCanceled(); }));
+    ctx->column_parts_pipeline.disableProfileEventUpdate();
+    ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
+
+    SerializationByName serializations_override;
+    serializations_override.emplace(
+        column_name,
+        SerializationMapKeyPresenceMerge::create(ctx->per_key_map->map_serialization, ctx->per_key_map->union_manifest, /*for_write_=*/ true));
+
+    NamesAndTypesList columns_list;
+    columns_list.emplace_back(column_name, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()));
+
+    ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
+        global_ctx->new_data_part,
+        global_ctx->data_settings,
+        global_ctx->metadata_snapshot,
+        columns_list,
+        MergeTreeIndices{},
+        global_ctx->compression_codec,
+        global_ctx->to->getIndexGranularity(),
+        global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
+        &global_ctx->written_offset_substreams,
+        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
+        global_ctx->to->getSkipIndicesPackedWriter(),
+        std::move(serializations_override));
+
+    ctx->column_elems_written = 0;
+}
+
+void MergeTask::VerticalMergeStage::preparePerKeyMapKey() const
+{
+    auto & state = *ctx->per_key_map;
+    const auto & column_name = state.map_column_name;
+    const auto & key_entry = state.union_manifest.keys[state.key_index];
+    const auto * with_key_columns = typeid_cast<const SerializationMapWithKeyColumns *>(state.map_serialization.get());
+    const String key_stream_name = with_key_columns->keyToStreamName(key_entry.key);
+    const String subcolumn_name = mapKeySubcolumnName(column_name, key_stream_name);
+
+    ctx->progress_before = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
+    const Float64 key_weight = ctx->column_sizes->columnWeight(column_name)
+        / static_cast<Float64>(std::max<size_t>(state.union_manifest.keys.size(), 1));
+    global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, key_weight);
+
+    auto column_pipeline = createPipelineForReadingOneColumn(subcolumn_name);
+    ctx->build_statistics_transforms.clear();
+    ctx->column_parts_pipeline = std::move(column_pipeline.pipeline);
+    ctx->column_parts_pipeline.setProgressCallback(MergeProgressCallback(
+        global_ctx->merge_list_element_ptr,
+        global_ctx->watch_prev_elapsed,
+        *global_ctx->column_progress,
+        [&my_ctx = *global_ctx]() { my_ctx.checkOperationIsNotCanceled(); }));
+    ctx->column_parts_pipeline.disableProfileEventUpdate();
+    ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
+
+    SerializationByName serializations_override;
+    serializations_override.emplace(
+        column_name,
+        SerializationMapWithKeyColumnsValue::createForWrite(
+            state.value_serialization, state.value_type, state.map_serialization, key_entry.key));
+
+    NamesAndTypesList columns_list;
+    columns_list.emplace_back(column_name, state.value_type);
+
+    ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
+        global_ctx->new_data_part,
+        global_ctx->data_settings,
+        global_ctx->metadata_snapshot,
+        columns_list,
+        MergeTreeIndices{},
+        global_ctx->compression_codec,
+        global_ctx->to->getIndexGranularity(),
+        global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
+        &global_ctx->written_offset_substreams,
+        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
+        global_ctx->to->getSkipIndicesPackedWriter(),
+        std::move(serializations_override));
+
+    ctx->column_elems_written = 0;
+}
+
+void MergeTask::VerticalMergeStage::finalizePerKeyMapPiece() const
+{
+    auto & state = *ctx->per_key_map;
+    global_ctx->checkOperationIsNotCanceled();
+
+    ctx->executor.reset();
+    ctx->column_to->finalizeIndexGranularity();
+    auto changed_checksums = ctx->column_to->fillChecksumsWithoutUpdatingPart(global_ctx->new_data_part->checksums);
+    global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
+
+    const auto & columns_substreams = ctx->column_to->getColumnsSubstreams();
+    if (!columns_substreams.empty())
+    {
+        const auto & substreams = columns_substreams.getColumnSubstreams(0);
+        if (state.phase == VerticalMergeRuntimeContext::PerKeyMapMergeState::Phase::Presence)
+        {
+            for (const auto & substream : substreams)
+            {
+                if (substream.ends_with(".keys_info"))
+                    state.keys_info_substreams.push_back(substream);
+                else
+                    state.presence_substreams.push_back(substream);
+            }
+        }
+        else
+        {
+            state.key_value_substreams.insert(state.key_value_substreams.end(), substreams.begin(), substreams.end());
+        }
+    }
+
+    auto cached_marks = ctx->column_to->releaseCachedMarks();
+    for (auto & [name, marks] : cached_marks)
+        global_ctx->cached_marks.emplace(name, std::move(marks));
+
+    auto cached_index_marks = ctx->column_to->releaseCachedIndexMarks();
+    for (auto & [name, marks] : cached_index_marks)
+        global_ctx->cached_index_marks.emplace(name, std::move(marks));
+
+    ctx->delayed_streams.emplace_back(std::move(ctx->column_to));
+
+    while (ctx->delayed_streams.size() > ctx->max_delayed_streams)
+    {
+        ctx->delayed_streams.front()->finish(ctx->need_sync);
+        ctx->delayed_streams.pop_front();
+    }
+
+    if (!global_ctx->isCancelled() && global_ctx->rows_written != ctx->column_elems_written)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Written {} elements of Map column {} piece, but {} rows of PK columns",
+            toString(ctx->column_elems_written),
+            state.map_column_name,
+            toString(global_ctx->rows_written));
+    }
+
+    UInt64 rows = 0;
+    UInt64 bytes = 0;
+    ctx->column_parts_pipeline.tryGetResultRowsAndBytes(rows, bytes);
+    global_ctx->merge_list_element_ptr->bytes_written_uncompressed += bytes;
+}
+
+void MergeTask::VerticalMergeStage::finishPerKeyMapColumn() const
+{
+    auto & state = *ctx->per_key_map;
+
+    ColumnsSubstreams piece;
+    piece.addColumn(state.map_column_name);
+    piece.addSubstreamsToLastColumn(state.keys_info_substreams);
+    piece.addSubstreamsToLastColumn(state.key_value_substreams);
+    piece.addSubstreamsToLastColumn(state.presence_substreams);
+
+    global_ctx->gathered_data.columns_substreams = ColumnsSubstreams::merge(
+        global_ctx->gathered_data.columns_substreams, piece, global_ctx->new_data_part->getColumns().getNames());
+
+    global_ctx->merge_list_element_ptr->columns_written += 1;
+    global_ctx->merge_list_element_ptr->progress.store(
+        ctx->progress_before + ctx->column_sizes->columnWeight(state.map_column_name), std::memory_order_relaxed);
+}
+
+MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
+MergeTask::VerticalMergeStage::createPipelineForMapPresence() const
+{
+    const auto & state = *ctx->per_key_map;
+    const String presence_name = mapKeysPresenceSubcolumnName(state.map_column_name);
+
+    std::vector<QueryPlanPtr> plans;
+    size_t part_starting_offset = 0;
+    bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
+
+    for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
+    {
+        auto plan_for_part = std::make_unique<QueryPlan>();
+
+        createReadFromPartStep(
+            MergeTreeSequentialSourceType::Merge,
+            *plan_for_part,
+            *global_ctx->data,
+            global_ctx->storage_snapshot,
+            RangesInDataPart(global_ctx->future_part->parts[part_num], nullptr, part_num, part_starting_offset),
+            global_ctx->alter_conversions[part_num],
+            global_ctx->merged_part_offsets,
+            Names{presence_name},
+            global_ctx->input_rows_filtered,
+            apply_deleted_mask,
+            /*filter=*/ std::nullopt,
+            ctx->read_with_direct_io,
+            ctx->use_prefetch,
+            global_ctx->context,
+            getLogger("VerticalMergeStage"));
+
+        auto remap = buildPresenceRemap(state.part_manifests[part_num], state.union_manifest);
+        auto remap_step = std::make_unique<RemapMapKeyPresenceStep>(
+            plan_for_part->getCurrentHeader(), std::move(remap), state.part_manifests[part_num].keys.size());
+        remap_step->setStepDescription("Remap Map key presence");
+        plan_for_part->addStep(std::move(remap_step));
+
+        plans.emplace_back(std::move(plan_for_part));
+        part_starting_offset += global_ctx->future_part->parts[part_num]->rows_count;
+    }
+
+    QueryPlan merge_column_query_plan;
+    {
+        SharedHeaders input_headers;
+        input_headers.reserve(plans.size());
+        for (auto & plan : plans)
+            input_headers.emplace_back(plan->getCurrentHeader());
+
+        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
+        merge_column_query_plan.unitePlans(std::move(union_step), std::move(plans));
+    }
+
+    {
+        const auto & merge_tree_settings = global_ctx->data_settings;
+        auto merge_step = std::make_unique<ColumnGathererStep>(
+            merge_column_query_plan.getCurrentHeader(),
+            RowsSourcesTemporaryFile::FILE_ID,
+            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
+            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
+            /*max_dynamic_subcolumns=*/ std::nullopt,
+            /*is_result_sparse=*/ false);
+
+        merge_step->setStepDescription("Gather Map key presence");
+        merge_column_query_plan.addStep(std::move(merge_step));
+    }
+
+    QueryPlanOptimizationSettings optimization_settings(global_ctx->context);
+    auto pipeline_settings = BuildQueryPipelineSettings(global_ctx->context);
+    pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
+    auto builder = merge_column_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
+
+    return {QueryPipelineBuilder::getPipeline(std::move(*builder)), MergeTreeIndices{}, {}};
 }
 
 
@@ -2782,7 +3250,19 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
     {
         case VerticalMergeRuntimeContext::State::NEED_PREPARE:
         {
-            prepareVerticalMergeForOneColumn();
+            if (isPerKeyMapGatheringColumn())
+            {
+                if (!ctx->per_key_map)
+                    preparePerKeyMapPresence();
+                else if (ctx->per_key_map->phase == VerticalMergeRuntimeContext::PerKeyMapMergeState::Phase::Presence)
+                    preparePerKeyMapPresence();
+                else
+                    preparePerKeyMapKey();
+            }
+            else
+            {
+                prepareVerticalMergeForOneColumn();
+            }
             ctx->vertical_merge_one_column_state = VerticalMergeRuntimeContext::State::NEED_EXECUTE;
             return true;
         }
@@ -2796,7 +3276,36 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
         }
         case VerticalMergeRuntimeContext::State::NEED_FINISH:
         {
-            finalizeVerticalMergeForOneColumn();
+            if (isPerKeyMapGatheringColumn())
+            {
+                finalizePerKeyMapPiece();
+                auto & state = *ctx->per_key_map;
+                if (state.phase == VerticalMergeRuntimeContext::PerKeyMapMergeState::Phase::Presence)
+                {
+                    state.phase = VerticalMergeRuntimeContext::PerKeyMapMergeState::Phase::Key;
+                    state.key_index = 0;
+                    if (state.union_manifest.keys.empty())
+                    {
+                        finishPerKeyMapColumn();
+                        ctx->per_key_map.reset();
+                        ++ctx->it_name_and_type;
+                    }
+                }
+                else
+                {
+                    ++state.key_index;
+                    if (state.key_index >= state.union_manifest.keys.size())
+                    {
+                        finishPerKeyMapColumn();
+                        ctx->per_key_map.reset();
+                        ++ctx->it_name_and_type;
+                    }
+                }
+            }
+            else
+            {
+                finalizeVerticalMergeForOneColumn();
+            }
             ctx->vertical_merge_one_column_state = VerticalMergeRuntimeContext::State::NEED_PREPARE;
             return true;
         }
@@ -3684,16 +4193,142 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 }
 
 
+void MergeTask::ExecuteAndFinalizeHorizontalPart::collectMapKeyUnions() const
+{
+    const auto & merge_tree_settings = *global_ctx->data_settings;
+    const UInt64 min_keys = merge_tree_settings[MergeTreeSetting::map_key_columns_per_key_merge_min_keys];
+    const auto storage_column_names = global_ctx->storage_columns.getNameSet();
+    const auto virtual_column_names = global_ctx->virtual_columns.getNameSet();
+
+    auto map_has_skip_index_or_statistics = [&](const String & column_name)
+    {
+        if (global_ctx->skip_indexes_by_column.contains(column_name))
+            return true;
+
+        for (const auto & index : global_ctx->text_indexes_to_merge)
+        {
+            for (const auto & index_column : index.expression->getRequiredColumns())
+            {
+                if (getColumnNameInStorage(index_column, storage_column_names, virtual_column_names) == column_name)
+                    return true;
+            }
+        }
+
+        if (global_ctx->gathered_data.statistics.contains(column_name))
+            return true;
+
+        for (const auto & [_, stats] : global_ctx->statistics_to_build_by_part)
+        {
+            if (stats.contains(column_name))
+                return true;
+        }
+
+        return false;
+    };
+
+    for (const auto & column : global_ctx->storage_columns)
+    {
+        if (!mergeOutputUsesMapWithKeyColumns(merge_tree_settings, *column.type))
+            continue;
+
+        std::vector<MapKeyManifest> manifests;
+        manifests.reserve(global_ctx->future_part->parts.size());
+        bool all_sources_with_key_columns = true;
+
+        for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
+        {
+            const auto & part = global_ctx->future_part->parts[part_num];
+            if (!partUsesMapWithKeyColumns(*part, column.name))
+            {
+                all_sources_with_key_columns = false;
+                manifests.push_back(scanMapKeysFromPart(
+                    *global_ctx->data,
+                    global_ctx->storage_snapshot,
+                    part,
+                    global_ctx->alter_conversions[part_num],
+                    column.name,
+                    part_num));
+            }
+            else if (isWidePart(part))
+            {
+                auto manifest = readMapKeyManifestFromWidePart(*part, column);
+                if (manifest.keys.empty() && part->rows_count > 0)
+                {
+                    manifest = scanMapKeysFromPart(
+                        *global_ctx->data,
+                        global_ctx->storage_snapshot,
+                        part,
+                        global_ctx->alter_conversions[part_num],
+                        column.name,
+                        part_num);
+                }
+                manifests.push_back(std::move(manifest));
+            }
+            else
+            {
+                manifests.push_back(scanMapKeysFromPart(
+                    *global_ctx->data,
+                    global_ctx->storage_snapshot,
+                    part,
+                    global_ctx->alter_conversions[part_num],
+                    column.name,
+                    part_num));
+            }
+        }
+
+        auto union_manifest = unionMapKeyManifests(manifests);
+        LOG_DEBUG(
+            ctx->log,
+            "Map column {} key union has {} keys across {} parts",
+            column.name,
+            union_manifest.keys.size(),
+            global_ctx->future_part->parts.size());
+
+        const bool is_gathering = std::ranges::any_of(
+            global_ctx->gathering_columns, [&](const auto & gathering) { return gathering.name == column.name; });
+
+        if (min_keys > 0 && union_manifest.keys.size() >= min_keys && all_sources_with_key_columns && is_gathering
+            && !map_has_skip_index_or_statistics(column.name))
+        {
+            global_ctx->per_key_vertical_map_columns.insert(column.name);
+            LOG_DEBUG(
+                ctx->log,
+                "Map column {} will use per-key Vertical gather ({} keys, threshold {})",
+                column.name,
+                union_manifest.keys.size(),
+                min_keys);
+        }
+
+        global_ctx->map_key_unions.emplace(column.name, std::move(union_manifest));
+    }
+}
+
 MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm() const
 {
     const size_t total_rows_count = global_ctx->merge_list_element_ptr->total_rows_count;
     const size_t total_size_bytes_uncompressed = global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed;
     const auto & merge_tree_settings = global_ctx->data_settings;
 
+    const bool need_per_key_vertical = !global_ctx->per_key_vertical_map_columns.empty();
+
+    auto fail_close_if_per_key = [&](const char * reason) -> MergeAlgorithm
+    {
+        if (!need_per_key_vertical)
+            return MergeAlgorithm::Horizontal;
+
+        Strings names(global_ctx->per_key_vertical_map_columns.begin(), global_ctx->per_key_vertical_map_columns.end());
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot merge with_key_columns Map column(s) {} using per-key gather: {}. "
+            "Set map_key_columns_per_key_merge_min_keys = 0 to disable per-key merge",
+            fmt::join(names, ", "),
+            reason);
+    };
+
     if (global_ctx->deduplicate)
-        return MergeAlgorithm::Horizontal;
+        return fail_close_if_per_key("DEDUPLICATE requires Horizontal merge");
     if ((*merge_tree_settings)[MergeTreeSetting::enable_vertical_merge_algorithm] == 0)
-        return MergeAlgorithm::Horizontal;
+        return fail_close_if_per_key("enable_vertical_merge_algorithm is 0");
     if (ctx->need_remove_expired_values)
     {
         /// `TTLTransform` stops reading after the first block when the rows TTL has expired for the whole part,
@@ -3701,21 +4336,21 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         if (global_ctx->future_part->merge_type == MergeType::TTLDrop && global_ctx->metadata_snapshot->hasRowsTTL())
             return MergeAlgorithm::Horizontal;
         if (!canVerticalTTLDelete(*global_ctx))
-            return MergeAlgorithm::Horizontal;
+            return fail_close_if_per_key("TTL delete cannot use Vertical merge");
     }
     if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)
-        return MergeAlgorithm::Horizontal;
+        return fail_close_if_per_key("merge output is not a Wide part");
     if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
-        return MergeAlgorithm::Horizontal;
+        return fail_close_if_per_key("merge storage type is not Full");
     if (global_ctx->cleanup)
-        return MergeAlgorithm::Horizontal;
+        return fail_close_if_per_key("CLEANUP merge requires Horizontal merge");
 
     if (!(*merge_tree_settings)[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts])
     {
         for (const auto & part : global_ctx->future_part->parts)
         {
             if (!isWidePart(part))
-                return MergeAlgorithm::Horizontal;
+                return fail_close_if_per_key("vertical merges from Compact to Wide are disabled");
         }
     }
 
@@ -3733,7 +4368,15 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
 
     bool no_parts_overflow = global_ctx->future_part->parts.size() <= RowSourcePart::MAX_PARTS;
 
-    auto merge_alg = (is_supported_storage && enough_total_rows && enough_total_bytes && enough_ordinary_cols && no_parts_overflow) ?
+    if (!is_supported_storage)
+        return fail_close_if_per_key("this MergeTree engine does not support Vertical merge");
+    if (!no_parts_overflow)
+        return fail_close_if_per_key("too many parts for Vertical merge");
+
+    if (need_per_key_vertical)
+        return MergeAlgorithm::Vertical;
+
+    auto merge_alg = (enough_total_rows && enough_total_bytes && enough_ordinary_cols) ?
                         MergeAlgorithm::Vertical : MergeAlgorithm::Horizontal;
 
     return merge_alg;

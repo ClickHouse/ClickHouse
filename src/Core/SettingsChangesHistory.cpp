@@ -1551,6 +1551,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
+            {"map_max_key_columns", 0, 0, "New setting reserved to bound the number of independent key streams in with_key_columns Map serialization. 0 means no limit. The writer does not apply it yet."},
+            {"max_bytes_for_compact_map_key_columns", 67108864, 67108864, "New setting to cap the uncompressed size of zero-level Compact parts written with with_key_columns Map serialization. 0 disables Compact for that serialization."},
             {"object_shared_data_target_chunk_rows", 8192, 8192, "New setting"},
         });
 

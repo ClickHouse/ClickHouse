@@ -215,8 +215,11 @@ void MergeTreeReaderCompact::readData(
 
         if (seek_to_substream_mark)
         {
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
-            stream.seekToMarkAndColumn(from_mark, substream_position);
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(
+                *column_positions[column_idx], name_and_type, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+            stream.seekToMarkAndColumn(from_mark, *substream_position);
         }
 
         return stream.getDataBuffer();
@@ -261,8 +264,11 @@ void MergeTreeReaderCompact::readData(
 
             deserialize_settings.seek_stream_to_current_mark_callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
-                stream.seekToMarkAndColumn(from_mark, substream_position);
+                auto substream_position = columns_substreams.tryGetSubstreamPosition(
+                    *column_positions[column_idx], name_and_type, substream_path, storage_settings);
+                if (!substream_position)
+                    return;
+                stream.seekToMarkAndColumn(from_mark, *substream_position);
             };
         }
 
@@ -449,8 +455,11 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
 
         if (seek_to_substream_mark)
         {
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
-            stream.seekToMarkAndColumn(from_mark, substream_position);
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(
+                *column_positions[column_idx], column, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+            stream.seekToMarkAndColumn(from_mark, *substream_position);
         }
 
         return stream.getDataBuffer();

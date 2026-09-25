@@ -1,0 +1,26 @@
+key_columns_part_type	Compact
+states_nstr	0
+states_nstr_vs_buckets	0
+lookup_u64	0
+lookup_u64_vs_buckets	0
+select_m_sorted	0
+select_m_sorted_vs_buckets	0
+keys_values	0
+keys_values_vs_buckets	0
+map_functions	0
+map_functions_vs_buckets	0
+escaped_and_typed_keys	0
+escaped_and_typed_keys_vs_buckets	0
+prewhere_where	0
+prewhere_where_vs_buckets	0
+group_by	0
+group_by_vs_buckets	0
+dup_lookup	1	1	1
+dup_length_basic	3
+dup_length_key_columns	2
+dup_length_buckets	3
+dup_map_basic	{'k':1,'k':2,'x':3}
+dup_map_key_columns	{'k':1,'x':3}
+dup_map_buckets	{'k':1,'k':2,'x':3}
+remote	0
+remote_vs_buckets	0

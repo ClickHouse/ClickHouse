@@ -1,0 +1,9 @@
+correctness_vs_basic	0
+correctness_vs_buckets	0
+rewrite_to_key_hot
+1
+wkc_hot_fewer_files_than_full	1
+wkc_hot_less_bytes_than_cold_key	1
+wkc_hot_less_bytes_than_basic	1
+wkc_hot_less_bytes_than_buckets	1
+wkc_hot_reads_key_subcolumn	1
