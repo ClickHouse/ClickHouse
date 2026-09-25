@@ -37,7 +37,6 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
