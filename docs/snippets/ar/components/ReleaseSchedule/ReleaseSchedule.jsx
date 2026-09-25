@@ -28,16 +28,6 @@ const ReleaseSchedule = ({ releases = [] }) => {
     </span>
   );
 
-  const handleReleaseChannelClick = (event) => {
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-    const href = event.currentTarget.getAttribute("href");
-    window.location.href = (window.location.pathname.startsWith("/docs") ? "/docs" : "") + href.slice("/docs".length);
-  };
-
   return (
     <table>
       <colgroup />
@@ -48,13 +38,13 @@ const ReleaseSchedule = ({ releases = [] }) => {
         <tr>
           <th rowSpan={2} scope="col">الإصدار</th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#fast-release-channel-early-upgrades" onClick={handleReleaseChannelClick}>القناة السريعة</a>
+            <a href="/products/cloud/features/admin-features/upgrades#fast-release-channel-early-upgrades">القناة السريعة</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#regular-release-channel" onClick={handleReleaseChannelClick}>القناة العادية</a>
+            <a href="/products/cloud/features/admin-features/upgrades#regular-release-channel">القناة العادية</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#slow-release-channel-deferred-upgrades" onClick={handleReleaseChannelClick}>القناة البطيئة</a>
+            <a href="/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">القناة البطيئة</a>
           </th>
         </tr>
         <tr>

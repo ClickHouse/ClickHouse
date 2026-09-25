@@ -28,16 +28,6 @@ const ReleaseSchedule = ({ releases = [] }) => {
     </span>
   );
 
-  const handleReleaseChannelClick = (event) => {
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-    const href = event.currentTarget.getAttribute("href");
-    window.location.href = (window.location.pathname.startsWith("/docs") ? "/docs" : "") + href.slice("/docs".length);
-  };
-
   return (
     <table>
       <colgroup />
@@ -48,13 +38,13 @@ const ReleaseSchedule = ({ releases = [] }) => {
         <tr>
           <th rowSpan={2} scope="col">バージョン</th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#fast-release-channel-early-upgrades" onClick={handleReleaseChannelClick}>高速チャネル</a>
+            <a href="/products/cloud/features/admin-features/upgrades#fast-release-channel-early-upgrades">高速チャネル</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#regular-release-channel" onClick={handleReleaseChannelClick}>標準チャネル</a>
+            <a href="/products/cloud/features/admin-features/upgrades#regular-release-channel">標準チャネル</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#slow-release-channel-deferred-upgrades" onClick={handleReleaseChannelClick}>低速チャネル</a>
+            <a href="/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">低速チャネル</a>
           </th>
         </tr>
         <tr>
