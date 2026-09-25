@@ -41,7 +41,7 @@ namespace Setting
 {
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
-    extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests;
+    extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests_per_stream;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
     extern const SettingsString ai_function_text_default_credentials;
@@ -472,7 +472,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
     });
 
-    const size_t concurrency = std::min<UInt64>(settings[Setting::ai_function_max_concurrent_requests].value, input_rows_count);
+    const size_t concurrency = std::min<UInt64>(settings[Setting::ai_function_max_concurrent_requests_per_stream].value, input_rows_count);
 
     /// Requests go out in waves of `concurrency` rows, and each completed wave is applied to the
     /// result column in row order. A wave waits for its slowest request before the next one starts,

@@ -9032,12 +9032,12 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", BETA) \
-    DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests, 1, R"(
-Maximum number of provider requests one AI function call has in flight at the same time, within one block of rows. The default `1` issues requests one at a time.
+    DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests_per_stream, 16, R"(
+Maximum number of provider requests one pipeline stream has in flight at the same time. `1` issues requests one at a time.
 
-The limit is per AI function call per block, so a query whose pipeline runs several streams may have more requests in flight than this. Use a settings profile constraint (`<constraints><ai_function_max_concurrent_requests><max>...</max></...>`) to put a ceiling on it that a query cannot raise.
+A query running several streams (at most `max_threads`) can have up to this many requests in flight per stream. Use a settings profile constraint (`<constraints><ai_function_max_concurrent_requests_per_stream><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per stream.
 
-Raising this above `1` loosens two guarantees, which is why the default is `1`:
+A value above `1` loosens two guarantees:
 
 - A request's token usage is only known once its response arrives, so the token quotas (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) may overshoot by one request's worth per request in flight - that is, by up to this many requests' worth rather than by one.
 - A whole wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, up to this many requests.

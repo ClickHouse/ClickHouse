@@ -446,6 +446,8 @@ def test_generate_truncated_response_counts_tokens(started_cluster):
     result = instance.query(
         "SELECT aiGenerate(x, map('credentials', 'ai_truncated')) FROM test_input",
         settings={
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_stream": 1,
             "ai_function_throw_on_error": 0,
             "ai_function_max_output_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 0,
@@ -1352,6 +1354,8 @@ def test_embed_quota_throw_records_input_tokens(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_stream": 1,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1375,6 +1379,8 @@ def test_embed_quota_throw_records_rows_processed(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_stream": 1,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1429,6 +1435,8 @@ def test_generate_malformed_response_counts_tokens_against_quota(started_cluster
     instance.query(
         "SELECT aiGenerate(x, map('credentials', 'ai_no_choices')) FROM test_input",
         settings={
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_stream": 1,
             "ai_function_throw_on_error": 0,
             "ai_function_throw_on_quota_exceeded": 0,
             "ai_function_max_retries": 0,
@@ -1469,6 +1477,8 @@ def test_similarity_row_counters_stay_zero_on_throw(started_cluster):
         "SELECT aiSimilarity(p.1, p.2, 'test-embed-model', map('credentials', 'ai_embed')) "
         "FROM (SELECT arrayJoin([('a', 'b'), ('c', 'd')]) AS p)",
         settings={
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_stream": 1,
             "ai_function_embedding_max_batch_size": 2,
             "ai_function_max_input_tokens_per_query": 2,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1570,6 +1580,8 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     result = instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_stream": 1,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 0,
@@ -2283,6 +2295,8 @@ def test_input_token_quota_is_per_query(started_cluster):
         instance.query(
             f"SELECT {CHAT_CALL} FROM quota_tokens FORMAT Null",
             settings={
+                # One request at a time, so the token quota is seen before the next request.
+                "ai_function_max_concurrent_requests_per_stream": 1,
                 **_QUOTA_SCOPE_SETTINGS,
                 "ai_function_max_input_tokens_per_query": limit,
                 "ai_function_throw_on_quota_exceeded": 0,
@@ -2407,14 +2421,14 @@ def _reset_concurrency():
 
 
 def _observe_concurrency(call, concurrency, rows, expected_requests, extra_settings=None):
-    """Run `call` over `rows` rows at the given `ai_function_max_concurrent_requests` and return
+    """Run `call` over `rows` rows at the given `ai_function_max_concurrent_requests_per_stream` and return
     the high-water mark of requests the mock saw in flight at the same time."""
     _reset_concurrency()
     qid = unique_query_id(f"ai_concurrency_{concurrency}")
     instance.query(
         f"SELECT {call} FROM numbers({rows}) FORMAT Null",
         settings={
-            "ai_function_max_concurrent_requests": concurrency,
+            "ai_function_max_concurrent_requests_per_stream": concurrency,
             **(extra_settings or {}),
         },
         query_id=qid,
@@ -2422,24 +2436,24 @@ def _observe_concurrency(call, concurrency, rows, expected_requests, extra_setti
     stats = _concurrency_stats()
     assert stats["requests"] == expected_requests, (
         f"expected {expected_requests} requests, got {stats['requests']} at "
-        f"ai_function_max_concurrent_requests={concurrency}"
+        f"ai_function_max_concurrent_requests_per_stream={concurrency}"
     )
     assert int(get_profile_events(qid)["api_calls"]) == expected_requests
     return stats["max_concurrency"]
 
 
 def test_max_concurrent_requests_controls_requests_in_flight(started_cluster):
-    """`ai_function_max_concurrent_requests` decides how many provider requests a text AI function
+    """`ai_function_max_concurrent_requests_per_stream` decides how many provider requests a text AI function
     has in flight, and nothing else does: the same query shape and the same data give one request
     at a time at 1, and several at 8."""
     one = _observe_concurrency(SLOW_CHAT_CALL, concurrency=1, rows=16, expected_requests=16)
     many = _observe_concurrency(SLOW_CHAT_CALL, concurrency=8, rows=16, expected_requests=16)
 
     assert one == 1, (
-        f"ai_function_max_concurrent_requests=1 must issue requests one at a time, saw {one} in flight"
+        f"ai_function_max_concurrent_requests_per_stream=1 must issue requests one at a time, saw {one} in flight"
     )
     assert 2 <= many <= 8, (
-        f"ai_function_max_concurrent_requests=8 must overlap requests without exceeding the "
+        f"ai_function_max_concurrent_requests_per_stream=8 must overlap requests without exceeding the "
         f"limit, saw {many} in flight"
     )
 
@@ -2456,10 +2470,10 @@ def test_max_concurrent_requests_applies_to_embeddings(started_cluster):
     )
 
     assert one == 1, (
-        f"ai_function_max_concurrent_requests=1 must issue batches one at a time, saw {one} in flight"
+        f"ai_function_max_concurrent_requests_per_stream=1 must issue batches one at a time, saw {one} in flight"
     )
     assert 2 <= many <= 4, (
-        f"ai_function_max_concurrent_requests=4 must overlap batches without exceeding the "
+        f"ai_function_max_concurrent_requests_per_stream=4 must overlap batches without exceeding the "
         f"limit, saw {many} in flight"
     )
 
@@ -2472,7 +2486,7 @@ def test_max_concurrent_requests_keeps_api_call_quota_exact(started_cluster):
     instance.query(
         f"SELECT {SLOW_CHAT_CALL} FROM numbers(64) FORMAT Null",
         settings={
-            "ai_function_max_concurrent_requests": 8,
+            "ai_function_max_concurrent_requests_per_stream": 8,
             "ai_function_max_api_calls_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 0,
         },
@@ -2495,7 +2509,7 @@ def test_concurrent_responses_map_to_their_rows(started_cluster):
         "(SELECT concat('row-', toString(number)) AS prompt, "
         "aiGenerate(prompt, map('credentials', 'ai_jitter')) AS answer FROM numbers_mt(100))",
         settings={
-            "ai_function_max_concurrent_requests": 10,
+            "ai_function_max_concurrent_requests_per_stream": 10,
             "max_block_size": 25,
             "max_threads": 2,
         },
@@ -2523,13 +2537,13 @@ def test_multiple_ai_calls_in_one_query(started_cluster):
     Each call's outputs stay with its own rows, the embeddings match a run with one request at a time,
     and `AIAPICalls` counts the requests of all three calls: 100 + 100 + 100 (one text per batch)."""
     serial = instance.query(
-        MULTI_CALL_QUERY, settings={**MULTI_CALL_SETTINGS, "ai_function_max_concurrent_requests": 1}
+        MULTI_CALL_QUERY, settings={**MULTI_CALL_SETTINGS, "ai_function_max_concurrent_requests_per_stream": 1}
     ).split("\t")
 
     qid = unique_query_id("ai_multi_call")
     concurrent = instance.query(
         MULTI_CALL_QUERY,
-        settings={**MULTI_CALL_SETTINGS, "ai_function_max_concurrent_requests": 10},
+        settings={**MULTI_CALL_SETTINGS, "ai_function_max_concurrent_requests_per_stream": 10},
         query_id=qid,
     ).split("\t")
 
@@ -2548,7 +2562,7 @@ def test_api_call_quota_is_shared_by_ai_calls_in_one_query(started_cluster):
         MULTI_CALL_QUERY,
         settings={
             **MULTI_CALL_SETTINGS,
-            "ai_function_max_concurrent_requests": 10,
+            "ai_function_max_concurrent_requests_per_stream": 10,
             "ai_function_max_api_calls_per_query": 50,
             "ai_function_throw_on_quota_exceeded": 0,
         },
@@ -2565,7 +2579,7 @@ def test_kill_query_stops_issuing_requests(started_cluster):
     qid = unique_query_id("ai_kill")
     request = instance.get_query_request(
         f"SELECT {SLOW_CHAT_CALL} FROM numbers(400) FORMAT Null",
-        settings={"ai_function_max_concurrent_requests": 4},
+        settings={"ai_function_max_concurrent_requests_per_stream": 4},
         query_id=qid,
     )
 

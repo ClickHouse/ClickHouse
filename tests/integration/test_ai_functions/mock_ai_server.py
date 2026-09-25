@@ -11,7 +11,7 @@ Endpoints:
   GET  /concurrency                  — returns JSON `{"requests": N, "max_concurrency": M}` describing
       the requests the slow endpoints below have served since the last `/reset-concurrency`, where
       `max_concurrency` is the highest number that were ever being served at the same moment. Used
-      to assert that `ai_function_max_concurrent_requests` controls how many requests are in flight.
+      to assert that `ai_function_max_concurrent_requests_per_stream` controls how many requests are in flight.
   GET  /reset-concurrency            — zeroes the counters above
   POST /v1/chat/slow                 — like `/v1/chat/completions`, but sleeps SLOW_RESPONSE_SECONDS
       before answering, so overlapping requests are observable in `/concurrency`.

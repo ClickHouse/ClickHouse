@@ -206,8 +206,8 @@ Maximum number of idle standby threads to keep in the thread pool for decoding I
     DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(
 The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
 )", 0) \
-    DECLARE(NonZeroUInt64, max_ai_request_thread_pool_size, 100, R"(
-Maximum total number of threads to use for requests to AI providers. One thread holds one request, so this caps how many AI provider requests the whole server has in flight at once, across all queries. [`ai_function_max_concurrent_requests`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests) bounds a single query's share of it.
+    DECLARE(NonZeroUInt64, max_ai_request_thread_pool_size, 1000, R"(
+Maximum total number of threads to use for requests to AI providers. One thread holds one request, so this caps how many AI provider requests the whole server has in flight at once, across all queries. [`ai_function_max_concurrent_requests_per_stream`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_stream) bounds each pipeline stream's share of it.
 )", 0) \
     DECLARE(UInt64, max_ai_request_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for requests to AI providers.
