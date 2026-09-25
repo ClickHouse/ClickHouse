@@ -1283,6 +1283,7 @@ class CHServer:
                 {runs_arg} --max-queries {max_queries} --soft-max-queries \
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
+                --stop-merges \
                 {test_file}",
             verbose=True,
             strip=False,
