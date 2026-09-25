@@ -2135,6 +2135,15 @@ void Context::setDynamicUserDefinedExecutableFunctionsPath(const String & path)
     shared->dynamic_user_defined_executable_functions_path = path;
 }
 
+std::optional<PreformattedMessage> Context::getWarningMessage(WarningType warning) const
+{
+    SharedLockGuard lock(shared->mutex);
+    auto it = shared->warnings.find(warning);
+    if (it == shared->warnings.end())
+        return std::nullopt;
+    return it->second;
+}
+
 bool Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
 {
     std::lock_guard lock(shared->mutex);

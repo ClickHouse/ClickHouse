@@ -5,8 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Poco/Environment.h>
 
-#include <algorithm>
-#include <atomic>
 #include <filesystem>
 #include <iterator>
 #include <mutex>
@@ -27,17 +25,14 @@ namespace
     /// Guarded on its own so recording never touches the context's lock.
     std::mutex pending_warnings_mutex;
     std::vector<RecordedMessage> pending_warnings;
-    /// Set by a flush that published an ext4 hit, cleared by one whose ext4 hits were all
-    /// suppressed: only a warning that is really in place outranks later undetermined probes.
-    std::atomic<bool> published_ext4{false};
+    /// Flushes run one at a time, so the stored warning a flush reads is still there when it publishes.
+    std::mutex flush_mutex;
+
+    constexpr auto ext4_hit_format = "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and {} ({}) "
+                                     "resides on ext4. Consider upgrading the kernel.";
 
     /// The batch the current thread stages into while one is open on it.
     thread_local Ext4CorruptionKernelBugWarningBatch::Recorded * staging = nullptr;
-
-    bool holdsExt4Hit(const std::vector<RecordedMessage> & messages)
-    {
-        return std::ranges::any_of(messages, [](const auto & recorded) { return recorded.ext4; });
-    }
 
     /// Only reached on Linux; the probe below is compiled out elsewhere.
     [[maybe_unused]] void recordWarning(PreformattedMessage message, bool ext4)
@@ -45,31 +40,16 @@ namespace
         if (staging)
         {
             staging->messages.push_back({std::move(message), ext4});
-            if (ext4)
-                staging->ext4 = true;
             return;
         }
         std::lock_guard lock(pending_warnings_mutex);
         pending_warnings.push_back({std::move(message), ext4});
-    }
-
-    /// Whether an ext4 hit is kept by whatever the current probe records into: staged, queued for
-    /// the next flush, or already published by one.
-    [[maybe_unused]] bool ext4Recorded()
-    {
-        if ((staging && staging->ext4) || published_ext4)
-            return true;
-        std::lock_guard lock(pending_warnings_mutex);
-        return holdsExt4Hit(pending_warnings);
     }
 }
 
 Ext4CorruptionKernelBugWarningBatch::Ext4CorruptionKernelBugWarningBatch()
     : outer(std::exchange(staging, &staged))
 {
-    /// An ext4 hit staged by the enclosing batch is kept exactly when this batch's commit is.
-    if (outer)
-        staged.ext4 = outer->ext4;
 }
 
 Ext4CorruptionKernelBugWarningBatch::~Ext4CorruptionKernelBugWarningBatch()
@@ -84,8 +64,6 @@ void Ext4CorruptionKernelBugWarningBatch::commit()
     if (outer)
     {
         outer->messages.insert(outer->messages.end(), begin, end);
-        if (staged.ext4)
-            outer->ext4 = true;
     }
     else
     {
@@ -97,27 +75,29 @@ void Ext4CorruptionKernelBugWarningBatch::commit()
 
 size_t flushExt4CorruptionKernelBugWarning(const Context & context)
 {
+    std::lock_guard flush_lock(flush_mutex);
     std::vector<RecordedMessage> messages;
     {
         std::lock_guard lock(pending_warnings_mutex);
         messages.swap(pending_warnings);
     }
 
-    /// Published in probe order, so the last unsuppressed one wins exactly as with direct publication.
+    /// An ext4 hit outranks an undetermined probe only while it is the stored warning:
+    /// a suppressed hit or `TRUNCATE system.warnings` leaves nothing to protect.
+    auto stored = context.getWarningMessage(Context::WarningType::LINUX_KERNEL_EXT4_CORRUPTION_BUG);
+    bool ext4_stored = stored && stored->format_string == ext4_hit_format;
+
+    /// Published in probe order, so the last unsuppressed one wins, except over a stored ext4 hit.
     size_t published = 0;
-    bool published_ext4_here = false;
     for (const auto & recorded : messages)
     {
+        if (ext4_stored && !recorded.ext4)
+            continue;
         if (!context.addOrUpdateWarningMessage(Context::WarningType::LINUX_KERNEL_EXT4_CORRUPTION_BUG, recorded.message))
             continue;
         ++published;
-        published_ext4_here |= recorded.ext4;
+        ext4_stored |= recorded.ext4;
     }
-
-    /// An ext4 hit only outranks later undetermined probes once it is published: one that
-    /// `warning_supress_regexp` dropped leaves no warning in place to protect.
-    if (holdsExt4Hit(messages))
-        published_ext4 = published_ext4_here;
     return published;
 }
 
@@ -148,15 +128,11 @@ void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & dir
         const String fs_type = getDirectoryFilesystemType(candidate.string());
         if (fs_type == "ext4")
         {
-            recordWarning(PreformattedMessage::create(
-                "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and {} ({}) resides on ext4. "
-                "Consider upgrading the kernel.",
-                description, directory), /* ext4 */ true);
+            recordWarning(PreformattedMessage::create(ext4_hit_format, description, directory), /* ext4 */ true);
         }
-        else if (fs_type.empty() && !ext4Recorded())
+        else if (fs_type.empty())
         {
-            /// A published or still kept ext4 hit outranks an undetermined probe, but a hit dropped
-            /// with its batch or by suppression must not hide one: it is not a false alarm.
+            /// Whether a stored ext4 hit outranks it is decided when it is published.
             recordWarning(PreformattedMessage::create(
                 "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and the filesystem of {} ({}) "
                 "could not be determined. Consider upgrading the kernel.",

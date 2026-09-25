@@ -895,6 +895,8 @@ public:
     };
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
+    /// The stored message of one warning. Unlike `getWarnings`, it does not publish the recorded ext4 probes.
+    std::optional<PreformattedMessage> getWarningMessage(WarningType warning) const;
     /// Returns whether the message was published, i.e. `warning_supress_regexp` did not drop it.
     bool addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
     void addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const;

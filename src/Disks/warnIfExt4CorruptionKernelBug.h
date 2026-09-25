@@ -31,12 +31,10 @@ public:
     ~Ext4CorruptionKernelBugWarningBatch();
     void commit();
 
-    /// What the probes recorded, and whether a determined ext4 hit is among it: such a hit takes
-    /// precedence over later undetermined probes, but only for as long as it is itself kept.
+    /// What the probes recorded.
     struct Recorded
     {
-        /// Each message carries whether it is a determined ext4 hit, so the flush can tell a
-        /// published hit from one that `warning_supress_regexp` dropped.
+        /// Each message carries whether it is a determined ext4 hit, which outranks an undetermined one.
         struct Message
         {
             PreformattedMessage message;
@@ -44,7 +42,6 @@ public:
         };
 
         std::vector<Message> messages;
-        bool ext4 = false;
     };
 
 private:
@@ -53,7 +50,7 @@ private:
 };
 
 /// Publishes whatever the probes above recorded, logging it and storing it for `system.warnings`,
-/// and returns how many messages survived `warning_supress_regexp`. Must be called without
+/// and returns how many messages it published. Must be called without
 /// `Context::shared->mutex`.
 /// The server calls it once startup is complete and `Context::updateStorageConfiguration` after
 /// every reload, so both are real server warnings; `Context::getWarnings` calls it too, to catch
