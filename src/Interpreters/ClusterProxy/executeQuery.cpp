@@ -69,6 +69,7 @@ namespace Setting
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsBool http_allow_database_as_path;
+    extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool http_allow_filters_as_path;
     extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
     extern const SettingsBool http_allow_table_as_file;
@@ -1091,6 +1092,7 @@ void executeQueryWithParallelReplicas(
         /// Asked rather than assumed, because the answer is usually yes, and then the fragment keeps the
         /// ordering it would read with - a merge instead of a sort above it, an aggregation in order.
         const bool replicas_get_pushed_conditions = !remote_query_plan
+            && local_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown]
             && canSpliceFiltersIntoRemoteQuery(forwarded_query_ast, query_tree, planner_context, local_context);
 
         auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(

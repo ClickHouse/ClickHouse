@@ -44,6 +44,11 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace DB::Setting
+{
+    extern const SettingsBool parallel_replicas_filter_pushdown;
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -1462,6 +1467,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
+        /// The way out if this push-down misbehaves in production: the condition stays above the read
+        /// and the fragment is left as it was, which is what versions before 26.10 did. Asked of the
+        /// fragment's own context, the same one the splice answers to, so that the two cannot disagree
+        /// about whether the condition travels.
+        if (!parallel_replicas_local_plan->getContext()->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
+            return 0;
+
         /// Only the initiator's share of the read gets the condition here; the replicas get it as well
         /// spliced into their query by the rewrite, which refuses some fragments and drops a predicate
         /// it cannot express. A join runtime filter is one of those - `__applyFilter` is

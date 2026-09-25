@@ -67,6 +67,7 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
 }
@@ -1193,6 +1194,10 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     /// for a filter push-down that could leave the initiator reading in a different order than the
     /// replicas; that is prevented directly now, by withholding the ordering rather than the condition.
     ///
+    /// Nor when the push-down has been turned off: then the condition was never put into the
+    /// initiator's copy of the fragment either, and shipping it here alone would leave the replicas
+    /// filtering - and ordering - by something the initiator does not have.
+    ///
     /// Not when the replicas are being sent a plan. This query text is still their fallback:
     /// `RemoteQueryExecutor::sendQuery` drops the plan and sends the text instead to a replica too old
     /// to receive a plan carrying execution limits. The initiator has withheld the ordering by then,
@@ -1200,7 +1205,8 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     /// read the condition out of the fallback text would fix a column the initiator did not and announce
     /// `WithOrder` against its `Default`. Through an upgrade window that replica filters late; the
     /// coordination mode is not negotiable.
-    if (filter_actions_dag && !query_plan)
+    if (filter_actions_dag && !query_plan
+        && filter_rewrite_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
         addFilters(
             &external_tables,
             context,
