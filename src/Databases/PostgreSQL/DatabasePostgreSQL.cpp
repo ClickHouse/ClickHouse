@@ -706,13 +706,14 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to reach a
         /// host through the database engine that `remote_url_allow_hosts` forbids elsewhere.
-        /// Skip it only for an internal metadata replay (server startup / restore, the same
-        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
-        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
-        /// enforcing the policy there would turn one database created before the whitelist was
-        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
-        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
-        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// Skip it only for the server's own replay of stored metadata (the same distinction
+        /// `DatabaseDataLake` uses): startup rebuilds every database from persisted metadata with
+        /// an ATTACH query and `loadMetadata` aborts on the first exception, so enforcing the policy
+        /// there would turn one database created before the whitelist was tightened into a server
+        /// that cannot boot. The loader flag, not `internal`, is the discriminator: wrappers such as
+        /// `PARALLEL WITH` run user statements as internal ones, and a user-issued `ATTACH DATABASE`
+        /// is not a replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
+        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
         if (!is_internal_metadata_replay)
         {
             for (const auto & address : configuration.addresses)
