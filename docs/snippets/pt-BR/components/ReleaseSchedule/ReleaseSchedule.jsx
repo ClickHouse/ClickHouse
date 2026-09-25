@@ -38,13 +38,13 @@ const ReleaseSchedule = ({ releases = [] }) => {
         <tr>
           <th rowSpan={2} scope="col">Versão</th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/products/cloud/features/admin-features/upgrades#fast-release-channel-early-upgrades">Canal rápido</a>
+            <a href="/docs/pt-BR/products/cloud/features/admin-features/upgrades#fast-release-channel-early-upgrades">Canal rápido</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/products/cloud/features/admin-features/upgrades#regular-release-channel">Canal regular</a>
+            <a href="/docs/pt-BR/products/cloud/features/admin-features/upgrades#regular-release-channel">Canal regular</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">Canal lento</a>
+            <a href="/docs/pt-BR/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">Canal lento</a>
           </th>
         </tr>
         <tr>
