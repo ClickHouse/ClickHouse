@@ -69,3 +69,32 @@ SELECT 'nodefault u base', min(u), max(u) FROM t_proj_ttl_nodefault SETTINGS opt
 SELECT 'nodefault u proj', min(u), max(u) FROM t_proj_ttl_nodefault SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 DROP TABLE t_proj_ttl_nodefault;
+
+-- A fully expired Map column with no DDL DEFAULT should keep the type default (empty Map).
+-- This covers the wide-part fast path that avoids pre-reserving unused key/value storage.
+DROP TABLE IF EXISTS t_proj_ttl_map_nodefault;
+
+CREATE TABLE t_proj_ttl_map_nodefault
+(
+    d Date,
+    k UInt32,
+    m Map(UInt64, FixedString(256)) TTL d + INTERVAL 1 DAY,
+    PROJECTION p (SELECT k, m ORDER BY k)
+)
+ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_proj_ttl_map_nodefault
+SELECT '2000-01-01', number, map(number, CAST('x', 'FixedString(256)'))
+FROM numbers(1000);
+
+OPTIMIZE TABLE t_proj_ttl_map_nodefault FINAL;
+
+SELECT 'nodefault map base', countIf(empty(m)), count()
+FROM t_proj_ttl_map_nodefault
+SETTINGS optimize_use_projections = 0;
+
+SELECT 'nodefault map proj', countIf(empty(m)), count()
+FROM t_proj_ttl_map_nodefault
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_proj_ttl_map_nodefault;
