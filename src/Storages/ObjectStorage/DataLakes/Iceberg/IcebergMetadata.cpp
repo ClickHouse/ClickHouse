@@ -6,6 +6,7 @@
 
 #if USE_AVRO
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -473,7 +474,7 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
 
 bool IcebergMetadata::optimize(
     [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    [[maybe_unused]] ContextPtr context,
+    ContextPtr context,
     [[maybe_unused]] const std::optional<FormatSettings> & format_settings)
 {
     checkTableRootIsQueriedPath("OPTIMIZE");
@@ -482,7 +483,23 @@ bool IcebergMetadata::optimize(
     if (!compaction_enabled)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Enable `allow_experimental_iceberg_compaction` setting to call OPTIMIZE for Iceberg tables.");
+#else
+    if (!context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
+#endif
 
+    auto snapshots_info = getHistory(context);
+    /// `getHistory` marks no record a current ancestor when the table has no current snapshot, and a
+    /// rewrite republishes a chain built from append history, so it would resurrect the rows.
+    if (std::ranges::none_of(
+            snapshots_info, [](const Iceberg::IcebergHistoryRecord & record) { return record.is_current_ancestor; }))
+    {
+        LOG_INFO(log, "No snapshot is a current ancestor, skipping compaction");
+        return true;
+    }
+
+#if CLICKHOUSE_CLOUD
     if (!iceberg_compaction_metadata_generator)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Background compaction is not initialized. This is a bug.");
@@ -490,26 +507,17 @@ bool IcebergMetadata::optimize(
     iceberg_compaction_metadata_generator->waitUntilUpdated();
     return true;
 #else
-    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
-    {
-        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
-        compactIcebergTable(
-            snapshots_info,
-            persistent_components,
-            object_storage,
-            data_lake_settings,
-            format_settings,
-            sample_block,
-            context,
-            write_format);
-        return true;
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
-    }
+    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+    compactIcebergTable(
+        snapshots_info,
+        persistent_components,
+        object_storage,
+        data_lake_settings,
+        format_settings,
+        sample_block,
+        context,
+        write_format);
+    return true;
 #endif
 }
 
@@ -1045,10 +1053,13 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
-    chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
+
+    /// `snapshots` is optional in the Iceberg spec, so an absent key is an empty history.
+    if (!metadata_object->has(f_snapshots))
+        return {};
 
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     /// snapshot-log is optional; treat an absent log as empty rather than throwing.
@@ -1068,8 +1079,9 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             parents_list[snapshot_id] = 0;
     }
 
-    /// For empty table we may have no snapshots
-    if (metadata_object->has(f_current_snapshot_id))
+    /// For empty table we may have no snapshots. `has` is true for a JSON null, which
+    /// `getValue<Int64>` cannot convert, and which means "no current snapshot" like an absent key.
+    if (metadata_object->has(f_current_snapshot_id) && !metadata_object->isNull(f_current_snapshot_id))
     {
         auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
         /// Add current snapshot-id to ancestors list
