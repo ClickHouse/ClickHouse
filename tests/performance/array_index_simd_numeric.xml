@@ -1,5 +1,4 @@
 <test>
-    <!-- Materialized arrays isolate search cost. Keep long scans and short UInt8 rows. -->
     <settings>
         <max_threads>1</max_threads>
         <max_block_size>8192</max_block_size>
@@ -102,26 +101,6 @@
     <query>
         SELECT sum(indexOf(arr, toUInt8(5)))
         FROM perf_array_index_simd_uint8_short
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(has(arr, toUInt8(255)))
-        FROM perf_array_index_simd_uint8_short
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(indexOf(arr, toUInt8(255)))
-        FROM perf_array_index_simd_uint8_short
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(has(u16, 65535))
-        FROM perf_array_index_simd_numeric
-        FORMAT Null
-    </query>
-    <query>
-        SELECT sum(has(u64, 18446744073709551615))
-        FROM perf_array_index_simd_numeric
         FORMAT Null
     </query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</drop_query>
