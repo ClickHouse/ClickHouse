@@ -328,6 +328,12 @@ namespace
         {
             if (!insert->format.empty() && insert->format != "Values" && insert->format != "Arrow")
                 return arrow::Status::ExecutionError("Invalid format (", insert->format, "), only 'Arrow' format is supported");
+
+            /// ArrowFlight DoPut transports data as Arrow IPC batches, never through ClickHouse's
+            /// ReadBuffer/CompressionMethod machinery, so a COMPRESSION clause here has no decompression
+            /// step to attach to. Reject it explicitly instead of silently accepting and ignoring it.
+            if (insert->isCompressionEffective())
+                return arrow::Status::ExecutionError("COMPRESSION clause is not supported for Arrow Flight queries");
         }
         return arrow::Status::OK();
     }

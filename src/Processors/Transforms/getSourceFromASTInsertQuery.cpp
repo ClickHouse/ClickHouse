@@ -52,6 +52,12 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     if (ast_insert_query->infile && context->getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
 
+    /// `COMPRESSION 'none'` (or 'auto' with nothing to detect from) is not actually compressed, so
+    /// there is nothing here the server could fail to decompress; only reject a clause that resolves
+    /// to a real compression method.
+    if (context->getApplicationType() == Context::ApplicationType::SERVER && ast_insert_query->isCompressionEffective())
+        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
+
     const Settings & settings = context->getSettingsRef();
 
     /// Allow `format` / `input_format` settings to override the FORMAT specified in the INSERT query.

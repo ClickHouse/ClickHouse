@@ -117,6 +117,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int USER_EXPIRED;
     extern const int UNSUPPORTED_PARAMETER;
 }
@@ -568,6 +569,17 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         /// Read at most 'async_insert_max_data_size' bytes of data.
         /// If limit is exceeded we will fallback to synchronous insert
         /// to avoid buffering of huge amount of data in memory.
+
+        if (const auto * insert_query = query->as<ASTInsertQuery>();
+            insert_query && insert_query->infile && query_context->getApplicationType() == Context::ApplicationType::SERVER)
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
+
+        /// `COMPRESSION 'none'` (or 'auto' with nothing to detect from) is not actually compressed, so
+        /// there is nothing here the server could fail to decompress; only reject a clause that resolves
+        /// to a real compression method.
+        if (const auto * insert_query = query->as<ASTInsertQuery>();
+            insert_query && query_context->getApplicationType() == Context::ApplicationType::SERVER && insert_query->isCompressionEffective())
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
 
         auto read_buf = getReadBufferFromASTInsertQuery(query, query_context->getSettingsRef()[Setting::snappy_mode]);
 
