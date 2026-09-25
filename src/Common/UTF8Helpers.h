@@ -61,6 +61,10 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     using Mask16 = bool __attribute__((ext_vector_type(16)));
 
     constexpr auto threshold = static_cast<Int8>(0xBF);
+    /// `(byte ^ 0x80) & 0xC0` is nonzero exactly where `byte > threshold` is true: a comparison would
+    /// depend on `-faltivec-src-compat` on PowerPC.
+    constexpr auto flip = static_cast<Int8>(0x80);
+    constexpr auto top_two_bits = static_cast<Int8>(0xC0);
 
     size_t res = 0;
     const UInt8 * end = data + size;
@@ -75,7 +79,7 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
         {
             Bytes64 bytes;
             memcpy(&bytes, data, sizeof(bytes));
-            counters += __builtin_convertvector(__builtin_convertvector(bytes > threshold, Mask64), Counters64);
+            counters += __builtin_convertvector(__builtin_convertvector((bytes ^ flip) & top_two_bits, Mask64), Counters64);
         }
         res += __builtin_reduce_add(__builtin_convertvector(counters, WideCounters64));
     }
@@ -84,7 +88,7 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     {
         Bytes16 bytes;
         memcpy(&bytes, data, sizeof(bytes));
-        res += __builtin_reduce_add(__builtin_convertvector(__builtin_convertvector(bytes > threshold, Mask16), Counters16));
+        res += __builtin_reduce_add(__builtin_convertvector(__builtin_convertvector((bytes ^ flip) & top_two_bits, Mask16), Counters16));
     }
 
     for (; data < end; ++data)

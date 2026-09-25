@@ -17,8 +17,10 @@ inline const char * skipASCIIBlocks(const char * p, const char * end)
     using Bytes = Int8 __attribute__((ext_vector_type(16)));
     using Mask = bool __attribute__((ext_vector_type(16)));
 
-    /// Only the sign bits are tested: `vpmovmskb` on x86, `cmlt` plus `umaxv` on NEON.
-    auto has_non_ascii = [](Bytes bytes) { return __builtin_reduce_or(__builtin_convertvector(bytes < 0, Mask)); };
+    /// `bytes >> 7` is nonzero exactly where the sign bit (`bytes < 0`) is set: a comparison would depend
+    /// on `-faltivec-src-compat` on PowerPC. Only the sign bits are tested: `vpmovmskb` on x86, `cmlt`
+    /// plus `umaxv` on NEON.
+    auto has_non_ascii = [](Bytes bytes) { return __builtin_reduce_or(__builtin_convertvector(bytes >> 7, Mask)); };
 
     for (Bytes bytes[4]; end - p >= 64; p += 64)
     {

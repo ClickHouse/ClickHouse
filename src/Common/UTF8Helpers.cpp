@@ -116,7 +116,11 @@ ALWAYS_INLINE UInt32 nonPrintableASCIIMask(const UInt8 * data)
 
     Bytes bytes;
     memcpy(&bytes, data, block_size);
-    return __builtin_bit_cast(Bits, __builtin_convertvector((bytes < 32) | (bytes > 126), Mask));
+    /// `(bytes - 32) >> 7` and `(126 - bytes) >> 7` are nonzero exactly where `bytes < 32` and `bytes > 126`
+    /// are true, respectively: a comparison would depend on `-faltivec-src-compat` on PowerPC.
+    const Bytes below = (bytes - static_cast<Int8>(32)) >> 7;
+    const Bytes above = (static_cast<Int8>(126) - bytes) >> 7;
+    return __builtin_bit_cast(Bits, __builtin_convertvector(below | above, Mask));
 }
 
 template <ComputeWidthMode mode>
