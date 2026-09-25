@@ -43,6 +43,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"max_temporary_tables", 0, 0, "New setting to limit the number of temporary tables in a session."},
+            {"max_temporary_table_memory_usage", 0, 0, "New setting to limit the memory usage of a temporary table with the `Memory` engine."},
+            {"max_temporary_table_size_bytes_compressed", 0, 0, "New setting to limit the compressed size of a temporary table with an engine of the `MergeTree` family."},
+            {"max_temporary_table_size_bytes_uncompressed", 0, 0, "New setting to limit the uncompressed size of a temporary table with an engine of the `MergeTree` family."},
             {"enable_join_runtime_filters_index_analysis", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."},
             {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"reader_executor_plan_look_ahead", 16777216, 16777216, "New experimental ReaderExecutor setting: how far ahead cache residency is resolved into the held read plan."},

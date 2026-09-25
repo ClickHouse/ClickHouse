@@ -151,6 +151,7 @@ namespace Setting
     extern const SettingsBool materialized_views_populate_atomically;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_temporary_tables;
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
@@ -2316,6 +2317,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
+/// Enforces `max_temporary_tables` before a temporary table named `table_name` is added to the session.
+void checkTemporaryTablesLimit(const ContextPtr & context, const String & table_name)
+{
+    const UInt64 max_temporary_tables = context->getSettingsRef()[Setting::max_temporary_tables];
+    if (!max_temporary_tables)
+        return;
+
+    const Tables tables = context->getSessionContext()->getExternalTables();
+
+    /// Replacing an existing temporary table does not change the number of tables.
+    if (tables.contains(table_name))
+        return;
+
+    if (tables.size() >= max_temporary_tables)
+        throw Exception(ErrorCodes::TOO_MANY_TABLES,
+            "Too many temporary tables in the session: {}, the maximum is {} (the `max_temporary_tables` setting)",
+            tables.size(), max_temporary_tables);
+}
+
 void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
@@ -2393,6 +2413,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
+
+        checkTemporaryTablesLimit(getContext(), create.getTable());
 
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
@@ -3133,6 +3155,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
                                                                 const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
+    /// Bare `REPLACE` requires the target to exist, so it never adds a table.
+    if (create.create_or_replace)
+        checkTemporaryTablesLimit(getContext(), create.getTable());
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
     String temporary_table_name = create.getTable();
