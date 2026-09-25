@@ -198,7 +198,7 @@ public:
 
 private:
     /// Rewrite arrayExists(x -> f(x, c), tokens(input[, tokenizer])) to hasTokenLike/hasTokenMatch(input, pattern, tokenizer),
-    /// which a text index on `input` can answer. Unlike hasTokenPrefix, they never apply the preprocessor of that index.
+    /// which a text index on `input` can answer. They never apply the preprocessor of that index.
     bool tryRewriteToHasTokenFunction(
         FunctionNode & array_exists_function_node, const QueryTreeNodePtr & lambda_expression, const auto & is_lambda_argument)
     {
