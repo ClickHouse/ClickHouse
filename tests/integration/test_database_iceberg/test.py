@@ -1981,7 +1981,6 @@ def test_create_table_as_rejects_source_storage_clauses(started_cluster):
         ("primary_key", "id UInt64, name String", "PRIMARY KEY id ORDER BY (id, name)", {}, "PRIMARY KEY"),
         ("sample_by", "id UInt64", "ORDER BY id SAMPLE BY id", {}, "SAMPLE BY"),
         ("ttl", "id UInt64, dt Date", "ORDER BY id TTL dt + INTERVAL 1 DAY", {}, "TTL"),
-        ("settings", "id UInt64", "ORDER BY id SETTINGS index_granularity = 4096", {}, "engine SETTINGS"),
         (
             "unique_key",
             "id UInt64",
@@ -2273,12 +2272,16 @@ def test_create_table_with_engine_unsupported_clauses(started_cluster):
         f"'{minio_access_key}', '{minio_secret_key}')"
     )
 
-    err = node.query_and_get_error(
-        f"CREATE TABLE {CATALOG_NAME}.`ns.engine_unsupp` (id Int64, name String) {engine} "
-        f"ORDER BY id SETTINGS iceberg_format_version = 2",
-        settings={"allow_database_iceberg": 1},
-    )
-    assert "PRIMARY KEY, SAMPLE BY, TTL, UNIQUE KEY, and engine SETTINGS are not supported" in err
+    for clause in [
+        "PRIMARY KEY id",
+        "ORDER BY id SAMPLE BY id",
+        "TTL toDate('2099-01-01')",
+    ]:
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`ns.engine_unsupp` (id Int64, name String) {engine} {clause}",
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "PRIMARY KEY, SAMPLE BY, TTL, and UNIQUE KEY are not supported" in err
 
 
 def test_create_table_invalid_partition_transforms(started_cluster):

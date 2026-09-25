@@ -1798,7 +1798,7 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
-const char * findUnsupportedDatalakeStorageClause(const ASTStorage & storage)
+const char * findUnsupportedDatalakeStorageClause(const ASTStorage & storage, bool allow_settings)
 {
     if (storage.primary_key)
         return "PRIMARY KEY";
@@ -1808,7 +1808,7 @@ const char * findUnsupportedDatalakeStorageClause(const ASTStorage & storage)
         return "TTL";
     if (storage.unique_key)
         return "UNIQUE KEY";
-    if (storage.settings)
+    if (!allow_settings && storage.settings)
         return "engine SETTINGS";
     return nullptr;
 }
@@ -2069,7 +2069,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     const char * datalake_unsupported_storage_clause = nullptr;
     if (create.storage)
-        datalake_unsupported_storage_clause = findUnsupportedDatalakeStorageClause(*create.storage);
+        datalake_unsupported_storage_clause = findUnsupportedDatalakeStorageClause(*create.storage, engine_user_specified);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
@@ -2202,6 +2202,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         if (datalake_unsupported_storage_clause)
         {
+            if (engine_user_specified)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "DataLakeCatalog CREATE TABLE with an explicit table engine supports only "
+                    "PARTITION BY, ORDER BY, and engine SETTINGS; "
+                    "PRIMARY KEY, SAMPLE BY, TTL, and UNIQUE KEY are not supported "
+                    "(got {})", datalake_unsupported_storage_clause);
+
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "DataLakeCatalog CREATE TABLE supports only PARTITION BY and ORDER BY; "
                 "PRIMARY KEY, SAMPLE BY, TTL, UNIQUE KEY, and engine SETTINGS are not supported "
@@ -2252,7 +2259,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
             if (source_storage)
             {
-                if (const char * inherited_clause = findUnsupportedDatalakeStorageClause(*source_storage))
+                if (const char * inherited_clause = findUnsupportedDatalakeStorageClause(*source_storage, /*allow_settings=*/ true))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Source table {}.{} has {}, which a DataLakeCatalog table cannot represent; "
                         "CREATE TABLE ... AS supports only columns, PARTITION BY, and ORDER BY",
