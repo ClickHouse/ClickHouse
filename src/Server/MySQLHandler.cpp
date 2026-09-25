@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <optional>
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/User.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -103,6 +105,35 @@ static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
   * message, and the fields inside the response are read up to a terminator.
   */
 static const size_t MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE = 64 * 1024;
+
+/** The `mysql_native_password` auth response is a hash of the password alone, so `checkMySQLAuthentication` can verify it
+  * only against `plaintext_password` and `double_sha1_password` methods, and it cannot carry a one-time password.
+  * Serving such a user with `mysql_native_password` would be wrong in two ways:
+  *  - a method with a second factor would be accepted without the one-time password, bypassing it. With `sha256_password`
+  *    the client appends the one-time password to the password, like `password+123456`, and it is enforced;
+  *  - `IAccessStorage::authenticateImpl` fails close for ambiguous credentials: when the same password is accepted by
+  *    several methods, the session is limited to the intersection of their `GRANTS` and expires at the earliest of their
+  *    `VALID UNTIL`. That scan re-checks the credential against the other locally verified methods, so a
+  *    `scram_sha256_password` or `bcrypt_password` method that cannot be matched by the Native41 response would silently
+  *    drop out of the combination, and the login would regain the broader rights or lifetime of the other method.
+  * Methods verified against an external system never take part in that combination and are not password hashes that
+  * `sha256_password` could check better, so they do not affect the choice of the plugin.
+  */
+static bool nativePasswordPluginCannotVerify(const AuthenticationData & authentication_method)
+{
+    if (authentication_method.getOneTimePassword())
+        return true;
+
+    switch (authentication_method.getType())
+    {
+        case AuthenticationType::SHA256_PASSWORD:
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+        case AuthenticationType::BCRYPT_PASSWORD:
+            return true;
+        default:
+            return false;
+    }
+}
 
 static bool checkShouldReplaceQuery(const String & query, const String & prefix)
 {
@@ -761,16 +792,17 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 {
     try
     {
-        const auto user_authentication_types = session->getAuthenticationTypesOrLogInFailure(user_name);
+        /// Logs a login failure and throws if there is no such user.
+        session->getAuthenticationTypesOrLogInFailure(user_name);
 
-        for (const auto user_authentication_type : user_authentication_types)
+        /// For compatibility with the JavaScript MySQL client, the `mysql_native_password` plugin (Native41) is used
+        /// when it can fully authenticate the user. Otherwise the `sha256_password` plugin is used: it transmits the
+        /// actual password string, which is then checked via the `BasicCredentials` path, the same as for the native
+        /// and HTTP protocols.
+        const auto user = session->globalContext()->getAccessControl().read<User>(user_name);
+        if (std::ranges::any_of(user->authentication_methods, nativePasswordPluginCannotVerify))
         {
-            // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible
-            // (if password is specified using double SHA1). Otherwise, SHA256 plugin is used.
-            if (user_authentication_type == DB::AuthenticationType::SHA256_PASSWORD)
-            {
-                authPluginSSL();
-            }
+            authPluginSSL();
         }
 
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
