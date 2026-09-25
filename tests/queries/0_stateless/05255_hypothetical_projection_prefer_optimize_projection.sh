@@ -51,6 +51,9 @@ echo "--- no filter and no ORDER BY ---"
 check "" ", prefer_optimize_projection = 0"
 check "" ", prefer_optimize_projection = 1"
 
+echo "--- no parts to read, where the optimizer has no projection parts to swap in either ---"
+check "WHERE a > 1000000" ", prefer_optimize_projection = 1"
+
 echo "--- a projection that wins on cost stays plainly chosen ---"
 check "WHERE b = 42" ", prefer_optimize_projection = 1"
 

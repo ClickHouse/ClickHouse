@@ -660,12 +660,10 @@ bool tryEstimateProjection(
 
     /// with `relaxing_setting` the optimizer takes any usable projection
     const bool nothing_to_serve = !has_filter && sort_help != SortOrderHelp::Helps;
-    if (!relaxing_setting.empty() && (result.verdict != "chosen" || nothing_to_serve || baseline_parts.empty()))
+    if (!relaxing_setting.empty() && (result.verdict != "chosen" || nothing_to_serve))
     {
         String cost;
-        if (baseline_parts.empty())
-            cost = "the query reads no parts";
-        else if (nothing_to_serve)
+        if (nothing_to_serve)
             cost = "the query has no filter or ORDER BY for the projection to help with";
         else if (projection_marks > baseline_marks)
             cost = fmt::format("the projection reads {} instead of {} from the base table", marks_text(projection_marks), baseline_marks);
@@ -775,11 +773,8 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    /// both lift this gate and the no-filter one below; read from the read's own context, as the optimizer does
-    const auto & read_settings = read_step->getContext()->getSettingsRef();
-    const std::string_view relaxing_setting = read_settings[Setting::force_optimize_projection] ? "force_optimize_projection"
-        : read_settings[Setting::prefer_optimize_projection] ? "prefer_optimize_projection" : "";
-    if (baseline_parts.empty() && relaxing_setting.empty())
+    /// with no parts the optimizer finds no projection parts to read, whatever the settings
+    if (baseline_parts.empty())
     {
         result.not_applicable_reason = "The query reads no parts, so the optimizer would not consider a projection";
         return result;
@@ -899,6 +894,11 @@ WhatIfCandidateResult evaluateProjection(
         if (key_condition->alwaysUnknownOrTrue() && !part_offset_condition && !total_offset_condition)
             key_condition.reset();
     }
+
+    /// both lift the gate below; read from the read's own context, as the optimizer does
+    const auto & read_settings = read_step->getContext()->getSettingsRef();
+    const std::string_view relaxing_setting = read_settings[Setting::force_optimize_projection] ? "force_optimize_projection"
+        : read_settings[Setting::prefer_optimize_projection] ? "prefer_optimize_projection" : "";
 
     /// the same gate as `optimizeUseNormalProjections`: a filter has to exist or the order has to help,
     /// but a filter the projection key cannot prune still leaves a full projection scan worth measuring,

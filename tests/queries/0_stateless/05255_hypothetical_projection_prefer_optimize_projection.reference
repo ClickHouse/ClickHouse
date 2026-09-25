@@ -24,6 +24,10 @@ status: applicable
 verdict: chosen (forced)
 reason: `prefer_optimize_projection = 1` overrides the cost; the query has no filter or ORDER BY for the projection to help with
 real: from the projection
+--- no parts to read, where the optimizer has no projection parts to swap in either ---
+status: not_applicable
+reason: The query reads no parts, so the optimizer would not consider a projection
+real: from the base table
 --- a projection that wins on cost stays plainly chosen ---
 status: applicable
 verdict: chosen
