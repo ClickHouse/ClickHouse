@@ -2934,6 +2934,12 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
         filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
 }
 
+void ReadFromMergeTree::copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step)
+{
+    for (const auto & descr : replaced_step.join_runtime_filters_for_index_analysis)
+        addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+}
+
 void ReadFromMergeTree::buildPartitionPruningIndexes(
     Indexes & indexes,
     const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
@@ -5209,16 +5215,38 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
 
+    /// A projection read built by `optimizeUseNormalProjections` arrives with its analysis result already
+    /// computed, so `selectRangesToRead` never ran for this step and no indexes were built. The join
+    /// runtime filter pruning below needs the key condition templates, so build them here on demand.
+    if (!join_runtime_filters_for_index_analysis.empty() && !indexes.has_value())
+        buildIndexes(
+            indexes,
+            query_info.filter_actions_dag.get(),
+            data,
+            getParts(),
+            vector_search_parameters,
+            top_k_filter_info,
+            context,
+            query_info,
+            storage_snapshot->metadata,
+            skip_partition_pruning);
+
     /// Now check if we have to use primary-key or skip indexes for join pruning
     bool runtime_prune_primary_key = false;
     const bool pending_mutations = mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts();
     MergeTreeIndices runtime_skip_indexes;
     if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
+        /// Not implemented for `FINAL` reads (which merge row versions across parts in their own
+        /// pipeline), and `optimizeLazyFinal` rebuilds such a read without the descriptors anyway. The
+        /// setting's description documents this no-op, and
+        /// `05243_join_runtime_filters_index_analysis_final_noop` pins it.
         && !query_info.isFinal()
         && !join_runtime_filters_for_index_analysis.empty()
         && !pending_mutations
         /// Not supported under parallel replicas: the descriptor is not carried to remote replica
         /// reads, so pruning would only cover the local replica's share. Skip it entirely there.
+        /// The setting's description documents this no-op, and
+        /// `05153_join_runtime_filters_index_analysis_distributed_noop` pins it.
         && !isParallelReadingFromReplicas()
         && indexes.has_value())
     {
@@ -6815,7 +6843,8 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     /// rebuilds a fresh `ReadFromMergeTree` in `deserialize` without these descriptors, so the pruning is
     /// simply skipped on distributed reads. Results stay correct (the read just does no runtime pruning);
     /// only the optimization is lost. This mirrors the parallel-replicas guard in `initializePipeline`.
-    /// Propagating the descriptors to worker plans is a follow-up.
+    /// Propagating the descriptors to worker plans is a follow-up. The setting's description documents
+    /// this no-op, and `05153_join_runtime_filters_index_analysis_distributed_noop` pins it.
 
     /// Bucketed reads exist only since query-plan serialization version 2. If the peer only understands
     /// version 1, throw a clear error rather than write bytes it would misread (the deserialize side checks
