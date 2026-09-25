@@ -16,6 +16,12 @@ from ci.praktika.utils import Shell, Utils
 RUNNER_MEMORY_RESERVE = 8 * 1024**3
 
 
+# Rows the harness writes about a consequence of a server crash rather than
+# about its cause. When the server logs name the crash, such a row only repeats
+# it as a separate, less specific failure.
+CRASH_CONSEQUENCE_RESULT_NAMES = frozenset({"Cannot start clickhouse-server"})
+
+
 def container_memory_limit() -> int:
     visible = Utils.physical_memory()
     limit = visible - RUNNER_MEMORY_RESERVE
@@ -441,6 +447,16 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         else:
             results = select_replica_failures(replica_log_pairs)
             if results:
+                # The crash named in the server logs is the cause, so drop the rows
+                # about its consequences to report it once.
+                if any(
+                    name != FuzzerLogParser.UNKNOWN_ERROR for name, _, _ in results
+                ):
+                    failed_results = [
+                        r
+                        for r in failed_results
+                        if r.name not in CRASH_CONSEQUENCE_RESULT_NAMES
+                    ]
                 for name, description, files in results:
                     failed_results.append(
                         Result.create_from(
@@ -468,7 +484,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             )
         )
 
-    if exit_code != 0:
+    # A failed row already explains the non-zero exit code of the script, so a
+    # generic row about it would only duplicate that failure.
+    if exit_code != 0 and not failed_results:
         failed_results.append(
             Result.create_from(
                 name="Check failed",
