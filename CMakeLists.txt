@@ -846,6 +846,16 @@ if (FUZZER)
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")
                 target_link_libraries(${target} PUBLIC ch_contrib::fuzzer)
+                # Every fuzzer statically links the whole of ClickHouse with its own copy of the
+                # ASan-instrumented DWARF: ~5 GiB per binary, more than 80% of it `.debug_*`. Thirty
+                # of them exceed the CI runner disk while linking the last ones, so keep the debug
+                # sections compressed in the linked binary (2.5-3x smaller; the object files are
+                # already `-gz=zlib`, gated by the same option). `llvm-symbolizer`, which ASan and
+                # libFuzzer use for reports, reads compressed sections transparently; the in-process
+                # `Dwarf` reader skips them, which only costs line numbers in ClickHouse's own traces.
+                if (LINKER_NAME MATCHES "lld" AND COMPRESS_DEBUG_SECTIONS)
+                    target_link_options(${target} PRIVATE "-Wl,--compress-debug-sections=zlib")
+                endif ()
                 # Add to fuzzers bundle
                 add_dependencies(fuzzers ${target})
                 get_target_filename(${target} target_bin_name)
