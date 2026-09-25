@@ -26,8 +26,11 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/parseAddress.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
@@ -946,6 +949,26 @@ Names parseTopics(String topic_list)
 String getDefaultClientId(const StorageID & table_id)
 {
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
+}
+
+void checkBrokerList(const String & broker_list, const ContextPtr & context)
+{
+    /// librdkafka takes `metadata.broker.list` as a comma-separated list of `[scheme://]host[:port]` entries
+    /// and connects to port 9092 when none is given, so the filter has to see the same host and port the client will dial.
+    Names brokers;
+    boost::split(brokers, broker_list, [](char c) { return c == ','; });
+    for (String & broker : brokers)
+    {
+        boost::trim(broker);
+        if (broker.empty())
+            continue;
+
+        if (const auto scheme_end = broker.find("://"); scheme_end != String::npos)
+            broker = broker.substr(scheme_end + 3);
+
+        const auto parsed_address = parseAddress(broker, 9092);
+        context->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
+    }
 }
 
 void consumerGracefulStop(
