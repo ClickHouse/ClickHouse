@@ -48,9 +48,6 @@ Returns a string consisting of the concatenated values of the column or expressi
 **Basic usage without a delimiter**
 
 ```sql title=Query
-CREATE TABLE Employees (Name String) ENGINE = Memory;
-INSERT INTO Employees VALUES ('John'), ('Jane'), ('Bob');
-
 SELECT groupConcat(Name) FROM Employees;
 ```
 

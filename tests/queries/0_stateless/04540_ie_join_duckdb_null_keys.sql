@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Rows with NULLs in the keys must not produce matches.
 -- The matching part is checked with INNER joins; LEFT joins are checked with
 -- `join_use_nulls = 1` (rows with NULL keys are unmatched, not dropped).
