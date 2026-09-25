@@ -1,5 +1,9 @@
 #include <Storages/StorageFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -7,6 +11,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
@@ -41,6 +46,47 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
     for (const auto & elem : names_and_types)
         if (elem.type->cannotBeStoredInTables())
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} of column '{}' cannot be used in tables", elem.type->getName(), elem.name);
+}
+
+
+/// An object whose definition is never written to disk is never rebuilt, so a gate that asks what a
+/// future server startup could reconstruct does not apply to it. `DatabaseMemory` keeps definitions in
+/// memory only, and the database that holds temporary tables is one of those.
+static bool definitionIsRebuiltOnStartup(const String & database_name)
+{
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    return !database || database->getEngineName() != "Memory";
+}
+
+
+static void checkAggregateFunctionStatesInType(const DataTypePtr & type)
+{
+    auto check = [](const IDataType & node)
+    {
+        const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&node);
+        if (!aggregate_type)
+            return;
+
+        aggregate_type->getFunction()->checkCanBeStoredInTable();
+
+        /// `DataTypeAggregateFunction` does not implement `forEachChild`, so the argument types of a
+        /// state are reached only from here.
+        for (const auto & argument_type : aggregate_type->getArgumentsDataTypes())
+            checkAggregateFunctionStatesInType(argument_type);
+    };
+
+    check(*type);
+    type->forEachChild(check);
+}
+
+
+void checkAggregateFunctionStatesCanBeStored(const NamesAndTypesList & names_and_types, const String & database_name)
+{
+    if (!definitionIsRebuiltOnStartup(database_name))
+        return;
+
+    for (const auto & elem : names_and_types)
+        checkAggregateFunctionStatesInType(elem.type);
 }
 
 
@@ -133,6 +179,10 @@ StoragePtr StorageFactory::get(
     ASTStorage * storage_def = query.storage;
 
     bool has_engine_args = false;
+
+    /// A temporary CREATE carries no database name at all, so it cannot be classified by database.
+    if (!query.isTemporary())
+        checkAggregateFunctionStatesCanBeStored(columns.getAll(), query.getDatabase());
 
     if (query.is_ordinary_view)
     {

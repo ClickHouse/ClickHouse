@@ -600,6 +600,14 @@ bool AggregateFunctionTuple::shouldPrintParametersWithTypes() const
         nested_functions, [](const auto & nested) { return nested->shouldPrintParametersWithTypes(); });
 }
 
+void AggregateFunctionTuple::checkCanBeStoredInTable() const
+{
+    /// Storing this state stores every element's state, and the base implementation delegates through
+    /// the singular `getNestedFunction()`, which this combinator has no single answer for.
+    for (const auto & nested : nested_functions)
+        nested->checkCanBeStoredInTable();
+}
+
 AggregateFunctionStateVariant AggregateFunctionTuple::getStateVariant() const
 {
     /// All elements are resolved together under one requested variant, so any element reporting

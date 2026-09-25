@@ -2324,7 +2324,11 @@ void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode,
     /// does not see inferred columns, and ATTACH/RESTORE, temporary tables and views/dictionaries are
     /// not subject to this check on load.
     if (mode <= LoadingStrictnessLevel::CREATE && !is_temporary && !storage.isView() && !storage.isDictionary())
+    {
         checkAllTypesAreAllowedInTable(metadata_snapshot->getColumns().getAll());
+        checkAggregateFunctionStatesCanBeStored(
+            metadata_snapshot->getColumns().getAll(), storage.getStorageID().database_name);
+    }
 
     if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {

@@ -486,6 +486,16 @@ public:
         return true;
     }
 
+    /** A stored state is rebuilt when the server starts, on a thread that has no session, so a feature
+      * gate that only a session answered would leave the column unreadable. A function whose gate
+      * refuses without a session rejects storage here instead.
+      */
+    virtual void checkCanBeStoredInTable() const
+    {
+        if (auto nested = getNestedFunction())
+            nested->checkCanBeStoredInTable();
+    }
+
     const DataTypePtr & getResultType() const override { return result_type; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
 

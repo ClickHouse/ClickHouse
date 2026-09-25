@@ -174,6 +174,17 @@ struct SequenceNextNodeGeneralData
     }
 };
 
+/// The factory passes null settings when the calling thread has no query context, which is the case
+/// for asynchronous table loading: it means "no session to read the setting from", not "the gate is off".
+bool isFunnelFunctionsEnabled(const Settings * settings)
+{
+    if (settings)
+        return (*settings)[Setting::enable_funnel_functions];
+
+    auto context = Context::getGlobalContextInstance();
+    return context && context->getSettingsRef()[Setting::enable_funnel_functions];
+}
+
 /// Implementation of sequenceFirstNode
 template <typename T, typename Node>
 class SequenceNextNodeImpl final
@@ -215,6 +226,15 @@ public:
     }
 
     String getName() const override { return "sequenceNextNode"; }
+
+    void checkCanBeStoredInTable() const override
+    {
+        if (!isFunnelFunctionsEnabled(nullptr))
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                "Aggregate function {} is experimental. Set `enable_funnel_functions` setting for the "
+                "server to enable it: a stored state is read back when the server starts, where a "
+                "session-level value is not visible", getName());
+    }
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
@@ -455,17 +475,6 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
 {
     return std::make_shared<SequenceNextNodeImpl<T, NodeString<max_events_size>>>(
         data_type, argument_types, parameters, base, direction, min_required_args);
-}
-
-/// The factory passes null settings when the calling thread has no query context, which is the case
-/// for asynchronous table loading: it means "no session to read the setting from", not "the gate is off".
-bool isFunnelFunctionsEnabled(const Settings * settings)
-{
-    if (settings)
-        return (*settings)[Setting::enable_funnel_functions];
-
-    auto context = Context::getGlobalContextInstance();
-    return context && context->getSettingsRef()[Setting::enable_funnel_functions];
 }
 
 AggregateFunctionPtr

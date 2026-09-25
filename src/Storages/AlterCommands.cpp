@@ -2201,6 +2201,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
             checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
+            checkAggregateFunctionStatesCanBeStored(
+                NamesAndTypesList{{command.column_name, command.data_type}}, table->getStorageID().database_name);
 
             if (virtuals.tryGet(column_name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -2297,6 +2299,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
                 checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
+                checkAggregateFunctionStatesCanBeStored(
+                    NamesAndTypesList{{command.column_name, command.data_type}}, table->getStorageID().database_name);
 
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;

@@ -937,6 +937,7 @@ void StorageMaterializedView::alter(
     else
     {
         checkAllTypesAreAllowedInTable(new_metadata.getColumns().getAll());
+        checkAggregateFunctionStatesCanBeStored(new_metadata.getColumns().getAll(), table_id.database_name);
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
