@@ -17,7 +17,7 @@
         FROM numbers(1000000) FORMAT Null
     ]]></query>
 
-    <!-- 65-byte inputs select the scanner immediately after the small-kernel boundary. -->
+    <!-- 65-byte inputs select the indexed matcher immediately after the short-kernel boundary. -->
     <query><![CDATA[
         SELECT sum(jaroSimilarity(
             if(number % 2 = 0, concat(repeat('AB', 32), 'A'), concat(repeat('BA', 32), 'B')),
@@ -25,7 +25,7 @@
         FROM numbers(500000) FORMAT Null
     ]]></query>
 
-    <!-- 258-byte inputs exercise the 128-byte unrolled scanner loop. -->
+    <!-- Longer repeated inputs exercise the indexed matcher and transposition pass. -->
     <query><![CDATA[
         SELECT sum(jaroSimilarity(
             if(number % 2 = 0, repeat('XYZ', 86), repeat('ZYX', 86)),

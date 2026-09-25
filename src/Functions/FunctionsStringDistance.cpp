@@ -198,7 +198,9 @@ struct ByteJaccardIndexImpl
                 haystack_size,
                 [&](UInt32 data) { scratch.haystack_utf8_set.insert(data); });
             parseUTF8String(
-                needle, needle_size, [&](UInt32 data) { scratch.needle_utf8_set.insert(data); });
+                needle,
+                needle_size,
+                [&](UInt32 data) { scratch.needle_utf8_set.insert(data); });
         }
         else
         {
@@ -333,7 +335,7 @@ struct BlockMyersEditDistance
     struct PatternMasksASCII
     {
         static constexpr size_t W = sizeof(Word) * 8;
-        // Needles up to stack_blocks * W chars keep the pattern table in inline storage,
+        // Needles up to stack_blocks * W = 512 chars keep the pattern table in inline storage,
         // avoiding a per-row heap allocation in the hot edit-distance loop. Longer needles
         // spill to a tracked allocation.
         static constexpr size_t stack_blocks = 8;
@@ -753,18 +755,6 @@ struct ByteDamerauLevenshteinDistanceImpl
     }
 };
 
-/// AVX2 short-input Jaro kernel. Longer inputs use the portable indexed matcher below.
-#if USE_MULTITARGET_CODE
-DECLARE_X86_64_V3_SPECIFIC_CODE(
-
-/// Mask covering bit positions [lo, hi). Caller guarantees 0 <= lo < hi <= 64.
-inline UInt64 jaroWindowMask(int lo, int hi)
-{
-    const UInt64 hi_mask = (hi == 64) ? ~UInt64{0} : ((UInt64{1} << hi) - 1);
-    const UInt64 lo_mask = (UInt64{1} << lo) - 1;
-    return hi_mask & ~lo_mask;
-}
-
 inline double jaroFinishScore(int matches, int trans2, int s1_len, int s2_len)
 {
     if (matches == 0)
@@ -774,56 +764,70 @@ inline double jaroFinishScore(int matches, int trans2, int s1_len, int s2_len)
     return (1.0 / 3.0) * (m / s1_len + m / s2_len + (m - t) / m);
 }
 
-static double jaroSmall(const unsigned char * s1, int s1_len,
-                        const unsigned char * s2, int s2_len,
-                        int max_range)
+/// Shared greedy matcher for two nonempty strings of at most 64 bytes.
+/// Only the equality-mask calculation depends on the instruction set.
+template <typename EqualMask>
+inline ALWAYS_INLINE double jaroMatchSmall(
+    const UInt8 * s1, int s1_len, const UInt8 * s2, int s2_len, int max_range, EqualMask equal_mask)
 {
-    alignas(32) unsigned char buf[64] = {};
-    memcpy(buf, s2, s2_len);
-    const __m256i s2v0 = _mm256_load_si256(reinterpret_cast<const __m256i *>(buf));
-    const __m256i s2v1 = _mm256_load_si256(reinterpret_cast<const __m256i *>(buf + 32));
-    const UInt64 valid = (s2_len == 64) ? ~UInt64{0} : ((UInt64{1} << s2_len) - 1);
-
-    /// matches <= s2_len <= 64, so the encounter list fits on the stack.
-    int idx_buf[64];
+    const UInt64 valid = ~UInt64{0} >> (64 - s2_len);
+    UInt64 available = valid;
+    UInt64 window = (UInt64{1} << (max_range + 1)) - 1;
+    UInt8 matched_s1[64];
     int matches = 0;
-    UInt64 matched_s2 = 0;
 
-    for (int i = 0; i < s1_len; ++i)
+    /// Past this point the matching window no longer intersects s2.
+    const int end = std::min(s1_len, s2_len + max_range);
+    for (int i = 0; i < end; ++i)
     {
-        const int lo = std::max(0, i - max_range);
-        const int hi = std::min(s2_len, i + max_range + 1);
-        if (lo >= hi)
-            continue;
-        const __m256i target = _mm256_set1_epi8(static_cast<char>(s1[i]));
-        const UInt32 e0 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(target, s2v0)));
-        const UInt32 e1 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(target, s2v1)));
-        const UInt64 eq = UInt64(e0) | (UInt64(e1) << 32);
-        const UInt64 cand = eq & jaroWindowMask(lo, hi) & valid & ~matched_s2;
-        if (cand)
+        const UInt64 candidates = equal_mask(s1[i]) & window & available;
+        if (candidates)
         {
-            const int j = static_cast<int>(getTrailingZeroBitsUnsafe(cand));
-            matched_s2 |= UInt64{1} << j;
-            idx_buf[matches++] = i;
+            /// Select the leftmost unmatched occurrence, preserving greedy match order.
+            const UInt64 bit = candidates & -candidates;
+            available ^= bit;
+            matched_s1[matches++] = s1[i];
         }
+
+        /// Advance [max(0, i - max_range), i + max_range + 1) by one position.
+        /// Keep bit zero until the left edge starts moving; available clips the right edge.
+        window = (window << 1) | UInt64(i < max_range);
     }
 
     int trans2 = 0;
-    UInt64 b = matched_s2;
+    UInt64 matched_s2 = valid ^ available;
     for (int k = 0; k < matches; ++k)
     {
-        const int j = static_cast<int>(getTrailingZeroBitsUnsafe(b));
-        b &= b - 1;
-        trans2 += (s1[idx_buf[k]] != s2[j]);
+        const int j = static_cast<int>(getTrailingZeroBitsUnsafe(matched_s2));
+        matched_s2 &= matched_s2 - 1;
+        trans2 += matched_s1[k] != s2[j];
     }
     return jaroFinishScore(matches, trans2, s1_len, s2_len);
+}
+
+#if USE_MULTITARGET_CODE
+DECLARE_X86_64_V3_SPECIFIC_CODE(
+
+static double jaroSmall(const UInt8 * s1, int s1_len, const UInt8 * s2, int s2_len, int max_range)
+{
+    alignas(32) UInt8 buf[64] = {};
+    memcpy(buf, s2, s2_len);
+    const __m256i low = _mm256_load_si256(reinterpret_cast<const __m256i *>(buf));
+    const __m256i high = _mm256_load_si256(reinterpret_cast<const __m256i *>(buf + 32));
+
+    return jaroMatchSmall(s1, s1_len, s2, s2_len, max_range, [&](UInt8 c)
+    {
+        const __m256i target = _mm256_set1_epi8(static_cast<char>(c));
+        const UInt32 e0 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(target, low)));
+        const UInt32 e1 = static_cast<UInt32>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(target, high)));
+        return UInt64(e0) | (UInt64(e1) << 32);
+    });
 }
 
 ) // DECLARE_X86_64_V3_SPECIFIC_CODE
 #endif
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
-/// Short-input NEON kernel. Longer inputs use the portable indexed matcher below.
 inline UInt64 jaroNeonMovemask64(uint8x16_t m0, uint8x16_t m1, uint8x16_t m2, uint8x16_t m3)
 {
     const uint8x16_t bit_per_lane = {1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128};
@@ -839,69 +843,24 @@ inline UInt64 jaroNeonMovemask64(uint8x16_t m0, uint8x16_t m1, uint8x16_t m2, ui
     return vgetq_lane_u64(vreinterpretq_u64_u8(lo), 0);
 }
 
-inline UInt64 jaroNeonWindowMask(int lo, int hi)
+static double jaroNeonSmall(const UInt8 * s1, int s1_len, const UInt8 * s2, int s2_len, int max_range)
 {
-    const UInt64 hi_mask = (hi == 64) ? ~UInt64{0} : ((UInt64{1} << hi) - 1);
-    const UInt64 lo_mask = (UInt64{1} << lo) - 1;
-    return hi_mask & ~lo_mask;
-}
-
-static double jaroNeonSmall(
-    const unsigned char * s1,
-    int s1_len,
-    const unsigned char * s2,
-    int s2_len,
-    int max_range)
-{
-    alignas(16) unsigned char buf[64] = {};
+    alignas(16) UInt8 buf[64] = {};
     memcpy(buf, s2, s2_len);
-    const uint8x16_t s2v0 = vld1q_u8(reinterpret_cast<const uint8_t *>(buf));
-    const uint8x16_t s2v1 = vld1q_u8(reinterpret_cast<const uint8_t *>(buf + 16));
-    const uint8x16_t s2v2 = vld1q_u8(reinterpret_cast<const uint8_t *>(buf + 32));
-    const uint8x16_t s2v3 = vld1q_u8(reinterpret_cast<const uint8_t *>(buf + 48));
-    const UInt64 valid = (s2_len == 64) ? ~UInt64{0} : ((UInt64{1} << s2_len) - 1);
+    const uint8x16_t s2v0 = vld1q_u8(buf);
+    const uint8x16_t s2v1 = vld1q_u8(buf + 16);
+    const uint8x16_t s2v2 = vld1q_u8(buf + 32);
+    const uint8x16_t s2v3 = vld1q_u8(buf + 48);
 
-    int idx_buf[64];
-    int matches = 0;
-    UInt64 matched_s2 = 0;
-
-    for (int i = 0; i < s1_len; ++i)
+    return jaroMatchSmall(s1, s1_len, s2, s2_len, max_range, [&](UInt8 c)
     {
-        const int lo = std::max(0, i - max_range);
-        const int hi = std::min(s2_len, i + max_range + 1);
-        if (lo >= hi)
-            continue;
-
-        const uint8x16_t target = vdupq_n_u8(s1[i]);
-        const UInt64 eq = jaroNeonMovemask64(
+        const uint8x16_t target = vdupq_n_u8(c);
+        return jaroNeonMovemask64(
             vceqq_u8(target, s2v0),
             vceqq_u8(target, s2v1),
             vceqq_u8(target, s2v2),
             vceqq_u8(target, s2v3));
-        const UInt64 cand = eq & jaroNeonWindowMask(lo, hi) & valid & ~matched_s2;
-        if (cand)
-        {
-            const int j = static_cast<int>(getTrailingZeroBitsUnsafe(cand));
-            matched_s2 |= UInt64{1} << j;
-            idx_buf[matches++] = i;
-        }
-    }
-
-    if (matches == 0)
-        return 0.0;
-
-    int trans2 = 0;
-    UInt64 bits = matched_s2;
-    for (int k = 0; k < matches; ++k)
-    {
-        const int j = static_cast<int>(getTrailingZeroBitsUnsafe(bits));
-        bits &= bits - 1;
-        trans2 += s1[idx_buf[k]] != s2[j];
-    }
-
-    const double m = static_cast<double>(matches);
-    const double t = static_cast<double>(trans2) * 0.5;
-    return (1.0 / 3.0) * (m / s1_len + m / s2_len + (m - t) / m);
+    });
 }
 #endif
 
@@ -967,9 +926,7 @@ struct ByteJaroSimilarityImpl
                 trans2 += matched_s1[k++] != s2[j];
         }
 
-        const double m = static_cast<double>(matches);
-        const double t = static_cast<double>(trans2) * 0.5;
-        return (1.0 / 3.0) * (m / s1len + m / s2len + (m - t) / m);
+        return jaroFinishScore(matches, trans2, s1len, s2len);
     }
 
     static ResultType process(
@@ -1003,21 +960,13 @@ struct ByteJaroSimilarityImpl
         if (std::max(s1len, s2len) > neon_min_size && s1len <= 64 && s2len <= 64)
         {
             return jaroNeonSmall(
-                reinterpret_cast<const unsigned char *>(haystack),
-                s1len,
-                reinterpret_cast<const unsigned char *>(needle),
-                s2len,
-                max_range);
+                reinterpret_cast<const UInt8 *>(haystack), s1len, reinterpret_cast<const UInt8 *>(needle), s2len, max_range);
         }
 #elif USE_MULTITARGET_CODE
         if (s1len <= 64 && s2len <= 64 && isArchSupported(TargetArch::x86_64_v3))
         {
             return TargetSpecific::x86_64_v3::jaroSmall(
-                reinterpret_cast<const unsigned char *>(haystack),
-                s1len,
-                reinterpret_cast<const unsigned char *>(needle),
-                s2len,
-                max_range);
+                reinterpret_cast<const UInt8 *>(haystack), s1len, reinterpret_cast<const UInt8 *>(needle), s2len, max_range);
         }
 #endif
         return processIndexed(haystack, needle, s1len, s2len, max_range);
