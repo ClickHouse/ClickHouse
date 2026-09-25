@@ -1933,6 +1933,57 @@ def test_kafka_producer_consumer_separate_settings(
 
 
 @pytest.mark.parametrize(
+    "create_query_generator",
+    [
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
+    ],
+)
+def test_kafka_password_not_logged(kafka_cluster, create_query_generator):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    username = f"kafka_user_{suffix}"
+    password = f"secret_kafka_password_{suffix}"
+
+    instance.rotate_logs()
+    instance.query(
+        create_query_generator(
+            kafka_table,
+            "key UInt64",
+            topic_list="password_not_logged",
+            consumer_group="test",
+            settings={
+                "kafka_sasl_username": username,
+                "kafka_sasl_password": password,
+            },
+        )
+    )
+
+    # Create an mv to initialize the librdkafka consumers
+    instance.query(f"CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table}")
+    instance.wait_for_log_line(f"{kafka_table}.*Created #0 consumer")
+    instance.query(f"DROP TABLE test.{kafka_table}_view")
+    instance.query(f"INSERT INTO test.{kafka_table} VALUES (1)")
+
+    assert instance.contains_in_log(f"{kafka_table}.*Kafka producer created")
+
+    # The property-logging loops ran for both the consumer and the producer,
+    # but they hid the values of the sensitive properties. `sasl.username` is
+    # hidden because librdkafka marks it with the _RK_SENSITIVE flag, not
+    # because of the name, so it validates the generated blacklist.
+    for client_type in ["Consumer", "Producer"]:
+        for property_name in ["sasl.username", "sasl.password"]:
+            assert instance.contains_in_log(
+                f"{kafka_table}.*{client_type} set property {property_name}:\\[HIDDEN\\]"
+            )
+    # The username still appears in the logged CREATE TABLE text (only
+    # kafka_sasl_password is masked there), so check only the password value.
+    assert not instance.contains_in_log(password)
+
+    instance.query(f"DROP TABLE test.{kafka_table}")
+
+
+@pytest.mark.parametrize(
     "create_query_generator, log_line",
     [
         (k.generate_new_create_table_query, "Saved offset 5"),
