@@ -1,0 +1,26 @@
+read back: 0
+read back with the server value off: Set `enable_funnel_functions` setting to enable it
+column: accepted for the server
+column: setting for the server to enable it
+add column: accepted for the server
+add column: setting for the server to enable it
+modify column: accepted for the server
+modify column: setting for the server to enable it
+inferred column: accepted for the server
+inferred column: setting for the server to enable it
+view: accepted for the server
+view: setting for the server to enable it
+materialized view query: accepted for the server
+materialized view query: setting for the server to enable it
+state argument: accepted for the server
+state argument: setting for the server to enable it
+array element: accepted for the server
+array element: setting for the server to enable it
+tuple element: accepted for the server
+tuple element: setting for the server to enable it
+schema read by the engine: accepted for the server
+schema read by the engine: setting for the server to enable it
+attach with a full definition: accepted for the server
+attach with a full definition: setting for the server to enable it
+temporary table: 0
+table in a Memory database: 0
