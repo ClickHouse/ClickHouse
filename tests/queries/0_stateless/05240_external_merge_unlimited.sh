@@ -22,7 +22,7 @@ command = shlex.split(os.environ['CLICKHOUSE_LOCAL']) + [
     '--path', str(root / 'data'), '--max_threads=1', '--max_block_size=4096',
     '--max_bytes_before_external_sort=1', '--max_bytes_ratio_before_external_sort=0',
     '--max_bytes_before_external_distinct=1', '--max_bytes_ratio_before_external_distinct=0',
-    '--allow_preliminary_distinct_abandoning=0', '--optimize_distinct_in_order=0',
+    '--max_untracked_memory=0', '--allow_preliminary_distinct_abandoning=0', '--optimize_distinct_in_order=0',
     '--query_plan_remove_redundant_sorting=0', '--logger.console', '--logger.level=trace',
     '--print-profile-events',
 ]
@@ -66,12 +66,15 @@ for mode, setting in (('explicit', 'max_external_merge_fan_in = 0'),
         text = log.read_text()
         assert result.returncode == 0, (name, text)
         assert result.stdout.strip() == expected, (name, result.stdout, expected)
-        finals = [int(n) for n in re.findall(r'Starting final external merge with (\d+) files', text)]
+
+        # Order restoration has its own sorter and can produce fewer files than the `DISTINCT` merge.
+        logger = 'ExternalDistinctTransform' if shape.startswith('distinct') else 'MergeSortingTransform'
+        finals = [int(n) for n in re.findall(rf'{logger}: Starting final external merge with (\d+) files', text)]
         assert finals and all(n > 64 for n in finals), (name, finals, text)
         assert 'fan-in limit: 0' in text, (name, text)
         assert 'Starting intermediate external merge' not in text, (name, text)
         for event in ('ExternalProcessingIntermediateMerge', 'ExternalProcessingIntermediateMergeInputs'):
             assert sum(int(n) for n in re.findall(rf'{event}: (\d+) \(increment\)', text)) == 0, name
         assert not list((root / 'data' / 'tmp').glob('tmp*')), name
-        print(name, 'ok')
+        print(name, 'ok', flush=True)
 TEST

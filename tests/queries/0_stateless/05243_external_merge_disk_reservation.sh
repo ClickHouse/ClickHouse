@@ -22,7 +22,7 @@ command = shlex.split(os.environ['CLICKHOUSE_LOCAL']) + [
     '--path', str(root / 'data'), '--max_threads=1', '--max_block_size=4096',
     '--max_bytes_before_external_sort=1', '--max_bytes_ratio_before_external_sort=0',
     '--max_bytes_before_external_distinct=1', '--max_bytes_ratio_before_external_distinct=0',
-    '--allow_preliminary_distinct_abandoning=0', '--optimize_distinct_in_order=0',
+    '--max_untracked_memory=0', '--allow_preliminary_distinct_abandoning=0', '--optimize_distinct_in_order=0',
     '--query_plan_remove_redundant_sorting=0', '--logger.console', '--logger.level=trace',
 ]
 units = {'B': 1, 'KiB': 1024, 'MiB': 1024**2, 'GiB': 1024**3}
@@ -46,7 +46,9 @@ for kind, query in queries.items():
         log = log_path.read_text()
         assert result.returncode == 0, (name, log)
         assert result.stdout.strip() == f'12288\t{12288 * 12287 // 2}', (name, result.stdout)
-        initial_end = log.index('Preparing external merge with 3 files')
+        initial = re.search(r'Preparing external merge with (\d+) files', log)
+        assert initial and int(initial[1]) == 3, (name, log)
+        initial_end = initial.start()
         reservations = [float(size) * units[unit] for size, unit in re.findall(
             r'Reserved ([\d.]+) (\w+) on local disk', log[initial_end:])]
         if fan_in == 0:
@@ -68,5 +70,5 @@ for kind, query in queries.items():
             reserved_bytes = reservations[0] - free_space
             assert 0.99 * input_bytes <= reserved_bytes <= 1.01 * input_bytes, (name, runs, reservations)
         assert not list((root / 'data' / 'tmp').glob('tmp*')), name
-        print(name, 'ok')
+        print(name, 'ok', flush=True)
 TEST

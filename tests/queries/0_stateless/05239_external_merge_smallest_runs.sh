@@ -22,7 +22,7 @@ command = shlex.split(os.environ['CLICKHOUSE_LOCAL']) + [
     '--path', str(root / 'data'), '--max_threads=1', '--max_block_size=4096',
     '--max_bytes_before_external_sort=1', '--max_bytes_ratio_before_external_sort=0',
     '--max_bytes_before_external_distinct=1', '--max_bytes_ratio_before_external_distinct=0',
-    '--allow_preliminary_distinct_abandoning=0', '--optimize_distinct_in_order=0',
+    '--max_untracked_memory=0', '--allow_preliminary_distinct_abandoning=0', '--optimize_distinct_in_order=0',
     '--query_plan_remove_redundant_sorting=0', '--logger.console', '--logger.level=trace',
 ]
 
@@ -38,7 +38,7 @@ def check(name, sql, expected, fan_in):
     groups = [int(n) for n in re.findall(r'Starting intermediate external merge with (\d+) inputs', text)]
     assert groups and all(2 <= n <= fan_in for n in groups), (name, groups, text)
     assert not list((root / 'data' / 'tmp').glob('tmp*')), name
-    print(name, 'ok')
+    print(name, 'ok', flush=True)
     return groups, text
 
 
