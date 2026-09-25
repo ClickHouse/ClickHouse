@@ -247,6 +247,7 @@ private:
 
     void alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context);
 };
+
 }
 
 #endif
