@@ -335,6 +335,56 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
+bool namesNonDeterministicFunction(const String & name, const ContextPtr & context)
+{
+    const String stripped = stripAggregateCombinators(name);
+    if (isOracleUnsafeFunctionName(name))
+        return true;
+
+    /// Experimental `timeSeries*ToGrid` aggregates bucket points onto a
+    /// parameterized grid; the result depends on grid parameters and
+    /// point ordering, so the metamorphic State/Merge and DQP rewrites
+    /// legitimately diverge. Whole family gated by prefix (it is growing).
+    /// Aggregate names resolve case-insensitively, so compare lowercased —
+    /// `TIMESERIES...` must not slip past the gate.
+    const String name_lower = Poco::toLower(name);
+    const String stripped_lower = Poco::toLower(stripped);
+    if (name_lower.starts_with("timeseries") || stripped_lower.starts_with("timeseries"))
+        return true;
+
+    for (const auto & candidate : {std::cref(name), std::cref(stripped)})
+    {
+        if (const auto resolver = FunctionFactory::instance().tryGet(candidate.get(), context))
+            if (!resolver->isDeterministic())
+                return true;
+        if (UserDefinedSQLFunctionFactory::instance().tryGet(candidate.get()))
+            /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+            return true;
+        if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(candidate.get(), context))
+            if (!udf_exec->isDeterministic())
+                return true;
+    }
+
+    return false;
+}
+
+/// The sub-ASTs of `ast` that its `children` do not contain.
+/// `ASTColumnsApplyTransformer` copies `parameters` and `lambda` by hand in
+/// `clone()` rather than through `cloneChildren()`, so neither is a child.
+ASTs hiddenApplyMembers(const ASTPtr & ast)
+{
+    const auto * apply = ast->as<ASTColumnsApplyTransformer>();
+    if (!apply)
+        return {};
+
+    ASTs members;
+    if (apply->lambda)
+        members.push_back(apply->lambda);
+    if (apply->parameters)
+        members.push_back(apply->parameters);
+    return members;
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
@@ -379,19 +429,7 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
 
     if (const auto * func = ast->as<ASTFunction>())
     {
-        const String stripped = stripAggregateCombinators(func->name);
-        if (isOracleUnsafeFunctionName(func->name))
-            return true;
-
-        /// Experimental `timeSeries*ToGrid` aggregates bucket points onto a
-        /// parameterized grid; the result depends on grid parameters and
-        /// point ordering, so the metamorphic State/Merge and DQP rewrites
-        /// legitimately diverge. Whole family gated by prefix (it is growing).
-        /// Aggregate names resolve case-insensitively, so compare lowercased —
-        /// `TIMESERIES...` must not slip past the gate.
-        const String name_lower = Poco::toLower(func->name);
-        const String stripped_lower = Poco::toLower(stripped);
-        if (name_lower.starts_with("timeseries") || stripped_lower.starts_with("timeseries"))
+        if (namesNonDeterministicFunction(func->name, context))
             return true;
 
         /// Comparator-based array sorts are not stable on ties: with a
@@ -403,27 +441,25 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
         /// unresolvable spelling merely skips one more query, which is safe.
         static const std::unordered_set<String> lambda_sort_functions = {
             "arraysort", "arrayreversesort", "arraypartialsort", "arraypartialreversesort"};
-        if (lambda_sort_functions.contains(name_lower)
+        if (lambda_sort_functions.contains(Poco::toLower(func->name))
             && func->arguments && func->arguments->children.size() >= 2)
             return true;
+    }
 
-        for (const auto & name : {std::cref(func->name), std::cref(stripped)})
-        {
-            if (const auto resolver = FunctionFactory::instance().tryGet(name.get(), context))
-                if (!resolver->isDeterministic())
-                    return true;
-            if (UserDefinedSQLFunctionFactory::instance().tryGet(name.get()))
-                /// SQL UDF determinism is not introspectable — treat as non-deterministic.
-                return true;
-            if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name.get(), context))
-                if (!udf_exec->isDeterministic())
-                    return true;
-        }
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        if (!apply->func_name.empty() && namesNonDeterministicFunction(apply->func_name, context))
+            return true;
     }
 
     for (const auto & child : ast->children)
     {
         if (hasNonDeterministicFunctionsImpl(child, context))
+            return true;
+    }
+    for (const auto & member : hiddenApplyMembers(ast))
+    {
+        if (hasNonDeterministicFunctionsImpl(member, context))
             return true;
     }
     return false;
@@ -547,6 +583,9 @@ bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
     }
     for (const auto & child : ast->children)
         if (hasWindowFunctionWithoutOrderBy(child))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (hasWindowFunctionWithoutOrderBy(member))
             return true;
     return false;
 }
@@ -686,6 +725,9 @@ bool hasNonStrippableInlineSettings(const ASTPtr & ast)
     for (const auto & child : ast->children)
         if (hasNonStrippableInlineSettings(child))
             return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (hasNonStrippableInlineSettings(member))
+            return true;
     return false;
 }
 
@@ -707,6 +749,9 @@ bool hasNestedThreadSettings(const ASTPtr & ast, const ASTPtr & top_level_settin
     }
     for (const auto & child : ast->children)
         if (hasNestedThreadSettings(child, top_level_settings))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (hasNestedThreadSettings(member, top_level_settings))
             return true;
     return false;
 }
@@ -788,6 +833,9 @@ bool hasWithFillAnywhere(const ASTPtr & ast)
     for (const auto & child : ast->children)
         if (hasWithFillAnywhere(child))
             return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (hasWithFillAnywhere(member))
+            return true;
     return false;
 }
 
@@ -809,6 +857,9 @@ bool usesFinalAnywhere(const ASTPtr & ast)
     for (const auto & child : ast->children)
         if (usesFinalAnywhere(child))
             return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (usesFinalAnywhere(member))
+            return true;
     return false;
 }
 
@@ -825,6 +876,9 @@ bool hasAsofJoinAnywhere(const ASTPtr & ast)
             return true;
     for (const auto & child : ast->children)
         if (hasAsofJoinAnywhere(child))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (hasAsofJoinAnywhere(member))
             return true;
     return false;
 }
@@ -909,6 +963,9 @@ bool referencesSystemDatabaseAnywhere(const ASTPtr & ast, const String & current
     for (const auto & child : ast->children)
         if (referencesSystemDatabaseAnywhere(child, current_database))
             return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (referencesSystemDatabaseAnywhere(member, current_database))
+            return true;
     return false;
 }
 
@@ -984,6 +1041,9 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
     }
     for (const auto & child : ast->children)
         if (referencesDistributedTableAnywhere(child, context))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (referencesDistributedTableAnywhere(member, context))
             return true;
     return false;
 }
@@ -1103,6 +1163,9 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
 
     for (const auto & child : ast->children)
         if (referencesUnscreenedDefinitionAnywhere(child, context, depth))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (referencesUnscreenedDefinitionAnywhere(member, context, depth))
             return true;
     return false;
 }
