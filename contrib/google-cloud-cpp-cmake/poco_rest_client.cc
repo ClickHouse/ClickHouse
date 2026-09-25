@@ -316,16 +316,25 @@ class SessionPool {
 // authenticated with the previous one. It enters the key as a hash rather than
 // verbatim, so the pool does not hold a second plaintext copy of the secret for
 // the lifetime of the session.
+//
+// The keep-alive policy discriminates as well. Poco refuses to change it once a
+// session is connected (the peer's own `Keep-Alive` header may lower it from then
+// on), so it can only be applied when a session is opened. Keying on it makes a
+// pooled session carry the policy of the client that borrows it, rather than the
+// policy of whichever client happened to open it.
 std::string SessionKey(
     Poco::URI const& uri,
-    Poco::Net::HTTPClientSession::ProxyConfig const& proxy) {
+    Poco::Net::HTTPClientSession::ProxyConfig const& proxy,
+    ::ClickHouse::PocoRestKeepAliveOption::Type const& keep_alive) {
   return uri.getScheme() + "://" + uri.getHost() + ":" +
          std::to_string(uri.getPort()) + "|" + proxy.host + ":" +
          std::to_string(proxy.port) + "|" + proxy.protocol + "|" +
          (proxy.tunnel ? "tunnel" : "direct") + "|" +
          proxy.originalRequestProtocol + "|" + proxy.username + "|" +
          std::to_string(std::hash<std::string>{}(proxy.password)) + "|" +
-         proxy.nonProxyHosts;
+         proxy.nonProxyHosts + "|" +
+         std::to_string(keep_alive.timeout.count()) + ":" +
+         std::to_string(keep_alive.max_requests);
 }
 
 // Where a session goes back to, and under which limit. Both are decided by the
@@ -385,7 +394,12 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   }
   if (effective_proxy.host.empty()) effective_proxy = {};
 
-  auto const key = SessionKey(uri, effective_proxy);
+  ::ClickHouse::PocoRestKeepAliveOption::Type keep_alive;
+  if (options.has<::ClickHouse::PocoRestKeepAliveOption>()) {
+    keep_alive = options.get<::ClickHouse::PocoRestKeepAliveOption>();
+  }
+
+  auto const key = SessionKey(uri, effective_proxy, keep_alive);
   if (ticket != nullptr) {
     ticket->key = key;
     ticket->proxy = effective_proxy;
@@ -394,8 +408,9 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
     }
   }
 
-  // A pooled session already points at this endpoint through this proxy -- both
-  // are in the key -- so only a fresh one needs constructing and configuring.
+  // A pooled session already points at this endpoint through this proxy, under
+  // this keep-alive policy -- all three are in the key -- so only a fresh one
+  // needs constructing and configuring.
   ::ClickHouse::PocoRestSessionStaleCheckOption::Type stale_check;
   if (options.has<::ClickHouse::PocoRestSessionStaleCheckOption>()) {
     stale_check = options.get<::ClickHouse::PocoRestSessionStaleCheckOption>();
@@ -428,6 +443,21 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
         }
       }
     }
+    // The keep-alive policy an operator configured (`http_keep_alive_timeout` /
+    // `http_keep_alive_max_requests`). Poco enforces both itself -- it counts the
+    // requests a session served and reconnects when either bound is reached --
+    // and the pool consults the same verdict (`isKeepAliveExpired`) before
+    // retaining or handing out a session. Poco throws when either is set on a
+    // connected session, so they cannot be reapplied to a pooled one; the pool key
+    // makes that unnecessary.
+    if (keep_alive.timeout.count() > 0) {
+      session->setKeepAliveTimeout(Poco::Timespan(
+          static_cast<Poco::Timespan::TimeDiff>(keep_alive.timeout.count()), 0));
+    }
+    if (keep_alive.max_requests > 0) {
+      session->setKeepAliveMaxRequests(
+          static_cast<int>(keep_alive.max_requests));
+    }
   }
 
   // Applied to pooled sessions too: the timeouts come from the options of the
@@ -447,23 +477,6 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   // Without this Poco sends `Connection: Close` and the peer tears the socket
   // down after one response, which would make the pool useless.
   session->setKeepAlive(true);
-  // The keep-alive policy an operator configured (`http_keep_alive_timeout` /
-  // `http_keep_alive_max_requests`), applied to pooled sessions too for the same
-  // reason the timeouts above are: it belongs to the client making *this*
-  // request. Poco enforces both itself -- it counts the requests a session served
-  // and reconnects when either bound is reached -- and the pool consults the same
-  // verdict (`isKeepAliveExpired`) before retaining or handing out a session.
-  if (options.has<::ClickHouse::PocoRestKeepAliveOption>()) {
-    auto const& keep_alive = options.get<::ClickHouse::PocoRestKeepAliveOption>();
-    if (keep_alive.timeout.count() > 0) {
-      session->setKeepAliveTimeout(Poco::Timespan(
-          static_cast<Poco::Timespan::TimeDiff>(keep_alive.timeout.count()), 0));
-    }
-    if (keep_alive.max_requests > 0) {
-      session->setKeepAliveMaxRequests(
-          static_cast<int>(keep_alive.max_requests));
-    }
-  }
   return session;
 }
 

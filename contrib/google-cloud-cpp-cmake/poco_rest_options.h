@@ -77,8 +77,10 @@ struct PocoRestSessionStaleCheckOption
 /// (`http_keep_alive_timeout` / `http_keep_alive_max_requests` of the shared `s3`/disk grammar).
 /// `Poco::Net::HTTPClientSession` enforces both itself -- it counts the requests it served and
 /// reconnects once either bound is reached -- so the transport only has to apply them to every
-/// session it hands out, and to stop pooling a session that has already reached them. A zero value
-/// of either field means "keep the transport default for it".
+/// session it opens, and to stop pooling a session that has already reached them. Poco does not
+/// allow changing them on a connected session, so the transport keys its pool on them instead of
+/// reapplying them to a pooled one. A zero value of either field means "keep the transport default
+/// for it".
 struct PocoRestKeepAliveOption
 {
     struct KeepAlive
