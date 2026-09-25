@@ -1,3 +1,4 @@
+-- Tags: no-parallel-replicas
 -- Random settings limits: enable_join_runtime_filters=(1, 1)
 
 -- An expression in a subquery's SELECT list must not be evaluated on the rows that the same
@@ -12,6 +13,9 @@
 -- The remaining settings are pinned because the test asserts on which join side is probed: the apply
 -- step is planted on one side only, and of the join algorithms only hash, parallel_hash and
 -- grace_hash build a runtime filter at all.
+-- use_query_cache = 0 is separate: log_comment is stripped before the cache key is computed, so the
+-- probe statement below would otherwise be served from the first statement's cache entry and raise no
+-- ProfileEvents at all.
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -30,14 +34,18 @@ FROM (SELECT c1, c2, CAST(c3, 'Array(String)') AS s FROM t1 FINAL WHERE c4) AS a
 INNER JOIN t2 AS b ON b.c1 = a.c2
 SETTINGS join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash',
          query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0,
-         query_plan_optimize_join_order_limit = 10;
+         query_plan_optimize_join_order_limit = 10,
+         query_plan_optimize_join_order_algorithm = 'greedy',
+         enable_parallel_replicas = 0, use_query_cache = 0;
 
 SELECT count(), sum(length(a.s))
 FROM (SELECT c1, c2, CAST(c3, 'Array(String)') AS s FROM t1 FINAL WHERE c4) AS a
 INNER JOIN t2 AS b ON b.c1 = a.c2
 SETTINGS join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash',
          query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0,
-         query_plan_optimize_join_order_limit = 10, enable_join_runtime_filters = 0;
+         query_plan_optimize_join_order_limit = 10,
+         query_plan_optimize_join_order_algorithm = 'greedy',
+         enable_parallel_replicas = 0, use_query_cache = 0, enable_join_runtime_filters = 0;
 
 -- The runtime filter must still be built, not silently dropped to avoid the CAST. This also fails if
 -- the assertions above ever stop planting the filter, which would make them pass vacuously.
@@ -49,7 +57,9 @@ FROM (
     INNER JOIN t2 AS b ON b.c1 = a.c2
     SETTINGS join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash',
              query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0,
-             query_plan_optimize_join_order_limit = 10
+             query_plan_optimize_join_order_limit = 10,
+             query_plan_optimize_join_order_algorithm = 'greedy',
+             enable_parallel_replicas = 0, use_query_cache = 0
 );
 
 -- Being built is not being applied, and only the probe side runs the guarded expression. This counter
@@ -62,7 +72,9 @@ FROM (SELECT c1, c2, CAST(c3, 'Array(String)') AS s FROM t1 FINAL WHERE c4) AS a
 INNER JOIN t2 AS b ON b.c1 = a.c2
 SETTINGS join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash',
          query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0,
-         query_plan_optimize_join_order_limit = 10, log_comment = '05255_rf_probe';
+         query_plan_optimize_join_order_limit = 10,
+         query_plan_optimize_join_order_algorithm = 'greedy',
+         enable_parallel_replicas = 0, use_query_cache = 0, log_comment = '05255_rf_probe';
 
 SYSTEM FLUSH LOGS query_log;
 
