@@ -142,8 +142,8 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t LIMIT 1 BY 
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT a FROM t ORDER BY a LIMIT 1 WITH TIES'), '"order_by":', '"unused_order_by":')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- `sql_security` is valid only for view shapes (`supportSQLSecurity()`). `formatImpl` hides it on a
--- plain `CREATE TABLE`, but `InterpreterCreateQuery::createTable` still runs `processSQLSecurityOption`.
+-- `sql_security` is valid only for the shapes `supportSQLSecurity` accepts. `formatImpl` hides it on
+-- a plain `CREATE TABLE`, but `InterpreterCreateQuery::createTable` still runs `processSQLSecurityOption`.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x UInt8) ENGINE = Memory'), '"attach":false', '"sql_security":{"type":"SQLSecurity","security_type":"DEFINER","is_definer_current_user":true},"attach":false')); -- { serverError BAD_ARGUMENTS }
 

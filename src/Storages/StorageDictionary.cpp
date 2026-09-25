@@ -1,5 +1,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Access/DefinerDependencies.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -11,6 +12,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Common/Config/ConfigHelper.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -24,6 +26,10 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Core/ServerSettings.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Common/CurrentThread.h>
+#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -172,8 +178,37 @@ StorageDictionary::StorageDictionary(
 #endif
     configuration = dictionary_configuration;
 
+    /// `system.tables.definer` and `DefinerDependencies` both read the storage metadata, so the clause
+    /// has to live there and not only in the generated dictionary configuration.
+    if (const auto security_type_name = dictionary_configuration->getString("dictionary.sql_security", ""); !security_type_name.empty())
+    {
+        auto security_type = magic_enum::enum_cast<SQLSecurityType>(security_type_name);
+        if (!security_type)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SQL security type '{}'", security_type_name);
+
+        ASTSQLSecurity sql_security;
+        sql_security.type = security_type;
+        if (const auto definer = dictionary_configuration->getString("dictionary.definer", ""); !definer.empty())
+            sql_security.definer = make_intrusive<ASTUserNameWithHost>(definer);
+
+        auto current_metadata = getInMemoryMetadataPtr(context_, /*bypass_metadata_cache=*/ false);
+        StorageInMemoryMetadata storage_metadata = *current_metadata;
+        storage_metadata.setSQLSecurity(sql_security);
+        setInMemoryMetadata(storage_metadata);
+
+        if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
+            DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id);
+    }
+
     auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
     remove_repository_callback = context_->getExternalDictionariesLoader().addConfigRepository(std::move(repository));
+}
+
+void StorageDictionary::drop()
+{
+    const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), /*bypass_metadata_cache=*/ false);
+    if (metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
+        DefinerDependencies::instance().removeDependencies(getStorageID());
 }
 
 StorageDictionary::~StorageDictionary()
@@ -281,6 +316,15 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
     chassert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
+    /// A definer dependency is keyed on the UUID, so gaining one has to register it: `DefinerDependencies`
+    /// tracks nothing for the Nil UUID this dictionary had before the move.
+    if (move_to_atomic)
+    {
+        const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), /*bypass_metadata_cache=*/ false);
+        if (metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
+            DefinerDependencies::instance().addDependency(*metadata_snapshot->definer, new_table_id);
+    }
+
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
     /// it can be in the process of loading or reloading right now.
     /// The correct way is to update the dictionary's configuration first and then ask ExternalDictionariesLoader to reload our dictionary.
@@ -382,6 +426,21 @@ void registerStorageDictionary(StorageFactory & factory)
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
+            /// A dictionary that never finishes being created reaches neither `drop` nor the destructor,
+            /// so its definer dependency has to be released here; that release is what deletes an
+            /// ephemeral `<user>:definer` account. The body runs during unwinding and must not throw.
+            scope_guard remove_definer_dependency_on_failure{[&]
+            {
+                try
+                {
+                    result_storage->drop();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("registerStorageDictionary");
+                }
+            }};
+
             bool lazy_load = external_dictionaries_loader.isObjectLazy(*abstract_dictionary_configuration, "dictionary")
                 .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
@@ -391,6 +450,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 external_dictionaries_loader.load(dictionary_id.getInternalDictionaryName());
             }
 
+            remove_definer_dependency_on_failure.release();
             return result_storage;
         }
 
