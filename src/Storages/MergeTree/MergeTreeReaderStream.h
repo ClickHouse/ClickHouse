@@ -62,6 +62,9 @@ public:
     /// takes a mark index instead). Must be called before seeking (see ReadBuffer::setReadUntilPosition).
     void setReadUntilMark(const MarkInCompressedFile & mark);
 
+    /// Offset just past the compressed block that the given mark starts in, read from only its header.
+    size_t getCompressedBlockEnd(const MarkInCompressedFile & mark);
+
     ReadBuffer * getDataBuffer();
 
     size_t getFileSize() const { return file_size; }

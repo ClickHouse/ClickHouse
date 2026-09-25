@@ -296,6 +296,13 @@ void MergeTreeReaderStream::setReadUntilMark(const MarkInCompressedFile & mark)
     data_buffer->setReadUntilPosition(right_offset);
 }
 
+size_t MergeTreeReaderStream::getCompressedBlockEnd(const MarkInCompressedFile & mark)
+{
+    init();
+    chassert(compressed_data_buffer);
+    return compressed_data_buffer->getCompressedBlockEnd(mark.offset_in_compressed_file);
+}
+
 ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();

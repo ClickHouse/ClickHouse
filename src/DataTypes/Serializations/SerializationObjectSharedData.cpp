@@ -1181,42 +1181,13 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosChunks> SerializationOb
     if (auto * cached_paths_infos = getElementFromSubstreamsCache(cache, paths_infos_path))
         return assert_cast<SubstreamsCachePathsInfosElement *>(cached_paths_infos)->paths_infos_chunks;
 
-    /// A path's read in the data stream is bounded to the first compressed block after it that contains no
-    /// requested data, so it does not read forward into the following paths. Blocks holding requested data are
-    /// read in one go, across chunks too, since chunk data in the stream is contiguous.
     auto paths_infos_chunks = std::make_shared<PathsInfosChunks>();
     paths_infos_chunks->reserve(chunk_structures.size());
 
-    /// Offsets of the compressed blocks in the data stream that contain no requested data.
-    std::vector<size_t> compressed_blocks_without_requested_data;
-
-    std::optional<size_t> current_compressed_block_offset;
-    bool current_compressed_block_has_requested_data = false;
-    bool previous_path_requested = false;
-
-    auto finish_current_compressed_block = [&]
-    {
-        if (current_compressed_block_offset && !current_compressed_block_has_requested_data)
-            compressed_blocks_without_requested_data.push_back(*current_compressed_block_offset);
-    };
-
-    /// Marks come in ascending order, so a different compressed offset means a new compressed block.
-    auto add_mark = [&](const MarkInCompressedFile & mark, bool requested)
-    {
-        if (current_compressed_block_offset != mark.offset_in_compressed_file)
-        {
-            finish_current_compressed_block();
-            current_compressed_block_offset = mark.offset_in_compressed_file;
-            current_compressed_block_has_requested_data = false;
-        }
-
-        /// The compressed block contains requested data if a requested path starts in it, or if the previous
-        /// path is requested and continues into it - which is the case when this mark is not at a block start.
-        if (requested || (previous_path_requested && mark.offset_in_decompressed_block != 0))
-            current_compressed_block_has_requested_data = true;
-
-        previous_path_requested = requested;
-    };
+    /// Marks of all paths in read order (across chunks, whose data is contiguous), each paired with the PathInfo
+    /// of a requested path or null for a not requested one. A requested path's read is bounded to where the next
+    /// not requested path begins, so consecutive requested paths are read together.
+    std::vector<std::pair<MarkInCompressedFile, PathInfo *>> gathered_marks;
 
     for (const auto & chunk_structure : chunk_structures)
     {
@@ -1230,7 +1201,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosChunks> SerializationOb
         /// alone, without reading its path marks.
         if (chunk_structure.position_to_requested_path.empty())
         {
-            add_mark(chunk_structure.data_stream_mark, /*requested=*/false);
+            gathered_marks.emplace_back(chunk_structure.data_stream_mark, nullptr);
             continue;
         }
 
@@ -1256,10 +1227,14 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosChunks> SerializationOb
 
                 auto path_it = chunk_structure.position_to_requested_path.find(i);
                 bool requested = path_it != chunk_structure.position_to_requested_path.end();
+                PathInfo * info = nullptr;
                 if (requested)
-                    path_to_info[path_it->second].data_mark = mark;
+                {
+                    info = &path_to_info[path_it->second];
+                    info->data_mark = mark;
+                }
 
-                add_mark(mark, requested);
+                gathered_marks.emplace_back(mark, info);
             }
 
             settings.path.pop_back();
@@ -1361,22 +1336,42 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosChunks> SerializationOb
         }
     }
 
-    finish_current_compressed_block();
-
-    /// Bound each requested path to the first compressed block without requested data after it, which can be
-    /// dropped from the read entirely. path_to_info contains only requested paths.
-    for (auto & paths_infos : *paths_infos_chunks)
+    /// Bound each sequence of consecutive requested paths to where the next not requested path begins; a
+    /// sequence with no not requested path after it reads to the end of the range.
+    for (size_t i = 0; i != gathered_marks.size();)
     {
-        for (auto & [_, path_info] : paths_infos.path_to_info)
+        if (!gathered_marks[i].second)
         {
-            auto it = std::upper_bound(
-                compressed_blocks_without_requested_data.begin(),
-                compressed_blocks_without_requested_data.end(),
-                path_info.data_mark.offset_in_compressed_file);
-
-            if (it != compressed_blocks_without_requested_data.end())
-                path_info.data_end_mark = MarkInCompressedFile{*it, 0};
+            ++i;
+            continue;
         }
+
+        size_t sequence_begin = i;
+        while (i != gathered_marks.size() && gathered_marks[i].second)
+            ++i;
+
+        std::optional<MarkInCompressedFile> data_end_mark;
+        if (i != gathered_marks.size())
+        {
+            /// The data ends at the compressed block of the first not requested path after the sequence. If that
+            /// path starts a fresh block, the data ends before it; otherwise the data shares that block, so read
+            /// through it - its end is found by reading only the block header.
+            const auto & boundary = gathered_marks[i].first;
+            if (boundary.offset_in_decompressed_block == 0)
+            {
+                data_end_mark = MarkInCompressedFile{boundary.offset_in_compressed_file, 0};
+            }
+            else if (settings.get_compressed_block_end_callback)
+            {
+                settings.path.push_back(Substream::ObjectSharedDataData);
+                size_t block_end = settings.get_compressed_block_end_callback(settings.path, boundary);
+                settings.path.pop_back();
+                data_end_mark = MarkInCompressedFile{block_end, 0};
+            }
+        }
+
+        for (size_t j = sequence_begin; j != i; ++j)
+            gathered_marks[j].second->data_end_mark = data_end_mark;
     }
 
     addElementToSubstreamsCache(cache, paths_infos_path, std::make_unique<SubstreamsCachePathsInfosElement>(paths_infos_chunks));

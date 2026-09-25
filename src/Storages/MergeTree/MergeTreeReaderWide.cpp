@@ -741,6 +741,15 @@ void MergeTreeReaderWide::readData(
             if (auto * stream = streams.find(*stream_name))
                 stream->adjustRightMark(last_mark_to_read);
         };
+
+        deserialize_settings.get_compressed_block_end_callback = [&](const ISerialization::SubstreamPath & substream_path, const MarkInCompressedFile & mark) -> size_t
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find stream for substream of column {} to get compressed block end", name_and_type.name);
+
+            return getOrAddStream(substream_path, *stream_name)->getCompressedBlockEnd(mark);
+        };
     }
 
     /// Seek a substream's stream to the current granule's mark. Needed by serializations that read a

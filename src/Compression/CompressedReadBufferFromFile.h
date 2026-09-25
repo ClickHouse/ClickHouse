@@ -67,6 +67,8 @@ public:
     void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
 
     void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
+
+    size_t getCompressedBlockEnd(size_t block_start_offset) override;
 };
 
 }

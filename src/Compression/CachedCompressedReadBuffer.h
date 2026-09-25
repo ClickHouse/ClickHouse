@@ -71,6 +71,8 @@ public:
         initInput();
         file_in->setReadUntilEnd();
     }
+
+    size_t getCompressedBlockEnd(size_t block_start_offset) override;
 };
 
 }

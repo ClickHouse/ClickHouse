@@ -84,6 +84,21 @@ CachedCompressedReadBuffer::CachedCompressedReadBuffer(
     allow_different_codecs = allow_different_codecs_;
 }
 
+size_t CachedCompressedReadBuffer::getCompressedBlockEnd(size_t block_start_offset)
+{
+    initInput();
+    char checksum_and_header[CHECKSUM_AND_HEADER_SIZE];
+    /// Bound the underlying read to the header so peeking it does not fetch the whole block.
+    file_in->setReadUntilPosition(block_start_offset + CHECKSUM_AND_HEADER_SIZE);
+    file_in->seek(block_start_offset, SEEK_SET);
+    file_in->readStrict(checksum_and_header, CHECKSUM_AND_HEADER_SIZE);
+    file_in->setReadUntilEnd();
+    /// Reset our position so the following data read seeks and re-bounds the underlying buffer from scratch.
+    owned_cell.reset();
+    seek(block_start_offset, 0);
+    return computeCompressedBlockEnd(block_start_offset, checksum_and_header);
+}
+
 void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
     /// Nothing to do if we already at required position

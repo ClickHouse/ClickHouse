@@ -533,6 +533,9 @@ public:
         std::function<void(const SubstreamPath &, const MarkInCompressedFile &)> set_stream_read_until_mark_callback;
         /// Extend a stream's read-until to the end of the range currently being read.
         std::function<void(const SubstreamPath &)> set_stream_read_until_to_range_end_callback;
+        /// Offset just past the compressed block that a given mark starts in, read from only its header.
+        /// Used to bound a shared data path read to the end of the block where the next path begins.
+        std::function<size_t(const SubstreamPath &, const MarkInCompressedFile &)> get_compressed_block_end_callback;
         /// Callback to seek specific stream to the start.
         /// Used in MergeTree for prefix deserialization.
         std::function<void(const SubstreamPath &)> seek_to_start_callback;
