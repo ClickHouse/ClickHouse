@@ -761,6 +761,7 @@ namespace
         void readQueryInfo();
         void throwIfFailedToReadQueryInfo();
         bool isQueryCancelled();
+        void cancelQueryOnTransportFailure(std::exception_ptr exception);
 
         void addQueryDetailsToResult();
         void addOutputFormatToResult();
@@ -1625,6 +1626,10 @@ namespace
                 {
                     /// We cannot throw an exception right here because this code is executed
                     /// on queue_thread.
+                    auto exception = std::make_exception_ptr(Exception(
+                        ErrorCodes::NETWORK_ERROR,
+                        initial_query_info_read ? "Failed to read extra QueryInfo" : "Failed to read initial QueryInfo"));
+                    cancelQueryOnTransportFailure(exception);
                     failed_to_read_query_info = true;
                 }
                 reading_query_info.set(false);
@@ -1687,6 +1692,15 @@ namespace
             cancelled.store(true);
         });
         return true;
+    }
+
+    void Call::cancelQueryOnTransportFailure(std::exception_ptr exception)
+    {
+        if (query_context)
+        {
+            if (auto process_list_element = query_context->getProcessListElementSafe())
+                process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::move(exception));
+        }
     }
 
     void Call::addQueryDetailsToResult()
@@ -1887,7 +1901,12 @@ namespace
         {
             /// Called on queue_thread.
             if (!ok)
+            {
+                auto exception = std::make_exception_ptr(
+                    Exception(ErrorCodes::NETWORK_ERROR, "Failed to send result to the client"));
+                cancelQueryOnTransportFailure(exception);
                 failed_to_send_result = true;
+            }
             sending_result.set(false);
         };
 

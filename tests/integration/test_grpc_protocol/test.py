@@ -927,6 +927,58 @@ def test_stream_io_client_cancelled_while_input_left_open():
     assert query("SELECT 4") == "4\n"
 
 
+def test_stream_io_disconnect_cancels_remote_read():
+    failpoint = "read_buffer_from_http_before_request"
+    query_id = f"grpc_disconnect_remote_read_{uuid.uuid4().hex}"
+    keep_open = Event()
+    call = None
+
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query=(
+                "SELECT * FROM url("
+                "'http://127.0.0.1:8123/?query=SELECT%201', "
+                "'TabSeparated', 'x UInt8') SETTINGS log_queries=1"
+            ),
+            query_id=query_id,
+        )
+        keep_open.wait()
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    try:
+        call = stub.ExecuteQueryWithStreamIO(send_query_info(), timeout=60)
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+        assert call.cancel()
+        is_cancelled = node.query_with_retry(
+            "SELECT is_cancelled FROM system.processes "
+            f"WHERE query_id='{query_id}'",
+            retry_count=100,
+            sleep_time=0.01,
+            check_callback=lambda value: value.strip() == "1",
+        )
+        assert is_cancelled.strip() == "1"
+
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        wait_for_no_grpc_call_threads()
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        http_requests = node.query(
+            "SELECT ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] "
+            "FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type!='QueryStart' "
+            "ORDER BY event_time_microseconds DESC LIMIT 1"
+        ).strip()
+        assert http_requests == "0"
+    finally:
+        if call is not None:
+            call.cancel()
+        keep_open.set()
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+
 def execute_and_cancel_while_sleeping(query_text, query_id):
     failpoint = "infinite_sleep"
     cancellation_observed = False
