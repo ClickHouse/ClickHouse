@@ -268,9 +268,11 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
     /// `ParserQueryWithOutput` is disabled above so that a trailing `FORMAT` or `INTO OUTFILE` stays
     /// with `EXPLAIN TEXT`. A `SETTINGS` clause directly after the statement belongs to the statement,
     /// as it does for a `SELECT` (whose own parser takes it) and whenever actions follow, so attach it
-    /// to the source the way `ParserQueryWithOutput` would have.
+    /// to the source the way `ParserQueryWithOutput` would have. A nested `EXPLAIN` over
+    /// `INSERT ... SELECT` may already have taken the trailing `FORMAT` onto its own node; a `SETTINGS`
+    /// clause after it follows that `FORMAT` and belongs to `EXPLAIN TEXT` together with it.
     if (auto * query_with_output = outputOptionsOwner(query.get());
-        query_with_output && !query_with_output->settings_ast)
+        query_with_output && !query_with_output->settings_ast && !query_with_output->format_ast)
     {
         auto saved = pos;
         ParserKeyword settings_keyword(Keyword::SETTINGS);
