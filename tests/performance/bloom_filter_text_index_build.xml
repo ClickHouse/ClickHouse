@@ -1,0 +1,33 @@
+<test>
+    <!-- Building tokenbf_v1, ngrambf_v1 and sparse_grams indexes on INSERT and on merge, over log lines
+         whose tokens repeat from row to row and over random numbers whose tokens mostly do not. -->
+
+    <create_query>CREATE TABLE bf_text_src_log (id UInt64, s String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE bf_text_src_rnd (s String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE bf_text_ngram (s String, INDEX idx s TYPE ngrambf_v1(3, 65536, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE bf_text_token (s String, INDEX idx s TYPE tokenbf_v1(65536, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE bf_text_sparse (s String, INDEX idx s TYPE sparse_grams(3, 8, 65536, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE bf_text_merge (id UInt64, s String, INDEX idx s TYPE ngrambf_v1(3, 65536, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>SYSTEM STOP MERGES</create_query>
+
+    <fill_query>INSERT INTO bf_text_src_log SELECT number, concat('2024-01-01 12:00:00.', toString(number % 1000), ' [thread-', toString(number % 64), '] INFO Request processed user_id=', toString(number), ' method=GET path=/api/v1/items/', hex(cityHash64(number)), ' status=200 latency_ms=', toString(number % 500), ' ua="Mozilla/5.0 (X11; Linux x86_64)" ok') FROM numbers(400000)</fill_query>
+    <fill_query>INSERT INTO bf_text_src_rnd SELECT arrayStringConcat(arrayMap(x -> toString(cityHash64(number, x) % 100000), range(12)), ' ') FROM numbers(400000)</fill_query>
+    <fill_query>INSERT INTO bf_text_merge SELECT id, s FROM bf_text_src_log WHERE intDiv(id, 100000) = 0</fill_query>
+    <fill_query>INSERT INTO bf_text_merge SELECT id, s FROM bf_text_src_log WHERE intDiv(id, 100000) = 1</fill_query>
+    <fill_query>INSERT INTO bf_text_merge SELECT id, s FROM bf_text_src_log WHERE intDiv(id, 100000) = 2</fill_query>
+    <fill_query>INSERT INTO bf_text_merge SELECT id, s FROM bf_text_src_log WHERE intDiv(id, 100000) = 3</fill_query>
+
+    <query>INSERT INTO bf_text_ngram SELECT s FROM bf_text_src_log SETTINGS max_threads = 1</query>
+    <query>INSERT INTO bf_text_token SELECT s FROM bf_text_src_log SETTINGS max_threads = 1</query>
+    <query>INSERT INTO bf_text_sparse SELECT s FROM bf_text_src_log LIMIT 100000 SETTINGS max_threads = 1</query>
+    <query>INSERT INTO bf_text_token SELECT s FROM bf_text_src_rnd SETTINGS max_threads = 1</query>
+    <query>OPTIMIZE TABLE bf_text_merge DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0'</query>
+
+    <drop_query>SYSTEM START MERGES</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bf_text_src_log</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bf_text_src_rnd</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bf_text_ngram</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bf_text_token</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bf_text_sparse</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bf_text_merge</drop_query>
+</test>

@@ -104,7 +104,75 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilterText::getGranuleAndR
     auto new_granule = std::make_shared<MergeTreeIndexGranuleBloomFilterText>(
         index_name, index_columns.size(), params);
     new_granule.swap(granule);
+
+    /// The remembered tokens were added to the bloom filters of the granule given away.
+    if (added_tokens_used)
+    {
+        for (auto & tokens : added_tokens)
+            tokens.reset();
+        added_tokens_used = false;
+    }
+    tokens_in_granule = 0;
+    remember_tokens = true;
+    remembered_lookups = 0;
+    remembered_hits = 0;
+
     return new_granule;
+}
+
+void MergeTreeIndexAggregatorBloomFilterText::addTokens(std::string_view document, size_t col)
+{
+    auto & bloom_filter = granule->bloom_filters[col];
+
+    /// The first tokens of a granule are added directly: remembering tokens pays off only in a granule
+    /// big enough for them to repeat, and a granule that did not remember any needs no reset.
+    static constexpr size_t min_tokens_to_remember = 1024;
+    if (tokens_in_granule < min_tokens_to_remember || !remember_tokens)
+    {
+        forEachToken(*tokenizer, document.data(), document.size(), [&](const char * token, size_t size)
+        {
+            ++tokens_in_granule;
+            bloom_filter.add(token, size);
+            return false;
+        });
+        return;
+    }
+
+    if (added_tokens.size() != index_columns.size())
+        added_tokens.resize(index_columns.size());
+    added_tokens_used = true;
+
+    auto & tokens = added_tokens[col];
+    const char * begin = document.data();
+    const char * end = begin + document.size();
+
+    /// A lookup costs a fraction of hashing a token. If fewer tokens repeat, e.g. in a large vocabulary,
+    /// the rest of the granule is added directly.
+    static constexpr size_t lookups_per_check = 4096;
+    static constexpr size_t min_hits_per_check = lookups_per_check / 4;
+
+    forEachToken(*tokenizer, begin, document.size(), [&](const char * token, size_t size)
+    {
+        ++tokens_in_granule;
+        if (size == 0 || size > BloomFilterAddedTokens::max_token_size || !remember_tokens)
+        {
+            bloom_filter.add(token, size);
+            return false;
+        }
+
+        if (tokens.checkAndRemember(token, size, begin, end))
+            ++remembered_hits;
+        else
+            bloom_filter.add(token, size);
+
+        if (++remembered_lookups == lookups_per_check)
+        {
+            remember_tokens = remembered_hits >= min_hits_per_check;
+            remembered_lookups = 0;
+            remembered_hits = 0;
+        }
+        return false;
+    });
 }
 
 void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t * pos, size_t limit)
@@ -133,10 +201,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
                 size_t elements_size = column_offsets[current_position] - element_start_row;
 
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
-                {
-                    auto ref = column_key.getDataAt(element_start_row + row_num);
-                    forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), granule->bloom_filters[col]);
-                }
+                    addTokens(column_key.getDataAt(element_start_row + row_num), col);
 
                 current_position += 1;
             }
@@ -144,10 +209,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
         else
         {
             for (size_t i = 0; i < rows_read; ++i)
-            {
-                auto ref = column->getDataAt(current_position + i);
-                forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), granule->bloom_filters[col]);
-            }
+                addTokens(column->getDataAt(current_position + i), col);
         }
     }
 
