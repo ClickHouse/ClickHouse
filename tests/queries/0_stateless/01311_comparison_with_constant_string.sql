@@ -18,11 +18,11 @@ SELECT 1 = '257';
 SELECT '---';
 SELECT 1 != '257';
 SELECT '---';
-SELECT 1 < '257'; -- this is wrong for now
+SELECT 1 < '257';
 SELECT '---';
 SELECT 1 > '257';
 SELECT '---';
-SELECT 1 <= '257'; -- this is wrong for now
+SELECT 1 <= '257';
 SELECT '---';
 SELECT 1 >= '257';
 SELECT '---';
