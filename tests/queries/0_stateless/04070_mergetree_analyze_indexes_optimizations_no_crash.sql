@@ -10,7 +10,10 @@ SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, [1]); -- { ser
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, array(1)); -- { serverError BAD_ARGUMENTS }
 
 -- An invalid element after a valid one, so accepting an array on the strength of its first element
--- alone would be reported here.
+-- alone would be reported here. A mixed-type array needs `Variant` as its common type; pin the
+-- setting, because the stress job randomizes `compatibility` and a version below 26.1 restores this
+-- setting's old default of 0, under which these two queries fail as `NO_COMMON_TYPE` instead.
+SET use_variant_as_common_type = 1;
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, ['all_1_1_0', 2]); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), data, 1, array('all_1_1_0', 2)); -- { serverError BAD_ARGUMENTS }
 
