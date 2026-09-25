@@ -9,10 +9,29 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-The [`Resample`](/reference/functions/aggregate-functions/combinators#-resample) 
+The [`Resample`](/reference/functions/aggregate-functions/combinators#-resample)
 combinator can be applied to the [`count`](/reference/functions/aggregate-functions/count)
-aggregate function to count values of a specified key column in a fixed number
-of intervals (`N`).
+aggregate function to bucket rows by a resampling key column and return, for each
+bucket, the number of rows whose count argument is non-null.
+
+## Syntax {#syntax}
+
+```sql
+countResample(start, end, step)(count_arg, resampling_key)
+```
+
+The three parameters in the first argument list define the bucketing over `resampling_key`:
+
+- `start` — lower bound of the range, inclusive.
+- `end` — upper bound of the range, exclusive. Rows with `resampling_key >= end` are dropped.
+- `step` — width of each bucket. The number of returned buckets is `ceil((end - start) / step)`.
+
+The second argument list is passed through to `count`:
+
+- `count_arg` — the column or expression counted per bucket. Rows where this value is null are not counted.
+- `resampling_key` — the column whose value places each row into a bucket.
+
+The result is an array with one element per bucket, in ascending order of `start`.
 
 ## Example usage {#example-usage}
 
@@ -22,12 +41,12 @@ Let's look at an example. We'll create a table which contains the `name`, `age` 
 `wage` of employees, and we'll insert some data into it:
 
 ```sql
-CREATE TABLE employee_data 
+CREATE TABLE employee_data
 (
     name String,
     age UInt8,
     wage Float32
-) 
+)
 ENGINE = MergeTree()
 ORDER BY tuple()
 
@@ -40,10 +59,11 @@ INSERT INTO employee_data (name, age, wage) VALUES
     ('Brian', 60, 16.0);
 ```
 
-Let's count all the people whose age lies in the intervals of `[30,60)` 
-and `[60,75)`. Since we use integer representation for age, we get ages in the
-`[30, 59]` and `[60,74]` intervals. To do so we apply the `Resample` combinator 
-to `count`
+Let's count all the people whose age lies in the intervals `[30, 60)` and `[60, 75)`.
+Because `age` is a `UInt8`, these intervals cover ages `30–59` and `60–74`.
+The arguments `(30, 75, 30)` set `start = 30`, `end = 75`, and `step = 30`,
+producing two buckets. The second argument list `(name, age)` counts `name`
+per bucket, using `age` as the resampling key.
 
 ```sql
 SELECT countResample(30, 75, 30)(name, age) AS amount FROM employee_data
@@ -54,6 +74,10 @@ SELECT countResample(30, 75, 30)(name, age) AS amount FROM employee_data
 │ [3,2]  │
 └────────┘
 ```
+
+The first bucket (`[30, 60)`) contains Alice, Mary, and Evelyn; the second bucket
+(`[60, 75)`) contains David and Brian. John is excluded because his age is below
+`start`.
 
 ## See also {#see-also}
 - [`count`](/reference/functions/aggregate-functions/count)
