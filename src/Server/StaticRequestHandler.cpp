@@ -88,11 +88,9 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         if (file_name.starts_with('/'))
             file_name = file_name.substr(1);
 
-        /// `file_name` comes from the handler config, but `weakly_canonical(... / file_name)`
-        /// silently follows `..` segments and can resolve to paths outside `user_files`.
-        /// Without an explicit boundary check, `file://../etc/passwd` would expose arbitrary
-        /// server-side files. Resolve under `user_files_path` and require containment
-        /// before accepting the candidate.
+        /// `file_name` comes from the handler config and may contain `..` segments that leave
+        /// `user_files`. Without an explicit boundary check, `file://../etc/passwd` would expose
+        /// arbitrary server-side files, so containment is required before reading.
         ///
         /// `file://` is served via local `ReadBufferFromFile` and is a local-filesystem
         /// feature. With `user_files_policy` configured on a non-local disk (e.g.
@@ -112,37 +110,18 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
             }
         }
 
-        /// `user_files_path` may still be a disk root from `user_files_policy` for a
-        /// local disk whose `getPath()` is a virtual marker rather than a real local
-        /// directory. `fs::canonical` would throw in that case — treat the failure as
-        /// "no candidate available" so the handler reports an access error instead of
-        /// leaking the underlying I/O exception. `file://` is a local filesystem
-        /// feature and is satisfied only by a local root that contains the resolved
-        /// candidate.
-        String file_path;
-        bool contained_candidate = false;
-        {
-            std::error_code ec;
-            const auto root = fs::canonical(fs::path(server.context()->getUserFilesPath()), ec);
-            if (!ec)
-            {
-                fs::path candidate = fs::weakly_canonical(root / file_name);
-                if (pathStartsWith(candidate.string(), root.string()))
-                {
-                    contained_candidate = true;
-                    if (fs::exists(candidate))
-                        file_path = candidate.string();
-                }
-            }
-        }
-        if (file_path.empty())
-        {
-            if (!contained_candidate)
-                throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                    "File `{}` for static HTTPHandler is not inside user files path", file_name);
+        /// The containment check is the one every other `user_files` consumer applies
+        /// (`Context::isUserFilesPath`): lexical on a plain `user_files_path`, so an admin-managed
+        /// symlink inside the directory keeps working as before, and resolved for a
+        /// `user_files_policy` disk. A root that cannot be resolved contains nothing.
+        const String file_path = (fs::path(server.context()->getUserFilesPath()) / file_name).lexically_normal().string();
+        if (!server.context()->isUserFilesPath(file_path))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                "File `{}` for static HTTPHandler is not inside user files path", file_name);
+
+        if (!existsOrFileNameTooLong([&] { return fs::exists(file_path); }))
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
                 "Invalid file name {} for static HTTPHandler. ", file_name);
-        }
 
         ReadBufferFromFile in(file_path);
         copyData(in, out);
