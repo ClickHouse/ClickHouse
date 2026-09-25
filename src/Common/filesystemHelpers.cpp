@@ -19,6 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 
 namespace fs = std::filesystem;
@@ -261,8 +262,22 @@ String getDirectoryFilesystemType([[maybe_unused]] const std::string & directory
 #endif
 }
 
+/// A path with an embedded NUL is malformed, and, more importantly, it cannot be validated: the
+/// comparisons below see the whole value, while every syscall the path is later passed to (`open`,
+/// `mkdir`, `stat`) stops at the first NUL. A path shaped as `<target>\0/<traversal back into the
+/// prefix>` would therefore be reported as contained in the prefix while it addresses `<target>`,
+/// anywhere on the filesystem. Report such a path as not contained, so that every containment check
+/// fails closed.
+static bool containsEmbeddedNul(const std::filesystem::path & path)
+{
+    return path.native().contains('\0');
+}
+
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
+    if (containsEmbeddedNul(path) || containsEmbeddedNul(prefix_path))
+        return false;
+
     auto rel = fs::relative(path, prefix_path);
     if (rel.empty() || rel == "..")
         return false;
@@ -283,6 +298,9 @@ static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, cons
     /// Make `path` absolute if it was relative and put it into normalized form: remove
     /// `.` and `..` and extra `/`. Path is not canonized because otherwise path will
     /// not be a path of a symlink itself.
+
+    if (containsEmbeddedNul(path) || containsEmbeddedNul(prefix_path))
+        return false;
 
     auto rel = fs::absolute(path).lexically_normal().lexically_relative(fs::absolute(prefix_path).lexically_normal());
 
@@ -478,6 +496,15 @@ fs::path readSymlink(const fs::path & path)
     if (path.filename().empty())
         return fs::read_symlink(path.parent_path());        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
     return fs::read_symlink(path);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+}
+
+bool tryDelete(const fs::path & path, LoggerPtr log)
+{
+    std::error_code ec;
+    bool removed = fs::remove(path, ec);
+    if (ec)
+        LOG_WARNING(log, "Cannot remove {}: {}", path.string(), ec.message());
+    return removed;
 }
 
 }
