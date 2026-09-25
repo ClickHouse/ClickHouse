@@ -61,13 +61,14 @@ CREATE TABLE t_oor_key32 (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS index_
 INSERT INTO t_oor_key32 SELECT number - 2 FROM numbers(5);
 SELECT 'every row is below the constant', count() FROM t_oor_key32 WHERE k <= '2147483648';
 SELECT 'and none is above it', count() FROM t_oor_key32 WHERE NOT (k <= '2147483648');
-SELECT 'granules', trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_oor_key32 WHERE k <= '2147483648') WHERE explain ILIKE '%Granules: %/%';
+-- Parallel replicas change the plan's shape, so the plan is explained on a single node.
+SELECT 'granules', trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_oor_key32 WHERE k <= '2147483648' SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules: %/%';
 
 DROP TABLE IF EXISTS t_oor_key64;
 CREATE TABLE t_oor_key64 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
 INSERT INTO t_oor_key64 SELECT number FROM numbers(3);
 SELECT 'a key range from a constant of the widest width keeps every row', count() FROM t_oor_key64 WHERE k <= '18446744073709551616';
-SELECT 'granules', trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_oor_key64 WHERE k <= '18446744073709551616') WHERE explain ILIKE '%Granules: %/%';
+SELECT 'granules', trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_oor_key64 WHERE k <= '18446744073709551616' SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules: %/%';
 
 DROP TABLE IF EXISTS t_oor_and;
 CREATE TABLE t_oor_and (u UInt8, i Int32) ENGINE = MergeTree ORDER BY tuple();
