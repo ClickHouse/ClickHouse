@@ -653,6 +653,17 @@ bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG
     return negating ? !default_matches : default_matches;
 }
 
+/// Whether the index holds the key as text, so a substring or token of the key's text describes it.
+bool indexedKeyIsTextComparable(const DataTypePtr & index_data_type)
+{
+    DataTypePtr key_type = index_data_type;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(key_type.get()))
+        key_type = array_type->getNestedType();
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(key_type.get()))
+        key_type = low_cardinality_type->getDictionaryType();
+    return WhichDataType(key_type).isStringOrFixedString();
+}
+
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
@@ -804,6 +815,14 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// index does not hold, so such a comparison must not prune.
     if (reads_map_element_against_values_index
         && constantIsIndexDomainDefault(index_data_types[*key_index], const_source_type, const_value))
+        return false;
+
+    /// A substituted key is the needle from here on, and the index holds the key column's own bytes. Only
+    /// the atoms below that convert the needle into the index domain can describe a key that is not text;
+    /// the rest tokenize a substring or a token of the key's text, which such a key has none of.
+    if (substituted_map_key && !indexedKeyIsTextComparable(index_data_types[*key_index])
+        && function_name != "equals" && function_name != "notEquals" && function_name != "like"
+        && function_name != "notLike" && function_name != "match")
         return false;
 
     const auto lowercase_key_index = getKeyIndex(fmt::format("lower({})", column_name));

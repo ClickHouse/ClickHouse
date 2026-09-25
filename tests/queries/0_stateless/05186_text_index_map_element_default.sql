@@ -153,14 +153,37 @@ INSERT INTO tab_ip_key_pattern VALUES (map(toIPv6('2001:db8::abcd:1'), 'v'));
 
 -- A pattern atom probes the index with the substituted key, so the key text needs the same conversion
 -- into the index domain that equality does. Tokenized as text against a binary key it matches nothing
--- and prunes the granule that holds the key.
+-- and prunes the granule that holds the key. Forcing the index asserts the probe stays active, so a
+-- conversion that silently stopped working would fail here rather than read as a pass.
 SELECT '-- a pattern atom over a non-String map key keeps the matching row';
-SELECT count() FROM tab_ip_key_pattern WHERE m.`key_2001:db8::abcd:1` LIKE '%v%';
+SELECT count() FROM tab_ip_key_pattern WHERE m.`key_2001:db8::abcd:1` LIKE '%v%' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM tab_ip_key_pattern WHERE m.`key_2001:db8::abcd:1` LIKE '%v%' SETTINGS ignore_data_skipping_indices = 'idx';
-SELECT count() FROM tab_ip_key_pattern WHERE match(m.`key_2001:db8::abcd:1`, 'v');
+SELECT count() FROM tab_ip_key_pattern WHERE match(m.`key_2001:db8::abcd:1`, 'v') SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM tab_ip_key_pattern WHERE match(m.`key_2001:db8::abcd:1`, 'v') SETTINGS ignore_data_skipping_indices = 'idx';
 
+-- A substring or token atom tokenizes its needle, which describes the substituted key only while the
+-- index holds it as text, so such an atom declines a binary key instead of mispruning it.
+SELECT '-- a substring or token atom declines a non-String map key';
+SELECT count() FROM tab_ip_key_pattern WHERE startsWith(m.`key_2001:db8::abcd:1`, 'v');
+SELECT count() FROM tab_ip_key_pattern WHERE startsWith(m.`key_2001:db8::abcd:1`, 'v') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab_ip_key_pattern WHERE endsWith(m.`key_2001:db8::abcd:1`, 'v');
+SELECT count() FROM tab_ip_key_pattern WHERE hasToken(m.`key_2001:db8::abcd:1`, 'v');
+SELECT count() FROM tab_ip_key_pattern WHERE hasToken(m.`key_2001:db8::abcd:1`, 'v') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
 DROP TABLE tab_ip_key_pattern;
+
+DROP TABLE IF EXISTS tab_ip_key_array;
+CREATE TABLE tab_ip_key_array (m Map(IPv6, Array(String)), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO tab_ip_key_array VALUES (map(toIPv6('2001:db8::abcd:1'), ['']));
+
+-- `has` reaches the same tokenizer with a scalar needle, so the array needle guard above does not cover
+-- it; an empty needle also leaves the array default unmatched, so the default guard does not either.
+SELECT '-- and so does an array membership atom';
+SELECT count() FROM tab_ip_key_array WHERE has(m.`key_2001:db8::abcd:1`, '');
+SELECT count() FROM tab_ip_key_array WHERE has(m.`key_2001:db8::abcd:1`, '') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
+DROP TABLE tab_ip_key_array;
 
 DROP TABLE IF EXISTS tab_fs_key;
 CREATE TABLE tab_fs_key (m Map(FixedString(4), String), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))

@@ -63,6 +63,12 @@
 1
 1
 1
+-- a substring or token atom declines a non-String map key
+1
+1
+1
+-- and so does an array membership atom
+1
 -- a FixedString key is that representation, so it stays indexed
 1
 1
