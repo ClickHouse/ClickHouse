@@ -1,0 +1,9 @@
+-- READ ON AZURE filtered to one container
+passed the access check
+passed the access check
+passed the access check
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- READ ON AZURE without a filter
+passed the access check

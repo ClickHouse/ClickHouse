@@ -1,0 +1,8 @@
+20150101_20150120_1_1_0
+20150201_20150220_2_2_0
+--- the default format version
+BAD_DATA_PART_NAME
+--- format_version = 0
+2000	999000	2015-01-01	2015-02-20	1	2
+--- the source table
+2000	999000	2015-01-01	2015-02-20	1	2
