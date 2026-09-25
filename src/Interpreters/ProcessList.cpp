@@ -8,7 +8,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
     extern const SettingsUInt64 reserve_memory;
+    extern const SettingsMilliseconds workload_admission_timeout_ms;
 }
 
 namespace ErrorCodes
@@ -73,7 +74,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -124,6 +124,10 @@ ProcessList::EntryPtr ProcessList::insert(
     const ClientInfo & client_info = query_context->getClientInfo();
     const Settings & settings = query_context->getSettingsRef();
 
+    /// Read before `mutex` is taken: `Context::getUserID` locks the context, and `QueryStatus` is
+    /// constructed with `mutex` held (see the constructor's own note about holding both locks).
+    const std::optional<UUID> user_id = query_context->getUserID();
+
     if (client_info.current_query_id.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
@@ -143,13 +147,22 @@ ProcessList::EntryPtr ProcessList::insert(
     MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
+        // One deadline shared by the query slot and the memory reservation (acquired sequentially below),
+        // so the whole pre-execution admission wait is bounded by a single `workload_admission_timeout_ms`
+        // budget. `saturatedMilliseconds` caps the wait at ~1 year (the standard idiom — a longer timeout
+        // is effectively no timeout); 0 is the explicit "no timeout" and maps to an infinite deadline.
+        const UInt64 admission_timeout_ms = static_cast<UInt64>(settings[Setting::workload_admission_timeout_ms].totalMilliseconds());
+        const auto admission_deadline = admission_timeout_ms
+            ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
+            : std::chrono::steady_clock::time_point::max();
+
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
         String query_resource_name = workload_entity_storage->getQueryResourceName();
         if (!query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
-                query_slot = std::make_unique<QuerySlot>(link);
+                query_slot = std::make_unique<QuerySlot>(link, admission_deadline);
         }
         String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
         if (!memory_reservation_resource_name.empty())
@@ -161,7 +174,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory]);
+                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);
             }
         }
     }
@@ -304,6 +317,7 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+            thread_group->memory_pressure_monitor.setParent(user_process_list.user_memory_pressure_monitor);
             if (user_process_list.user_temp_data_on_disk)
             {
                 TemporaryDataOnDiskSettings temporary_data_on_disk_settings
@@ -313,9 +327,6 @@ ProcessList::EntryPtr ProcessList::insert(
                     .buffer_size = settings[Setting::temporary_files_buffer_size],
                     .metrics = {}, /// Metrics are set by child scopes
                 };
-
-                if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
 
                 if (user_process_list.user_temp_data_on_disk)
                     query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
@@ -357,6 +368,7 @@ ProcessList::EntryPtr ProcessList::insert(
             query_,
             normalized_query_hash,
             client_info,
+            user_id,
             priorities.insert(
                 settings[Setting::priority],
                 saturatedMilliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
@@ -502,6 +514,7 @@ QueryStatus::QueryStatus(
     const String & query_,
     UInt64 normalized_query_hash_,
     const ClientInfo & client_info_,
+    const std::optional<UUID> & user_id_,
     QueryPriorities::Handle && priority_handle_,
     QuerySlotPtr && query_slot_,
     MemoryReservationPtr && memory_reservation_,
@@ -514,6 +527,7 @@ QueryStatus::QueryStatus(
     , query(query_)
     , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
+    , user_id(user_id_)
     , query_slot(std::move(query_slot_))
     , memory_reservation(std::move(memory_reservation_))
     , thread_group(std::move(thread_group_))
@@ -592,7 +606,8 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
 
         is_killed = true;
         cancel_reason = reason;
-        cancellation_exception = exception;
+        /// Only ever read (copied) after this, so it must not alias an object a caller still decorates.
+        cancellation_exception = exception ? copyMutableException(exception) : nullptr;
     }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
@@ -681,8 +696,9 @@ bool QueryStatus::checkTimeLimit()
 
 void QueryStatus::throwQueryWasCancelled() const
 {
+    /// A private copy per caller: `catch (Exception &)` handlers up the stack decorate what they catch.
     if (cancellation_exception)
-        std::rethrow_exception(cancellation_exception);
+        std::rethrow_exception(copyMutableException(cancellation_exception));
     else
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
@@ -760,7 +776,29 @@ QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_quer
 }
 
 
-CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
+std::optional<ProcessList::OwnQuery> ProcessList::tryGetOwnRunningQuery(const String & current_query_id, const UUID & user_id)
+{
+    LockAndBlocker lock(mutex);
+
+    /// Not through `queries_to_user`: an entry there is erased by key alone, so it can be gone while a
+    /// query that took the id over still runs. In `processes` an entry leaves only through its own
+    /// iterator, and a query taking an id over is appended after the one it replaces, hence newest first.
+    for (auto it = processes.rbegin(); it != processes.rend(); ++it)
+    {
+        const auto & elem = *it;
+        if (elem->user_id != user_id || elem->getClientInfo().current_query_id != current_query_id)
+            continue;
+
+        /// `query` is set by the constructor and never mutated afterwards, so plain reads are safe.
+        return OwnQuery{elem->getClientInfo().current_user, elem->query};
+    }
+
+    return {};
+}
+
+
+CancellationCode ProcessList::sendCancelToQueryImpl(
+    const String & current_query_id, const String & current_user, const std::optional<UUID> & expected_user_id)
 {
     QueryStatusPtr elem;
 
@@ -779,7 +817,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
     {
         LockAndBlocker lock(mutex);
         elem = tryGetProcessListElement(current_query_id, current_user);
-        if (!elem)
+        if (!elem || (expected_user_id && elem->user_id != *expected_user_id))
             return CancellationCode::NotFound;
         elem->is_cancelling = true;
     }
@@ -796,6 +834,19 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
 }
 
 
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
+{
+    return sendCancelToQueryImpl(current_query_id, current_user, {});
+}
+
+
+CancellationCode ProcessList::sendCancelToQuery(
+    const String & current_query_id, const String & current_user, const UUID & expected_user_id)
+{
+    return sendCancelToQueryImpl(current_query_id, current_user, expected_user_id);
+}
+
+
 CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 {
     /// Cancelling the query should be done without the lock.
@@ -803,6 +854,59 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
     /// The ProcessListEntry cannot be destroy if is_cancelling is true.
     {
         LockAndBlocker lock(mutex);
+        elem->is_cancelling = true;
+    }
+
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        Lock lock(mutex);
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+}
+
+
+void ProcessList::registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys[{connection_id, secret_key}] = query_id;
+}
+
+
+void ProcessList::unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys.erase({connection_id, secret_key});
+}
+
+
+CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key)
+{
+    QueryStatusPtr elem;
+
+    {
+        LockAndBlocker lock(mutex);
+
+        /// The request is unauthenticated, so a wrong secret must be indistinguishable from an
+        /// unknown connection.
+        auto cancellation_key = postgresql_cancellation_keys.find({process_id, secret_key});
+        if (cancellation_key == postgresql_cancellation_keys.end())
+            return CancellationCode::NotFound;
+
+        const String & current_query_id = cancellation_key->second;
+        auto query_user = queries_to_user.find(current_query_id);
+        if (query_user == queries_to_user.end())
+            return CancellationCode::NotFound;
+
+        /// Other interfaces can forge this query-id shape, so only cancel PostgreSQL queries.
+        elem = tryGetProcessListElement(current_query_id, query_user->second);
+        if (!elem || elem->getClientInfo().interface != ClientInfo::Interface::POSTGRESQL)
+            return CancellationCode::NotFound;
+
+        /// Keep the verified entry by pointer to prevent query-id reuse races.
         elem->is_cancelling = true;
     }
 
