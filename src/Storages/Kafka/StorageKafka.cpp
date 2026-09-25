@@ -222,7 +222,9 @@ StorageKafka::StorageKafka(
     for (size_t i = 0; i < num_consumers; ++i)
         consumers[i] = createKafkaConsumer(i);
 
-    cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]()
+    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(
+        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+        [this]()
     {
         DB::setThreadName(ThreadName::KAFKA_CLEANUP);
         cleanConsumersByTTL();
