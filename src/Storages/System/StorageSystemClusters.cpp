@@ -11,6 +11,7 @@
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/PendingReplicasInfo.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -272,16 +273,23 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
                 entries.push_back({.name = all_groups_name, .cluster = std::move(cluster), .replicated = replicated});
     }
 
-    std::vector<ReplicasInfo> replicas_info(entries.size());
+    /// Send the Keeper requests of all `Replicated` databases first and await them one by one while writing
+    /// the rows: the requests are in flight together, one round trip for all databases instead of one each.
+    std::vector<PendingReplicasInfo> pending_replicas_info(entries.size());
     if (with_replicas_info)
     {
         for (size_t i = 0; i < entries.size(); ++i)
             if (entries[i].replicated)
-                replicas_info[i] = entries[i].replicated->tryGetReplicasInfo(entries[i].cluster);
+                pending_replicas_info[i] = entries[i].replicated->requestReplicasInfo(entries[i].cluster);
     }
 
     for (size_t i = 0; i < entries.size(); ++i)
-        writeCluster(res_columns, columns_mask, entries[i].name, *entries[i].cluster, replicas_info[i]);
+        writeCluster(
+            res_columns,
+            columns_mask,
+            entries[i].name,
+            *entries[i].cluster,
+            entries[i].replicated ? entries[i].replicated->awaitReplicasInfo(std::move(pending_replicas_info[i])) : ReplicasInfo{});
 
 #if CLICKHOUSE_CLOUD
     if (SharedDatabaseCatalog::initialized())

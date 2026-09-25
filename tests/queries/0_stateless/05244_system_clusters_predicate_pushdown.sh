@@ -73,3 +73,8 @@ $CLICKHOUSE_CLIENT --query "
         AND event_date >= yesterday()
     ORDER BY log_comment"
 
+echo "-- a database whose Keeper state is broken does not affect the others requested with it"
+# The failure is expected: it must not be forwarded to the client at the default send_logs_level
+# (any stderr fails the test), see 04278_database_replicated_system_clusters_replicas_info.
+$CLICKHOUSE_KEEPER_CLIENT --query "rmr ${ZK_PATH}/1/max_log_ptr"
+$CLICKHOUSE_CLIENT --query "SELECT cluster = '${DB1}', cluster = '${DB2}', is_active FROM system.clusters WHERE cluster IN ('${DB1}', '${DB2}') ORDER BY cluster"

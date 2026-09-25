@@ -21,3 +21,6 @@
 05244_one_db_alias	1
 05244_subquery	1
 05244_two_dbs	2
+-- a database whose Keeper state is broken does not affect the others requested with it
+1	0	\N
+0	1	1

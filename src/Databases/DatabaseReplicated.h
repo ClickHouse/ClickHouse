@@ -24,6 +24,8 @@ namespace DB
 class DatabaseReplicatedDDLWorker;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
+class PendingReplicasInfo;
+
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
@@ -155,7 +157,12 @@ public:
 
     void restoreDatabaseInKeeper(ContextPtr ctx);
 
-    ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
+    /// The replica state of one cluster of this database, see `PendingReplicasInfo`: `requestReplicasInfo` sends
+    /// the Keeper request, `awaitReplicasInfo` waits for and parses the response, `tryGetReplicasInfo` does both.
+    /// None of them throws: a failed request yields an empty `ReplicasInfo` and is logged.
+    PendingReplicasInfo requestReplicasInfo(const ClusterPtr & cluster_) const noexcept;
+    ReplicasInfo awaitReplicasInfo(PendingReplicasInfo pending) const noexcept;
+    ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const noexcept;
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
@@ -278,6 +285,11 @@ private:
     DatabaseReplicatedSettings db_settings;
 
     ZooKeeperPtr getZooKeeper() const;
+
+    /// Keeper paths of the replica state of one cluster of this database: `max_log_ptr`, then `active` and `log_ptr` of every replica.
+    Strings getReplicasInfoPaths(const Cluster & cluster_) const;
+    /// Parses the responses to `getReplicasInfoPaths` of a request in flight; throws when `max_log_ptr` is missing.
+    ReplicasInfo parseReplicasInfo(PendingReplicasInfo & pending) const;
 
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;
