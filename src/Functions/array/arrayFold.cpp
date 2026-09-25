@@ -87,7 +87,17 @@ public:
         return accumulator_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/ false);
+    }
+
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/ true);
+    }
+
+    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count, bool dry_run) const
     {
         /// Resolved from the executing thread rather than captured: this instance can be stored in table
         /// metadata and then run by any later query.
@@ -292,7 +302,7 @@ public:
                 lambda->appendArguments(ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(vertical_slices[array_col][slice]), arrays_data_with_type_and_name[array_col].type, arrays_data_with_type_and_name[array_col].name)});
 
             /// Perform the actual calculation and copy the result into the accumulator
-            ColumnWithTypeAndName res_with_type_and_name = lambda->reduce();
+            ColumnWithTypeAndName res_with_type_and_name = lambda->reduce(dry_run);
             accumulator_col = res_with_type_and_name.column->convertToFullColumnIfConst();
 
             unfinished_rows = accumulator_col->size();
