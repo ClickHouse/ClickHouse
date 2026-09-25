@@ -18,12 +18,7 @@ secret="find_me_${CLICKHOUSE_DATABASE}_TOPSECRET"
 # per-parameter assertions below cannot be confused with one another.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&param_secret_key=${secret}_skey" -d "SELECT 1 FORMAT Null" >/dev/null 2>&1
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&password=${secret}_pw" -d "SELECT 1 FORMAT Null" >/dev/null 2>&1
-# `sig` is neither a reserved HTTP parameter nor a setting name, so with the default
-# `http_allow_filters_as_unrecognized_url_parameters = 1` it is turned into the filter
-# `sig = '<value>'`, spliced into the query text and echoed by the resulting `UNKNOWN_IDENTIFIER`
-# exception - which is logged. That is the filter feature at work, not a URI-masking failure, so
-# switch it off here to keep this test on its own subject.
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_allow_filters_as_unrecognized_url_parameters=0&sig=${secret}_sig" -d "SELECT 1 FORMAT Null" >/dev/null 2>&1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&sig=${secret}_sig" -d "SELECT 1 FORMAT Null" >/dev/null 2>&1
 # Percent-encoded sensitive name: the server decodes "pass%77ord" to "password" before using it,
 # so masking must too, or the value leaks. --globoff stops curl treating the literal as a glob.
 ${CLICKHOUSE_CURL} -sS --globoff "${CLICKHOUSE_URL}&pass%77ord=${secret}_enc" -d "SELECT 1 FORMAT Null" >/dev/null 2>&1
