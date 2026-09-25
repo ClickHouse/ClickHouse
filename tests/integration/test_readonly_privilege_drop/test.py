@@ -265,11 +265,11 @@ def test_a_url_parameter_profile_cannot_leave_readonly_mode(started_cluster):
     assert output.strip() == "0"
 
 
-def test_tightening_does_not_reopen_the_keyword_escape_via_a_switched_profile(started_cluster):
-    # The residual is not confined to a user whose own profile declares the keyword: a profile's name
-    # is selectable by any session, so `ro2` (which declares nothing) can switch into `kw_only` and
-    # pick the constraint up. The switch itself is never constraint-checked, and only the values of
-    # the switched-to profile are, so what bounds this route is the refusal of the final step.
+def test_a_switched_profile_cannot_supply_the_keyword_and_then_leave_readonly_mode(started_cluster):
+    # A profile's name is selectable by any session, so `ro2`, which declares nothing, can pick the
+    # keyword up from `kw_only`. `kw_only` supplies the constraint and no values, so leaving read-only
+    # mode stays a separate third step, and that step is refused. A profile carrying the VALUE
+    # `readonly = 0` is not refused: `SET profile` applies it to the session and checks it there.
     output, error = http(node_on, "SET readonly = 1", "ro2", {"session_id": "prof_get"})
     assert error is None, error
     output, error = http(node_on, "SET profile = 'kw_only'", "ro2", {"session_id": "prof_get"})

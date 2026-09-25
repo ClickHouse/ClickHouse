@@ -706,7 +706,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(
     auto it = constraints.find(resolved_name);
     if (current_settings[Setting::readonly] == 1)
     {
-        /// `readonly` carries the restriction the method imposed, so the keyword on it is self-defeating.
+        /// The method's read-only requirement is expressed by `readonly` itself, so making it changeable defeats the method.
         const bool keyword_applies = !(
             http_method_implies_readonly && resolved_name == "readonly" && access_control
             && access_control->canReadonlyOnlyBeTightened());
