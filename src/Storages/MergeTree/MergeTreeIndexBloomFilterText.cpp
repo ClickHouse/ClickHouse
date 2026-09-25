@@ -812,6 +812,9 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
 
+        const DataTypePtr & element_type = prepared_set->getElementsTypes()[tuple_idx];
+        const bool is_fixed_string_element = WhichDataType(removeNullable(element_type)).isFixedString();
+
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
             /// A NULL element also matches the column's NULL rows, which the filter cannot express.
@@ -819,7 +822,12 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
                 return false;
 
             bloom_filters.back().emplace_back(params);
-            auto ref = column->getDataAt(row);
+
+            /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
+            std::string_view ref = column->getDataAt(row);
+            if (is_fixed_string_element)
+                ref = ref.substr(0, ref.find_last_not_of('\0') + 1);
+
             forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());
         }
     }
