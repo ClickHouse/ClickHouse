@@ -27,8 +27,10 @@ public:
     /// lightweight-delete marker of the target table (not an ordinary physical column with that name);
     /// it gates the `_row_exists = 0` -> ALTER DELETE shortcut in the UPDATE command. Pass false to fail
     /// closed (e.g. a non-local ON CLUSTER target, or ALTER DATABASE).
+    /// `context_` resolves the source table of `ATTACH`/`REPLACE PARTITION ... FROM`, so that a session
+    /// temporary table is checked under `TEMPORARY_DATABASE` rather than the current database.
     static AccessRightsElements getRequiredAccessForCommand(
-        const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker);
+        const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker, const ContextPtr & context_);
 
     /// True when `_row_exists` is the hidden virtual lightweight-delete marker of `storage`, i.e. not
     /// an ordinary physical column with that name (as is possible on engines like `Memory`). Null
