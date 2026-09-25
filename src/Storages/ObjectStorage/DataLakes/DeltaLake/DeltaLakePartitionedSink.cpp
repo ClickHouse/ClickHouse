@@ -447,6 +447,13 @@ void DeltaLakePartitionedSink::onFinish()
     }
     catch (...)
     {
+        if (delta_transaction->isCommitOutcomeUnknown())
+        {
+            /// `cancelBuffers()` and the destructor also unlink whatever is still tracked here.
+            partitions_data.clear();
+            throw;
+        }
+
         for (auto & [_, partition_info] : partitions_data)
         {
             for (const auto & [sink, written_bytes, written_rows] : partition_info->data_files)
