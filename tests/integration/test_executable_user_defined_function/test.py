@@ -311,6 +311,40 @@ def test_executable_function_parameter_python(started_cluster):
         )
 
 
+def test_executable_function_parameter_in_legacy_predicate_analysis(started_cluster):
+    skip_test_msan(node)
+
+    # `EXPLAIN AST optimize = 1` runs the old interpreter, so the predicate reaches
+    # `PredicateExpressionsOptimizer` and `ExpressionInfoVisitor`. A parametric executable UDF
+    # must be recognized there by name only: instantiating the resolver with an empty parameter
+    # list raises `BAD_ARGUMENTS` and used to turn the optimizer walk into a query failure.
+    node.query("DROP TABLE IF EXISTS test_table_legacy_predicate")
+    node.query(
+        "CREATE TABLE test_table_legacy_predicate (k UInt64) ENGINE = MergeTree ORDER BY k"
+    )
+    node.query("INSERT INTO test_table_legacy_predicate SELECT number FROM numbers(4)")
+
+    for query in (
+        "EXPLAIN AST optimize = 1 SELECT k FROM (SELECT k FROM test_table_legacy_predicate)"
+        " WHERE test_function_parameter_python(2)(k) != ''",
+        # The same UDF in the subquery `SELECT` list goes through `hasNonRewritableFunction`.
+        "EXPLAIN AST optimize = 1 SELECT v FROM"
+        " (SELECT test_function_parameter_python(2)(k) AS v FROM test_table_legacy_predicate)"
+        " WHERE v != ''",
+    ):
+        assert "test_function_parameter_python" in node.query(query)
+
+    assert (
+        node.query(
+            "SELECT count() FROM (SELECT k FROM test_table_legacy_predicate)"
+            " WHERE test_function_parameter_python(2)(k) != ''"
+        )
+        == "4\n"
+    )
+
+    node.query("DROP TABLE test_table_legacy_predicate")
+
+
 def test_executable_function_always_error_python(started_cluster):
     skip_test_msan(node)
     try:
