@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -114,6 +115,10 @@ public:
         /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
         /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
         bool is_masked_secret = false;
+        /// Ids of the scalar subqueries this constant is made of. A list because folding
+        /// collapses expressions: `(SELECT a) + (SELECT b)` is one constant from two subqueries.
+        /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
+        std::vector<size_t> scalar_subquery_ids;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
 
@@ -134,6 +139,11 @@ private:
     NodeRawConstPtrs inputs;
     NodeRawConstPtrs outputs;
 
+    /// The same ids as `Node::scalar_subquery_ids`, kept on the actions as a whole because a node
+    /// does not always survive: a constant projected under an alias is re-materialised as a fresh
+    /// column under the alias's name, and the marked node disappears with the old one.
+    std::vector<size_t> scalar_subquery_ids;
+
 public:
     ActionsDAG();
     ActionsDAG(ActionsDAG &&) noexcept;
@@ -143,6 +153,9 @@ public:
     ~ActionsDAG();
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns = true);
+
+    const std::vector<size_t> & getScalarSubqueryIds() const { return scalar_subquery_ids; }
+    void addScalarSubqueryId(size_t id);
 
     const Nodes & getNodes() const { return nodes; }
     NodeRawConstPtrs getNodesPointers() const;
@@ -180,7 +193,8 @@ public:
         std::string name,
         bool is_deterministic_constant = true,
         bool is_masked_secret = false,
-        bool is_runtime_filter_id = false);
+        bool is_runtime_filter_id = false,
+        std::vector<size_t> scalar_subquery_ids = {});
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(

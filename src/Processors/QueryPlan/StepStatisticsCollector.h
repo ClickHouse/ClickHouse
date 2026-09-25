@@ -1,17 +1,13 @@
 #pragma once
 
-#include <utility>
 #include <set>
-#include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/StepStatsModel.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/IProcessor.h>
-#include <IO/WriteBuffer.h>
-#include <IO/Operators.h>
-#include <Common/formatReadable.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/StepStatisticsAnalyzer.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <base/types.h>
 #include <boost/container_hash/hash.hpp>
 
@@ -19,8 +15,13 @@
 namespace DB
 {
 
-class AnalyzeStepsStats
+/// Reads what a pipeline reported about each plan step, and derives the per-step values a
+/// consumer can render.
+class StepStatisticsCollector
 {
+    /// Everything collected from the pipeline is keyed by the step it belongs to. A raw pointer is
+    /// safe here: the storage is built and consumed while the plan and its pipeline are alive, and
+    /// analyzeStep needs a live step anyway.
     using StepAndGroup = std::pair<const IQueryPlanStep *, size_t>;
 
     /// Per-processor elapsed times collected per (step, group) to compute the distribution.
@@ -34,9 +35,16 @@ class AnalyzeStepsStats
     using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
-    AnalyzeStepsStats(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
+    StepStatisticsCollector(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
 
-    void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix, bool processors_info = false) const;
+    /// Must run while the pipeline is still alive.
+    AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
+
+    /// How long the query executed.
+    UInt64 getExecutionTimeNs() const { return execution_query_time_ns; }
+
+    /// The pipeline's thread count, which caps how parallel any stage could have been.
+    UInt64 getMaxThreads() const { return max_num_threads_per_query; }
 
 private:
     void collectIOStats(const Processors & processors);
@@ -44,17 +52,18 @@ private:
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
     void computeJoinBranchCosts(const QueryPlan & plan);
 
-    StepStatsContext makeContext(const IQueryPlanStep * step) const;
-    AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
-    void renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const;
+    StepStatisticsContext makeContext(const IQueryPlanStep * step) const;
 
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStep processors_by_step;
 
+    /// Reports for join steps, produced up front by computeJoinBranchCosts because a branch cost
+    /// needs the whole plan, not one step. analyzeStep prefers these over asking the step again.
     ReportsByStep join_raw_reports;
 
     UInt64 max_num_threads_per_query = 0;
     UInt64 execution_query_time_ns = 0;
 };
+
 }

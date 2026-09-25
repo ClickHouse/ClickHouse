@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinEstimation.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
-#include <Processors/QueryPlan/StepStatsAnalyzer.h>
+#include <Processors/QueryPlan/StepStatisticsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/IJoin.h>
@@ -140,7 +140,7 @@ std::optional<UInt64> enrichJoinSides(StepAnalysisReport & report, UInt64 output
 
 /// sort time is the time a merge join spent sorting the blocks of one side. Relate it to the
 /// processor time of the corresponding stage to show whether sorting dominated that stage.
-void appendSortShare(StepAnalysisReport & report, const StepStatsContext & context, MetricGroupKey group_key, JoinStep::JoinStage stage)
+void appendSortShare(StepAnalysisReport & report, const StepStatisticsContext & context, MetricGroupKey group_key, JoinStep::JoinStage stage)
 {
     auto * group = findGroup(report, group_key);
     if (!group)
@@ -212,7 +212,7 @@ std::optional<double> resultRowsQError(const std::optional<UInt64> & estimated_r
 }
 
 void prependEstimationComparison(
-    StepAnalysisReport & report, const JoinStep & join_step, const StepStatsContext & context, std::optional<UInt64> matched_output_rows)
+    StepAnalysisReport & report, const JoinStep & join_step, const StepStatisticsContext & context, std::optional<UInt64> matched_output_rows)
 {
     const JoinEstimation & estimation = join_step.getEstimation();
 
@@ -271,7 +271,7 @@ void inlineGroupIntoStage(AnalyzedStepData & step_data, MetricGroupKey group_key
 
 }
 
-AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisReport report)
+AnalyzedStepData analyzeJoinStep(const StepStatisticsContext & context, StepAnalysisReport report)
 {
     const auto * join_step = typeid_cast<const JoinStep *>(context.step);
     const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(context.step);

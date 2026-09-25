@@ -4,6 +4,8 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <algorithm>
+
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/JoinNode.h>
@@ -60,6 +62,42 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// Ids of every scalar subquery whose folded value appears anywhere under `node`. Recurses through
+/// a constant's `source_expression` as well as its children.
+void collectScalarSubqueryIdsImpl(const QueryTreeNodePtr & node, std::vector<size_t> & ids)
+{
+    if (!node)
+        return;
+
+    if (const auto * constant = node->as<ConstantNode>())
+    {
+        const auto & node_ids = constant->getScalarSubqueryIds();
+        ids.insert(ids.end(), node_ids.begin(), node_ids.end());
+
+        if (constant->hasSourceExpression())
+            collectScalarSubqueryIdsImpl(constant->getSourceExpression(), ids);
+    }
+
+    for (const auto & child : node->getChildren())
+        collectScalarSubqueryIdsImpl(child, ids);
+}
+
+void collectScalarSubqueryIds(const QueryTreeNodePtr & node, ConstantNode & into)
+{
+    std::vector<size_t> ids;
+    collectScalarSubqueryIdsImpl(node, ids);
+
+    ::std::sort(ids.begin(), ids.end());
+    ids.erase(::std::unique(ids.begin(), ids.end()), ids.end());
+
+    into.addScalarSubqueryIds(ids);
+}
+
+}
 
 namespace ErrorCodes
 {
@@ -3423,6 +3461,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 /// Replace function node with result constant node
                 constant_node = std::make_shared<ConstantNode>(ConstantValue{ column_const->getPtr(), std::move(result_type) }, node, is_deterministic);
+
+                /// Folding collapses the expression, and with it any scalar subquery whose value
+                /// went into it. For example, `(SELECT a) + (SELECT b)` becomes one constant.
+                /// So, carry their ids onto the result so the plan can still say which step reads them.
+                collectScalarSubqueryIds(node, *constant_node);
             }
         }
 

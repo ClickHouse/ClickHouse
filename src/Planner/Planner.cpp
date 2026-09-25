@@ -592,21 +592,27 @@ public:
         if (query_node.hasLimit())
         {
             /// Constness of limit is validated during query analysis stage
+            const auto & limit_constant = query_node.getLimit()->as<ConstantNode &>();
             std::tie(limit_length, fractional_limit, is_limit_length_negative)
-                = getLimitOffsetValue(query_node.getLimit()->as<ConstantNode &>());
+                = getLimitOffsetValue(limit_constant);
+            collectLimitOffsetSubqueryIdsFrom(limit_constant);
 
             if (query_node.hasOffset() && (limit_length || fractional_limit > 0))
             {
                 /// Constness of offset is validated during query analysis stage
+                const auto & offset_constant = query_node.getOffset()->as<ConstantNode &>();
                 std::tie(limit_offset, fractional_offset, is_limit_offset_negative)
-                    = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>());
+                    = getLimitOffsetValue(offset_constant);
+                collectLimitOffsetSubqueryIdsFrom(offset_constant);
             }
         }
         else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
+            const auto & offset_constant = query_node.getOffset()->as<ConstantNode &>();
             std::tie(limit_offset, fractional_offset, is_limit_offset_negative)
-                = getLimitOffsetValue(query_node.getOffset()->as<ConstantNode &>());
+                = getLimitOffsetValue(offset_constant);
+            collectLimitOffsetSubqueryIdsFrom(offset_constant);
         }
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN, NEGATIVE LIMIT, FRACTIONAL LIMIT/OFFSET
@@ -648,6 +654,26 @@ public:
     bool query_has_array_join_in_join_tree = false;
     bool query_has_with_totals_in_any_subquery_in_join_tree = false;
     SortDescription sort_description;
+    /// Scalar subqueries whose value became the LIMIT or OFFSET, as in `LIMIT (SELECT ...)`. They
+    /// cannot be linked the way every other consumer is: the walk that attributes a subquery to the
+    /// step that reads it looks inside `ActionsDAG`s, and `LimitStep` keeps its bound as a plain
+    /// field rather than an expression. So the ids are carried here and put on the step directly.
+    std::vector<size_t> limit_offset_subquery_ids;
+
+    /// Collects the LIMIT and OFFSET subquery ids from the ConstantNode
+    void collectLimitOffsetSubqueryIdsFrom(const ConstantNode & constant)
+    {
+        for (size_t id : constant.getScalarSubqueryIds())
+            limit_offset_subquery_ids.push_back(id);
+    }
+
+    /// Adds the LIMIT and OFFSET subquery IDS to the plan step
+    void addLimitOffsetSubqueryIdsTo(IQueryPlanStep & step) const
+    {
+        for (size_t id : limit_offset_subquery_ids)
+            step.addConsumedSubqueryId(id);
+    }
+
     UInt64 limit_length = 0;
     UInt64 limit_offset = 0;
     Float64 fractional_limit = 0;
@@ -1683,6 +1709,7 @@ void addPreliminaryLimitStep(
     {
         auto limit = std::make_unique<LimitStep>(
             query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*limit);
         if (is_shard_limit)
             limit->markAsShardLimit();
         if (do_not_skip_offset)
@@ -1694,6 +1721,7 @@ void addPreliminaryLimitStep(
     else if (is_limit_length_negative && is_limit_offset_negative)
     {
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*limit);
         if (is_shard_limit)
             limit->markAsShardLimit();
 
@@ -1702,10 +1730,12 @@ void addPreliminaryLimitStep(
     else if (is_limit_length_negative && !is_limit_offset_negative)
     {
         auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*offset);
 
         query_plan.addStep(std::move(offset));
 
         auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*limit);
         if (is_shard_limit)
             limit->markAsShardLimit();
         query_plan.addStep(std::move(limit));
@@ -1718,6 +1748,7 @@ void addPreliminaryLimitStep(
 
         auto limit = std::make_unique<LimitStep>(
             query_plan.getCurrentHeader(), limit_length, 0, settings[Setting::exact_rows_before_limit]);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*limit);
         if (is_shard_limit)
             limit->markAsShardLimit();
         query_plan.addStep(std::move(limit));
@@ -2024,6 +2055,7 @@ void addLimitStep(
             always_read_till_end,
             limit_with_ties,
             limit_with_ties_sort_description);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*limit);
 
         if (limit_with_ties)
             limit->setStepDescription("LIMIT WITH TIES");
@@ -2034,6 +2066,7 @@ void addLimitStep(
     {
         auto limit = std::make_unique<NegativeLimitStep>(
             query_plan.getCurrentHeader(), limit_length, limit_offset, limit_with_ties, limit_with_ties_sort_description);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*limit);
 
         if (limit_with_ties)
             limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
@@ -2043,11 +2076,13 @@ void addLimitStep(
     else if (is_limit_length_negative && !is_limit_offset_negative)
     {
         auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), limit_offset);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*offset);
 
         query_plan.addStep(std::move(offset));
 
         auto limit = std::make_unique<NegativeLimitStep>(
             query_plan.getCurrentHeader(), limit_length, 0, limit_with_ties, limit_with_ties_sort_description);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*limit);
 
         if (limit_with_ties)
             limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
@@ -2062,6 +2097,7 @@ void addLimitStep(
 
         auto limit = std::make_unique<LimitStep>(
             query_plan.getCurrentHeader(), limit_length, 0, always_read_till_end, limit_with_ties, limit_with_ties_sort_description);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*limit);
         if (limit_with_ties)
             limit->setStepDescription("LIMIT WITH TIES");
         query_plan.addStep(std::move(limit));
@@ -2070,6 +2106,7 @@ void addLimitStep(
     {
         auto fractional_offset_step
             = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.fractional_offset);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*fractional_offset_step);
         query_plan.addStep(std::move(fractional_offset_step));
 
         auto limit = std::make_unique<LimitStep>(
@@ -2079,6 +2116,7 @@ void addLimitStep(
             always_read_till_end,
             limit_with_ties,
             limit_with_ties_sort_description);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*limit);
         query_plan.addStep(std::move(limit));
     }
     else
@@ -2091,6 +2129,7 @@ void addLimitStep(
             limit_offset,
             limit_with_ties,
             limit_with_ties_sort_description);
+        query_analysis_result.addLimitOffsetSubqueryIdsTo(*fractional_limit_step);
         query_plan.addStep(std::move(fractional_limit_step));
     }
 }
@@ -2122,17 +2161,20 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
         if (query_analysis_result.is_limit_offset_negative) [[unlikely]]
         {
             auto offset_step = std::make_unique<NegativeOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
+            query_analysis_result.addLimitOffsetSubqueryIdsTo(*offset_step);
             query_plan.addStep(std::move(offset_step));
         }
         else if (query_analysis_result.limit_offset) [[likely]]
         {
             auto offset_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.limit_offset);
+            query_analysis_result.addLimitOffsetSubqueryIdsTo(*offset_step);
             query_plan.addStep(std::move(offset_step));
         }
         else [[unlikely]]
         {
             auto fractional_offset_step
                 = std::make_unique<FractionalOffsetStep>(query_plan.getCurrentHeader(), query_analysis_result.fractional_offset);
+            query_analysis_result.addLimitOffsetSubqueryIdsTo(*fractional_offset_step);
             query_plan.addStep(std::move(fractional_offset_step));
         }
     }

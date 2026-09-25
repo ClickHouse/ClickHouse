@@ -304,6 +304,11 @@ size_t ThreadStatus::getNextPlanStepIndex() const
     return local_data.plan_step_index->fetch_add(1);
 }
 
+size_t ThreadStatus::getNextSubqueryIndex() const
+{
+    return local_data.subquery_index->fetch_add(1);
+}
+
 size_t ThreadStatus::getNextPipelineProcessorIndex() const
 {
     return local_data.pipeline_processor_index->fetch_add(1);

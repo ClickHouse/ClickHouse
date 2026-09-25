@@ -1,14 +1,14 @@
 #pragma once
 
 #include <Core/Joins.h>
-#include <Processors/QueryPlan/StepStatsModel.h>
+#include <Processors/QueryPlan/StepStatisticsAnalyzer.h>
 
 namespace DB
 {
 
 /// A report generator that knows some join specific information and builds the report
 /// with metrics for printing in EXPLAIN ANALYZE
-AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisReport report);
+AnalyzedStepData analyzeJoinStep(const StepStatisticsContext & context, StepAnalysisReport report);
 
 /// Actual matched pairs, i.e. the output rows produced by real matches (excluding NULL-padded
 /// rows of the preserved sides of an outer join)

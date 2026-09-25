@@ -26,9 +26,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/QueryPlanProfiler.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <optional>
+
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 
 namespace ProfileEvents
 {
@@ -124,6 +129,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     Block scalar_block;
 
+    /// Identifies this subquery within the query.
+    ///
+    /// Stays unset when the value came from somewhere this analysis never ran, where there is no
+    /// local plan to point at. Declared out here because the constant the value is folded into is
+    /// built further down, outside those branches.
+    std::optional<size_t> scalar_subquery_id;
+
     auto node_without_alias = node->clone();
     node_without_alias->removeAlias();
 
@@ -144,6 +156,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             ProfileEvents::increment(ProfileEvents::ScalarSubqueriesLocalCacheHit);
 
         scalar_block = scalars_cache.at(node_with_hash);
+
+        /// Nothing ran here, because this query computed the value earlier, and the id it was given
+        /// then is what links the step reading it to the sub-plan that produced it.
+        if (const auto it = scalar_subquery_to_subquery_id.find(node_with_hash); it != scalar_subquery_to_subquery_id.end())
+            scalar_subquery_id = it->second;
     }
     else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
     {
@@ -154,6 +171,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     else
     {
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
+
+        scalar_subquery_id = CurrentThread::isInitialized() ? CurrentThread::get().getNextSubqueryIndex() : 0;
+
         auto subquery_context = Context::createCopy(context);
 
         Settings subquery_settings = context->getSettingsCopy();
@@ -289,18 +309,29 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 }
             }
 
+            /// The subquery runs here, during analysis, and its result is folded into the outer
+            /// query as a literal.
+            SubPlanCapture sub_plan_capture;
+
             if (!skip_execution_for_exists)
             {
                 QueryPlanOptimizationSettings optimization_settings(subquery_context);
                 BuildQueryPipelineSettings build_pipeline_settings(subquery_context);
 
                 query_plan.setConcurrencyControl(subquery_context->getSettingsRef()[Setting::use_concurrency_control]);
+                query_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
+                query_plan.optimize(optimization_settings);
 
-                auto pipeline_builder = std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+                sub_plan_capture = QueryPlanProfiler::captureSubPlan(
+                    subquery_context, query_plan, *scalar_subquery_id, SubPlanKind::Scalar);
+
+                auto pipeline_builder = std::move(*query_plan.buildQueryPipeline(
+                    optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
 
                 io.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
                 io.pipeline.setQuota(subquery_context->getQuota());
                 io.pipeline.setNormalizedQueryHash(subquery_context->getNormalizedQueryHash());
+                sub_plan_capture.instrument(io.pipeline);
             }
 
             std::optional<PullingAsyncPipelineExecutor> executor;
@@ -318,6 +349,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 while (chunk.getNumRows() == 0 && executor->pull(chunk))
                 {
                 }
+
+                sub_plan_capture.finish(io.pipeline);
             }
 
             if (chunk.getNumRows() == 0)
@@ -383,6 +416,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         }
 
         scalars_cache.emplace(node_with_hash, scalar_block);
+        if (scalar_subquery_id)
+            scalar_subquery_to_subquery_id.emplace(node_with_hash, *scalar_subquery_id);
         if (can_use_global_scalars && context->hasQueryContext())
             context->getQueryContext()->addScalar(str_hash, scalar_block);
     }
@@ -417,11 +452,18 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     {
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
+        /// The subquery is gone from here on -- only its value remains -- so the id it was captured
+        /// under travels on the constant, for the planner to hand to the step that reads it.
+        if (scalar_subquery_id)
+            constant_node->addScalarSubqueryId(*scalar_subquery_id);
 
         if (scalar_column_with_type.column->isNullAt(0))
         {
             node = buildCastFunction(constant_node, constant_node->getResultType(), context);
-            node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+            auto wrapped = std::make_shared<ConstantNode>(std::move(constant_value), node);
+            if (scalar_subquery_id)
+                wrapped->addScalarSubqueryId(*scalar_subquery_id);
+            node = std::move(wrapped);
         }
         else
             node = std::move(constant_node);
@@ -442,6 +484,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     std::string get_scalar_function_name = "__getScalar";
 
     auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
+
+    /// The value is too large to fold in, so what stays behind is this hash and a `__getScalar`
+    /// reading it back. The hash is the only thing left of the subquery, so it carries the id, as
+    /// the folded value does above.
+    if (scalar_subquery_id)
+        scalar_query_hash_constant_node->addScalarSubqueryId(*scalar_subquery_id);
 
     auto get_scalar_function_node = std::make_shared<FunctionNode>(get_scalar_function_name);
     get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
