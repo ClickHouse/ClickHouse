@@ -226,7 +226,13 @@ private:
     mutable IncrementalHash hash;
 
     void createNullMask();
-    void updateNullMask();
+    /// Runs once per inserted value, so the work stays out of line behind the flag.
+    void updateNullMask()
+    {
+        if (is_nullable)
+            updateNullMaskImpl();
+    }
+    void updateNullMaskImpl();
 
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
@@ -319,18 +325,15 @@ void ColumnUnique<ColumnType>::createNullMask()
 }
 
 template <typename ColumnType>
-void ColumnUnique<ColumnType>::updateNullMask()
+void ColumnUnique<ColumnType>::updateNullMaskImpl()
 {
-    if (is_nullable)
-    {
-        if (!nested_null_mask)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null mask for ColumnUnique is was not created.");
+    if (!nested_null_mask)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Null mask for ColumnUnique is was not created.");
 
-        size_t size = getRawColumnPtr()->size();
+    size_t size = getRawColumnPtr()->size();
 
-        if (nested_null_mask->size() != size)
-            assert_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
-    }
+    if (nested_null_mask->size() != size)
+        assert_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
 }
 
 template <typename ColumnType>
@@ -452,8 +455,13 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t length)
 {
-    if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == std::string_view(pos, length))
-        return index;
+    /// The reserved prefix slots are not in the reverse index, so the default value is matched here.
+    /// Comparing the first byte first keeps the `memcmp` call out of this path for the values that
+    /// are not the default, which is all of them in a typical dictionary.
+    const size_t default_index = getNestedTypeDefaultValueIndex();
+    const std::string_view default_value = getRawColumnPtr()->getDataAt(default_index);
+    if (default_value.size() == length && (length == 0 || (default_value[0] == pos[0] && default_value == std::string_view(pos, length))))
+        return default_index;
 
     auto insertion_point = reverse_index.insert({pos, length});
 
