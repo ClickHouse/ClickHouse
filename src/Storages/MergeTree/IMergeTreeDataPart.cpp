@@ -135,6 +135,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NO_FILE_IN_DATA_PART;
@@ -2421,6 +2422,16 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
         bool noop = false;
         auto result = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
+
+        /// An empty result means the recount was skipped because of a retryable error (a real part always
+        /// has files). Persisting it would write an empty manifest and drop every `.proj` ownership entry,
+        /// so fail with a retryable error instead: the part is not marked broken and loading is retried.
+        if (result.computed_checksums.empty())
+            throw Exception(
+                ErrorCodes::ABORTED,
+                "Could not recalculate checksums for part {} (checksum computation was skipped because of a transient error)",
+                name);
+
         checksums = std::move(result.computed_checksums);
 
         /// Persist checksums for projection parts whose checksums.txt was also missing (recomputed by checkDataPart).

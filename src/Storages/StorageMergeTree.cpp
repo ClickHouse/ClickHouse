@@ -3918,6 +3918,14 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
             {
                 auto result = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
 
+                /// An empty result means verification was skipped because of a retryable error, not that the part
+                /// is empty: retry instead of reporting a healthy part as corrupt (or writing an empty manifest).
+                if (result.computed_checksums.empty())
+                    throw Exception(
+                        ErrorCodes::ABORTED,
+                        "Could not recalculate checksums for part {} (checksum computation was skipped because of a transient error)",
+                        part->name);
+
                 /// The in-memory manifest was loaded from the manifest that is now gone and may still list a projection
                 /// `checkDataPart` has normalized away (dropped while the part was detached, then re-attached). Such an
                 /// entry is not a data mismatch: compare against the manifest without it, exactly as the checksums-present
