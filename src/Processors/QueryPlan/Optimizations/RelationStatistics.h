@@ -3,6 +3,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include <Core/Joins.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <base/types.h>
@@ -48,6 +49,16 @@ bool isExactDistinctCount(const ColumnStatsProvenance & provenance);
 /// The true distinct count cannot exceed the estimate, or a test-only synthetic override explicitly
 /// supplies that planner contract.
 bool isDistinctCountUpperBound(const ColumnStatsProvenance & provenance);
+
+/// Tighten equi-join key NDVs to their minimum, respecting which side each join kind preserves.
+/// Anti joins and full joins leave both inputs unchanged. The caller decides whether the input
+/// counts satisfy the provenance guarantee required by its estimator.
+void updateJoinKeyDistinctCounts(
+    ColumnStats & left_stats,
+    ColumnStats & right_stats,
+    JoinKind kind,
+    JoinStrictness strictness);
+
 /// The following predicates also govern `ColumnStats::null_fraction`: it is a value fact for the
 /// same rows as the range and consumers must require the corresponding range guarantee.
 /// The range is exactly the produced rows' range.

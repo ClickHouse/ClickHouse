@@ -312,31 +312,13 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         UInt64 max_number_of_distinct_values = std::max<UInt64>({left_number_of_distinct_values, right_number_of_distinct_values, 1});
         Float64 predicate_selectivity = 1.0 / Float64(max_number_of_distinct_values);
 
-        /// The matched key domain is bounded by the minimum only when both inputs provide upper
-        /// bounds. Preserve outer-join sides and semi/anti semantics as the join-order estimator does.
         if (left_has_upper_bound && right_has_upper_bound)
         {
-            bool update_left = false;
-            bool update_right = false;
-            if (join_operator.strictness == JoinStrictness::Semi)
-            {
-                update_left = join_operator.kind == JoinKind::Left;
-                update_right = join_operator.kind == JoinKind::Right;
-            }
-            else if (join_operator.strictness != JoinStrictness::Anti)
-            {
-                update_left = join_operator.kind == JoinKind::Inner || join_operator.kind == JoinKind::Right
-                    || join_operator.kind == JoinKind::Cross || join_operator.kind == JoinKind::Comma;
-                update_right = join_operator.kind == JoinKind::Inner || join_operator.kind == JoinKind::Left
-                    || join_operator.kind == JoinKind::Cross || join_operator.kind == JoinKind::Comma;
-            }
-
-            const UInt64 min_number_of_distinct_values
-                = std::min(left_number_of_distinct_values, right_number_of_distinct_values);
-            if (update_left)
-                statistics.column_statistics[left_column].num_distinct_values = min_number_of_distinct_values;
-            if (update_right)
-                statistics.column_statistics[right_column].num_distinct_values = min_number_of_distinct_values;
+            QueryPlanOptimizations::updateJoinKeyDistinctCounts(
+                statistics.column_statistics.at(left_column),
+                statistics.column_statistics.at(right_column),
+                join_operator.kind,
+                join_operator.strictness);
         }
 
         /// Predicate reuses a column already seen on one side - redundant for selectivity.
