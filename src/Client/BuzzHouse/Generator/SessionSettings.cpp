@@ -1822,6 +1822,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"throw_on_hive_partitioning_resolution_failure", trueOrFalseSettingNoOracle},
     {"throw_on_max_partitions_per_insert_block", trueOrFalseSettingNoOracle},
     {"throw_on_unsupported_query_inside_transaction", trueOrFalseSettingNoOracle},
+    {"to_start_of_interval_preserves_argument_type", trueOrFalseSettingNoOracle},
     {"totals_auto_threshold", CHSetting(probRange, {}, false)},
     {"totals_mode",
      CHSetting(

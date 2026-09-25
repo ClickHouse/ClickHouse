@@ -1396,6 +1396,15 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
+    DECLARE(Bool, to_start_of_interval_preserves_argument_type, true, R"(
+Makes the function `toStartOfInterval` (and its aliases `time_bucket` and `date_bin`) return a value of the same type as its first argument:
+`Date` for `Date`, `Date32` for `Date32`, `DateTime` for `DateTime` and `DateTime64` with the same scale for `DateTime64`, regardless of the interval unit.
+
+Possible values:
+
+- `1` — The result has the type of the first argument. The setting `enable_extended_results_for_datetime_functions` does not affect the function.
+- `0` — Legacy behavior: the result type depends on the interval unit. The units `WEEK` and longer produce a `Date`, `DAY` down to `SECOND` produce a `DateTime`, and the subsecond units produce a `DateTime64` with the scale of the unit (for `Date32` and `DateTime64` arguments, `Date32` and `DateTime64` instead of `Date` and `DateTime` with `enable_extended_results_for_datetime_functions = 1`). A value that does not fit the range of the narrower result type is wrapped: for example, `toStartOfInterval(toDate32('1900-01-01'), INTERVAL 1 DAY)` returns `2036-02-07 06:28:16`.
+)", 0) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
 This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.

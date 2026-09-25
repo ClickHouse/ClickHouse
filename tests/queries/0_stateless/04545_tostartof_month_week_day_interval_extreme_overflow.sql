@@ -17,6 +17,9 @@
 -- interval returned `1970-01-01` instead of the `1969-12-22` bucket. That path now goes through the same
 -- floored `roundDownToMultiple` helper.
 
+-- The narrowing of the result to `Date` and `DateTime` is tested, which depends on the interval unit only in the legacy mode.
+SET to_start_of_interval_preserves_argument_type = 0;
+
 -- Normal values must still be rounded down to the start of the interval correctly.
 SELECT toStartOfInterval(toDate('2021-06-22'), INTERVAL 5 MONTH);
 SELECT toStartOfInterval(toDate('2021-06-22'), INTERVAL 3 MONTH);
