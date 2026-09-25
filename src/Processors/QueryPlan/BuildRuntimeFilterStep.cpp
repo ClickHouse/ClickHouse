@@ -1,4 +1,5 @@
 #include <string_view>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -39,6 +40,11 @@ extern const Event RuntimeFilterStateBytesSent;
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_join_runtime_filters_index_analysis;
+}
 
 namespace ErrorCodes
 {
@@ -213,11 +219,10 @@ public:
         {
             if (!query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterPartialTransform");
-            query_context->getRuntimeFilterLookup()->add(
-                filter_key,
-                filter_name,
-                std::make_unique<RuntimeFilter>(
-                    /*filters_to_merge_=*/0, runtime_filter_config, std::move(*task_filter->filter)));
+            auto filter = std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, runtime_filter_config, std::move(*task_filter->filter));
+            if (query_context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis])
+                filter->enableIndexAnalysis();
+            query_context->getRuntimeFilterLookup()->add(filter_key, filter_name, std::move(filter));
         }
         task_filter->filter.reset();
         ProfileEvents::increment(ProfileEvents::RuntimeFilterStatesSent, num_destinations);

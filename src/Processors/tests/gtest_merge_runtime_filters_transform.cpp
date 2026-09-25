@@ -215,6 +215,7 @@ struct TestPipeline
     std::atomic<size_t> data_rows = 0;
     RuntimeFilterGeometry geometry = testGeometry();
     UInt64 max_received_state_bytes = MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES;
+    bool enable_index_analysis = false;
 
     /// Partial sources feed the merge, which ends in its own sink, so the executor schedules the
     /// filter branch independently of data-side demand. `data_source` feeds `data_sink` directly.
@@ -236,6 +237,8 @@ struct TestPipeline
             lookup,
             /*num_forward_destinations_=*/1,
             max_received_state_bytes);
+        if (enable_index_analysis)
+            transform->enableIndexAnalysis();
 
         if (!data_sink)
             data_sink = std::make_shared<CountingSink>(dataHeader(), data_rows, open_gate_at, std::move(gate));
@@ -376,6 +379,31 @@ TEST(MergeRuntimeFiltersTransform, AllPartialsRegisterUnion)
     ASSERT_NE(filter, nullptr);
     EXPECT_EQ(probe(*filter, 0, 30), std::vector<bool>(30, true));
     EXPECT_EQ(probe(*filter, 30, 40), std::vector<bool>(10, false));
+}
+
+TEST(MergeRuntimeFiltersTransform, RegisteredUnionExposesExactValuesForIndexAnalysis)
+{
+    for (const bool enable_index_analysis : {false, true})
+    {
+        TestPipeline pipeline;
+        pipeline.enable_index_analysis = enable_index_analysis;
+        pipeline.build(
+            {partialSource(10, 20), partialSource(0, 10)}, std::make_shared<SourceFromSingleChunk>(dataHeader(), makeDataChunk(10)));
+        pipeline.execute();
+
+        auto filter = pipeline.lookup->find("test_key");
+        ASSERT_NE(filter, nullptr);
+        const auto values = filter->getRecordedKeyValues();
+        if (enable_index_analysis)
+        {
+            ASSERT_NE(values, nullptr);
+            EXPECT_EQ(values->size(), 20u);
+        }
+        else
+        {
+            EXPECT_EQ(values, nullptr);
+        }
+    }
 }
 
 TEST(MergeRuntimeFiltersTransform, MissingPartialFailsOpen)

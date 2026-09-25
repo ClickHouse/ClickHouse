@@ -61,6 +61,9 @@ public:
     Status prepare() override;
     void work() override;
 
+    /// `RegisterUnion` only: let storage index analysis prune granules by the union's exact values.
+    void enableIndexAnalysis() { enable_index_analysis = true; }
+
 private:
     void consume();
     void finalize();
@@ -75,6 +78,7 @@ private:
     /// used only for the sent-state counters.
     const size_t num_forward_destinations;
     const UInt64 max_received_state_bytes;
+    bool enable_index_analysis = false;
 
     /// Which inputs have delivered their state.
     std::vector<bool> received;

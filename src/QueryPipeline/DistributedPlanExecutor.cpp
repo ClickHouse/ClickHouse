@@ -95,6 +95,7 @@ static_assert(MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES == StreamingExchangePro
 namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
+    extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -980,7 +981,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         VectorWithMemoryTracking<ExchangeStreamId> streams(descriptor.streams.begin(), descriptor.streams.end());
         auto partials = receiveExchangeStreams(
             partials_header, descriptor.streams.front().exchange_id, streams, pipeline_settings, /*spread_over_max_threads*/ false);
-        partials.addTransform(std::make_shared<MergeRuntimeFiltersTransform>(
+        auto merge = std::make_shared<MergeRuntimeFiltersTransform>(
             partials_header,
             descriptor.streams.size(),
             MergeRuntimeFiltersTransform::Mode::RegisterUnion,
@@ -988,7 +989,10 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
             descriptor.filter_key,
             descriptor.key_column_type,
             descriptor.geometry,
-            context->getRuntimeFilterLookup()));
+            context->getRuntimeFilterLookup());
+        if (context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis])
+            merge->enableIndexAnalysis();
+        partials.addTransform(std::move(merge));
         auto branch = QueryPipelineBuilder::getPipeline(std::move(partials));
         branch.complete(std::make_shared<EmptySink>(partials_header));
         receive_branches.start(std::move(branch), descriptor.filter_name);

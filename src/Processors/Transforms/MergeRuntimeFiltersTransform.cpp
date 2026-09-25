@@ -201,8 +201,10 @@ void MergeRuntimeFiltersTransform::finalize()
         /// Every input has delivered, so the union is complete and the published filter expects no
         /// further merges: `add` finishes it right away and `__applyFilter` can start pruning.
         const RuntimeFilterConfig config{geometry.pass_ratio_threshold_for_disabling, geometry.blocks_to_skip_before_reenabling};
-        filter_lookup->add(
-            filter_key, filter_name, std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, config, std::move(*accumulated)));
+        auto filter = std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, config, std::move(*accumulated));
+        if (enable_index_analysis)
+            filter->enableIndexAnalysis();
+        filter_lookup->add(filter_key, filter_name, std::move(filter));
         accumulated.reset();
         return;
     }
