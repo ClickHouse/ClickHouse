@@ -24,9 +24,12 @@ codex --version && codex login status
 ```
 
 - `codex` missing: stop and tell the user to install it (`npm install -g @openai/codex`).
-- Not logged in: stop and ask the user to run `! codex login` (ChatGPT login) themselves. Do not run
-  `codex login`, set `CODEX_HOME`, or ask for `OPENAI_API_KEY`. A paid ChatGPT account is required;
-  ClickHouse Inc. members can request a seat through the internal AI tools onboarding guide.
+- Not logged in: stop and ask the user to authenticate themselves with any method codex supports
+  (`! codex login` for the ChatGPT browser flow, or `codex login --with-api-key` /
+  `codex login --with-access-token` in their own terminal), then re-run the skill. Never run `codex login`
+  yourself, never set `CODEX_HOME` or `OPENAI_API_KEY`, and never ask the user to paste a key or token
+  into the session. ClickHouse Inc. members can request access through the internal AI tools onboarding
+  guide.
 
 ## 2. Model and effort (asked once, persisted)
 
@@ -61,14 +64,18 @@ Tell the user which model/effort is used and that `/codex-review --model` change
 
 Use the local remote-tracking refs only. **Do not `git fetch`**: the review must not change the user's refs.
 
-Find the remote that points to the upstream repository (it may be called `origin`, `upstream`, `blessed`...):
+Find the remote that points to the upstream repository, `ClickHouse/ClickHouse` or
+`ClickHouse/ClickHouse-private` (it may be called `origin`, `upstream`, `blessed`, `private`...):
 
 ```bash
-UPSTREAM=$(git remote -v | awk '$3 == "(fetch)" && $2 ~ /[:\/]ClickHouse\/ClickHouse(\.git)?$/ { print $1; exit }')
-BASE_REF="$UPSTREAM/master"
+git remote -v | awk '$3 == "(fetch)" && tolower($2) ~ /[:\/]clickhouse\/clickhouse(-private)?(\.git)?$/ { print $1 }'
+BASE_REF="<remote>/master"
 git rev-parse --verify -q "$BASE_REF^{commit}"
 ```
 
+- Exactly one match: use it.
+- Several matches (a checkout with both the public and the private remote): use the one whose
+  `<remote>/master` has the newer merge-base with `HEAD`; if they are equal, ask the user.
 - No such remote, or `$BASE_REF` does not exist: stop and ask the user which ref to diff against. Do not
   guess a local `master` (it is often stale or has local commits).
 - If the user named a different base (e.g. a release branch), use it instead.
