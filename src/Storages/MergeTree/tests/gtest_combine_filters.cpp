@@ -244,7 +244,7 @@ TEST(MergeTree, UniformFilterValue)
         SCOPED_TRACE(size);
         for (UInt8 value : {UInt8(0), UInt8(1), UInt8(2), UInt8(128), UInt8(255)})
         {
-            SCOPED_TRACE(value);
+            SCOPED_TRACE(static_cast<unsigned>(value));
             const auto column = ColumnUInt8::create(size, value);
             const FilterWithCachedCount filter(column->getPtr());
             const auto uniform_value = filter.tryGetUniformValue();
@@ -274,7 +274,7 @@ TEST(MergeTree, MixedUniformFilterValue)
             SCOPED_TRACE(position);
             for (UInt8 value : {UInt8(0), UInt8(255)})
             {
-                SCOPED_TRACE(value);
+                SCOPED_TRACE(static_cast<unsigned>(value));
                 auto column = ColumnUInt8::create(size, value);
                 column->getData()[position] = value ? 0 : 128;
                 const FilterWithCachedCount filter(column->getPtr());
