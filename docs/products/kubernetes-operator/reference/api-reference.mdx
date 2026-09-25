@@ -137,10 +137,12 @@ ClickHouseSettings defines ClickHouse server settings options.
 |-------|------|-------------|----------|---------|
 | `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector) | Specifies source and type of the password for `default` ClickHouse user. | false |  |
 | `logger` | [LoggerConfig](#loggerconfig) | Configuration of ClickHouse server logging. | false |  |
+| `systemLogsTTLDays` | integer | Retention in days for the system log tables (`query_log`, `part_log`, `text_log`, `metric_log`,<br />`asynchronous_metric_log`), applied as a table TTL on the next server restart. Defaults to 30 days<br />on new clusters only; clusters created before this field existed keep unbounded tables until it is set.<br />0 disables the TTL. | false |  |
 | `tls` | [ClusterTLSSpec](#clustertlsspec) | TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse server. | false |  |
 | `encryption` | [EncryptionSettings](#encryptionsettings) | Encryption, when set, enables at-rest encryption of table data through a dedicated storage policy.<br />Opt in per table with `SETTINGS storage_policy = '<policyName>'`. | false |  |
 | `enableDatabaseSync` | boolean | Enables synchronization of ClickHouse databases to the newly created replicas and cleanup of stale replicas<br />after scale down.<br />Supports only Replicated and integration databases. | false | true |
 | `extraConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse configuration that will be merged with the default one. | false |  |
+| `extraReloadableConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse configuration that will be merged with the default one and applied through a<br />configuration reload, without restarting pods. Placing a section here asserts it is reload-safe:<br />a restart-only setting placed here takes effect only at the next restart, without any error. | false |  |
 | `extraUsersConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse users configuration that will be merged with the default one. | false |  |
 
 Appears in:
@@ -200,6 +202,7 @@ ContainerTemplateSpec describes the container configuration overrides for the cl
 | `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core) | SecurityContext defines the security options the container should be run with.<br />A non-nil SecurityContext fully replaces operator defaults; the user owns the<br />entire struct. When nil, operator defaults are preserved.<br />More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false |  |
 | `livenessProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | LivenessProbe overrides the operator's default liveness probe. | false |  |
 | `readinessProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | ReadinessProbe overrides the operator's default readiness probe. | false |  |
+| `startupProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | StartupProbe holds back the liveness and readiness probes until it succeeds, giving slow-starting<br />containers time to come up. The operator sets no startup probe by default. | false |  |
 
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
@@ -379,9 +382,9 @@ LoggerConfig defines server logging configuration.
 |-------|------|-------------|----------|---------|
 | `logToFile` | boolean | If false then disable all logging to file. | false | true |
 | `jsonLogs` | boolean | If true, then log in JSON format. | false | false |
-| `level` | string | Server logger verbosity level. | false | trace |
-| `size` | string | Maximum log file size. | false | 1000M |
-| `count` | integer | Maximum number of log files to keep. | false | 50 |
+| `level` | string | Server logger verbosity level. | false | information |
+| `size` | string | Maximum log file size. | false | 100M |
+| `count` | integer | Maximum number of log files to keep. | false | 10 |
 
 Appears in:
 - [ClickHouseSettings](#clickhousesettings)
