@@ -1339,7 +1339,7 @@ def is_slow_build_binary(args) -> bool:
         for san in ("thread", "address", "undefined", "memory")
     )
     out = shell_get_output(
-        f"{local} --query \""
+        f"{local} --tmp --query \""
         "SELECT countIf(name = 'BUILD_TYPE' AND position('Debug' IN value)) "
         "+ countIf(name = 'WITH_COVERAGE' AND value IN ('ON', '1')) "
         f"+ countIf(name = 'CXX_FLAGS' AND ({sanitizers})) "
