@@ -10,6 +10,7 @@ from unittest.mock import patch
 from ci.jobs.scripts.coverage_selection import (
     build_candidate_query,
     canonical_coverage_paths,
+    load_snapshots,
     protect_selection,
     rank_candidates,
     validate_snapshots,
@@ -62,6 +63,8 @@ class FixtureCIDB:
         self.queries.append(query)
         if "from checks\n" in query:
             return ""
+        if "SELECT DISTINCT check_start_time" in query:
+            return json.dumps({"check_start_time": FIXTURE_TIME})
         if "AS exported_tests" in query:
             return "\n".join(map(json.dumps, fixture_snapshots()))
         if "LIMIT 1 FORMAT JSONEachRow" in query:
@@ -148,10 +151,11 @@ class SelectionSmoke(unittest.TestCase):
         first._test_exists = lambda test: True
         first.get_previously_failed_tests()
         first.coverage_snapshots()
-        failed_query, snapshot_query_text = first._cidb.queries
+        failed_query, times_query, health_query = first._cidb.queries
         self.assertIn("check_start_time < toDateTime('2026-09-05 00:00:00', 'UTC')", failed_query)
         self.assertNotIn("now()", failed_query)
-        self.assertIn("toDateTime('2026-09-04 23:00:00', 'UTC')", snapshot_query_text)
+        self.assertIn("toDateTime('2026-09-04 23:00:00', 'UTC')", times_query)
+        self.assertIn(f"toDateTime('{FIXTURE_TIME}', 'UTC')", health_query)
 
     def test_production_path_contract(self):
         for path in canonical_coverage_paths("src/Interpreters/Fixture.cpp"):
@@ -200,6 +204,39 @@ class SelectionSmoke(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 validate_snapshots(snapshots, cutoff)
+
+    def test_snapshots_read_only_needed_exports(self):
+        shards = [
+            f"Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, {shard}/8)"
+            for shard in range(1, 9)
+        ]
+        # One export per shard per day, the newest one unhealthy for shard 1.
+        days = [f"2026-09-{day:02d} 03:00:00" for day in range(1, 11)]
+        queries = []
+
+        def query(sql):
+            queries.append(sql)
+            if "SELECT DISTINCT check_start_time" in sql:
+                return "\n".join(json.dumps({"check_start_time": t}) for t in days)
+            rows = [
+                {"check_start_time": t, "check_name": name, "exported_tests": 200}
+                for t in sorted(days, reverse=True)
+                if f"'{t}'" in sql
+                for name in shards
+                if not (t == days[-1] and name == shards[0])
+            ]
+            return "\n".join(map(json.dumps, rows))
+
+        snapshots = load_snapshots(query, "2026-09-11 00:00:00")
+        self.assertEqual(len(snapshots), 3 * 8)
+        by_shard = {}
+        for row in snapshots:
+            by_shard.setdefault(row["check_name"], []).append(row["check_start_time"])
+        self.assertEqual(by_shard[shards[0]], days[-4:-1][::-1])
+        self.assertEqual(by_shard[shards[1]], days[-3:][::-1])
+        # The oldest day is never read.
+        self.assertTrue(all(f"'{days[0]}'" not in sql for sql in queries[1:]))
+        validate_snapshots(snapshots, "2026-09-11 00:00:00")
 
     def test_failing_canary_propagates(self):
         target = Targeting(SimpleNamespace(job_name="Stateless tests"))

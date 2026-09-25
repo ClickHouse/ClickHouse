@@ -14,11 +14,11 @@ from ci.jobs.scripts.coverage_selection import (
     build_candidate_query,
     build_selector_smoke_seed_query,
     canonical_coverage_path,
+    load_snapshots,
     parse_rows,
     protect_selection,
     rank_candidates,
     snapshot_predicate,
-    snapshot_query,
     validate_snapshots,
 )
 from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
@@ -537,8 +537,10 @@ class Targeting:
                 )
                 - timedelta(hours=self.config.coverage_settle_hours)
             ).strftime("%Y-%m-%d %H:%M:%S")
-            snapshots = parse_rows(
-                self._ci_db().query(snapshot_query(cutoff, self.config), log_level="")
+            snapshots = load_snapshots(
+                lambda query: self._ci_db().query(query, log_level=""),
+                cutoff,
+                self.config,
             )
             self.selection_diagnostics.update(
                 {

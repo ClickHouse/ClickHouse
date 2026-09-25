@@ -16,10 +16,10 @@ from time import monotonic
 
 from ci.jobs.scripts.coverage_selection import (
     build_candidate_query,
+    load_snapshots,
     parse_rows,
     protect_selection,
     rank_candidates,
-    snapshot_query,
     timestamp,
     validate_snapshots,
 )
@@ -45,7 +45,7 @@ def evaluate_case(case, cidb=None):
     ]
     hunks = Targeting._parse_diff_hunk_ranges(case["diff"])
     snapshots = (
-        parse_rows(cidb.query(snapshot_query(cutoff), log_level=""))
+        load_snapshots(lambda query: cidb.query(query, log_level=""), cutoff)
         if cidb
         else case["snapshots"]
     )

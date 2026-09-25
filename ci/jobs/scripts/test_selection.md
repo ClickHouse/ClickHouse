@@ -59,6 +59,8 @@ These temporary keys are **not** workflow-run IDs; shards can start in different
 hours. New exports retain second-resolution timestamps. Selecting complete
 workflow runs directly in CIDB remains dependent on that schema migration.
 
+Snapshots are found by listing the distinct `check_start_time` values in the window and counting exported tests only for the newest few timestamps at a time, because counting over the whole window reads tens of GB of `test_name` and times out when CIDB is busy.
+
 ## Validation and rollout
 
 Run deterministic smoke without network access:

@@ -49,23 +49,64 @@ def snapshot_predicate(snapshots):
     return f"(check_start_time, check_name) IN ({keys})"
 
 
-def snapshot_query(cutoff, config=SELECTION_CONFIG):
-    # Temporary identity until CIDB has a workflow run/shard metadata table.
-    # Select independent observations per shard; hours are never workflow IDs.
+def snapshot_times_query(cutoff, config=SELECTION_CONFIG):
+    # Reads only `check_start_time`, which compresses to almost nothing (about
+    # 0.3 s for the 14-day window). It deliberately does not filter by
+    # `check_name`, which would read that column for billions of rows.
     return f"""
-        SELECT check_start_time, check_name, uniqExact(test_name) AS exported_tests
+        SELECT DISTINCT check_start_time
         FROM checks_coverage_lines
         WHERE check_start_time <= toDateTime({sql_string(cutoff)}, 'UTC')
           AND check_start_time > toDateTime({sql_string(cutoff)}, 'UTC')
               - INTERVAL {config.coverage_search_days} DAY
+        FORMAT JSONEachRow
+    """
+
+
+def snapshot_query(times, config=SELECTION_CONFIG):
+    # Temporary identity until CIDB has a workflow run/shard metadata table.
+    # Select independent observations per shard; hours are never workflow IDs.
+    # The explicit timestamps let the primary key skip everything else, as
+    # `uniqExact(test_name)` over the whole window reads tens of GB.
+    keys = ", ".join(f"toDateTime({sql_string(t)}, 'UTC')" for t in times)
+    return f"""
+        SELECT check_start_time, check_name, uniqExact(test_name) AS exported_tests
+        FROM checks_coverage_lines
+        WHERE check_start_time IN ({keys})
           AND check_name LIKE 'Stateless%per_test_coverage%'
           AND match(test_name, '^[0-9]{{5}}_')
         GROUP BY check_start_time, check_name
         HAVING exported_tests >= {config.min_exported_tests_per_shard}
         ORDER BY check_start_time DESC, check_name
-        LIMIT {config.coverage_run_count} BY check_name
         FORMAT JSONEachRow
     """
+
+
+def load_snapshots(query, cutoff, config=SELECTION_CONFIG):
+    """Return the newest `coverage_run_count` healthy snapshots per shard.
+
+    `query` runs SQL and returns the raw `JSONEachRow` response. Timestamps are
+    walked newest first, a few at a time, until every shard seen has enough
+    healthy snapshots, so only the exports actually used are read.
+    """
+    times = sorted(
+        {row["check_start_time"] for row in parse_rows(query(snapshot_times_query(cutoff, config)))},
+        reverse=True,
+    )
+    per_shard = defaultdict(list)
+    # A nightly run exports its shards under two or three timestamps.
+    batch = config.coverage_run_count
+    for start in range(0, len(times), batch):
+        for row in parse_rows(query(snapshot_query(times[start : start + batch], config))):
+            per_shard[row["check_name"]].append(row)
+        if len(per_shard) >= config.coverage_shards and all(
+            len(rows) >= config.coverage_run_count for rows in per_shard.values()
+        ):
+            break
+    snapshots = [row for rows in per_shard.values() for row in rows[: config.coverage_run_count]]
+    snapshots.sort(key=lambda row: row["check_name"])
+    snapshots.sort(key=lambda row: row["check_start_time"], reverse=True)
+    return snapshots
 
 
 def validate_snapshots(snapshots, cutoff, config=SELECTION_CONFIG):
