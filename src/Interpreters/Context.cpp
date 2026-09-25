@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <set>
@@ -387,6 +388,7 @@ namespace Setting
     extern const SettingsBool reader_executor_use_long_connections;
     extern const SettingsUInt64 reader_executor_window_size;
     extern const SettingsUInt64 reader_executor_block_size;
+    extern const SettingsUInt64 reader_executor_plan_look_ahead;
     extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
     extern const SettingsUInt64 reader_executor_max_tail_for_drain;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
@@ -1467,6 +1469,7 @@ ContextData::ContextData(const ContextData &o) :
     partition_id_to_max_block(o.partition_id_to_max_block),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
     query_factories_info(o.query_factories_info),
+    distributed_plan_local_object(o.distributed_plan_local_object),
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
     query_execution_counters(o.query_execution_counters),
@@ -3136,6 +3139,22 @@ Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
     suppress_query_factories_info = prev;
 }
 
+void Context::addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const
+{
+    /// Reading `system.functions` creates the resolver of every function to list its properties, which for `regionTo*`
+    /// touches the embedded dictionaries; that enumeration is not a use by the query, so it runs under
+    /// `SuppressQueryFactoriesInfoScope`, the same guard that keeps it out of `query_log.used_functions`. A context that
+    /// was not copied from a query context has no record.
+    if (suppress_query_factories_info || !distributed_plan_local_object)
+        return;
+    distributed_plan_local_object->add(kind, name);
+}
+
+std::shared_ptr<const DistributedPlanLocalObject> Context::getDistributedPlanLocalObject() const
+{
+    return distributed_plan_local_object;
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     if (suppress_query_factories_info)
@@ -3569,6 +3588,41 @@ Settings Context::getSettingsCopy() const
     return *settings;
 }
 
+namespace
+{
+bool isProfileChange(const SettingChange & change)
+{
+    return change.name == "profile";
+}
+
+/// Enforces the constraints on `changes` the way `applySettingsChanges` applies them: a `profile` change
+/// installs a new constraint set for the changes after it. Each run of changes up to the next `profile`
+/// change is enforced against the constraints in force before it, then applied together with that `profile`
+/// change to a scratch copy of `context`, so a rejected list leaves `context` untouched. Returns the enforced list.
+template <typename Enforce>
+SettingsChanges enforceConstraintsAlongProfileChanges(const ContextPtr & context, const SettingsChanges & changes, Enforce && enforce)
+{
+    auto scratch_context = Context::createCopy(context);
+    SettingsChanges enforced;
+    for (auto begin = changes.begin(); begin != changes.end();)
+    {
+        auto profile = std::find_if(begin, changes.end(), isProfileChange);
+        SettingsChanges segment(begin, profile);
+        enforce(*scratch_context, segment);
+        begin = profile;
+        if (profile != changes.end())
+        {
+            segment.push_back(*profile);
+            ++begin;
+        }
+        /// `setCurrentProfile` checks the profile's own settings against the constraints in force before it.
+        scratch_context->applySettingsChanges(segment);
+        enforced.insert(enforced.end(), segment.begin(), segment.end());
+    }
+    return enforced;
+}
+}
+
 void Context::setSettings(const Settings & settings_)
 {
     std::lock_guard lock(mutex);
@@ -3729,6 +3783,15 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(std::as_const(segment), source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
@@ -3741,14 +3804,46 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
 }
 
+void Context::checkSettingsConstraintsForSettingsReset(
+    const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source)
+{
+    if (std::ranges::none_of(changes_applied_first, isProfileChange))
+    {
+        checkSettingsConstraintsForSettingsReset(names, source);
+        return;
+    }
+    /// The resets take effect after the rest of the statement, so a `profile` change in it decides the constraints.
+    auto scratch_context = Context::createCopy(shared_from_this());
+    scratch_context->applySettingsChanges(changes_applied_first);
+    scratch_context->checkSettingsConstraintsForSettingsReset(names, source);
+}
+
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(segment, source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(changes, source);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.clampToSettingsConstraints(segment, source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
 }
@@ -4028,6 +4123,7 @@ ContextMutablePtr Context::getBufferContext() const
 void Context::makeQueryContext()
 {
     query_context = shared_from_this();
+    distributed_plan_local_object = std::make_shared<DistributedPlanLocalObject>();
 
     /// Throttling should not be inherited, otherwise if you will set
     /// throttling for default profile you will not able to overwrite it
@@ -4138,11 +4234,14 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
+    /// The `region*` functions take them here when they are created, i.e. while the query is analyzed.
+    addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 
 EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 {
+    addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 
@@ -8942,14 +9041,30 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
     res.reader_executor.window_size = settings_ref[Setting::reader_executor_window_size];
     res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
-    /// Below this the executor would serve near-empty windows / stall on tiny source reads.
+    res.reader_executor.plan_look_ahead = settings_ref[Setting::reader_executor_plan_look_ahead];
+    /// Below the floor the executor serves near-empty windows and stalls on tiny source reads; above
+    /// the ceiling one reader holds that much in buffers and cache pins. One band for the three sizes
+    /// keeps `plan_look_ahead >= block_size` satisfiable at every legal `block_size`.
     static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
-    if (res.reader_executor.window_size < min_reader_executor_size)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",
-            res.reader_executor.window_size, min_reader_executor_size);
-    if (res.reader_executor.block_size < min_reader_executor_size)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_block_size: must be at least {} bytes",
-            res.reader_executor.block_size, min_reader_executor_size);
+    static constexpr UInt64 max_reader_executor_size = MAX_READER_EXECUTOR_SIZE;
+    auto validate_reader_executor_size = [](std::string_view name, UInt64 value)
+    {
+        if (value < min_reader_executor_size)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for {}: must be at least {} bytes",
+                value, name, min_reader_executor_size);
+        if (value > max_reader_executor_size)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for {}: must be at most {} bytes",
+                value, name, max_reader_executor_size);
+    };
+    validate_reader_executor_size("reader_executor_window_size", res.reader_executor.window_size);
+    validate_reader_executor_size("reader_executor_block_size", res.reader_executor.block_size);
+    validate_reader_executor_size("reader_executor_plan_look_ahead", res.reader_executor.plan_look_ahead);
+    /// Looking ahead less than one source block is meaningless, so reject the combination rather than
+    /// silently run at `block_size` and let the setting report a value the executor ignores.
+    if (res.reader_executor.plan_look_ahead < res.reader_executor.block_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} for reader_executor_plan_look_ahead: must be at least reader_executor_block_size ({} bytes)",
+            res.reader_executor.plan_look_ahead, res.reader_executor.block_size);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass

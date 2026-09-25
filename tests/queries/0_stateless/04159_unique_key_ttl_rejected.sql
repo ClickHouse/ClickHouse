@@ -8,7 +8,7 @@
 -- TTL. REMOVE TTL stays allowed and ATTACH is exempt (loads a pre-existing UK+TTL
 -- table); non-UNIQUE-KEY tables are unaffected. All keys distinct (dedup is a later PR).
 
-SET allow_experimental_unique_key = 1;
+SET enable_unique_key = 1;
 
 DROP TABLE IF EXISTS uk_ttl;
 

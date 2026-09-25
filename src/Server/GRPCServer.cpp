@@ -317,6 +317,20 @@ namespace
         }
     };
 
+    /// A protobuf map has no order, so `profile` goes first for its constraints to bind the other settings.
+    SettingsChanges settingsChangesFromMap(const google::protobuf::Map<std::string, std::string> & map)
+    {
+        SettingsChanges changes;
+        for (const auto & [key, value] : map)
+        {
+            if (key == "profile")
+                changes.insert(changes.begin(), {key, value});
+            else
+                changes.push_back({key, value});
+        }
+        return changes;
+    }
+
     /// Gets session's timeout from query info or from the server config.
     std::chrono::steady_clock::duration getSessionTimeout(const GRPCQueryInfo & query_info, const Poco::Util::AbstractConfiguration & config)
     {
@@ -954,12 +968,7 @@ namespace
         query_scope = QueryScope::createForQueryContext();
         query_context = session->makeQueryContext(std::move(client_info));
 
-        /// Prepare settings.
-        SettingsChanges settings_changes;
-        for (const auto & [key, value] : query_info.settings())
-        {
-            settings_changes.push_back({key, value});
-        }
+        auto settings_changes = settingsChangesFromMap(query_info.settings());
         query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         query_context->applySettingsChanges(settings_changes);
 
@@ -1286,9 +1295,7 @@ namespace
                     {
                         temp_context = Context::createCopy(query_context);
                         external_table_context = temp_context;
-                        SettingsChanges settings_changes;
-                        for (const auto & [key, value] : external_table.settings())
-                            settings_changes.push_back({key, value});
+                        auto settings_changes = settingsChangesFromMap(external_table.settings());
                         external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
