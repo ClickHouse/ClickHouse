@@ -522,15 +522,18 @@ def test_iceberg_on_a_native_gcs_disk(started_cluster):
         "SETTINGS disk = 'gcs_iceberg_disk', iceberg_use_version_hint = 1"
     )
 
+    # Writing to Iceberg is a beta feature, gated behind its own setting.
     node.query(
-        "INSERT INTO gcs_iceberg SELECT number, toString(number) FROM numbers(100)"
+        "INSERT INTO gcs_iceberg SELECT number, toString(number) FROM numbers(100)",
+        settings={"allow_insert_into_iceberg": 1},
     )
     assert node.query("SELECT count(), sum(a) FROM gcs_iceberg").strip() == "100\t4950"
 
     # A second commit advances the snapshot and rewrites `version-hint.text` against the etag of the
     # version it read, which is the conditional write the metadata override exists for.
     node.query(
-        "INSERT INTO gcs_iceberg SELECT number, toString(number) FROM numbers(100, 100)"
+        "INSERT INTO gcs_iceberg SELECT number, toString(number) FROM numbers(100, 100)",
+        settings={"allow_insert_into_iceberg": 1},
     )
     assert node.query("SELECT count() FROM gcs_iceberg").strip() == "200"
 
