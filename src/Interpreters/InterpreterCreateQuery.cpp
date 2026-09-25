@@ -76,6 +76,10 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 #include <Access/Common/AccessRightsElement.h>
 
 #include <DataTypes/DataTypeFactory.h>
@@ -963,12 +967,26 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
         }
 
+        /// A full-definition `ATTACH` is fresh user input, but a `Replicated` database replays it
+        /// under the same loading mode. Only the initiator has the session settings that accepted
+        /// its codecs. Keeper recovery and Shared Catalog replay also reuse stored definitions.
+        bool validate_projection_codecs = isFreshTableDefinition(mode, create.attach_short_syntax)
+            && !getContext()->isRecoveryFromStoredMetadata();
+        if (const auto metadata_txn = getContext()->getZooKeeperMetadataTransaction())
+            validate_projection_codecs &= metadata_txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        if (getContext()->getClientInfo().is_shared_catalog_internal)
+            validate_projection_codecs &= SharedDatabaseCatalog::isInitialQuery(getContext());
+#endif
+
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(
                     projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
-                ProjectionDescription::validateDeclaredColumnCodecs(projection, getContext(), mode);
+                if (validate_projection_codecs)
+                    ProjectionDescription::validateDeclaredColumnCodecs(
+                        projection, getContext(), mode, create.attach_short_syntax);
                 properties.projections.add(std::move(projection));
             }
 

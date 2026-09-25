@@ -350,6 +350,78 @@ def test_projection_codec_alter_replay_uses_initiator_settings(started_cluster):
     dummy_node.query(f"DROP DATABASE {database} SYNC")
 
 
+def test_projection_codec_type_change_replay_uses_initiator_settings(started_cluster):
+    database = "projection_codec_type_change_replay"
+    main_node.query(
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica1')"
+    )
+    dummy_node.query(
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica2')"
+    )
+
+    main_node.query(
+        f"CREATE TABLE {database}.t (k UInt64, x Float64) "
+        "ENGINE = MergeTree ORDER BY k"
+    )
+    main_node.query(
+        f"ALTER TABLE {database}.t ADD PROJECTION p "
+        "(x CODEC(Gorilla)) AS (SELECT k, x ORDER BY k)"
+    )
+    main_node.query(
+        f"ALTER TABLE {database}.t MODIFY COLUMN x UInt64",
+        settings={"allow_suspicious_codecs": 1},
+    )
+
+    # The changed projection codec was accepted against UInt64 on the initiator. The secondary uses
+    # allow_suspicious_codecs = 0 and must trust that decision while replaying the ALTER.
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    assert_eq_with_retry(
+        dummy_node,
+        "SELECT codecs FROM system.projections "
+        f"WHERE database = '{database}' AND table = 't' AND name = 'p'",
+        "{'x':'CODEC(Gorilla(8))'}\n",
+    )
+
+    main_node.query(f"DROP DATABASE {database} SYNC")
+    dummy_node.query(f"DROP DATABASE {database} SYNC")
+
+
+def test_projection_codec_full_attach_replay_uses_initiator_settings(started_cluster):
+    database = "projection_codec_full_attach_replay"
+    main_node.query(
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica1')"
+    )
+    dummy_node.query(
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica2')"
+    )
+
+    table_uuid = main_node.query("SELECT generateUUIDv4()").strip()
+    main_node.query(
+        f"ATTACH TABLE {database}.t UUID '{table_uuid}' "
+        "(k UInt64, x UInt64, "
+        "PROJECTION p (x CODEC(Gorilla)) AS (SELECT k, x ORDER BY k)) "
+        "ENGINE = MergeTree ORDER BY k",
+        settings={"allow_suspicious_codecs": 1},
+    )
+
+    # Full ATTACH retains ATTACH loading mode when replayed. Neither an existing secondary nor a
+    # replica recovering the stored definition has the initiator's session setting.
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    competing_node.query(
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica3')"
+    )
+    for node in (dummy_node, competing_node):
+        assert_eq_with_retry(
+            node,
+            "SELECT codecs FROM system.projections "
+            f"WHERE database = '{database}' AND table = 't' AND name = 'p'",
+            "{'x':'CODEC(Gorilla(8))'}\n",
+        )
+
+    for node in (main_node, dummy_node, competing_node):
+        node.query(f"DROP DATABASE {database} SYNC")
+
+
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
 def test_delete_from_table(started_cluster, engine):
     database = f"delete_from_table_{engine}"

@@ -104,6 +104,23 @@ namespace MergeTreeSetting
 namespace
 {
 
+bool shouldValidateProjectionCodecs(const ContextPtr & context)
+{
+    /// A `Replicated` database and Shared Catalog execute an `ALTER` again on secondary replicas.
+    /// The initiator already accepted session-gated declarations, and a secondary may not have the
+    /// same session settings.
+    const auto metadata_txn = context->getZooKeeperMetadataTransaction();
+    if (metadata_txn && !metadata_txn->isInitialQuery())
+        return false;
+
+#if CLICKHOUSE_CLOUD
+    if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
+        return false;
+#endif
+
+    return true;
+}
+
 /// Whether the two names name one setting: a `MergeTree` setting can have two names.
 bool isSameSetting(const String & left, const String & right)
 {
@@ -1873,12 +1890,21 @@ void AlterCommands::apply(
 
     /// Changes in columns may lead to changes in projections
     ProjectionsDescription new_projections;
+    const bool validate_projection_codecs = shouldValidateProjectionCodecs(context);
     for (const auto & projection : metadata_copy.projections)
     {
         try
         {
             /// Check if we can still build projection from new metadata.
             auto new_projection = ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context);
+            if (validate_projection_codecs)
+            {
+                const ProjectionDescription * previous_projection = nullptr;
+                if (metadata.projections.has(projection.name))
+                    previous_projection = &metadata.projections.get(projection.name);
+                ProjectionDescription::validateDeclaredColumnCodecs(
+                    new_projection, context, LoadingStrictnessLevel::CREATE, true, previous_projection);
+            }
             /// Check if new metadata has the same keys as the old one.
             if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
@@ -2147,18 +2173,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         projection_names.insert(projection_name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
 
-    /// A Replicated database and Shared Catalog execute an ALTER again on secondary replicas. The
-    /// initiator has already accepted session-gated declarations; a secondary may not have the same
-    /// session settings and must not wedge its DDL queue by rejecting the committed query.
-    const auto metadata_txn = context->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay = context->getClientInfo().is_shared_catalog_internal
-        && !SharedDatabaseCatalog::isInitialQuery(context);
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-    const bool validate_new_projection_codecs = !is_ddl_replay && !is_shared_catalog_replay;
+    const bool validate_projection_codecs = shouldValidateProjectionCodecs(context);
 
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2533,7 +2548,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             /// Building the projection here would otherwise move failures for every other
             /// `ADD PROJECTION` from `apply` to this point.
-            if (validate_new_projection_codecs
+            if (validate_projection_codecs
                 && !(command.if_not_exists && projection_names.contains(command.projection_name))
                 && command.projection_decl->as<const ASTProjectionDeclaration &>().columns)
             {

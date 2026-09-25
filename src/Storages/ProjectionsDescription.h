@@ -110,10 +110,14 @@ struct ProjectionDescription
     /// is reached with the global context, so a check placed there would both miss the user's settings
     /// and make a table using a suspicious codec impossible to attach. Takes the built projection
     /// because a declaration need not spell out the type, and the type-sensitive checks need it.
+    /// When rebuilding an existing projection after an `ALTER`, pass its previous description so
+    /// declarations whose resolved type did not change are not revalidated.
     static void validateDeclaredColumnCodecs(
         const ProjectionDescription & projection,
         const ContextPtr & query_context,
-        LoadingStrictnessLevel mode);
+        LoadingStrictnessLevel mode,
+        bool attach_short_syntax = true,
+        const ProjectionDescription * previous_projection = nullptr);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
