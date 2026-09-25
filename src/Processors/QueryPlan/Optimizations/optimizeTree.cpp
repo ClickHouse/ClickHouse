@@ -849,6 +849,9 @@ void optimizeTreeSecondPass(
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
 
+    if (optimization_settings.query_plan_join_shard_by_partitions && !optimization_settings.make_distributed_plan)
+        optimizeJoinByPartitions(root, optimization_settings.max_threads);
+
     /// Shard `parallel_full_sorting_merge` joins by the hash of the join keys. The `join_algorithm`
     /// choice is the gate (this is a no-op unless a join uses that algorithm).
     ///

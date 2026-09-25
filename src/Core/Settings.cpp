@@ -2830,6 +2830,10 @@ is added so the join order optimizer can consider direct (A JOIN C) plans.
 Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash, full_sorting_merge and parallel_full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
 )", 0) \
     \
+    DECLARE(Bool, query_plan_join_shard_by_partitions, false, R"(
+Join two `MergeTree` tables partition by partition when both are partitioned by the same function of the join keys, e.g. `PARTITION BY toYYYYMM(date)` and `ON l.date = r.date`. Partitions that cannot produce output are not read. Applies to the `hash` and `parallel_hash` algorithms when the join cannot spill to disk.
+)", 0) \
+    \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
 )", 0) \

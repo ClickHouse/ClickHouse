@@ -414,6 +414,13 @@ public:
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
+    /// Output one port per group of partition ids, in the order of `groups`, even if a group has nothing to
+    /// read. Partitions outside of all the groups are not read. Used by `optimizeJoinByPartitions`.
+    void requestOutputPartitionGroupsThroughSeparatePorts(const std::vector<Strings> & groups);
+
+    /// Whether the steps above rely on which rows go to which output port, so no other port layout can be requested.
+    bool hasRequestedOutputPortLayout() const { return output_each_partition_through_separate_port || num_partition_groups != 0; }
+
     /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
     /// window functions.
     enum class ProcessorKind : uint8_t { Aggregation, Distinct, Window };
@@ -655,6 +662,9 @@ private:
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
+    /// See `requestOutputPartitionGroupsThroughSeparatePorts`.
+    std::unordered_map<String, size_t> partition_to_group;
+    size_t num_partition_groups = 0;
 
     PartitionIdToMaxBlockPtr max_block_numbers_to_read;
 
@@ -736,6 +746,14 @@ private:
         std::optional<ActionsDAG> & result_projection);
 
     Pipe groupPartitionsByStreams(AnalysisResult & result);
+
+    Pipe readByPartitionGroups(
+        AnalysisResult & result,
+        const MergeTreeIndexBuildContextPtr & index_build_context,
+        std::optional<ActionsDAG> & result_projection);
+
+    /// Ignored for parallel replicas, like the primary-key layers (see `spreadMarkRanges`).
+    bool usePartitionGroups() const { return num_partition_groups != 0 && !is_parallel_reading_from_replicas; }
 
     Pipe readByLayers(
         const RangesInDataParts & parts_with_ranges,

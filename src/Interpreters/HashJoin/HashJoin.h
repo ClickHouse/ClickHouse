@@ -161,6 +161,25 @@ public:
         return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
     }
 
+    std::shared_ptr<IJoin> cloneForShard(const std::shared_ptr<TableJoin> & table_join_,
+        SharedHeader,
+        SharedHeader right_sample_block_,
+        size_t shard,
+        JoinShardsPtr shards_) const override
+    {
+        return createForShard(table_join_, right_sample_block_, any_take_last_row, stats_collecting_params, shard, std::move(shards_));
+    }
+
+    /// A `HashJoin` holding one shard of the right side. It keeps the size statistics of its own shard,
+    /// so the next execution preallocates the hash table for the size of the shard.
+    static std::shared_ptr<HashJoin> createForShard(
+        const std::shared_ptr<TableJoin> & table_join_,
+        SharedHeader right_sample_block_,
+        bool any_take_last_row_,
+        const HashJoinStatsCollectingParams & stats_collecting_params_,
+        size_t shard,
+        JoinShardsPtr shards_);
+
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
@@ -700,6 +719,12 @@ private:
     bool shared_runtime_filters_publish_attempted = false;
 
     const HashJoinStatsCollectingParams stats_collecting_params;
+
+    /// Set for a shard (see `createForShard`): the size limits are checked against the size of all the shards.
+    JoinShardsPtr shards;
+    /// The size of this shard already added to `shards`.
+    size_t rows_in_shards = 0;
+    size_t bytes_in_shards = 0;
     bool build_phase_finished = false;
     bool probe_phase_finished = false;
 
