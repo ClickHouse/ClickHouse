@@ -2350,8 +2350,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     };
     for (const auto & entry : reader_executor_sizes)
     {
-        performanceSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"4096", "16384", "1048576", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"4096", "8192", "16384", "65536", "1048576"}, false)}});
+        performanceSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"131072", "1048576", "'10M'"}, false)}});
+        serverSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"131072", "1048576", "'10M'"}, false)}});
     }
     for (const auto & entry : max_columns_values)
     {
