@@ -897,7 +897,7 @@ struct ByteJaroSimilarityImpl
         /// Window size to search for matches in the other string
         const int max_range = std::max(0, std::max(s1len, s2len) / 2 - 1);
 
-if (s1len <= 64 && s2len <= 64)
+        if (s1len <= 64 && s2len <= 64)
         {
             return jaroSmall(
                 reinterpret_cast<const UInt8 *>(haystack), s1len, reinterpret_cast<const UInt8 *>(needle), s2len, max_range);
