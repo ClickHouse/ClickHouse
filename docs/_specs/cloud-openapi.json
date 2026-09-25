@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1145498",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1157335",
       "email": "support@clickhouse.com"
     }
   },
@@ -378,7 +378,7 @@
     "/v1/organizations/{organizationId}/prometheus": {
       "get": {
         "summary": "Get organization metrics",
-        "description": "Deprecated. Use the Prometheus service discovery endpoint (/v1/organizations/{organizationId}/prometheus/discovery) instead. This endpoint is not available for new organizations; contact ClickHouse support to request access. Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted.",
+        "description": "**Deprecated.** This endpoint is disabled on 1 January 2027. It is already disabled for new organizations.\n\nMigrate before then to the service discovery endpoint, `GET /v1/organizations/{organizationId}/prometheus/discovery`. It returns one scrape target per service in the [`http_sd`](https://prometheus.io/docs/prometheus/latest/http_sd/) format, and Prometheus picks up new and deleted services automatically. The [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) has a `prometheus.yml` example.\n\nIf you need this endpoint after 1 January 2027, contact ClickHouse support to have it enabled for your organization.\n\nReturns Prometheus metrics for the services in the organization. Only services the API key is authorized to view are included.",
         "operationId": "organizationPrometheusGet",
         "parameters": [
           {
@@ -676,7 +676,7 @@
           "Role Management"
         ],
         "x-mint": {
-          "content": "Returns all available roles (system + custom) for an organization."
+          "content": "Returns all available roles (system + custom) for an organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -901,7 +901,7 @@
           "Role Management"
         ],
         "x-mint": {
-          "content": "Returns details for a specific role."
+          "content": "Returns details for a specific role.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       },
       "patch": {
@@ -1950,7 +1950,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Updates basic service details like service name or IP access list."
+          "content": "Updates basic service details like service name or IP access list.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -3007,7 +3007,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Sets a new password for the service"
+          "content": "Sets a new password for the service\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -6468,7 +6468,7 @@
           "API keys"
         ],
         "x-mint": {
-          "content": "Updates API key properties."
+          "content": "Updates API key properties.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-api-keys` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -6577,7 +6577,7 @@
           "API keys"
         ],
         "x-mint": {
-          "content": "Deletes API key. Only a key not used to authenticate the active request can be deleted."
+          "content": "Deletes API key. Only a key not used to authenticate the active request can be deleted.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-api-keys` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -7594,7 +7594,7 @@
           "Organization"
         ],
         "x-mint": {
-          "content": "Returns a list of all organization activities."
+          "content": "Returns a list of all organization activities.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-activities` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -7707,7 +7707,7 @@
           "Organization"
         ],
         "x-mint": {
-          "content": "Returns a single organization activity by ID."
+          "content": "Returns a single organization activity by ID.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-activities` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -8194,7 +8194,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Returns a list of ClickPipes."
+          "content": "Returns a list of ClickPipes.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -8315,7 +8315,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Create a new ClickPipe."
+          "content": "Create a new ClickPipe.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -8556,12 +8556,12 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Returns the specified ClickPipe."
+          "content": "Returns the specified ClickPipe.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "patch": {
         "summary": "Update ClickPipe",
-        "description": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce) are not applied, except schema registry credentials, which are rejected.",
+        "description": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce, tombstoneMode) are not applied, except schema registry credentials, which are rejected.",
         "operationId": "clickPipeUpdate",
         "parameters": [
           {
@@ -8687,7 +8687,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce) are not applied, except schema registry credentials, which are rejected."
+          "content": "Update the specified ClickPipe. Source fields not present in the per-source update schemas are immutable after creation. For Kafka sources, values submitted for immutable fields (type, format, brokers, topics, consumerGroup, offset, schemaRegistry, exactlyOnce, tombstoneMode) are not applied, except schema registry credentials, which are rejected.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -8806,7 +8806,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Delete the specified ClickPipe."
+          "content": "Delete the specified ClickPipe.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -8930,7 +8930,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Returns the advanced settings for the specified ClickPipe."
+          "content": "Returns the advanced settings for the specified ClickPipe.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "put": {
@@ -9061,7 +9061,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans."
+          "content": "Update the advanced settings for the specified ClickPipe. Send key-value pairs where values can be strings, numbers, or booleans.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -9320,7 +9320,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Change scaling settings for the specified ClickPipe. This endpoint supports Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob).\n\n**Note:** For database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery), use the [Update CDC ClickPipes scaling](/products/cloud/api-reference/clickpipes/update-cdc-clickpipes-scaling) endpoint instead."
+          "content": "Change scaling settings for the specified ClickPipe. This endpoint supports Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob).\n\n**Note:** For database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery), use the [Update CDC ClickPipes scaling](/products/cloud/api-reference/clickpipes/update-cdc-clickpipes-scaling) endpoint instead.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -9453,7 +9453,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Start, stop or resync ClickPipe. Stopping a ClickPipe will stop the ingestion process from any state. Starting is allowed for ClickPipes in the \"Stopped\" state or with a \"Failed\" state. Resyncing is only for Postgres and MySQL pipes and can be done from any state."
+          "content": "Start, stop or resync ClickPipe. Stopping a ClickPipe will stop the ingestion process from any state. Starting is allowed for ClickPipes in the \"Stopped\" state or with a \"Failed\" state. Resyncing is only for Postgres and MySQL pipes and can be done from any state.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -9567,7 +9567,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Get scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. For billing purposes, 2 CPU cores and 8 GB of RAM [correspond](https://clickhouse.com/docs/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](/products/cloud/api-reference/clickpipes/get-clickpipe).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**"
+          "content": "Get scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. For billing purposes, 2 CPU cores and 8 GB of RAM [correspond](https://clickhouse.com/docs/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](/products/cloud/api-reference/clickpipes/get-clickpipe).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "patch": {
@@ -9688,7 +9688,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Update scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. Scaling settings may take a few minutes to fully propagate.\n\nFor billing purposes, 2 CPU cores and 8 GB of RAM [correspond](https://clickhouse.com/docs/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit. If your organization tier changes, database ClickPipes will be [rescaled](https://clickhouse.com/docs/cloud/manage/billing/overview#compute) appropriately.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](/products/cloud/api-reference/clickpipes/get-clickpipe).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**"
+          "content": "Update scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. Scaling settings may take a few minutes to fully propagate.\n\nFor billing purposes, 2 CPU cores and 8 GB of RAM [correspond](https://clickhouse.com/docs/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit. If your organization tier changes, database ClickPipes will be [rescaled](https://clickhouse.com/docs/cloud/manage/billing/overview#compute) appropriately.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](/products/cloud/api-reference/clickpipes/get-clickpipe).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -16216,7 +16216,7 @@
           "Organization"
         ],
         "x-mint": {
-          "content": "Create a new BYOC Infrastructure in the organization. Returns the configuration of the newly created infrastructure"
+          "content": "Create a new BYOC Infrastructure in the organization. Returns the configuration of the newly created infrastructure\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -16327,7 +16327,7 @@
           "Organization"
         ],
         "x-mint": {
-          "content": "Removes a BYOC Infrastructure from the organization"
+          "content": "Removes a BYOC Infrastructure from the organization\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       },
       "patch": {
@@ -16448,7 +16448,7 @@
           "Organization"
         ],
         "x-mint": {
-          "content": "Update configuration of the BYOC infrastructure. Returns the modified infrastructure"
+          "content": "Update configuration of the BYOC infrastructure. Returns the modified infrastructure\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:manage` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -16565,7 +16565,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Returns a list of reverse private endpoints for the specified service."
+          "content": "Returns a list of reverse private endpoints for the specified service.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -16686,7 +16686,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Create a new reverse private endpoint."
+          "content": "Create a new reverse private endpoint.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -16810,7 +16810,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Returns the reverse private endpoint with the specified ID."
+          "content": "Returns the reverse private endpoint with the specified ID.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "delete": {
@@ -16929,7 +16929,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Delete the reverse private endpoint with the specified ID."
+          "content": "Delete the reverse private endpoint with the specified ID.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "patch": {
@@ -17060,7 +17060,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Update mutable fields for an existing reverse private endpoint. customPrivateDnsMappings is a full replacement list. Use an empty array to clear mappings."
+          "content": "Update mutable fields for an existing reverse private endpoint. customPrivateDnsMappings is a full replacement list. Use an empty array to clear mappings.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -22156,6 +22156,14 @@
           }
         }
       },
+      "OrganizationCapabilities": {
+        "properties": {
+          "snapshots": {
+            "description": "Whether the organization is eligible to use service snapshots: true only when the organization has the snapshots feature enabled, is on a PPv2 tier, and has the backups entitlement — the same conditions enforced when a snapshotConfiguration is saved. Check this before configuring snapshots on a service. Snapshots apply to primary services only, so a secondary/replica service is rejected regardless of organization eligibility.",
+            "type": "boolean"
+          }
+        }
+      },
       "Organization": {
         "properties": {
           "id": {
@@ -22189,6 +22197,9 @@
           "enableCoreDumps": {
             "description": "Whether crash reports (core dumps) collection is enabled for services in the organization. When disabled at the organization level, individual services cannot enable crash reports.",
             "type": "boolean"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/OrganizationCapabilities"
           }
         }
       },
@@ -23046,8 +23057,9 @@
             "type": "string"
           },
           "topics": {
-            "description": "Topics of the Kafka source.",
-            "type": "string"
+            "description": "One or more Kafka topics as a comma-separated string. All topics must have the same schema and are ingested into the same destination table by a single ClickPipe.",
+            "type": "string",
+            "example": "topic1,topic2"
           },
           "consumerGroup": {
             "description": "Consumer group of the Kafka source. If not provided \"clickpipes-<<ID>>\" will be used.",
@@ -23118,6 +23130,17 @@
               "boolean",
               "null"
             ]
+          },
+          "tombstoneMode": {
+            "description": "How Kafka tombstone records are handled. Set to \"delete\" to delete the matching destination row. Requires exactly-once delivery and can only be set at pipe creation.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "delete"
+            ],
+            "example": "delete"
           }
         }
       },
@@ -23152,8 +23175,9 @@
             "type": "string"
           },
           "topics": {
-            "description": "Topics of the Kafka source.",
-            "type": "string"
+            "description": "One or more Kafka topics as a comma-separated string. All topics must have the same schema and are ingested into the same destination table by a single ClickPipe.",
+            "type": "string",
+            "example": "topic1,topic2"
           },
           "consumerGroup": {
             "description": "Consumer group of the Kafka source. If not provided \"clickpipes-<<ID>>\" will be used.",
@@ -23224,6 +23248,17 @@
               "boolean",
               "null"
             ]
+          },
+          "tombstoneMode": {
+            "description": "How Kafka tombstone records are handled. Set to \"delete\" to delete the matching destination row. Requires exactly-once delivery and can only be set at pipe creation.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "delete"
+            ],
+            "example": "delete"
           },
           "credentials": {
             "description": "Credentials for Kafka source. Choose one that is supported by the authentication method.",
@@ -23311,6 +23346,40 @@
           }
         }
       },
+      "ClickPipeKinesisSchemaRegistry": {
+        "properties": {
+          "type": {
+            "description": "Type of the schema registry. Kinesis ClickPipes support the AWS Glue Schema Registry, which authenticates with IAM instead of credentials.",
+            "type": "string",
+            "enum": [
+              "glue"
+            ]
+          },
+          "glueRegion": {
+            "description": "AWS region of the Glue Schema Registry.",
+            "type": "string",
+            "example": "us-east-1"
+          },
+          "glueRegistryName": {
+            "description": "Name of the Glue Schema Registry.",
+            "type": "string",
+            "example": "my-registry"
+          },
+          "glueRoleArn": {
+            "description": "IAM role to assume for Glue Schema Registry access. Defaults to the IAM identity of the Kinesis source.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "arn:aws:iam::123456789012:role/MyGlueRegistryRole"
+          }
+        },
+        "required": [
+          "type",
+          "glueRegion",
+          "glueRegistryName"
+        ]
+      },
       "ClickPipeKinesisSource": {
         "properties": {
           "format": {
@@ -23372,6 +23441,16 @@
               "null"
             ],
             "example": "arn:aws:iam::123456789012:role/MyRole"
+          },
+          "schemaRegistry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipeKinesisSchemaRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -23437,6 +23516,16 @@
             ],
             "example": "arn:aws:iam::123456789012:role/MyRole"
           },
+          "schemaRegistry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipeKinesisSchemaRegistry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "accessKey": {
             "oneOf": [
               {
@@ -23448,7 +23537,7 @@
             ]
           },
           "protobufSchema": {
-            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Required with Protobuf format and not supported with other formats.",
+            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Required with Protobuf format unless a schema registry is configured, and not supported with other formats.",
             "type": "string",
             "example": "c3ludGF4ID0gInByb3RvMyI7IG1lc3NhZ2UgRXZlbnQge30=",
             "maxLength": 1048576,
@@ -25967,7 +26056,7 @@
           },
           "sortingKey": {
             "type": "array",
-            "description": "Sorting key of the destination table. List of columns.",
+            "description": "Sorting key of the destination table. An entry that matches the name of a column declared in `columns` is used as that column. Any other entry is used as a SQL expression, for example a JSON sub-path such as `payload.workspace_id`. Entries must not contain commas, and every component must be non-Nullable.",
             "items": {
               "type": "string"
             }
@@ -26761,6 +26850,10 @@
               "scim_group_update",
               "scim_group_delete",
               "organization_saml_connection_delete",
+              "organization_update_saml_query_ownership_migration",
+              "organization_approved_domain_verify",
+              "organization_approved_domain_update",
+              "organization_approved_domain_delete",
               "datadog_integration_create",
               "datadog_integration_delete",
               "organization_update_spend_alert",
@@ -26768,6 +26861,7 @@
               "organization_update_private_endpoints",
               "organization_update_pci_compliance",
               "organization_update_hipaa_status",
+              "organization_update_public_preview",
               "transfer_credits_in",
               "transfer_credits_out",
               "promo_code_claim",
@@ -32928,7 +33022,7 @@
           },
           "groups": {
             "type": "array",
-            "description": "A list of groups to which the user belongs. Role may be derived from group display or value.",
+            "description": "A list of groups to which the user belongs. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserGroup"
             }
@@ -32942,7 +33036,7 @@
           },
           "roles": {
             "type": "array",
-            "description": "A list of roles for the user.",
+            "description": "A list of roles for the user. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserRole"
             }
@@ -33150,7 +33244,7 @@
           },
           "groups": {
             "type": "array",
-            "description": "A list of groups to which the user belongs. Role may be derived from group display or value.",
+            "description": "A list of groups to which the user belongs. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserGroup"
             }
@@ -33164,7 +33258,7 @@
           },
           "roles": {
             "type": "array",
-            "description": "A list of roles for the user.",
+            "description": "A list of roles for the user. Read-only; ignored on write. Membership is managed via the Groups endpoints.",
             "items": {
               "$ref": "#/components/schemas/ScimUserRole"
             }
