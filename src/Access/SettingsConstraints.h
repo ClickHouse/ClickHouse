@@ -80,7 +80,6 @@ public:
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
-    /// `http_method_implies_readonly` is the per-request fact recorded by `setReadOnlyIfHTTPMethodIdempotent`.
     void check(const Settings & current_settings, const SettingChange & change, SettingSource source, bool http_method_implies_readonly = false) const;
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source, bool http_method_implies_readonly = false) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source, bool http_method_implies_readonly = false) const;

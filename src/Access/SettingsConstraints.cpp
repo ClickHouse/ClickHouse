@@ -74,9 +74,8 @@ bool isChangeDisablingTheAnalyzer(std::string_view resolved_name, const Field & 
     return resolved_name == "allow_experimental_analyzer" && !SettingFieldBool{new_value}.value;
 }
 
-/// The restriction order of `readonly` is not its numeric order: 0 allows writes, 2 forbids writes but
-/// leaves every other setting changeable, 1 forbids both. 1 is the strictest value, so it is the only one
-/// a read-only session can tighten to.
+/// The restriction order of `readonly` is not its numeric order: 0 allows writes, 2 forbids writes but leaves
+/// every other setting changeable, 1 forbids both, so 1 is the strictest value.
 bool isReadonlyTightening(
     const AccessControl * access_control,
     const Settings & current_settings,
@@ -514,7 +513,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
              .check(change, new_value, reaction, source))
         return false;
 
-    /// `Checker::check` clamps `change.value` to a `MIN`/`MAX` bound, and only the strictest value is admissible here.
+    /// `Checker::check` clamps `change.value` to a `MIN`/`MAX` bound.
     if (allow_readonly_tightening)
         return isReadonlyTightening(
             access_control, current_settings, setting_name, castValueOfSetting<Settings>(change.name, change.value));

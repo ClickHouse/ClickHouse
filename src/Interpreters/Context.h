@@ -426,8 +426,7 @@ protected:
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
-    /// Whether the request this context serves arrived over an HTTP method the HTTP interface does not
-    /// treat as mutating. Set once per request by `setReadOnlyIfHTTPMethodIdempotent`, never cleared.
+    /// Set once per request by `setReadOnlyIfHTTPMethodIdempotent`, never cleared.
     bool http_method_implies_readonly = false;
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
