@@ -127,5 +127,28 @@ run gate_2 "SELECT k FROM t_05243 ORDER BY k DESC LIMIT 5" ", use_query_conditio
 echo "--- query condition cache lookups"
 events nowhere_1 nowhere_2 nowhere_limit nowhere_asc where_1 where_2 rewritten_nowhere rewritten_where file_b_1 file_b_2 file_b_after_a_changed external_1 external_2 gate_1 gate_2
 
+echo "--- a single stream"
+# With one stream, the exact final threshold comes from `MergeSortingTransform` when it generates the
+# sorted result. Of the three row groups, the first holds the values 1000, 999, 998, 997, the second one's
+# best value is 997, and the third holds 2000. With `k >= 997` evaluated in the reader, the second and
+# third row groups return one row each, however far the reader runs ahead of the threshold: too few to make
+# the sorting publish anything while it consumes them, but 2000 tightens the threshold of `LIMIT 4` from
+# 997 to 998, beyond the best value of the second row group. So only the final threshold records the
+# second row group as holding no row of the result.
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${DATA_DIR}_single/data.parquet')
+    SELECT multiIf(number < 4, 1000 - number, number = 1500, 997, number = 2500, 2000, number % 100) AS k FROM numbers(3001)
+    SETTINGS output_format_parquet_row_group_size = 1000, engine_file_truncate_on_insert = 1"
+touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}_single/data.parquet"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05243_single (k UInt64) ENGINE = File(Parquet, '${DATA_DIR}_single/data.parquet')"
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CONDITION CACHE"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT k FROM t_05243_single WHERE k >= 997 ORDER BY k DESC LIMIT 4
+    SETTINGS ${SETTINGS}, max_threads = 1, max_parsing_threads = 1, max_block_size = 65536,
+        optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, input_format_parquet_filter_push_down = 1"
+${CLICKHOUSE_CLIENT} --query "SELECT matching_marks FROM system.query_condition_cache"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05243_single"
+rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}_single"
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05243"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}"

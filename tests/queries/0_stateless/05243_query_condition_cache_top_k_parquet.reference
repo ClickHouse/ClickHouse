@@ -83,3 +83,9 @@ external_1	1	0
 external_2	1	1
 gate_1	0	0
 gate_2	0	0
+--- a single stream
+2000
+1000
+999
+998
+101
