@@ -1,4 +1,7 @@
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/JoinOperator.h>
+#include <Interpreters/MergeJoin.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -107,6 +110,52 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
 
 namespace JoinCommon
 {
+
+bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKind kind, JoinStrictness strictness)
+{
+    const auto & join_algorithms = join_settings.join_algorithms;
+    for (auto algorithm : join_algorithms)
+    {
+        switch (algorithm)
+        {
+            case JoinAlgorithm::FULL_SORTING_MERGE:
+            case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE:
+                if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(kind, strictness))
+                    return true;
+                break;
+            case JoinAlgorithm::PARTIAL_MERGE:
+                if (MergeJoin::isSupported(kind, strictness))
+                    return true;
+                break;
+            case JoinAlgorithm::DIRECT:
+                /// Only over a key-value right table, and only for the strictness it already has.
+                break;
+            case JoinAlgorithm::IE_JOIN:
+                /// Only for an inequality `ON` condition, which no rewrite introduces.
+                break;
+            case JoinAlgorithm::DEFAULT:
+            case JoinAlgorithm::AUTO:
+            case JoinAlgorithm::HASH:
+            case JoinAlgorithm::PARALLEL_HASH:
+                /// The hash-based algorithms implement every kind and strictness.
+                return true;
+            case JoinAlgorithm::GRACE_HASH:
+                /// So does `grace_hash`, but without a spill threshold `tryCreateJoin` passes it over for
+                /// the next algorithm of the list, so there it cannot execute anything.
+                if (join_settings.legacy_join_size_limits_trigger_spilling
+                    || join_settings.getEffectiveMaxBytesBeforeExternalJoin() > 0
+                    || join_algorithms.size() == 1)
+                    return true;
+                break;
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
+                /// `prefer_partial_merge` means `partial_merge` with a hash fallback for everything
+                /// `MergeJoin` cannot execute, so it can execute every kind and strictness as well.
+                return true;
+        }
+    }
+
+    return false;
+}
 
 Int64 getCurrentQueryMemoryUsage()
 {
