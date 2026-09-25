@@ -111,6 +111,15 @@ ${CLICKHOUSE_CLIENT} --query "SELECT k, k_old FROM t_05255_renamed ORDER BY k DE
 compare "SELECT k, k_old FROM t_05255_renamed ORDER BY k DESC LIMIT 3"
 compare "SELECT k, k_old FROM t_05255_renamed ORDER BY k LIMIT 3"
 
+echo "--- Iceberg: equality deletes"
+# Files with equality deletes are read under the current schema, so the filter applies to them; the
+# deletes only remove rows after the reader. The fixture deletes, among others, every `name_9` row.
+EQ_DELETES="icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table')"
+${CLICKHOUSE_CLIENT} --query "SELECT id, name FROM ${EQ_DELETES} ORDER BY id DESC LIMIT 3 SETTINGS ${SETTINGS}, ${ON}"
+compare "SELECT id, name FROM ${EQ_DELETES} ORDER BY id DESC LIMIT 5"
+compare "SELECT id, name FROM ${EQ_DELETES} ORDER BY id LIMIT 5"
+compare "SELECT id FROM ${EQ_DELETES} WHERE name != 'name_1' ORDER BY id DESC LIMIT 5"
+
 echo "--- Iceberg: sorted by an identity partition column"
 ${CLICKHOUSE_CLIENT} --query "
     ${ICEBERG_INSERT_SETTINGS}

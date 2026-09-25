@@ -1346,9 +1346,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// the same. They are not where a data lake rewrites the file's columns after the reader:
         /// schema evolution renames and casts them (and a column of the file may carry the name
         /// another column has in the current schema), and an identity-partitioned column takes the
-        /// value the manifest defines for it, whatever the file stores.
+        /// value the manifest defines for it, whatever the file stores. A file with an initial schema
+        /// but no schema transform (an Iceberg file with equality deletes in the current schema) is
+        /// read under the current names, and deletes only remove rows after the reader.
         const bool top_k_filter_allowed = format_filter_info && format_filter_info->top_k_filter
-            && !schema_changed
             && !(object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
             && !configuration->getSchemaTransformer(context_, object_info)
             && std::none_of(identity_partition_columns.begin(), identity_partition_columns.end(),
@@ -1448,6 +1449,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
                     /// pruning) back to a field_id.
                     result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    if (top_k_filter_allowed)
+                        result->top_k_filter = format_filter_info->top_k_filter;
                     return result;
                 }
             }

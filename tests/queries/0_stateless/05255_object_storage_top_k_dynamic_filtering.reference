@@ -20,6 +20,13 @@ OK
 99997	2
 OK
 OK
+--- Iceberg: equality deletes
+998	name_8
+997	name_7
+996	name_6
+OK
+OK
+OK
 --- Iceberg: sorted by an identity partition column
 OK
 OK
