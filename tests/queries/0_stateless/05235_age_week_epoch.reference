@@ -18,3 +18,10 @@ later weekday, earlier time of day, nowhere near the epoch (was 0)
 1
 control: same weekday, nowhere near the epoch
 0
+reversed arguments: later weekday is the start (was -103)
+-104
+reversed arguments: later weekday, earlier time of day (was 0)
+-1
+-1
+reversed arguments control: same weekday, less than a full week
+0

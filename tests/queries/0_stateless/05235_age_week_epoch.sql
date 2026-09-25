@@ -43,3 +43,16 @@ SELECT age('week', toDateTime64('2000-01-04 01:30:00.000', 3, 'UTC'), toDateTime
 
 SELECT 'control: same weekday, nowhere near the epoch';
 SELECT age('week', toDateTime64('2000-01-04 01:30:00.000', 3, 'UTC'), toDateTime64('2000-01-11 01:15:00.000', 3, 'UTC'));
+
+-- For `x > y` the adjustment swaps the two arguments into chronological order (`a_comp` / `b_comp`),
+-- so the weekdays must be swapped with them. They used to be compared in argument order, which ran
+-- the weekday test in the opposite direction from the time-of-day test.
+SELECT 'reversed arguments: later weekday is the start (was -103)';
+SELECT age('week', toDate('2017-12-31'), toDate('2016-01-01'));
+
+SELECT 'reversed arguments: later weekday, earlier time of day (was 0)';
+SELECT age('week', toDateTime64('2000-01-12 01:15:00.000', 3, 'UTC'), toDateTime64('2000-01-04 01:30:00.000', 3, 'UTC'));
+SELECT age('week', toDateTime64('1970-01-07 01:15:00.000', 3, 'UTC'), toDateTime64('1969-12-30 01:30:00.000', 3, 'UTC'));
+
+SELECT 'reversed arguments control: same weekday, less than a full week';
+SELECT age('week', toDateTime64('2000-01-11 01:15:00.000', 3, 'UTC'), toDateTime64('2000-01-04 01:30:00.000', 3, 'UTC'));
