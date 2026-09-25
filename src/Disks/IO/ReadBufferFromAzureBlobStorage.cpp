@@ -144,7 +144,11 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
         /// A previous attempt may have reopened the download, so what is left of it is measured per attempt.
-        const size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
+        size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
+        /// The response may run past the right bound - e.g. the whole object in answer to a ranged
+        /// request at offset 0 - and nothing past the bound may reach the caller.
+        if (read_until_position)
+            to_read_bytes = std::min(to_read_bytes, static_cast<size_t>(read_until_position - offset));
         bool premature_end_of_response = false;
 
         try
