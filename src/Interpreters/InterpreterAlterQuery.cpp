@@ -61,6 +61,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsBool allow_statistics;
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -82,6 +83,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -344,6 +346,27 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
+/// `allow_statistics` gates the statistics DDL - whether statistics may be declared on a table -
+/// so only the submitting session's value is meaningful for it, and the gate must be applied
+/// exactly once, here at submission time.
+///
+/// `ALTER TABLE ... ADD/DROP/MODIFY STATISTICS` carries an `AlterCommand` and is gated by
+/// `AlterCommands::validate`, but `MATERIALIZE STATISTICS` parses into a `MutationCommands`
+/// segment only, so it is checked here, next to the other submission-time mutation validation.
+/// `MutationsInterpreter` does not check it: it also runs in the background with a context that
+/// reads the server-default profile instead of the submitting session.
+void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const Settings & settings)
+{
+    if (settings[Setting::allow_statistics])
+        return;
+
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::MATERIALIZE_STATISTICS || command.type == MutationCommand::DROP_STATISTICS)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+    }
+}
+
 BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, bool no_ddl_lock)
 {
     BlockIO res;
@@ -387,6 +410,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
+                checkStatisticsMutationsAreAllowed(*mutation_commands, settings);
                 /// Checked ahead of the full validation below, which repeats it, so that a
                 /// nondeterministic mutation is reported as such even when the predicate also
                 /// fails to analyze.

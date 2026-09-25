@@ -1,0 +1,12 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!--
+                The reported reproducer: the server profile turns the statistics DDL off, and the
+                statement opts back in per session. The background context that executes a mutation
+                reads this profile, not the submitting session.
+            -->
+            <allow_statistics>0</allow_statistics>
+        </default>
+    </profiles>
+</clickhouse>
