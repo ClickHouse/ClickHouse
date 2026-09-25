@@ -7,6 +7,7 @@
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/LowCardinalityValueIndex.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1855,6 +1856,17 @@ struct MatcherNumberConst
     bool match(size_t row_data, size_t /* row_index */) const { return data[row_data] == index; }
 };
 
+/// Matcher for keys of a ColumnLowCardinality. The requested key is resolved to its dictionary
+/// position once, so a key is matched without comparing the key values.
+template <typename IndexType>
+struct MatcherLowCardinalityConst
+{
+    const IndexType * indexes;
+    IndexType key_index;
+
+    bool match(size_t row_data, size_t /* row_index */) const { return indexes[row_data] == key_index; }
+};
+
 }
 
 template <ArrayElementExceptionMode mode>
@@ -1921,11 +1933,6 @@ bool castColumnString(const IColumn * column, F && f)
     return castTypeToEither<ColumnString, ColumnFixedString>(column, std::forward<F>(f));
 }
 
-bool isStringOrFixedStringColumn(const IColumn & column)
-{
-    return typeid_cast<const ColumnString *>(&column) || typeid_cast<const ColumnFixedString *>(&column);
-}
-
 template <ArrayElementExceptionMode mode>
 bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
     const IColumn & data, const Offsets & offsets, const Field & index, PaddedPODArray<UInt64> & matched_idxs)
@@ -1933,37 +1940,27 @@ bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
     if (index.getType() != Field::Types::String)
         return false;
 
-    /// The dictionary lookup below is defined only for String and FixedString keys. For other
-    /// LowCardinality key types, fall through so that the regular dispatch reports the type error
-    /// instead of silently finding no match.
-    const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&data);
-    if (low_cardinality_data
-        && isStringOrFixedStringColumn(*low_cardinality_data->getDictionary().getNestedNotNullableColumn()))
+    if (const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&data))
     {
-        const auto & requested_key = index.safeGet<String>();
-        auto dictionary_index = low_cardinality_data->getDictionary().getOrFindValueIndex(requested_key);
         matched_idxs.reserve(offsets.size());
 
-        if (!dictionary_index)
+        auto lookup_result = callWithLowCardinalityValueIndex(
+            *low_cardinality_data,
+            index.safeGet<String>(),
+            [&](const auto * indexes, auto key_index)
+            {
+                MatcherLowCardinalityConst<decltype(key_index)> matcher{indexes, key_index};
+                executeMatchKeyToIndex(offsets, matched_idxs, matcher);
+            });
+
+        /// For LowCardinality key types without a dictionary lookup, fall through so that the regular
+        /// dispatch reports the type error instead of silently finding no match.
+        if (lookup_result != LowCardinalityValueLookupResult::Unsupported)
         {
-            matched_idxs.resize_fill(offsets.size());
+            if (lookup_result == LowCardinalityValueLookupResult::NotFound)
+                matched_idxs.resize_fill(offsets.size());
             return true;
         }
-
-        struct MatcherLowCardinalityStringConst
-        {
-            const ColumnLowCardinality & data;
-            UInt64 dictionary_index;
-
-            bool match(size_t row_data, size_t /* row_index */) const
-            {
-                return data.getIndexAt(row_data) == dictionary_index;
-            }
-        };
-
-        MatcherLowCardinalityStringConst matcher{*low_cardinality_data, *dictionary_index};
-        executeMatchKeyToIndex(offsets, matched_idxs, matcher);
-        return true;
     }
 
     return castColumnString(
