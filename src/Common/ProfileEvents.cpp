@@ -1145,6 +1145,16 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperCommitsFailed, "Number of failed commits", ValueType::Number) \
     M(KeeperSnapshotCreations, "Number of snapshots creations", ValueType::Number) \
     M(KeeperSnapshotCreationsFailed, "Number of failed snapshot creations", ValueType::Number) \
+    M(KeeperFileMoves, "Number of successful cross-disk moves of Keeper files (changelogs, snapshots)", ValueType::Number) \
+    M(KeeperFileMoveFailedBeforeMarkerPublication, "Number of Keeper file moves that failed before the move marker was published on the destination; the source file was kept", ValueType::Number) \
+    M(KeeperFileMoveMarkerPublishedCopyNotCompleted, "Number of Keeper file moves that failed while copying the file after the move marker was published; the source file was kept", ValueType::Number) \
+    M(KeeperFileMoveCopyCompletedDestinationValidationFailed, "Number of Keeper file moves that failed to validate the copied destination file's size or digest; the source file was kept", ValueType::Number) \
+    M(KeeperFileMoveMarkerRemovalFailed, "Number of Keeper file moves where the copy was validated but removing the move marker from the destination failed; the source file was kept", ValueType::Number) \
+    M(KeeperFileMoveCallbackRejectedOrThrew, "Number of Keeper file moves where the caller rejected the publish or its callback threw after the copy was validated; a rejection is not necessarily an error, and the source file was kept", ValueType::Number) \
+    M(KeeperFileMoveDestinationPublishedSourceRemovalFailed, "Number of Keeper file moves where the destination was published but removing the file from the source disk failed", ValueType::Number) \
+    M(KeeperFileMoveBytes, "Number of bytes moved by successful Keeper file moves between disks", ValueType::Bytes) \
+    M(KeeperFileMoveMicroseconds, "Total time spent in Keeper file moves between disks, including failed attempts", ValueType::Microseconds) \
+    M(KeeperFileMoveDigestMicroseconds, "Time spent computing the source digest and verifying the destination digest during Keeper file moves", ValueType::Microseconds) \
     M(KeeperSnapshotApplys, "Number of snapshot applying", ValueType::Number) \
     M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying", ValueType::Number) \
     M(KeeperReadSnapshot, "Number of completed snapshot reads", ValueType::Number) \

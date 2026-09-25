@@ -19,6 +19,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <base/errnoToString.h>
+#include <base/EnumReflection.h>
 #include <base/scope_guard.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -132,7 +133,7 @@ void moveChangelogBetweenDisks(
             disk_from->getName(),
             path_to,
             disk_to->getName(),
-            static_cast<unsigned>(move_result.error()),
+            magic_enum::enum_name(move_result.error()),
             description->path,
             description->disk->getName());
 }

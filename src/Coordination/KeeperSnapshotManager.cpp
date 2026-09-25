@@ -1266,8 +1266,24 @@ bool KeeperSnapshotManager::moveSnapshotCandidate(
             keeper_context);
 
         /// Callback rejection is reported only after the destination was validated and its marker was removed.
-        if (!metadata_published && !move_result && move_result.error() == KeeperMoveError::CallbackRejectedOrThrew)
-            cleanupCopiedMoveTarget(candidate);
+        if (!move_result)
+        {
+            if (move_result.error() == KeeperMoveError::CallbackRejectedOrThrew)
+            {
+                if (!metadata_published)
+                    cleanupCopiedMoveTarget(candidate);
+            }
+            else
+                LOG_WARNING(
+                    log,
+                    "Failed to move snapshot {} from {} on disk {} to {} on disk {} at stage {}",
+                    candidate.log_idx,
+                    candidate.source_path,
+                    candidate.source_disk->getName(),
+                    candidate.target_path,
+                    candidate.target_disk->getName(),
+                    magic_enum::enum_name(move_result.error()));
+        }
     }
     catch (...)
     {

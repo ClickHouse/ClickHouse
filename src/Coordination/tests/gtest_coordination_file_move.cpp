@@ -27,10 +27,39 @@ namespace DB::CoordinationSetting
 namespace ProfileEvents
 {
     extern const Event S3CompleteMultipartUploadAdoptedExistingObject;
+    extern const Event KeeperFileMoves;
+    extern const Event KeeperFileMoveFailedBeforeMarkerPublication;
+    extern const Event KeeperFileMoveMarkerPublishedCopyNotCompleted;
+    extern const Event KeeperFileMoveCopyCompletedDestinationValidationFailed;
+    extern const Event KeeperFileMoveMarkerRemovalFailed;
+    extern const Event KeeperFileMoveCallbackRejectedOrThrew;
+    extern const Event KeeperFileMoveDestinationPublishedSourceRemovalFailed;
+    extern const Event KeeperFileMoveBytes;
 }
 
 namespace
 {
+
+/// Counters are process-wide, so callers must always compare deltas, never absolute values.
+ProfileEvents::Event eventForMoveError(DB::KeeperMoveError error)
+{
+    switch (error)
+    {
+        case DB::KeeperMoveError::FailedBeforeMarkerPublication:
+            return ProfileEvents::KeeperFileMoveFailedBeforeMarkerPublication;
+        case DB::KeeperMoveError::MarkerPublishedCopyNotCompleted:
+            return ProfileEvents::KeeperFileMoveMarkerPublishedCopyNotCompleted;
+        case DB::KeeperMoveError::CopyCompletedDestinationValidationFailed:
+            return ProfileEvents::KeeperFileMoveCopyCompletedDestinationValidationFailed;
+        case DB::KeeperMoveError::MarkerRemovalFailed:
+            return ProfileEvents::KeeperFileMoveMarkerRemovalFailed;
+        case DB::KeeperMoveError::CallbackRejectedOrThrew:
+            return ProfileEvents::KeeperFileMoveCallbackRejectedOrThrew;
+        case DB::KeeperMoveError::DestinationPublishedSourceRemovalFailed:
+            return ProfileEvents::KeeperFileMoveDestinationPublishedSourceRemovalFailed;
+    }
+    UNREACHABLE();
+}
 
 class ChunkedReadBuffer final : public DB::ReadBuffer
 {
@@ -321,6 +350,8 @@ TEST(KeeperFileMove, LocalMoveAndCallbackOutcomes)
     writeFile(source, "file", "keeper-data");
     auto keeper_context = makeKeeperContext(false);
 
+    const auto moves_before = ProfileEvents::global_counters[ProfileEvents::KeeperFileMoves];
+    const auto bytes_before = ProfileEvents::global_counters[ProfileEvents::KeeperFileMoveBytes];
     const auto result = DB::moveFileBetweenDisks(
         source,
         "file",
@@ -337,7 +368,10 @@ TEST(KeeperFileMove, LocalMoveAndCallbackOutcomes)
     EXPECT_FALSE(source->existsFile("file"));
     EXPECT_TRUE(destination->existsFile("file"));
     EXPECT_FALSE(destination->existsFile("tmp_file"));
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::KeeperFileMoves], moves_before + 1);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::KeeperFileMoveBytes], bytes_before + strlen("keeper-data"));
 
+    const auto rejections_before = ProfileEvents::global_counters[ProfileEvents::KeeperFileMoveCallbackRejectedOrThrew];
     writeFile(source, "rejected", "source-remains");
     const auto rejected = DB::moveFileBetweenDisks(
         source,
@@ -351,6 +385,8 @@ TEST(KeeperFileMove, LocalMoveAndCallbackOutcomes)
     EXPECT_EQ(rejected.error(), DB::KeeperMoveError::CallbackRejectedOrThrew);
     EXPECT_TRUE(source->existsFile("rejected"));
     EXPECT_TRUE(destination->existsFile("rejected"));
+    EXPECT_EQ(
+        ProfileEvents::global_counters[ProfileEvents::KeeperFileMoveCallbackRejectedOrThrew], rejections_before + 1);
 
     writeFile(source, "exception", "source-remains");
     const auto callback_exception = DB::moveFileBetweenDisks(
@@ -479,6 +515,10 @@ TEST(KeeperFileMove, EveryFailurePhaseReturnsTypedOutcomeAndPreservesAuthority)
         (*settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 0;
         auto keeper_context = makeKeeperContext(false, settings);
         bool callback_called = false;
+
+        const auto moves_before = ProfileEvents::global_counters[ProfileEvents::KeeperFileMoves];
+        const auto error_count_before = ProfileEvents::global_counters[eventForMoveError(test_case.expected)];
+
         const auto result = DB::moveFileBetweenDisks(
             source,
             "source",
@@ -496,6 +536,8 @@ TEST(KeeperFileMove, EveryFailurePhaseReturnsTypedOutcomeAndPreservesAuthority)
         EXPECT_EQ(result.error(), test_case.expected);
         EXPECT_TRUE(source->existsFile("source"));
         EXPECT_EQ(callback_called, test_case.expected == DB::KeeperMoveError::DestinationPublishedSourceRemovalFailed);
+        EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::KeeperFileMoves], moves_before);
+        EXPECT_EQ(ProfileEvents::global_counters[eventForMoveError(test_case.expected)], error_count_before + 1);
         if (test_case.expected == DB::KeeperMoveError::DestinationPublishedSourceRemovalFailed)
         {
             EXPECT_TRUE(destination->existsFile("destination"));

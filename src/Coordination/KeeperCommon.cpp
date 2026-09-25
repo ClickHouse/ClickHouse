@@ -12,6 +12,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Disks/DiskLocal.h>
@@ -25,10 +26,21 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <base/find_symbols.h>
+#include <base/scope_guard.h>
 
 namespace ProfileEvents
 {
     extern const Event S3CompleteMultipartUploadAdoptedExistingObject;
+    extern const Event KeeperFileMoves;
+    extern const Event KeeperFileMoveFailedBeforeMarkerPublication;
+    extern const Event KeeperFileMoveMarkerPublishedCopyNotCompleted;
+    extern const Event KeeperFileMoveCopyCompletedDestinationValidationFailed;
+    extern const Event KeeperFileMoveMarkerRemovalFailed;
+    extern const Event KeeperFileMoveCallbackRejectedOrThrew;
+    extern const Event KeeperFileMoveDestinationPublishedSourceRemovalFailed;
+    extern const Event KeeperFileMoveBytes;
+    extern const Event KeeperFileMoveMicroseconds;
+    extern const Event KeeperFileMoveDigestMicroseconds;
 }
 
 namespace DB
@@ -184,14 +196,28 @@ void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path)
     syncLocalParentDirectory(disk, path);
 }
 
-KeeperMoveResult moveFileBetweenDisks(
+namespace
+{
+
+/// Time spent in the individual phases of a move, accumulated over all attempts, including failed
+/// ones, but excluding retry sleeps. `bytes` is the size of the moved file.
+struct KeeperMoveTimings
+{
+    UInt64 digest_microseconds = 0;
+    UInt64 copy_microseconds = 0;
+    UInt64 verification_microseconds = 0;
+    UInt64 bytes = 0;
+};
+
+KeeperMoveResult moveFileBetweenDisksImpl(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,
     const std::string & path_to,
-    std::function<bool()> before_file_remove_op,
+    const std::function<bool()> & before_file_remove_op,
     LoggerPtr logger,
-    const KeeperContextPtr & keeper_context)
+    const KeeperContextPtr & keeper_context,
+    KeeperMoveTimings & timings)
 {
     /// This is the only work that frees the local disk, and the Raft write path that fills it is
     /// itself exempt from memory limit exceptions. Refusing the mover under memory pressure turns
@@ -243,11 +269,17 @@ KeeperMoveResult moveFileBetweenDisks(
 
     std::optional<KeeperFileDigest> source_digest;
     if (!run_with_retries(
-            [&] { source_digest = computeKeeperFileDigest(disk_from, path_from); },
+            [&]
+            {
+                Stopwatch digest_watch;
+                SCOPE_EXIT(timings.digest_microseconds += digest_watch.elapsedMicroseconds());
+                source_digest = computeKeeperFileDigest(disk_from, path_from);
+            },
             "calculating source file digest"))
         return std::unexpected(KeeperMoveError::FailedBeforeMarkerPublication);
 
     chassert(source_digest.has_value());
+    timings.bytes = source_digest->size;
     const std::string marker = serializeKeeperMoveMarker(*source_digest);
 
     if (!run_with_retries(
@@ -269,6 +301,8 @@ KeeperMoveResult moveFileBetweenDisks(
     if (!run_with_retries(
             [&]
             {
+                Stopwatch copy_watch;
+                SCOPE_EXIT(timings.copy_microseconds += copy_watch.elapsedMicroseconds());
                 disk_from->copyFile(from_path, *disk_to, path_to, {});
                 if (isLocalDisk(*disk_to))
                     syncLocalFileAndParentDirectory(disk_to, path_to);
@@ -290,10 +324,15 @@ KeeperMoveResult moveFileBetweenDisks(
             = ProfileEvents::global_counters[ProfileEvents::S3CompleteMultipartUploadAdoptedExistingObject] > adopted_existing_object_before;
         const bool verify_digest
             = coordination_settings[CoordinationSetting::disk_move_verify_destination_digest].value || adopted_existing_object;
-        if (verify_digest && computeKeeperFileDigest(disk_to, path_to) != *source_digest)
+        if (verify_digest)
         {
-            LOG_ERROR(logger, "Copied destination {} on disk {} has an unexpected digest", path_to, disk_to->getName());
-            return std::unexpected(KeeperMoveError::CopyCompletedDestinationValidationFailed);
+            Stopwatch verification_watch;
+            SCOPE_EXIT(timings.verification_microseconds += verification_watch.elapsedMicroseconds());
+            if (computeKeeperFileDigest(disk_to, path_to) != *source_digest)
+            {
+                LOG_ERROR(logger, "Copied destination {} on disk {} has an unexpected digest", path_to, disk_to->getName());
+                return std::unexpected(KeeperMoveError::CopyCompletedDestinationValidationFailed);
+            }
         }
     }
     catch (...)
@@ -337,6 +376,70 @@ KeeperMoveResult moveFileBetweenDisks(
         return std::unexpected(KeeperMoveError::DestinationPublishedSourceRemovalFailed);
 
     return {};
+}
+
+}
+
+KeeperMoveResult moveFileBetweenDisks(
+    DiskPtr disk_from,
+    const std::string & path_from,
+    DiskPtr disk_to,
+    const std::string & path_to,
+    std::function<bool()> before_file_remove_op,
+    LoggerPtr logger,
+    const KeeperContextPtr & keeper_context)
+{
+    KeeperMoveTimings timings;
+    Stopwatch total_watch;
+    const auto result = moveFileBetweenDisksImpl(disk_from, path_from, disk_to, path_to, before_file_remove_op, logger, keeper_context, timings);
+    const UInt64 total_microseconds = total_watch.elapsedMicroseconds();
+
+    ProfileEvents::increment(ProfileEvents::KeeperFileMoveMicroseconds, total_microseconds);
+    ProfileEvents::increment(ProfileEvents::KeeperFileMoveDigestMicroseconds, timings.digest_microseconds + timings.verification_microseconds);
+
+    if (result)
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperFileMoves);
+        ProfileEvents::increment(ProfileEvents::KeeperFileMoveBytes, timings.bytes);
+        LOG_DEBUG(
+            logger,
+            "Moved {} to {} from disk {} to disk {} ({} bytes) in {} ms: digest {} ms, copy {} ms, verification {} ms",
+            path_from,
+            path_to,
+            disk_from->getName(),
+            disk_to->getName(),
+            timings.bytes,
+            total_microseconds / 1000,
+            timings.digest_microseconds / 1000,
+            timings.copy_microseconds / 1000,
+            timings.verification_microseconds / 1000);
+    }
+    else
+    {
+        switch (result.error())
+        {
+            case KeeperMoveError::FailedBeforeMarkerPublication:
+                ProfileEvents::increment(ProfileEvents::KeeperFileMoveFailedBeforeMarkerPublication);
+                break;
+            case KeeperMoveError::MarkerPublishedCopyNotCompleted:
+                ProfileEvents::increment(ProfileEvents::KeeperFileMoveMarkerPublishedCopyNotCompleted);
+                break;
+            case KeeperMoveError::CopyCompletedDestinationValidationFailed:
+                ProfileEvents::increment(ProfileEvents::KeeperFileMoveCopyCompletedDestinationValidationFailed);
+                break;
+            case KeeperMoveError::MarkerRemovalFailed:
+                ProfileEvents::increment(ProfileEvents::KeeperFileMoveMarkerRemovalFailed);
+                break;
+            case KeeperMoveError::CallbackRejectedOrThrew:
+                ProfileEvents::increment(ProfileEvents::KeeperFileMoveCallbackRejectedOrThrew);
+                break;
+            case KeeperMoveError::DestinationPublishedSourceRemovalFailed:
+                ProfileEvents::increment(ProfileEvents::KeeperFileMoveDestinationPublishedSourceRemovalFailed);
+                break;
+        }
+    }
+
+    return result;
 }
 
 /// When this function is updated, update KEEPER_CURRENT_DIGEST_VERSION!!
