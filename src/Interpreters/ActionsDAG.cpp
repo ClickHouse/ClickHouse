@@ -4020,9 +4020,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     for (const auto & right_stream_allowed_conjunction : right_stream_allowed_conjunctions)
         rejected_conjunctions_set.erase(right_stream_allowed_conjunction);
 
-    /// `and` is evaluated left to right, so the conjuncts left in the predicate must keep the order they
-    /// appear in it: a guard stays ahead of the conjunct it guards.
-    /// `extractConjunctionAtoms` yields the atoms right to left, hence the reverse.
+    /// `extractConjunctionAtoms` yields the atoms right to left, while `and` is evaluated left to right.
     auto conjunction_atoms = extractConjunctionAtoms(predicate);
     std::ranges::reverse(conjunction_atoms);
 

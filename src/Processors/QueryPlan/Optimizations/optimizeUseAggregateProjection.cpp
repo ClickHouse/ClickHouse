@@ -242,8 +242,7 @@ static const ActionsDAG::Node * buildResidualFilterNode(
         filter_root = filter_root->children.front();
 
     auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
-    /// `extractConjunctionAtoms` yields the atoms right to left, and the residual `and` rebuilt below is
-    /// evaluated left to right: a guard must stay ahead of the conjunct it guards.
+    /// `extractConjunctionAtoms` yields the atoms right to left, while the rebuilt `and` is evaluated left to right.
     std::ranges::reverse(query_atoms);
 
     std::vector<ASTPtr> proj_conjuncts;

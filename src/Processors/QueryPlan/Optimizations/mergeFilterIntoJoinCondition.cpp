@@ -253,9 +253,7 @@ bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
     return false;
 }
 
-/// The conjuncts of `predicate` in the order they are written, left to right. Mirrors `getConjunctsList`
-/// (same `and` flattening, same ALIAS unwrapping) except that it does not de-duplicate shared nodes, so a
-/// node occurring more than once is reported at every position it occupies.
+/// Unlike `getConjunctsList`, shared nodes are not de-duplicated: each occurrence is reported.
 ActionsDAG::NodeRawConstPtrs getConjunctsInWrittenOrder(const ActionsDAG::Node * predicate)
 {
     ActionsDAG::NodeRawConstPtrs conjuncts;
@@ -267,7 +265,6 @@ ActionsDAG::NodeRawConstPtrs getConjunctsInWrittenOrder(const ActionsDAG::Node *
 
         if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
         {
-            /// Pushed in reverse so the atoms come back left to right.
             for (const auto * child : node->children | std::ranges::views::reverse)
                 stack.push_back(child);
         }
@@ -375,10 +372,8 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         }
         else if (rejected_conjuncts.size() > 1)
         {
-            /// `and` is evaluated left to right, so the conjuncts left in the predicate must keep the order
-            /// they appear in it: a guard stays ahead of the conjunct it guards. `getConjunctsList`
-            /// de-duplicates shared nodes and can also report one node twice through its ALIAS branch, so
-            /// its order is not reversible into the written one and its multiplicity has to be carried over.
+            /// `and` is evaluated left to right, so a guard stays ahead of the conjunct it guards.
+            /// `getConjunctsList` de-duplicates shared nodes and can report one twice through its ALIAS branch.
             std::unordered_map<const ActionsDAG::Node *, size_t> remaining_occurrences;
             for (const auto * conjunct : rejected_conjuncts)
                 ++remaining_occurrences[conjunct];
@@ -395,8 +390,6 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
                 }
             }
 
-            /// The walk has no `visited_nodes`, so it reports every conjunct at least as often as
-            /// `getConjunctsList` did: a shortfall here means the two walks have diverged.
             if (ordered_conjuncts.size() != rejected_conjuncts.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Reordering the residual filter lost {} of {} conjuncts. DAG:\n{}",
