@@ -51,6 +51,7 @@
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/PruneArrayJoinColumnsPass.h>
+#include <Analyzer/Passes/PushSubcolumnsIntoSubqueriesPass.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/RegexpFunctionRewritePass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
@@ -188,6 +189,11 @@ QueryTreePassManager::QueryTreePassManager(ContextPtr context_) : WithContext(co
 
 void QueryTreePassManager::addPass(QueryTreePassPtr pass)
 {
+    /// Remember the position of the pass once, so that `runOnlyResolve` neither looks it up
+    /// on every call nor relies on a hardcoded index that silently drifts when a pass is added before it.
+    if (resolve_passes_count == 0 && pass->getName() == "RemoveUnusedProjectionColumnsPass")
+        resolve_passes_count = passes.size() + 1;
+
     passes.push_back(std::move(pass));
 }
 
@@ -207,12 +213,13 @@ void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node)
 
 void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
 {
-    // Run only query tree passes that doesn't affect output header:
-    // 1. QueryAnalysisPass
-    // 2. GroupingFunctionsResolvePass
-    // 3. AutoFinalOnQueryPass
-    // 4. RemoveUnusedProjectionColumnsPass
-    run(query_tree_node, 4);
+    /// Run only query tree passes that don't affect the output header, up to and including
+    /// `RemoveUnusedProjectionColumnsPass`: `QueryAnalysisPass`, `GroupingFunctionsResolvePass`,
+    /// `AutoFinalOnQueryPass`, `PushSubcolumnsIntoSubqueriesPass` and `RemoveUnusedProjectionColumnsPass`.
+    if (resolve_passes_count == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RemoveUnusedProjectionColumnsPass is not registered in the query tree pass manager");
+
+    run(query_tree_node, resolve_passes_count);
 }
 
 void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, size_t up_to_pass_index)
@@ -270,6 +277,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
+    /// Should run before RemoveUnusedProjectionColumnsPass, so that a column replaced
+    /// with its subcolumns can be removed from the subquery projection if it is not used anywhere else.
+    manager.addPass(std::make_unique<PushSubcolumnsIntoSubqueriesPass>());
     /// This pass should be run for the secondary queries
     /// to ensure that the only required columns are read from VIEWs on the shards.
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());

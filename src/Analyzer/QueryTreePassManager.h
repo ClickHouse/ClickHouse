@@ -45,6 +45,10 @@ public:
 
 private:
     std::vector<QueryTreePassPtr> passes;
+
+    /// Number of passes run by `runOnlyResolve`: the passes up to and including
+    /// `RemoveUnusedProjectionColumnsPass`, zero if it is not registered.
+    size_t resolve_passes_count = 0;
 };
 
 void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false);

@@ -19,6 +19,9 @@ SET query_plan_remove_unused_columns = 1;
 SET use_top_k_dynamic_filtering = 0;
 SET enable_multiple_prewhere_read_steps = 1;
 SET allow_reorder_prewhere_conditions = 1;
+-- Keep reading the whole `content` and `metadata` columns as in the original repro,
+-- instead of only their `size` subcolumns pushed through the subquery.
+SET optimize_push_subcolumns_into_subqueries = 0;
 
 DROP TABLE IF EXISTS repro_t;
 

@@ -1,0 +1,20 @@
+correlated EXISTS uses the whole column, no pushdown
+FUNCTION id: 2, function_name: getSubcolumn, function_type: ordinary, result_type: UInt32
+COLUMN id: 4, column_name: tup, result_type: Tuple(a UInt32, b String), source_id: 5
+COLUMN id: 8, column_name: tup, result_type: Tuple(a UInt32, b String), source_id: 9
+COLUMN id: 14, column_name: tup, result_type: Tuple(a UInt32, b String), source_id: 5
+COLUMN id: 14, column_name: tup, result_type: Tuple(a UInt32, b String), source_id: 5
+COLUMN id: 14, column_name: tup, result_type: Tuple(a UInt32, b String), source_id: 5
+1
+correlated EXISTS uses another column, the subcolumn is pushed
+COLUMN id: 2, column_name: tup.a, result_type: UInt32, source_id: 3
+COLUMN id: 7, column_name: tup.a, result_type: UInt32, source_id: 6
+1
+correlated scalar subquery uses a subcolumn of the same column, no pushdown
+FUNCTION id: 2, function_name: getSubcolumn, function_type: ordinary, result_type: UInt32
+COLUMN id: 4, column_name: tup, result_type: Tuple(a UInt32, b String), source_id: 5
+COLUMN id: 8, column_name: tup, result_type: Tuple(a UInt32, b String), source_id: 9
+COLUMN id: 14, column_name: tup, result_type: Tuple(a UInt32, b String), source_id: 5
+FUNCTION id: 16, function_name: getSubcolumn, function_type: ordinary, result_type: String
+COLUMN id: 14, column_name: tup, result_type: Tuple(a UInt32, b String), source_id: 5
+1

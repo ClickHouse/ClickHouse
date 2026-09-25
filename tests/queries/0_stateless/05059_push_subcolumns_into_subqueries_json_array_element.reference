@@ -1,0 +1,44 @@
+one field
+ReadFromMergeTree (default.t_push_subcolumns_json_array)
+Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+1
+3
+nested fields
+ReadFromMergeTree (default.t_push_subcolumns_json_array)
+Header: json.a.:`Array(JSON)`.c.e Array(Dynamic(max_types=16))
+10
+30
+two levels of subqueries
+ReadFromMergeTree (default.t_push_subcolumns_json_array)
+Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+1
+3
+through a CTE
+ReadFromMergeTree (default.t_push_subcolumns_json_array)
+Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+1
+3
+UNION ALL
+│  Header: tupleElement(arrayElement(x.a, 1), \'b\') Dynamic
+├──ReadFromMergeTree (default.t_push_subcolumns_json_array)
+│     Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+└──ReadFromMergeTree (default.t_push_subcolumns_json_array)
+Header: json.a.:`Array(JSON)`.b Array(Dynamic(max_types=16))
+1
+1
+3
+3
+a Dynamic column that is not a JSON path is not rewritten (as in the direct read)
+ReadFromMergeTree (default.t_push_subcolumns_json_array)
+Header: d Dynamic
+FINAL is not rewritten into a direct read of the nested subcolumn
+ReadFromMergeTree (default.t_push_subcolumns_json_array_final)
+Header: json.a Dynamic
+3
+9
+the whole column stays alive
+ReadFromMergeTree (default.t_push_subcolumns_json_array)
+Header: json JSON
+setting off
+ReadFromMergeTree (default.t_push_subcolumns_json_array)
+Header: json JSON

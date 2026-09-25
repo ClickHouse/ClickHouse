@@ -1,0 +1,18 @@
+whole column in the projection
+Output: tup, getSubcolumn(tup, \'a\')
+Output: tup
+(1,'one')	1
+(2,'two')	2
+whole column in WHERE, subcolumn in the projection
+Output: getSubcolumn(tup, \'a\')
+Output: tup
+1
+only subcolumns are used, pushed down
+Output: tup.a, tup.b
+Output: tup.a, tup.b
+1	one
+2	two
+the same subcolumn used twice, pushed down
+Output: tup.a
+Output: tup.a
+1
