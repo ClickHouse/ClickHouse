@@ -270,7 +270,7 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
             /// Both plans in full, each step tagged with its hash. `LOG_IMPL` leaves before it touches
             /// its arguments when the level is off, so neither plan is walked unless someone asked for
             /// this.
-            LOG_TRACE(
+            LOG_TEST(
                 getLogger("AutoParallelReplicas"),
                 "No match for hash {}. Plan with parallel replicas:\n{}\nSingle-node plan:\n{}",
                 it->second,
