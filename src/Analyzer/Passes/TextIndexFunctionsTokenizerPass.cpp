@@ -1,4 +1,4 @@
-#include <Analyzer/Passes/TextSearchTokenizerPass.h>
+#include <Analyzer/Passes/TextIndexFunctionsTokenizerPass.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -53,15 +53,18 @@ StoragePtr getSourceStorage(const IQueryTreeNode & source)
     return nullptr;
 }
 
-/// The table carrying the index definitions, for a `Distributed` the shards' local one. Returns
-/// `storage` unless that table is provably the shard target, never an unrelated table of the same name.
+/// The table carrying the index definitions, for a `Distributed` the shards' local one. Only a node that
+/// is itself a shard can name that table; on any other initiator the definitions are out of reach without
+/// a round trip, so `storage` is returned and the tokenizer stays unresolved rather than being guessed
+/// from an unrelated table of the same name.
 StoragePtr getIndexStorage(const StoragePtr & storage, const ContextPtr & context)
 {
     const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get());
     if (!distributed)
         return storage;
 
-    /// The same locality test that decides whether the data is read locally or over the network.
+    /// Resolving the name is not enough: an initiator outside the cluster can hold an unrelated table of
+    /// that name. Being a shard is the proof, and it is the test that decides where the data is read.
     const auto cluster = distributed->getCluster();
     if (!cluster || cluster->getLocalShardCount() == 0)
         return storage;
@@ -83,8 +86,6 @@ StoragePtr getIndexStorage(const StoragePtr & storage, const ContextPtr & contex
     return local_table;
 }
 
-Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const ContextPtr & context, size_t & substitutions);
-
 /// The index-expression name of a resolved expression, spelled the way `IndexDescription::column_names` is.
 String indexExpressionName(const IQueryTreeNode & resolved)
 {
@@ -93,8 +94,6 @@ String indexExpressionName(const IQueryTreeNode & resolved)
     ast_options.fully_qualified_identifiers = false;
     return resolved.toAST(ast_options)->getColumnName();
 }
-
-const IQueryTreeNode * projectionAt(const IQueryTreeNode & source, size_t position, const ContextPtr & context, size_t & substitutions);
 
 std::optional<size_t> projectionPosition(const NamesAndTypes & projection_columns, const String & name)
 {
@@ -107,22 +106,24 @@ std::optional<size_t> projectionPosition(const NamesAndTypes & projection_column
     return {};
 }
 
+QueryTreeNodePtr projectionAt(const IQueryTreeNode & source, size_t position, const ContextPtr & context, size_t & substitutions);
+Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const ContextPtr & context, size_t & substitutions);
+
 /// A row comes from exactly one branch, so every branch must expose the same indexed expression of the
 /// same table; otherwise the tokenizer would depend on which branch produced the row.
-const IQueryTreeNode *
-findAgreedUnionProjection(const UnionNode & union_node, size_t position, const ContextPtr & context, size_t & substitutions)
+QueryTreeNodePtr findAgreedUnionProjection(const UnionNode & union_node, size_t position, const ContextPtr & context, size_t & substitutions)
 {
-    const IQueryTreeNode * agreed = nullptr;
     String agreed_name;
+    QueryTreeNodePtr agreed;
     const IStorage * agreed_storage = nullptr;
 
     for (const auto & branch : union_node.getQueries().getNodes())
     {
-        const auto * projection = projectionAt(*branch, position, context, substitutions);
+        auto projection = projectionAt(*branch, position, context, substitutions);
         if (!projection)
             return nullptr;
 
-        auto resolution = resolveToTableColumns(projection->clone(), context, substitutions);
+        auto resolution = resolveToTableColumns(projection, context, substitutions);
         if (!resolution.expression)
             return nullptr;
 
@@ -131,8 +132,8 @@ findAgreedUnionProjection(const UnionNode & union_node, size_t position, const C
 
         if (!agreed)
         {
-            agreed = projection;
             agreed_name = name;
+            agreed = std::move(projection);
             agreed_storage = storage;
         }
         else if (name != agreed_name || storage != agreed_storage)
@@ -144,12 +145,12 @@ findAgreedUnionProjection(const UnionNode & union_node, size_t position, const C
     return agreed;
 }
 
-const IQueryTreeNode * projectionAt(const IQueryTreeNode & source, size_t position, const ContextPtr & context, size_t & substitutions)
+QueryTreeNodePtr projectionAt(const IQueryTreeNode & source, size_t position, const ContextPtr & context, size_t & substitutions)
 {
     if (const auto * query_node = source.as<QueryNode>())
     {
         const auto & projection = query_node->getProjection().getNodes();
-        return position < projection.size() ? projection[position].get() : nullptr;
+        return position < projection.size() ? projection[position] : QueryTreeNodePtr{};
     }
 
     if (const auto * union_node = source.as<UnionNode>())
@@ -159,18 +160,18 @@ const IQueryTreeNode * projectionAt(const IQueryTreeNode & source, size_t positi
 }
 
 /// Not only a passed-through column: `SELECT lower(s) AS x` exposes the indexed `lower(s)` as `x`.
-const IQueryTreeNode * findProjection(const IQueryTreeNode & source, const String & name, const ContextPtr & context, size_t & substitutions)
+QueryTreeNodePtr findProjection(const IQueryTreeNode & source, const String & name, const ContextPtr & context, size_t & substitutions)
 {
     if (const auto * query_node = source.as<QueryNode>())
     {
         auto position = projectionPosition(query_node->getProjectionColumns(), name);
-        return position ? projectionAt(source, *position, context, substitutions) : nullptr;
+        return position ? projectionAt(source, *position, context, substitutions) : QueryTreeNodePtr{};
     }
 
     if (const auto * union_node = source.as<UnionNode>())
     {
         auto position = projectionPosition(union_node->computeProjectionColumns(), name);
-        return position ? findAgreedUnionProjection(*union_node, *position, context, substitutions) : nullptr;
+        return position ? findAgreedUnionProjection(*union_node, *position, context, substitutions) : QueryTreeNodePtr{};
     }
 
     return nullptr;
@@ -179,36 +180,51 @@ const IQueryTreeNode * findProjection(const IQueryTreeNode & source, const Strin
 /// Null unless the expression reads from exactly one table, because otherwise no index describes it.
 Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const ContextPtr & context, size_t & substitutions)
 {
-    auto resolved = expression->clone();
     StoragePtr storage;
     bool failed = false;
 
-    auto visit = [&](QueryTreeNodePtr & current, auto & self) -> void
+    /// Returns null when nothing below `current` was substituted, so an expression over plain table
+    /// columns is resolved without copying anything. A substitution is only ever written into a copy.
+    auto substitute = [&](const QueryTreeNodePtr & current, auto & self) -> QueryTreeNodePtr
     {
-        if (failed)
-            return;
-
         const auto * column_node = current->as<ColumnNode>();
         if (!column_node)
         {
-            for (auto & child : current->getChildren())
+            QueryTreeNodePtr substituted;
+            const auto & children = current->getChildren();
+
+            for (size_t i = 0; i < children.size(); ++i)
             {
-                if (child)
-                    self(child, self);
+                if (!children[i])
+                    continue;
+
+                auto replacement = self(children[i], self);
+                if (failed)
+                    return nullptr;
+
+                if (!replacement)
+                    continue;
+
+                if (!substituted)
+                    substituted = current->clone();
+                substituted->getChildren()[i] = std::move(replacement);
             }
-            return;
+
+            return substituted;
         }
 
         const auto source = column_node->getColumnSourceOrNull();
         if (!source)
         {
             failed = true;
-            return;
+            return nullptr;
         }
 
         /// A lambda parameter is bound inside the expression, which is how an index names it too.
         if (source->as<LambdaArgumentsNode>())
-            return;
+            return nullptr;
+
+        QueryTreeNodePtr what_it_reads;
 
         if (auto column_storage = getSourceStorage(*source))
         {
@@ -219,41 +235,39 @@ Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const Cont
             if (storage && storage.get() != column_storage.get())
             {
                 failed = true;
-                return;
+                return nullptr;
             }
             storage = column_storage;
 
             /// An ALIAS column stands for an expression, and that is what the index is defined on.
             if (!column_node->hasExpression())
-                return;
+                return nullptr;
 
-            if (++substitutions > max_substitutions)
-            {
-                failed = true;
-                return;
-            }
-
-            current = column_node->getExpression()->clone();
-            self(current, self);
-            return;
+            what_it_reads = column_node->getExpression();
+        }
+        else
+        {
+            what_it_reads = findProjection(*source, column_node->getColumnName(), context, substitutions);
         }
 
-        const auto * projection = findProjection(*source, column_node->getColumnName(), context, substitutions);
-        if (!projection || ++substitutions > max_substitutions)
+        if (!what_it_reads || ++substitutions > max_substitutions)
         {
             failed = true;
-            return;
+            return nullptr;
         }
 
-        current = projection->clone();
-        self(current, self);
-    };
-    visit(resolved, visit);
+        auto replacement = self(what_it_reads, self);
+        if (failed)
+            return nullptr;
 
+        return replacement ? replacement : what_it_reads;
+    };
+
+    auto substituted = substitute(expression, substitute);
     if (failed || !storage)
         return {};
 
-    return {resolved, storage};
+    return {substituted ? substituted : expression, storage};
 }
 
 /// The names one indexed expression can be read through, as `MergeTreeIndexConditionText` accepts them:
@@ -288,17 +302,17 @@ Names carrierNames(const IQueryTreeNode & resolved, const String & resolved_name
     return names;
 }
 
-class TextSearchTokenizerVisitor : public InDepthQueryTreeVisitorWithContext<TextSearchTokenizerVisitor>
+class TextIndexFunctionsTokenizerVisitor : public InDepthQueryTreeVisitorWithContext<TextIndexFunctionsTokenizerVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<TextSearchTokenizerVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<TextIndexFunctionsTokenizerVisitor>;
     using Base::Base;
 
     void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isOrdinaryFunction()
-            || !textSearchFunctionAcceptsTokenizer(function_node->getFunctionName()))
+            || !doesTextSearchFunctionAcceptTokenizer(function_node->getFunctionName()))
             return;
 
         /// Two arguments means no explicit tokenizer, which is the only case the index decides.
@@ -366,9 +380,9 @@ private:
 
 }
 
-void TextSearchTokenizerPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void TextIndexFunctionsTokenizerPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    TextSearchTokenizerVisitor visitor(context);
+    TextIndexFunctionsTokenizerVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 

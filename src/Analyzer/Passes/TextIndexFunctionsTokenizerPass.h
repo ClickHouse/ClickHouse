@@ -5,21 +5,23 @@
 namespace DB
 {
 
-/** Takes the tokenizer from the text index on the haystack and makes it explicit, so that
-  * `hasAnyTokens(s, ['a b'])` on `INDEX idx (s) TYPE text(tokenizer = array)` becomes
-  * `hasAnyTokens(s, ['a b'], 'array')`. Otherwise the function answers with its default
-  * `splitByNonAlpha` and the result depends on whether the index was read (issue #115999).
+/** Takes the tokenizer from the text index definition and forwards it to the supported functions on that
+  * index' expression, to make it explicit.
+  *
+  * Without forwarding, a text-search function uses the default `splitByNonAlpha` tokenizer and answers a
+  * different question than the index does, so the result depends on whether the index was read. See issue
+  * #115999.
   *
   * Runs in the analyzer because only the query tree states which table a column comes from.
   */
-class TextSearchTokenizerPass final : public IQueryTreePass
+class TextIndexFunctionsTokenizerPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "TextSearchTokenizer"; }
+    String getName() override { return "TextIndexFunctionsTokenizer"; }
 
     String getDescription() override
     {
-        return "Add the tokenizer of the text index as an explicit argument of text-search functions";
+        return "Forwards tokenizer from the text index definition into supported text search functions";
     }
 
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;

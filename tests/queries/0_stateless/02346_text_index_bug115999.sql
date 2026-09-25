@@ -7,6 +7,9 @@
 
 SET enable_full_text_index = 1;
 SET enable_analyzer = 1;
+-- `clickhouse-test` randomizes both, and the arms below name the direct-read path they exercise.
+SET query_plan_direct_read_from_text_index = 1;
+SET query_plan_text_index_add_hint = 1;
 
 CREATE TABLE t_115999_a
 (
@@ -40,7 +43,7 @@ INSERT INTO t_115999_b VALUES
     (3, 'other'),
     (4, 'target');
 
-SELECT 'default settings';
+SELECT 'query_plan_direct_read_from_text_index = 1';
 
 SELECT a.record_id
 FROM t_115999_a AS a INNER JOIN t_115999_b AS b ON a.group_id = b.group_id
