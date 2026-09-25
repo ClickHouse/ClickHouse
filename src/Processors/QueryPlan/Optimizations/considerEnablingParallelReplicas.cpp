@@ -270,7 +270,7 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
             /// Both plans in full, each step tagged with its hash. `LOG_IMPL` leaves before it touches
             /// its arguments when the level is off, so neither plan is walked unless someone asked for
             /// this.
-            LOG_TEST(
+            LOG_TRACE(
                 getLogger("AutoParallelReplicas"),
                 "No match for hash {}. Plan with parallel replicas:\n{}\nSingle-node plan:\n{}",
                 it->second,
@@ -384,7 +384,12 @@ ReadFromMergeTree * findReadingStep(
             // sets `swap_streams`). Guard against it explicitly so that if a future change ever revives
             // it, AutoParallelReplicas fails closed (skips) instead of instrumenting/parallelizing the wrong side.
             if (join_step->swap_streams)
+            {
+                LOG_TRACE(
+                    getLogger("AutoParallelReplicas"),
+                    "The join on the way to the read swaps its streams, cannot tell which side is parallelized. Skipping optimization");
                 return nullptr;
+            }
             // Descending exactly one side is only a valid decomposition for join kinds that can be
             // evaluated by parallelizing one input while the other is read in full on every replica:
             // `INNER` (ALL), `LEFT`, and a leftmost `RIGHT`. It is NOT valid for `FULL` or
@@ -401,7 +406,14 @@ ReadFromMergeTree * findReadingStep(
         }
 
         if (!lazy_joining && reading_step->children.size() > 1)
+        {
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
+                "Step {} on the way to the read has {} inputs, cannot tell which one is parallelized. Skipping optimization",
+                reading_step->step->getName(),
+                reading_step->children.size());
             return nullptr;
+        }
         reading_step = reading_step->children.front();
     }
 
@@ -412,7 +424,7 @@ ReadFromMergeTree * findReadingStep(
         {
             // TODO(nickitat): support multiple read steps with parallel replicas
             if (lazy_reads.size() > 1)
-                LOG_DEBUG(getLogger("optimizeTree"), "More than one lazy reading step, not collecting their statistics");
+                LOG_TRACE(getLogger("AutoParallelReplicas"), "More than one lazy reading step, not collecting their statistics");
             else if (lazy_reads.size() == 1)
                 *lazy_reading_step = lazy_reads.front();
         }
@@ -473,9 +485,9 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
 
     if (single_node_reads.size() != replicas_reads.size())
     {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "Single-node plan has {} reads and the replicas plan {}; not transplanting index analysis",
+        LOG_TRACE(
+            getLogger("AutoParallelReplicas"),
+            "Single-node plan has {} reads and the replicas plan {}; not transplanting index analysis. Skipping optimization",
             single_node_reads.size(),
             replicas_reads.size());
         return false;
@@ -500,10 +512,10 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         auto identity = identify(read);
         if (!identity || !single_node_by_identity.emplace(*identity, read).second)
         {
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
                 "Read of {} in the single-node plan has no name to pair it by, or shares one with another read; "
-                "not transplanting index analysis",
+                "not transplanting index analysis. Skipping optimization",
                 read->getStorageID().getNameForLogs());
             return false;
         }
@@ -517,10 +529,10 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         auto it = identity ? single_node_by_identity.find(*identity) : single_node_by_identity.end();
         if (it == single_node_by_identity.end())
         {
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
                 "Read of {} in the replicas plan has no counterpart of the same name in the single-node plan; "
-                "not transplanting index analysis",
+                "not transplanting index analysis. Skipping optimization",
                 replicas_reads[i]->getStorageID().getNameForLogs());
             return false;
         }
@@ -530,10 +542,10 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         /// things. Pair one to one or not at all.
         if (!claimed_single_node_reads.insert(it->second).second)
         {
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
                 "Two reads of {} in the replicas plan share one counterpart in the single-node plan; "
-                "not transplanting index analysis",
+                "not transplanting index analysis. Skipping optimization",
                 replicas_reads[i]->getStorageID().getNameForLogs());
             return false;
         }
@@ -561,10 +573,10 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         /// reach this point.
         if (analyzed && analyzed->readFromProjection())
         {
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
                 "Read of {} in the single-node plan is answered from a projection, which the plan for parallel "
-                "replicas does not use; not transplanting index analysis",
+                "replicas does not use; not transplanting index analysis. Skipping optimization",
                 paired_single_node_reads[i]->getStorageID().getNameForLogs());
             return false;
         }
@@ -980,10 +992,8 @@ void considerEnablingParallelReplicas(
                 /// every mark, so the candidate is worse than the plan it replaces; decline rather than run it.
                 if (!transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode()))
                 {
+                    /// `transplantAnalysisToAllReads` has logged which read could not be paired and why.
                     ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
-                    LOG_TRACE(
-                        getLogger("AutoParallelReplicas"),
-                        "Cannot give every read of the plan with parallel replicas its index analysis. Skipping optimization");
                     return;
                 }
                 /// The candidate's reads have their filter actions only now, so the pass that tags a filter
