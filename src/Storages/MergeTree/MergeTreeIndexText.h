@@ -299,7 +299,6 @@ public:
 
     bool empty() const { return size() == 0; }
     size_t size() const;
-    size_t lowerBound(std::string_view token) const;
     size_t upperBound(std::string_view token) const;
 
     std::string_view getToken(size_t idx) const;
@@ -595,7 +594,6 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexSubstreams getPotentialSubstreams() const override;
     using IMergeTreeIndex::getPhysicalFormat;
     MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,

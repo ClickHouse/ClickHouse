@@ -750,7 +750,7 @@ bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
 }
 bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
 {
-    return !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
+    return table_join.enableAnalyzer() && !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
 }
 
 bool HashJoin::isUsedByAnotherAlgorithm() const

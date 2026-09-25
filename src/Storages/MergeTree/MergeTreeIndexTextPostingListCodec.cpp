@@ -249,18 +249,18 @@ void encodePostingsInBlocks(
 
 }
 
-void SegmentedPostingListCodecBase::encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
+void PostingListCodecBitpacking::encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
 {
-    encodePostingsInBlocks(postings, max_rowids_in_segment, getType(), info, out);
+    encodePostingsInBlocks(postings, max_rowids_in_segment, IPostingListCodec::Type::Bitpacking, info, out);
 }
 
-void SegmentedPostingListCodecBase::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const
+void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const
 {
     SegmentedPostingListCodec impl;
     impl.decode(in, postings, buffer);
 }
 
-void SegmentedPostingListCodecBase::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
+void PostingListCodecBitpacking::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
 {
     SegmentedPostingListCodec impl;
     impl.decode(in, row_ids, buffer);
