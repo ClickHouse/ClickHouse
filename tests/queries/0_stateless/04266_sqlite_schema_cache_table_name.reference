@@ -1,0 +1,9 @@
+Default table schema
+id	Int64
+name	Nullable(String)
+First table schema
+id	Int64
+name	Nullable(String)
+Second table schema
+value	Float64
+payload	Nullable(String)

@@ -51,9 +51,21 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
+    /// Open the SQLite database on external contact (structure inference or execution) rather than in
+    /// `parseArguments`. The table function never creates the database file (`allow_create` is always false), so
+    /// a `SELECT` / `DESCRIBE` / `INSERT` against a missing path fails closed instead of fabricating an empty
+    /// database (matching the storage engine and the `SQLite` format reader).
+    ///
+    /// The connection is never retained by the table function. A `CREATE TABLE ... AS sqlite(...)` proxy keeps
+    /// the table function alive until the nested storage is first resolved, so a handle kept here would pin the
+    /// database file the path pointed to at that moment, and a same-path replacement made before the first use
+    /// would neither be observed by the nested storage's construction-time schema classification nor release
+    /// the old file. Structure inference and execution are never called on the same instance anyway (see
+    /// `InterpreterCreateQuery`, which instantiates the function once per step), so nothing is lost.
+    std::shared_ptr<sqlite3> openConnection(ContextPtr context) const;
+
     String database_path;
     TableNameOrQuery remote_table_or_query;
-    std::shared_ptr<sqlite3> sqlite_db;
 };
 
 StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
@@ -65,24 +77,57 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
         throw Exception(ErrorCodes::INCORRECT_QUERY,
             "Cannot INSERT into the 'sqlite' table function: it represents the result of a query passed to SQLite, which is read-only");
 
+    /// Open here (not in `parseArguments`), and never create the database file: a table function always refers
+    /// to an already-existing table, so a missing path can only be a mistake. Even an `INSERT` would fail with
+    /// `no such table` after fabricating an empty database, so opening with `allow_create` would only leave a
+    /// junk file behind. A missing path therefore fails closed for reads and writes alike. The connection serves
+    /// the construction-time schema inference of `StorageSQLite` only; neither the storage nor this table
+    /// function retains it.
+    ///
+    /// When the structure is provided (`cached_columns`), do not open the database here at all and let
+    /// `StorageSQLite` open it lazily on the first read or write instead. This path is taken when the nested
+    /// storage of a `CREATE TABLE ... AS sqlite(...)` proxy is instantiated - e.g. by a `SELECT` from
+    /// `system.tables` - and such a metadata-only access must not fail (or touch the file) just because the
+    /// database file is unavailable, mirroring how `ATTACH` of the `SQLite` engine leaves the connection
+    /// unopened. The generated-column classification of the explicit column list is then still pending and is
+    /// repaired on the first successful open (see `updateExternalDynamicMetadataIfExists`), through a fresh
+    /// connection that sees the current database file even if it was replaced at the same path since the table
+    /// was created; a query-backed source is read-only and needs no classification.
+    std::shared_ptr<sqlite3> connection;
+    bool generated_columns_reclassification_pending = false;
+    if (cached_columns.empty())
+        connection = openConnection(context);
+    else
+        generated_columns_reclassification_pending = !remote_table_or_query.isQuery();
+
     auto storage = std::make_shared<StorageSQLite>(StorageID(getDatabaseName(), table_name),
-                                         sqlite_db,
+                                         connection,
                                          database_path,
                                          remote_table_or_query,
-                                         cached_columns, ConstraintsDescription{}, /* comment = */ "", context);
+                                         cached_columns, ConstraintsDescription{}, /* comment = */ "", context,
+                                         generated_columns_reclassification_pending);
 
     storage->startup();
     return storage;
 }
 
 
-ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr /* context */, bool /*is_insert_query*/) const
+std::shared_ptr<sqlite3> TableFunctionSQLite::openConnection(ContextPtr context) const
+{
+    return openSQLiteDB(database_path, context, /* throw_on_error */ true, /* allow_create */ false);
+}
+
+
+ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     /// A query-backed insert is rejected in executeImpl, which is the only path taken by INSERT INTO TABLE
     /// FUNCTION (it is called with empty cached columns, before any external contact). It must not be rejected
     /// here, because DESCRIBE TABLE also calls getActualTableStructure with is_insert_query = true and must
     /// keep returning the inferred structure.
-    return StorageSQLite::getTableStructureFromData(sqlite_db, remote_table_or_query);
+    ///
+    /// Inferring a structure never creates the database file: a read of a missing path must fail closed rather
+    /// than materialize an empty database (fail-open review finding).
+    return StorageSQLite::getTableStructureFromData(openConnection(context), remote_table_or_query);
 }
 
 
@@ -100,7 +145,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
     auto maybe_query = tryGetExternalDatabaseQuery(
-        args[1], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::SQLite);
+        args[1], context, IdentifierQuotingStyle::BackticksSQLite, LiteralEscapingStyle::SQLite, IdentifierQuotingRule::Always);
     for (size_t i = 0; i < args.size(); ++i)
     {
         if (i == 1 && maybe_query)
@@ -114,7 +159,8 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     else
         remote_table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(args[1], "table_name"));
 
-    sqlite_db = openSQLiteDB(database_path, context);
+    /// The database is opened on first external contact (see `openConnection`) so a `SELECT` of a missing path
+    /// does not fabricate an empty database file here.
 }
 
 }
@@ -141,7 +187,7 @@ sqlite('db_path', 'table_name')
 
 ## Passing a query instead of a table name {#passing-a-query}
 
-Instead of a table name, the second argument can be a `SELECT` query that is passed to SQLite as is. The structure of the resulting table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+Instead of a table name, the second argument can be a `SELECT` query that is passed to SQLite as is. The structure of the resulting table is inferred from the query result. SQLite reports a declared type only for a result column that is a direct column of a table; for an expression, a literal or an aggregate it reports nothing. A declared type that maps to `String` (see the [type mapping](/reference/engines/database-engines/sqlite#data_types-support)) is used as is. Every other column - one with a numeric declared type, and one without a declared type - is resolved against the storage class of its value in the first row of the query result: an `INTEGER` value gives `Int64`, a `REAL` value gives `Float64`, and any other value (`TEXT`, `BLOB`, `NULL`), as well as an empty result, gives `String`. A numeric declared type is kept only if the storage class of that row agrees with it, because SQLite reports a declared type for a compound `SELECT` as well, taken from one of its arms while the rows come from all of them; otherwise the column is typed from the storage class, like an undeclared one. The inferred type is therefore only ever widened, never narrowed. Inferring such a column starts the query in SQLite. The first row does not speak for the rest: SQLite is free to return a different storage class in every row (for example, `CASE WHEN id = 1 THEN 1 ELSE 1.5 END`), so a query-backed read is fail-closed for every column read through a numeric type - not only for the ones without a declared type. A value whose storage class does not match that type, or which is not exactly representable in it (an `INTEGER` cell of `300` in a `UInt8` column, a `REAL` cell of `16777217` in a `Float32` column), fails the read instead of being silently coerced. To read a column with values of mixed storage classes, declare it as `String` or cast it to text in the SQLite query. Every inferred column is `Nullable`. The query can be written either as a subquery, or wrapped into the `query` function:
 
 ```sql
 SELECT * FROM sqlite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));

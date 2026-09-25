@@ -1,0 +1,8 @@
+Escaped underscore in LIKE is evaluated by ClickHouse:
+a_b
+NOT LIKE remains case-sensitive:
+Abc
+zzz
+Query: SELECT `s` FROM `t`
+Query: SELECT `s` FROM `t`
+Query: SELECT `s` FROM `t` WHERE `s` = 'abc'

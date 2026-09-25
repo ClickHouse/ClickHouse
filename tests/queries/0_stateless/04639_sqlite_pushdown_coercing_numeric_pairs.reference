@@ -1,0 +1,20 @@
+UInt8 over STRICT INTEGER holding 300 (reads as 44), u8 = 44 must keep both rows:
+44
+44
+Int64 over STRICT REAL holding 1.9 (reads as 1), i64r = 1 must keep both rows:
+1
+1
+Float64 over STRICT INTEGER holding 2^53 + 1 (reads as 2^53), f64i = 9007199254740992. must keep the row:
+9007199254740992
+Float32 over STRICT REAL holding 2^24 + 1 (reads as 2^24), f32r = 16777216. must keep the row:
+16777216
+Int64 over STRICT INTEGER stays pushed down and correct:
+10
+Float64 over STRICT REAL stays pushed down and correct:
+1.5
+Query: SELECT `u8` FROM `t`
+Query: SELECT `i64r` FROM `t`
+Query: SELECT `f64i` FROM `t`
+Query: SELECT `f32r` FROM `t`
+Query: SELECT `i64` FROM `t` WHERE `i64` > 2
+Query: SELECT `f64` FROM `t` WHERE `f64` > 0.5
