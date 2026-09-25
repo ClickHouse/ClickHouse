@@ -30,6 +30,7 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -650,7 +651,8 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if ((function_name == "in" || function_name == "globalIn")
+        if ((function_name == "in" || function_name == "globalIn"
+             || function_name == "nullIn" || function_name == "globalNullIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -894,6 +896,19 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 #endif
 }
 
+/// The value an absent map key reads: `''`, or all NUL when the value type is `FixedString`.
+/// `mapValues` stores neither.
+static bool isMapValueDefault(std::string_view value, const Block & header)
+{
+    /// A text index is always defined on a single expression.
+    chassert(header.columns() == 1);
+    auto value_type = removeNullable(removeLowCardinality(header.getByPosition(0).type));
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(value_type.get()))
+        value_type = removeNullable(removeLowCardinality(array_type->getNestedType()));
+
+    return value.empty() || (isFixedString(value_type) && value.find_first_not_of('\0') == std::string_view::npos);
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -943,7 +958,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             auto & [map_column_name, _] = *parsed;
             if (header.has(fmt::format("mapValues({})", map_column_name))
                 && value_field.getType() == Field::Types::String
-                && !value_field.safeGet<String>().empty())
+                && !isMapValueDefault(value_field.safeGet<String>(), header))
             {
                 has_index_column = true;
                 direct_read_mode = getHintOrNoneMode();
@@ -1641,7 +1656,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
     /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
     /// If index can be used, than we can analyze the index as for scalar string column
     /// because `arrayElement(m, 'const_key')` projects Array(String) to String.
-    if (const_value.getType() != Field::Types::String || const_value.safeGet<String>().empty())
+    if (const_value.getType() != Field::Types::String || isMapValueDefault(const_value.safeGet<String>(), header))
         return false;
 
     return hasIndexForMapElementValue(index_column_node);
@@ -1721,10 +1736,17 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 {
     std::optional<size_t> set_key_position;
 
+    /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
+    bool has_index_for_map_element_value = false;
+
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
+        if (hasIndexForMapElementValue(node))
+        {
+            has_index_for_map_element_value = true;
+            return true;
+        }
         return hasIndexForColumn(node.getColumnName())
-            || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
     };
 
@@ -1773,19 +1795,32 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     const auto & set_column = *columns[*set_key_position];
-    if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
+
+    /// With setting `transform_null_in = 1`, the IN set can be nullable.
+    const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(&set_column);
+    const auto & set_column_values = set_column_nullable ? set_column_nullable->getNestedColumn() : set_column;
+
+    if (!WhichDataType(set_column_values.getDataType()).isStringOrFixedString())
         return false;
 
     size_t total_row_count = prepared_set->getTotalRowCount();
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
+        /// The atom is an OR over the elements, and the index skips NULL rows when building a
+        /// granule, so a NULL element is a disjunct it cannot bind. Decline the atom.
+        if (set_column.isNullAt(row))
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+
         auto ref = set_column.getDataAt(row);
 
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
-        if (ref.empty())
+        if (ref.empty() || (has_index_for_map_element_value && isMapValueDefault(ref, header)))
         {
             out.text_search_queries.clear();
             return false;
