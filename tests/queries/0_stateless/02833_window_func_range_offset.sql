@@ -17,11 +17,10 @@ SELECT count() OVER (ORDER BY 1.0::Decimal32(1) RANGE BETWEEN CURRENT ROW AND na
 -- the two equal
 SELECT count() OVER (ORDER BY 1.0::Decimal32(1) RANGE BETWEEN 0.5 PRECEDING AND 0.5111::Decimal32(4) PRECEDING); -- { serverError BAD_ARGUMENTS }
 -- a `RANGE` offset that is not a nonnegative number is rejected before execution,
--- with either analyzer, and before a lossy coercion could hide it
+-- and before a lossy coercion could hide it
 SELECT count() OVER (ORDER BY materialize(1.5)::Nullable(Float64) RANGE NULL::Nullable(Float64) PRECEDING); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY 1.0::Decimal32(1) RANGE -0.04::Decimal32(2) PRECEDING); -- { serverError BAD_ARGUMENTS }
--- the legacy analyzer checks the offset type nowhere else, so these pin that allowing fractional
--- offsets did not start accepting anything it rejected before
-SELECT count() OVER (ORDER BY 1.5 RANGE '0.5' PRECEDING) SETTINGS enable_analyzer = 0; -- { serverError BAD_ARGUMENTS }
-SELECT count() OVER (ORDER BY 1.5 RANGE true PRECEDING) SETTINGS enable_analyzer = 0; -- { serverError BAD_ARGUMENTS }
-SELECT count() OVER (ORDER BY 1.0::Decimal32(1) RANGE toDateTime64('1970-01-01 00:00:01.5', 3) PRECEDING) SETTINGS enable_analyzer = 0; -- { serverError BAD_ARGUMENTS }
+-- a `RANGE` offset has to be numeric: a string and a `DateTime64` constant are both rejected,
+-- even though either one converts to a number
+SELECT count() OVER (ORDER BY 1.5 RANGE '0.5' PRECEDING); -- { serverError BAD_ARGUMENTS }
+SELECT count() OVER (ORDER BY 1.0::Decimal32(1) RANGE toDateTime64('1970-01-01 00:00:01.5', 3) PRECEDING); -- { serverError BAD_ARGUMENTS }

@@ -20,8 +20,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// `Bool` is not a number here: only the legacy analyzer leaves a frame offset in that field
-/// alternative, and the analyzer folds `true` to an integer one.
+/// `Bool` is not a number here: a `true` offset arrives as an integer field, so a frame offset
+/// never reaches this in that field alternative.
 bool isNumericFieldType(Field::Types::Which which)
 {
     return isInt64OrUInt64FieldType(which)
