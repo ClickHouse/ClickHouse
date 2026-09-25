@@ -48,12 +48,14 @@
 #include <IO/copyData.h>
 #include <Common/FailPoint.h>
 #include <Common/FileChecker.h>
+#include <Common/formatReadable.h>
 
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_temporary_table_memory_usage;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
@@ -75,6 +77,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TOO_MANY_BYTES;
 }
 
 namespace FailPoints
@@ -93,6 +96,8 @@ public:
         , storage(storage_)
         , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
     {
+        if (storage.is_temporary_table)
+            max_temporary_table_memory_usage = context->getSettingsRef()[Setting::max_temporary_table_memory_usage];
     }
 
     String getName() const override { return "MemorySink"; }
@@ -111,6 +116,16 @@ public:
         else
         {
             new_blocks.push_back(std::move(block));
+        }
+
+        /// Fail early instead of buffering the whole `INSERT` in memory. The eviction by `max_bytes_to_keep`
+        /// and `max_rows_to_keep` may still make room at the end, so leave that case to `onFinish`.
+        if (max_temporary_table_memory_usage)
+        {
+            new_blocks_bytes += new_blocks.back().allocatedBytes();
+            const auto & memory_settings = storage.getMemorySettingsRef();
+            if (!memory_settings[MemorySetting::max_bytes_to_keep] && !memory_settings[MemorySetting::max_rows_to_keep])
+                checkTemporaryTableMemoryUsage(storage.total_size_bytes.load(std::memory_order_relaxed) + new_blocks_bytes);
         }
     }
 
@@ -150,6 +165,8 @@ public:
             new_data->erase(new_data->begin());
         }
 
+        checkTemporaryTableMemoryUsage(new_total_bytes);
+
         // append new data to modified storage table and commit
         new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
 
@@ -159,7 +176,17 @@ public:
     }
 
 private:
+    void checkTemporaryTableMemoryUsage(UInt64 total_bytes) const
+    {
+        if (max_temporary_table_memory_usage && total_bytes > max_temporary_table_memory_usage)
+            throw Exception(ErrorCodes::TOO_MANY_BYTES,
+                "The temporary table would use {} of memory, the maximum is {} (the `max_temporary_table_memory_usage` setting)",
+                ReadableSize(total_bytes), ReadableSize(max_temporary_table_memory_usage));
+    }
+
     Blocks new_blocks;
+    UInt64 new_blocks_bytes = 0;
+    UInt64 max_temporary_table_memory_usage = 0;
     StorageMemory & storage;
     StorageSnapshotPtr storage_snapshot;
 };
@@ -762,7 +789,14 @@ void registerStorageMemory(StorageFactory & factory)
 
         settings.sanityCheck();
 
-        return std::make_shared<StorageMemory>(args.table_id, args.columns, args.constraints, args.comment, settings);
+        auto storage = std::make_shared<StorageMemory>(args.table_id, args.columns, args.constraints, args.comment, settings);
+
+        /// Internal temporary tables (external data, `GLOBAL IN`, CTEs) construct `StorageMemory` directly,
+        /// so a `Memory` table created by a query in the temporary database comes from `CREATE TEMPORARY TABLE`.
+        if (args.table_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            storage->markAsTemporaryTable();
+
+        return storage;
     },
     {
         .supports_settings = true,

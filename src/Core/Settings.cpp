@@ -4265,6 +4265,66 @@ Possible values:
 - Positive integer.
 - `0` — unlimited (default)
 )", 0)\
+    DECLARE(UInt64, max_temporary_tables, 0, R"(
+The maximum number of temporary tables that can exist in one session at the same time.
+Only tables created with `CREATE TEMPORARY TABLE` are counted: tables with external data sent with a query and the
+temporary tables built internally for `GLOBAL IN` / `GLOBAL JOIN` or materialized CTEs are not.
+
+The limit is checked when a new temporary table is created, and an exception with the `TOO_MANY_TABLES` error code is
+thrown if the session already has this number of temporary tables. Replacing an existing temporary table with
+`CREATE OR REPLACE TEMPORARY TABLE` does not increase the number of tables and is always allowed.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0) \
+    DECLARE(UInt64, max_temporary_table_memory_usage, 0, R"(
+The maximum number of bytes of memory that one temporary table with the `Memory` engine can hold.
+It applies to tables created with `CREATE TEMPORARY TABLE`, including the default temporary table engine
+(see `default_temporary_table_engine`), and is counted in the same way as `total_bytes` in `system.tables`.
+
+The limit is checked on every `INSERT` into the table (including `CREATE TEMPORARY TABLE ... AS SELECT`), while the data
+is being received and again before it is added: if the table would exceed it, the `INSERT` throws an exception with the
+`TOO_MANY_BYTES` error code and the data is not added. An `INSERT` that writes with several threads (see
+`max_insert_threads`) adds the data of every thread separately, so the data of some threads may already be added when
+another one throws, but the table never exceeds the limit. The value is taken from the settings of the `INSERT` query.
+
+Note that the `max_bytes_to_keep` setting of the `Memory` engine is different: it evicts the oldest data instead of
+rejecting the new one. If both are set, the eviction is applied first.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0) \
+    DECLARE(UInt64, max_temporary_table_size_bytes_compressed, 0, R"(
+The maximum size in bytes of the data on disk (compressed) of one temporary table with an engine of the `MergeTree` family.
+It applies to tables created with `CREATE TEMPORARY TABLE` and is counted in the same way as `total_bytes` in `system.tables`,
+that is, as the sum of the sizes of the active data parts.
+
+The limit is checked on every `INSERT` into the table (including `CREATE TEMPORARY TABLE ... AS SELECT`) before each new
+data part is committed: if the table would exceed it, the `INSERT` throws an exception with the `TOO_MANY_BYTES` error
+code and the part is not added. Parts committed earlier by the same `INSERT` stay in the table, as with any other
+error during an `INSERT` of multiple blocks. The value is taken from the settings of the `INSERT` query.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0) \
+    DECLARE(UInt64, max_temporary_table_size_bytes_uncompressed, 0, R"(
+The maximum size in bytes of the uncompressed data of one temporary table with an engine of the `MergeTree` family.
+It applies to tables created with `CREATE TEMPORARY TABLE` and is counted in the same way as `total_bytes_uncompressed`
+in `system.tables`.
+
+The limit is checked in the same way as `max_temporary_table_size_bytes_compressed`.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0) \
     \
     DECLARE(UInt64, backup_restore_keeper_max_retries, 1000, R"(
 Max retries for [Zoo]Keeper operations in the middle of a BACKUP or RESTORE operation.
