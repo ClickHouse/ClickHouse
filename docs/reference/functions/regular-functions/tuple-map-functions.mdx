@@ -464,6 +464,71 @@ SELECT mapContainsKeyLike(a, 'a%') FROM tab;
 └─────────────────────────────┘
 ```
 
+## mapContainsKeyValue {#mapContainsKeyValue}
+
+Introduced in: v26.9.0
+
+Returns whether the map contains an entry with the given key and value.
+
+For arguments that are not `NULL` this is
+`arrayExists((k, v) -> k = key AND v = value, mapKeys(map), mapValues(map))`.
+A `NULL` matches only another `NULL`, as in `mapContainsKey` and `mapContainsValue`, rather than
+comparing as unknown the way `=` does.
+
+All entries are considered, unlike `map[key] = value`, which compares only the value of the first
+occurrence of `key`.
+
+A [text index](/reference/engines/table-engines/mergetree-family/textindexes) with the `keyValuePairs`
+tokenizer answers this function from the index.
+
+**Syntax**
+
+```sql
+mapContainsKeyValue(map, key, value)
+```
+
+**Arguments**
+
+- `map` — The map to search. [`Map(K, V)`](/reference/data-types/map)
+- `key` — The key to search for. Type must match the key type of the map. [`Any`](/reference/data-types/index)
+- `value` — The value to search for. Type must match the value type of the map. [`Any`](/reference/data-types/index)
+
+**Returned value**
+
+Returns `1` if the map contains an entry with the key and the value, `0` if not. [`UInt8`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Basic usage**
+
+```sql title=Query
+SELECT mapContainsKeyValue(map('k1', 'v1', 'k2', 'v2'), 'k1', 'v1')
+```
+
+```response title=Response
+1
+```
+
+**Key and value of different entries**
+
+```sql title=Query
+SELECT mapContainsKeyValue(map('k1', 'v1', 'k2', 'v2'), 'k1', 'v2')
+```
+
+```response title=Response
+0
+```
+
+**Repeated key**
+
+```sql title=Query
+SELECT mapContainsKeyValue(map('k', 'v1', 'k', 'v2'), 'k', 'v2'), map('k', 'v1', 'k', 'v2')['k'] = 'v2'
+```
+
+```response title=Response
+1	0
+```
+
 ## mapContainsValue {#mapContainsValue}
 
 Introduced in: v25.6.0

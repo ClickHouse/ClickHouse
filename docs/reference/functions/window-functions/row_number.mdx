@@ -13,7 +13,7 @@ Numbers the current row within its partition starting from 1.
 
 ```sql
 row_number (column_name)
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
         [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
@@ -48,7 +48,7 @@ INSERT INTO salaries FORMAT Values
 ```
 
 ```sql title="Query"
-SELECT player, salary, 
+SELECT player, salary,
        row_number() OVER (ORDER BY salary DESC) AS row_number
 FROM salaries;
 ```

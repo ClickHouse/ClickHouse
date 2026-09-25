@@ -133,6 +133,18 @@ Replace table function engines with their -Cluster alternatives
 
 If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
 
+## parallel_replicas_for_queries_with_multiple_tables {#parallel_replicas_for_queries_with_multiple_tables}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control whether parallel replicas are used for queries joining multiple tables (queries with JOIN). It does not affect a UNION query without a JOIN, nor ARRAY JOIN."}]}]}/>
+
+If enabled, parallel replicas can be used for queries joining multiple tables (queries with `JOIN`). If disabled, parallel replicas are not used for such queries, and they are executed without parallel replicas.
+
+The setting affects only queries with `JOIN`, where the non-leftmost side is read in full on every replica. A `UNION` query without a `JOIN` is not affected: each `UNION` branch is an independent single-table read, so parallel replicas remain applicable to it. A `UNION` used as a table expression of a `JOIN` is a part of a query joining multiple tables and is affected. `ARRAY JOIN` does not count as a join between tables.
+
 ## parallel_replicas_index_analysis_only_on_coordinator {#parallel_replicas_index_analysis_only_on_coordinator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -188,6 +200,8 @@ Type of filter to use with custom key for parallel replicas. default - use modul
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query. Experimental.
+
+Has no effect on a distributed `INSERT SELECT` ([parallel_distributed_insert_select](/reference/settings/session-settings/parallel#parallel_distributed_insert_select) = 2), which ships the whole `INSERT` as a query to every replica: a replica executing that query reads with the query-tree-based implementation, so the initiator, taking part as one more replica, uses it too.
 
 ## parallel_replicas_prefer_local_join {#parallel_replicas_prefer_local_join}
 

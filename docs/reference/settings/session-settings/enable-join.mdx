@@ -40,11 +40,14 @@ Filter left side by set of JOIN keys collected from the right side at runtime.
 
 ## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "The JOIN runtime filters became a Production tier feature."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting to enable join filtering using dynamic index analysis"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "The JOIN runtime filters became a Production tier feature."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting to enable join filtering using dynamic index analysis"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."}]}]}/>
 
-Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
+Prune granules on the probe side of a JOIN with the runtime filter collected from the build side, see `enable_join_runtime_filters`.
+Only has an effect if `use_skip_indexes_on_data_read = 1`.
+Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, can be pruned.
+If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 
 ## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
