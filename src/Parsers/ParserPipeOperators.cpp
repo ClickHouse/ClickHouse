@@ -734,7 +734,7 @@ FROM customers
 
 Since every operator is a new subquery scope, table aliases are visible only inside the same operator (in the `ON` condition). The following operators see the combined columns of the join result, as after `SELECT *`.
 
-The comma spelling of a cross join is supported as well, with the input of the operator as the left side: `FROM customers |> AS c |> , orders`. As with the other joins, the input needs an alias when the `joined_subquery_requires_alias` setting is enabled (it is by default).
+The comma spelling of a cross join is supported as well, with the input of the operator as the left side: `FROM customers |> AS c |> , orders`. As with the other joins, when the `joined_subquery_requires_alias` setting is enabled (it is by default), the input needs an alias only when one of its columns has to be told apart from an equally named column of the joined table by qualifying it: when such a name is referenced without a qualifier inside the same operator (for example, in the `ON` condition), or when the joined table is itself a subquery or table function without an alias. Otherwise the columns of the joined table are the ones that get qualified, as `po.name` in `FROM customers |> , orders AS po`.
 
 As in the `FROM` clause of an ordinary query, a comma (cross) join is not supported right after an `ARRAY JOIN`: a comma after the `ARRAY JOIN` always belongs to its expression list.
 

@@ -52,9 +52,9 @@ $CLIENT --query "SELECT count() FROM pv3(p1 = []) AS a INNER JOIN pv3(p1 = ['1']
 
 echo '-- controls: regular table functions gain nothing'
 $CLIENT --query "SELECT numbers.number FROM numbers(3)" 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'
-$CLIENT --query "SELECT count() FROM t1 INNER JOIN numbers(3) ON 1 = 1" 2>&1 | grep -o -m1 'ALIAS_REQUIRED'
+$CLIENT --query "SELECT number FROM numbers(2) AS n INNER JOIN numbers(3) ON 1 = 1" 2>&1 | grep -o -m1 'ALIAS_REQUIRED'
 $CLIENT --query "SELECT view.dummy FROM view(SELECT 1 AS dummy)" 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'
-$CLIENT --query "SELECT count() FROM t1 INNER JOIN view(SELECT 1 AS dummy) ON 1 = 1" 2>&1 | grep -o -m1 'ALIAS_REQUIRED'
+$CLIENT --query "SELECT c1 FROM t1 INNER JOIN view(SELECT '1' AS c1) ON 1 = 1" 2>&1 | grep -o -m1 'ALIAS_REQUIRED'
 # a clashing column of `view(...)` has no name to be qualified with, in both qualification modes
 $CLIENT --query "SELECT * FROM t1, view(SELECT '0' AS c1) LIMIT 0 SETTINGS joined_subquery_requires_alias = 0, analyzer_compatibility_multiple_joins_qualify_column_names = 0 FORMAT TSVWithNames"
 $CLIENT --query "SELECT * FROM t1 INNER JOIN t2 ON t1.c1 = t2.c1, view(SELECT '0' AS c1) LIMIT 0 SETTINGS joined_subquery_requires_alias = 0, analyzer_compatibility_multiple_joins_qualify_column_names = 1 FORMAT TSVWithNames"
