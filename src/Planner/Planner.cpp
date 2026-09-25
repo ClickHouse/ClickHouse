@@ -2722,7 +2722,9 @@ void Planner::buildPlanForQueryNode()
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
 
-    if (query_context->canUseTaskBasedParallelReplicas())
+    /// Not `canUseTaskBasedParallelReplicas`: cluster engines use parallel replicas regardless of
+    /// `automatic_parallel_replicas_mode`, so the check must not depend on it either.
+    if (query_context->canUseTaskBasedParallelReplicasForClusterEngines())
     {
         if (!settings[Setting::parallel_replicas_allow_in_with_subquery] && planner_context->getPreparedSets().hasSubqueries())
         {

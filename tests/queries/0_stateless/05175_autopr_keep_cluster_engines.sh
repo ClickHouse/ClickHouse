@@ -30,3 +30,10 @@ echo "session settings: $(read_step "SET $SETTINGS, enable_parallel_replicas = 1
 
 # The automatic mode alone does not enable parallel replicas.
 echo "automatic mode only: $(read_step "SET $SETTINGS, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 1; EXPLAIN $QUERY")"
+
+# The compatibility checks of parallel replicas apply to cluster engines in every mode, e.g. an `IN` subquery in force mode.
+for mode in 0 1 2; do
+    echo "IN subquery in force mode, mode $mode: $($CLICKHOUSE_CLIENT -q "EXPLAIN $QUERY WHERE x IN (SELECT 1) SETTINGS $SETTINGS,
+        enable_parallel_replicas = 2, automatic_parallel_replicas_mode = $mode, parallel_replicas_allow_in_with_subquery = 0" 2>&1 \
+        | grep -o -m1 'SUPPORT_IS_DISABLED')"
+done

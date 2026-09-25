@@ -2,3 +2,6 @@ settings clause, mode 1: ReadFromCluster
 settings clause, mode 2: ReadFromCluster
 session settings: ReadFromCluster
 automatic mode only: ReadFromURL
+IN subquery in force mode, mode 0: SUPPORT_IS_DISABLED
+IN subquery in force mode, mode 1: SUPPORT_IS_DISABLED
+IN subquery in force mode, mode 2: SUPPORT_IS_DISABLED
