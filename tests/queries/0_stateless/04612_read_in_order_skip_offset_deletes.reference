@@ -1,0 +1,12 @@
+lightweight delete, offset at first granule boundary
+5
+6
+7
+lightweight delete, offset at second granule boundary
+9
+10
+11
+on-the-fly delete mutation, offset at first granule boundary
+5
+6
+7
