@@ -31,6 +31,9 @@ struct JWTProviderOptions
     std::string token_endpoint; /// Optional explicit override (`--oauth-token-uri`)
     /// `basic` (default when secret is set) or `post`. Ignored when secret is empty.
     std::string client_auth_method;
+
+    /// No option is set explicitly. Only then does a ClickHouse Cloud host use the Cloud login flow.
+    bool empty() const;
 };
 
 class JWTProvider
@@ -90,6 +93,7 @@ protected:
 };
 
 /// Creates the appropriate JWT provider based on the application configuration.
+/// Throws if the options are not enough to log in to a user-configured IdP.
 std::unique_ptr<JWTProvider> createJwtProvider(
     JWTProviderOptions options,
     const std::string & host,

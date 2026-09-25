@@ -548,21 +548,6 @@ void Client::login()
     options.token_endpoint = getClientConfiguration().getString("oauth-token-uri", "");
     options.client_auth_method = getClientConfiguration().getString("oauth-client-auth", "");
 
-    const bool has_explicit_endpoints
-        = !options.device_authorization_endpoint.empty() && !options.token_endpoint.empty();
-    const bool has_issuer_config = !options.auth_url.empty() && !options.client_id.empty();
-
-    if (!isCloudEndpoint(host) && !has_issuer_config && !(has_explicit_endpoints && !options.client_id.empty()))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not retrieve authentication endpoints for host '{}'. "
-            "Specify --oauth-url and --oauth-client-id (OIDC discovery), "
-            "or --oauth-client-id with both --oauth-device-uri and --oauth-token-uri, "
-            "if you are not using ClickHouse Cloud.",
-            host);
-    }
-
     jwt_provider = createJwtProvider(std::move(options), host, output_stream, error_stream);
     if (jwt_provider)
     {

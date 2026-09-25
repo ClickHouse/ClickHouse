@@ -556,14 +556,39 @@ Poco::Timestamp JWTProvider::getJwtExpiry(const std::string & token)
     }
 }
 
+bool JWTProviderOptions::empty() const
+{
+    return auth_url.empty() && client_id.empty() && client_secret.empty() && audience.empty() && scope.empty()
+        && device_authorization_endpoint.empty() && token_endpoint.empty() && client_auth_method.empty();
+}
+
 std::unique_ptr<JWTProvider> createJwtProvider(
     JWTProviderOptions options,
     const std::string & host,
     std::ostream & out,
     std::ostream & err)
 {
-    if (isCloudEndpoint(host))
+    /// Explicit OAuth options mean that the user authenticates against their own IdP, so the generic
+    /// device flow is used even for ClickHouse Cloud hosts (for example, a Cloud service with JWT
+    /// authentication through an external IdP), and the IdP token is sent as the JWT. The Cloud flow
+    /// fills in its own IdP and client ID, hardcodes the audience, and swaps the token through the
+    /// Cloud API, which only works with the Cloud IdP itself.
+    if (isCloudEndpoint(host) && options.empty())
         return std::make_unique<CloudJWTProvider>(std::move(options), host, out, err);
+
+    const bool has_explicit_endpoints = !options.device_authorization_endpoint.empty() && !options.token_endpoint.empty();
+    const bool has_issuer_config = !options.auth_url.empty() && !options.client_id.empty();
+
+    if (!has_issuer_config && !(has_explicit_endpoints && !options.client_id.empty()))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Could not retrieve authentication endpoints for host '{}'. "
+            "Specify --oauth-url and --oauth-client-id (OIDC discovery), "
+            "or --oauth-client-id with both --oauth-device-uri and --oauth-token-uri. "
+            "OAuth settings are inferred only for ClickHouse Cloud hosts, and only when no --oauth-* options are passed.",
+            host);
+    }
 
     return std::make_unique<JWTProvider>(std::move(options), out, err);
 }
