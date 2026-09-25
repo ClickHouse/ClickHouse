@@ -2,7 +2,7 @@
 
 SET enable_json_type = 1;
 SET allow_suspicious_types_in_order_by = 1;
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 
 DROP TABLE IF EXISTS test_json_merge;
 CREATE TABLE test_json_merge (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id;

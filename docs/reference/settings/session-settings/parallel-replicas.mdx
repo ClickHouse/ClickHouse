@@ -179,14 +179,6 @@ Limit the number of replicas used in a query to (estimated rows to read / min_nu
 
 Type of filter to use with custom key for parallel replicas. default - use modulo operation on the custom key, range - use range filter on custom key using all possible values for the value type of custom key.
 
-## parallel_replicas_only_with_analyzer {#parallel_replicas_only_with_analyzer}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Parallel replicas is supported only with analyzer enabled"}]}]}/>
-
-The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
-
 ## parallel_replicas_plan_based {#parallel_replicas_plan_based}
 
 <ExperimentalBadge/>

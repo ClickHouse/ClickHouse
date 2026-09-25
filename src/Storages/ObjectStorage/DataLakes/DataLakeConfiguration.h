@@ -233,6 +233,21 @@ public:
         getMetadata()->checkAlterIsPossible(commands);
     }
 
+    void checkAlterPartitionIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const PartitionCommands & commands) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        getMetadata()->checkAlterPartitionIsPossible(commands);
+    }
+
+    Pipe alterPartition(
+        const PartitionCommands & commands,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id) override
+    {
+        return getMetadata()->alterPartition(commands, context, std::move(catalog), std::move(storage_id));
+    }
+
     void alter(
         ObjectStoragePtr object_storage,
         const AlterCommands & params,
@@ -447,8 +462,13 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not allowed for usage in storage engines. The list of allowed disks is defined by server setting `allowed_disks_for_table_engines`", disk_name);
 
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
+        this->source_disk_name = disk_name;
         auto disk = context->getDisk(disk_name);
-        ready_object_storage = disk->getObjectStorage();
+        /// The table works through a private copy of the disk's object storage: the decorators
+        /// (e.g. `CachedObjectStorage`), connection settings and the disk's IO scheduling resources
+        /// stay in effect for the table, while per-table setting updates (see `update`) cannot
+        /// corrupt the disk's own storage.
+        ready_object_storage = disk->getObjectStorage()->clone();
     }
 
     bool supportsPrewhere() const override
