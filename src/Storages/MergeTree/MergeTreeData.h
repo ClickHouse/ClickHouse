@@ -1053,9 +1053,6 @@ public:
     /// Removes parts from data_parts, they should be in Deleting state
     void removePartsFinally(const MergeTreeData::DataPartsVector & parts, MergeTreeData::DataPartsVector * removed_parts = nullptr);
 
-    /// Writes a RemovePart event to system.part_log for each of the parts. Best-effort: a failed write is logged, never thrown.
-    void writePartRemovalLog(const DataPartsVector & parts);
-
     /// Try to clear parts from filesystem.
     /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
     void clearPartsFromFilesystemImpl(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete);
