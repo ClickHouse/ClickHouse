@@ -487,9 +487,8 @@ size_t MergeTreeReaderTextIndex::readRows(
         for (const auto & col_name_type : fallback_columns_list)
             fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});
 
-        /// The fallback reader's row count is not checked anywhere else: its return value is discarded
-        /// just above, a column absent from the part is left null, and a Wide part reports the maximum
-        /// over its columns. The mark loop below attributes every row of this block to some mark.
+        /// The fallback reader's row count is not checked anywhere else: its return value is discarded,
+        /// a column absent from the part is left null, and a Wide part reports the maximum over its columns.
         fallback_block.checkNumberOfRows();
         if (fallback_block.rows() != max_rows_to_read)
             throw Exception(ErrorCodes::LOGICAL_ERROR,

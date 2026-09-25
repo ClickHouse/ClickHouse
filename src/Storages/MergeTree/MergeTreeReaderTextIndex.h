@@ -91,8 +91,7 @@ private:
         size_t offset,
         size_t num_rows) const;
 
-    /// Evaluates the same default expression over a whole physical block. The returned column is full
-    /// (never sparse or const) and holds one UInt8 per row of `physical_block`.
+    /// Evaluates the same default expression over the whole block; returns a full UInt8 column of `physical_block.rows()` rows.
     ColumnPtr evaluateFallback(const String & column_name, const Block & physical_block) const;
 
     PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
