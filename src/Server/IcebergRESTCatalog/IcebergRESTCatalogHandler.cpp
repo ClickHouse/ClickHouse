@@ -31,6 +31,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_ddl;
     extern const SettingsUInt64 readonly;
 }
 
@@ -38,6 +39,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
+    extern const int QUERY_IS_PROHIBITED;
     extern const int READONLY;
     extern const int REQUIRED_PASSWORD;
 }
@@ -247,7 +249,7 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             type = "NotAuthorizedException";
             message = getCurrentExceptionMessage(false);
         }
-        else if (code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::READONLY)
+        else if (code == ErrorCodes::ACCESS_DENIED || code == ErrorCodes::READONLY || code == ErrorCodes::QUERY_IS_PROHIBITED)
         {
             status = Poco::Net::HTTPResponse::HTTP_FORBIDDEN;
             type = "ForbiddenException";
@@ -357,9 +359,12 @@ void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTRouteMatc
 
 void IcebergRESTCatalogHandler::handleCreateNamespace(HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const
 {
-    /// V1 has no privilege model, but a `readonly` profile must not mutate the catalog.
-    if (context.getSettingsRef()[Setting::readonly])
+    /// V1 has no privilege model, so mirror the settings that `ContextAccess` enforces for SQL DDL.
+    const auto & settings = context.getSettingsRef();
+    if (settings[Setting::readonly])
         throw Exception(ErrorCodes::READONLY, "Cannot create namespace in readonly mode");
+    if (!settings[Setting::allow_ddl])
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Cannot create namespace. DDL queries are prohibited for the user");
 
     const auto body = readRequestBody(request, response, MAX_NAMESPACE_CREATE_BODY_SIZE);
     if (!body)

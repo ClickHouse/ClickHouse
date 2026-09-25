@@ -295,6 +295,19 @@ def test_create_namespace_rejects_readonly(started_cluster):
     assert "readonly" in response.json()["error"]["message"]
     assert [ns] not in list_namespaces()
 
+    # `allow_ddl = 0` permits writes but not structural changes, and a namespace is structure.
+    catalog_request("GET", "/v1/my_warehouse/namespaces", auth=("no_ddl_user", ""))
+    response = catalog_request(
+        "POST",
+        "/v1/my_warehouse/namespaces",
+        json=body,
+        auth=("no_ddl_user", ""),
+        expected_code=403,
+    )
+    assert_error_shape(response, "ForbiddenException")
+    assert "DDL" in response.json()["error"]["message"]
+    assert [ns] not in list_namespaces()
+
     create_namespace([ns])
     assert [ns] in list_namespaces()
 
