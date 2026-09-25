@@ -102,3 +102,40 @@ inline void memcpySmallAllowReadWriteOverflow15(void * __restrict dst, const voi
 }
 
 #endif
+
+/** Copy a small region, touching only the bytes inside it, so unlike the variant above neither side
+  * has to be padded. Inlined, which is what matters for the short regions it is meant for, where the
+  * `memcpy` call itself costs more than the copy.
+  */
+inline void memcpySmall(void * __restrict dst, const void * __restrict src, size_t n)
+{
+    auto * to = reinterpret_cast<char *>(dst);
+    const auto * from = reinterpret_cast<const char *>(src);
+
+    /// Each step copies the region as two overlapping halves, so no byte outside it is touched.
+    if (n >= 8)
+    {
+        for (size_t offset = 0; offset + 8 < n; offset += 8)
+        {
+            __builtin_memcpy(to + offset, from + offset, 8);
+
+            /// Avoid clang loop-idiom optimization, which transforms the loop back into memcpy
+            __asm__ __volatile__("" : : : "memory");
+        }
+        __builtin_memcpy(to + n - 8, from + n - 8, 8);
+    }
+    else if (n >= 4)
+    {
+        __builtin_memcpy(to, from, 4);
+        __builtin_memcpy(to + n - 4, from + n - 4, 4);
+    }
+    else if (n >= 2)
+    {
+        __builtin_memcpy(to, from, 2);
+        __builtin_memcpy(to + n - 2, from + n - 2, 2);
+    }
+    else if (n == 1)
+    {
+        to[0] = from[0];
+    }
+}

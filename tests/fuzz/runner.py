@@ -20,6 +20,10 @@ TIMEOUT = int(os.getenv("TIMEOUT", "0"))
 OUTPUT = "/test_output"
 RUNNERS = int(os.getenv("RUNNERS", "16"))
 DEFAULT_INPUT_TIMEOUT = 1200 # libFuzzer default value for '-timeout' option
+# Extra time a merge gets after SIGUSR1, on top of the input timeout. libFuzzer only stops
+# between inputs, and it then still has to parse the merge control file and write out the
+# whole minimized corpus - work proportional to the corpus size, not to a single input.
+MERGE_FINALIZATION_TIMEOUT = 600
 SKIP_MERGE = int(os.getenv("SKIP_MERGE", "0"))
 MINIMIZE_ONLY = int(os.getenv("MINIMIZE_ONLY", "0"))
 
@@ -118,8 +122,9 @@ def truncate_output(output_log: Path):
 # If process does not exit, SIGKILL is issued after additional kill_timeout time.
 # If process exits on SIGUSR1 signal it is treated as a normal exit.
 # If process termination is a result of the SIGKILL signal then subprocess.TimeoutExpired is raised.
-# Fuzzer merge starts a child process, so to gracefully terminate fuzzer we need to send SIGUSR1 signal
-# to this child instead of parent (seems to be some kind of bug in libFuzzer)
+# A merge runs the inputs in a child process while the parent only waits for it, so SIGUSR1
+# has to go to that child: the parent checks for a graceful exit between child processes and
+# would not look at the flag until the child had finished the whole corpus anyway.
 def run_merge_fuzzer(*popenargs,
         input=None, capture_output=False, timeout=None, check=False, kill_timeout=10, **kwargs):
     if input is not None:
@@ -340,7 +345,8 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     shell=False,
                     errors="replace",
                     timeout=timeout,
-                    kill_timeout= input_timeout * 2 if input_timeout > 0 else DEFAULT_INPUT_TIMEOUT,
+                    kill_timeout= (input_timeout if input_timeout > 0 else DEFAULT_INPUT_TIMEOUT)
+                        + MERGE_FINALIZATION_TIMEOUT,
                     env= os.environ | env_common | env_fuzzer,
                 )
         except subprocess.CalledProcessError as e:

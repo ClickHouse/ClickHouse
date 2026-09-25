@@ -56,6 +56,13 @@
                Light theme: a high lightness so the dark cell text stays readable on top. */
             --viz-cell-lightness: 88%;
             --viz-cell-chroma: 0.09;
+            /* Fills of a Graphviz-rendered `EXPLAIN ... graph = 1` result. Graphviz hardcodes
+               `white` node fills and `lightgrey` cluster boxes in the graph it emits, and draws
+               everything else (borders, edges, arrowheads, labels) in `black`; the rules under
+               `#graph` remap exactly those three colors, so the light theme keeps the familiar
+               look while the dark theme gets dark boxes and light lines. */
+            --graph-node-color: #FFF;
+            --graph-cluster-color: #D3D3D3; /* Graphviz' `lightgrey`. */
             --border-color: #CCC;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --button-color: #FF0;
@@ -147,6 +154,10 @@
             /* Dark theme: a low lightness so the light cell text stays readable on top. */
             --viz-cell-lightness: 38%;
             --viz-cell-chroma: 0.08;
+            /* Dark theme: node boxes a shade above the graph background, cluster boxes a shade
+               above the nodes, keeping the same nesting order as the light theme. */
+            --graph-node-color: #111;
+            --graph-cluster-color: #2A2A2A;
             --border-color: #444;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --text-color: #CCC;
@@ -344,14 +355,6 @@
             z-index: -1;
             background: var(--table-header-color); /* light gray strip */
             border-bottom: 1px solid var(--border-color);
-        }
-
-        /* The `display: flex` above (id specificity) overrides the user-agent
-           `[hidden] { display: none }` rule, so restore hiding explicitly with a
-           selector that wins on specificity. */
-        #tab-bar[hidden]
-        {
-            display: none;
         }
 
         [data-theme="dark"] #tab-bar::before
@@ -586,13 +589,188 @@
             display: none;
         }
 
-        /* Holds the 🔑 button and its drop-down; pushed to the far right of the tab bar
-           so the connection settings sit in the top-right corner of the main area.
-           `position: relative` is the containing block for the absolutely positioned
-           drop-down below. */
-        #connection-menu
+        /* Save / load of the whole workspace: the tab list and the query of every tab, written to
+           (and read back from) a Markdown file. Sits at the right end of the bar, immediately left
+           of the 🔑 connection button.
+
+           This group carries the `margin-left: auto` that pushes the whole right-hand cluster away
+           from the tabs, and `#connection-menu` after it carries none: two auto margins would SPLIT
+           the free space between them, leaving the cluster floating in the middle of the bar. The
+           group is never hidden, so the cluster is always pushed right whenever the bar is shown. */
+        #tab-io
         {
             margin-left: auto;
+            align-self: flex-end;
+            display: flex;
+            flex-shrink: 0;
+        }
+
+        /* Borderless, background-less buttons - just the icon - sitting next to the 🔑 button.
+           The icons are line art stroked in the current text color (like the copy/download icons of
+           the toolbar), not emoji: a colour glyph takes no text color, so it could not be muted
+           when idle nor lit on hover the way every other control in the bar is. The page font is
+           inherited (rather than the system button font) for the same reason as `#tab-add`: so
+           their line box matches the tabs' and they align on the strip's bottom line.
+
+           Both icons are drawn to exactly the same vertical extent on their shared 24x24 grid -
+           y from 3 to 20, the floppy's body and the folder's back being the same 17 units tall -
+           so that side by side their tops and their bottoms fall on the same line. The stock
+           floppy is a unit taller than that (its body is square, 18x18); it is shortened here
+           rather than the folder being stretched, because the folder's height is set by two arcs
+           tangent to the box and moving those would reshape its corners. */
+        #tab-save, #tab-load
+        {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.25rem;
+            cursor: pointer;
+            font: inherit;
+            font-size: 100%;
+            line-height: 1;
+            background: none;
+            border: none;
+            /* Idle in the muted tone the tabs' own close icons use, so the pair reads as part of
+               the bar's chrome rather than competing with the tab titles. */
+            color: var(--misc-text-color);
+            transition: color 0.1s;
+        }
+
+        #tab-save svg, #tab-load svg
+        {
+            width: 1.1em;
+            height: 1.1em;
+            display: block;
+        }
+
+        #tab-save:hover, #tab-save:focus, #tab-load:hover, #tab-load:focus
+        {
+            color: var(--text-color-active);
+        }
+
+        /* The two modals the save/load buttons open. They are plain `<dialog>` elements shown with
+           `showModal`, so the browser provides the backdrop, the Escape key and the focus trap;
+           only the looks are ours, and they follow `#connection-dropdown`: the page background,
+           delineated by a border and a shadow, floating over the content. */
+        .tabs-dialog
+        {
+            width: min(92vw, 60rem);
+            /* A fixed, generous height rather than `fit-content`: the textarea is a flex item whose
+               base size comes from its `rows`, not from its text, so under `fit-content` it would
+               stay at its `min-height` and a long document would scroll inside a small box while
+               the dialog had room to spare. */
+            height: min(85vh, 48rem);
+            /* The page resets the margins of block elements, which would defeat the `margin: auto`
+               a `<dialog>` relies on to center itself. */
+            margin: auto;
+            padding: 0.75rem;
+            color: var(--text-color);
+            background: var(--background-color);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 0.25rem 1rem var(--shadow-color);
+        }
+
+        /* A `<dialog>` is `display: none` until it is opened, so the column layout has to be
+           attached to the open state or it would defeat the closed one. */
+        .tabs-dialog[open]
+        {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .tabs-dialog::backdrop
+        {
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        .tabs-dialog-head
+        {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .tabs-dialog-head h2
+        {
+            margin: 0;
+            font-size: 120%;
+        }
+
+        /* A borderless [x] in the corner, styled like the tabs' own close icon. */
+        .tabs-dialog-close
+        {
+            font: inherit;
+            font-size: 120%;
+            line-height: 1;
+            padding: 0 0.25rem;
+            cursor: pointer;
+            color: var(--misc-text-color);
+            background: none;
+            border: none;
+        }
+
+        .tabs-dialog-close:hover, .tabs-dialog-close:focus
+        {
+            color: var(--text-color-active);
+            background: var(--border-color);
+        }
+
+        .tabs-dialog-hint
+        {
+            margin: 0;
+            color: var(--misc-text-color);
+        }
+
+        /* The document is what the dialog is about, so it takes all the height that is left. Lines
+           are not wrapped: a Markdown table row is long, and wrapping it would make the shape of
+           the document unreadable. */
+        .tabs-dialog textarea
+        {
+            flex: 1 1 auto;
+            min-height: 8rem;
+            resize: none;
+            white-space: pre;
+            overflow: auto;
+            color: var(--text-color);
+        }
+
+        .tabs-dialog-buttons
+        {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+        }
+
+        /* Styled like the Run button. `position: relative` anchors the "Copied" balloon
+           (`.copy-balloon`) that the Copy button shows above itself. */
+        .tabs-dialog-buttons button
+        {
+            position: relative;
+            font: inherit;
+            font-size: 100%;
+            font-weight: bold;
+            padding: 0.25rem 1rem;
+            cursor: pointer;
+            user-select: none;
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            border: none;
+        }
+
+        .tabs-dialog-buttons button:hover, .tabs-dialog-buttons button:focus
+        {
+            color: var(--button-active-text-color);
+            background-color: var(--button-active-color);
+        }
+
+        /* Holds the 🔑 button and its drop-down; it sits at the far right of the tab bar, after the
+           save/load group that carries the `margin-left: auto` pushing both of them there, so the
+           connection settings are in the top-right corner of the main area. `position: relative` is
+           the containing block for the absolutely positioned drop-down below. */
+        #connection-menu
+        {
             /* Cancel the tab bar's 0.5rem right padding so the key's right edge lines up with
                the query editor and result tables (the right edge of #main's content). */
             margin-right: -0.5rem;
@@ -619,11 +797,6 @@
             transition: filter 0.1s;
         }
 
-        #connection-key[hidden]
-        {
-            display: none;
-        }
-
         #connection-key:hover, #connection-key:focus
         {
             filter: brightness(1.15);
@@ -639,10 +812,9 @@
             z-index: 3;
             padding: 0.75rem;
             width: min(90vw, 34rem);
-            /* The page background, so the inputs look exactly as they do in the inline top bar
-               (a field on the page color, delineated by its own border) rather than blending
-               into a same-colored panel. The border and shadow below set the panel apart from
-               the content it floats over. */
+            /* The page background, so each input reads as a field on the page color, delineated
+               by its own border, rather than blending into a same-colored panel. The border and
+               shadow below set the panel apart from the content it floats over. */
             background: var(--background-color);
             border: 1px solid var(--border-color);
             box-shadow: 0 0.25rem 1rem var(--shadow-color);
@@ -1696,6 +1868,46 @@
             position: relative;
         }
 
+        /* The "Format" button sits inside the editor, in its bottom right corner: just inside the
+           1px border and to the left of the vertical scrollbar, whose width is kept in
+           `--query-scrollbar-width` by `updateFormatButtonPosition`. It is subtle while inactive
+           (a gray link), becomes a regular yellow button on hover, and takes the accented yellow
+           while the formatting is in progress. It is above the completion overlay (z-index 2) and
+           the resizer strip, which overlaps the editor's bottom edge. */
+        #format-query
+        {
+            position: absolute;
+            right: calc(1px + var(--query-scrollbar-width, 0px));
+            bottom: 1px;
+            z-index: 3;
+            padding: 0.125rem 0.375rem;
+            font: inherit;
+            font-size: 85%;
+            line-height: normal;
+            cursor: pointer;
+            user-select: none;
+            color: var(--misc-text-color);
+            background-color: var(--element-background-color);
+            text-decoration: underline dashed;
+            text-underline-offset: 0.2em;
+        }
+
+        #format-query:hover, #format-query:focus-visible
+        {
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            text-decoration: none;
+        }
+
+        /* While the formatting is in progress. */
+        #format-query.busy
+        {
+            cursor: progress;
+            color: var(--button-active-text-color);
+            background-color: var(--button-active-color);
+            text-decoration: none;
+        }
+
         #query-params
         {
             display: flex;
@@ -1833,20 +2045,25 @@
         <div id="terminal-resizer"></div>
     </div>
     <div id="main">
-        <div id="tab-bar" hidden>
+        <div id="tab-bar">
             <div id="tabs"></div>
             <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
             <button id="tab-close-others" type="button" title="Close other tabs" hidden>×</button>
+            <div id="tab-io">
+                <button id="tab-save" type="button" title="Save all tabs and their queries as Markdown"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v10a2 2 0 0 1-2 2z"/><polyline points="17 20 17 13 7 13 7 20"/><polyline points="7 3 7 8 15 8"/></svg></button>
+                <button id="tab-load" type="button" title="Load tabs and their queries from Markdown"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></button>
+            </div>
             <div id="connection-menu">
-                <button id="connection-key" type="button" title="Connection settings" aria-expanded="false" hidden>🔑</button>
-                <div id="connection-dropdown" hidden></div>
+                <button id="connection-key" type="button" title="Connection settings" aria-expanded="false">🔑</button>
+                <div id="connection-dropdown" hidden>
+                    <div id="inputs">
+                        <input name="url" form="controls" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" form="controls" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" form="controls" class="monospace shadow" id="password" type="password" placeholder="password" />
+                    </div>
+                </div>
             </div>
         </div>
         <form id="controls">
-            <div id="inputs">
-                <input name="url" form="controls" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" form="controls" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" form="controls" class="monospace shadow" id="password" type="password" placeholder="password" />
-            </div>
-            <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div></div>
+            <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div><button type="button" id="format-query" title="Format the query">Format</button></div>
             <div id="query-params"></div>
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
@@ -1895,6 +2112,34 @@
             </div>
             <button id="download-button">Download</button>
         </div>
+        <!-- The Save / Load modals of the tab bar. `<dialog>` gives the backdrop, the Escape key
+             and the focus trap for free; the close [x] is a `method="dialog"` submit button, which
+             closes the dialog without any script. -->
+        <dialog id="tabs-save-dialog" class="tabs-dialog">
+            <form method="dialog" class="tabs-dialog-head">
+                <h2>Save tabs</h2>
+                <button class="tabs-dialog-close" type="submit" title="Close" aria-label="Close">&times;</button>
+            </form>
+            <p class="tabs-dialog-hint">Save tabs in a markdown file. The tabs can be restored back from this file.</p>
+            <textarea id="tabs-save-text" class="monospace" spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" aria-label="The saved document"></textarea>
+            <div class="tabs-dialog-buttons">
+                <button id="tabs-save-copy" type="button">Copy</button>
+                <button id="tabs-save-download" type="button">Download</button>
+            </div>
+        </dialog>
+        <dialog id="tabs-load-dialog" class="tabs-dialog">
+            <form method="dialog" class="tabs-dialog-head">
+                <h2>Load tabs</h2>
+                <button class="tabs-dialog-close" type="submit" title="Close" aria-label="Close">&times;</button>
+            </form>
+            <p class="tabs-dialog-hint">Paste a saved document below, or upload it from a file. The current tabs and their results are replaced.</p>
+            <textarea id="tabs-load-text" class="monospace" spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" aria-label="The document to load" placeholder="# Tab title&#10;&#10;```&#10;SELECT 1&#10;```"></textarea>
+            <div class="tabs-dialog-buttons">
+                <button id="tabs-load-upload" type="button">Upload a file...</button>
+                <button id="tabs-load-apply" type="button">Load</button>
+            </div>
+            <input id="tabs-load-file" type="file" accept=".md,.markdown,text/markdown,text/plain" hidden />
+        </dialog>
     </div>
 </body>
 
@@ -3847,8 +4092,8 @@ class QueryResultElement extends HTMLElement
                     display: none;
                     margin: auto;
                     overflow: auto;
-                    background: white;
-                    color: black;
+                    background: var(--element-background-color);
+                    color: var(--text-color);
                     padding: 0.5rem;
                     border-radius: 3px;
                     filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
@@ -3859,6 +4104,22 @@ class QueryResultElement extends HTMLElement
                     display: block;
                     margin: auto;
                 }
+
+                /* Theme the Graphviz output. Graphviz writes its colors as presentation
+                   attributes, which the cascade ranks below any stylesheet rule, so these
+                   selectors override them without touching the rendered SVG. Only the default
+                   colors Graphviz emits for an EXPLAIN graph are matched, so a graph that asks
+                   for a color of its own still gets it. */
+                #graph svg [fill="black"] { fill: var(--text-color); }
+                #graph svg [stroke="black"] { stroke: var(--text-color); }
+                #graph svg [fill="white"] { fill: var(--graph-node-color); }
+                #graph svg [stroke="white"] { stroke: var(--graph-node-color); }
+                #graph svg [fill="lightgrey"] { fill: var(--graph-cluster-color); }
+                #graph svg [stroke="lightgrey"] { stroke: var(--graph-cluster-color); }
+
+                /* Labels carry no fill attribute unless the graph sets fontcolor: they default
+                   to black. */
+                #graph svg text:not([fill]) { fill: var(--text-color); }
 
                 #chart
                 {
@@ -7211,20 +7472,34 @@ class QueryResultElement extends HTMLElement
         });
     }
 
+    /// Where a JavaScript asset that ships with the server lives. The server serves these from
+    /// the site root, but a page opened straight from disk has no site root - `/js/...` there
+    /// points at the root of the filesystem - so resolve the name against the document instead,
+    /// which finds the copy sitting next to `play.html` in the source tree. The site-root path is
+    /// kept for http(s), where the page is also served under `/play/` and a document-relative URL
+    /// would resolve to `/play/js/...`, which the server does not serve.
+    static _assetURL(name)
+    {
+        return location.protocol === 'file:'
+            ? new URL('js/' + name, document.baseURI).href
+            : '/js/' + name;
+    }
+
     async _getViz()
     {
         if (QueryResultElement._vizInstance) { return QueryResultElement._vizInstance; }
+        const src = QueryResultElement._assetURL('viz-standalone.js');
         if (!QueryResultElement._loadVizPromise)
         {
             /// Drop the cached promise on failure so a later attempt can retry the load
             /// instead of re-awaiting a permanently rejected promise.
-            QueryResultElement._loadVizPromise = this._loadJS('/js/viz-standalone.js')
+            QueryResultElement._loadVizPromise = this._loadJS(src)
                 .catch((e) => { QueryResultElement._loadVizPromise = null; throw e; });
         }
         await QueryResultElement._loadVizPromise;
         if (typeof Viz === 'undefined')
         {
-            throw new Error('Viz.js failed to load from /js/viz-standalone.js.');
+            throw new Error('Viz.js failed to load from ' + src + '.');
         }
         QueryResultElement._vizInstance = await Viz.instance();
         return QueryResultElement._vizInstance;
@@ -7249,7 +7524,18 @@ class QueryResultElement extends HTMLElement
         this._clearElement(this._dataTable);
         const viz = await this._getViz();
         if (isValid && !isValid()) return;
-        const svg = viz.renderSVGElement(this._explain_graph);
+        /// These are *default* attributes (like `dot -G`/`-N`/`-E`), so a graph setting them
+        /// itself still wins. Graphviz defaults to Times, a serif face nothing else on the page
+        /// uses; asking for Helvetica makes it lay the graph out with sans-serif metrics, which a
+        /// stylesheet could not do - overriding `font-family` after the fact would leave the
+        /// labels sized for the wrong font and spilling out of their boxes. A transparent
+        /// background drops the opaque white canvas rectangle, letting `#graph` (and with it the
+        /// light/dark theme) show through.
+        const svg = viz.renderSVGElement(this._explain_graph, {
+            graphAttributes: { fontname: 'Helvetica', bgcolor: 'transparent' },
+            nodeAttributes: { fontname: 'Helvetica' },
+            edgeAttributes: { fontname: 'Helvetica' },
+        });
         this._graph.replaceChildren(svg);
         this._graph.style.display = 'block';
     }
@@ -9468,10 +9754,8 @@ function checkCredentials() {
                 updateServerInfoVisibility();
             } else {
                 [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.add('fail'); });
-                /// The credentials didn't work — surface the connection settings so they can be
-                /// fixed. Only relevant when they live in the drop-down (tab bar shown); inline
-                /// (single tab) they are already visible, so there is nothing to open.
-                if (!connection_key_elem.hidden) { openConnectionDropdown(); }
+                /// The credentials didn't work — surface the connection settings so they can be fixed.
+                openConnectionDropdown();
             }
         }
     });
@@ -9545,10 +9829,7 @@ function resetCredentialsStatus() {
 function connectionSurface() {
     /// Resolved live via `getElementById` (not the `const`s declared later in the file), so it is
     /// safe to call from the handlers registered just below, which run before those declarations.
-    /// The 🔑 button is hidden in the single-tab inline layout; there the surface is `#inputs`.
-    return document.getElementById('connection-key').hidden
-        ? document.getElementById('inputs')
-        : document.getElementById('connection-menu');
+    return document.getElementById('connection-menu');
 }
 let pointer_down_inside_inputs = false;
 let commit_deferred = false;
@@ -12969,15 +13250,13 @@ const tab_bar_elem = document.getElementById('tab-bar');
 const tabs_elem = document.getElementById('tabs');
 const tab_close_others_elem = document.getElementById('tab-close-others');
 
-/// The connection parameters (url/user/password) live in the `#inputs` element. When the tab
-/// bar is shown they clutter the top of every tab, so we relocate that same element into a
-/// drop-down behind a 🔑 button in the top-right corner. Relocating the existing element (rather
-/// than duplicating the inputs) keeps every reference and event listener bound to it valid. The
-/// three inputs carry `form="controls"`, so once moved out of the form's subtree they still count
-/// as its fields: pressing `Enter` in url/user/password keeps submitting `#controls` (running the
-/// query), matching the inline single-tab layout.
+/// The connection parameters (url/user/password) live in the `#inputs` element, inside the
+/// drop-down behind the 🔑 button in the top-right corner of the tab bar: they are shared by
+/// every tab, so showing them above the editor would clutter the top of all of them. The three
+/// inputs carry `form="controls"`, so although they sit outside the form's subtree they still
+/// count as its fields: pressing `Enter` in url/user/password submits `#controls` and runs the
+/// query, as it does from the editor.
 const inputs_elem = document.getElementById('inputs');
-const controls_elem = document.getElementById('controls');
 const connection_menu_elem = document.getElementById('connection-menu');
 const connection_key_elem = document.getElementById('connection-key');
 const connection_dropdown_elem = document.getElementById('connection-dropdown');
@@ -12992,45 +13271,6 @@ function openConnectionDropdown() {
 function closeConnectionDropdown() {
     connection_dropdown_elem.hidden = true;
     connection_key_elem.setAttribute('aria-expanded', 'false');
-}
-
-/// Place the `#inputs` element either inline in `#controls` (no tab bar) or inside the
-/// drop-down behind the 🔑 button (tab bar shown). Called from `renderTabBar` whenever the
-/// tab bar's visibility is recomputed.
-function syncConnectionUI() {
-    const tabsShown = !tab_bar_elem.hidden;
-    /// Capture whether the 🔑 button owns focus before the next line may hide it: hiding a focused
-    /// element strands keyboard focus, so on the drop-down→inline transition we hand focus to a
-    /// visible control below (the mirror of the inline→drop-down handoff).
-    const keyHadFocus = document.activeElement === connection_key_elem;
-    connection_key_elem.hidden = !tabsShown;
-    if (tabsShown) {
-        if (inputs_elem.parentElement !== connection_dropdown_elem) {
-            /// If focus is inside `#inputs` when the tab bar first appears (e.g. the user pressed
-            /// Enter in url/user/password to run the first query — reachable because those fields
-            /// keep `form="controls"` and submit implicitly), moving the subtree into the hidden
-            /// drop-down would strand focus on a hidden element. Move focus to the now-visible 🔑
-            /// button first — as the Escape handler does — so keyboard users keep a visible focus
-            /// target and the inputs stay one key press away behind that button.
-            const refocus = inputs_elem.contains(document.activeElement);
-            connection_dropdown_elem.appendChild(inputs_elem);
-            if (refocus) connection_key_elem.focus();
-        }
-    } else {
-        /// Restore the inline position (first child of the form) and make sure the drop-down
-        /// is closed so a later reappearance of the tab bar starts collapsed.
-        if (inputs_elem.parentElement !== controls_elem) {
-            controls_elem.insertBefore(inputs_elem, controls_elem.firstChild);
-        }
-        closeConnectionDropdown();
-        /// The `#connection-key` button was just hidden; if it owned focus, hand focus to the
-        /// now-visible inline `url` input — the first connection field the button gated — so
-        /// keyboard focus stays visible and the next Tab continues from the connection row.
-        if (keyHadFocus) url_elem.focus();
-    }
-    /// The url input's width differs between the inline bar and the drop-down, so the point at
-    /// which the hostname reaches the version/uptime indicator changes: recompute its visibility.
-    updateServerInfoVisibility();
 }
 
 connection_key_elem.addEventListener('click', (e) => {
@@ -13097,10 +13337,9 @@ document.addEventListener('keydown', (e) => {
 /// A hidden invalid control blocks the submit with no visible bubble, leaving the Run button
 /// dead. Open the drop-down when a connection field reports invalid, so the browser shows its
 /// validation bubble on a now-visible control. `invalid` does not bubble, so listen in the
-/// capture phase. In the single-tab layout the 🔑 button is hidden and the inputs are already
-/// visible inline, so nothing is opened.
+/// capture phase.
 inputs_elem.addEventListener('invalid', () => {
-    if (!connection_key_elem.hidden && connection_dropdown_elem.hidden) openConnectionDropdown();
+    if (connection_dropdown_elem.hidden) openConnectionDropdown();
 }, true);
 
 /// Generate the next default title: "Query A" .. "Query Z", "Query AA", ...
@@ -13626,6 +13865,404 @@ function closeOtherTabs() {
     scheduleSave();
 }
 
+/// ----- Save / load the whole workspace as Markdown ------------------------------
+///
+/// The tab list, the query of every tab and its query parameters round-trip through a plain
+/// Markdown document: one top-level heading per tab (its title), followed by the tab's editor
+/// content in a fenced code block, then - when the tab has any - its parameter values, and then -
+/// when it has one - its result rendered as a Markdown table.
+///
+///     # Query A
+///
+///     ```
+///     SELECT {n:UInt8}
+///     ```
+///
+///     ## Parameters
+///
+///     ```json
+///     {
+///         "n": "1"
+///     }
+///     ```
+///
+///     | 1 |
+///     |---|
+///     | 1 |
+///
+/// Save writes that document; Load reads the headings, the code blocks and the parameter blocks
+/// back and rebuilds the tabs from them. The parameters are written as JSON, not as a table, so
+/// that they round-trip EXACTLY: they are restored as data (they decide what a rerun sends), and a
+/// table would mangle a value holding a `|` or a newline. The result tables, in contrast, are
+/// deliberately NOT read back: a table is a lossy rendering of a result (no column types, cells
+/// escaped for the table syntax, rows capped), so restoring one as data would fabricate a result
+/// the server never returned. A loaded tab is therefore a query that has not been run yet.
+
+/// The name of the file Save produces (Load accepts any file the user picks).
+const TABS_FILE_NAME = 'queries.md';
+
+/// How many rows of a result are written into its saved Markdown table. Mirrors the renderer's own
+/// row cap (`_max_rows`), so the file holds what the page showed rather than more.
+const TABS_MARKDOWN_MAX_ROWS = 1000;
+
+/// A duck-typed stand-in for a `<query-result>` that collects a result's header and rows instead
+/// of rendering them. The snapshot replay paths - `makeEventStreamHandler` for a framed stream and
+/// the per-line `JSON.parse` of a plain one - only ever call `update`/`flushFragment` on their
+/// target plus the log and metric sinks, so pointing them at this object reuses the very code that
+/// rebuilds a table on screen, instead of a second parser for the framing and for the compact row
+/// shapes it reassembles. Only rows are kept: progress, totals, extremes and an in-band exception
+/// are not part of the table.
+function makeRowCollector() {
+    return {
+        meta: null,
+        rows: [],
+        update(json) {
+            if (json.meta) { this.meta = json.meta; return true; }
+            /// `false` stops the replay, exactly as the renderer's own row cap does.
+            if (json.row) {
+                if (this.rows.length >= TABS_MARKDOWN_MAX_ROWS) return false;
+                this.rows.push(json.row);
+            }
+            return true;
+        },
+        flushFragment() {},
+        updateRaw() {},
+        appendLog() {},
+        updateMetrics() {},
+        finalizeMetrics() {},
+        enableViews() {},
+    };
+}
+
+/// Replay one stored result snapshot into a row collector, or return null when the snapshot holds
+/// nothing that is a table: a failed run, a run whose body was not persisted (an image, or a result
+/// too large for the snapshot budget), a non-default output format (shown raw or as a chart), or a
+/// stream of the `JSONEachPacket*` framings (shown raw as well). `ok === false` is tested rather
+/// than falsiness because a never-run snapshot has no `ok` at all, mirroring `materializeResult`.
+function collectSnapshotRows(snap) {
+    if (!snap || snap.ok === false || snap.data == null || !isDefaultFormat(snap.format)) return null;
+    const kind = snapshotFramingKind(snap);
+    if (kind === 'ndjson_packets') return null;
+    const collector = makeRowCollector();
+    if (kind === 'event_stream') {
+        const handleEvent = makeEventStreamHandler(collector, { format: snap.format, base64: !!snap.base64, replay: true });
+        for (const block of snap.data.split('\n\n')) {
+            /// A snapshot of a stream that broke mid-frame holds a partial block whose JSON does
+            /// not parse; skip it and keep replaying, as `renderEventStreamText` does.
+            try { dispatchEventStreamBlock(block, handleEvent); }
+            catch (e) { console.log(e); }
+        }
+    } else {
+        for (const line of snap.data.split('\n')) {
+            if (line.length === 0) continue;
+            if (!collector.update(JSON.parse(line))) break;
+        }
+    }
+    if (!Array.isArray(collector.meta) || collector.meta.length === 0) return null;
+    return collector;
+}
+
+/// One cell of a saved Markdown table. A `|` or a newline would break the row apart, and a
+/// backtick would open a code span over the rest of it, so those (and the backslash that escapes
+/// them) are escaped or folded. Nothing else is: a value is far more often read as it stands, in
+/// the Save dialog, than rendered, and escaping every character Markdown could act on would make
+/// the raw table unreadable - which is also why the tables are never read back (see the note at
+/// the top of this section). `NULL` is written with the same glyph the table on screen uses, so it
+/// is not confused with the string "NULL".
+function markdownCell(value) {
+    if (value === null || value === undefined) return QueryResultElement._NULL_TEXT;
+    const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return text.replace(/\\/g, '\\\\').replace(/([`|])/g, '\\$1').replace(/\r?\n/g, '<br>');
+}
+
+/// Render a collected result as a GitHub-flavored Markdown table (a header row, the delimiter row,
+/// then the data rows). Column types are not written: the table documents the result, and Load
+/// never reads it back.
+function markdownTable(collector) {
+    const lines = [];
+    lines.push('| ' + collector.meta.map(column => markdownCell(column.name)).join(' | ') + ' |');
+    lines.push('|' + collector.meta.map(() => '---').join('|') + '|');
+    for (const row of collector.rows) {
+        lines.push('| ' + collector.meta.map(column => markdownCell(row[column.name])).join(' | ') + ' |');
+    }
+    return lines.join('\n');
+}
+
+/// The Markdown tables of a tab's stored result: one for a single-query run, one per statement for
+/// a "Run all" run (in statement order), and none at all when the tab never ran or produced
+/// something that is not a table.
+function tabResultTables(tab) {
+    if (!tab.result) return [];
+    const snapshots = (tab.result.multi && tab.result.multi.length) ? tab.result.multi : [tab.result];
+    const tables = [];
+    for (const snap of snapshots) {
+        const collected = collectSnapshotRows(snap);
+        if (collected) tables.push(markdownTable(collected));
+    }
+    return tables;
+}
+
+/// The opening/closing fence for a code block holding `text`: three backticks, or one more than the
+/// longest run of backticks inside the text, so a query that contains a fence of its own (in a
+/// string literal or a comment) cannot close the block early.
+function codeFence(text) {
+    let longest = 0;
+    for (const run of text.match(/`+/g) || []) longest = Math.max(longest, run.length);
+    return '`'.repeat(Math.max(3, longest + 1));
+}
+
+/// Build the Markdown document for the current workspace. The live editor is folded into the active
+/// tab first (`captureActiveTab`), so an unrun draft is saved as it stands on screen.
+function buildTabsMarkdown() {
+    /// Flush an in-progress inline title rename, so the file records the name being typed rather
+    /// than the stale one (the editor writes back only on `blur`; see `duplicateTab`).
+    if (activeTitleCommit) activeTitleCommit(true);
+    captureActiveTab();
+    const out = [];
+    for (const tab of tabs) {
+        /// The title is a single line by construction (`startTitleEdit` collapses whitespace), and
+        /// is written verbatim: Markdown headings need no escaping.
+        out.push('# ' + tab.title);
+        out.push('');
+        const fence = codeFence(tab.query);
+        /// The query is emitted as one string rather than pushed line by line, so a trailing
+        /// newline in the editor survives the round trip as an empty last line of the block.
+        out.push(fence + '\n' + tab.query + '\n' + fence);
+        out.push('');
+        /// The values bound to the query's `{name:Type}` placeholders, under their own sub-heading
+        /// so that neither a reader nor the parser can confuse them with the result table below.
+        const params = tab.params || {};
+        if (Object.keys(params).length) {
+            const json = JSON.stringify(params, null, 4);
+            const params_fence = codeFence(json);
+            out.push('## Parameters');
+            out.push('');
+            out.push(params_fence + 'json\n' + json + '\n' + params_fence);
+            out.push('');
+        }
+        for (const table of tabResultTables(tab)) {
+            out.push(table);
+            out.push('');
+        }
+    }
+    return out.join('\n');
+}
+
+/// Parse a saved document back into `{title, query, params}` entries: every top-level `#` heading
+/// starts a tab, the FIRST fenced code block under it is that tab's query, and a block under a
+/// `## Parameters` sub-heading holds its parameter values as a JSON object. Everything else is
+/// ignored - the result tables above all (see the note on lossiness at the top of this section),
+/// but also any prose a user added around them. Tilde fences and an info string (```sql) are
+/// accepted too, since the document is meant to be editable by hand.
+function parseTabsMarkdown(text) {
+    const entries = [];
+    let current = null;
+    let fence = null;   /// the fence that opened the block being read, or null outside a block
+    let body = null;    /// the lines of the block being read, or null when it holds nothing we want
+    let expect = null;  /// what the next fenced block of this section holds: 'query', 'params', or nothing
+    let kind = null;    /// what the block being read holds
+
+    const finishBlock = () => {
+        if (current && body) {
+            if (kind === 'query') {
+                current.query = body.join('\n');
+            } else {
+                /// A hand-written parameter block that is not a JSON object is dropped instead of
+                /// taking the whole load down with it: the tab still loads, without parameters.
+                try {
+                    const parsed = JSON.parse(body.join('\n'));
+                    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                        current.params = {};
+                        /// Parameter values are strings everywhere else on the page (they come from
+                        /// the `param_*` inputs and go into the URL as they are), so a JSON number
+                        /// or boolean written by hand is adopted as its text.
+                        for (const name of Object.keys(parsed)) current.params[name] = String(parsed[name]);
+                    }
+                } catch (e) { console.log(e); }
+            }
+        }
+        body = null;
+        kind = null;
+        fence = null;
+    };
+
+    for (const raw of text.split('\n')) {
+        const line = raw.replace(/\r$/, '');
+        if (fence !== null) {
+            /// A closing fence uses the same character as the opening one, is at least as long,
+            /// and is alone on its line.
+            const close = line.match(/^\s*(`{3,}|~{3,})\s*$/);
+            if (close && close[1][0] === fence[0] && close[1].length >= fence.length) { finishBlock(); continue; }
+            if (body) body.push(line);
+            continue;
+        }
+        const open = line.match(/^\s*(`{3,}|~{3,})[^`]*$/);
+        if (open) {
+            fence = open[1];
+            /// Only the block the section is currently waiting for is read; any other one (a second
+            /// code block, a snippet inside prose) is skipped.
+            kind = current ? expect : null;
+            body = kind ? [] : null;
+            expect = null;
+            continue;
+        }
+        if (current && line.match(/^##[ \t]+parameters[ \t]*$/i)) { expect = 'params'; continue; }
+        const heading = line.match(/^#[ \t]+(.+)$/);
+        if (heading) {
+            current = { title: heading[1].trim(), query: null, params: null };
+            entries.push(current);
+            expect = 'query';
+        }
+    }
+    /// A document cut off inside a code block still yields the query it had accumulated.
+    finishBlock();
+
+    return entries.filter(entry => entry.title)
+        .map(entry => ({ title: entry.title, query: entry.query ?? '', params: entry.params }));
+}
+
+/// Hand `text` to the browser as a downloaded attachment.
+function downloadTextFile(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    /// Firefox only follows a click on a link that is in the document.
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    /// Revoking in the same task can cancel the download that was just started, so let the click
+    /// be processed first.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/// Replace the workspace with the tabs described by a saved Markdown document. The current tabs are
+/// closed - their queries are aborted and their panels (results, images, charts) dropped - exactly
+/// as `closeOtherTabs` closes the tabs it removes, so nothing keeps streaming into a detached panel.
+/// Returns whether the workspace was actually replaced: nothing to load, or a declined
+/// confirmation, leaves it untouched (and the Load dialog open on the text that produced it).
+function loadTabsFromMarkdown(text) {
+    const entries = parseTabsMarkdown(text);
+    if (entries.length === 0) {
+        alert('No tabs found in this document. A saved workspace has one "# Title" heading per tab, each followed by the query in a fenced code block.');
+        return false;
+    }
+
+    /// Fold the live editor - and an in-progress inline title rename, whose editable span is about
+    /// to be destroyed - into the active tab before asking: what is on screen is what would be
+    /// lost, and it is also what the check below looks at.
+    if (activeTitleCommit) activeTitleCommit(true);
+    captureActiveTab();
+    /// Loading REPLACES the workspace, so confirm whenever there is anything to lose. A pristine
+    /// page - a single empty tab that never ran - has nothing, and is replaced silently.
+    const has_content = tabs.some(tab => tab.query.trim() !== '' || tab.result || tab.inFlight);
+    if (has_content && !confirm(
+        `Replace the current ${tabs.length} tab(s) with ${entries.length} tab(s) from the document?`
+        + ' The current tabs, their results and any running query will be closed.')) return false;
+
+    markBootstrapDirty();   /// the user replaced the workspace; reconciliation must preserve it
+    /// Fold the outgoing active tab's latest draft into its own history entry, as every other
+    /// structural tab change does, so a Back to it restores what was on screen.
+    refreshCurrentHistoryEntry(getActiveTab());
+
+    for (const tab of tabs) {
+        abortTabQuery(tab);
+        if (tab.panel) tab.panel.remove();
+    }
+    tabs = [];
+    for (const entry of entries) {
+        /// Titles key the URL `tab=` reconciliation, so repeated headings in the document must not
+        /// produce two tabs with the same name (see `uniqueTitle`).
+        const tab = makeTab(uniqueTitle(entry.title, null), entry.query);
+        if (entry.params) {
+            tab.params = entry.params;
+            /// The document states a tab's query and its parameter values together, so the pair is
+            /// coherent by construction - as it is for a duplicated tab (see `duplicateTab`) - and
+            /// the values may be published into this tab's history entry and URL right away.
+            tab.paramsSyncedQuery = tab.query;
+        }
+        tabs.push(tab);
+    }
+    activeTabId = tabs[0].id;
+    activateTab(tabs[0].id).then(syncHistory);
+    refreshFavicon();   /// a replaced tab may have held the last running query
+    scheduleSave();
+    return true;
+}
+
+/// Show a short message in a balloon above a button, fading out on its own. Shared by the Copy
+/// button of this dialog and the one over the result (`#copy-div`).
+function showButtonBalloon(button, message) {
+    const balloon = document.createElement('span');
+    balloon.className = 'copy-balloon';
+    balloon.textContent = message;
+    button.appendChild(balloon);
+    balloon.addEventListener('animationend', () => balloon.remove());
+}
+
+const tabs_save_dialog_elem = document.getElementById('tabs-save-dialog');
+const tabs_save_text_elem = document.getElementById('tabs-save-text');
+const tabs_load_dialog_elem = document.getElementById('tabs-load-dialog');
+const tabs_load_text_elem = document.getElementById('tabs-load-text');
+const tabs_load_file_elem = document.getElementById('tabs-load-file');
+
+/// Save opens a modal with the whole document in a textarea, from which it can be copied or
+/// downloaded. The textarea is editable and both actions read it back, so the document can be
+/// trimmed (a result table dropped, a tab removed) before it leaves the page.
+document.getElementById('tab-save').addEventListener('click', () => {
+    tabs_save_text_elem.value = buildTabsMarkdown();
+    tabs_save_dialog_elem.showModal();
+    /// Focus the document rather than the close [x] that `showModal` would pick as the first
+    /// focusable element, and show it from its start whatever it was scrolled to the last time.
+    tabs_save_text_elem.focus();
+    tabs_save_text_elem.setSelectionRange(0, 0);
+    tabs_save_text_elem.scrollTop = 0;
+});
+
+document.getElementById('tabs-save-copy').addEventListener('click', function () {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(tabs_save_text_elem.value).then(
+            () => showButtonBalloon(this, 'Copied'),
+            () => showButtonBalloon(this, 'Copy failed'));
+    } else {
+        showButtonBalloon(this, 'Copy not supported');
+    }
+});
+
+document.getElementById('tabs-save-download').addEventListener('click', () => {
+    downloadTextFile(TABS_FILE_NAME, tabs_save_text_elem.value);
+});
+
+/// Load opens a modal with an empty textarea to paste a saved document into. "Upload a file..."
+/// fills that same textarea from a file rather than applying it directly, so a file is reviewed
+/// (and can be edited) on exactly the same screen as a paste before it replaces the workspace.
+document.getElementById('tab-load').addEventListener('click', () => {
+    tabs_load_dialog_elem.showModal();
+    tabs_load_text_elem.focus();
+});
+
+document.getElementById('tabs-load-upload').addEventListener('click', () => {
+    /// Picking the same file twice in a row must fire `change` again, so drop the previous choice.
+    tabs_load_file_elem.value = '';
+    tabs_load_file_elem.click();
+});
+
+tabs_load_file_elem.addEventListener('change', async () => {
+    const file = tabs_load_file_elem.files && tabs_load_file_elem.files[0];
+    if (!file) return;
+    tabs_load_text_elem.value = await file.text();
+    tabs_load_text_elem.focus();
+});
+
+document.getElementById('tabs-load-apply').addEventListener('click', () => {
+    /// Keep the dialog open when nothing was loaded (an empty or unparseable document, or a
+    /// declined confirmation), so the text stays on screen and can be fixed.
+    if (loadTabsFromMarkdown(tabs_load_text_elem.value)) {
+        tabs_load_text_elem.value = '';
+        tabs_load_dialog_elem.close();
+    }
+});
+
 /// Begin inline editing of the active tab's title. The title `span` itself becomes
 /// editable (rather than swapping in an `input`), so it grows with its content and the
 /// tab width does not jump when editing starts.
@@ -13684,23 +14321,13 @@ function renderTabBar() {
     /// covers every path (not just `duplicateTab`). Safe against re-entry: `commit` clears
     /// `activeTitleCommit` before it calls back into `renderTabBar`, so this becomes a no-op.
     if (activeTitleCommit) activeTitleCommit(true);
-    const active = getActiveTab();
-    /// Hidden when there is a single tab that has never produced a result from a genuine
-    /// run, so the page looks exactly as before tabs existed. Keying off `result.ran`
-    /// (rather than merely `result != null`) also ignores any stale/fabricated result
-    /// snapshot that an older build may have persisted to IndexedDB.
-    /// A running query also reveals the bar (`anyInFlight`), so even the very first query on a
-    /// fresh page can be backgrounded: the user needs the `[+]` button to open a second tab (or
-    /// switch away) while that first query is still in flight.
-    tab_bar_elem.hidden = (tabs.length <= 1 && !(active && active.result && active.result.ran) && !anyInFlight());
     /// With a single tab there are no "other" tabs to close; show it only for 2+. Hiding a
-    /// focused element strands keyboard focus (same problem `syncConnectionUI` solves for the
-    /// 🔑 button): activating this button with Enter/Space on exactly two tabs hides it in the
-    /// resulting rerender, so hand focus to the query area — always visible — before hiding.
+    /// focused element strands keyboard focus: activating this button with Enter/Space on exactly
+    /// two tabs hides it in the resulting rerender, so hand focus to the query area — always
+    /// visible — before hiding.
     const closeOthersHadFocus = document.activeElement === tab_close_others_elem;
     tab_close_others_elem.hidden = tabs.length < 2;
     if (closeOthersHadFocus && tab_close_others_elem.hidden) query_area.focus();
-    syncConnectionUI();
 
     tabs_elem.textContent = '';
     for (const tab of tabs) {
@@ -14354,7 +14981,7 @@ function saveHistory(stateData, titleForDoc, tab) {
     /// `result.query` comparison fails for a partial run; this is the same rule for the run path.
     const full_editor_run = stateData.fullEditor === true;
     tab.result = {
-        ran: true,   /// marks a genuine run; the tab bar's visibility keys off this
+        ran: true,   /// marks a genuine run (see `tabReflectsRun` and the blank-tab pruning on startup)
         /// The single statement that produced this result (in multi-query mode it differs
         /// from the editor text in tab.query); used for rendering/graph-detection/downloads.
         query: stateData.resultQuery ?? stateData.query,
@@ -14456,8 +15083,8 @@ function saveHistory(stateData, titleForDoc, tab) {
 }
 
 /// Record a history entry for the active tab on tab switch / rename. Reuses the tab's
-/// existing result (or none); does NOT fabricate a result, so a never-run single tab
-/// stays result-less and the tab bar stays hidden. Keeps the entry's `run=1` marker while the
+/// existing result (or none); does NOT fabricate a result, so a never-run tab stays
+/// result-less. Keeps the entry's `run=1` marker while the
 /// editor still reflects the produced run (`tabReflectsRun`) so switching INTO a run-backed tab
 /// leaves its shared `run=1` URL as re-runnable as `saveHistory` left it; a result-less or
 /// edited tab reports false and the marker is dropped.
@@ -14721,8 +15348,7 @@ window.onpopstate = function(event) {
     /// snapshot under `result`; legacy flat entries (predating per-tab state) store the produced
     /// result at the TOP level. Normalize such a flat entry into a nested snapshot on `tab.result`
     /// (which `materializeResult` renders) rather than treating it as "no result" — otherwise the
-    /// tab bar would hide despite a visible result and the next persist/switch would drop the
-    /// restored snapshot. A truly result-less entry stays null.
+    /// next persist/switch would drop the restored snapshot. A truly result-less entry stays null.
     if (event.state.result) {
         tab.result = event.state.result;
     } else if (event.state.data != null || (event.state.multi && event.state.multi.length)) {
@@ -14819,11 +15445,6 @@ function beginFlight(tab, launchInteractionGen) {
     scheduleSave();
     updateTabIndicator(tab);
     refreshFavicon();
-    /// Reveal the tab bar (with its `[+]`) the moment a run starts on an otherwise-hidden bar, so
-    /// the first query on a fresh page can be backgrounded. Only rebuilds when hidden (a no-op cost
-    /// once the bar is already shown), and in that case there is a single tab, so no background
-    /// tab's spinner animation is reset by the rebuild.
-    if (tab_bar_elem.hidden) renderTabBar();
     /// New run: no statement of it has claimed the editor's error marker yet, scoping the
     /// arbitration in `highlightQueryError` to this run. Both error-marker fields live on the
     /// TAB, and are (re)set for a background launch too: runs execute concurrently across tabs,
@@ -14851,14 +15472,6 @@ function endFlight(tab) {
     tab.inFlight = false;
     updateTabIndicator(tab);
     refreshFavicon();
-    /// A run that ended without leaving a result (e.g. cancelled before the first row) on a lone
-    /// tab should let the bar collapse back to its pristine hidden state. Re-render only when that
-    /// hide actually applies, so the common case (bar stays visible) does not rebuild on every run.
-    if (!tab_bar_elem.hidden && tabs.length <= 1 && !anyInFlight()
-        && !(getActiveTab() && getActiveTab().result && getActiveTab().result.ran))
-    {
-        renderTabBar();
-    }
     if (tab.id === activeTabId) {
         document.getElementById('run').blur();
         updateRunButtons(isMultiQuery);
@@ -15132,6 +15745,64 @@ document.addEventListener('keydown', event => {
         }
         event.preventDefault();
     }
+});
+
+/// The "Format" button in the bottom right corner of the editor: sends the editor's text to the server
+/// as the `q` parameter of `SELECT formatQuery({q:String})` and replaces the text with the result.
+/// The query text goes in the request body (as a `multipart/form-data` field, next to the `query`
+/// field itself), so a long query does not bloat the URL.
+const format_button = document.getElementById('format-query');
+
+/// Keep the button to the left of the editor's vertical scrollbar, if there is one. The scrollbar
+/// comes and goes with the amount of text, which no event reports directly, so the position is
+/// refreshed on edits, resizes, and right before the user can reach the button with the mouse.
+function updateFormatButtonPosition() {
+    const style = getComputedStyle(query_area);
+    const scrollbar_width = query_area.offsetWidth - query_area.clientWidth
+        - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth);
+    format_button.style.setProperty('--query-scrollbar-width', Math.max(0, scrollbar_width) + 'px');
+}
+
+query_area.addEventListener('input', updateFormatButtonPosition);
+document.getElementById('query_div').addEventListener('mouseenter', updateFormatButtonPosition);
+new ResizeObserver(updateFormatButtonPosition).observe(query_area);
+
+format_button.addEventListener('click', async () => {
+    if (format_button.classList.contains('busy')) return;
+
+    const original = query_area.value;
+    if (!original.trim()) return;
+
+    const tab_id = activeTabId;
+    const body = new FormData();
+    body.append('query', 'SELECT formatQuery({q:String}) AS formatted');
+    /// The server reads the value of a query parameter in the escaped (`TabSeparated`) form, where
+    /// a raw line feed or tab would end the value.
+    body.append('param_q', original.replace(/[\\\n\t\r]/g,
+        (c) => ({ '\\': '\\\\', '\n': '\\n', '\t': '\\t', '\r': '\\r' })[c]));
+
+    /// An error (e.g. a syntax error in the query) is shown in the result pane, as for the other queries.
+    format_button.classList.add('busy');
+    const json = await auxiliaryQuery(url_elem.value, user_elem.value, password_elem.value, body,
+        '', false, connectionGeneration);
+    format_button.classList.remove('busy');
+    if (!json) return;
+
+    /// The user could have edited the query or switched to another tab while the request was in
+    /// flight; the result then belongs to a text that is no longer in the editor.
+    if (activeTabId !== tab_id || query_area.value !== original) return;
+
+    const formatted = json.data[0].formatted;
+    if (formatted === original) return;
+
+    /// Replace the text via a selection + `execCommand`, so that the change can be undone with
+    /// Ctrl/Cmd+Z and fires the `input` event that refreshes the highlighting and the tab state.
+    /// Like `acceptCompletion`, suppress reopening the completion list on the inserted text.
+    completionAccepting = true;
+    query_area.focus();
+    query_area.setSelectionRange(0, original.length);
+    document.execCommand('insertText', false, formatted);
+    completionAccepting = false;
 });
 
 /// Pressing Tab in textarea will increase indentation.
@@ -18380,8 +19051,8 @@ if (theme) {
 
 /// ----- Tab bootstrap & startup reconciliation -----------------------------------
 /// Build the initial in-memory tab from whatever the synchronous load produced (the
-/// URL hash query, if any). A single result-less tab keeps the tab bar hidden, so the
-/// first paint is identical to the pre-tabs UI (no layout shift).
+/// URL hash query, if any). It is a real tab like any other: the bar is always shown, so a
+/// first-ever visit opens with one tab rather than with a tab-less page.
 tabs = [makeTab(undefined, query_area.value)];
 activeTabId = tabs[0].id;
 /// Seed the bootstrap tab's color modes, pinned columns and column sort from the URL (a
@@ -18473,9 +19144,9 @@ async function reconcileStartup() {
         /// Do not restore blank scratch tabs left over from a previous session: on reload they
         /// would reappear as empty tabs the user never asked to keep. A tab counts as blank only
         /// when its query is empty AND it carries no genuine run result: a tab whose editor was
-        /// cleared after a run still holds a `result.ran` snapshot, which `renderTabBar` treats as
-        /// meaningful persisted state, so it must be preserved (dropping it would silently erase a
-        /// run-backed tab from `IndexedDB`). Dropping the truly-blank tabs here lets the workspace
+        /// cleared after a run still holds a `result.ran` snapshot — meaningful persisted state
+        /// that must be preserved (dropping it would silently erase a run-backed tab from
+        /// `IndexedDB`). Dropping the truly-blank tabs here lets the workspace
         /// fall back to a single fresh tab when every saved tab was blank (as on a first-ever
         /// visit), and the trailing `persist` prunes them from storage.
         for (const r of ordered) {
@@ -18853,9 +19524,9 @@ async function reconcileStartup() {
         /// back to the dropped blank title, and the trailing `scheduleSave` would persist it again,
         /// resurrecting the very blank tab the pruning removed. Keep the default fresh bootstrap
         /// tab, and strip the stale `?tab=` from the URL so it matches a first-ever visit (an
-        /// all-blank workspace falls back to a single fresh tab). The tab bar stays hidden for the
-        /// lone result-less tab, so `syncHistory` is deliberately not called here (it would re-add
-        /// a `?tab=` for the default title); a targeted `replaceState` drops the `tab` key. The
+        /// all-blank workspace falls back to a single fresh tab). `syncHistory` is deliberately
+        /// not called here (it would re-add a `?tab=` for the default title); a targeted
+        /// `replaceState` drops the `tab` key. The
         /// reloaded entry's state must go too: it still carries the dropped tab's `tabId`/`tabName`
         /// (history state survives a reload), and keeping it would make the bootstrap tab's first
         /// unrun edit bail out of `refreshCurrentHistoryEntry` (`cur.tabId !== tab.id`), never
@@ -19057,21 +19728,12 @@ document.getElementById('copy-div').addEventListener('click', function() {
     let text = resultEl.rawText;
     if (!text) return;
 
-    let button = this;
-    let showBalloon = function(message) {
-        let balloon = document.createElement('span');
-        balloon.className = 'copy-balloon';
-        balloon.textContent = message;
-        button.appendChild(balloon);
-        balloon.addEventListener('animationend', () => balloon.remove());
-    };
-
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(
-            () => showBalloon('Result copied'),
-            () => showBalloon('Copy failed'));
+            () => showButtonBalloon(this, 'Result copied'),
+            () => showButtonBalloon(this, 'Copy failed'));
     } else {
-        showBalloon('Copy not supported');
+        showButtonBalloon(this, 'Copy not supported');
     }
 });
 
