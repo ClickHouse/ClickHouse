@@ -1,0 +1,24 @@
+-- unpartitioned, 0-row INSERT: no new log version (was: a version referencing no data file)
+   log:     00000000000000000000.json
+   adds:    0
+   rows:    0
+-- unpartitioned, 0-row INSERT from an empty source: likewise
+   log:     00000000000000000000.json
+   adds:    0
+   rows:    0
+-- partitioned, 0-row INSERT: no new log version (unchanged)
+   log:     00000000000000000000.json
+   adds:    0
+   rows:    0
+-- unpartitioned, INSERT that writes data: still committed
+   log:     00000000000000000000.json 00000000000000000001.json
+   adds:    1
+   rows:    1
+-- partitioned, INSERT that writes data: still committed
+   log:     00000000000000000000.json 00000000000000000001.json
+   adds:    1
+   rows:    1
+-- a 0-row INSERT into a table that already has data adds nothing (the no-op refresh)
+   log:     00000000000000000000.json 00000000000000000001.json
+   adds:    1
+   rows:    1

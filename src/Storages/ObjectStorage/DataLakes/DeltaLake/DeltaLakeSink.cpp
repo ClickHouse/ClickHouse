@@ -119,7 +119,8 @@ void DeltaLakeSink::consume(Chunk & chunk)
 
 void DeltaLakeSink::onFinish()
 {
-    if (isCancelled())
+    /// A commit with an empty file list is not a no-op: it still appends a version holding only `commitInfo`.
+    if (isCancelled() || data_files.empty())
         return;
 
     std::vector<DeltaLake::WriteTransaction::CommitFile> files;
