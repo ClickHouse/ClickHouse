@@ -649,16 +649,15 @@ ReplicasInfo DatabaseReplicated::parseReplicasInfo(PendingReplicasInfo & pending
     return ReplicasInfo{.replicas = std::move(replicas_info), .replicas_belong_to_shared_catalog = false};
 }
 
-/// Call from a catch block. Same rationale as in `tryGetCluster`: the caller (e.g.
-/// `system.clusters`) treats an empty `ReplicasInfo` as "skip the replica state
-/// columns for this database", and the Keeper state of a `Replicated` database can be
-/// in flux during normal lifecycle operations. Log expected coordination/connection
-/// failures at `information` so they do not leak into the client stderr at the
-/// default `send_logs_level = warning`, but keep anything unexpected at the default
-/// `error` level.
-static void logReplicasInfoFailure(const LoggerPtr & log)
+/// Logs the exception being handled; `code` is its `getCurrentExceptionCode`. Same rationale
+/// as in `tryGetCluster`: the caller (e.g. `system.clusters`) treats an empty `ReplicasInfo`
+/// as "skip the replica state columns for this database", and the Keeper state of a
+/// `Replicated` database can be in flux during normal lifecycle operations. Log expected
+/// coordination/connection failures at `information` so they do not leak into the client
+/// stderr at the default `send_logs_level = warning`, but keep anything unexpected at the
+/// default `error` level.
+static void logReplicasInfoFailure(const LoggerPtr & log, int code)
 {
-    const auto code = getCurrentExceptionCode();
     if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
         tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
     else
@@ -677,7 +676,7 @@ PendingReplicasInfo DatabaseReplicated::requestReplicasInfo(const ClusterPtr & c
     }
     catch (...)
     {
-        logReplicasInfoFailure(log);
+        logReplicasInfoFailure(log, getCurrentExceptionCode());
     }
     return pending;
 }
@@ -693,7 +692,7 @@ ReplicasInfo DatabaseReplicated::awaitReplicasInfo(PendingReplicasInfo pending) 
     }
     catch (...)
     {
-        logReplicasInfoFailure(log);
+        logReplicasInfoFailure(log, getCurrentExceptionCode());
         return {};
     }
 }

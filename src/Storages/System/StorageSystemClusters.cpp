@@ -284,12 +284,11 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
     }
 
     for (size_t i = 0; i < entries.size(); ++i)
-        writeCluster(
-            res_columns,
-            columns_mask,
-            entries[i].name,
-            *entries[i].cluster,
-            entries[i].replicated ? entries[i].replicated->awaitReplicasInfo(std::move(pending_replicas_info[i])) : ReplicasInfo{});
+    {
+        const ReplicasInfo replicas_info
+            = entries[i].replicated ? entries[i].replicated->awaitReplicasInfo(std::move(pending_replicas_info[i])) : ReplicasInfo{};
+        writeCluster(res_columns, columns_mask, entries[i].name, *entries[i].cluster, replicas_info);
+    }
 
 #if CLICKHOUSE_CLOUD
     if (SharedDatabaseCatalog::initialized())
