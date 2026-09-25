@@ -3708,7 +3708,9 @@ public:
 
         if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get()))
         {
-            if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
+            /// `toString(d, tz)` formats in that time zone, as the date functions do.
+            const auto & inner = adaptor->getFunction();
+            if ((dynamic_cast<FunctionDateOrDateTimeBase *>(inner.get()) || inner->getName() == "toString") && kind == Kind::RIGHT_CONST)
             {
                 auto time_zone = extractTimeZoneNameFromColumn(const_arg.column.get(), const_arg.name);
 

@@ -4772,9 +4772,12 @@ struct ToStringMonotonicity
         IFunction::Monotonicity positive{ .is_monotonic = true };
         IFunction::Monotonicity not_monotonic;
 
+        /// The type guards below need the value type, so `Nullable` comes off like `LowCardinality`.
         const auto * type_ptr = &type;
         if (const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
             type_ptr = low_cardinality_type->getDictionaryType().get();
+        if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
+            type_ptr = nullable_type->getNestedType().get();
 
         /// Order on enum values (which is the order on integers) is completely arbitrary in respect to the order on strings.
         if (WhichDataType(*type_ptr).isEnum())
