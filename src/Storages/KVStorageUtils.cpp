@@ -414,8 +414,7 @@ bool traverseDAGFilter(
                         element_type = removeNullable(recursiveRemoveLowCardinality(set_element_types[col]));
 
                     /// An element that does not convert into the key type can still equal a stored key:
-                    /// the runtime comparison converts in the other direction. Dropping it would leave the
-                    /// candidate keys a subset, so such a set is not a key filter and a full scan decides.
+                    /// the runtime comparison converts in the other direction, so this set is not a key filter.
                     auto converted = tryConvertFieldToType(field, *primary_key_types[col], element_type.get());
                     if (converted.isNull())
                         return false;
