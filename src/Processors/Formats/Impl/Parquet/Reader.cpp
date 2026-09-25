@@ -3152,22 +3152,17 @@ static size_t processRepDefLevelsForFlatArray(
                 continue;
             }
 
-            UInt64 processed = 0;
+            /// Each boundary needs the number of contributing values before it.
+            /// Count from the block's starting offset rather than accumulating per boundary.
             while (boundaries)
             {
                 const unsigned boundary = std::countr_zero(boundaries);
-                const UInt64 before_boundary = boundary ? (UInt64(1) << boundary) - 1 : 0;
-                const UInt64 boundary_bit = UInt64(1) << boundary;
-
-                offset += std::popcount(contributes & before_boundary & ~processed);
-                *out++ = offset;
-                offset += (contributes >> boundary) & 1;
-
-                processed |= before_boundary | boundary_bit;
+                const UInt64 before_boundary = (UInt64(1) << boundary) - 1;
+                *out++ = offset + std::popcount(contributes & before_boundary);
                 boundaries &= boundaries - 1;
             }
 
-            offset += std::popcount(contributes & ~processed);
+            offset += std::popcount(contributes);
         }
     }
 
