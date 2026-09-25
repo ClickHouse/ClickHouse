@@ -1,0 +1,11 @@
+-- its own temporary table, with no grant on any table, reports its definition
+max_rows_to_keep	7	1	definition
+-- and the system table agrees, reporting it under the empty database
+	max_rows_to_keep	7	definition
+-- a temporary table shadowing a permanent one reports the temporary, not the table it hides
+max_rows_to_keep	13	1	definition
+0
+-- and naming the permanent table itself is still refused
+ACCESS_DENIED
+-- as is reading it through the system table, which yields no row for it
+0
