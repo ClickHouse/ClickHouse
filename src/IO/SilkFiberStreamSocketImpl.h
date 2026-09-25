@@ -24,6 +24,11 @@ public:
     void setBlocking(bool flag) override;
     bool supportsExternalPolling() const override { return false; }
 
+    bool getDontWait() const { return dont_wait; }
+    void setDontWait(bool flag) { dont_wait = flag; }
+
+private:
+    bool dont_wait = false;
 };
 
 }

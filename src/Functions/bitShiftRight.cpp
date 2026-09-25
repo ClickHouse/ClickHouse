@@ -131,22 +131,13 @@ struct BitShiftRightImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    /// `apply` above refuses a big-integer shift amount and a negative one. The compiled body cannot
-    /// throw, so it must not answer for those at all: otherwise the same query raises an exception
-    /// until the expression gets compiled and then silently returns a value.
-    static constexpr bool compilable = !is_big_int_v<B> && is_unsigned_v<B>;
+    static constexpr bool compilable = true;
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (!left->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftRightImpl expected an integral type");
-
-        /// A shift by the width of the left operand or more answers zero above, while a shift by such
-        /// an amount is poison. The width is that of the operand as declared: `compileImpl` has already
-        /// widened both values to the result type, while the interpreted path clamps at `8 * sizeof(A)`.
-        auto * width = llvm::ConstantInt::get(left->getType(), 8 * sizeof(A));
-        auto * shifted = is_signed ? b.CreateAShr(left, right) : b.CreateLShr(left, right);
-        return b.CreateSelect(b.CreateICmpULT(right, width), shifted, llvm::ConstantInt::get(left->getType(), 0));
+        return is_signed ? b.CreateAShr(left, right) : b.CreateLShr(left, right);
     }
 #endif
 };
@@ -178,26 +169,25 @@ On the contrary, a `String` value is extended with additional bytes, so no bits 
 SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
         )",
         R"(
-┌───a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
-│ 101 │ 01100101 │        25 │ 00011001       │
-└─────┴──────────┴───────────┴────────────────┘
+┌───a─┬─bin(101)─┬─a_shifted─┬─bin(bitShiftRight(101, 2))─┐
+│ 101 │ 01100101 │        25 │ 00011001                   │
+└─────┴──────────┴───────────┴────────────────────────────┘
         )"},
         {"Usage example with hexadecimal encoding", R"(
--- The shifted value is binary, so it is shown with `hex`.
-SELECT 'abc' AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
+SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
         )",
         R"(
-┌─a───┬─hex(a)─┬─a_shifted─┐
-│ abc │ 616263 │ 0616      │
-└─────┴────────┴───────────┘
+┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftRight('abc', 12))─┐
+│ abc │ 616263     │           │ 0616                          │
+└─────┴────────────┴───────────┴───────────────────────────────┘
         )"},
 {"Usage example with Fixed String encoding", R"(
-SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
+SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
         )",
 R"(
-┌─a───┬─hex(a)─┬─a_shifted─┐
-│ abc │ 616263 │ 000616    │
-└─────┴────────┴───────────┘
+┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftRight(toFixedString('abc', 3), 12))─┐
+│ abc │ 616263                       │           │ 000616                                          │
+└─────┴──────────────────────────────┴───────────┴─────────────────────────────────────────────────┘
         )"},
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

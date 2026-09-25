@@ -27,22 +27,14 @@ using ValueMaskingFunc = std::function<bool(String &)>;
 /// precondition holds by construction and needs no check.
 inline bool maskURLCredentials(String & value)
 {
-    /// A statement is masked for logging before its settings are validated, so a value that no URI
-    /// parser can read still reaches a log.
-    if (findURIAuthority(value) == String::npos && value.contains('@'))
-    {
-        value = "[HIDDEN]";
-        return true;
-    }
-
-    bool masked = maskURIUserinfo(value);
+    bool masked = maskURIPassword(&value);
     masked |= maskPresignedURLParameters(value);
     return masked;
 }
 
 /// The settings of the query-level `Settings` collection whose value can carry a credential, and how
 /// each one is masked. `system.query_log.query` shows
-/// `format_avro_schema_registry_url = 'http://[HIDDEN]@registry:8080'`, so every other place that
+/// `format_avro_schema_registry_url = 'http://user:[HIDDEN]@registry:8080'`, so every other place that
 /// prints the same value hides the same secret through this map.
 ///
 /// Mirrors the per-engine `SETTINGS_TO_HIDE` maps (`Kafka_fwd.h`, `NATS_fwd.h`, ...), which do this

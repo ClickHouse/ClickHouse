@@ -1,7 +1,6 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/FieldVisitorDump.h>
 #include <IO/WriteBuffer.h>
@@ -18,24 +17,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
-}
-
-static bool anyChunkColumnReplicated(const Chunk & chunk)
-{
-    if (!chunk)
-        return false;
-    for (const auto & column : chunk.getColumns())
-        if (column->isReplicated())
-            return true;
-    return false;
-}
-
-static bool anyInputColumnReplicated(const IMergingAlgorithm::Inputs & inputs)
-{
-    for (const auto & input : inputs)
-        if (anyChunkColumnReplicated(input.chunk))
-            return true;
-    return false;
 }
 
 static void rememberVirtualRowBoundary(const SortCursorImpl & cursor, Columns & virtual_row_boundary)
@@ -87,7 +68,7 @@ static void checkVirtualRowCoversSortDescription(const Block & pk_block, const S
     {
         if (!pk_block.has(column_description.column_name))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Virtual row does not cover sort column '{}'. "
+                "Virtual row does not cover sort column '{}'."
                 "Virtual row columns: {}, sort description [{}]",
                 column_description.column_name, pk_block.dumpNames(),
                 fmt::join(description | std::views::transform([](const auto & d) { return d.column_name; }), ", "));
@@ -124,7 +105,6 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)
     , virtual_row_prefetch_window(virtual_row_prefetch_window_)
     , current_inputs(num_inputs)
-    , source_row_filter_masks(num_inputs, nullptr)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
 {
@@ -153,22 +133,8 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
 void MergingSortedAlgorithm::addInput()
 {
     current_inputs.emplace_back();
-    source_row_filter_masks.emplace_back(nullptr);
     cursors.emplace_back();
     virtual_row_boundary.emplace_back();
-}
-
-const IColumnFilter * MergingSortedAlgorithm::resolveRowFilterMask(const Chunk & chunk) const
-{
-    if (filter_column_position != -1)
-    {
-        /// One merge filters on one predicate: `canVerticalTTLDelete` gives up when a source part
-        /// has a lightweight delete, so a merge never gets a mask from both directions.
-        chassert(!chunk.getChunkInfos().has<RowFilterInfo>());
-        return &assert_cast<const ColumnUInt8 &>(*chunk.getColumns()[filter_column_position]).getData();
-    }
-
-    return getRowFilterMask(chunk);
 }
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
@@ -191,17 +157,8 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     removeReplicatedFromSortingColumns(header, inputs, description);
     removeConstAndSparse(inputs);
     merged_data.initialize(*header, inputs);
-
-    /// Enable the row-by-row fast path in `MergedData` when no input column is `ColumnReplicated`.
-    /// `removeReplicatedFromSortingColumns` already materialized the sort columns, but non-sort
-    /// columns can still be replicated (for example from a JOIN with lazy replication). If none
-    /// are, the per-row wrapping check in `insertRow` / `insertRows` is pure overhead. This is
-    /// only ever raised back to `true` in `consume` (before those rows can reach `insertRow`).
-    merged_data.setMayHaveReplicatedColumns(anyInputColumnReplicated(inputs));
-
     current_inputs = std::move(inputs);
     virtual_row_boundary.assign(current_inputs.size(), {});
-    source_row_filter_masks.assign(current_inputs.size(), nullptr);
 
     for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
@@ -210,7 +167,6 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             continue;
 
         cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
-        source_row_filter_masks[source_num] = resolveRowFilterMask(chunk);
     }
 
     if constexpr (do_debug_checks)
@@ -346,16 +302,8 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 
     removeReplicatedFromSortingColumns(header, input, description);
     removeConstAndSparse(input);
-
-    /// A late-arriving chunk may bring non-sort `ColumnReplicated` columns even if the initial
-    /// inputs had none. Raise the hint monotonically (never lower it) so `MergedData` restores the
-    /// wrapping check before these rows are inserted. See `initialize`.
-    if (!merged_data.mayHaveReplicatedColumns() && anyChunkColumnReplicated(input.chunk))
-        merged_data.setMayHaveReplicatedColumns(true);
-
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
-    source_row_filter_masks[source_num] = resolveRowFilterMask(current_inputs[source_num].chunk);
 
     if (!is_virtual_row)
     {
@@ -453,12 +401,15 @@ void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
 
     size_t current_row = current.getRow();
 
-    if (const auto * mask = source_row_filter_masks[current.order])
+    if (hasFilter())
     {
-        if ((*mask)[current_row])
+        const auto & filter_column = current.all_columns[filter_column_position];
+        const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
+
+        if (filter_data[current_row])
             merged_data.insertRow(current.all_columns, current_row, current.rows);
 
-        write_row_source(!(*mask)[current_row]);
+        write_row_source(!filter_data[current_row]);
     }
     else
     {
@@ -469,15 +420,18 @@ void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
 
 void MergingSortedAlgorithm::insertRows(const SortCursorImpl & current, size_t num_rows)
 {
-    if (const auto * mask = source_row_filter_masks[current.order])
+    if (hasFilter())
     {
+        const auto & filter_column = current.all_columns[filter_column_position];
+        const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
+
         size_t start_index = current.getRow();
         RowSourcePart row_source(current.order, false);
         RowSourcePart row_source_skipped(current.order, true);
 
         for (size_t i = start_index; i < start_index + num_rows; ++i)
         {
-            if ((*mask)[i])
+            if (filter_data[i])
             {
                 merged_data.insertRow(current.all_columns, i, current.rows);
                 out_row_sources_buf->write(row_source.data);
@@ -507,11 +461,12 @@ void MergingSortedAlgorithm::insertChunk(size_t source_num)
     Chunk chunk = std::move(current_inputs[source_num].chunk);
     size_t chunk_num_rows = chunk.getNumRows();
 
-    const auto * mask = source_row_filter_masks[source_num];
-
-    if (mask)
+    if (hasFilter())
     {
         auto columns = chunk.detachColumns();
+
+        const auto & filter_column = columns[filter_column_position];
+        const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
 
         if (out_row_sources_buf)
         {
@@ -519,12 +474,12 @@ void MergingSortedAlgorithm::insertChunk(size_t source_num)
             RowSourcePart row_source_skipped(source_num, true);
 
             for (size_t i = 0; i < chunk_num_rows; ++i)
-                out_row_sources_buf->write((*mask)[i] ? row_source.data : row_source_skipped.data);
+                out_row_sources_buf->write(filter_data[i] ? row_source.data : row_source_skipped.data);
         }
 
         for (auto & column : columns)
         {
-            column = column->filter(*mask, -1);
+            column = column->filter(filter_data, -1);
         }
 
         chunk_num_rows = columns.empty() ? 0 : columns.front()->size();

@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <Core/SettingsQuirks.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -96,7 +95,7 @@ namespace Setting
 
 namespace QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_sort;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_remerge_sort;
@@ -188,7 +187,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
-    temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]);
+    temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -249,14 +248,14 @@ SortingStep::SortingStep(
     const SharedHeader & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
-    const Settings & settings_,
+    size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , limit(limit_)
-    , sort_settings(settings_)
+    , sort_settings(max_block_size_)
 {
 }
 
@@ -280,11 +279,10 @@ void SortingStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_)
+void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_)
 {
     limit_by_columns = std::move(limit_by_columns_);
     limit_by_group_length = limit_by_group_length_;
-    limit_by_always_read_till_end = limit_by_always_read_till_end_;
 }
 
 void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc)
@@ -292,7 +290,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
     if (limit_by_columns.empty() || pipeline.getNumStreams() <= 1)
         return;
 
-    auto sort_prefix = getCollationAwareSortPrefixInColumns(stream_sort_desc, limit_by_columns, *input_headers.front());
+    auto sort_prefix = getCollationAwareSortPrefixInColumns(stream_sort_desc, limit_by_columns);
     if (sort_prefix.size() != limit_by_columns.size())
         return;
 
@@ -301,8 +299,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
-            return std::make_shared<LimitBySortedStreamTransform>(
-                header, limit_by_group_length, 0, sort_prefix, limit_by_always_read_till_end);
+            return std::make_shared<LimitBySortedStreamTransform>(header, limit_by_group_length, 0, sort_prefix);
         });
 }
 
@@ -470,8 +467,7 @@ void SortingStep::mergeSorting(
             .current_metric = CurrentMetrics::TemporaryFilesForSort,
             .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
-            .num_files = ProfileEvents::ExternalSortWritePart,
-            .spilled_to_disk_operator = "sort"},
+            .num_files = ProfileEvents::ExternalSortWritePart},
             sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec);
 
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)
@@ -752,12 +748,13 @@ void SortingStep::serialize(Serialization & ctx) const
             "Serialization of SortingStep requires query plan serialization version >= {}; "
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
 
-    serializeSortDescription(result_description, ctx.out, ctx.version);
+    serializeSortDescription(result_description, ctx.out);
 
-    serializeSortDescription(partition_by_description, ctx.out, ctx.version);
+    serializeSortDescription(partition_by_description, ctx.out);
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
-    /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
+    /// sorted by a prefix (e.g. the output of a pushed-down window); read-in-order distributed reads
+    /// are rejected earlier, so the buffering/virtual-row flags can only come from that conversion.
     /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
     /// bit is set), so a plain full sort always writes a plain 0.
     UInt8 flags = 0;
@@ -772,7 +769,7 @@ void SortingStep::serialize(Serialization & ctx) const
     writeIntBinary(flags, ctx.out);
 
     if (type == Type::FinishSorting)
-        serializeSortDescription(prefix_description, ctx.out, ctx.version);
+        serializeSortDescription(prefix_description, ctx.out);
 
     /// The limit matters for a distributed partial top-N: the sort runs on a worker below a
     /// sorted gather, and losing the limit would turn it into an unbounded full sort there.
@@ -800,10 +797,10 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
 
     SortDescription result_description;
-    deserializeSortDescription(result_description, ctx.in, ctx.version, ctx.max_type_complexity);
+    deserializeSortDescription(result_description, ctx.in);
 
     SortDescription partition_by_description;
-    deserializeSortDescription(partition_by_description, ctx.in, ctx.version, ctx.max_type_complexity);
+    deserializeSortDescription(partition_by_description, ctx.in);
 
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
@@ -813,7 +810,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     SortDescription prefix_description;
     if (finish_sorting)
-        deserializeSortDescription(prefix_description, ctx.in, ctx.version, ctx.max_type_complexity);
+        deserializeSortDescription(prefix_description, ctx.in);
 
     /// A stream older than version 7 has no limit field (see serialize).
     UInt64 limit = 0;
@@ -851,7 +848,6 @@ QueryPlanStepPtr SortingStep::clone() const
     cloned->threshold_tracker = threshold_tracker;
     cloned->limit_by_columns = limit_by_columns;
     cloned->limit_by_group_length = limit_by_group_length;
-    cloned->limit_by_always_read_till_end = limit_by_always_read_till_end;
     return cloned;
 }
 

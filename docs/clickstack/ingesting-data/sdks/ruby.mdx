@@ -6,9 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'logging', 'integration', 'application monitoring']
 ---
 
-import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+This guide integrates:
 
-<ClickStackIntegrates signals={['traces']} />
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✖️ Logs</td>
+      <td className="pe-2">✖️ ️️Metrics</td>
+      <td className="pe-2">✅ Traces</td>
+    </tr>
+  </tbody>
+</table>
 
 _To send logs to ClickStack, please send logs via the [OpenTelemetry collector](/clickstack/ingesting-data/collector)._
 
@@ -71,9 +79,9 @@ Afterwards you'll need to configure the following environment variables in your 
 <Tab title="Managed ClickStack">
 
 ```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
 ```
 
 </Tab>
@@ -81,9 +89,9 @@ OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
 <Tab title="ClickStack Open Source">
 
 ```shell
-export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
 OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 ```
 

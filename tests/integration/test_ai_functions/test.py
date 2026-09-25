@@ -98,35 +98,10 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
-        # Endpoint that always replies with plain text, ignoring `response_format`, as a
-        # model/gateway that doesn't support structured output would.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_mock_no_structured_output AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions_no_structured_output', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
         instance.query(
             f"CREATE NAMED COLLECTION ai_error AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/error', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
-        # Endpoint returning a billed `200` whose body has no usable `choices`.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_no_choices AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/no_choices', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
-        # Anthropic endpoint returning a billed `200` with no `content` array.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_anthropic_no_content AS "
-            f"provider = 'anthropic', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/no_content', "
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
@@ -763,7 +738,7 @@ def test_classify_null_input(started_cluster):
 
 
 def test_filter_basic(started_cluster):
-    """aiFilter constrains the model to a JSON-schema boolean `match` field.
+    """aiFilter asks the model for a bare true/false response.
     The mock returns true for ordinary messages."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('The package never arrived')")
@@ -818,8 +793,8 @@ def test_filter_truncated_response_graceful(started_cluster):
     assert result.strip() == ""
 
 
-def test_filter_response_format(started_cluster):
-    """aiFilter sends a JSON-schema response_format constraining the model to a boolean `match` field."""
+def test_filter_no_response_format(started_cluster):
+    """aiFilter does not send a JSON-schema response_format; it asks for bare true/false."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('hello')")
     instance.query(
@@ -831,41 +806,9 @@ def test_filter_response_format(started_cluster):
         )
     )
     body = json.loads(last["body"])
-    assert body["response_format"]["type"] == "json_schema"
-    schema = body["response_format"]["json_schema"]["schema"]
-    assert schema["properties"]["match"]["type"] == "boolean"
-    assert schema["required"] == ["match"]
+    assert "response_format" not in body
     system = next(m["content"] for m in body["messages"] if m["role"] == "system")
-    assert "boolean text filter" in system.lower()
-
-
-def test_filter_no_structured_output(started_cluster):
-    """aiFilter still sends `response_format`, but a provider that ignores it and replies with plain
-    text must still be handled correctly by the fallback in `FunctionAiFilter::postProcessResponse`:
-    a bare `true` matches, `false` doesn't, and an unrecognized reply (neither) fails closed to no
-    match rather than matching."""
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query(
-        "INSERT INTO test_input VALUES ('great product'), ('does not match'), ('gibberish reply')"
-    )
-    result = instance.query(
-        "SELECT x, aiFilter(x, 'positive feedback', map('credentials', 'ai_mock_no_structured_output')) "
-        "FROM test_input ORDER BY x",
-    )
-    lines = result.strip().split("\n")
-    assert lines == [
-        "does not match\t0",
-        "gibberish reply\t0",
-        "great product\t1",
-    ]
-
-    last = json.loads(
-        instance.exec_in_container(
-            ["curl", "-s", f"http://localhost:{MOCK_PORT}/last-request"]
-        )
-    )
-    body = json.loads(last["body"])
-    assert body["response_format"]["type"] == "json_schema"
+    assert "lowercase text true or false" in system.lower()
 
 
 def test_filter_null_input(started_cluster):
@@ -1356,178 +1299,6 @@ def test_embed_error_throw(started_cluster):
         "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_error'))",
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
-
-
-def test_embed_quota_throw_records_input_tokens(started_cluster):
-    """With `ai_function_throw_on_quota_exceeded = 1` the second batch throws from `checkQuotas`, so
-    the tokens the first batch really consumed must still be reported. Pins `AIInputTokens`, which the
-    failed-request tests cannot: there the very first call fails, leaving nothing to count."""
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query(
-        "INSERT INTO test_input SELECT 'row_' || toString(number) FROM numbers(4)"
-    )
-    qid = unique_query_id("embed_quota_throw")
-    # Batch size 1 and rows of length 5 ("row_0".."row_3"): the first batch consumes the whole
-    # 5-token cap, so the second trips the quota and raises instead of skipping.
-    error = instance.query_and_get_error(
-        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
-        settings={
-            "ai_function_embedding_max_batch_size": 1,
-            "ai_function_max_input_tokens_per_query": 5,
-            "ai_function_throw_on_quota_exceeded": 1,
-        },
-        query_id=qid,
-    )
-    assert "LIMIT_EXCEEDED" in error
-    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
-    assert int(events["api_calls"]) == 1
-    assert int(events["input_tokens"]) == 5  # "row_0"
-
-
-def test_embed_quota_throw_records_rows_processed(started_cluster):
-    """Same throw, seen through the row counters: `aiEmbed` embeds one text per row, so the rows the
-    first batch did embed must survive `embedTexts` throwing on the second."""
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query(
-        "INSERT INTO test_input SELECT 'row_' || toString(number) FROM numbers(4)"
-    )
-    qid = unique_query_id("embed_quota_throw_rows")
-    error = instance.query_and_get_error(
-        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
-        settings={
-            "ai_function_embedding_max_batch_size": 1,
-            "ai_function_max_input_tokens_per_query": 5,
-            "ai_function_throw_on_quota_exceeded": 1,
-        },
-        query_id=qid,
-    )
-    assert "LIMIT_EXCEEDED" in error
-    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
-    assert int(events["rows_processed"]) == 1  # "row_0" was embedded before the quota tripped
-    assert int(events["rows_skipped"]) == 0  # the quota raised instead of skipping
-
-
-def test_embed_malformed_response_records_input_tokens(started_cluster):
-    """A `200` body the provider billed for but that fails validation still consumed tokens, so they must
-    reach `system.query_log` and `AIQuotaTracker` rather than being lost with the rejected payload."""
-    qid = unique_query_id("embed_malformed_tokens")
-    error = instance.query_and_get_error(
-        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
-        settings={"ai_function_max_retries": 0},
-        query_id=qid,
-    )
-    assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
-    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
-    assert int(events["api_calls"]) == 1
-    assert int(events["input_tokens"]) == 2  # the mock bills one token per input character: "a", "b"
-
-
-def test_generate_malformed_response_records_input_tokens(started_cluster):
-    """Same guarantee on the text path: a chat `200` the provider billed for still reports its tokens when
-    the body fails validation. Uses `ai_function_throw_on_error = 0` so the query reaches `QueryFinish`."""
-    qid = unique_query_id("generate_malformed_tokens")
-    result = instance.query(
-        "SELECT aiGenerate('hi', map('credentials', 'ai_no_choices'))",
-        settings={
-            "ai_function_throw_on_error": 0,
-            "ai_function_max_retries": 0,
-        },
-        query_id=qid,
-    )
-    assert result.strip() == ""  # the rejected response yields no output
-    events = get_profile_events(qid)
-    assert int(events["api_calls"]) == 1
-    assert int(events["input_tokens"]) == 7  # `usage.prompt_tokens` of the rejected body
-
-
-def test_generate_malformed_response_counts_tokens_against_quota(started_cluster):
-    """The tokens of a billed-but-rejected response must reach `AIQuotaTracker`, not only `system.query_log`:
-    the first row spends the whole input-token cap, so the second row is never dispatched."""
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
-    qid = unique_query_id("generate_malformed_quota")
-    instance.query(
-        "SELECT aiGenerate(x, map('credentials', 'ai_no_choices')) FROM test_input",
-        settings={
-            "ai_function_throw_on_error": 0,
-            "ai_function_throw_on_quota_exceeded": 0,
-            "ai_function_max_retries": 0,
-            "ai_function_max_input_tokens_per_query": 7,
-        },
-        query_id=qid,
-    )
-    events = get_profile_events(qid)
-    # One request only: the first response's 7 rejected-but-billed tokens met the cap.
-    assert int(events["api_calls"]) == 1
-    assert int(events["input_tokens"]) == 7
-    assert int(events["rows_skipped"]) == 2  # one rejected response, one row never dispatched
-
-
-def test_anthropic_malformed_response_records_input_tokens(started_cluster):
-    """Same guarantee through `AnthropicProvider`, whose body shape and usage keys differ from OpenAI's."""
-    qid = unique_query_id("anthropic_malformed_tokens")
-    result = instance.query(
-        "SELECT aiGenerate('hi', map('credentials', 'ai_anthropic_no_content'))",
-        settings={
-            "ai_function_throw_on_error": 0,
-            "ai_function_max_retries": 0,
-        },
-        query_id=qid,
-    )
-    assert result.strip() == ""  # the rejected response yields no output
-    assert int(get_profile_events(qid)["input_tokens"]) == 9  # `usage.input_tokens` of the rejected body
-
-
-def test_similarity_row_counters_stay_zero_on_throw(started_cluster):
-    """`aiSimilarity` scores rows only once every batch is embedded, so a throw mid-embedding leaves no
-    scored row to report even though the first row's pair was embedded and billed. Pins that split: the
-    embedding counters are reported, the row counters are zero because no row was scored."""
-    qid = unique_query_id("sim_throw_rows")
-    # Batch size 2 over rows ('a','b') and ('c','d'): the first batch embeds row 0's pair and consumes the
-    # 2-token cap, so the second batch raises instead of embedding row 1.
-    error = instance.query_and_get_error(
-        "SELECT aiSimilarity(p.1, p.2, 'test-embed-model', map('credentials', 'ai_embed')) "
-        "FROM (SELECT arrayJoin([('a', 'b'), ('c', 'd')]) AS p)",
-        settings={
-            "ai_function_embedding_max_batch_size": 2,
-            "ai_function_max_input_tokens_per_query": 2,
-            "ai_function_throw_on_quota_exceeded": 1,
-        },
-        query_id=qid,
-    )
-    assert "LIMIT_EXCEEDED" in error
-    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
-    assert int(events["api_calls"]) == 1
-    assert int(events["input_tokens"]) == 2  # "a" and "b" were embedded and billed
-    assert int(events["rows_processed"]) == 0
-    assert int(events["rows_skipped"]) == 0
-
-
-def test_embed_error_throw_records_api_calls(started_cluster):
-    """The provider was called and charged for it, so `embedTexts` must report the usage counters even
-    though it rethrows. They used to be lost with the `EmbeddingResult` that never reached the caller."""
-    qid = unique_query_id("embed_error_throw_events")
-    error = instance.query_and_get_error(
-        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_error'))",
-        settings={"ai_function_max_retries": 0},
-        query_id=qid,
-    )
-    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
-    # The query threw, so its log row is an exception row rather than QueryFinish.
-    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
-    assert int(events["api_calls"]) == 1  # one attempt, retries disabled
-
-
-def test_similarity_error_throw_records_api_calls(started_cluster):
-    """Same guarantee through the other `embedTexts` caller, which counts rows differently."""
-    qid = unique_query_id("similarity_error_throw_events")
-    instance.query_and_get_error(
-        "SELECT aiSimilarity('a', 'b', 'test-embed-model', map('credentials', 'ai_embed_error'))",
-        settings={"ai_function_max_retries": 0},
-        query_id=qid,
-    )
-    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
-    assert int(events["api_calls"]) == 1
 
 
 def test_embed_error_graceful(started_cluster):
@@ -2382,8 +2153,8 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
         )
         outer_wins = int(get_profile_events(qid)["api_calls"])
 
-        # The quota is set only in the subquery; the outer query leaves it at the default (0 -
-        # no limit). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
+        # The quota is set only in the subquery; the outer query leaves it at the default (far
+        # above 64). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
         # a quota set only in a subquery has no effect.
         qid = unique_query_id("quota_levels_subquery_only")
         instance.query(

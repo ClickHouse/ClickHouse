@@ -19,9 +19,6 @@ public:
     {
         size_t read_no_less = 0;
         size_t read_no_more = std::numeric_limits<size_t>::max();
-        /// Throw instead of reporting EOF when the nested buffer still has data at the limit. Do not set
-        /// it when the nested buffer carries an unrelated message after this one, such as the next
-        /// keep-alive request: those bytes are not part of what the limit counts.
         bool expect_eof = false;
         std::string excetion_hint = {};
     };

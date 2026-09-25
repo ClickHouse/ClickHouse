@@ -3,7 +3,6 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Core/Field.h>
 #include <Common/FieldVisitorDump.h>
-#include <Common/checkStackSize.h>
 
 #include <cmath>
 
@@ -23,7 +22,6 @@ void JSONObjectWriter::writeAlias(const ASTWithAlias & node)
 
 static void writeFieldJSON(WriteBuffer & out, const FormatSettings & fs, const Field & field)
 {
-    checkStackSize();
     out << "{\"field_type\":";
     writeJSONString(field.getTypeName(), out, fs);
 
