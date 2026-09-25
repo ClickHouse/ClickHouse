@@ -28,6 +28,8 @@ class FuzzerLogParser:
     # How many matching lines to consider before giving up on finding a failure that
     # is not a quoted query.
     MAX_FAILURE_CANDIDATES = 50
+    # How far back to look for the start of the log record a line belongs to.
+    QUERY_TEXT_LOOKBACK = 100
     SANITIZER_ERROR_PATTERN = (
         r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|"
         r".*[a-zA-Z]+Sanitizer: CHECK failed:.*"
@@ -144,6 +146,11 @@ class FuzzerLogParser:
         match = re.search(r"\[ (\d+) \] \{", line)
         return match.group(1) if match else ""
 
+    @staticmethod
+    def is_log_record_start(line):
+        # The "[ <tid> ] {<qid>} <Level>" prefix every server log record starts with.
+        return "] {" in line and "} <" in line
+
     def find_format_string(self, match_position, matched_log_file):
         # Find the `Format string:` message belonging to the failure found at
         # `match_position` (a 1-based line number in the input).
@@ -242,11 +249,41 @@ class FuzzerLogParser:
             ).splitlines()
         return self.stack_trace_str.splitlines()[position : position + 9]
 
+    def lines_before(self, position, file):
+        # Up to QUERY_TEXT_LOOKBACK lines preceding the line at `position` (1-based),
+        # nearest first. `sed -n '1,0p'` prints line 1, so the empty range is explicit.
+        if position <= 1:
+            return []
+        start = max(1, position - self.QUERY_TEXT_LOOKBACK)
+        if file:
+            lines = Shell.get_output(
+                f"sed -n '{start},{position - 1}p' {file}"
+            ).splitlines()
+        else:
+            lines = self.stack_trace_str.splitlines()[start - 1 : position - 1]
+        lines.reverse()
+        return lines
+
+    def inside_quoted_query(self, position, file):
+        # Whether the line at `position` (1-based) is part of a query quoted by an
+        # earlier line of the same log record: `toOneLineQuery` keeps a newline after
+        # every SQL comment, so only the record's first line carries a marker. The
+        # quoted query is the last field of the `executeQuery` messages, so it ends
+        # either at STACK_TRACE_MARKER or at the ")" closing the marker's parenthesis.
+        for line in self.lines_before(position, file):
+            if self.STACK_TRACE_MARKER in line or line.rstrip().endswith(")"):
+                return False
+            if any(marker in line for marker in self.QUERY_TEXT_MARKERS):
+                return True
+            if self.is_log_record_start(line):
+                return False
+        return False
+
     def find_failure(self, pattern, file):
         # Find the failure matching `pattern` and return its text - the match itself
         # followed by the next 9 lines - together with the 1-based line number of the
         # match, or ("", None) when the pattern does not match a failure.
-        # A match inside a query that the log line quotes is not a failure: the query
+        # A match inside a query that the log record quotes is not a failure: the query
         # text is data, and both a test comment and a fuzzed query may contain any
         # text, so it is skipped and the search continues with the next match.
         for position, line in self.failure_candidates(pattern, file):
@@ -257,6 +294,12 @@ class FuzzerLogParser:
                 marker in line[: match.start()] for marker in self.QUERY_TEXT_MARKERS
             ):
                 print(f"Skipping the match in the query text at line {position}")
+                continue
+            # A match on a record's own first line is the check above's business.
+            if not self.is_log_record_start(line) and self.inside_quoted_query(
+                position, file
+            ):
+                print(f"Skipping the match in the quoted query text at line {position}")
                 continue
             return (
                 "\n".join([match.group(0)] + self.lines_after(position, file)),
@@ -369,7 +412,7 @@ class FuzzerLogParser:
         # Skip the matched line itself: a pattern with a leading `.*` keeps the record's
         # own "] {id} <Level>" prefix, which this guard would otherwise match.
         for i, line in enumerate(error_lines[1:], start=1):
-            if "] {" in line and "} <" in line or line.startswith("    #"):
+            if self.is_log_record_start(line) or line.startswith("    #"):
                 # it's a new log line or sanitizer frame - break
                 error_lines = error_lines[:i]
                 break
@@ -559,7 +602,7 @@ class FuzzerLogParser:
         # Stop at the next server log line so an unrelated later message is not
         # folded into this one.
         for i, line in enumerate(lines):
-            if i > 0 and "] {" in line and "} <" in line:
+            if i > 0 and self.is_log_record_start(line):
                 lines = lines[:i]
                 break
         message = "\n".join(lines).strip()

@@ -241,3 +241,132 @@ def test_specific_pattern_wins_over_generic_fatal(tmp_path):
     result_name, _, _ = parser.parse_failure()
 
     assert result_name.startswith("Logical error")
+
+
+# A real record from `Upgrade check (amd_release)`: the stress phase injected a
+# memory-limit fault, so `executeQuery` logged the exception together with the whole
+# query text. `toOneLineQuery` keeps the newline after every SQL comment, so the six
+# comment lines of tests/queries/0_stateless/
+# 04057_aggregate_function_nothing_with_parameters.sql land on their own log lines and
+# only the first one carries the "(in query:" marker.
+_QUOTED_MULTILINE_QUERY_LOG = """\
+2026.09.21 08:26:23.414235 [ 27178 ] {f1e16e4a-075e-436f-9bd2-da2f5d230e4f} <Error> executeQuery: Code: 241. DB::Exception: Query memory tracker: fault injected. Would use 149.85 KiB, maximum: 4.66 GiB: While executing AggregatingTransform. (MEMORY_LIMIT_EXCEEDED) (version 26.8.9.10 (official build)) (from [::1]:42798) (comment: 04057_aggregate_function_nothing_with_parameters.sql-test_v0i7w6q0l1b9) (query 1, line 1) (in query: -- Regression test for assertion failure when aggregate function combinators
+ -- wrap AggregateFunctionNothing that carries parameters.
+ -- These queries used to crash with: Assertion `parameters == nested_func->getParameters()' failed
+ SELECT quantileIfArrayArray(0.5)([[NULL]], [[1]]);), Stack trace (when copying this message, always include the lines below):
+
+0. src/Common/Exception.cpp:166:1: DB::Exception::Exception(DB::Exception::MessageMasked&&, int, bool) @ 0x000000001707dbaa
+4. src/Common/MemoryTracker.cpp:332:19: MemoryTracker::allocImpl(long, bool, MemoryTracker*, double) @ 0x000000001711c0b6
+ (version 26.8.9.10 (official build))
+"""
+
+# A genuine assertion: glibc writes it to stderr as a bare line, with no log-record
+# prefix to anchor on.
+_REAL_ASSERTION_LINE = (
+    "clickhouse: /src/Foo.h:31: DB::Foo::Foo(): Assertion `real_expr' failed.\n"
+)
+
+
+def test_assertion_quoted_in_multiline_query_is_not_a_failure(tmp_path):
+    # The failure phrase sits on a continuation line of the quoted query, so the
+    # line itself carries no marker to skip it by.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(_QUOTED_MULTILINE_QUERY_LOG, encoding="utf-8")
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, _, _ = parser.parse_failure()
+
+    assert "nested_func" not in result_name
+    assert result_name == FuzzerLogParser.UNKNOWN_ERROR
+
+
+def test_real_failure_after_a_quoted_multiline_query_wins(tmp_path):
+    # Naming the run after the quote is not just noise: `find_failure` returns the
+    # first candidate, so the quote hides every real failure logged after it.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        _QUOTED_MULTILINE_QUERY_LOG + _REAL_ASSERTION_LINE, encoding="utf-8"
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, _, _ = parser.parse_failure()
+
+    assert "real_expr" in result_name
+    assert "nested_func" not in result_name
+
+
+def test_match_in_stack_frame_after_the_quoted_query_is_still_found(tmp_path):
+    # The stack-trace marker ends the quoted query, so a failing frame of the very
+    # record that quoted a query is still reported.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.21 08:26:23.414235 [ 27178 ] {q} <Error> executeQuery: Code: 241. "
+        "DB::Exception: fault injected. (MEMORY_LIMIT_EXCEEDED) "
+        "(in query: -- a comment\n"
+        " -- Assertion `quoted_expr' failed\n"
+        " SELECT 1;), Stack trace (when copying this message, always include the "
+        "lines below):\n"
+        "\n"
+        "0. src/Common/Foo.cpp:1: _LIBCPP_ASSERT_VALID_ELEMENT_ACCESS @ 0x1\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, _, _ = parser.parse_failure()
+
+    assert "_LIBCPP_ASSERT_VALID_ELEMENT_ACCESS" in result_name
+    assert "quoted_expr" not in result_name
+
+
+def test_quoted_query_closed_on_its_own_line_does_not_shadow_a_later_match(tmp_path):
+    # A record without a stack trace ends at the ")" that closes "(in query:", so a
+    # later failure is not read as part of that query either.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.21 08:26:23.414235 [ 27178 ] {q} <Error> executeQuery: Code: 47. "
+        "DB::Exception: Unknown expression identifier. (UNKNOWN_IDENTIFIER) "
+        "(in query: -- a comment\n"
+        " -- Assertion `quoted_expr' failed\n"
+        " SELECT 1;)\n" + _REAL_ASSERTION_LINE,
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, _, _ = parser.parse_failure()
+
+    assert "real_expr" in result_name
+    assert "quoted_expr" not in result_name
+
+
+def test_failure_on_a_record_start_after_an_unterminated_quote_is_still_found(tmp_path):
+    # A log truncated mid-record leaves a quoted query that never closes. A failure
+    # opening a record of its own is never a continuation of it, whatever precedes it.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.21 08:26:23.414235 [ 27178 ] {q} <Error> executeQuery: Code: 241. "
+        "DB::Exception: fault injected. (MEMORY_LIMIT_EXCEEDED) "
+        "(in query: -- a comment\n"
+        " -- Logical error: 'quoted only'\n"
+        " SELECT 1;\n"
+        "2026.09.21 08:26:24.000000 [ 27178 ] {q2} <Error> executeQuery: Code: 49. "
+        "DB::Exception: Logical error: 'Bad cast from type A to type B'. "
+        "(LOGICAL_ERROR) (version 26.8.9.10 (official build)) (from [::1]:1) "
+        "(in query: SELECT 1)\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, _, _ = parser.parse_failure()
+
+    assert "Bad cast from type A to type B" in result_name
+    assert "quoted only" not in result_name
