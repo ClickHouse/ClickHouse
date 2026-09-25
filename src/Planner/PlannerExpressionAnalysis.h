@@ -36,6 +36,8 @@ struct AggregationAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_aggregation_actions;
     Names aggregation_keys;
+    /// Index in `aggregation_keys` of each `GROUP BY` element as written; empty unless an element repeats.
+    std::vector<size_t> aggregation_key_positions;
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
