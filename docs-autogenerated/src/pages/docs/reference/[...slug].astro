@@ -1,0 +1,91 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import { components as mintlifyComponents } from '@mintlify/astro/components';
+import { resolvePageData, type NavEntry, type NavPage } from '@mintlify/astro/helpers';
+import type { DocsConfig } from '@mintlify/astro';
+
+import docsConfig from '@generated/mintlify/docs.json';
+import redirectConfig from '@generated/data/redirects.json';
+import * as clickhouseComponents from '@generated/mdx-components';
+
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+
+type ReferenceEntry = CollectionEntry<'reference'>;
+
+interface PageProps {
+  entry: ReferenceEntry;
+  sidebarEntries: NavEntry[];
+  featureStateByRoute: Record<string, 'beta' | 'experimental'>;
+  previous: NavPage | null;
+  next: NavPage | null;
+}
+
+interface RedirectProps {
+  redirect: string;
+}
+
+type Props = PageProps | RedirectProps;
+
+export async function getStaticPaths() {
+  const entries = await getCollection('reference');
+  const titleMap = Object.fromEntries(
+    entries.map((entry) => [entry.id, entry.data.title]),
+  );
+  const sidebarTitleMap = Object.fromEntries(
+    entries.map((entry) => [entry.id, entry.data.sidebarTitle]),
+  );
+  const featureStateByRoute = Object.fromEntries(
+    entries
+      .filter((entry) => entry.data.featureState)
+      .map((entry) => [entry.data.route, entry.data.featureState]),
+  ) as Record<string, 'beta' | 'experimental'>;
+
+  const pages = entries.map((entry) => {
+    const sidebarPage = resolvePageData(docsConfig as DocsConfig, {
+      currentPath: entry.data.route,
+      titleMap: sidebarTitleMap,
+    });
+    const footerPage = resolvePageData(docsConfig as DocsConfig, {
+      currentPath: entry.data.route,
+      titleMap,
+    });
+
+    return {
+      params: { slug: entry.data.route.slice('/docs/reference/'.length) },
+      props: {
+        entry,
+        sidebarEntries: sidebarPage.sidebarEntries,
+        featureStateByRoute,
+        previous: footerPage.footerPages.prev,
+        next: footerPage.footerPages.next,
+      },
+    };
+  });
+
+  const redirects = redirectConfig.redirects
+    .filter(({ from }) => from.startsWith('/docs/reference/'))
+    .map(({ from, to }) => ({
+      params: { slug: from.slice('/docs/reference/'.length) },
+      props: { redirect: to },
+    }));
+
+  return [...pages, ...redirects];
+}
+
+const props = Astro.props as Props;
+if ('redirect' in props) return Astro.redirect(props.redirect, 301);
+
+const { entry, sidebarEntries, featureStateByRoute, previous, next } = props;
+const { Content, headings } = await render(entry);
+---
+
+<DocsLayout
+  document={entry.data}
+  sidebarEntries={sidebarEntries}
+  featureStateByRoute={featureStateByRoute}
+  headings={headings}
+  previous={previous}
+  next={next}
+>
+  <Content components={{ ...mintlifyComponents, ...clickhouseComponents }} />
+</DocsLayout>

@@ -1,0 +1,13 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@components/*": ["src/components/*"],
+      "@clickhouse-docs-components/*": ["src/generated/shared/components/*"],
+      "@generated/*": ["src/generated/*"],
+      "/snippets/components/*": ["src/generated/shared/components/*"],
+      "/snippets/lib/*": ["src/generated/shared/lib/*"]
+    }
+  }
+}

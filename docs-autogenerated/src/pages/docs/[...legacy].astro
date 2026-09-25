@@ -1,0 +1,15 @@
+---
+import redirectConfig from '@generated/data/redirects.json';
+
+export function getStaticPaths() {
+  return redirectConfig.redirects
+    .filter(({ from }) => !from.startsWith('/docs/reference/'))
+    .map(({ from, to }) => ({
+      params: { legacy: from.slice('/docs/'.length) },
+      props: { redirect: to },
+    }));
+}
+
+const { redirect } = Astro.props;
+return Astro.redirect(redirect, 301);
+---
