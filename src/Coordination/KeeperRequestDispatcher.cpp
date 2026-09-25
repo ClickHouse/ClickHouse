@@ -152,6 +152,8 @@ KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_, KeeperS
     if (!special_response_router)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcher requires a special response router");
 
+    /// Raft callbacks can publish this server metric from arbitrary threads during shutdown.
+    ProfileEvents::global_counters.preallocate(ProfileEvents::KeeperCommitsFailed);
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
     size_t max_request_queue_size = coordination_settings[CoordinationSetting::max_request_queue_size];
     requests_queue.init(max_request_queue_size);
@@ -426,7 +428,7 @@ void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noex
                 /// and close the socket. This is a weird enough situation that idk how it would
                 /// arise in practice and what would be a good way to handle or avoid it.
                 LOG_ERROR(log, "Response queue is too big for too long. Dropping responses.");
-                ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
+                ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperCommitsFailed);
                 /// Also prevent sending any future responses for this session to avoid breaking
                 /// ordering. The client will disconnect after session timeout.
                 try

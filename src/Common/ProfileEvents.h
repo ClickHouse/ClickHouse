@@ -91,7 +91,11 @@ namespace ProfileEvents
         std::atomic_bool trace_all_profile_events = false;
 
         Count load(Event event) const;
+        template <bool allow_allocation>
         void fetchAdd(Event event, Count amount, int32_t cpu);
+
+        template <bool allow_allocation>
+        void incrementImpl(Event event, Count amount);
 
     public:
 
@@ -119,8 +123,12 @@ namespace ProfileEvents
         /// Reset retains reservations; a newly attached parent must be reserved separately.
         void preallocate(Event event);
 
-        /// The event must have reserved backing at every parent. Retains ordinary tracing.
-        /// Debug allocation checks enforce the contract where supported.
+        /// Publish through already reserved backing, including every current parent.
+        /// Missing backing terminates instead of allocating, including in release builds.
+        /// Retains ordinary tracing; this is not the signal-safe API.
+        void incrementNonAllocating(Event event, Count amount = 1) noexcept;
+
+        /// Statically hot events need no preceding reservation.
         void incrementNonAllocating(NonAllocatingEvent event, Count amount = 1) noexcept;
         void incrementNoTrace(Event event, Count amount = 1);
         void incrementSignalSafe(NonAllocatingEvent event, Count amount = 1);
@@ -203,6 +211,9 @@ namespace ProfileEvents
 
     /// Reserve backing in the current thread and its parent chain without incrementing the event.
     void preallocate(Event event);
+
+    /// Publish an already reserved event on the current thread's counter chain.
+    void incrementNonAllocating(Event event, Count amount = 1) noexcept;
 
     /// The same as above but ignores value of setting 'trace_profile_events'
     /// and never sends profile event to trace log.

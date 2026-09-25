@@ -5,12 +5,14 @@
 #include <Common/MemoryTracker.h>
 #include <Common/VariableContext.h>
 #include <Common/PerCPU.h>
+#include <base/scope_guard.h>
 
 #include <array>
 #include <atomic>
 #include <barrier>
 #include <cerrno>
 #include <memory>
+#include <optional>
 #include <limits>
 #include <thread>
 #include <vector>
@@ -363,7 +365,7 @@ TEST(ProfileEvents, PreallocateColdEventAcrossParentsAndCPUs)
             observed_cpu = sched_getcpu();
             DENY_ALLOCATIONS_IN_SCOPE;
             thread.preallocate(event);
-            thread.incrementNoTrace(event);
+            thread.incrementNonAllocating(event);
         });
         worker.join();
         if (affinity_error)
@@ -374,7 +376,7 @@ TEST(ProfileEvents, PreallocateColdEventAcrossParentsAndCPUs)
 #else
     {
         DENY_ALLOCATIONS_IN_SCOPE;
-        thread.incrementNoTrace(event);
+        thread.incrementNonAllocating(event);
         ++updates;
     }
 #endif
@@ -389,9 +391,81 @@ TEST(ProfileEvents, PreallocateColdEventAcrossParentsAndCPUs)
         thread.resetCounters();
         process.resetCounters();
         user.resetCounters();
-        thread.incrementNoTrace(event);
+        thread.incrementNonAllocating(event);
     }
     EXPECT_EQ(thread[event], 1);
     EXPECT_EQ(process[event], 1);
     EXPECT_EQ(user[event], 1);
 }
+
+/// These checks do not depend on allocator interception or debug-only allocation guards.
+TEST(ProfileEventsDeathTest, MissingReservationIsRejected)
+{
+    ProfileEvents::Counters counters(VariableContext::Process, nullptr);
+    EXPECT_DEATH(counters.incrementNonAllocating(ProfileEvents::AdaptiveAggregationSpillBacklogSheds), "");
+}
+
+TEST(ProfileEventsDeathTest, ReservationDoesNotCoverANewParent)
+{
+    const auto event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
+    ProfileEvents::Counters counters(VariableContext::Thread, nullptr);
+    counters.preallocate(event);
+    ProfileEvents::Counters parent(VariableContext::Process, nullptr);
+    counters.setParent(&parent);
+    EXPECT_DEATH(counters.incrementNonAllocating(event), "");
+
+    counters.preallocate(event);
+    counters.incrementNonAllocating(event);
+    EXPECT_EQ(counters[event], 1);
+    EXPECT_EQ(parent[event], 1);
+}
+
+TEST(ProfileEventsDeathTest, SharedParentReservationDoesNotCoverANewWorker)
+{
+    const auto event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
+    ProfileEvents::Counters parent(VariableContext::Process, nullptr);
+    ProfileEvents::Counters submitting_thread(VariableContext::Thread, &parent);
+    submitting_thread.preallocate(event);
+    ProfileEvents::Counters worker(VariableContext::Thread, &parent);
+    EXPECT_DEATH(worker.incrementNonAllocating(event), "");
+
+    worker.preallocate(event);
+    worker.incrementNonAllocating(event);
+    EXPECT_EQ(worker[event], 1);
+    EXPECT_EQ(parent[event], 1);
+    EXPECT_EQ(submitting_thread[event], 0);
+}
+
+TEST(ProfileEvents, ColdTimerPreparesBeforeCleanup)
+{
+    const auto event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
+    ProfileEvents::Counters parent(VariableContext::Process, nullptr);
+    ProfileEvents::Counters counters(VariableContext::Thread, &parent);
+    std::optional<ProfileEvents::Timer> timer;
+    timer.emplace(counters, event, ProfileEvents::Timer::Resolution::Nanoseconds);
+    try
+    {
+        DENY_ALLOCATIONS_IN_SCOPE;
+        SCOPE_EXIT({ timer.reset(); });
+        /// An integer exception avoids allocating an exception message.
+        throw 1;
+    }
+    catch (int)
+    {
+    }
+    EXPECT_GT(counters[event], 0);
+    EXPECT_EQ(counters[event], parent[event]);
+}
+
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+TEST(ProfileEventsDeathTest, OrdinaryColdAllocationChecksTheDenyGuard)
+{
+    ProfileEvents::Counters counters(VariableContext::Process, nullptr);
+    EXPECT_DEATH(
+        {
+            DENY_ALLOCATIONS_IN_SCOPE;
+            counters.increment(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+        },
+        "cold page allocation");
+}
+#endif

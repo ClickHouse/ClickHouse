@@ -113,17 +113,17 @@ UInt32 PostingListCursor::cardinality() const
 PostingListCursor::~PostingListCursor()
 {
     if (counters.blocks_decoded)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyPackedBlocksDecoded, counters.blocks_decoded);
+        ProfileEvents::incrementNonAllocating(ProfileEvents::TextIndexLazyPackedBlocksDecoded, counters.blocks_decoded);
     if (counters.advance_count)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyAdvanceCount, counters.advance_count);
+        ProfileEvents::incrementNonAllocating(ProfileEvents::TextIndexLazyAdvanceCount, counters.advance_count);
     if (counters.segments_prepared)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsPrepared, counters.segments_prepared);
+        ProfileEvents::incrementNonAllocating(ProfileEvents::TextIndexLazySegmentsPrepared, counters.segments_prepared);
     if (counters.segments_skipped_dense)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedDense, counters.segments_skipped_dense);
+        ProfileEvents::incrementNonAllocating(ProfileEvents::TextIndexLazySegmentsSkippedDense, counters.segments_skipped_dense);
     if (counters.segments_skipped_resolved)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedResolved, counters.segments_skipped_resolved);
+        ProfileEvents::incrementNonAllocating(ProfileEvents::TextIndexLazySegmentsSkippedResolved, counters.segments_skipped_resolved);
     if (counters.blocks_skipped_resolved)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedResolved, counters.blocks_skipped_resolved);
+        ProfileEvents::incrementNonAllocating(ProfileEvents::TextIndexLazyBlocksSkippedResolved, counters.blocks_skipped_resolved);
 }
 
 void PostingListCursor::prepareSegment(size_t segment_idx)

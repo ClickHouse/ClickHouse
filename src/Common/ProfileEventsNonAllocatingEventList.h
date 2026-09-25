@@ -2,12 +2,35 @@
 
 /// Events published from signal handlers, allocator hooks, or allocation-denied scopes.
 /// Every event in this list has preallocated storage at every counter level.
+/// HTTP pool cleanup can run after a connection changes threads or queries, so construction-time
+/// reservation cannot prepare the destroying thread without retaining unrelated completed queries.
+/// The other transferable cleanup objects must also preserve the current nested profiling scope.
 #define APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M) \
     M(QueryProfilerConcurrencyOverruns) \
     M(QueryProfilerSignalOverruns) \
     M(QueryProfilerErrors) \
     M(QueryProfilerRuns) \
     M(CannotWriteToWriteBufferDiscard) \
+    M(CannotRemoveEphemeralNode) \
+    M(StorageConnectionsReset) \
+    M(StorageConnectionsPreserved) \
+    M(StorageConnectionsExpired) \
+    M(DiskConnectionsReset) \
+    M(DiskConnectionsPreserved) \
+    M(DiskConnectionsExpired) \
+    M(HTTPConnectionsReset) \
+    M(HTTPConnectionsPreserved) \
+    M(HTTPConnectionsExpired) \
+    M(TextIndexLazyPackedBlocksDecoded) \
+    M(TextIndexLazyAdvanceCount) \
+    M(TextIndexLazySegmentsPrepared) \
+    M(TextIndexLazySegmentsSkippedDense) \
+    M(TextIndexLazySegmentsSkippedResolved) \
+    M(TextIndexLazyBlocksSkippedResolved) \
+    M(DirectorySync) \
+    M(DirectorySyncElapsedMicroseconds) \
+    M(ParallelReplicasQueryCount) \
+    M(ObjectStorageQueueExclusiveModeProcessingErrors) \
     M(MemoryAllocatedWithoutCheck) \
     M(MemoryAllocatedWithoutCheckBytes) \
     M(MemoryLargeAllocationTraced) \

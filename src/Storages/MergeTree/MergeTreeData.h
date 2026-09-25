@@ -12,6 +12,7 @@
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -119,6 +120,7 @@ struct DataPartsLock
     DataPartsLock & operator=(DataPartsLock &&) = default;
 
 private:
+    ProfileEvents::Counters * counters;
     std::optional<Stopwatch> wait_watch;
     std::unique_lock<DB::SharedMutex> lock;
     std::optional<Stopwatch> lock_watch;
@@ -138,6 +140,7 @@ struct DataPartsSharedLock
     void unlock() { lock.unlock(); }
 
 private:
+    ProfileEvents::Counters * counters;
     std::optional<Stopwatch> wait_watch;
     std::shared_lock<DB::SharedMutex> lock;
     std::optional<Stopwatch> lock_watch;

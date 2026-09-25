@@ -19,6 +19,7 @@
 #include <Common/logger_useful.h>
 
 #include <cfloat>
+#include <exception>
 #include <random>
 #include <ranges>
 
@@ -1817,7 +1818,12 @@ constexpr Event END = Event(__COUNTER__);
 namespace
 {
 
-constexpr size_t hot_counter_count = 128;
+constexpr std::array hot_events = {
+#define M(NAME) static_cast<size_t>(NAME),
+    APPLY_FOR_HOT_PROFILE_EVENTS(M)
+#undef M
+};
+constexpr size_t hot_counter_count = hot_events.size();
 constexpr size_t cold_page_size = 32;
 constexpr size_t event_count = static_cast<size_t>(END);
 constexpr size_t cold_page_count = (event_count - hot_counter_count + cold_page_size - 1) / cold_page_size;
@@ -1830,12 +1836,6 @@ struct CounterLayout
 
     constexpr CounterLayout()
     {
-        const std::array hot_events = {
-#define M(NAME) static_cast<size_t>(NAME),
-            APPLY_FOR_HOT_PROFILE_EVENTS(M)
-#undef M
-        };
-        static_assert(hot_events.size() == hot_counter_count);
         std::array<bool, event_count> is_hot{};
         size_t slot = 0;
         for (const size_t event : hot_events)
@@ -1880,6 +1880,14 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
         auto * page = page_pointer.load(std::memory_order_acquire);
         if (!page)
         {
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+            /// Check at the page boundary too: sanitizer builds may not intercept `new`.
+            if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
+            {
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                chassert(false, "ProfileEvents cold page allocation in an allocation-denied scope; call preallocate before entering it");
+            }
+#endif
             /// Counter publication must not introduce memory-limit exceptions or overcommit
             /// waits. Allocator-hook events have inline hot backing to prevent recursion.
             LockMemoryExceptionInThread lock(VariableContext::Global);
@@ -1913,6 +1921,7 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
         std::atomic_ref<Count>(hot[slot]).fetch_add(amount, std::memory_order_relaxed);
     }
 
+    template <bool allow_allocation>
     void increment(Event event, Count amount, VariableContext allocation_level)
     {
         if (!amount)
@@ -1924,7 +1933,20 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
             return;
         }
         const size_t cold_slot = slot - hot_counter_count;
-        auto * page = ensurePage(cold_slot / cold_page_size, allocation_level);
+        Count * page;
+        if constexpr (allow_allocation)
+            page = ensurePage(cold_slot / cold_page_size, allocation_level);
+        else
+        {
+            page = pages[cold_slot / cold_page_size].load(std::memory_order_acquire);
+            if (unlikely(!page))
+            {
+                /// Permit the assertion diagnostic, never a replacement counter page.
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                chassert(page, "ProfileEvents publication without preallocated backing");
+                std::terminate();
+            }
+        }
         std::atomic_ref<Count>(page[cold_slot % cold_page_size]).fetch_add(amount, std::memory_order_relaxed);
     }
 
@@ -2017,6 +2039,8 @@ const Event Counters::num_counters = END;
 Timer::Timer(Counters & counters_, Event timer_event_, Resolution resolution_)
     : counters(counters_), timer_event(timer_event_), resolution(resolution_)
 {
+    counters.preallocate(timer_event);
+    watch.restart();
 }
 
 Timer::Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_)
@@ -2032,7 +2056,7 @@ UInt64 Timer::get()
 
 void Timer::end()
 {
-    counters.increment(timer_event, get());
+    counters.incrementNonAllocating(timer_event, get());
     watch.reset();
 }
 
@@ -2135,12 +2159,13 @@ void Counters::setTraceAllProfileEvents()
     trace_all_profile_events.store(true, std::memory_order_relaxed);
 }
 
+template <bool allow_allocation>
 void Counters::fetchAdd(Event event, Count amount, int32_t cpu)
 {
     const uint32_t rows = cpus.load(std::memory_order_relaxed);
     /// Out-of-range CPUs use row zero, including the unsharded case.
     const size_t row = (cpu >= 0 && static_cast<uint32_t>(cpu) < rows) ? static_cast<size_t>(cpu) : 0;
-    counters[row].increment(event, amount, level);
+    counters[row].increment<allow_allocation>(event, amount, level);
 }
 
 void Counters::reset()
@@ -2344,6 +2369,11 @@ void preallocate(Event event)
     DB::CurrentThread::getProfileEvents().preallocate(event);
 }
 
+void incrementNonAllocating(Event event, Count amount) noexcept
+{
+    DB::CurrentThread::getProfileEvents().incrementNonAllocating(event, amount);
+}
+
 void incrementSignalSafe(NonAllocatingEvent event, Count amount)
 {
     DB::CurrentThread::getProfileEvents().incrementSignalSafe(event, amount);
@@ -2373,7 +2403,8 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
     return static_cast<double>(os_cpu_wait_microseconds) / static_cast<double>(os_cpu_virtual_time_microseconds);
 }
 
-void Counters::increment(Event event, Count amount)
+template <bool allow_allocation>
+void Counters::incrementImpl(Event event, Count amount)
 {
     Counters * current = this;
     bool send_to_trace_log = false;
@@ -2381,7 +2412,7 @@ void Counters::increment(Event event, Count amount)
 
     do
     {
-        current->fetchAdd(event, amount, cpu);
+        current->fetchAdd<allow_allocation>(event, amount, cpu);
         /// Small optimization for quite a hot path.
         /// Load with relaxed as it almost always returns null.
         /// If non-null, add an acquire fence.
@@ -2399,10 +2430,20 @@ void Counters::increment(Event event, Count amount)
         DB::TraceSender::send(DB::TraceType::ProfileEvent, StackTrace(), {.event = event, .increment = amount});
 }
 
-void Counters::incrementNonAllocating(NonAllocatingEvent event, Count amount) noexcept
+void Counters::increment(Event event, Count amount)
+{
+    incrementImpl<true>(event, amount);
+}
+
+void Counters::incrementNonAllocating(Event event, Count amount) noexcept
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    increment(event.value(), amount);
+    incrementImpl<false>(event, amount);
+}
+
+void Counters::incrementNonAllocating(NonAllocatingEvent event, Count amount) noexcept
+{
+    incrementNonAllocating(event.value(), amount);
 }
 
 void Counters::incrementNoTrace(Event event, Count amount)
@@ -2411,7 +2452,7 @@ void Counters::incrementNoTrace(Event event, Count amount)
     const int32_t cpu = PerCPU::getCurrentCPU();
     do
     {
-        current->fetchAdd(event, amount, cpu);
+        current->fetchAdd<true>(event, amount, cpu);
         current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }

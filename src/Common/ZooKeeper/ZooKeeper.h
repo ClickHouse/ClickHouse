@@ -817,13 +817,13 @@ public:
                 zookeeper.tryRemove(path);
             else
             {
-                ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
+                ProfileEvents::incrementNonAllocating(ProfileEvents::CannotRemoveEphemeralNode);
                 LOG_DEBUG(getLogger("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
             }
         }
         catch (...)
         {
-            ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
+            ProfileEvents::incrementNonAllocating(ProfileEvents::CannotRemoveEphemeralNode);
             DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path);
         }
     }
