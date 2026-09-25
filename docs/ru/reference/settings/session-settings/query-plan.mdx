@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка для включения и отключения оптимизации плана, при которой на этапе финального преобразования агрегации материализуются только n лучших групп из каждого двухуровневого бакета, если финальная агрегация передаёт результаты в ORDER BY с LIMIT n, а выборка в каждом бакете гарантированно точна."}]}]} />
+
+Включает или отключает оптимизацию на уровне плана запроса: если финальная агрегация передаёт результаты в `ORDER BY` с `LIMIT n`, а план гарантирует точность выборки в каждом бакете, на этапе финального преобразования агрегации материализуются только n лучших групп из каждого двухуровневого бакета в этом порядке. Результат точен: у группы, не входящей в n лучших групп своего бакета, есть как минимум n групп, опережающих её в глобальном порядке, поэтому она не может войти в глобальный top n.
+Действует только при значении 1 настройки [query&#95;plan&#95;enable&#95;optimizations](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations).
+
+Возможные значения:
+
+* 0 - Отключить
+* 1 - Включить
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>
@@ -145,6 +161,21 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * 0 - Отключить
 * 1 - Включить
 
+<div id="query_plan_fuse_filter_into_array_join">
+  ## query_plan_fuse_filter_into_array_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая оптимизация, объединяющая фильтр по столбцам, полученным с помощью ARRAY JOIN, с шагом ARRAY JOIN; включена по умолчанию."}]}]} />
+
+Включает или отключает оптимизацию на уровне плана запроса, объединяющую фильтр по столбцам элементов `ARRAY JOIN` с шагом `ARRAY JOIN`. Массивы фильтруются в пространстве элементов до развёртывания, поэтому отфильтрованные элементы никогда не развёртываются и не реплицируются.
+Действует только при значении 1 настройки [query&#95;plan&#95;enable&#95;optimizations](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations).
+
+<Note>
+  Это настройка экспертного уровня, которую разработчикам следует использовать только для отладки. В будущем настройка может быть изменена обратно несовместимым образом или удалена.
+</Note>
+
 <div id="query_plan_join_shard_by_pk_ranges">
   ## query_plan_join_shard_by_pk_ranges
 </div>
@@ -234,6 +265,8 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1000"},{"label": "Новая настройка"}]}]} />
 
 Определяет максимальное значение LIMIT, при котором выполняется оценка плана запроса для оптимизации TopK с использованием индекса пропуска данных minmax и динамической фильтрации по порогу. Если значение равно 0, ограничение отсутствует.
+
+Эта настройка также управляет поведением [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ru/reference/settings/session-settings/enable#enable_group_by_top_k_optimization).
 
 <div id="query_plan_max_optimizations_to_apply">
   ## query_plan_max_optimizations_to_apply
@@ -418,13 +451,23 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Использовать план запроса для оптимизации отложенной материализации.
 
+<div id="query_plan_optimize_lazy_materialization_for_file">
+  ## query_plan_optimize_lazy_materialization_for_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка для использования отложенной материализации в запросах `ORDER BY ... LIMIT n`, читающих локальные файлы Parquet с помощью табличной функции `file` и движка таблицы `File`."}]}]} />
+
+Использовать оптимизацию отложенной материализации при чтении локальных файлов Parquet с помощью табличной функции `file` и движка таблицы `File`: в запросах `ORDER BY ... LIMIT n` столбцы, не требующиеся для сортировки и фильтрации, считываются только для `n` строк, оставшихся после применения `LIMIT`. Действует только при включенной настройке `query_plan_optimize_lazy_materialization`.
+
 <div id="query_plan_optimize_lazy_materialization_for_object_storage">
   ## query_plan_optimize_lazy_materialization_for_object_storage
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка для использования отложенной материализации в запросах `ORDER BY ... LIMIT n`, считывающих файлы Parquet из объектного хранилища (включая таблицы Iceberg)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка для использования отложенной материализации в запросах `ORDER BY ... LIMIT n`, считывающих файлы Parquet из объектного хранилища (включая таблицы Iceberg)."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка для использования отложенной материализации в запросах `ORDER BY ... LIMIT n`, считывающих файлы Parquet из объектного хранилища (включая таблицы Iceberg)."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "Новая настройка для использования отложенной материализации в запросах `ORDER BY ... LIMIT n`, считывающих файлы Parquet из объектного хранилища (включая таблицы Iceberg)."}]}]} />
 
 Использовать оптимизацию отложенной материализации при чтении файлов Parquet из объектного хранилища (включая таблицы Iceberg): в запросах `ORDER BY ... LIMIT n` столбцы, не необходимые для сортировки и фильтрации, считываются только для `n` строк, оставшихся после применения `LIMIT`. Действует только при включенной настройке `query_plan_optimize_lazy_materialization`.
 
@@ -455,6 +498,24 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 * 0 - Отключить
 * 1 - Включить
+
+<div id="query_plan_push_down_volume_reducing_functions">
+  ## query_plan_push_down_volume_reducing_functions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка для проталкивания функций, уменьшающих объём (`length`, `lengthUTF8`, `empty`, `notEmpty`), ниже этапов `Sorting` и `Filter`, чтобы широкий столбец-аргумент заменялся результатом фиксированного размера. previous_value=false, поэтому `compatibility` с версиями до 26.8 восстанавливает прежнее поведение (без проталкивания)."}]}]} />
+
+Включает или отключает оптимизацию на уровне плана запроса, которая перемещает функции, уменьшающие объём (`length`, `lengthUTF8`, `empty`, `notEmpty`), ниже этапов `Sorting` и `Filter` в плане выполнения. Результат фиксированного размера заменяет широкий аргумент типа `String` / `FixedString`, поэтому его больше не нужно передавать через эти этапы.
+Преобразование применяется только в том случае, если столбец-аргумент не требуется выше этапа, ниже которого он проталкивается.
+
+Действует только при значении 1 настройки [query&#95;plan&#95;enable&#95;optimizations](/ru/reference/settings/session-settings/query-plan#query_plan_enable_optimizations).
+
+Возможные значения:
+
+* 0 — Отключить
+* 1 — Включить
 
 <div id="query_plan_push_limit_by_into_sort">
   ## query_plan_push_limit_by_into_sort
@@ -500,22 +561,6 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "новая настройка"}]}]} />
 
 Сохранять упорядоченное чтение из левой таблицы при выполнении операций JOIN, чтобы его можно было использовать на последующих этапах.
-
-<div id="query_plan_read_in_order_through_spilling_join">
-  ## query_plan_read_in_order_through_spilling_join
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка, позволяющая распространить чтение по порядку через hash join с автоматическим порогом сброса на диск: JOIN закрепляется в памяти, чтобы сохранить гарантированный им порядок. previous_value=false, поэтому `compatibility` с версиями до 26.8 восстанавливает прежнее консервативное поведение, при котором такой JOIN никогда не используется для чтения по порядку, но всегда может выполнить сброс на диск."}]}]} />
-
-Позволяет [`query_plan_read_in_order_through_join`](/ru/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) применяться также к hash join, для которого с помощью [`max_bytes_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) или [`max_bytes_ratio_before_external_join`](/ru/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) настроен автоматический порог сброса на диск.
-
-Такой JOIN может гарантировать сохранение порядка левой таблицы, только если он никогда не выполняет сброс на диск, поскольку при сбросе строки распределяются по бакетам на основе хеша. Поэтому при применении оптимизации JOIN удерживается в памяти, а порог сброса на диск больше не срабатывает: вместо этого размер правой таблицы ограничивается трекером памяти, как если бы автоматический сброс на диск не был настроен.
-
-Установите значение `0`, чтобы сохранить консервативное поведение, при котором чтение по порядку никогда не распространяется через JOIN, способный выполнить сброс на диск. Запросы, которым для соблюдения лимита памяти требуется сброс на диск и которые иначе стали бы подходящими для оптимизации, продолжают работать как прежде.
-
-Отдельная оптимизация `ORDER BY ... LIMIT` через `JOIN`, которая передает `Sort` и `Limit` на сохраняемую сторону JOIN, никогда не полагается на сохранение JOIN какого-либо порядка и остается доступной для JOIN, способных выполнять сброс на диск, независимо от этой настройки. Однако при возможности чтения по порядку она уступает ему место: поэтому при включенной настройке для `ORDER BY ... LIMIT` над JOIN, способным выполнять сброс на диск, если его сохраняемая сторона может передавать строки в запрошенном порядке, используется план чтения по порядку вместо переданных вниз `Sort` и `Limit`. При этом сохраняются прежние условия, наиболее важное из которых — [`query_plan_join_swap_table`](/ru/reference/settings/session-settings/query-plan#query_plan_join_swap_table) должна быть явно установлена в `false`: при значении по умолчанию `auto` последующая оптимизация может поменять стороны JOIN местами и сделать план чтения по порядку недействительным, поэтому такое переключение никогда не выполняется, а подобные запросы используют переданные вниз `Sort` и `Limit`.
 
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct

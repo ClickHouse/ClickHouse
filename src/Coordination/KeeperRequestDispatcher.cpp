@@ -15,6 +15,7 @@
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
+#include <Common/saturatedWaitDuration.h>
 #include <base/sleep.h>
 
 template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
@@ -253,7 +254,7 @@ void KeeperRequestDispatcher::shutdownRequests()
         uint64_t timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::session_shutdown_timeout].totalMilliseconds();
         bool sent = false;
         auto start_time = std::chrono::steady_clock::now();
-        auto temp_stream = server->raft_instance->open_client_req_stream(timeout_ms);
+        auto temp_stream = server->raft_instance->open_client_req_stream(saturatedWaitMillisecondsCountNonZero(timeout_ms));
         if (temp_stream)
         {
             std::vector<nuraft::ptr<nuraft::buffer>> entries;
@@ -274,7 +275,7 @@ void KeeperRequestDispatcher::shutdownRequests()
             ///       to be committed, there to get error code).
             ///       If shutdown Close is made reliable, remove retries in
             ///       test_session_close_shutdown.
-            while (!temp_stream->is_idle() && std::chrono::steady_clock::now() - start_time < std::chrono::milliseconds(timeout_ms))
+            while (!temp_stream->is_idle() && std::chrono::steady_clock::now() - start_time < saturatedWaitMilliseconds(timeout_ms))
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
             sent = temp_stream->is_idle();
@@ -344,7 +345,8 @@ bool KeeperRequestDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
             if (try_push())
                 break;
 
-            std::chrono::milliseconds operation_timeout(keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
+            std::chrono::milliseconds operation_timeout = saturatedWaitMilliseconds(
+                keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
             if (std::chrono::steady_clock::now() - start_time > operation_timeout)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
         }
@@ -417,7 +419,7 @@ void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noex
             if (try_push())
                 break;
 
-            if (std::chrono::steady_clock::now() - start_time > std::chrono::milliseconds(
+            if (std::chrono::steady_clock::now() - start_time > saturatedWaitMilliseconds(
                     keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
             {
                 /// Just drop responses on the floor, I guess. The client will eventually time out
@@ -513,17 +515,17 @@ void KeeperRequestDispatcher::recreateStreamWithBackoff()
     while (!shutting_down.load())
     {
         auto slept = std::chrono::steady_clock::now() - sleep_start;
-        if (slept >= std::chrono::milliseconds(keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+        if (slept >= saturatedWaitMilliseconds(keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
             break;
 
         auto is_delaying_reconnect = [&]
         {
-            return current_stream_is_suspect.load() && slept < std::chrono::milliseconds(
+            return current_stream_is_suspect.load() && slept < saturatedWaitMilliseconds(
                 keeper_context->getCoordinationSettings()[CoordinationSetting::stream_suspect_retry_delay_ms].totalMilliseconds());
         };
         auto is_waiting_for_in_flight_requests = [&]
         {
-            return head_idx.load() < tail_idx.load() && slept < std::chrono::milliseconds(
+            return head_idx.load() < tail_idx.load() && slept < saturatedWaitMilliseconds(
                 keeper_context->getCoordinationSettings()[CoordinationSetting::stream_in_flight_drain_timeout_ms].totalMilliseconds());
         };
         if (server->isLeaderAlive() && !is_delaying_reconnect() && !is_waiting_for_in_flight_requests())
@@ -566,8 +568,8 @@ void KeeperRequestDispatcher::recreateStreamWithBackoff()
 
     current_stream_is_suspect.store(true);
     /// May return nullptr.
-    stream = server->raft_instance->open_client_req_stream(
-        keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
+    stream = server->raft_instance->open_client_req_stream(saturatedWaitMillisecondsCountNonZero(
+        keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()));
 
     if (stream)
         LOG_INFO(log, "Created append stream");
@@ -606,11 +608,11 @@ void KeeperRequestDispatcher::dispatchThread()
             /// In particular, we can get stuck if there's a bug that breaks stream guarantees
             /// (causes reordering or gaps) as our commit callback only checks completion of the request
             /// at the head of the queue.
-            if (now > last_stuck_check_time + std::chrono::milliseconds(operation_timeout_ms))
+            if (now > last_stuck_check_time + saturatedWaitMilliseconds(operation_timeout_ms))
             {
                 last_stuck_check_time = now;
                 size_t idx = head_idx.load();
-                if (tail_idx.load() > idx && now > in_flight_batches[idx % in_flight_batches.size()].start_time + std::chrono::milliseconds(operation_timeout_ms * 10))
+                if (tail_idx.load() > idx && now > in_flight_batches[idx % in_flight_batches.size()].start_time + saturatedWaitMilliseconds(operation_timeout_ms * 10))
                 {
                     if (server->isLeaderAlive())
                         LOG_ERROR(log, "Detected stuck or reordered requests. Dropping. This may indicate a bug.");
@@ -722,11 +724,14 @@ void KeeperRequestDispatcher::dispatchThread()
 
                 /// Read request must be executed after all previous requests from the same session.
                 /// There are 3 cases:
-                ///  (1) Reads that depend on some earlier writes in the batch we're making.
-                ///      Put them in the batch's `reads`.
-                ///  (2) Reads that depend on some writes in an earlier batch that is not committed yet.
+                ///  (1) Reads that have to wait for an earlier request from the same session that
+                ///      went into the batch we're making. That earlier request is usually a write,
+                ///      but with `quorum_reads` it can be a read that goes through raft too.
+                ///      Put them in the batch's `intermediate_reads`.
+                ///  (2) Reads that have to wait for an earlier batch that is not committed yet,
+                ///      because that batch carries an earlier request from the same session.
                 ///      Add them to that batch's `late_reads`.
-                ///  (3) Reads from sessions that have no writes in progress.
+                ///  (3) Reads from sessions that have nothing in flight.
                 ///      Execute them right in this thread, before sending the current batch.
                 ///      (This case is likely important in practice: it should greatly reduce read
                 ///       latency for users that mostly do reads, or that alternate blocking reads
@@ -856,15 +861,17 @@ void KeeperRequestDispatcher::dispatchThread()
                         if (last_batch == batch_idx)
                         {
                             /// Case (1): read request should be attached to the current batch.
-                            /// Put it in late_reads, which will later be flushed to the batch's `reads`.
+                            /// Put it in `late_reads`, which will later be flushed to the batch's
+                            /// `intermediate_reads`.
                             chassert(!requests.empty());
                             if (session)
                                 session->reordering_version = current_reordering_version;
+                            initializeWaitForWriteSpan(request);
                             late_reads.push_back(std::move(request));
                         }
                         else
                         {
-                            /// There are no write requests from this session in current batch so far.
+                            /// No earlier request from this session went into the current batch so far.
                             bool added = false;
                             if (last_batch >= cur_head_idx)
                             {
@@ -1015,6 +1022,29 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     onResponse(std::move(response_for_session));
 }
 
+void KeeperRequestDispatcher::initializeWaitForWriteSpan(const KeeperRequestForSession & read_request, UInt64 wait_start_us)
+{
+    read_request.request->spans.maybeInitialize(
+        KeeperSpan::ReadWaitForWrite, read_request.request->tracing_context.get(), wait_start_us);
+}
+
+void KeeperRequestDispatcher::finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads)
+{
+    for (const auto & read_request : reads)
+    {
+        read_request.request->spans.maybeFinalize(
+            KeeperSpan::ReadWaitForWrite,
+            [&]
+            {
+                return std::vector<OpenTelemetry::SpanAttribute>{
+                    {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
+                    {"keeper.session_id", read_request.session_id},
+                    {"keeper.xid", read_request.request->xid},
+                };
+            });
+    }
+}
+
 void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session)
 {
     /// When Close commits, mark the session as dead so that
@@ -1069,6 +1099,8 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         auto reads = std::move(batch.intermediate_reads[batch.intermediate_reads_idx].second);
         batch.intermediate_reads_idx += 1;
 
+        finalizeWaitForWriteSpans(reads);
+
         /// (We could re-check whether the requests' sessions are still alive, but it doesn't seem
         ///  worth the map lookup cost. We already checked session liveness just before starting
         ///  this raft batch, and hopefully raft commit latency doesn't get high in practice even
@@ -1102,6 +1134,7 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
             auto reads = batch.late_reads.takeAndFinishIfEmpty();
             if (reads.empty())
                 break;
+            finalizeWaitForWriteSpans(reads);
             executeReads(std::move(reads));
         }
 

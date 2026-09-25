@@ -1,8 +1,12 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -87,6 +91,21 @@ bool dagContainsNonReadySet(const ActionsDAG & dag)
     return false;
 }
 
+bool canHoistGatherThroughStep(const IQueryPlanStep & step)
+{
+    const ActionsDAG * dag = nullptr;
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
+        dag = &expression->getExpression();
+    else if (const auto * filter = typeid_cast<const FilterStep *>(&step))
+        dag = &filter->getExpression();
+    else if (!typeid_cast<const BuildRuntimeFilterStep *>(&step))
+        return false;
+
+    /// Per-block functions (rowNumberInAllBlocks, blockNumber, nowInBlock, ...) depend on the whole block
+    /// stream; below a gather they would run per shard and produce different values.
+    return !(dag && dagContainsNonDeterministicFunction(*dag));
+}
+
 bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
 {
     /// We are interested in functions that are non-deterministic *within* a single query --
@@ -97,14 +116,12 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     /// value for all rows in a single query (`isDeterministicInScopeOfQuery() == true`), so
     /// the optimizer can soundly use their plan-time value and they should NOT block the
     /// JOIN-conversion rewrite.
+    /// The walk also looks inside the lambdas of the DAG - a non-deterministic call that depends on a
+    /// lambda argument lives in the lambda's own `ActionsDAG`, not in this one - which is what
+    /// `allNodeFunctions` covers, including a lambda that constant folding turned into a `COLUMN` node.
     for (const auto & node : dag.getNodes())
-    {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
-        {
-            if (!node.function_base->isDeterministicInScopeOfQuery())
-                return true;
-        }
-    }
+        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }))
+            return true;
     return false;
 }
 
@@ -156,7 +173,12 @@ FilterResult filterResultForNotMatchedRows(
             continue;
         }
 
-        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
+        /// A not-matched row holds the column's own default (`Date32`: 1970-01-01, not `getDefault`'s
+        /// 1900-01-01), and where default insertion is not trivial no probe is guaranteed faithful.
+        if (!input->result_type->isDefaultInsertTrivial())
+            continue;
+
+        auto constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());
         auto constant_column_with_type_and_name = ColumnWithTypeAndName{std::move(constant_column), input->result_type, input->result_name};
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }

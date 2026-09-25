@@ -63,6 +63,11 @@ enum class CatalogShape
     /// echoes the same top-level namespace for every parent. A REST catalog would recurse on this
     /// forever (gold -> gold.gold -> ...); a flat-namespace catalog must list the top level only.
     ParentIgnoringEcho,
+    /// Flat-namespace catalog (Apache Polaris federated to AWS Glue) that rejects `parent` with
+    /// HTTP 400 instead of ignoring it, and holds a table in its only top-level namespace.
+    ParentRejecting,
+    /// Rejects the client credentials at the OAuth token endpoint.
+    OAuthTokenRejected,
 };
 
 void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body, Poco::Net::HTTPResponse::HTTPStatus status = Poco::Net::HTTPResponse::HTTP_OK)
@@ -134,6 +139,22 @@ public:
 
         if (path == "/v1/oauth/tokens")
         {
+            const std::string request_body(std::istreambuf_iterator<char>(request.stream()), {});
+            ++token_requests;
+            if (shape == CatalogShape::OAuthTokenRejected)
+            {
+                writeError(
+                    response,
+                    Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED,
+                    R"({"error":"invalid_client","error_description":"Client secret does not match"})");
+                return;
+            }
+            /// Horizon secret-only credentials omit client_id; standard REST includes it.
+            if (request_body.contains("client_secret=") && !request_body.contains("client_id="))
+            {
+                writeJSON(response, R"({"token_type":"Bearer","expires_in":3600,"access_token":"mock-horizon-secret-only-token"})");
+                return;
+            }
             writeJSON(response, R"({"token_type":"Bearer","expires_in":3600,"access_token":"mock-access-token"})");
             return;
         }
@@ -157,6 +178,12 @@ public:
             else if (shape == CatalogShape::ParentIgnoringEcho)
                 /// Ignores `parent` and echoes the top-level namespace back for any parent.
                 writeJSON(response, R"({"namespaces":[["gold"]]})");
+            else if (shape == CatalogShape::ParentRejecting)
+                writeError(
+                    response,
+                    Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+                    R"({"error":{"message":"Malformed request: Glue dataCatalog does not support multipart namespace.",)"
+                    R"("type":"BadRequestException","code":400}})");
             else
                 writeJSON(response, R"({"namespaces":[]})");
             return;
@@ -164,7 +191,7 @@ public:
 
         if (path == "/v1/namespaces/namespace/tables")
         {
-            if (shape == CatalogShape::TopLevelTable)
+            if (shape == CatalogShape::TopLevelTable || shape == CatalogShape::ParentRejecting)
                 writeJSON(response, R"({"identifiers":[{"name":"table_a"}]})");
             else
                 writeJSON(response, R"({"identifiers":[]})");
@@ -305,7 +332,7 @@ void expectThrowsCode(std::function<void()> fn, int expected_code)
     }
 }
 
-bool restCatalogEmpty(CatalogShape shape)
+bool restCatalogEmpty(CatalogShape shape, bool flat_namespaces = false)
 {
     RestCatalogTestServer server(shape);
     auto context = DB::Context::createCopy(getContext().context);
@@ -319,9 +346,30 @@ bool restCatalogEmpty(CatalogShape shape)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        flat_namespaces,
         context);
 
     return catalog.empty();
+}
+
+DataLake::ICatalog::Namespaces restCatalogNamespaces(CatalogShape shape, bool flat_namespaces)
+{
+    RestCatalogTestServer server(shape);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        flat_namespaces,
+        context);
+
+    return catalog.getNamespaces();
 }
 
 bool deltaSharingCatalogEmpty(CatalogShape shape)
@@ -338,6 +386,7 @@ bool deltaSharingCatalogEmpty(CatalogShape shape)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     return catalog.empty();
@@ -369,6 +418,86 @@ TEST(RestCatalog, EmptyReturnsTrueWhenNoTablesExist)
     EXPECT_TRUE(restCatalogEmpty(CatalogShape::Empty));
 }
 
+TEST(RestCatalog, RejectedClientCredentialsReportTheOAuthError)
+{
+    RestCatalogTestServer server(CatalogShape::OAuthTokenRejected);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    try
+    {
+        RestCatalog catalog(
+            "warehouse",
+            server.getUrl(),
+            /* catalog_credential */"client-1:wrong-secret",
+            /* auth_scope */"PRINCIPAL_ROLE:ALL",
+            /* auth_header */"",
+            /* oauth_server_uri */"",
+            /* oauth_server_use_request_body */true,
+            /* flat_namespaces */false,
+            context);
+        FAIL() << "expected the rejected client credentials to fail the catalog construction";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+        EXPECT_TRUE(e.message().contains("invalid_client")) << e.message();
+        EXPECT_TRUE(e.message().contains("Client secret does not match")) << e.message();
+        EXPECT_TRUE(e.message().contains("status 401")) << e.message();
+        EXPECT_FALSE(e.message().contains("wrong-secret")) << e.message();
+    }
+}
+
+TEST(RestCatalog, ParentFilterRejectionReportsFlatNamespacesSetting)
+{
+    try
+    {
+        restCatalogNamespaces(CatalogShape::ParentRejecting, /* flat_namespaces */false);
+        FAIL() << "expected the rejected `parent` filter to fail the namespace listing";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+        EXPECT_TRUE(e.message().contains("flat_namespaces")) << e.message();
+        EXPECT_TRUE(e.message().contains("HTTP status: 400")) << e.message();
+    }
+}
+
+TEST(RestCatalog, FlatNamespacesSettingSkipsSubNamespaceListing)
+{
+    EXPECT_FALSE(restCatalogEmpty(CatalogShape::ParentRejecting, /* flat_namespaces */true));
+    EXPECT_EQ(restCatalogNamespaces(CatalogShape::ParentRejecting, /* flat_namespaces */true), ICatalog::Namespaces{"namespace"});
+}
+
+TEST(RestCatalog, FlatNamespacesSettingIgnoresEchoedParent)
+{
+    EXPECT_EQ(restCatalogNamespaces(CatalogShape::ParentIgnoringEcho, /* flat_namespaces */true), ICatalog::Namespaces{"gold"});
+}
+
+TEST(RestCatalog, OneLakeFlatNamespacesSettingSkipsSubNamespaceListing)
+{
+    RestCatalogTestServer server(CatalogShape::ParentRejecting);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    OneLakeCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* onelake_tenant_id */"tenant-1",
+        /* onelake_client_id */"",
+        /* onelake_client_secret */"",
+        /* bearer_token */"token-1",
+        /* refresh_token */"",
+        /* auth_scope */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        /* flat_namespaces */true,
+        context);
+
+    EXPECT_FALSE(catalog.empty());
+    EXPECT_EQ(catalog.getNamespaces(), ICatalog::Namespaces{"namespace"});
+}
+
 TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
 {
     RestCatalogTestServer server(CatalogShape::TopLevelTable);
@@ -383,6 +512,7 @@ TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     auto existing = TableMetadata().withLocation();
@@ -419,6 +549,7 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
         /* auth_scope */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     TableMetadata metadata;
@@ -450,6 +581,7 @@ TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     DB::SettingsChanges changes;
@@ -471,6 +603,7 @@ TEST(RestCatalog, ApplySettingsChangesCredentialMode)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     EXPECT_EQ(catalog.getStateSnapshot()->client_id, "client-1");
@@ -512,6 +645,7 @@ TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
         /* auth_header */"Authorization: Bearer token-1",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     DB::SettingsChanges changes;
@@ -544,6 +678,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
         /* auth_scope */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     const auto snapshot_before = catalog.getStateSnapshot();
@@ -604,6 +739,7 @@ TEST(RestCatalog, OneLakeRejectsMalformedBearerToken)
                 /* auth_scope */ "",
                 /* oauth_server_uri */ "",
                 /* oauth_server_use_request_body */ false,
+                /* flat_namespaces */ false,
                 context);
         },
         DB::ErrorCodes::BAD_ARGUMENTS);
@@ -644,6 +780,7 @@ TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
         /* auth_scope */"https://storage.azure.com/.default",
         /* oauth_server_uri */server.getUrl() + "/token",
         /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
         context);
 
     const auto requests_after_construction = server.tokenRequests();
@@ -685,6 +822,7 @@ TEST(RestCatalog, OneLakeRefreshTokenExpiredThrowsWithAlterHint)
             /* auth_scope */"https://storage.azure.com/.default",
             /* oauth_server_uri */server.getUrl() + "/token",
             /* oauth_server_use_request_body */true,
+            /* flat_namespaces */false,
             context);
         /// ADD_FAILURE (rather than FAIL) does not return from the test, so the
         /// profile event check below is reached on every path; FAIL would make
@@ -719,6 +857,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
         /* auth_scope */"https://storage.azure.com/.default",
         /* oauth_server_uri */server.getUrl() + "/token",
         /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
         context);
 
     DB::SettingsChanges changes;
@@ -736,6 +875,107 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
     expired.emplace_back("onelake_refresh_token", "expired-refresh");
     expectThrowsCode([&] { catalog.applySettingsChanges(expired); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
     EXPECT_EQ(catalog.getStateSnapshot()->refresh_token, "another-good-refresh");
+}
+
+TEST(RestCatalog, HorizonParseCredentialKeepsColonsInSecret)
+{
+    {
+        const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("my-pat-token");
+        EXPECT_TRUE(client_id.empty());
+        EXPECT_EQ(client_secret, "my-pat-token");
+    }
+    {
+        /// Snowflake PATs may contain `:`; Horizon must not split them into client_id/client_secret.
+        const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("ver:1-hint:abc:rest-of-token");
+        EXPECT_TRUE(client_id.empty());
+        EXPECT_EQ(client_secret, "ver:1-hint:abc:rest-of-token");
+    }
+    {
+        const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("");
+        EXPECT_TRUE(client_id.empty());
+        EXPECT_TRUE(client_secret.empty());
+    }
+}
+
+TEST(RestCatalog, HorizonCatalogAuthenticatesWithBarePAT)
+{
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    HorizonCatalog catalog(
+        "ICEBERG_TEST_DB",
+        server.getUrl(),
+        /* catalog_credential */"horizon-pat-without-colon",
+        /* auth_scope */"session:role:DATA_ENGINEER",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
+        context);
+
+    EXPECT_EQ(catalog.getCatalogType(), DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON);
+    EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
+    EXPECT_EQ(catalog.getStateSnapshot()->client_secret, "horizon-pat-without-colon");
+    EXPECT_FALSE(catalog.empty());
+
+    TableMetadata metadata;
+    metadata.withLocation();
+    catalog.getTableMetadata("namespace", "table_a", metadata);
+    EXPECT_TRUE(metadata.hasLocation());
+    EXPECT_EQ(metadata.getLocation(), "s3://bucket/table_a");
+}
+
+TEST(RestCatalog, HorizonCatalogRequiresCredentialOrAuthHeader)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    expectThrowsCode(
+        [&]
+        {
+            HorizonCatalog catalog(
+                "ICEBERG_TEST_DB",
+                server.getUrl(),
+                /* catalog_credential */"",
+                /* auth_scope */"session:role:DATA_ENGINEER",
+                /* auth_header */"",
+                /* oauth_server_uri */"",
+                /* oauth_server_use_request_body */true,
+                /* flat_namespaces */false,
+                context);
+        },
+        DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, HorizonApplySettingsChangesBarePAT)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    HorizonCatalog catalog(
+        "ICEBERG_TEST_DB",
+        server.getUrl(),
+        /* catalog_credential */"pat-one",
+        /* auth_scope */"session:role:DATA_ENGINEER",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
+        context);
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("catalog_credential", "pat-two");
+    catalog.applySettingsChanges(changes);
+    EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
+    EXPECT_EQ(catalog.getStateSnapshot()->client_secret, "pat-two");
+
+    /// Mode is fixed: cannot switch to auth_header on a credential catalog.
+    DB::SettingsChanges mode_switch;
+    mode_switch.emplace_back("auth_header", "Authorization: Bearer token");
+    expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 #endif

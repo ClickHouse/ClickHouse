@@ -5,6 +5,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
+#include <Core/SettingsSecrets.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Core/Settings.h>
 
 
@@ -86,6 +88,16 @@ private:
             if (!getContext()->getSettingsRef().tryGet(setting_name, setting_value))
                 setting_value = (*default_value_column)[0];
         }
+
+        /// Hide the credential the value may carry, exactly as `system.settings` does: it is the same
+        /// value read by the same user, so returning it here would be a way around that column.
+        if (!canDisplaySecrets(getContext()))
+        {
+            String rendered;
+            if (setting_value.tryGet<String>(rendered) && CoreSettings::maskSettingValue(String(setting_name), rendered))
+                setting_value = rendered;
+        }
+
         return setting_value;
     }
 
@@ -109,17 +121,18 @@ Returns the current value of a setting.
     {
         "Usage example",
         R"(
-SELECT getSetting('enable_analyzer');
-SET enable_analyzer = false;
-SELECT getSetting('enable_analyzer');
+SET optimize_move_to_prewhere = false;
+SELECT getSetting('optimize_move_to_prewhere');
+SET optimize_move_to_prewhere = true;
+SELECT getSetting('optimize_move_to_prewhere');
         )",
         R"(
-┌─getSetting('⋯_analyzer')─┐
-│ true                     │
-└──────────────────────────┘
-┌─getSetting('⋯_analyzer')─┐
-│ false                    │
-└──────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ false                                   │
+└─────────────────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ true                                    │
+└─────────────────────────────────────────┘
         )"
     }
     };
@@ -149,7 +162,7 @@ SELECT getSettingOrDefault('custom_undef3', NULL);
         R"(
 my_value
 100
-NULL
+\N
         )"
     }
     };

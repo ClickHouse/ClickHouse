@@ -131,7 +131,8 @@
             "resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "resources/support-center/knowledge-base/materialized-views/projection-example"
+            "resources/support-center/knowledge-base/materialized-views/projection-example",
+            "resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
           ]
         },
         {
@@ -180,7 +181,8 @@
             "resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "resources/support-center/knowledge-base/setup-installation/production"
+            "resources/support-center/knowledge-base/setup-installation/production",
+            "resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
           ]
         },
         {

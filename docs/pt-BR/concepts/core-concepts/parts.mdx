@@ -14,7 +14,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <br />
 
-Os dados de cada tabela da família de motores [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index) no ClickHouse são organizados em disco como uma coleção de `data part` imutáveis.
+Os dados de cada tabela da família de motores [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index) no ClickHouse são organizados em disco como uma coleção de `partes de dados` imutáveis.
 
 Para ilustrar isso, usamos [esta](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGU\&run_query=true\&tab=results) tabela (adaptada do [conjunto de dados de preços de imóveis do Reino Unido](/pt-BR/get-started/sample-datasets/uk-price-paid)), que registra a data, a cidade, a rua e o preço dos imóveis vendidos no Reino Unido:
 
@@ -40,13 +40,23 @@ Uma parte de dados é criada sempre que um conjunto de linhas é inserido na tab
 
 Quando o servidor do ClickHouse processa a inserção de exemplo com 4 linhas (por exemplo, por meio de uma [instrução INSERT INTO](/pt-BR/reference/statements/insert-into)) mostrada no diagrama acima, ele executa várias etapas:
 
-① **Ordenação**: As linhas são ordenadas pela chave de ordenação da tabela `(town, street)`, e um [índice primário esparso](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) é gerado para as linhas ordenadas.
+<Steps>
+  <Step title="Ordenação">
+    As linhas são ordenadas pela chave de ordenação da tabela `(town, street)`, e um [índice primário esparso](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) é gerado para as linhas ordenadas.
+  </Step>
 
-② **Divisão**: Os dados ordenados são divididos em colunas.
+  <Step title="Divisão">
+    Os dados ordenados são divididos em colunas.
+  </Step>
 
-③ **Compressão**: Cada coluna é [comprimida](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  <Step title="Compressão">
+    Cada coluna é [comprimida](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  </Step>
 
-④ **Gravação em disco**: As colunas comprimidas são salvas como arquivos binários de coluna em um novo diretório que representa a parte de dados da inserção. O índice primário esparso também é comprimido e armazenado no mesmo diretório.
+  <Step title="Gravação em disco">
+    As colunas comprimidas são salvas como arquivos binários de coluna em um novo diretório que representa a parte de dados da inserção. O índice primário esparso também é comprimido e armazenado no mesmo diretório.
+  </Step>
+</Steps>
 
 Dependendo do engine específico da tabela, transformações adicionais [podem](/pt-BR/reference/settings/session-settings) ocorrer juntamente com a ordenação.
 
