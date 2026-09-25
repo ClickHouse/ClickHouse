@@ -1,0 +1,18 @@
+-- compatibility = 26.8
+-- create and insert under the pin
+[1,3]
+v2_with_positions
+-- merge under the pin
+1
+[1,3]
+-- read without the pin
+[4]
+-- compatibility = 26.5
+-- create and insert under the pin
+[1,3]
+v0_initial
+-- merge under the pin
+1
+[1,3]
+-- read without the pin
+[4]
