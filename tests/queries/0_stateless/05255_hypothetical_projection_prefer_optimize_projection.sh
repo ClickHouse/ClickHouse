@@ -20,17 +20,23 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_prefer_real SELECT number, number % 100, number FROM numbers(300);
 "
 
-check()
+# TABLE stands for the table: the estimate runs on t_prefer, the real plan on t_prefer_real
+check_query()
 {
-    local where="$1" settings="$2" session="$3"
+    local sql="$1" session="$2"
     $CLICKHOUSE_CLIENT -q "
         ${session}
         CREATE HYPOTHETICAL PROJECTION p_b ON t_prefer (SELECT a, b, v ORDER BY b);
-        EXPLAIN WHATIF SELECT a, b, v FROM t_prefer ${where} SETTINGS ${PIN}${settings};
-        EXPLAIN SELECT a, b, v FROM t_prefer_real ${where} SETTINGS ${PIN}${settings};
+        EXPLAIN WHATIF ${sql//TABLE/t_prefer};
+        EXPLAIN ${sql//TABLE/t_prefer_real};
     " | grep -E '^\s+(status|verdict|reason):|ReadFromMergeTree \(' \
       | sed -E 's/.*ReadFromMergeTree \(p_b\).*/real: from the projection/; s/.*ReadFromMergeTree \(.*/real: from the base table/' \
       | awk '{$1=$1; print}'
+}
+
+check()
+{
+    check_query "SELECT a, b, v FROM TABLE $1 SETTINGS ${PIN}$2" "$3"
 }
 
 echo "--- more marks than the base table ---"
@@ -57,5 +63,11 @@ check "WHERE a = 42 AND b >= 40" ", prefer_optimize_projection = 0" "SET force_o
 
 echo "--- the query setting overrides the session one ---"
 check "WHERE a = 42 AND b >= 40" ", prefer_optimize_projection = 0, force_optimize_projection = 0" "SET force_optimize_projection = 1;"
+
+echo "--- a setting in a subquery that does not read the table stays there ---"
+check_query "SELECT a, b, v FROM TABLE WHERE a = 42 AND b >= 40 AND a IN (SELECT 42 SETTINGS force_optimize_projection = 1) SETTINGS ${PIN}, prefer_optimize_projection = 0"
+
+echo "--- the setting of the subquery that reads the table applies to it ---"
+check_query "SELECT a, b, v FROM (SELECT a, b, v FROM TABLE WHERE a = 42 AND b >= 40 SETTINGS prefer_optimize_projection = 1) SETTINGS ${PIN}, prefer_optimize_projection = 0"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_prefer; DROP TABLE t_prefer_real"

@@ -31,7 +31,6 @@ WhatIfCandidateResult evaluateProjection(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
-    bool force_projection,
     QueryPlan::Node * plan_root,
     ContextPtr context);
 

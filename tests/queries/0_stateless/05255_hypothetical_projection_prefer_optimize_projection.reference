@@ -48,3 +48,13 @@ status: applicable
 verdict: not chosen
 reason: 2 marks would be read instead of 1 from the base table
 real: from the base table
+--- a setting in a subquery that does not read the table stays there ---
+status: applicable
+verdict: not chosen
+reason: 2 marks would be read instead of 1 from the base table
+real: from the base table
+--- the setting of the subquery that reads the table applies to it ---
+status: applicable
+verdict: chosen (forced)
+reason: `prefer_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+real: from the projection

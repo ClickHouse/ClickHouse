@@ -26,7 +26,6 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
-#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -38,7 +37,6 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsString force_data_skipping_indices;
-    extern const SettingsBool force_optimize_projection;
 }
 
 namespace ErrorCodes
@@ -121,9 +119,8 @@ WhatIfResult buildResultWithoutScan(
 }
 
 /// Drop the inner-SELECT settings we pin for a deterministic local baseline
-/// `force_data_skipping_indices` is collected into `removed_force` so we can re-check it later,
-/// `force_optimize_projection` into `forced_projection` for the projection verdict
-void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_force, std::optional<bool> & forced_projection)
+/// `force_data_skipping_indices` is collected into `removed_force` so we can re-check it later
+void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_force)
 {
     if (!node)
         return;
@@ -140,11 +137,6 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
                         removed_force.push_back(change.value.template safeGet<String>());
                         return true;
                     }
-                    if (change.name == "force_optimize_projection")
-                    {
-                        forced_projection = SettingFieldBool(change.value).value;
-                        return true;
-                    }
                     /// keep the estimate local, use_skip_indexes_on_data_read: avoid over-reporting marks
                     return change.name == "force_optimize_projection_name"
                         || change.name == "preferred_optimize_projection_name"
@@ -156,7 +148,7 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
     }
 
     for (const auto & child : node->children)
-        stripWhatIfControlledSettings(child.get(), removed_force, forced_projection);
+        stripWhatIfControlledSettings(child.get(), removed_force);
 }
 
 /// Check applicability, then try empirical → statistical → applicability_only
@@ -325,15 +317,12 @@ WhatIfResult estimateHypotheticalIndexes(
     /// Grab the forced index names, drop them for baseline planning, re-check them at the end
     local_context->resetSettingsToDefaultValue(
         {"force_data_skipping_indices",
-         "force_optimize_projection",
          "force_optimize_projection_name",
          "preferred_optimize_projection_name"});
 
     auto select_query_copy = select_query->clone();
     std::vector<String> forced_strings;
-    std::optional<bool> forced_projection;
-    stripWhatIfControlledSettings(select_query_copy.get(), forced_strings, forced_projection);
-    const bool force_projection = forced_projection.value_or(context->getSettingsRef()[Setting::force_optimize_projection]);
+    stripWhatIfControlledSettings(select_query_copy.get(), forced_strings);
 
     if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
         forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indices]);
@@ -350,7 +339,10 @@ WhatIfResult estimateHypotheticalIndexes(
         plan = std::move(interpreter).extractQueryPlan();
     }
 
-    plan.optimize(QueryPlanOptimizationSettings(plan_context));
+    /// plan as the query would, but a forced projection that is not used must not fail the statement
+    QueryPlanOptimizationSettings optimization_settings(plan_context);
+    optimization_settings.force_use_projection = false;
+    plan.optimize(optimization_settings);
 
     std::vector<ReadFromMergeTree *> read_steps;
     collectReadSteps(plan.getRootNode(), read_steps);
@@ -559,8 +551,7 @@ WhatIfResult estimateHypotheticalIndexes(
 
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
         result.candidates.push_back(
-            evaluateProjection(
-                projection, read_step, analysis, baseline_parts, settings, force_projection, plan.getRootNode(), plan_context));
+            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
