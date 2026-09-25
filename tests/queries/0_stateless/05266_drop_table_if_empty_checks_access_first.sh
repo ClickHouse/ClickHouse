@@ -6,7 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `DROP TABLE ... IF EMPTY` checks the privilege to drop before it looks at the table: otherwise a
 # user who may not drop a table could tell an empty one (`ACCESS_DENIED`) from a non-empty one
-# (`TABLE_NOT_EMPTY`).
+# (`TABLE_NOT_EMPTY`). Once the user may drop it, a row policy that hides every row from them
+# does not make a non-empty table look empty.
 
 user="user_${CLICKHOUSE_DATABASE}"
 
@@ -26,7 +27,11 @@ do
         | grep -o -m1 -E 'ACCESS_DENIED|TABLE_NOT_EMPTY'
 done
 
-${CLICKHOUSE_CLIENT} --query "GRANT DROP TABLE ON ${CLICKHOUSE_DATABASE}.* TO ${user}"
+${CLICKHOUSE_CLIENT} --query "
+    GRANT DROP TABLE ON ${CLICKHOUSE_DATABASE}.* TO ${user};
+    CREATE ROW POLICY policy_${CLICKHOUSE_DATABASE} ON ${CLICKHOUSE_DATABASE}.t_full USING 0 TO ${user};
+"
+${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_full"
 
 ${CLICKHOUSE_CLIENT} --user "${user}" \
     --query "DROP TABLE IF EMPTY ${CLICKHOUSE_DATABASE}.t_full SETTINGS ignore_drop_queries_probability = 0" 2>&1 \
@@ -36,6 +41,7 @@ ${CLICKHOUSE_CLIENT} --user "${user}" \
 
 ${CLICKHOUSE_CLIENT} --query "
     SELECT name FROM system.tables WHERE database = currentDatabase() AND name LIKE 't_%' ORDER BY name;
+    DROP ROW POLICY policy_${CLICKHOUSE_DATABASE} ON ${CLICKHOUSE_DATABASE}.t_full;
     DROP TABLE t_full;
     DROP USER ${user};
 "
