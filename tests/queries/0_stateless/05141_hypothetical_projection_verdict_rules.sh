@@ -135,9 +135,10 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_aj ON t_aj (SELECT a, b, arr ORDER BY b);
     SELECT 'in the filter above the read:';
-    EXPLAIN WHATIF SELECT a FROM t_aj WHERE b = 42 AND arrayJoin(arr) > 0 SETTINGS ${PIN};
+    -- lowered to a step the array join leaves the slice, so keep it a function here
+    EXPLAIN WHATIF SELECT a FROM t_aj WHERE b = 42 AND arrayJoin(arr) > 0 SETTINGS ${PIN}, query_plan_lower_array_join_function = 0;
     EXPLAIN indexes = 1 SELECT a FROM t_real_aj WHERE b = 42 AND arrayJoin(arr) > 0
-        SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_aj';
+        SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_aj', query_plan_lower_array_join_function = 0;
     SELECT 'above the slice the chooser replays:';
     EXPLAIN WHATIF SELECT a, x FROM t_aj ARRAY JOIN arr AS x WHERE b = 42 SETTINGS ${PIN};
     EXPLAIN indexes = 1 SELECT a, x FROM t_real_aj ARRAY JOIN arr AS x WHERE b = 42
