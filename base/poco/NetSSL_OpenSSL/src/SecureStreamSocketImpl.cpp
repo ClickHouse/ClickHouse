@@ -211,6 +211,12 @@ bool SecureStreamSocketImpl::havePeerCertificate() const
 }
 
 
+bool SecureStreamSocketImpl::needHandshake() const
+{
+	return _impl.needHandshake();
+}
+
+
 X509 * SecureStreamSocketImpl::peerCertificate() const
 {
 	X509 * pCert = _impl.peerCertificate();
