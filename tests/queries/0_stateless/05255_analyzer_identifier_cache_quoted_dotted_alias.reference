@@ -1,0 +1,6 @@
+-- quoted dotted alias in HAVING --
+11.25
+11.25
+-- equal part count, different boundaries --
+1	2
+1	2
