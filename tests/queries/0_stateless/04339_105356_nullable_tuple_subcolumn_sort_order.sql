@@ -3,7 +3,7 @@
 -- Merge-time check: a Nullable subcolumn of Nullable(Tuple(...)) used as a sort key must keep the
 -- outer null map, otherwise OPTIMIZE FINAL aborts with `Sort order of blocks violated`.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 -- Carrier 1: inner element `Nullable(Decimal)` (extracted as a ColumnNullable).
 DROP TABLE IF EXISTS t_105356;
