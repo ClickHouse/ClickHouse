@@ -2630,7 +2630,7 @@ private:
     /// Per-key state of the two object traversal passes, one entry per key of the object being
     /// traversed. `accepted` is the set of element types the first pass admitted for the key,
     /// `emitted` the set the second pass has already sent down the recursion. Both sets range over
-    /// JSONElementType, which has two enumerators, so each is a two-bit mask.
+    /// `JSONElementType`, which has two enumerators, so each is a two-bit mask.
     struct KeyTypes
     {
         static unsigned bit(JSONElementType type) { return 1U << static_cast<unsigned>(type); }
