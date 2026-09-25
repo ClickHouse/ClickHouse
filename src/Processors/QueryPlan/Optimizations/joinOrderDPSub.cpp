@@ -272,6 +272,9 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
     JoinStrictness strictness = JoinStrictness::All;
     bool have_non_inner = false;
     bool any_involved = false;
+    /// Whether anything applied here actually ties the two sides together, as opposed to a cross
+    /// product, which is applied across the split while joining the sides on nothing.
+    bool have_connecting_op = false;
 
     for (const auto & op : dpsub_data.conflict_operators)
     {
@@ -318,9 +321,16 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         if (!forward && !mirrored)
             return std::nullopt;
 
-        /// Inner joins impose no join kind and are commutative; only their gate matters.
+        /// Inner joins impose no join kind and are commutative; only their gate matters. A cross
+        /// product is equally reorderable, but unlike an inner join its kind is worth keeping, so
+        /// note it and read it off below. It must not go through the kind-fixing path underneath:
+        /// that rejects a second such operator at one node, and two cross products there are legal.
         if (op.freely_reorderable)
+        {
+            if (!isCrossOrComma(op.kind))
+                have_connecting_op = true;
             continue;
+        }
 
         /// A non-inner operator fixes the kind. Two of them at one node -> impossible order.
         if (have_non_inner)
@@ -343,6 +353,13 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
     /// connectivity with no operator spanning it -- reject rather than invent an inner join.
     if (!any_involved && !query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask)))
         return std::nullopt;
+
+    /// Only cross products were applied, and no operator fixed a kind, so the two sides are joined
+    /// on nothing. Report that rather than the `Inner` this started as: an unconditioned join is a
+    /// cross product, and `applyParallelReplicas` and `EXPLAIN` both go by the kind.
+    if (kind == JoinKind::Inner && any_involved && !have_non_inner && !have_connecting_op
+        && !query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask)))
+        kind = JoinKind::Cross;
 
     return std::make_pair(kind, strictness);
 }

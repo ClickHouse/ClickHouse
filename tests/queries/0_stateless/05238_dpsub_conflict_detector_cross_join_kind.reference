@@ -1,0 +1,13 @@
+-- cross join, no detector
+Type: cross
+-- cross join, CD-A
+Type: cross
+-- cross join, CD-C
+Type: cross
+-- comma join with no predicate, CD-C
+Type: cross
+-- transitive inner join stays inner, CD-C
+Type: inner
+Type: inner
+-- results are unaffected
+12
