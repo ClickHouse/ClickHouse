@@ -24,3 +24,5 @@ empirical_status: unsupported
 --- variable-width rows on a sampled estimate ---
 verdict: too close to call
 not known to have the same width
+--- a sampled compact part with uneven granules ---
+empirical_status: ok

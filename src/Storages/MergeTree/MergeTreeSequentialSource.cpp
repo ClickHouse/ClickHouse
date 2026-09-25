@@ -236,6 +236,13 @@ try
     /// (e.g. applying huge patch parts), to check that shutdown does not wait for it.
     fiu_do_on(FailPoints::merge_tree_sequential_source_sleep_before_read, { sleepForSeconds(10); });
 
+    /// past a gap between ranges the reader resumes at the next range, not at the next mark
+    if (readers_chain.isCurrentRangeFinished() && !mark_ranges.empty() && current_mark < mark_ranges.front().begin)
+    {
+        current_mark = mark_ranges.front().begin;
+        updateRowsToRead(current_mark);
+    }
+
     auto read_result = readers_chain.read(current_rows_to_read, mark_ranges, patch_ranges);
     if (!read_result.num_rows)
         return {};
