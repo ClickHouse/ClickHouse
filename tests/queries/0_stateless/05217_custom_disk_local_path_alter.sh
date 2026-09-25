@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT -q "
 # fence has to reject the definition before that first resolution registers anything.
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_05217 MODIFY SETTING disk = disk(name = '05217_alter', type = local, path = '$OUTSIDE')" 2>&1 \
-    | grep -c -F "must be inside"
+    | grep -m1 -c -F "must be inside"
 
 # The disk must not be left behind by the rejected statement, ...
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.disks WHERE name = '05217_alter'"
@@ -35,7 +35,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_05217"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_05217_backup (x UInt64) ENGINE = MergeTree ORDER BY x
     SETTINGS disk = disk(name = 'backup', type = local, path = '$OUTSIDE')" 2>&1 \
-    | grep -c -F "must be inside"
+    | grep -m1 -c -F "must be inside"
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.disks WHERE name = 'backup'"
 test -e "$OUTSIDE" && echo "the rejected disk created ${OUTSIDE}" || echo "no directory"
