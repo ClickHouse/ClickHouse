@@ -35,6 +35,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsString compatibility;
 }
 
 namespace
@@ -157,6 +158,8 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     evaluation_settings.table_timestamp_type = std::move(table_timestamp_type);
     evaluation_settings.time_scale = time_scale;
     evaluation_settings.mode = mode;
+    evaluation_settings.use_quantile_prometheus_histogram_array
+        = useQuantilePrometheusHistogramArray(context->getSettingsRef()[Setting::compatibility].value);
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
     evaluation_settings.step = step;
