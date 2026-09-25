@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # Tag no-fasttest: exercises the `S3Queue` engine, which is not compiled into the fast-test build.
+# Tag no-replicated-database: named collections are server-global, not database-scoped
 #
 # `S3Queue` must honor the S3 user-credential restriction the same way the `s3` table function and `S3`
 # engine do, including the per-session/profile `s3_allow_server_credentials_in_user_queries` override given
@@ -25,7 +26,10 @@ $CLICKHOUSE_CLIENT -q "
         use_environment_credentials = 1
 "
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE} SYNC"
+# ast_fuzzer_any_query = 0: the AST fuzzer replays table DDL as a DETACH, or as a `__fuzz_N` clone that
+# inherits the collection reference, either of which leaves metadata naming the collection dropped below.
+# The CREATE that must fail needs no pin: the fuzzer only replays a statement that succeeded.
+$CLICKHOUSE_CLIENT -q "SET ast_fuzzer_any_query = 0; DROP TABLE IF EXISTS ${TABLE} SYNC"
 
 # Without the override the S3Queue would resolve the server's environment credentials, so it is rejected.
 $CLICKHOUSE_CLIENT -q "
@@ -37,10 +41,11 @@ $CLICKHOUSE_CLIENT -q "
 # With the session-level override the table is created (the override reaches the S3 client built in the
 # storage constructor).
 $CLICKHOUSE_CLIENT -q "
+    SET ast_fuzzer_any_query = 0;
     CREATE TABLE ${TABLE} (x UInt8) ENGINE = S3Queue(${NC}, format = 'TSV')
     SETTINGS mode = 'ordered', s3_allow_server_credentials_in_user_queries = 1
 "
 echo "s3queue_override: created"
 
 # Chained so the collection outlives the table: metadata must never reference a missing collection.
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE} SYNC" && $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC}"
+$CLICKHOUSE_CLIENT -q "SET ast_fuzzer_any_query = 0; DROP TABLE IF EXISTS ${TABLE} SYNC" && $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC}"

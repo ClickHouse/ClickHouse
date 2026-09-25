@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -30,6 +31,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -97,6 +99,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace FailPoints
+{
+extern const char object_storage_source_pause_before_virtual_columns[];
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
@@ -238,7 +245,7 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
 #if USE_AVRO
     if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
     {
-        if (!iceberg_object->info.position_deletes_objects.empty() || !iceberg_object->info.equality_deletes_objects.empty())
+        if (iceberg_object->info.hasPositionDeletes() || !iceberg_object->info.equality_deletes_objects.empty())
             return true;
     }
 #endif
@@ -360,9 +367,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    std::string result = joinPathUnderPrefix(
-        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
-        object_info.getPath());
+    std::string result = formatObjectPath(configuration, object_info.getPath(), include_connection_info);
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -627,7 +632,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 *filter_actions_dag,
                 virtual_columns,
                 hive_columns,
-                configuration->getNamespace(),
+                configuration,
                 local_context,
                 file_progress_callback);
         }
@@ -653,7 +658,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(joinPathUnderPrefix(configuration->getNamespace(), key));
+                paths.push_back(formatObjectPath(*configuration, key, /*include_connection_info=*/false));
 
             if (is_explicit_archive_member)
             {
@@ -766,7 +771,7 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto reading_path = configuration->getPathForRead().path;
 
-            if (!full_path.starts_with(reading_path))
+            if (!full_path.starts_with(reading_path) && !trySplitFullyQualifiedObjectPath(full_path))
                 full_path = fs::path(reading_path) / object_info->getPath();
 
             auto object_metadata = object_info->getObjectMetadata();
@@ -831,6 +836,8 @@ Chunk StorageObjectStorageSource::generate()
                 object_size = object_info->fileSizeInArchive();
             else if (object_metadata->is_size_known)
                 object_size = object_metadata->size_bytes;
+
+            FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_virtual_columns);
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
@@ -957,6 +964,11 @@ Chunk StorageObjectStorageSource::generate()
 
                                     const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
                                     auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                                    /// The `_delta_log` type differs from the declared one when the columns were
+                                    /// specified rather than inferred, and the block follows the declared schema.
+                                    const auto & declared_type = read_from_format_info.source_header.getByPosition(column_pos).type;
+                                    if (!name_and_type.type->equals(*declared_type))
+                                        partition_column = castColumn({partition_column, name_and_type.type, name_and_type.name}, declared_type);
                                     /// This column is filled with default value now, remove it.
                                     chunk.erase(column_pos);
                                     /// Add correct values.

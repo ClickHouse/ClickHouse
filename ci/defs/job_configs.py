@@ -2,10 +2,11 @@ from praktika import Job
 from praktika.utils import Utils
 
 from ci.defs.defs import (
+    ASAN_IT_NUM_BATCHES,
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,
-    LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
+    LLVM_FT_S3_DB_REPL_NUM_BATCHES,
+    LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
@@ -171,6 +172,10 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            # clickhouse_proc.py's "No such key" check runs this script, and so does
+            # check_logs_for_critical_errors in tests/docker_scripts/stress_tests.lib.
+            "./ci/jobs/scripts/s3_key_lifecycle.py",
+            "./ci/jobs/scripts/log_cluster.py",
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/log_export.py",
@@ -208,14 +213,17 @@ common_stress_job_config = Job.Config(
         include_paths=[
             "./tests/queries/0_stateless/",
             "./ci/jobs/stress_job.py",
+            # stress_runner.sh drives the log export through clickhouse_proc.py
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/s3_key_lifecycle.py",
+            "./ci/jobs/scripts/log_cluster.py",
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/jobs/scripts/stress/stress.py",
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
             "./tests/docker_scripts/",
             "./ci/docker/stress-test",
-            "./ci/jobs/scripts/clickhouse_proc.py",
             "./ci/jobs/scripts/log_parser.py",
             # `stress_runner.sh` exports the system logs through
             # `clickhouse_proc.py logs_export_*`. The `ci_logs_sender` user is
@@ -261,7 +269,10 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
-        enable_commit_status=True,
+        enable_gh_auth=True,
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
+        ],
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
@@ -269,9 +280,6 @@ class JobConfigs:
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         enable_gh_auth=True,
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
-        ],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -584,11 +592,39 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.ARM_FUZZERS,
+            parameter=BuildTypes.AMD_FUZZERS,
             provides=[],
+            # The target arch comes from the toolchain file, not from the host, so this
+            # cross-compiles on arm like every other Linux `amd_*` build. It has to: the
+            # ~18 fuzzers each statically link the whole of ClickHouse with its own copy
+            # of the ASan+debug DWARF, ~94 GiB of build output, which does not fit in the
+            # ~135 GiB free on `amd-large` (`m7i.8xlarge`) and dies linking one of the
+            # last targets. Only the job that *runs* the binaries needs an amd64 host.
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
+    # stages the .options files, a source-derived fallback all.dict, and seed
+    # corpora repacked from tests/queries/0_stateless/*.sql into the build
+    # output (see ArtifactConfigs.fuzzers), so the produced artifact also
+    # depends on the inputs under tests/fuzz and on the stateless test queries,
+    # which the shared build digest does not cover. Extend the digest of the
+    # fuzzers build only, so that a dictionary generation or corpus change
+    # cannot cache-hit a stale artifact while the other builds are unaffected.
+    special_build_jobs = [
+        (
+            job.set_digest_config(
+                Job.CacheDigestConfig(
+                    include_paths=build_digest_config.include_paths
+                    + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
+                    with_git_submodules=True,
+                )
+            )
+            if job.parameter == BuildTypes.AMD_FUZZERS
+            else job
+        )
+        for job in special_build_jobs
+    ]
     # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
     # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
     # the host, so it is a CMake project of its own driven by its own script in its own image -
@@ -637,7 +673,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
-        timeout=900,
+        timeout=1800,
         # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
         # images before installing, not just afterwards. Best-effort: praktika does
         # not propagate a hook's exit code to the job status.
@@ -676,7 +712,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
-        timeout=900,
+        timeout=1800,
         # See install_check_jobs above.
         pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
@@ -884,28 +920,28 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_parallel_{batch}"
+                    + f"_ft_s3_db_repl_parallel_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_S3_DB_REPL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL,
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
-                    + f"_ft_old_s3_db_repl_sequential_{batch}"
+                    + f"_ft_s3_db_repl_sequential_{batch}"
                 ],
             )
-            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
+            for total_batches in (LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
@@ -1266,12 +1302,12 @@ class JobConfigs:
                 "./ci/jobs/stress_job.py",
                 "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
+                "./ci/jobs/scripts/s3_key_lifecycle.py",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
-                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
-                # not cover ./tests/ci.
-                "./tests/ci/get_previous_release_tag.py",
-                "./tests/ci/download_release_packages.py",
+                # upgrade_runner.sh symlinks and runs both of these
+                "./ci/tools/get_previous_release_tag.py",
+                "./ci/tools/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
@@ -1282,30 +1318,15 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
-    # Despite the name, only release_branches.py uses these.
-    # Six batches, not four: the whole integration suite is about 110000 test-seconds, which
-    # four batches of three xdist workers cannot fit into the two-hour pytest session timeout
-    # however well they are balanced. At four batches this job timed out on roughly half of
-    # all release-branch runs.
-    integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
+    integration_test_jobs_required = common_integration_test_job_config.parametrize(
+        # `ASAN_IT_NUM_BATCHES` in ci/defs/defs.py explains the batch count.
         *[
             Job.ParamSet(
                 parameter=f"amd_asan_ubsan, db disk, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (6,)
-            for batch in range(1, total_batches + 1)
-        ]
-    )
-    integration_test_jobs_required = common_integration_test_job_config.parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"amd_asan_ubsan, db disk, old analyzer, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,
-                requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-            )
-            for total_batches in (6,)
+            for total_batches in (ASAN_IT_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -1487,7 +1508,10 @@ class JobConfigs:
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
+                # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
+                "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 # Copied into the server config by `run-fuzzer.sh`
                 "./tests/config/users.d/ci_logs_sender.yaml",
@@ -1534,7 +1558,10 @@ class JobConfigs:
                 "./ci/jobs/scripts/find_symbols.py",
                 "./ci/jobs/scripts/find_tests.py",
                 "./ci/jobs/scripts/log_parser.py",
+                # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
+                "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 # Copied into the server config by `run-fuzzer.sh`
                 "./tests/config/users.d/ci_logs_sender.yaml",
@@ -1566,7 +1593,10 @@ class JobConfigs:
                 "./ci/jobs/buzzhouse_job.py",
                 "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
+                # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
+                "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 # Copied into the server config by `run-fuzzer.sh`
                 "./tests/config/users.d/ci_logs_sender.yaml",
@@ -1611,6 +1641,7 @@ class JobConfigs:
                 "./ci/docker/performance-comparison",
                 # Both servers export their system logs to the CI Logs cluster
                 "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./tests/config/users.d/ci_logs_sender.yaml",
             ],
@@ -1651,6 +1682,7 @@ class JobConfigs:
                 "./ci/docker/performance-comparison",
                 # Both servers export their system logs to the CI Logs cluster
                 "./ci/jobs/scripts/log_export.py",
+                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./tests/config/users.d/ci_logs_sender.yaml",
             ],
@@ -1679,6 +1711,7 @@ class JobConfigs:
                 # clears leftover processes through `server_cleanup.py`. Track
                 # both so changes to the shared start path reschedule the job.
                 "./ci/jobs/scripts/clickhouse_proc.py",
+                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/scripts/clickbench/",
                 "./ci/jobs/scripts/clickhouse_service.py",
@@ -1737,6 +1770,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
+                "./ci/jobs/scripts/docker_server",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -1753,6 +1787,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
+                "./ci/jobs/scripts/docker_server",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -1876,6 +1911,23 @@ class JobConfigs:
         run_in_docker="clickhouse/stateless-test",
         timeout=3600,
     )
+    # The merge-queue copy of `docs_examples_job`, which reruns the examples
+    # against the merge group state. The examples are extracted from the
+    # server's own registrations and run against a live server, so a pull
+    # request and a `master` commit that are each green on their own can still
+    # break them together: the pull request documents a function whose behavior
+    # a `master` commit then changes, or `master` fixes an example the pull
+    # request has just listed in `known_failures.txt`.
+    #
+    # The merge queue builds only the plain `amd_binary` flavor, so this copy
+    # runs against that binary on an amd runner instead of the `arm_release`
+    # build the pull request and master workflows use - the examples exercise
+    # server behavior, which is the same either way. The run takes ~1.5 minutes
+    # and reuses the build the queue already produces, so it finishes well
+    # inside the runtime of the fast test it runs alongside.
+    docs_examples_mq_job = docs_examples_job.set_requires(
+        ArtifactNames.CH_AMD_BINARY, reset=True
+    ).set_runs_on(RunnerLabels.FUNC_TESTER_AMD)
     sqlstorm_test_job = Job.Config(
         name=JobNames.SQL_STORM_TEST,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -1883,6 +1935,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqlstorm_test.py",
+                "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
@@ -1909,24 +1962,41 @@ class JobConfigs:
     )
     libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
-        runs_on=RunnerLabels.ARM_MEDIUM,
+        runs_on=RunnerLabels.AMD_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        # Five hours of fuzzing per target, all targets in parallel, plus
+        # artifact download and corpus upload. Praktika's default is exactly
+        # five hours, which would kill the job mid-run.
+        timeout=5.5 * 3600,
+        # The release binary is used to generate the fuzzer dictionary (all.dict)
+        # from the actual set of functions, data types and keywords. It has to be the
+        # binary for the arch this job runs the fuzzers on.
+        requires=[
+            ArtifactNames.AMD_FUZZERS,
+            ArtifactNames.FUZZERS_CORPUS,
+            ArtifactNames.CH_AMD_RELEASE,
+        ],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
                 "./tests/fuzz/runner.py",
+                "./tests/fuzz/update_dict.sh",
+                # `update_dict.sh` shells out to the source-derived extractor for
+                # the source-vs-binary coverage check, so a change confined to the
+                # extractor has to re-run this job rather than take a cache hit.
+                "./tests/fuzz/generate_source_dict.sh",
+                "./tests/fuzz/dictionaries/old.dict",
             ],
         ),
     )
     libfuzzer_corpus_minimization_job = Job.Config(
         name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
-        runs_on=RunnerLabels.ARM_MEDIUM,
+        runs_on=RunnerLabels.AMD_MEDIUM,
         command=(
             "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
             "'libFuzzer corpus minimization'"
         ),
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        requires=[ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
@@ -1977,6 +2047,21 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/parser_memory_check.py",
                 "./utils/parser-memory-profiler/",
+            ],
+        ),
+    )
+    storage_memory_check_job = Job.Config(
+        name=JobNames.STORAGE_MEMORY_CHECK,
+        runs_on=RunnerLabels.ARM_SMALL,
+        run_in_docker="clickhouse/test-base",
+        command="python3 ./ci/jobs/storage_memory_check.py",
+        requires=[ArtifactNames.CLICKHOUSE_EXAMPLES],
+        result_name_for_cidb="Tests",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/storage_memory_check.py",
+                "./ci/jobs/parser_memory_check.py",
+                "./utils/storage-memory-profiler/",
             ],
         ),
     )
@@ -2057,6 +2142,7 @@ class JobConfigs:
                 "./ci/jobs/llvm_coverage_job.py",
                 "./ci/jobs/scripts/merge_llvm_coverage.sh",
                 "./ci/jobs/scripts/generate_diff_coverage_report.sh",
+                "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",

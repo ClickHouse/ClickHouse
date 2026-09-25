@@ -23,7 +23,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -37,7 +36,11 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageBuffer.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -47,14 +50,13 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/AggregationUtils.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
-#include <Analyzer/QueryTreeBuilder.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -93,6 +95,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -125,6 +128,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
+    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsBool extremes;
@@ -138,6 +142,7 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsDouble offset;
     extern const SettingsBool prefer_column_name_to_alias;
+    extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
@@ -168,6 +173,7 @@ namespace Setting
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsBool enable_lazy_columns_replication;
@@ -183,7 +189,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ACCESS_DENIED;
     extern const int ILLEGAL_PREWHERE;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
@@ -299,8 +304,27 @@ bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & 
 /// already constant-folded live in ConstantNode::source_expression, which is NOT a child
 /// (children_size == 0), so they are correctly ignored: by then they are constants evaluated on
 /// the initiator and safe to ship.
+///
+/// A bare `IN some_table` / `NOT IN some_table` carries a TABLE node - or a TABLE_FUNCTION node for
+/// a table function - instead of a QUERY node, and reads a table by name exactly the way a subquery
+/// does: on the normal StorageView path against the initiator's table, per-shard once the
+/// optimization fires. Those count here too, otherwise two spellings of the same predicate over the
+/// same view return different rows. Only the right-hand side of an `IN` is inspected for them,
+/// because the query's own join tree is made of TABLE nodes as well.
 bool containsSubqueryNode(const QueryTreeNodePtr & node)
 {
+    if (const auto * function_node = node->as<FunctionNode>();
+        function_node && isNameOfInFunction(function_node->getFunctionName()))
+    {
+        const auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() >= 2)
+        {
+            const auto right_node_type = arguments[1]->getNodeType();
+            if (right_node_type == QueryTreeNodeType::TABLE || right_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+                return true;
+        }
+    }
+
     for (const auto & child : node->getChildren())
     {
         if (!child)
@@ -320,6 +344,13 @@ bool containsSubqueryNode(const QueryTreeNodePtr & node)
 /// filters on the normal StorageView path; a subquery inside them would be evaluated per-shard once
 /// the optimization fires, with the same divergence risk described above, so suppress the
 /// optimization when present. Mirrors hasSubquery in StorageView.cpp.
+///
+/// Like containsSubqueryNode, this also treats a bare `IN some_table` / `IN some_table_function(...)`
+/// as a subquery. The expression parser produces an ASTFunction from the IN family whose right-hand
+/// side is an ASTIdentifier (the table name) or an ASTFunction naming a table function, never an
+/// ASTSubquery, so the plain ASTSubquery check above misses it, while the analyzer resolves that
+/// identifier as a table and reads it exactly the way a subquery would - on each shard once folded
+/// into the shipped query. Only the right-hand side of an IN is inspected.
 bool astContainsSubquery(const ASTPtr & ast)
 {
     if (!ast)
@@ -328,56 +359,28 @@ bool astContainsSubquery(const ASTPtr & ast)
     if (ast->as<ASTSubquery>())
         return true;
 
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->arguments && isNameOfInFunction(function->name))
+    {
+        const auto & arguments = function->arguments->children;
+        if (arguments.size() >= 2)
+        {
+            const auto & right = arguments[1];
+            if (right->as<ASTIdentifier>())
+                return true;
+
+            if (const auto * right_function = right->as<ASTFunction>();
+                right_function && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
+                return true;
+        }
+    }
+
     for (const auto & child : ast->children)
     {
         if (astContainsSubquery(child))
             return true;
     }
     return false;
-}
-
-/// Check if current user has privileges to SELECT columns from table
-/// Throws an exception if access to any column from `column_names` is not granted
-/// If `column_names` is empty, check access to any columns and return names of accessible columns
-NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_id, const StorageSnapshotPtr & storage_snapshot, const Names & column_names, const ContextPtr & query_context)
-{
-    /// StorageDummy is created on preliminary stage, ignore access check for it.
-    if (typeid_cast<const StorageDummy *>(storage.get()))
-        return {};
-
-    if (column_names.empty())
-    {
-        NameSet accessible_columns;
-        /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
-          * one table column is accessible.
-          */
-        auto access = query_context->getAccess();
-        const auto * alias = storage->as<StorageAlias>();
-        for (const auto & column : storage_snapshot->metadata->getColumns())
-        {
-            /// An `Alias` also requires access to the selected column of its target table.
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
-                accessible_columns.insert(column.name);
-        }
-
-        if (accessible_columns.empty())
-        {
-            throw Exception(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
-                query_context->getUserName(),
-                storage_id.getFullTableName());
-        }
-        return accessible_columns;
-    }
-
-    // In case of cross-replication we don't know what database is used for the table.
-    // `storage_id.hasDatabase()` can return false only on the initiator node.
-    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    if (storage_id.hasDatabase())
-        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
-
-    return {};
 }
 
 /// Check access rights for all tables referenced in a subquery
@@ -520,31 +523,6 @@ bool hasTrivialCountIncompatibleModifiers(
     return false;
 }
 
-/// Returns the effective row policy filter for the table, or nullptr if the
-/// table has no row policies for the current user or the combined filter is
-/// always-true. Mirrors the effective-filter check used by
-/// buildRowPolicyFilterIfNeeded.
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
-{
-    auto storage_id = storage->getStorageID();
-    if (!storage_id.hasDatabase())
-        return nullptr;
-    auto row_policy_filter = query_context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (const auto * alias = storage->as<StorageAlias>())
-    {
-        const auto target_storage_id = alias->getTargetTable()->getStorageID();
-        auto target_row_policy_filter = query_context->getRowPolicyFilter(
-            target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
-    }
-
-    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
-        return nullptr;
-    return row_policy_filter;
-}
-
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
     SelectQueryInfo & select_query_info,
@@ -569,7 +547,7 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -696,7 +674,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -809,7 +787,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         /// would let the query read the view without any `SELECT` grant. Enforce the same column-aware `SELECT`
         /// check the underlying view would receive as a `TableNode`.
         const auto & storage = table_function_node->getStorage();
-        if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr; storage_view && storage_view->isParameterizedView())
+        if (table_function_node->isParameterizedView())
         {
             const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
             columns_names_allowed_to_select = checkAccessRights(
@@ -860,6 +838,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             const auto & column_identifier = global_planner_context->createColumnIdentifierOrGet(additional_column_to_read, table_expression);
             columns_names.push_back(additional_column_to_read.name);
             table_expression_data.addColumn(additional_column_to_read, column_identifier);
+            table_expression_data.setRowCountOnlyColumnIdentifier(column_identifier);
         }
     }
 
@@ -944,7 +923,7 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
 {
     const auto & query_context = planner_context->getQueryContext();
 
-    auto row_policy_filter = getEffectiveRowPolicyFilter(storage, query_context);
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context);
     if (!row_policy_filter)
         return {};
 
@@ -994,7 +973,12 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         metadata_snapshot->columns,
         query_context);
 
-    return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
+    return buildFilterInfo(
+        parallel_replicas_custom_filter_ast,
+        table_expression_query_info.table_expression,
+        planner_context,
+        {},
+        /*check_access_rights=*/ true);
 }
 
 /// Parse `additional_table_filters` for this table expression and assign the AST into
@@ -1051,7 +1035,8 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(
     if (!additional_filter_ast)
         return {};
 
-    auto filter_info = buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
+    auto filter_info = buildFilterInfo(
+        additional_filter_ast, table_expression_query_info.table_expression, planner_context, {}, /*check_access_rights=*/ true);
     if (prewhere_info)
     {
         for (const auto * input : filter_info.actions.getInputs())
@@ -1093,22 +1078,14 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
         limit_offset = offset_uint->getUInt(0);
     }
 
-    /// `arrayJoin` in the projection expands one input row into several output rows after the
-    /// source has run. Capping the source to `limit + offset` rows would truncate input BEFORE
-    /// expansion, so hard consumers of `trivial_limit` (StorageLoop, system.zeros, generateRandom)
-    /// could drop output rows that the LIMIT should keep. See issue #82279 and the sibling guard
-    /// in `numbersLikeUtils::shouldPushdownLimit`. (The `ARRAY JOIN` clause is lowered to a
-    /// separate table expression in the analyzer, so it is not a single-table read and never
-    /// reaches this optimization.)
-    if (hasFunctionNode(main_query_node.getProjectionNode(), "arrayJoin"))
-        return 0;
-
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
       * but LIMIT is specified with UInt64 value, and limit + offset < max_block_size,
       * then as the block size we will use limit + offset (not to read more from the table than requested),
       * and also set the number of threads to 1.
       */
     if (main_query_node.hasLimit()
+        && !main_query_node.hasLimitAfter()
+        && !main_query_node.hasLimitUntil()
         && !main_query_node.isDistinct()
         && !main_query_node.isLimitWithTies()
         && !main_query_node.hasPrewhere()
@@ -1298,7 +1275,7 @@ void pushOrderByIntoView(
     /// `StorageView` does not support prewhere), so pushing `LIMIT` would
     /// truncate before the row-policy filter runs and could return fewer rows
     /// than expected.
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
         return;
 
     /// Skip when `additional_table_filters` matches this view: the additional
@@ -1331,7 +1308,7 @@ void pushOrderByIntoView(
     /// source rows before the expansion runs, so if the top ordered rows have
     /// empty arrays the rewritten query would return too few rows instead of
     /// continuing to lower ordered rows to fill the `LIMIT`. Mirror the existing
-    /// guard in `mainQueryNodeBlockSizeByLimit`.
+    /// `trivial_limit` guard in `buildQueryPlanForTableExpression`.
     if (hasFunctionNode(outer->getProjectionNode(), "arrayJoin"))
         return;
 
@@ -1346,6 +1323,13 @@ void pushOrderByIntoView(
     /// LIMIT_LENGTH would truncate too many rows before the outer OFFSET is
     /// applied, producing wrong results.
     if (outer->hasOffset())
+        return;
+
+    /// `LIMIT n AFTER ... [UNTIL ...]` counts rows only from the boundary row onwards, and the
+    /// boundary is located on the coordinator over the ordered stream. Pushing `LIMIT_LENGTH` into
+    /// the view would keep the first n rows of every shard instead, so the boundary row may never
+    /// reach the coordinator and the range would return too few rows or none at all.
+    if (outer->hasLimitAfter() || outer->hasLimitUntil())
         return;
 
     /// LIMIT ... WITH TIES decides ties globally after ordering. Pushing
@@ -1415,8 +1399,10 @@ void pushOrderByIntoView(
     if (sel->qualify())
         return;
 
-    /// View must not already have ORDER BY/LIMIT
-    if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset())
+    /// View must not already have ORDER BY/LIMIT, including a `LIMIT [n] AFTER/UNTIL` range: the
+    /// injected `ORDER BY` would change which rows its boundaries select, and the injected
+    /// `LIMIT_LENGTH` would become the count of a range that had none.
+    if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset() || sel->limitAfter() || sel->limitUntil())
         return;
 
     /// View must not carry `LIMIT`/`OFFSET` through its own `SETTINGS` clause.
@@ -1638,6 +1624,70 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     return false;
 }
 
+/// Disables parallel replicas in the context of every query carried by `node`, including `node` itself.
+/// A subquery is not planned by the `Planner` of the query that contains it: a `UNION` table expression
+/// is planned branch by branch (see `buildPlanForUnionNode`), an `IN` subquery is planned by
+/// `addBuildSubqueriesForSetsStepIfNeeded`, a materialized CTE by `addBuildSubqueriesForMaterializedCTEsIfNeeded`
+/// and a correlated subquery by `buildPlannerForCorrelatedSubquery`. Each of them builds an independent
+/// `Planner` from the subquery's own context, so it is not enough to update the context of the enclosing
+/// query: the kill switch has to reach the context of every nested `QueryNode`/`UnionNode` as well.
+/// The materialized CTE subquery is a child of its `TableNode` and the correlated subquery is a child of
+/// the expression that uses it, so a full traversal of the query tree covers all the carriers.
+void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
+{
+    traverseQueryTree(node, Everything{}, [](const QueryTreeNodePtr & current_node)
+    {
+        if (auto * query_node = current_node->as<QueryNode>())
+            query_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+        else if (auto * union_node = current_node->as<UnionNode>())
+            union_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+    });
+}
+
+}
+
+void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context)
+{
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    if (settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
+        return;
+
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+    const auto table_expressions_stack = buildTableExpressionsStack(query_node_typed.getJoinTreeNode());
+    const bool joins_multiple_tables = std::any_of(
+        table_expressions_stack.begin(),
+        table_expressions_stack.end(),
+        [](const auto & table_expression)
+        {
+            /// `ARRAY JOIN` is not a join between tables and does not count here.
+            const auto node_type = table_expression->getNodeType();
+            return node_type == QueryTreeNodeType::JOIN || node_type == QueryTreeNodeType::CROSS_JOIN;
+        });
+
+    if (!joins_multiple_tables)
+        return;
+
+    LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
+    planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
+
+    /// Every subquery of this query is planned by an independent `Planner` built from the
+    /// subquery's own context, so updating the query context above is not enough: the switch has to
+    /// reach the context of every query carried by the query tree - `IN` subqueries, materialized
+    /// CTE subqueries and correlated subqueries alike. All of them are still part of the tree here
+    /// (they are detached, if at all, only when their plan is built, which happens later).
+    disableParallelReplicasForSubqueries(query_node);
+
+    /// A prepared set holds its own reference to the subquery tree, taken by `collectSets` before
+    /// this point, so a set whose tree was replaced in the query tree in the meantime is not covered
+    /// by the traversal above.
+    for (const auto & set_subquery : planner_context->getPreparedSets().getSubqueries())
+        if (const auto & set_query_tree = set_subquery->getQueryTree())
+            disableParallelReplicasForSubqueries(set_query_tree);
+}
+
+namespace
+{
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
@@ -1727,6 +1777,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
         UInt64 max_block_size = settings[Setting::max_block_size];
         UInt64 max_block_size_limited = 0;
+        /// LIMIT + OFFSET as the most rows the source has to produce, when that holds.
+        UInt64 max_source_rows = 0;
         if (is_single_table_expression && !select_query_options.only_analyze)
         {
             /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
@@ -1738,29 +1790,51 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// planning further down: the trivial-LIMIT optimization must be disabled
             /// whenever those filters actually apply, so the flags must agree.
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
-                || !!getEffectiveRowPolicyFilter(storage, query_context);
+                || !!getEffectiveRowPolicyFilter(*storage, query_context);
             if (!has_additional_filters)
                 max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
             {
-                if (max_block_size_limited < max_block_size)
+                const bool has_array_join = hasFunctionNode(select_query_info.query_tree->as<QueryNode &>().getProjectionNode(), "arrayJoin");
+                const bool shrink_block = max_block_size_limited < max_block_size;
+                if (shrink_block)
                 {
-                    max_block_size = std::max<UInt64>(1, max_block_size_limited);
-                    max_streams = 1;
-                    max_threads_execute_query = 1;
+                    /// With `arrayJoin` the source cannot stop at the LIMIT, so over a long run of empty arrays it streams
+                    /// every row anyway, and one-row blocks make that hundreds of times slower than the default block.
+                    /// Keep a few hundred rows per block: still a small read, and the empty prefix stays cheap.
+                    constexpr UInt64 min_block_size_above_array_join = 256;
+                    if (has_array_join)
+                        max_block_size = std::min(max_block_size, std::max(max_block_size_limited, min_block_size_above_array_join));
+                    else
+                        max_block_size = std::max<UInt64>(1, max_block_size_limited);
                 }
 
-                if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
+                /// With `arrayJoin` the LIMIT does not bound the source rows, so only the block size shrinks (#82279).
+                if (!has_array_join)
                 {
-                    if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
+                    max_source_rows = max_block_size_limited;
+                    if (shrink_block)
+                    {
+                        max_streams = 1;
+                        max_threads_execute_query = 1;
+                    }
+
+                    if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
+                    {
+                        if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
+                            table_expression_query_info.trivial_limit = max_block_size_limited;
+                        /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
+                        else if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max())
+                            table_expression_query_info.trivial_limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
+                    }
+                    else
+                    {
                         table_expression_query_info.trivial_limit = max_block_size_limited;
-                    /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
-                    else if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max())
-                        table_expression_query_info.trivial_limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
+                    }
                 }
                 else
                 {
-                    table_expression_query_info.trivial_limit = max_block_size_limited;
+                    table_expression_query_info.small_limit_above_array_join = shrink_block;
                 }
             }
 
@@ -1993,6 +2067,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     else if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
                              distributed && query_context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
                     {
+                        /// The key is evaluated on the replicas on behalf of this user.
+                        auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context);
+                        buildFilterQueryTree(
+                            custom_key_ast,
+                            table_expression_query_info.table_expression,
+                            query_context,
+                            /*check_access_rights=*/ true);
+
                         planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
                         /// We disable prefer_localhost_replica because if one of the replicas is local it will create a single local plan
                         /// instead of executing the query with multiple replicas
@@ -2098,14 +2180,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// enforces the view policy in the right namespace and handles the Distributed
                         /// policy (not propagated to shards — see issue #28334) and used_row_policies
                         /// bookkeeping correctly, so we fall back to it whenever any policy is present.
-                        const auto & view_id = storage->getStorageID();
-                        const auto & dist_id = underlying_dist->getStorageID();
-                        auto view_row_policy = query_context->getRowPolicyFilter(
-                            view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-                        auto dist_row_policy = query_context->getRowPolicyFilter(
-                            dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-                        const bool has_row_policy = (view_row_policy && !view_row_policy->isAlwaysTrue())
-                            || (dist_row_policy && !dist_row_policy->isAlwaysTrue());
+                        const bool has_row_policy = getEffectiveRowPolicyFilter(*storage, query_context)
+                            || getEffectiveRowPolicyFilter(*underlying_dist, query_context);
 
                         /// Also suppress when shard pruning is forced. The pushdown ships the outer
                         /// query's WHERE in the view-output namespace, which cannot be safely mapped to
@@ -2292,15 +2368,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             /// unaliased views, but a hard error for aliased ones).
                             if (auto & additional_filter_ast = table_expression_query_info.additional_filter_ast; additional_filter_ast)
                             {
-                                ASTPtr wrapped_filter_ast = additional_filter_ast;
-                                if (wrapped_filter_ast->as<ASTSubquery>() || wrapped_filter_ast->as<ASTSelectWithUnionQuery>())
-                                    wrapped_filter_ast = makeASTFunction("notEquals",
-                                        wrapped_filter_ast,
-                                        make_intrusive<ASTLiteral>(Field(UInt8(0))));
-
-                                auto filter_query_tree = buildQueryTree(wrapped_filter_ast, query_context);
-                                QueryAnalysisPass query_analysis_pass(table_expression_query_info.table_expression);
-                                query_analysis_pass.run(filter_query_tree, query_context);
+                                auto filter_query_tree = buildFilterQueryTree(
+                                    additional_filter_ast,
+                                    table_expression_query_info.table_expression,
+                                    query_context,
+                                    /*check_access_rights=*/ true);
 
                                 auto & outer_query_node = table_expression_query_info.query_tree->as<QueryNode &>();
                                 if (outer_query_node.hasWhere())
@@ -2323,6 +2395,35 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             /// and parseAdditionalFilterAstIfNeeded is a no-op when no entry matches.
                             parseAdditionalFilterAstIfNeeded(
                                 underlying_dist, dist_table_node->getAlias(), table_expression_query_info, inner_context);
+
+                            /// The filter AST itself is forwarded to the shards by `StorageDistributed`, so resolve it
+                            /// against the Distributed table node here only to check access to the columns it reads.
+                            if (table_expression_query_info.additional_filter_ast)
+                            {
+                                buildFilterQueryTree(
+                                    table_expression_query_info.additional_filter_ast,
+                                    std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
+                                    inner_context,
+                                    /*check_access_rights=*/ true);
+                            }
+
+                            /// The pushed-down read goes through `StorageDistributed::read` under inner_context, which
+                            /// ships `parallel_replicas_custom_key` to the replicas as a filter over the columns of the
+                            /// `Distributed` table. The check for a direct `Distributed` read above only ran for the
+                            /// view's own storage, so repeat it here for the table the read is actually handed to. For
+                            /// `SQL SECURITY NONE` the override context has already dropped the invoker's key, so the
+                            /// check is a no-op there.
+                            const auto & underlying_dist_cluster = *underlying_dist->as<const StorageDistributed &>().getCluster();
+                            if (inner_context->canUseParallelReplicasCustomKeyForCluster(underlying_dist_cluster))
+                            {
+                                auto custom_key_ast = parseCustomKeyForTable(
+                                    inner_context->getSettingsRef()[Setting::parallel_replicas_custom_key], *inner_context);
+                                buildFilterQueryTree(
+                                    custom_key_ast,
+                                    std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
+                                    inner_context,
+                                    /*check_access_rights=*/ true);
+                            }
 
                             /// Replace the view's table expression in the outer query with the
                             /// inlined inner query tree. StorageDistributed will then replace
@@ -2556,6 +2657,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
                         {
+                            /// The key is evaluated on the replicas on behalf of this user.
+                            auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context);
+                            buildFilterQueryTree(
+                                custom_key_ast,
+                                table_expression_query_info.table_expression,
+                                query_context,
+                                /*check_access_rights=*/ true);
+
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
                             auto modified_query_info = select_query_info;
                             modified_query_info.cluster = std::move(cluster);
@@ -2606,8 +2715,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
                                 rows_to_read = table_expression_query_info.trivial_limit;
 
-                            if (max_block_size_limited && (max_block_size_limited < rows_to_read))
-                                rows_to_read = max_block_size_limited;
+                            if (max_source_rows && (max_source_rows < rows_to_read))
+                                rows_to_read = max_source_rows;
 
                             const size_t number_of_replicas_to_use
                                 = rows_to_read / settings[Setting::parallel_replicas_min_number_of_rows_per_replica];
@@ -2772,6 +2881,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
             auto subquery_options = select_query_options.subquery();
+
+            /// When `parallel_replicas_for_queries_with_multiple_tables` is disabled, the outer query
+            /// has already turned off parallel replicas in the planner context (see `buildJoinTreeQueryPlan`).
+            /// A subquery is planned by an independent `Planner` using its own context, so this decision
+            /// would not reach it, and a single-table subquery of a multi-table query could still be read
+            /// with parallel replicas. Propagate only the parallel replicas switch (not the whole context,
+            /// which would clobber the subquery's own settings and bound resources) to the subquery.
+            if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
+                && !settings[Setting::allow_experimental_parallel_reading_from_replicas])
+            {
+                disableParallelReplicasForSubqueries(table_expression);
+            }
+
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
@@ -2798,7 +2920,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
     /// Propagated to the outer planner so a distributed aggregation merge buckets by only the representative keys.
     std::unordered_map<String, String> shard_collapse_duplicate_keys;
 
-    if (till_stage == QueryProcessingStage::FetchColumns)
+    /// A storage asked for `FetchColumns` may report a higher stage (`StorageMerge` folds its children's
+    /// stages), so `ignore_rename_columns` is honoured regardless of `till_stage`: the caller that sets it
+    /// matches the produced header by source column name.
+    if (till_stage == QueryProcessingStage::FetchColumns || select_query_options.ignore_rename_columns)
     {
         ActionsDAG rename_actions_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs updated_actions_dag_outputs;
@@ -3245,6 +3370,127 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     };
 }
 
+const StorageDistributed * getDistributedStorageFromTableExpression(const QueryTreeNodePtr & table_expression)
+{
+    StoragePtr storage;
+    if (const auto * table_node = table_expression->as<TableNode>())
+        storage = table_node->getStorage();
+    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+        storage = table_function_node->getStorage();
+    else
+        return nullptr;
+
+    /// `Alias`, `MaterializedView`, `Buffer` and `StorageProxy` (for example `lazy_load_tables`)
+    /// forward `read` to a nested storage. If that nested storage is `Distributed`, the join still
+    /// fans out across shards, so look through the wrappers before deciding.
+    for (size_t i = 0; storage && i < 16; ++i)
+    {
+        if (const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get()))
+            return distributed;
+
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+            storage = proxy->getNested();
+        else if (const auto * alias = storage->as<StorageAlias>())
+            storage = alias->tryGetTargetTable();
+        else if (const auto * materialized_view = storage->as<StorageMaterializedView>())
+            storage = materialized_view->tryGetTargetTable();
+        else if (const auto * buffer = storage->as<StorageBuffer>())
+            storage = buffer->getDestinationTable();
+        else
+            break;
+    }
+
+    return nullptr;
+}
+
+bool isGlobalJoin(const JoinNode & join_node, const Settings & settings)
+{
+    const auto distributed_product_mode = settings[Setting::distributed_product_mode];
+    return join_node.getLocality() == JoinLocality::Global
+        || distributed_product_mode == DistributedProductMode::GLOBAL
+        || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
+}
+
+void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPtr & context)
+{
+    /** Join trees are left deep, so the join that reads the leftmost table is the deepest one, and it is
+      * the only one whose sides can be swapped without moving a join into the right table expression.
+      */
+    auto * join_node = query_node.getJoinTreeNode()->as<JoinNode>();
+    while (join_node)
+    {
+        auto * deeper_join_node = join_node->getLeftTableExpressionNode()->as<JoinNode>();
+        if (!deeper_join_node)
+            break;
+        join_node = deeper_join_node;
+    }
+
+    if (!join_node || join_node->getKind() != JoinKind::Right || !join_node->hasJoinExpression())
+        return;
+
+    /** These strictnesses mirror when both the table expressions and the kind are flipped.
+      * `Asof` does not: its last key is an inequality, and swapping the sides reverses its direction.
+      * `RightAny` does not either, because the strictness itself names the side to take a row from,
+      * and that name does not follow the tables across the swap.
+      */
+    const auto strictness = join_node->getStrictness();
+    if (strictness != JoinStrictness::All && strictness != JoinStrictness::Any
+        && strictness != JoinStrictness::Semi && strictness != JoinStrictness::Anti)
+        return;
+
+    if (!isGlobalJoin(*join_node, context->getSettingsRef()))
+        return;
+
+    /// Only the left table fans the query out across shards, so only its shard count decides whether
+    /// the rows of the preserved side get emitted more than once. What the right side is does not matter.
+    const auto * left_storage = getDistributedStorageFromTableExpression(join_node->getLeftTableExpressionNode());
+    if (!left_storage || left_storage->getShardCount() < 2)
+        return;
+
+    /** A `JOIN USING` key records its sides positionally, the left one first. The join condition, the
+      * `USING (a AS b)` clause shipped to the shards and the key supertype all read that order, so the
+      * sides have to be swapped together with the table expressions. A key that does not hold a plain
+      * column per side is not swappable that way, so leave such a query alone. `NATURAL` needs no separate
+      * handling: the analyzer has already turned it into `USING` by now.
+      */
+    std::vector<ListNode *> using_key_sides;
+    if (join_node->isUsingJoinExpression())
+    {
+        for (const auto & using_key : join_node->getJoinExpression()->as<ListNode &>().getNodes())
+        {
+            auto * using_column = using_key->as<ColumnNode>();
+            if (!using_column || !using_column->hasExpression())
+                return;
+
+            auto * key_sides = using_column->getExpression()->as<ListNode>();
+            if (!key_sides || key_sides->getNodes().size() != 2)
+                return;
+
+            for (const auto & side : key_sides->getNodes())
+            {
+                const auto * side_column = side->as<ColumnNode>();
+                if (!side_column || side_column->hasExpression())
+                    return;
+            }
+
+            using_key_sides.push_back(key_sides);
+        }
+    }
+
+    /** A `GLOBAL RIGHT JOIN` cannot run with the left table sharded and the right side broadcast.
+      * Every shard would independently emit the rows of the complete right side that the kind preserves.
+      * Swap the inputs before choosing the table expression that will execute the query, so the preserved
+      * side moves out of the broadcast position. It then keeps running on the shards if it is a sharded
+      * `Distributed` table of its own, and falls back to the initiator otherwise, which is slower but is
+      * the only way to emit those rows once.
+      * Projection nodes are already resolved and keep the user-visible column order unchanged.
+      */
+    std::swap(join_node->getLeftTableExpressionNode(), join_node->getRightTableExpressionNode());
+    for (auto * key_sides : using_key_sides)
+        std::swap(key_sides->getNodes()[0], key_sides->getNodes()[1]);
+    join_node->setKind(JoinKind::Left);
+}
+
 }
 
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
@@ -3253,7 +3499,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
-    const QueryTreeNodePtr & join_tree_node = query_node->as<QueryNode &>().getJoinTreeNode();
+    auto & query_node_typed = query_node->as<QueryNode &>();
+    tryRewriteGlobalRightJoinAsLeftJoin(query_node_typed, planner_context->getQueryContext());
+
+    const QueryTreeNodePtr & join_tree_node = query_node_typed.getJoinTreeNode();
     auto table_expressions_stack = buildTableExpressionsStack(join_tree_node);
     size_t table_expressions_stack_size = table_expressions_stack.size();
     bool is_single_table_expression = table_expressions_stack_size == 1;
@@ -3278,11 +3527,24 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     int first_join_pos = -1;
     int last_right_join_pos = -1;
     bool is_cross_join = false;
+    bool has_global_join_preserving_broadcast_rows = false;
+    /// `allowParallelReplicasForJoinTree` only ever sees the leftmost leaf's parent join, so any other
+    /// join of an n-way tree must be tracked here. Set for JOIN/CROSS_JOIN/ARRAY_JOIN, read only in the JOIN branch.
+    bool leftmost_join_tree_node_seen = false;
+    bool has_unsafe_non_leftmost_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
         const auto & table_expression = table_expressions_stack[i];
         auto table_expression_type = table_expression->getNodeType();
+
+        const bool is_join_tree_node = table_expression_type == QueryTreeNodeType::JOIN
+            || table_expression_type == QueryTreeNodeType::CROSS_JOIN
+            || table_expression_type == QueryTreeNodeType::ARRAY_JOIN;
+        const bool is_non_leftmost_join_tree_node = is_join_tree_node && leftmost_join_tree_node_seen;
+        if (is_join_tree_node)
+            leftmost_join_tree_node_seen = true;
+
         if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
             continue;
 
@@ -3305,6 +3567,13 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             if (join_node.getLocality() == JoinLocality::Global)
                 is_global_join = true;
 
+            /// Rows of the right side are preserved by these kinds, and that side is broadcast whole to
+            /// every shard. `tryRewriteGlobalRightJoinAsLeftJoin` swaps the sides where it can, so a join
+            /// still standing here would emit those rows once per shard.
+            if ((join_kind == JoinKind::Right || join_kind == JoinKind::Full)
+                && isGlobalJoin(join_node, planner_context->getQueryContext()->getSettingsRef()))
+                has_global_join_preserving_broadcast_rows = true;
+
             // save join positions for later check
             if (first_join_pos < 0 && (join_kind == JoinKind::Left || join_kind == JoinKind::Inner || join_kind == JoinKind::Right))
                 first_join_pos = static_cast<int>(i);
@@ -3321,6 +3590,24 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 is_right_join_with_remote_table = right_expression_data.isRemote();
             }
 
+            /// The whole join tree is shipped to every replica, but a leaf's reads are coordinated only for the
+            /// shapes the search for that leaf descends: `LEFT`, `INNER` with `ALL`, and a qualifying `RIGHT`.
+            /// Any other non-leftmost join leaves no leaf coordinated, so every replica evaluates the whole
+            /// join and the initiator concatenates the copies, multiplying every row by the replica count.
+            /// That happens even to a join deciding each left row on its own, such as `INNER ASOF`. Under
+            /// `LEFT` every strictness is admitted, which is the point of the kind exemption; outside it this
+            /// stays a whitelist, so a future `JoinStrictness` is fail-closed.
+            /// `GLOBAL`/`CROSS`, and a misplaced `RIGHT`, remain the business of the disjuncts
+            /// below, which is why `ALL` is still admitted for those kinds here.
+            /// Two kinds need their own term because they are unsafe while carrying `ALL`: `PASTE`
+            /// pairs rows by position, and `FULL` emits unmatched right rows, which each replica
+            /// would decide from its own slice of the left side.
+            if (is_non_leftmost_join_tree_node
+                && (join_kind == JoinKind::Paste
+                    || join_kind == JoinKind::Full
+                    || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left)))
+                has_unsafe_non_leftmost_join = true;
+
             continue;
         }
 
@@ -3336,6 +3623,11 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
         /// for n-way join with FULL JOIN or GLOBAL JOINS or CROSS JOIN
         if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
+            return true;
+
+        /// A non-leftmost join that is not replica-safe (e.g. INNER ... ANY INNER). Deliberately not gated on
+        /// `joins_count`: an ARRAY JOIN can occupy the leftmost slot without incrementing it.
+        if (has_unsafe_non_leftmost_join)
             return true;
 
         /// For RIGHT JOIN with distributed table on the right side
@@ -3396,6 +3688,17 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
             // Only wrap if it's specifically IStorageCluster, not StorageDistributed or other remote storages
             should_wrap_left_table = (dynamic_cast<const IStorageCluster *>(storage.get()) != nullptr);
+        }
+
+        /** Reading the leftmost table through a subquery keeps the join on the initiator instead of running
+          * it on every shard, which is the only way left to emit the preserved rows once. It costs the
+          * distributed execution of the join, and shard specific values such as `shardNum` stop varying,
+          * so do it only for the join trees that are wrong without it.
+          */
+        if (!should_wrap_left_table && has_global_join_preserving_broadcast_rows)
+        {
+            const auto * left_storage = getDistributedStorageFromTableExpression(left_table_expression);
+            should_wrap_left_table = left_storage && left_storage->getShardCount() > 1;
         }
     }
 

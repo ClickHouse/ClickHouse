@@ -15,6 +15,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/TypeMismatchStrictness.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
@@ -1009,6 +1010,32 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
     checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
 
+/// `arrayJoin` is the one action that changes the number of rows in a block, while every consumer of a
+/// TTL expression indexes its result column positionally against the block's rows:
+/// `TTLDeleteAlgorithm::execute` sizes its loop by `block.rows()` and reads `timestamps[i]`. With a
+/// multi-element array a row is judged by an earlier row's timestamp - so rows whose own TTL is far in
+/// the future are deleted - and with an empty array the read goes past the end of the column, letting
+/// garbage decide deletion. Even `allow_suspicious_ttl_expressions` must not allow that. Loading already
+/// stored metadata is the one place that has to accept it, because a rejection there fails the whole load
+/// rather than the one table; `buildExpression` below then stops such a TTL before it ever executes.
+///
+/// The built DAG only carries an `ARRAY_JOIN` node when `ActionsVisitor` recognised the literal name
+/// `arrayJoin`, which it does not do for the `unnest` alias when `normalize_function_names = 0` left
+/// the name uncanonicalized (the expression is then built as an ordinary call of a special function
+/// that throws `FUNCTION_IS_SPECIAL` on every later TTL evaluation). The AST is therefore checked as
+/// well, by canonical function name, so the verdict does not depend on that setting or on the
+/// spelling of the alias.
+///
+/// Either argument may be null: the check on a stored expression runs before that expression is built,
+/// and a stored `GROUP BY ... SET` assignment has no AST to check.
+void checkTTLExpressionPreservesRowCount(const ExpressionActionsPtr & expression, const ASTPtr & ast, std::string_view expression_kind)
+{
+    if ((expression && expression->hasArrayJoin()) || expressionContainsArrayJoin(ast))
+        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+            "TTL {}expression cannot contain arrayJoin, because it changes the number of rows",
+            expression_kind);
+}
+
 void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
 {
     /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
@@ -1358,8 +1385,30 @@ static void checkTTLGroupBySetForAggregateFunctions(
     }
 }
 
+/// A stored TTL is screened again here, every time it is turned back into a runnable expression.
+///
+/// `TTLValidationMode::Attach` cannot reject it while the metadata is being read - a rejection there
+/// fails the whole load rather than the one table, so the server would not start after an upgrade and a
+/// replica could not read the metadata another replica wrote - so a TTL stored before the `CREATE`-time
+/// check existed still loads. It must not then execute: it deletes rows whose own TTL is far in the
+/// future and reads past the end of the expression column for an empty array. `buildExpression` and
+/// `buildWhereExpression` are the only way a consumer gets a runnable expression out of a stored
+/// description (`TTLTransform`, `TTLCalcTransform`, `TTLDeleteFilterTransform` and
+/// `MergeTreeDataWriter::updateTTL` all go through them), so failing here turns the silent row loss into
+/// a failed INSERT or TTL merge. The table still attaches, so `ALTER TABLE ... REMOVE TTL` or a
+/// `MODIFY TTL` to a sane expression repairs it.
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
+    checkTTLExpressionPreservesRowCount(/*expression=*/ nullptr, expression_ast, /*expression_kind=*/ "");
+
+    /// A `GROUP BY ... SET` assignment is stored as prebuilt `ExpressionActions` and not as an AST, so it
+    /// is screened through the built expression, and it is screened here, because setting up the
+    /// `TTLAggregationAlgorithm` that executes it goes through this function too. A spelling that
+    /// `ActionsVisitor` does not recognise as `arrayJoin` is not built as an `ARRAY_JOIN` node at all and
+    /// throws `FUNCTION_IS_SPECIAL` when executed, which already fails closed.
+    for (const auto & set_part : set_parts)
+        checkTTLExpressionPreservesRowCount(set_part.expression, /*ast=*/ nullptr, /*expression_kind=*/ "GROUP BY SET ");
+
     auto ast = expression_ast->clone();
     return buildExpressionAndSets(ast, expression_source_columns, context);
 }
@@ -1368,6 +1417,8 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
 {
     if (where_expression_ast)
     {
+        checkTTLExpressionPreservesRowCount(/*expression=*/ nullptr, where_expression_ast, /*expression_kind=*/ "WHERE ");
+
         auto ast = where_expression_ast->clone();
         /// Only the TTL timestamp expression needs widening. The `DELETE WHERE`
         /// predicate must keep the table's original static column types.
@@ -1446,15 +1497,45 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             const auto & pk_columns = primary_key.column_names;
 
-            if (ttl_element->group_by_key.size() > pk_columns.size())
+            auto is_primary_key_prefix = [&pk_columns](const ASTs & keys)
+            {
+                if (keys.size() > pk_columns.size())
+                    return false;
+                for (size_t i = 0; i < keys.size(); ++i)
+                    if (keys[i]->getColumnName() != pk_columns[i])
+                        return false;
+                return true;
+            };
+
+            /// `GROUP BY (a, b, c)` parses as a single `tuple(a, b, c)` expression, but it means the same list
+            /// of keys as `GROUP BY a, b, c`, exactly as `ORDER BY (a, b, c)` means the same key as
+            /// `ORDER BY a, b, c`. Unwrap it here rather than in the parser: the parsed AST is what gets
+            /// formatted back, and rewriting it there would make formatting non-idempotent, because the
+            /// formatted `GROUP BY a, b, c` would be unwrapped again on the next parse.
+            ///
+            /// The spelling is ambiguous when the first primary key element is itself a tuple: with
+            /// `ORDER BY ((a, b), c)`, the single key `GROUP BY (a, b)` already matches the primary key
+            /// prefix as an intact tuple, and such tables exist and must keep attaching. So the intact
+            /// interpretation wins whenever it is a prefix of the primary key, and only otherwise do we
+            /// fall back to reading the parentheses as a key list. An empty `GROUP BY ()` unwraps to
+            /// nothing, which would pass the prefix check vacuously, so it keeps the `tuple()` in place
+            /// and is rejected as before.
+            ASTs group_by_key = ttl_element->group_by_key;
+            if (group_by_key.size() == 1 && !is_primary_key_prefix(group_by_key))
+            {
+                if (auto unwrapped = extractKeyExpressionList(group_by_key.front())->children; !unwrapped.empty())
+                    group_by_key = std::move(unwrapped);
+            }
+
+            if (group_by_key.size() > pk_columns.size())
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
 
             NameSet aggregation_columns_set;
 
-            for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
+            for (size_t i = 0; i < group_by_key.size(); ++i)
             {
-                if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", ttl_element->group_by_key[i]->getColumnName(), pk_columns[i]);
+                if (group_by_key[i]->getColumnName() != pk_columns[i])
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", group_by_key[i]->getColumnName(), pk_columns[i]);
             }
 
             std::vector<std::pair<String, ASTPtr>> aggregations;
@@ -1481,7 +1562,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             if (aggregation_columns_set.size() != ttl_element->group_by_assignments.size())
                 throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "Multiple aggregations set for one column in TTL Expression");
 
-            result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
+            result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + group_by_key.size());
 
             for (auto [name, value] : aggregations)
             {
@@ -1499,6 +1580,9 @@ TTLDescription TTLDescription::getTTLFromAST(
                 /// must be rejected here instead of failing during the TTL merge.
                 if (!skip_validation)
                     checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
+
+                if (validation_mode != TTLValidationMode::Attach)
+                    checkTTLExpressionPreservesRowCount(set_part.expression, value, /*expression_kind=*/ "GROUP BY SET ");
 
                 result.set_parts.emplace_back(set_part);
 
@@ -1520,6 +1604,13 @@ TTLDescription TTLDescription::getTTLFromAST(
     }
 
     checkTTLExpression(expression, result.result_column, skip_validation);
+
+    if (validation_mode != TTLValidationMode::Attach)
+    {
+        checkTTLExpressionPreservesRowCount(expression, result.expression_ast, /*expression_kind=*/ "");
+        if (where_expression)
+            checkTTLExpressionPreservesRowCount(where_expression, result.where_expression_ast, /*expression_kind=*/ "WHERE ");
+    }
 
     if (where_expression && !skip_validation)
         checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ");

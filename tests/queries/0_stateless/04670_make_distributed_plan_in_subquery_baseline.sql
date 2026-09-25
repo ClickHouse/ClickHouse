@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- Baseline contract for `IN (subquery)` under `make_distributed_plan`: the set is built once on
 -- the initiator and its values ship with the worker tasks (`GLOBAL IN` semantics). This is the
 -- default path; `rewrite_in_to_join` remains available as an explicit opt-in that turns the
@@ -20,7 +19,7 @@ SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50);
 
 SELECT '-- the explicit rewrite executes IN as a distributed join';
 SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50)
-    SETTINGS allow_experimental_correlated_subqueries = 1, rewrite_in_to_join = 1;
+    SETTINGS allow_correlated_subqueries = 1, rewrite_in_to_join = 1;
 
 SELECT '-- GLOBAL IN over local tables behaves as plain IN';
 SELECT count() FROM t_big WHERE k GLOBAL IN (SELECT val FROM t_small WHERE id < 50);

@@ -7,10 +7,12 @@ import hashlib
 import logging
 import os
 import random
+import re
 import socket
 import struct
 import threading
 import time
+import ssl
 import uuid
 from contextlib import closing
 from io import StringIO
@@ -71,6 +73,30 @@ server_port = 5433
 alt_server_port = 5435
 
 
+def _read_exact(sock, size):
+    data = b""
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            raise AssertionError("Connection closed before the complete PostgreSQL message was received")
+        data += chunk
+    return data
+
+
+def _read_startup_error(sock):
+    assert _read_exact(sock, 1) == b"E"
+    message_size = struct.unpack("!I", _read_exact(sock, 4))[0]
+    message = _read_exact(sock, message_size - 4)
+    assert b"C08P01\x00" in message
+
+
+def _assert_connection_closed(sock):
+    try:
+        assert sock.recv(1) == b""
+    except ConnectionResetError:
+        pass
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -85,6 +111,33 @@ def started_cluster():
         raise ex
     finally:
         cluster.shutdown()
+
+
+def test_malformed_startup_messages_do_not_consume_following_bytes(started_cluster):
+    node = cluster.instances["node"]
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(struct.pack("!I", 7))
+        _assert_connection_closed(sock)
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(struct.pack("!II", 8, 80877103))
+        assert _read_exact(sock, 1) == b"S"
+
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with context.wrap_socket(sock, server_hostname=node.ip_address) as tls_sock:
+            tls_sock.sendall(struct.pack("!II", 8, 196608))
+            _read_startup_error(tls_sock)
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(
+            struct.pack("!II", 13, 196608)
+            + b"user\x00default\x00\x00"
+            + b"following message bytes"
+        )
+        _read_startup_error(sock)
 
 
 def test_psql_client(started_cluster):
@@ -1043,17 +1096,77 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     assert "C" in types, f"connection must stay alive after a rejected Bind, got {types}"
     sock.close()
 
+    # `C = 1` applies one format code to all parameters, so a binary code over a message that
+    # carries no value to decode describes nothing and must not be rejected.
+    def bind_format_codes_only(portal, stmt, codes, values):
+        b = portal.encode() + b"\x00" + stmt.encode() + b"\x00" + struct.pack("!H", len(codes))
+        for c in codes:
+            b += struct.pack("!H", c)
+        b += struct.pack("!H", len(values))
+        for v in values:
+            if v is None:
+                b += struct.pack("!i", -1)  # protocol NULL: no value bytes follow
+                continue
+            vb = v.encode()
+            b += struct.pack("!i", len(vb)) + vb
+        b += struct.pack("!H", 0)
+        return _fe("B", b)
 
-def test_bind_negative_count_recovers(started_cluster):
-    # Reject negative `Bind` counts without desynchronizing recovery.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(
+        parse("", "SELECT 1", ())
+        + bind_format_codes_only("", "", (1,), ())
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" not in types, f"a zero-parameter Bind carries no binary payload, got {types}"
+    assert "C" in types, f"the zero-parameter statement must run, got {types}"
+
+    # A protocol NULL carries no value bytes either, so a binary code over it is also accepted.
+    sock.sendall(
+        parse("", "SELECT $1", (23,))
+        + bind_format_codes_only("", "", (1,), (None,))
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" not in types, f"an all-NULL Bind carries no binary payload, got {types}"
+    assert "C" in types, f"the all-NULL statement must run, got {types}"
+
+    # A binary format code that does cover an actual value is still rejected.
+    sock.sendall(
+        parse("", "SELECT $1", (23,))
+        + bind_format_codes_only("", "", (1,), ("5",))
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" in types, f"a binary parameter value must still be rejected, got {types}"
+    sock.close()
+
+
+def test_malformed_extended_message_recovers(started_cluster):
+    # Reject malformed extended messages without desynchronizing recovery.
     node = started_cluster.instances["node"]
 
     def sync():
         return _fe("S", b"")
 
-    # `num_params = -1`.
+    # Put a complete-looking `Sync` frame after each invalid count, but include it in the
+    # malformed message's declared payload. Recovery must ignore it and wait for the real `Sync`.
+    def parse_neg_num_params():
+        b = b"\x00" + b"SELECT 1\x00" + struct.pack("!h", -1) + sync()
+        return _fe("P", b)
+
+    # Negative parameter-format-code count.
+    def bind_neg_param_formats():
+        b = b"\x00" + b"\x00" + struct.pack("!h", -1) + sync()
+        return _fe("B", b)
+
+    # Negative parameter count.
     def bind_neg_num_params():
-        b = b"\x00" + b"\x00" + struct.pack("!H", 0) + struct.pack("!h", -1)
+        b = b"\x00" + b"\x00" + struct.pack("!H", 0) + struct.pack("!h", -1) + sync()
         return _fe("B", b)
 
     # Negative result-format-code count.
@@ -1064,22 +1177,62 @@ def test_bind_negative_count_recovers(started_cluster):
             + struct.pack("!H", 0)
             + struct.pack("!H", 0)
             + struct.pack("!h", -1)
+            + sync()
         )
         return _fe("B", b)
 
-    for make_bind in (bind_neg_num_params, bind_neg_result_formats):
+    # `Describe` must not read the following `Sync` as its missing payload.
+    def describe_incomplete_payload():
+        return _fe("D", b"")
+
+    # A named portal is rejected after deserialization. The embedded `Sync` must
+    # remain in the `Execute` payload until recovery reaches the real `Sync`.
+    def execute_named_portal():
+        b = b"named\x00" + struct.pack("!I", 0) + sync()
+        return _fe("E", b)
+
+    # An invalid close target is rejected after deserialization for the same reason.
+    def close_invalid_target():
+        return _fe("C", b"X\x00" + sync())
+
+    for make_message in (
+        parse_neg_num_params,
+        bind_neg_param_formats,
+        bind_neg_num_params,
+        bind_neg_result_formats,
+        describe_incomplete_payload,
+        execute_named_portal,
+        close_invalid_target,
+    ):
         sock, read_until_ready = _pg_raw_extended_query_session(node)
-        sock.sendall(make_bind() + sync())
+        sock.sendall(make_message() + sync())
         types = read_until_ready()
-        assert "E" in types, f"malformed Bind must be rejected, got {types}"
+        assert "E" in types, f"malformed message must be rejected, got {types}"
         assert types.count("Z") == 1, (
-            f"malformed Bind must emit one ReadyForQuery per Sync, got {types}"
+            f"malformed message must emit one ReadyForQuery per real Sync, got {types}"
         )
         # The same connection must stay usable (stream stayed aligned).
         sock.sendall(_fe("Q", b"SELECT 7\x00"))
         types = read_until_ready()
-        assert "C" in types, f"connection must stay alive after malformed Bind, got {types}"
+        assert "C" in types, f"connection must stay alive after malformed message, got {types}"
         sock.close()
+
+
+def test_incomplete_simple_query_payload_recovers(started_cluster):
+    # A length-only `Query` must not wait for or consume the next frontend message.
+    node = started_cluster.instances["node"]
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(_fe("Q", b""))
+    types = read_until_ready()
+    assert "E" in types, f"incomplete Query must be rejected, got {types}"
+    assert types.count("Z") == 1, (
+        f"incomplete Query must emit one ReadyForQuery, got {types}"
+    )
+
+    sock.sendall(_fe("Q", b"SELECT 7\x00"))
+    types = read_until_ready()
+    assert "C" in types, f"connection must stay usable after incomplete Query, got {types}"
+    sock.close()
 
 
 def test_flush_error_discards_until_sync(started_cluster):
@@ -1127,10 +1280,138 @@ def test_flush_error_discards_until_sync(started_cluster):
     assert types.count("Z") == 1, (
         f"FLUSH pipeline must emit one ReadyForQuery per Sync, got {types}"
     )
+    # `Sync` ended the cycle, so this second `FLUSH` is out of cycle even though no simple
+    # query has run since. It must be answered at once, and a timeout here is the hang.
+    sock.sendall(flush())
+    try:
+        types = read_until_ready(timeout=15.0)
+    except socket.timeout:
+        types = ["<no ReadyForQuery, client left waiting>"]
+    assert types == ["E", "Z"], (
+        f"FLUSH after the cycle's Sync must be answered at once, got {types}"
+    )
+    # A discarded `Execute` leaves nothing queued, so an empty query that answers with
+    # `EmptyQueryResponse` alone is what distinguishes discarding from executing late.
+    sock.sendall(_fe("Q", b"\x00"))
+    types = read_until_ready()
+    assert types == ["I", "Z"], (
+        f"nothing but the empty query may answer after a discarded Execute, got {types}"
+    )
     # The same connection must stay usable.
     sock.sendall(_fe("Q", b"SELECT 7\x00"))
     types = read_until_ready()
     assert "C" in types, f"connection must stay alive after FLUSH error, got {types}"
+    sock.close()
+
+
+def test_out_of_cycle_rejection_keeps_connection_usable(started_cluster):
+    # A rejected message outside an extended-query cycle has no `Sync` to recover at,
+    # so it must be answered with an error and one `ReadyForQuery`.
+    node = started_cluster.instances["node"]
+
+    def read_types(read_until_ready):
+        # A missing `ReadyForQuery` surfaces as a read timeout, which is the hang itself.
+        try:
+            return read_until_ready(timeout=15.0)
+        except socket.timeout:
+            return ["<no ReadyForQuery, client left waiting>"]
+
+    # `H` is `Flush`; `f` is `CopyFail`, a real message type this server does not accept.
+    for label, message in (("Flush", _fe("H", b"")), ("CopyFail", _fe("f", b""))):
+        # A connection that has sent nothing yet has no cycle open either, so the very
+        # first message must be answered rather than starting the discard state. Every
+        # other case here opens and ends a cycle first, which would hide a handler that
+        # started out believing a cycle was already in progress.
+        sock, read_until_ready = _pg_raw_extended_query_session(node)
+        sock.sendall(message)
+        types = read_types(read_until_ready)
+        assert types == ["E", "Z"], (
+            f"{label} as the connection's first message must be answered, got {types}"
+        )
+        sock.close()
+
+        sock, read_until_ready = _pg_raw_extended_query_session(node)
+
+        # `Parse` opens an extended-query cycle and the simple query that follows ends it,
+        # so the rejection below is out of cycle even though no `Sync` was ever sent.
+        sock.sendall(_fe("P", b"\x00" + b"SELECT 1\x00" + struct.pack("!H", 0)))
+        sock.sendall(_fe("Q", b"SELECT 1\x00"))
+        types = read_types(read_until_ready)
+        assert "1" in types, f"{label}: Parse must be accepted, got {types}"
+        assert "C" in types, f"{label}: control query must complete, got {types}"
+
+        sock.sendall(message)
+        types = read_types(read_until_ready)
+        assert types.count("Z") == 1, (
+            f"{label} outside a cycle must emit one ReadyForQuery, got {types}"
+        )
+        assert "E" in types, f"{label} must produce an ErrorResponse, got {types}"
+
+        sock.sendall(_fe("Q", b"SELECT 7\x00"))
+        types = read_types(read_until_ready)
+        assert "C" in types, f"connection stopped answering after {label}, got {types}"
+        sock.close()
+
+
+def test_simple_query_drops_unnamed_statement_and_portal(started_cluster):
+    # A simple `Query` destroys the unnamed prepared statement and the unnamed portal, so
+    # neither may stay executable across it, while named statements are untouched.
+    node = started_cluster.instances["node"]
+
+    def parse(stmt, query):
+        b = stmt.encode() + b"\x00" + query.encode() + b"\x00" + struct.pack("!H", 0)
+        return _fe("P", b)
+
+    def bind(stmt):
+        # The unnamed portal, no parameters and no explicit result formats.
+        return _fe("B", b"\x00" + stmt.encode() + b"\x00" + struct.pack("!HHH", 0, 0, 0))
+
+    def execute():
+        return _fe("E", b"\x00" + struct.pack("!I", 0))
+
+    sync = _fe("S", b"")
+    simple_query = _fe("Q", b"SELECT 222\x00")
+
+    # The portal: a `Bind` that completed before the simple query must not survive it.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(parse("", "SELECT 111") + bind("") + simple_query)
+    types = read_until_ready()
+    assert types == ["1", "2", "T", "D", "C", "Z"], (
+        f"Parse, Bind and the simple query must all succeed first, got {types}"
+    )
+    sock.sendall(execute() + sync)
+    types = read_until_ready()
+    assert types == ["E", "Z"], (
+        f"Execute of the portal the simple query destroyed must fail, got {types}"
+    )
+    sock.close()
+
+    # The prepared statement: a later `Bind` has nothing left to resolve the name to.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(parse("", "SELECT 111") + simple_query)
+    types = read_until_ready()
+    assert types == ["1", "T", "D", "C", "Z"], (
+        f"Parse and the simple query must both succeed first, got {types}"
+    )
+    sock.sendall(bind("") + sync)
+    types = read_until_ready()
+    assert types == ["E", "Z"], (
+        f"Bind on the statement the simple query destroyed must fail, got {types}"
+    )
+    sock.close()
+
+    # A named statement is not the unnamed one, so it must still bind and execute.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(parse("st", "SELECT 333") + simple_query)
+    types = read_until_ready()
+    assert types == ["1", "T", "D", "C", "Z"], (
+        f"Parse of the named statement and the simple query must succeed, got {types}"
+    )
+    sock.sendall(bind("st") + execute() + sync)
+    types = read_until_ready()
+    assert types == ["2", "T", "D", "C", "Z"], (
+        f"a named statement must survive the simple query, got {types}"
+    )
     sock.close()
 
 
@@ -1644,6 +1925,371 @@ def test_copy_command(started_cluster):
 
     assert cur.fetchall() == [(1, "a"), (2, "b"), (3, "c")]
     cur.execute("DROP DATABASE copy_x")
+
+
+def test_copy_options(started_cluster):
+    # `COPY` options written the way PostgreSQL clients write them: the parenthesized list every
+    # modern client and `psql` emit, and the legacy `WITH CSV` spelling. Both used to be swallowed
+    # silently, so the data was transferred as TSV: `COPY FROM` stored wrongly parsed rows and
+    # `COPY TO` handed TSV bytes to a client that asked for CSV, with no error either way.
+    node = cluster.instances["node"]
+
+    def connect():
+        # `with connection` manages transactions but does not close the connection.
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    setup.autocommit = True
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_options;")
+    cur.execute("CREATE TABLE copy_options (s String) ENGINE = Memory;")
+
+    # The standard syntax on the way in: the value is parsed as CSV, so the quotes are not stored.
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT csv)", StringIO('"hello, world"\n')
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("hello, world",)]
+
+    # And on the way out: the value is quoted, as CSV.
+    out = StringIO()
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options TO STDOUT WITH (FORMAT csv)", out)
+    assert out.getvalue() == '"hello, world"\n'
+
+    # HEADER writes the column names, and reads them back as a header rather than as a row.
+    out = StringIO()
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options TO STDOUT WITH (FORMAT csv, HEADER)", out)
+    assert out.getvalue() == '"s"\n"hello, world"\n'
+
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT csv, HEADER true)", StringIO("s\nvalue\n")
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("value",)]
+
+    # The legacy PostgreSQL spelling.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options (s) FROM STDIN WITH CSV", StringIO('"x, y"\n'))
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("x, y",)]
+
+    # An explicitly requested TSV is transferred as TSV, not through CSV.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT tsv)", StringIO('"a,b"\n')
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [('"a,b"',)]
+
+    # The format name is a name, not a keyword: any spelling of it works.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT CSV)", StringIO('"u, v"\n')
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("u, v",)]
+
+    # An option that would change the shape of the data is reported rather than ignored.
+    with connect() as c, pytest.raises(Exception, match="DELIMITER"):
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT csv, DELIMITER ';')", StringIO("a;b\n")
+        )
+
+    # Asking for what the format writes anyway is accepted: this is what the psycopg2 helpers send.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_from(StringIO("hello\n"), "copy_options", columns=("s",))
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("hello",)]
+
+    out = StringIO()
+    with connect() as c:
+        c.cursor().copy_to(file=out, table="copy_options")
+    assert out.getvalue() == "hello\n"
+
+    # Without HEADER the first line is data, even when it looks like the column names.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options (s) FROM STDIN", StringIO("s\nvalue\n"))
+    cur.execute("SELECT count() FROM copy_options;")
+    assert int(cur.fetchone()[0]) == 2
+
+    cur.execute("DROP TABLE copy_options;")
+    setup.close()
+
+
+def test_copy_option_defaults_are_pinned(started_cluster):
+    # The option list of a `COPY` is accepted only when it asks for the shape this protocol
+    # transfers anyway, which is checked against the defaults of the formats. The session must not
+    # be able to move those defaults underneath the check: `SET format_csv_delimiter = ';'` followed
+    # by a `COPY ... WITH (FORMAT csv, DELIMITER ',')` used to be accepted and then served with `;`,
+    # which is exactly the silent shape mismatch the option list is there to prevent.
+    node = cluster.instances["node"]
+
+    def connect():
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    setup.autocommit = True
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_pinned;")
+    cur.execute(
+        "CREATE TABLE copy_pinned (a String, b Nullable(String)) ENGINE = Memory;"
+    )
+
+    # A session delimiter of `;` does not reach a `COPY` that asked for the default one.
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_csv_delimiter = ';'")
+        session.copy_expert(
+            "COPY copy_pinned (a, b) FROM STDIN WITH (FORMAT csv, DELIMITER ',')",
+            StringIO("x,y\n"),
+        )
+    cur.execute("SELECT a, b FROM copy_pinned;")
+    assert cur.fetchall() == [("x", "y")]
+
+    out = StringIO()
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_csv_delimiter = ';'")
+        session.copy_expert(
+            "COPY copy_pinned TO STDOUT WITH (FORMAT csv, DELIMITER ',')", out
+        )
+    assert out.getvalue() == '"x","y"\n'
+
+    # And neither does a session representation of NULL. These go through the psycopg2 helpers,
+    # which spell the PostgreSQL defaults out in the option list on every call.
+    cur.execute("TRUNCATE TABLE copy_pinned;")
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_tsv_null_representation = 'NULL'")
+        session.copy_from(StringIO("x\t\\N\n"), "copy_pinned", columns=("a", "b"))
+    cur.execute("SELECT a, isNull(b) FROM copy_pinned;")
+    assert cur.fetchall() == [("x", 1)]
+
+    out = StringIO()
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_tsv_null_representation = 'NULL'")
+        session.copy_to(file=out, table="copy_pinned")
+    assert out.getvalue() == "x\t\\N\n"
+
+    cur.execute("DROP TABLE copy_pinned;")
+    setup.close()
+
+
+def test_copy_option_errors_reach_the_client(started_cluster):
+    # An option this protocol cannot serve is reported with the message that says why. These used to
+    # be swallowed: `processCopyQuery` caught everything the `COPY` parser raised and handed the
+    # query to the generic SQL parser, so the client got a plain syntax error instead.
+    node = cluster.instances["node"]
+
+    def connect():
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    setup.autocommit = True
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_errors;")
+    cur.execute("CREATE TABLE copy_errors (s String) ENGINE = Memory;")
+
+    unsupported = [
+        # A delimiter the format does not write.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, DELIMITER ';')",
+            "only supported with the default delimiter",
+        ),
+        # A representation of NULL the format does not write.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, NULL 'NULL')",
+            "only supported with the value",
+        ),
+        # The binary format has neither a field separator nor a textual NULL.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT binary, DELIMITER '\t')",
+            "DELIMITER of the postgresql copy command is not supported with the binary format",
+        ),
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT binary, NULL 'x')",
+            "NULL of the postgresql copy command is not supported with the binary format",
+        ),
+        # There is no header in the binary format.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT binary, HEADER true)",
+            "HEADER of the postgresql copy command is not supported with the binary format",
+        ),
+        # A quote character the format does not write, and `QUOTE` outside of the csv format.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, QUOTE '|')",
+            "QUOTE of the postgresql copy command is only supported with the value",
+        ),
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT tsv, QUOTE '\"')",
+            "QUOTE of the postgresql copy command applies to the csv format only",
+        ),
+        # An option with no version this protocol can serve.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, ENCODING 'latin1')",
+            "ENCODING of the postgresql copy command is not supported",
+        ),
+        # A format this protocol does not have.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT parquet)",
+            "Unknown format from postgresql copy command",
+        ),
+    ]
+
+    for query, message in unsupported:
+        with connect() as c, pytest.raises(Exception, match=re.escape(message)):
+            c.cursor().copy_expert(query, StringIO("a\n"))
+
+    # The failed commands stored nothing, and the session is still usable afterwards.
+    cur.execute("SELECT count() FROM copy_errors;")
+    assert int(cur.fetchone()[0]) == 0
+
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv)", StringIO("a\n")
+        )
+    cur.execute("SELECT s FROM copy_errors;")
+    assert cur.fetchall() == [("a",)]
+
+    cur.execute("DROP TABLE copy_errors;")
+    setup.close()
+
+
+def test_copy_from_header(started_cluster):
+    # The `HEADER` of a PostgreSQL `COPY ... FROM` means that the first line of the data is the
+    # column names, and nothing more: the fields are bound to the columns of the command by
+    # position, and the header stands at the beginning of the whole stream rather than of every
+    # `CopyData` message the client happens to split that stream into.
+    node = cluster.instances["node"]
+
+    def connect():
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return c
+
+    setup = connect()
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_header;")
+    cur.execute("CREATE TABLE copy_header (a String, b String) ENGINE = Memory;")
+
+    def copy_from(statement, data, size=8192):
+        # `size` is how many bytes psycopg2 reads at a time, and so how much data it puts in one
+        # `CopyData` message.
+        with closing(connect()) as c:
+            c.cursor().copy_expert(statement, StringIO(data), size=size)
+
+    # The names on the header line are not looked at: the fields go to the columns of the command
+    # in order, even where the header spells those same columns the other way round.
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv, HEADER)",
+        "b,a\nfirst,second\n",
+    )
+    cur.execute("SELECT a, b FROM copy_header;")
+    assert cur.fetchall() == [("first", "second")]
+
+    # A header naming columns the table does not have at all is a header all the same.
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv, HEADER)",
+        "x,y\nfirst,second\n",
+    )
+    cur.execute("SELECT a, b FROM copy_header;")
+    assert cur.fetchall() == [("first", "second")]
+
+    # Only the first line of the stream is the header, however many messages the client sends the
+    # data in, and a row split across two of them is still one row. 100 rows of 8 bytes sent 100
+    # bytes at a time make 9 messages, and every other boundary between them falls inside a row.
+    rows = [("a%02d" % i, "b%02d" % i) for i in range(100)]
+    body = "".join("%s,%s\n" % row for row in rows)
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv, HEADER)",
+        "a,b\n" + body,
+        size=100,
+    )
+    cur.execute("SELECT a, b FROM copy_header ORDER BY a;")
+    assert cur.fetchall() == rows
+
+    # And without `HEADER`, every line of every message is data.
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from("COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv)", body, size=100)
+    cur.execute("SELECT a, b FROM copy_header ORDER BY a;")
+    assert cur.fetchall() == rows
+
+    # The header of the tab separated format, which is the default one, is read the same way.
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT text, HEADER)",
+        "b\ta\nfirst\tsecond\n",
+    )
+    cur.execute("SELECT a, b FROM copy_header;")
+    assert cur.fetchall() == [("first", "second")]
+
+    # A `HEADER` of the binary format has no meaning, and PostgreSQL refuses it there as well.
+    with pytest.raises(Exception, match="HEADER"):
+        copy_from("COPY copy_header (a, b) FROM STDIN WITH (FORMAT binary, HEADER)", "")
+
+    cur.execute("DROP TABLE copy_header;")
+    setup.close()
 
 
 def test_boolean_type(started_cluster):
@@ -2230,3 +2876,298 @@ def test_restricted_user_catalog_visibility(started_cluster):
     cur.execute("DROP DATABASE IF EXISTS pg_visible_db")
     cur.execute("DROP DATABASE IF EXISTS pg_hidden_db")
     ch.close()
+
+
+def test_catalog_qualifier_is_case_insensitive(started_cluster):
+    """PostgreSQL folds unquoted identifiers to lower case, so a bare `PG_CATALOG`
+    qualifier names the same schema as `pg_catalog` and must be stripped as well.
+    A quoted identifier keeps its case in PostgreSQL, so `"PG_CATALOG"` is a
+    different (and non-existent) schema and must not be rewritten."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+
+    for qualifier in ["pg_catalog", "PG_CATALOG", "Pg_Catalog", '"pg_catalog"']:
+        cur.execute(f"SELECT count() FROM {qualifier}.pg_namespace")
+        assert int(cur.fetchall()[0][0]) > 0, qualifier
+
+        cur.execute(f"SELECT {qualifier}.pg_table_is_visible(1)")
+        assert str(cur.fetchall()[0][0]) in ("1", "True"), qualifier
+
+    # A quoted qualifier in a different case is a different schema in PostgreSQL,
+    # and there is no such database here.
+    with pytest.raises(psycopg.errors.Error):
+        cur.execute('SELECT count() FROM "PG_CATALOG".pg_namespace')
+
+    ch.close()
+
+
+def test_catalog_oids_are_unique(started_cluster):
+    """The synthesized oids of the emulated catalog are used as join keys by
+    PostgreSQL clients, so they have to be unique: `pg_class.relnamespace` must
+    resolve to exactly one `pg_namespace` row, and no two relations may share
+    an oid."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("CREATE DATABASE IF NOT EXISTS pg_oids_db")
+    for i in range(16):
+        cur.execute(f"CREATE DATABASE IF NOT EXISTS pg_oids_extra_{i}")
+        cur.execute(
+            f"CREATE TABLE IF NOT EXISTS pg_oids_db.t_{i} (id Int32) ENGINE = Memory"
+        )
+    ch.close()
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        dbname="pg_oids_db",
+    )
+    cur = ch.cursor()
+
+    cur.execute("SELECT oid, nspname FROM pg_namespace")
+    namespaces = cur.fetchall()
+    oids = [int(row[0]) for row in namespaces]
+    assert len(oids) == len(set(oids))
+
+    cur.execute("SELECT oid, relname FROM pg_class WHERE relname != ''")
+    relations = cur.fetchall()
+    relation_oids = [int(row[0]) for row in relations]
+    assert len(relation_oids) == len(set(relation_oids))
+    assert len(relations) == 16
+    # The oid spaces of namespaces and relations must not overlap either.
+    assert not (set(oids) & set(relation_oids))
+
+    # The join psql performs behind `\d` must match exactly one namespace per relation.
+    cur.execute(
+        "SELECT c.relname, n.nspname FROM pg_class AS c "
+        "JOIN pg_namespace AS n ON n.oid = c.relnamespace WHERE c.relname != ''"
+    )
+    joined = cur.fetchall()
+    assert len(joined) == 16
+    assert {row[1] for row in joined} == {"pg_oids_db"}
+
+    ch.close()
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP DATABASE IF EXISTS pg_oids_db")
+    for i in range(16):
+        cur.execute(f"DROP DATABASE IF EXISTS pg_oids_extra_{i}")
+    ch.close()
+
+
+def test_catalog_table_oids_differ_across_databases(started_cluster):
+    """A session can switch the current database with `USE`, and `pg_class` then lists
+    the tables of the new one. Two same-named tables in two databases are different
+    objects, so their oids must differ - otherwise an oid a client remembered in the
+    first database silently resolves to the other table after the switch."""
+    node = started_cluster.instances["node"]
+
+    databases = ["pg_oids_qualified_a", "pg_oids_qualified_b"]
+
+    def connect(dbname=None):
+        return psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            **({"dbname": dbname} if dbname else {}),
+        )
+
+    ch = connect()
+    cur = ch.cursor()
+    for database in databases:
+        cur.execute(f"DROP DATABASE IF EXISTS {database}")
+        cur.execute(f"CREATE DATABASE {database}")
+        cur.execute(f"CREATE TABLE {database}.events (id Int32) ENGINE = Memory")
+    ch.close()
+
+    oids = []
+    for database in databases:
+        ch = connect(database)
+        cur = ch.cursor()
+        cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
+        oids.append(int(cur.fetchall()[0][0]))
+        ch.close()
+
+    assert oids[0] != oids[1]
+
+    # The same, inside a single session that switches the database with `USE`:
+    # the oid remembered before the switch must not name the other table after it.
+    ch = connect(databases[0])
+    cur = ch.cursor()
+    cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
+    remembered = int(cur.fetchall()[0][0])
+    cur.execute(f"USE {databases[1]}")
+    cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
+    after_switch = int(cur.fetchall()[0][0])
+    ch.close()
+
+    assert remembered != after_switch
+    assert {remembered, after_switch} == set(oids)
+
+    ch = connect()
+    cur = ch.cursor()
+    for database in databases:
+        cur.execute(f"DROP DATABASE IF EXISTS {database}")
+    ch.close()
+
+
+def test_catalog_oids_are_stable(started_cluster):
+    """An oid identifies an object, and PostgreSQL clients are allowed to remember
+    one and use it in a later query, so the oid of a database or a table must not
+    change when unrelated objects appear."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_db")
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_aaa")
+    cur.execute("CREATE DATABASE pg_stable_oids_db")
+    cur.execute("CREATE TABLE pg_stable_oids_db.zzz (id Int32) ENGINE = Memory")
+    ch.close()
+
+    def read_oids():
+        ch = psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            dbname="pg_stable_oids_db",
+        )
+        cur = ch.cursor()
+        cur.execute("SELECT oid FROM pg_namespace WHERE nspname = 'pg_stable_oids_db'")
+        namespace_oid = int(cur.fetchall()[0][0])
+        cur.execute("SELECT oid, relnamespace FROM pg_class WHERE relname = 'zzz'")
+        row = cur.fetchall()[0]
+        ch.close()
+        return namespace_oid, int(row[0]), int(row[1])
+
+    before = read_oids()
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    # Both names sort before the existing ones, which is what a scheme numbering
+    # the objects by their position in the sorted list of names would shift.
+    cur.execute("CREATE DATABASE pg_stable_oids_aaa")
+    cur.execute("CREATE TABLE pg_stable_oids_db.aaa (id Int32) ENGINE = Memory")
+    ch.close()
+
+    assert read_oids() == before
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_db")
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_aaa")
+    ch.close()
+
+
+def test_catalog_oids_do_not_depend_on_a_colliding_peer(started_cluster):
+    """The oid of an object is a pure function of its name, so it must not change even
+    when another name whose hash lands in the same slot appears or disappears. These two
+    names are a real collision of the namespace oids: `sipHash64(name) % 2000000000`
+    is 7242078 for both."""
+    node = started_cluster.instances["node"]
+    colliding = ["collision_probe_121841", "collision_probe_264544"]
+
+    def sql(query, dbname=None):
+        ch = psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            **({"dbname": dbname} if dbname else {}),
+        )
+        cur = ch.cursor()
+        for statement in query:
+            cur.execute(statement)
+        rows = cur.fetchall() if cur.description else None
+        ch.close()
+        return rows
+
+    sql([f"DROP DATABASE IF EXISTS {name}" for name in colliding])
+    sql(
+        [
+            f"CREATE DATABASE {colliding[0]}",
+            f"CREATE TABLE {colliding[0]}.{colliding[0]} (id Int32) ENGINE = Memory",
+            f"CREATE TABLE {colliding[0]}.{colliding[1]} (id Int32) ENGINE = Memory",
+        ]
+    )
+
+    def read_oids():
+        namespace = sql(
+            [f"SELECT oid FROM pg_namespace WHERE nspname = '{colliding[0]}'"],
+            dbname=colliding[0],
+        )
+        relation = sql(
+            [
+                f"SELECT oid, relnamespace FROM pg_class WHERE relname = '{colliding[0]}'"
+            ],
+            dbname=colliding[0],
+        )
+        return int(namespace[0][0]), int(relation[0][0]), int(relation[0][1])
+
+    # The first name is alone in its slot here - only its colliding peer as a table exists.
+    before = read_oids()
+
+    # Creating the colliding database must not renumber the object that is already there.
+    sql([f"CREATE DATABASE {colliding[1]}"])
+    assert read_oids() == before
+
+    # Neither must dropping it again.
+    sql([f"DROP DATABASE {colliding[1]}"])
+    assert read_oids() == before
+
+    # The accepted cost of that stability: while both colliding databases exist,
+    # `pg_namespace` emits the same oid for both of them, so the join behind `\d`
+    # cannot tell them apart. Uniqueness and stability are not both achievable in a
+    # bounded oid space without a persistent oid counter, and stability wins - see the
+    # comment above the view. This asserts the trade-off rather than a correct join.
+    sql([f"CREATE DATABASE {colliding[1]}"])
+    joined = sql(
+        [
+            "SELECT c.relname, n.nspname FROM pg_class AS c "
+            "JOIN pg_namespace AS n ON n.oid = c.relnamespace "
+            "WHERE c.relname != '' ORDER BY c.relname, n.nspname"
+        ],
+        dbname=colliding[0],
+    )
+    assert {row[0] for row in joined} == set(colliding)
+    assert {row[1] for row in joined} == set(colliding)
+
+    sql([f"DROP DATABASE IF EXISTS {name}" for name in colliding])

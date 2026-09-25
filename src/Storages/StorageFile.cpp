@@ -9,6 +9,9 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -60,6 +63,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
@@ -67,6 +71,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Common/ErrnoException.h>
+#include <Common/saturatedDuration.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -122,6 +127,7 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
@@ -152,6 +158,11 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_ROWS;
     extern const int FILE_CHANGED_DURING_READ;
+}
+
+namespace FailPoints
+{
+    extern const char file_read_inject_version_token_mismatch[];
 }
 
 using String = std::string;
@@ -266,7 +277,7 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
 
-    if (!fs::exists(prefix_without_globs))
+    if (!existsOrFileNameTooLong([&] { return fs::exists(prefix_without_globs); }))
         return;
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
@@ -405,10 +416,24 @@ void checkCreationIsAllowed(
 
     if (can_be_directory)
     {
-        auto table_path_stat = fs::status(table_path);
-        if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
+        const bool is_existing_directory = existsOrFileNameTooLong([&]
+        {
+            const auto table_path_stat = fs::status(table_path);
+            return fs::exists(table_path_stat) && fs::is_directory(table_path_stat);
+        });
+        if (is_existing_directory)
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
     }
+}
+
+/// Every syscall a path is passed to (`stat`, `open`, `opendir`) stops at the first NUL byte, while the
+/// containment checks see the whole value. A path with an embedded NUL therefore addresses a location the
+/// checks never look at, so it is rejected before the first filesystem probe. The path is not echoed in the
+/// message: it would put the NUL byte into the logs.
+void throwIfPathContainsEmbeddedNul(const std::string & path)
+{
+    if (path.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "File path contains an embedded NUL byte");
 }
 
 /// Use this instead of checkCreationIsAllowed for a path that can still carry a `..`.
@@ -418,6 +443,9 @@ void checkCreationIsAllowedResolvingDotDot(
     const std::string & path,
     bool can_be_directory)
 {
+    /// The resolver below canonicalizes the head of the path on the filesystem.
+    throwIfPathContainsEmbeddedNul(path);
+
     std::error_code ec;
     const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
     if (ec)
@@ -459,6 +487,10 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 /// Finds files matching a specified pattern with globs.
 Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
 {
+    /// The listing below stats the path and expands its globs on the filesystem before the matched paths
+    /// are checked for containment in `user_files_path`, so the path must be rejected here, not there.
+    throwIfPathContainsEmbeddedNul(path_with_globs);
+
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_pattern(path_with_globs);
     if (fs_pattern.is_relative())
@@ -479,7 +511,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
     else if (pattern.find_first_of("*?{") == std::string::npos)
     {
-        if (!fs::is_directory(pattern))
+        if (!existsOrFileNameTooLong([&] { return fs::is_directory(pattern); }))
         {
             std::error_code error;
             size_t size = fs::file_size(pattern, error);
@@ -1374,6 +1406,7 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     is_path_with_globs = file_source_.with_globs;
     path_for_partitioned_write = std::move(file_source_.path_for_partitioned_write);
     archive_info = std::move(file_source_.archive_info);
+    total_bytes_to_read = file_source_.total_bytes_to_read;
 
     is_db_table = false;
 
@@ -1487,7 +1520,7 @@ static std::chrono::seconds getLockTimeout(const ContextPtr & context)
     Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
-    return std::chrono::seconds{lock_timeout};
+    return saturatedSeconds(lock_timeout);
 }
 
 using StorageFilePtr = std::shared_ptr<StorageFile>;
@@ -1726,7 +1759,7 @@ Chunk StorageFileSource::generate()
                         if (archive.empty())
                             return {};
 
-                        if (!fs::exists(archive))
+                        if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
                         {
                             if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                 continue;
@@ -1773,7 +1806,7 @@ Chunk StorageFileSource::generate()
                                 if (archive.empty())
                                     return {};
 
-                                if (!fs::exists(archive))
+                                if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
                                 {
                                     if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                         continue;
@@ -1835,7 +1868,7 @@ Chunk StorageFileSource::generate()
                     if (current_path.empty())
                         return {};
 
-                    if (!fs::exists(current_path))
+                    if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                             continue;
@@ -1951,10 +1984,15 @@ Chunk StorageFileSource::generate()
             /// bypassed entirely while the token has not settled and cannot prove a rewrite. Only
             /// formats that expose bucket splitting (Parquet) ever populate the cache, so other
             /// formats miss.
+            /// A TopN read consults the cache only while `use_query_condition_cache_for_top_k` is on:
+            /// the setting is documented to make TopK reads neither consult nor populate the query
+            /// condition cache, and the write side is already off for them unconditionally (see below).
             FileBucketInfoPtr buckets_to_read;
             QueryConditionCachePtr query_condition_cache;
             if (object_with_metadata.has_value() && current_file_version_settled
-                && format_filter_info && format_filter_info->condition_hash)
+                && format_filter_info && format_filter_info->condition_hash
+                && (!format_filter_info->top_k_filter
+                    || getContext()->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
                 query_condition_cache = getContext()->getQueryConditionCache();
 
             if (query_condition_cache)
@@ -2183,8 +2221,17 @@ Chunk StorageFileSource::generate()
         /// happens while this file was being read would otherwise let a version token, still valid
         /// at open time, get written together with row groups derived from bytes it no longer
         /// describes.
+        /// TopN dynamic filtering makes the matched buckets threshold-dependent rather than a
+        /// predicate-only verdict: a row group can end up empty (hence "unmatched") only because the
+        /// running `__topKFilter` threshold - established from the rows of *all* files this query
+        /// reads - had already excluded its rows. The cache key encodes just the predicate and the
+        /// single file's version, so such an entry would poison a later plain read, a read with a
+        /// different `LIMIT` or sort direction, or a read of only one file of the glob. Never write
+        /// cache entries for TopK reads. Reading the cache stays enabled while
+        /// `use_query_condition_cache_for_top_k` is on: entries are only ever written by
+        /// threshold-oblivious reads, so applying them to a TopK read is sound.
         if (input_format && current_file_cache_version.has_value() && current_file_version_settled
-            && format_filter_info && format_filter_info->condition_hash
+            && format_filter_info && format_filter_info->condition_hash && !format_filter_info->top_k_filter
             && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
             try
@@ -2274,6 +2321,33 @@ std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & p
     };
 
     return schema_cache.tryGetNumRows(key, get_last_mod_time);
+}
+
+bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
+{
+    if (!boost::iequals(storage->format_name, "Parquet"))
+        return false;
+
+    /// The output header of this step is broader than what the format reads: `prepareReadingFromFormat`
+    /// appends Hive partition columns (taken from the file path) and virtual columns (`_path`,
+    /// `_file`, ...) after the format has produced its chunk, while the Parquet reader is built on
+    /// `format_header` and only sees the physical file columns. Arming the filter for a sort key
+    /// the reader cannot see would give no pruning but still pay its side effects (offset-index
+    /// prefetches for every column, no query condition cache writes), so gate on `format_header`.
+    const auto * format_column = info.format_header.findByName(sort_column.name);
+    if (!format_column || !format_column->type->equals(*sort_column.type))
+        return false;
+
+    /// Being in `format_header` is still not the same as "what the reader read is what the query
+    /// sorts by": `format_header` lists the query-schema columns, and a column carrying a
+    /// `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed *above* the format by
+    /// `AddingDefaultsTransform` for every value the reader reported as missing - a column absent
+    /// from this particular file (the reader fills type defaults), or a `NULL` read into a
+    /// non-`Nullable` column. The threshold the sorting transforms publish then comes from the
+    /// recomputed values while the reader compares its own placeholders against it, which can drop
+    /// rows that belong to the top-K. A column with no default expression is never rewritten above
+    /// the reader, so for it the two values always agree.
+    return !info.columns_description.hasDefault(sort_column.name);
 }
 
 void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2397,6 +2471,13 @@ void StorageFile::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    /// A storage carrying a renaming rule renames the files it read once its readers are destroyed
+    /// (`StorageFileSource::beforeDestroy`), so reading it needs `WRITE` on the source besides `READ`.
+    /// This context is the reading query's, not that of the query which built the storage.
+    if (!file_renamer.isEmpty())
+        context->getAccess()->checkAccessWithFilter(
+            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
     if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
             context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
@@ -2452,7 +2533,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
 }
 
-void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator(nullptr);
 
@@ -2480,6 +2561,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -2509,8 +2591,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = ctx->getSettingsRef()[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < max_num_streams)
-        pipe.resize(max_num_streams);
+    /// `max_num_streams` is a read-parallelism request, not a thread budget.
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
@@ -2572,6 +2656,8 @@ public:
                 /// and keeps the byte size - the same residual window every single-pass read of a
                 /// concurrently rewritten local file has. (getFileStat throws if the file is gone.)
                 auto file_stat = getFileStat(path, /*use_table_fd=*/ false, -1, storage->getName());
+                /// Armed, this stands in for a replacement of the file: the inode is what a rename changes.
+                fiu_do_on(FailPoints::file_read_inject_version_token_mismatch, { file_stat.st_ino = 0; });
                 if (computeFileCacheVersionToken(file_stat) != file.file.version_token)
                     throwFileChanged(path);
 
@@ -3147,6 +3233,8 @@ void registerStorageFile(StorageFactory & factory)
         "File",
         [](const StorageFactory::Arguments & factory_args)
         {
+            checkStorageSettingNames(factory_args);
+
             auto context = factory_args.getLocalContext();
             StorageFile::CommonArguments storage_args
             {
@@ -3178,7 +3266,7 @@ void registerStorageFile(StorageFactory & factory)
             {
                 Settings settings = factory_args.getContext()->getSettingsCopy();
 
-                // Apply changes from SETTINGS clause, with validation.
+                // Applying the changes validates the values, not the names.
                 settings.applyChanges(factory_args.storage_def->settings->changes);
 
                 storage_args.format_settings = getFormatSettings(factory_args.getContext(), settings);
@@ -3248,9 +3336,9 @@ Usage scenarios:
 - Convert data from one format to another.
 - Updating data in ClickHouse via editing a file on a disk.
 
-:::note
+<Note>
 This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/reference/functions/table-functions/s3).
-:::
+</Note>
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
@@ -3269,9 +3357,9 @@ When creating table using `File(Format)` it creates empty subdirectory in that f
 
 You may manually create this subfolder and file in server filesystem and then [ATTACH](/reference/statements/attach) it to table information with matching name, so you can query data from that file.
 
-:::note
+<Note>
 Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
-:::
+</Note>
 
 ## Example {#example}
 
