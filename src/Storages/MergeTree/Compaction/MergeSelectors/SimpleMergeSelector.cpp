@@ -143,6 +143,7 @@ bool allow(
     double sum_size,
     double max_size,
     double min_age,
+    double min_partition_age,
     double partition_size,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log,
@@ -156,6 +157,10 @@ bool allow(
 
     if (settings.min_age_to_force_merge && min_age >= static_cast<double>(settings.min_age_to_force_merge))
         return true;
+
+    if (settings.min_partition_age_to_force_merge && min_partition_age > 0)
+        if (min_partition_age >= static_cast<double>(settings.min_partition_age_to_force_merge))
+            return true;
 
     const size_t size = end - begin;
 
@@ -223,6 +228,10 @@ void selectWithinPartsRange(
     size_t parts_count = parts.size();
     if (parts_count <= 1)
         return;
+
+    double min_partition_age = 0;
+    if (settings.partitions_stats)
+        min_partition_age = static_cast<double>(settings.partitions_stats->at(parts.front().info.getPartitionId()).min_age);
 
     /// If the parts in the parts vector are sorted by block number,
     /// it may not be ideal to only select parts for merging from the first N ones.
@@ -308,6 +317,7 @@ void selectWithinPartsRange(
                     static_cast<double>(sum_size),
                     static_cast<double>(max_size),
                     static_cast<double>(min_age),
+                    min_partition_age,
                     static_cast<double>(parts_count),
                     min_size_to_lower_base_log,
                     max_size_to_lower_base_log,
