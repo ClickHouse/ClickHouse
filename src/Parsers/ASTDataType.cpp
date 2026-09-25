@@ -264,8 +264,11 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
     if (equalsCaseInsensitiveString(table_function.name, "generateRandom") || equalsCaseInsensitiveString(table_function.name, "input")
         || equalsCaseInsensitiveString(table_function.name, "null"))
         return {argument_at(0)};
+    /// `values` treats its first argument as a schema only when it is already a string literal
+    /// (see `TableFunctionValues::parseArguments`); otherwise it is the first row. Folding a constant string
+    /// expression there would change which overload the persisted query uses, so only a literal is rewritten.
     if (equalsCaseInsensitiveString(table_function.name, "values"))
-        return arguments.size() > 1 ? std::vector{argument_at(0)} : std::vector<ASTPtr *>{};
+        return (arguments.size() > 1 && arguments[0]->as<ASTLiteral>()) ? std::vector{argument_at(0)} : std::vector<ASTPtr *>{};
     if (equalsCaseInsensitiveString(table_function.name, "file") || equalsCaseInsensitiveString(table_function.name, "url")
         || equalsCaseInsensitiveString(table_function.name, "s3") || equalsCaseInsensitiveString(table_function.name, "gcs")
         || equalsCaseInsensitiveString(table_function.name, "oss") || equalsCaseInsensitiveString(table_function.name, "cosn")
