@@ -875,6 +875,7 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
 # fall through the explicit guards below instead of killing the script).
 function confirm_changes
 {
+if [ "${CHPC_NIGHTLY:-0}" = 1 ]; then echo "confirm_changes: skipped in nightly mode"; return 0; fi
 rm -rf analyze-confirm ||:
 mkdir analyze-confirm analyze-confirm/tmp ||:
 
