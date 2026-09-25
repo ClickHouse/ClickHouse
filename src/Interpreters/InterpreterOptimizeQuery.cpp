@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #if USE_AVRO
@@ -47,7 +48,8 @@ BlockIO InterpreterOptimizeQuery::execute()
     getContext()->checkAccess(getRequiredAccess());
 
     auto table_id = getContext()->resolveStorageID(ast);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// `OPTIMIZE` accesses the table anyway; resolve a `lazy_load_tables` stand-in so that `DRY RUN` sees the engine.
+    StoragePtr table = resolveLazyTable(DatabaseCatalog::instance().getTable(table_id, getContext()));
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, getContext());
