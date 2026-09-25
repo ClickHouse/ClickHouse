@@ -29,7 +29,9 @@ ENGINE = MergeTree
 ORDER BY (event_date, id)
 SETTINGS
     index_granularity = 1, min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1, -- only the OPTIMIZE below may merge these parts
+    shared_merge_tree_disable_merges_and_mutations_assignment = 1;
 
 INSERT INTO test_simple_projection VALUES (1, '2023-01-01', 101, 'https://example.com/page1', 'europe');
 INSERT INTO test_simple_projection VALUES (2, '2023-01-01', 102, 'https://example.com/page2', 'us_west');
@@ -37,7 +39,7 @@ INSERT INTO test_simple_projection VALUES (3, '2023-01-02', 106, 'https://exampl
 INSERT INTO test_simple_projection VALUES (4, '2023-01-02', 107, 'https://example.com/page4', 'us_west');
 INSERT INTO test_simple_projection VALUES (5, '2023-01-03', 104, 'https://example.com/page5', 'asia');
 
-OPTIMIZE TABLE test_simple_projection FINAL;
+OPTIMIZE TABLE test_simple_projection FINAL SETTINGS optimize_throw_if_noop = 1;
 
 -- aggressively use projection index
 SET min_table_rows_to_use_projection_index = 0;
@@ -88,7 +90,9 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     index_granularity = 16, min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1, -- only the OPTIMIZE below may merge these parts
+    shared_merge_tree_disable_merges_and_mutations_assignment = 1;
 
 INSERT INTO test_projection_granule_edge_cases VALUES (0, 'top_region', 100);
 INSERT INTO test_projection_granule_edge_cases SELECT number + 1, 'other_region', 101 FROM numbers(6);
@@ -99,7 +103,7 @@ INSERT INTO test_projection_granule_edge_cases VALUES (15, 'bol_region', 104);
 -- add more data to ensure projection index is triggered during query planning
 INSERT INTO test_projection_granule_edge_cases SELECT number + 100, 'unknown_region', 999 FROM numbers(1000);
 
-OPTIMIZE TABLE test_projection_granule_edge_cases FINAL;
+OPTIMIZE TABLE test_projection_granule_edge_cases FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT trimLeft(explain)
 FROM (EXPLAIN projections = 1 SELECT * FROM test_projection_granule_edge_cases WHERE region = 'top_region')
