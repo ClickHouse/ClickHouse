@@ -84,20 +84,20 @@ SET lightweight_deletes_sync = 2;
 ALTER TABLE t_stale_subcolumn_delete UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
 SELECT 'materialized', id, a.size0 FROM t_stale_subcolumn_delete ORDER BY id;
 
-SELECT 'a physical column whose name contains a dot keeps reading from the part';
+SELECT 'a subcolumn of a Nested element follows the update of that element';
 
--- A wide part on purpose: the offsets of a Nested column are only read as a shared subcolumn
--- there, so a compact part would not exercise this control at all.
+-- A wide part on purpose: the offsets of a Nested column are only read as a shared subcolumn there,
+-- so a compact part would not exercise this at all. The parent of `n.a.size0` is `n.a`, not `n`.
 DROP TABLE IF EXISTS t_stale_subcolumn_nested;
 CREATE TABLE t_stale_subcolumn_nested (id UInt8, n Nested(a Int32), v UInt32, y UInt8)
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_stale_subcolumn_nested VALUES (1, [1, 2, 3], 10, 0);
 SYSTEM STOP MERGES t_stale_subcolumn_nested;
-ALTER TABLE t_stale_subcolumn_nested UPDATE v = 99 WHERE 1;
-SELECT 'pending', id, length(n.a), n.a, v FROM t_stale_subcolumn_nested ORDER BY id;
+ALTER TABLE t_stale_subcolumn_nested UPDATE `n.a` = [7, 8, 9, 10], v = 99 WHERE 1;
+SELECT 'pending', id, n.a.size0, length(n.a), n.a, v FROM t_stale_subcolumn_nested ORDER BY id;
 SYSTEM START MERGES t_stale_subcolumn_nested;
 ALTER TABLE t_stale_subcolumn_nested UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'materialized', id, length(n.a), n.a, v FROM t_stale_subcolumn_nested ORDER BY id;
+SELECT 'materialized', id, n.a.size0, length(n.a), n.a, v FROM t_stale_subcolumn_nested ORDER BY id;
 
 SELECT 'a parent omitted from the part by skip_empty_columns_on_insert';
 
