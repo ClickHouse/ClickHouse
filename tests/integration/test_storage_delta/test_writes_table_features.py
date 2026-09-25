@@ -114,8 +114,8 @@ FEATURES = {
 
 
 # Outcome observed with the pinned kernel: a change in either direction must be a deliberate edit here.
-# Features missing from the map are kernel-decided in a way not pinned yet (Spark in the runner could
-# not create them when this was written).
+# Features missing from the map could not be created by Spark in the runner when this was written; the
+# test fails, not skips, if that changes.
 EXPECTED_OUTCOME = {
     "append_only": "accepted",
     "not_null": "accepted",
@@ -178,6 +178,9 @@ def test_write_to_table_with_writer_feature(started_cluster, feature):
         create_feature_table(spark, feature, path)
     except Exception as e:  # pylint: disable=broad-except
         pytest.skip(f"Spark cannot create a table with {feature} here: {str(e)[:200]}")
+    # Every feature the runner can create has a recorded outcome; a runner upgrade that starts
+    # creating a new one fails here until the observed outcome is recorded deliberately.
+    assert feature in EXPECTED_OUTCOME, f"{feature}: Spark created the table, record its accepted/rejected outcome in EXPECTED_OUTCOME"
     push_to_node(node, path)
 
     ch_columns = "id Int32, v String"
