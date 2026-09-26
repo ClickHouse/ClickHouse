@@ -2084,6 +2084,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 StorageID{remote_database, remote_table},
                 structure_context,
                 /* table_func_ptr = */ nullptr);
+            columns.clearColumnTTLs();
         }
 
         return std::make_shared<StorageDistributed>(
@@ -2493,7 +2494,10 @@ void registerStorageRemote(StorageFactory & factory)
                     args.getLocalContext(),
                     parsed.remote_table_function_ptr);
                 if (columns.empty())
+                {
                     columns = std::move(inferred);
+                    columns.clearColumnTTLs();
+                }
             }
             catch (const Exception & e)
             {
