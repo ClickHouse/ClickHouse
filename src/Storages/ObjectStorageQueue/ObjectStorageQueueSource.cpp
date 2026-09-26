@@ -1,11 +1,8 @@
 #include "config.h"
-#include <base/sleep.h>
 #include <Common/CurrentThread.h>
 
 #include <Common/Exception.h>
-#include <Common/ErrorCodes.h>
 #include <Common/ProfileEvents.h>
-#include <Common/DimensionalMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -14,7 +11,6 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -23,8 +19,6 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueExclusiveFileMetadata.h>
-#include <Storages/IStreamingStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -44,13 +38,6 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueExceptionsDuringRead;
     extern const Event ObjectStorageQueueExceptionsDuringInsert;
     extern const Event ObjectStorageQueueCancelledFiles;
-    extern const Event ObjectStorageQueueRemoveObjectFailures;
-}
-
-namespace DimensionalMetrics
-{
-    extern MetricFamily & ObjectStorageQueueFailures;
-    extern MetricFamily & ObjectStorageQueuePermanentlyFailedFiles;
 }
 
 namespace DB
@@ -59,6 +46,11 @@ namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsUInt64 keeper_max_retries;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ObjectStorageQueueSetting
@@ -73,10 +65,6 @@ namespace ObjectStorageQueueSetting
 namespace FailPoints
 {
     extern const char object_storage_queue_fail_in_the_middle_of_file[];
-    extern const char object_storage_queue_fail_commit_after_success[];
-    extern const char object_storage_queue_cancel_in_generate[];
-    extern const char object_storage_queue_sleep_in_generate[];
-    extern const char object_storage_queue_fail_tags_fetch[];
 }
 
 namespace ErrorCodes
@@ -89,55 +77,13 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_BEING_RESTARTED;
-    extern const int INCORRECT_DATA;
-    extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
-    extern const int FILE_CHANGED_DURING_READ;
-    extern const int S3_OBJECT_CHANGED_DURING_READ;
-}
-
-bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing)
-{
-    switch (storage_type)
-    {
-        /// The copy of a `MOVE` (`If-Match` on the copy source) and the `DELETE` (`If-Match` on the
-        /// delete) are both pinned to the ingested generation, on Azure and on S3 alike.
-        case ObjectStorageType::Azure:
-        case ObjectStorageType::S3:
-            return after_processing == ObjectStorageQueueAction::MOVE || after_processing == ObjectStorageQueueAction::DELETE;
-        default:
-            return false;
-    }
-}
-
-bool useIngestedGenerationOfTheListedObject(RelativePathWithMetadata & object_info)
-{
-    /// Only the generation that the listing itself reported may be used. A `HEAD` made here would
-    /// run after the object was listed and claimed in Keeper, so it could return a generation `B`
-    /// that replaced the listed generation `A` in the meantime; the file would then be ingested,
-    /// moved or deleted as `B` and marked processed by path, and `A` - the generation the queue
-    /// actually accepted - would be skipped forever. When the listing carries no generation, the
-    /// caller fails the file closed instead.
-    if (!object_info.metadata || object_info.metadata->etag.empty())
-        return false;
-
-    /// The read of this object has to serve the generation named by the listing, independently of
-    /// `s3_validate_etag_on_read`: that setting decides whether a plain read is protected from a
-    /// torn read, while here the generation the read serves is the generation the move or the
-    /// delete acts on afterwards.
-    object_info.require_read_pinned_to_generation = true;
-    return true;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
     const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
-    /// Copies the whole carrier, so that everything the iterator learned about the object - its
-    /// generation and the requirement to pin the read to it - reaches `createReadBuffer`.
-    : ObjectInfo(object_info.relative_path_with_metadata)
+    : ObjectInfo(RelativePathWithMetadata{object_info.getPath(), object_info.getObjectMetadata()})
     , file_metadata(file_metadata_)
 {
-    /// The path the queue tracks the file by is the rendered one (an archive renders it out of the
-    /// carrier's own `relative_path`), as it was before the whole carrier was copied.
-    relative_path_with_metadata.relative_path = object_info.getPath();
 }
 
 ObjectStorageQueueSource::FileIterator::FileIterator(
@@ -306,19 +252,6 @@ ObjectStorageQueueSource::FileIterator::next()
 
             LOG_TEST(log, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
 
-            /// Update the "seen" watermark only from files this table will actually process:
-            /// updating it before filterProcessableFiles() would also count objects already
-            /// resolved (processed/failed, e.g. kept around by after_processing=KEEP) and, in
-            /// hash-ring mode, objects owned by a different consumer - neither of which this
-            /// table will ever commit, which would otherwise make the lag estimate a false
-            /// positive (e.g. right after a restart, before anything has been committed yet).
-            for (const auto & object_info : new_batch)
-            {
-                auto object_metadata = object_info->getObjectMetadata();
-                if (object_metadata && object_metadata->is_last_modified_known)
-                    metadata->updateNewestSeenTimestamp(object_metadata->last_modified.epochTime(), storage_id);
-            }
-
             if (!new_batch.empty()
                 && enable_hash_ring_filtering
                 && mode == ObjectStorageQueueMode::UNORDERED)
@@ -361,8 +294,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 Coordination::Responses responses;
-                Coordination::Error code = {};
-                auto set_processing_batch = [&]
+                Coordination::Error code;
+                zk_retry.retryLoop([&]
                 {
                     auto zk_client = metadata->getZooKeeper();
                     if (zk_retry.isRetry())
@@ -425,22 +358,7 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
                     }
                     code = zk_client->tryMulti(requests, responses);
-                };
-
-                try
-                {
-                    zk_retry.retryLoop(set_processing_batch);
-                }
-                catch (const zkutil::KeeperException & e)
-                {
-                    /// Retries were exhausted on a hardware error: the exception escapes the
-                    /// retry loop before `code` is set, so the `else` branch below (which
-                    /// records this metric for non-throwing failures) is never reached.
-                    DimensionalMetrics::add(
-                        DimensionalMetrics::ObjectStorageQueueFailures,
-                        {storage_id.getDatabaseName(), storage_id.getTableName(), "set_processing", String(magic_enum::enum_name(e.code))});
-                    throw;
-                }
+                });
 
                 if (code == Coordination::Error::ZOK)
                 {
@@ -459,9 +377,6 @@ ObjectStorageQueueSource::FileIterator::next()
                 else
                 {
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedToBatchSetProcessing);
-                    DimensionalMetrics::add(
-                        DimensionalMetrics::ObjectStorageQueueFailures,
-                        {storage_id.getDatabaseName(), storage_id.getTableName(), "set_processing", String(magic_enum::enum_name(code))});
 
                     auto failed_idx = zkutil::getFailedOpIndex(code, responses);
 
@@ -552,8 +467,6 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     const auto & zookeeper_name = metadata->getZooKeeperName();
     if (mode == ObjectStorageQueueMode::UNORDERED)
         ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), zookeeper_name, log);
-    else if (mode == ObjectStorageQueueMode::EXCLUSIVE)
-        ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), zookeeper_name, log);
     else
         ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
             paths,
@@ -637,24 +550,8 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
         if (!file_metadata)
         {
             file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info);
-            try
-            {
-                if (!file_metadata->trySetProcessing())
-                    continue;
-            }
-            catch (const zkutil::KeeperException & e)
-            {
-                /// A plain `false` return from trySetProcessing() is a normal outcome (someone
-                /// else already claimed/resolved this file); this catches a genuine Keeper
-                /// communication failure escaping after retries are exhausted. Covers both the
-                /// default (non-hash-ring-batched) claim path and Ordered mode's bucketed path,
-                /// which both funnel through this same call when a bucket has no cached file
-                /// metadata yet (see bucket_info.keys.emplace_back(object_info, nullptr) above).
-                DimensionalMetrics::add(
-                    DimensionalMetrics::ObjectStorageQueueFailures,
-                    {storage_id.getDatabaseName(), storage_id.getTableName(), "set_processing", String(magic_enum::enum_name(e.code))});
-                throw;
-            }
+            if (!file_metadata->trySetProcessing())
+                continue;
         }
 
         if (file_deletion_on_processed_enabled && !object_storage->exists(StoredObject(object_info->getPath())))
@@ -685,16 +582,6 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             file_metadata->resetProcessing();
             continue;
         }
-
-        /// A `MOVE` after processing copies and deletes the very generation that was ingested, and
-        /// a `DELETE` deletes it (on Azure and on S3 alike), so that generation must be known before
-        /// the read is opened, and the read is then pinned to it. It is the generation the listing
-        /// reported, and only that one - a `HEAD` made now could name a generation that replaced
-        /// it after it was listed. A file whose listing carries no generation is still returned:
-        /// the source refuses to read it and fails it, so that it is never committed as processed
-        /// and then moved or deleted as whatever generation exists by then.
-        if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), metadata->getTableMetadata().after_processing))
-            useIngestedGenerationOfTheListedObject(object_info->relative_path_with_metadata);
 
         return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, std::move(file_metadata));
     }
@@ -1119,10 +1006,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const StorageID & storage_id_,
     LoggerPtr log_,
     bool commit_once_processed_,
-    bool is_direct_select_,
-    bool add_deduplication_info_,
-    bool is_deduplication_v2_,
-    IStreamingStorage & streaming_storage_)
+    bool add_deduplication_info_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -1144,11 +1028,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , system_queue_log(system_queue_log_)
     , storage_id(storage_id_)
     , commit_once_processed(commit_once_processed_)
-    , is_direct_select(is_direct_select_)
-    , streaming_storage(streaming_storage_)
-    , cancel_epoch(streaming_storage_.currentCancelEpoch())
     , add_deduplication_info(add_deduplication_info_)
-    , is_deduplication_v2(is_deduplication_v2_)
+    , insert_deduplication_version(context_->getServerSettings()[ServerSetting::insert_deduplication_version].value)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1171,36 +1052,21 @@ Chunk ObjectStorageQueueSource::generate()
     catch (...)
     {
         if (commit_once_processed)
-            commit(false, getCurrentExceptionMessage(true), getCurrentExceptionCode());
+            commit(false, getCurrentExceptionMessage(true));
 
         throw;
     }
 
     if (!chunk && commit_once_processed)
-    {
-        try
-        {
-            commit(true);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Failed to commit data: {}", getCurrentExceptionMessage(false));
-            throw;
-        }
-    }
+        commit(true);
 
     return chunk;
 }
-
-void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStream(); }
 
 Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
-        if (is_direct_select && streaming_storage.isConsumeCancelRequested(cancel_epoch))
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption aborted by SYSTEM STOP or SYSTEM CANCEL");
-
         if (isCancelled())
         {
             if (reader)
@@ -1246,22 +1112,20 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
 
             auto started_file = processed_files.back().metadata;
-            /// Aborting re-reads the file from offset 0 on next start, duplicating
-            /// any rows already inserted. Only safe when dedup will drop those rows,
-            /// or when the table is being dropped (no retry).
-            if (table_is_being_dropped || is_deduplication_v2)
+            if (table_is_being_dropped)
             {
+                /// Something must have been already read.
                 chassert(started_file->getFileStatus()->processed_rows > 0);
+                /// Mark file as Cancelled, such files will not be set as Failed.
                 processed_files.back().state = FileState::Cancelled;
+                /// Throw exception to avoid inserting half processed file to destination table.
                 throw Exception(
                     ErrorCodes::QUERY_WAS_CANCELLED,
-                    "{} (having unfinished file: {})",
-                    table_is_being_dropped ? "Table is being dropped" : "Shutdown was called",
-                    started_file->getPath());
+                    "Table is being dropped (having unfinished file: {})", started_file->getPath());
             }
 
             LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
-                     "Will process the file fully and then shutdown (dedup off).",
+                     "Will process the file fully and then shutdown",
                      started_file->getPath(), started_file->getFileStatus()->processed_rows.load());
         }
 
@@ -1292,7 +1156,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
-                storage_id,
                 file_iterator,
                 configuration,
                 object_storage,
@@ -1321,7 +1184,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 if (old_processed_files >= commit_settings.max_processed_files_before_commit)
                 {
                     LOG_DEBUG(log, "Number of max processed files before commit reached "
-                            "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                            "(rows: {}, bytes: {}, files: {}, time: {})",
                             progress->processed_rows.load(), progress->processed_bytes.load(),
                             progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
 
@@ -1334,88 +1197,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
 
             processed_files.emplace_back(file_metadata);
-
-            if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata(); object_metadata)
-            {
-                if (object_metadata->is_last_modified_known)
-                    processed_files.back().last_modified = object_metadata->last_modified.epochTime();
-
-                /// Remember which generation of the object is being read, for the post-processing.
-                processed_files.back().bytes_size = object_metadata->size_bytes;
-                processed_files.back().etag = object_metadata->etag;
-            }
-
-            /// Fail closed: a file whose generation is unknown (the listing carried no `ETag`)
-            /// is not read when the post-processing
-            /// has to act on the ingested generation, because it could then only move or delete
-            /// whatever generation exists at post-processing time. It is failed like a file whose
-            /// read failed, so it is never committed as processed.
-            const auto after_processing = files_metadata->getTableMetadata().after_processing.load();
-            if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
-                && processed_files.back().etag.empty())
-            {
-                const auto message = fmt::format(
-                    "The generation (`ETag`) of the object {} is not reported by the listing of the endpoint, "
-                    "while `after_processing = '{}'` has to act on exactly the generation that was ingested. "
-                    "The file is not read",
-                    file_metadata->getPath(), ObjectStorageQueueTableMetadata::actionToString(after_processing));
-                LOG_ERROR(log, "{}. Will set the file as failed", message);
-
-                processed_files.back().state = FileState::ErrorOnRead;
-                processed_files.back().exception_during_read = message;
-                processed_files.back().exception_during_read_code = ErrorCodes::INCORRECT_DATA;
-
-                if (mode == ObjectStorageQueueMode::ORDERED)
-                {
-                    /// Stop processing and commit what is already processed,
-                    /// because we must preserve order.
-                    return {};
-                }
-
-                /// Continue processing. This failed file will be committed along with processed files.
-                reader = {};
-                progress->processed_files -= 1;
-                continue;
-            }
-
-            /// Tags are not fetched during listing (it lists with with_tags = false), so populate
-            /// them on demand here, once per file, only when _tags is requested. Must run after
-            /// emplace_back so a fetch failure fails the already-claimed file through the normal
-            /// commit accounting instead of leaving it orphaned.
-            if (read_from_format_info.requested_virtual_columns.contains("_tags"))
-            {
-                if (const auto & object_info_for_tags = reader.getObjectInfo())
-                {
-                    auto metadata_with_tags = object_info_for_tags->getObjectMetadata();
-                    if (metadata_with_tags && metadata_with_tags->tags.empty())
-                    {
-                        try
-                        {
-                            fiu_do_on(FailPoints::object_storage_queue_fail_tags_fetch, {
-                                throw Exception(
-                                    ErrorCodes::UNKNOWN_EXCEPTION,
-                                    "Failpoint-triggered tag fetch failure for file: {}", file_metadata->getPath());
-                            });
-
-                            metadata_with_tags->tags
-                                = object_storage->getObjectMetadata(object_info_for_tags->getPath(), /*with_tags=*/true).tags;
-                            object_info_for_tags->setObjectMetadata(*metadata_with_tags);
-                        }
-                        catch (...)
-                        {
-                            /// This file's rows were never pulled, so this is a read-path
-                            /// failure, not an insert failure: tag it the same way the
-                            /// pull-error handler below does, so prepareCommitRequests later
-                            /// labels it "read" instead of "insert". Rethrow immediately -
-                            /// only the label changes, not how this failure is handled.
-                            processed_files.back().state = FileState::ErrorOnRead;
-                            processed_files.back().exception_during_read = getCurrentExceptionMessage(true);
-                            processed_files.back().exception_during_read_code = getCurrentExceptionCode();
-                            throw;
-                        }
-                    }
-                }
-            }
         }
 
         chassert(file_metadata);
@@ -1423,28 +1204,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
         const auto & path = file_metadata->getPath();
 
         LOG_TEST(log, "Processing file: {}", path);
-
-        /// Simulates a mid-file cancellation (KILL QUERY, server shutdown
-        /// reaching the executor). Must throw outside the inner try-catch so
-        /// the exception reaches `generate()` rather than being converted to
-        /// `FileState::ErrorOnRead` by the pull-error handler below.
-        if (file_status->processed_rows > 0)
-        {
-            fiu_do_on(FailPoints::object_storage_queue_cancel_in_generate, {
-                processed_files.back().state = FileState::Cancelled;
-                throw Exception(
-                    ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Failpoint-triggered cancellation (having unfinished file: {})", path);
-            });
-
-            /// Park `generateImpl` here long enough for a concurrent server shutdown
-            /// to set `shutdown_called`, so the next loop iteration enters the
-            /// shutdown-handling branch above with the current file in `Processing`
-            /// state. Used by the dedup-off regression test.
-            fiu_do_on(FailPoints::object_storage_queue_sleep_in_generate, {
-                sleepForSeconds(5);
-            });
-        }
 
         Chunk chunk;
         bool result = false;
@@ -1474,7 +1233,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             processed_files.back().state = FileState::ErrorOnRead;
             processed_files.back().exception_during_read = message;
-            processed_files.back().exception_during_read_code = getCurrentExceptionCode();
 
              if (file_status->processed_rows > 0)
              {
@@ -1514,7 +1272,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 /// Create unique token per chunk: etag + row offset
                 dedup_token = fmt::format("{}:{}", etag, row_offset);
 
-                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
+                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true, insert_deduplication_version);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
                 chunk.getChunkInfos().add(std::move(deduplication_info));
             }
@@ -1534,9 +1292,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path,
-                    format_settings,
-                    getContext());
+                    path);
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -1544,14 +1300,10 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .storage_id = storage_id,
                     .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified,
-                    .etag = &(object_metadata->etag),
-                    .tags = &(object_metadata->tags),
+                    .last_modified = object_metadata->last_modified
                 },
-                getContext(),
-                format_settings);
+                getContext());
 
             return chunk;
         }
@@ -1571,7 +1323,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_files >= commit_settings.max_processed_files_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed files before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1580,7 +1332,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_rows >= commit_settings.max_processed_rows_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed rows before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1589,7 +1341,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_bytes >= commit_settings.max_processed_bytes_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed bytes before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1598,7 +1350,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->elapsed_time.elapsedSeconds() >= static_cast<double>(commit_settings.max_processing_time_sec_before_commit))
         {
             LOG_DEBUG(log, "Max processing time before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1626,7 +1378,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
         processed_files.size(),
         insert_succeeded ? "Processed" : "Failed");
 
-    const bool is_ordered_mode = mode == ObjectStorageQueueMode::ORDERED;
+    const bool is_ordered_mode = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
     const bool use_buckets_for_processing = file_iterator->useBucketsForProcessing();
     const bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
@@ -1656,14 +1408,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
     /// We do not want to reduce retry count on certain errors,
     /// because their incidence does not depend on the user.
-    /// `QUERY_WAS_CANCELLED` is included because cancellation (shutdown,
-    /// `KILL QUERY`) is never the file's fault — a file should not burn a
-    /// retry just because the server happened to be restarting, and the
-    /// processing node should be reset rather than transitioned to `Failed`.
     const bool reduce_retry_count = !(error_code == ErrorCodes::TOO_MANY_PARTS
                                       || error_code == ErrorCodes::TABLE_IS_BEING_RESTARTED
-                                      || error_code == ErrorCodes::TABLE_IS_READ_ONLY
-                                      || error_code == ErrorCodes::QUERY_WAS_CANCELLED);
+                                      || error_code == ErrorCodes::TABLE_IS_READ_ONLY);
 
     /// Count successfully processed files in a failed batch.
     /// If the batch had multiple files, don't reduce retry counts:
@@ -1672,14 +1419,14 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     size_t processed_count = 0;
     if (!insert_succeeded && reduce_retry_count)
     {
-        for (const auto & processed_file : processed_files)
-            if (processed_file.state == FileState::Processed)
+        for (const auto & [file_state, file_metadata_, exception_during_read_] : processed_files)
+            if (file_state == FileState::Processed)
                 ++processed_count;
     }
 
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
-        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_, bytes_size, etag] = processed_files[i];
+        const auto & [file_state, file_metadata, exception_during_read] = processed_files[i];
         switch (file_state)
         {
             case FileState::Processed:
@@ -1708,18 +1455,11 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     {
                         file_metadata->prepareProcessedRequests(requests);
                     }
-                    /// The post-processing acts on the generation that was ingested, not on
-                    /// whatever the path holds by then.
-                    StoredObject ingested_generation(file_metadata->getPath(), /* local_path */ "", bytes_size);
-                    ingested_generation.etag = etag;
-                    successful_files.push_back(std::move(ingested_generation));
+                    successful_files.push_back(StoredObject(file_metadata->getPath()));
                 }
                 else
                 {
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringInsert);
-                    DimensionalMetrics::add(
-                        DimensionalMetrics::ObjectStorageQueueFailures,
-                        {storage_id.getDatabaseName(), storage_id.getTableName(), "insert", String(ErrorCodes::getName(error_code))});
 
                     file_metadata->prepareFailedRequests(
                         requests,
@@ -1745,11 +1485,6 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 else
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringInsert);
 
-                if (file_state != FileState::Cancelled)
-                    DimensionalMetrics::add(
-                        DimensionalMetrics::ObjectStorageQueueFailures,
-                        {storage_id.getDatabaseName(), storage_id.getTableName(), "insert", String(ErrorCodes::getName(error_code))});
-
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_message,
@@ -1759,49 +1494,12 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             case FileState::ErrorOnRead:
             {
                 ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringRead);
-                DimensionalMetrics::add(
-                    DimensionalMetrics::ObjectStorageQueueFailures,
-                    {storage_id.getDatabaseName(), storage_id.getTableName(), "read", String(ErrorCodes::getName(exception_during_read_code))});
 
                 chassert(!exception_during_read.empty());
-                /// A read pinned to the generation that the listing reported fails when that
-                /// generation is not in the bucket any more - `FILE_CHANGED_DURING_READ` from the
-                /// Azure buffer, `S3_OBJECT_CHANGED_DURING_READ` from the S3 one, which pins the
-                /// read whenever `s3_validate_etag_on_read` is on or the post-processing acts on the
-                /// ingested generation (see `ReadBufferFromS3::sendRequest`, `afterProcessingNeedsIngestedGeneration`):
-                /// the object was rewritten between the listing and the read. That is a race over
-                /// which generation this table is looking at, not a file that cannot be read, and
-                /// the newer generation at the same key has never been ingested. Charging it to the
-                /// per-path retry budget would eventually create the terminal `failed` node for the
-                /// path, and both queue modes then skip every later generation at that key - the
-                /// rewritten object would be dropped for good. So the processing is reset without a
-                /// failure instead, and the newer generation is picked up on a later pass.
-                ///
-                /// This branch is about a read that failed, so no `after_processing` step acts on
-                /// this file in this pass: nothing is moved or deleted, and the reset only decides
-                /// whether the path is listed again. What the post-processing does with a file that
-                /// was ingested is a separate matter (`ObjectStorageQueuePostProcessor`): there the
-                /// copy of a move and the delete are pinned to the ingested generation on both
-                /// Azure and S3.
-                const bool the_generation_was_rewritten = exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ
-                    || exception_during_read_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
-
-                /// Resetting the processing means the path is read again from offset 0 on a later
-                /// pass. That is only free while the file has emitted nothing: rows of the
-                /// generation that was replaced may already be in the destination table, and
-                /// replaying the path from the start would insert them a second time.
-                /// `deduplication_v2` does not make that replay safe here, unlike the shutdown path
-                /// above: its chunk token is `object_etag:chunk_offset`, and the replay reads the
-                /// generation that took the key over, so the token of every replayed chunk names
-                /// the new generation and matches nothing that the replaced generation inserted.
-                /// A file that has emitted rows therefore keeps the ordinary failure handling: the
-                /// retry budget is charged and the path ends up `failed`, rather than ingested as a
-                /// mix of the two generations.
-                const bool a_replay_would_duplicate_rows = file_metadata->getFileStatus()->processed_rows > 0;
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_during_read,
-                    /* reduce_retry_count */!the_generation_was_rewritten || a_replay_would_duplicate_rows);
+                    /* reduce_retry_count */true);
                 break;
             }
         }
@@ -1827,53 +1525,28 @@ void ObjectStorageQueueSource::preparePartitionProcessedRequests(
     }
 }
 
-void ObjectStorageQueueSource::setUncertainCommit()
-{
-    for (auto & file : processed_files)
-        file.metadata->setUncertainCommit();
-}
-
 void ObjectStorageQueueSource::finalizeCommit(
     bool insert_succeeded,
     UInt64 commit_id,
     time_t commit_time,
     time_t transaction_start_time_,
-    const std::string & exception_message,
-    const UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths)
+    const std::string & exception_message)
 {
     if (processed_files.empty())
         return;
 
-    bool respect_post_processing_failed_paths = mode == ObjectStorageQueueMode::EXCLUSIVE;
-
     std::exception_ptr finalize_exception;
-    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified, bytes_size_, etag_] : processed_files)
+    for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
     {
         try
         {
-            bool processed = false;
-
             switch (file_state)
             {
                 case FileState::Processed:
                 {
                     if (insert_succeeded)
                     {
-                        if (respect_post_processing_failed_paths && post_processing_failed_paths.contains(file_metadata->getPath()))
-                        {
-                            /// The rows were inserted, but the after_processing action failed for
-                            /// this object, so do not record it as processed.
-                            file_metadata->finalizeFailed("The after_processing action did not complete");
-                        }
-                        else
-                        {
-                            file_metadata->finalizeProcessed();
-
-                            if (last_modified)
-                                files_metadata->updateNewestCommittedTimestamp(last_modified, storage_id);
-
-                            processed = true;
-                        }
+                        file_metadata->finalizeProcessed();
                     }
                     else if (file_metadata->wasProcessingResetWithoutFailure())
                     {
@@ -1887,12 +1560,6 @@ void ObjectStorageQueueSource::finalizeCommit(
                     {
                         file_metadata->finalizeFailed(exception_message);
                     }
-
-                    if (file_metadata->wasPermanentlyFailed())
-                        DimensionalMetrics::add(
-                            DimensionalMetrics::ObjectStorageQueuePermanentlyFailedFiles,
-                            {storage_id.getDatabaseName(), storage_id.getTableName()});
-
                     break;
                 }
                 case FileState::Cancelled: [[fallthrough]];
@@ -1910,48 +1577,19 @@ void ObjectStorageQueueSource::finalizeCommit(
                         file_metadata->finalizeResetProcessing();
                     else
                         file_metadata->finalizeFailed(exception_message);
-
-                    if (file_metadata->wasPermanentlyFailed())
-                        DimensionalMetrics::add(
-                            DimensionalMetrics::ObjectStorageQueuePermanentlyFailedFiles,
-                            {storage_id.getDatabaseName(), storage_id.getTableName()});
-
                     break;
                 }
                 case FileState::ErrorOnRead:
                 {
                     chassert(!exception_during_read.empty());
-                    /// A read of a generation that was rewritten before it could be read only
-                    /// released the processing node (see `prepareCommitRequests`), so that the
-                    /// newer generation is read on a later pass rather than being failed by path.
-                    if (file_metadata->wasProcessingResetWithoutFailure())
-                        file_metadata->finalizeResetProcessing();
-                    else
-                        file_metadata->finalizeFailed(exception_during_read);
-
-                    if (file_metadata->wasPermanentlyFailed())
-                        DimensionalMetrics::add(
-                            DimensionalMetrics::ObjectStorageQueuePermanentlyFailedFiles,
-                            {storage_id.getDatabaseName(), storage_id.getTableName()});
-
+                    file_metadata->finalizeFailed(exception_during_read);
                     break;
                 }
             }
 
-            /// Files that were reset for retry (processing node removed without creating
-            /// a Failed node) are not a real outcome — they will be picked up again on
-            /// the next iteration. Skip the log entry so they do not show up as Failed
-            /// in `system.s3queue_log`. They will be logged on their next attempt with
-            /// the actual outcome (Processed, or genuinely Failed).
-            /// A read whose pinned generation was rewritten is reset for retry as well, and that
-            /// one can happen while the insert of the rest of the batch succeeds, so the state of
-            /// the insert does not decide it.
-            if (file_metadata->wasProcessingResetWithoutFailure())
-                continue;
-
             appendLogElement(
                 file_metadata,
-                processed,
+                /* processed */insert_succeeded && file_state == FileState::Processed,
                 commit_id,
                 commit_time,
                 transaction_start_time_);
@@ -1967,7 +1605,7 @@ void ObjectStorageQueueSource::finalizeCommit(
         std::rethrow_exception(finalize_exception);
 }
 
-void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message, int error_code)
+void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
 {
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
@@ -1983,112 +1621,43 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         successful_objects,
         last_processed_file_per_partition,
         /* created_nodes */ nullptr,
-        exception_message,
-        error_code);
+        exception_message);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
-    const auto after_processing = files_metadata->getTableMetadata().after_processing.load();
-
-    if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
-        return;
-
-    /// As in `StorageObjectStorageQueue::commit`: an object that is no longer the generation that
-    /// was ingested (`FILE_CHANGED_DURING_READ`) throws out of the post-processing below, and the
-    /// batch is not committed - neither as processed nor as failed.
-    UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
-
-    if (!successful_objects.empty())
+    if (!successful_objects.empty()
+        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        if (after_processing != ObjectStorageQueueAction::KEEP)
-        {
-            auto postProcessor = ObjectStorageQueuePostProcessor(
-                getContext(),
-                configuration->getType(),
-                object_storage,
-                getName(),
-                files_metadata->getTableMetadata(),
-                after_processing_settings);
-            postProcessor.process(successful_objects, post_processing_failed_paths);
-
-            if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
-            {
-                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemoveObjectFailures, post_processing_failed_paths.size());
-
-                const auto commit_id = StorageObjectStorageQueue::generateCommitID();
-                const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-
-                finalizeCommit(
-                    insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message, post_processing_failed_paths);
-
-                throw Exception(
-                    ErrorCodes::OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED,
-                    "The after_processing action did not complete for {} object(s): {}",
-                    post_processing_failed_paths.size(), post_processing_failed_paths);
-            }
-        }
+        auto postProcessor = ObjectStorageQueuePostProcessor(
+            getContext(),
+            configuration->getType(),
+            object_storage,
+            getName(),
+            files_metadata->getTableMetadata(),
+            after_processing_settings);
+        postProcessor.process(successful_objects);
     }
 
-    if (mode != ObjectStorageQueueMode::EXCLUSIVE)
+    auto zk_client = files_metadata->getZooKeeper();
+    Coordination::Responses responses;
+
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    const auto & settings = getContext()->getSettingsRef();
+    Coordination::Error code;
+    size_t try_num = 0;
+    zk_retry.retryLoop([&]
     {
-        auto zk_client = files_metadata->getZooKeeper();
-        Coordination::Responses responses;
-
-        auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
-        const auto & settings = getContext()->getSettingsRef();
-        Coordination::Error code = {};
-        size_t try_num = 0;
-        try
+        if (zk_retry.isRetry())
         {
-            zk_retry.retryLoop([&]
-            {
-                if (zk_retry.isRetry())
-                {
-                    LOG_TRACE(
-                        log, "Failed to commit processed files at try {}/{}, will retry",
-                        try_num, toString(settings[Setting::keeper_max_retries].value));
-                }
-                ++try_num;
-                code = zk_client->tryMulti(requests, responses);
-                fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
-                    if (code == Coordination::Error::ZOK)
-                        throw zkutil::KeeperException::fromMessage(
-                            Coordination::Error::ZCONNECTIONLOSS,
-                            "Simulated connection loss after successful commit");
-                });
-            });
+            LOG_TRACE(
+                log, "Failed to commit processed files at try {}/{}, will retry",
+                try_num, toString(settings[Setting::keeper_max_retries].value));
         }
-        catch (const zkutil::KeeperException & e)
-        {
-            /// See the analogous catch in StorageObjectStorageQueue::commit(): this covers
-            /// retries exhausted on a hardware error, which previously went uncounted entirely.
-            DimensionalMetrics::add(
-                DimensionalMetrics::ObjectStorageQueueFailures,
-                {storage_id.getDatabaseName(), storage_id.getTableName(), "commit", String(magic_enum::enum_name(e.code))});
+        ++try_num;
+        code = zk_client->tryMulti(requests, responses);
+    });
 
-            /// A tryMulti attempt may have succeeded in Keeper before the connection dropped -
-            /// the commit outcome is unknown, so destructors must check ownership before
-            /// removing processing nodes (see the analogous handling in
-            /// StorageObjectStorageQueue::commit()).
-            setUncertainCommit();
-            throw;
-        }
-
-        if (code != Coordination::Error::ZOK)
-        {
-            /// See the analogous comment in StorageObjectStorageQueue::commit(): prefer a stored
-            /// transport error from an earlier retried attempt over this "failed after operation"
-            /// replay code, if there is one.
-            const auto reported_code = zk_retry.getLastKeeperErrorCode() != Coordination::Error::ZOK
-                ? zk_retry.getLastKeeperErrorCode()
-                : code;
-            DimensionalMetrics::add(
-                DimensionalMetrics::ObjectStorageQueueFailures,
-                {storage_id.getDatabaseName(), storage_id.getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
-            if (try_num > 1)
-                setUncertainCommit();
-            throw zkutil::KeeperMultiException(code, requests, responses);
-        }
-    }
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperMultiException(code, requests, responses);
 
     const auto commit_id = StorageObjectStorageQueue::generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -2110,9 +1679,9 @@ void ObjectStorageQueueSource::appendLogElement(
     const auto & file_path = file_metadata_->getPath();
     const auto & file_status = *file_metadata_->getFileStatus();
 
-    system_queue_log->add([&](ObjectStorageQueueLogElement & element)
+    ObjectStorageQueueLogElement elem{};
     {
-        element = ObjectStorageQueueLogElement
+        elem = ObjectStorageQueueLogElement
         {
             .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
             .database = storage_id.database_name,
@@ -2129,7 +1698,8 @@ void ObjectStorageQueueSource::appendLogElement(
             .transaction_start_time = transaction_start_time_,
             .get_object_time_ms = file_status.get_object_time_ms,
         };
-    });
+    }
+    system_queue_log->add(std::move(elem));
 }
 
 }

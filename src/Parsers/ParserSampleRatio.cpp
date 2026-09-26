@@ -66,41 +66,11 @@ static const char * readUInt128Text(ASTSampleRatio::BigNum & x, const char * pos
     return result;
 }
 
-/// `tryReadIntText` silently leaves the exponent at 0 on overflow. Read it via `readUInt128Text`
-/// and saturate the magnitude, so a huge exponent can't be mistaken for `1e0`.
-static bool readExponent(const char * & pos, const char * end, Int64 & exponent)
-{
-    const char * start = pos;
-
-    bool negative = false;
-    if (pos < end && (*pos == '+' || *pos == '-'))
-    {
-        negative = *pos == '-';
-        ++pos;
-    }
-
-    ASTSampleRatio::BigNum magnitude = 0;
-    const char * pos_after_magnitude = readUInt128Text(magnitude, pos, end);
-
-    if (pos_after_magnitude == pos)
-    {
-        pos = start;
-        return false;
-    }
-    pos = pos_after_magnitude;
-
-    Int64 clamped = magnitude > static_cast<ASTSampleRatio::BigNum>(std::numeric_limits<Int64>::max())
-        ? std::numeric_limits<Int64>::max()
-        : static_cast<Int64>(magnitude);
-    exponent = negative ? -clamped : clamped;
-    return true;
-}
-
-static bool parseDecimalImpl(const char * pos, const char * end, ASTSampleRatio::Rational & res)
+static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rational & res)
 {
     ASTSampleRatio::BigNum num_before = 0;
     ASTSampleRatio::BigNum num_after = 0;
-    Int64 exponent = 0;
+    Int32 exponent = 0;
 
     const char * pos_after_first_num = readUInt128Text(num_before, pos, end);
 
@@ -128,7 +98,9 @@ static bool parseDecimalImpl(const char * pos, const char * end, ASTSampleRatio:
     if (has_exponent)
     {
         ++pos;
-        if (!readExponent(pos, end, exponent))
+        const char * pos_after_exponent = tryReadIntText(exponent, pos, end);
+
+        if (pos_after_exponent == pos)
             return false;
     }
 
@@ -140,29 +112,10 @@ static bool parseDecimalImpl(const char * pos, const char * end, ASTSampleRatio:
     if (exponent > 0)
         res.numerator = saturatingMultiply(res.numerator, bigIntExp10(exponent));
     if (exponent < 0)
-        res.denominator = saturatingMultiply(res.denominator, bigIntExp10(-exponent));
-
-    /// Reject trailing characters instead of silently ignoring them (they could change the fraction).
-    if (pos != end)
-        return false;
+        res.denominator = saturatingMultiply(res.denominator, bigIntExp10(-static_cast<Int64>(exponent)));
 
     /// NOTE You do not need to remove the common power of ten from the numerator and denominator.
     return true;
-}
-
-static bool parseDecimal(const char * pos, const char * end, ASTSampleRatio::Rational & res)
-{
-    /// A Number token may contain '_' digit separators; `readUInt128Text` stops at them, so strip
-    /// first (as `parseNumber` does) to handle grouped spellings like 1_000 or 1e2_000.
-    std::string stripped;
-    stripped.reserve(end - pos);
-    for (const char * it = pos; it != end; ++it)
-    {
-        if (*it != '_')
-            stripped += *it;
-    }
-
-    return parseDecimalImpl(stripped.data(), stripped.data() + stripped.size(), res);
 }
 
 
