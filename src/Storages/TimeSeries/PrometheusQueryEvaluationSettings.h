@@ -11,9 +11,7 @@ namespace DB
 
 enum class PrometheusQueryEvaluationMode
 {
-    /// Evaluates a query at a specified evaluation time set either by `start_time` and `end_time` (they must be equal),
-    /// or by turning on `use_current_time`.
-    /// Corresponds to endpoint /api/v1/query
+    /// Evaluates at a single time (`start_time` = `end_time`, or `use_current_time`); corresponds to endpoint /api/v1/query.
     QUERY,
 
     /// Evaluates a query over a range of time at a specified evaluation time set by `start_time` and `end_time` (they must be equal).
@@ -26,6 +24,10 @@ struct PrometheusQueryEvaluationSettings
 {
     StorageID time_series_storage_id = StorageID::createEmpty();
     UInt64 time_series_version = TimeSeriesVersion::LATEST;
+
+    /// Specifies that the TimeSeries storage has a histograms target, so selectors also read native
+    /// histogram samples (see StoreMethod::HISTOGRAM_RAW_DATA).
+    bool storage_has_native_histograms = false;
 
     /// Data type of the timestamp column in the TimeSeries table.
     DataTypePtr table_timestamp_type;
@@ -55,16 +57,11 @@ struct PrometheusQueryEvaluationSettings
     std::optional<TimestampType> end_time;
     std::optional<DurationType> step;
 
-    /// The window used by instant selectors (see lookback period).
-    /// For example, query "http_requests_total @ 1770810669" is in fact evaluated as
-    /// "last_over_time(http_requests_total[<instant_selector_window>] @ 1770810669)"
-    /// If not set then it's 5 minutes by default.
+    /// The lookback window of instant selectors: `http_requests_total @ 1770810669` is evaluated as
+    /// `last_over_time(http_requests_total[<instant_selector_window>] @ 1770810669)`; 5 minutes by default.
     std::optional<DurationType> instant_selector_window;
 
-    /// The default subquery step is used for subqueries specified without explicit step,
-    /// for example "http_requests_total[10m:]"
-    /// (If a step is given in the subquery, as in "http_requests_total[10m:1m]", then the given step is used.)
-    /// If not set then it's 15 seconds by default.
+    /// The step for subqueries without an explicit one, as in `http_requests_total[10m:]`; 15 seconds by default.
     std::optional<DurationType> default_subquery_step;
 };
 
