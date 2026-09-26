@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_distinct;
     extern const SettingsDouble max_bytes_ratio_before_external_distinct;
+    extern const SettingsUInt64 max_external_merge_fan_in;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
@@ -56,6 +57,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_distinct;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_distinct;
+    extern const QueryPlanSerializationSettingsUInt64 max_external_merge_fan_in;
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
@@ -122,6 +124,7 @@ DistinctStep::Settings::Settings(const DB::Settings & settings_)
     max_bytes_before_external_distinct = settings_[Setting::max_bytes_before_external_distinct];
     max_bytes_ratio_before_external_distinct = settings_[Setting::max_bytes_ratio_before_external_distinct];
 
+    max_external_merge_fan_in = ExternalMergeSource::validateFanIn(settings_[Setting::max_external_merge_fan_in]);
     min_free_disk_space = settings_[Setting::min_free_disk_space_for_temporary_data];
     temporary_files_codec = settings_[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings_[Setting::temporary_files_buffer_size];
@@ -138,6 +141,7 @@ DistinctStep::Settings::Settings(const QueryPlanSerializationSettings & settings
     max_bytes_before_external_distinct = settings_[QueryPlanSerializationSetting::max_bytes_before_external_distinct];
     max_bytes_ratio_before_external_distinct = settings_[QueryPlanSerializationSetting::max_bytes_ratio_before_external_distinct];
 
+    max_external_merge_fan_in = ExternalMergeSource::validateFanIn(settings_[QueryPlanSerializationSetting::max_external_merge_fan_in]);
     min_free_disk_space = settings_[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     temporary_files_codec = settings_[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings_[QueryPlanSerializationSetting::temporary_files_buffer_size]);
@@ -155,6 +159,10 @@ void DistinctStep::Settings::updatePlanSettings(QueryPlanSerializationSettings &
         plan_settings[QueryPlanSerializationSetting::max_bytes_before_external_distinct] = max_bytes_before_external_distinct;
         plan_settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_distinct] = max_bytes_ratio_before_external_distinct;
     }
+
+    /// Unlimited merging uses the reader's default without introducing a new setting name.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN && max_external_merge_fan_in != 0)
+        plan_settings[QueryPlanSerializationSetting::max_external_merge_fan_in] = max_external_merge_fan_in;
 
     plan_settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     plan_settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
@@ -263,7 +271,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                     tmp_data_on_disk,
                     settings.min_free_disk_space,
                     settings.max_block_size,
-                    preserve_input_order);
+                    preserve_input_order,
+                    settings.max_external_merge_fan_in);
             });
         return;
     }
@@ -395,7 +404,9 @@ void registerDistinctStep(QueryPlanStepRegistry & registry)
 {
     /// Preliminary distinct probably can be a query plan optimization.
     /// It's easier to serialize it using different names, so that pre-distinct can be potentially removed later.
-    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT}};
+
+    const QueryPlanStepRegistry::StepVersions versions{
+        {0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT}};
     registry.registerStep("Distinct", DistinctStep::deserializeNormal, versions);
     registry.registerStep("PreDistinct", DistinctStep::deserializePre, versions);
 }

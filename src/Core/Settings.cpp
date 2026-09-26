@@ -4041,6 +4041,13 @@ Possible values:
 
 - Any positive integer. Recommended range of values: \[1000, 100000\].
 )", 0) \
+    DECLARE(UInt64, max_external_merge_fan_in, 64, R"(
+Limits the number of temporary files merged simultaneously for external sorting, including sorting for `full_sorting_merge` joins, and external `DISTINCT`. Any remaining in-memory run joins only the final merge and does not count toward this limit. Larger collections are reduced through intermediate merges on disk, which combine the smallest files first to minimize the amount of data rewritten.
+
+Smaller nonzero values reduce the number of active readers but can require more disk I/O. This setting does not change the spill threshold or bound total query memory. The `partial_merge` join algorithm uses `join_on_disk_max_files_to_merge` instead.
+
+Possible values are `0` for unlimited fan-in, or integers starting from `2`. With `0`, all temporary files enter the final merge directly, without intermediate merges.
+)", 0) \
     DECLARE(UInt64, join_on_disk_max_files_to_merge, 64, R"(
 Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.
 
@@ -4978,7 +4985,7 @@ See also:
 )", 0) \
     \
     DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, R"(
-The minimum disk space to keep while writing temporary data used in external sorting and aggregation.
+The minimum free disk space, in bytes, to keep while writing temporary data for external sorting, `full_sorting_merge` joins, aggregation, and `DISTINCT`.
 )", 0) \
     \
     DECLARE(DefaultTableEngine, default_temporary_table_engine, DefaultTableEngine::Memory, R"(

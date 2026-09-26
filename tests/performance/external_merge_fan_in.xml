@@ -1,0 +1,79 @@
+<test>
+
+    <!-- Explicit thresholds produce spill files even on machines with ample memory. The queries cover
+         large file counts, unequal file sizes, and merges that already fit the configured file limit. -->
+    <query>
+        SELECT cityHash64(number) AS k, repeat(toString(number % 10), 64) AS payload
+        FROM numbers(8000000) ORDER BY k
+        SETTINGS max_block_size = 4096, max_bytes_before_external_sort = 1048576,
+            max_bytes_ratio_before_external_sort = 0, prefer_external_sort_block_bytes = 65536
+    </query>
+    <query>
+        SELECT count() FROM (SELECT DISTINCT cityHash64(number) AS k FROM numbers(16000000))
+        SETTINGS max_block_size = 4096, max_bytes_before_external_distinct = 1,
+            max_bytes_ratio_before_external_distinct = 0, allow_preliminary_distinct_abandoning = 1
+    </query>
+    <query>
+        SELECT count() FROM (SELECT DISTINCT cityHash64(number % 1000000) AS k FROM numbers(16000000))
+        SETTINGS max_block_size = 4096, max_bytes_before_external_distinct = 1,
+            max_bytes_ratio_before_external_distinct = 0, allow_preliminary_distinct_abandoning = 1
+    </query>
+
+    <!-- Sorting with fewer files than the fan-in limit needs no intermediate write. -->
+    <query>
+        SELECT cityHash64(number) AS k, repeat(toString(number % 10), 64) AS payload
+        FROM numbers(1000000) ORDER BY k
+        SETTINGS max_block_size = 4096, max_bytes_before_external_sort = 1048576,
+            max_bytes_ratio_before_external_sort = 0, prefer_external_sort_block_bytes = 65536
+    </query>
+
+    <!-- Unequal run sizes exercise selecting small files before rewriting larger ones. -->
+    <query>
+        SELECT cityHash64(number) AS k,
+            repeat(toString(number), if(number &lt; 262144, 128, 1)) AS payload
+        FROM numbers(524288) ORDER BY k, payload
+        SETTINGS max_block_size = 1024, max_bytes_before_external_sort = 262144,
+            max_bytes_ratio_before_external_sort = 0, prefer_external_sort_block_bytes = 65536
+    </query>
+
+    <!-- A single oversized run should stay out of the two-input merge needed to reach the cap. -->
+    <query>
+        SELECT cityHash64(number) AS k,
+            arrayStringConcat(arrayMap(i -> hex(reinterpretAsFixedString(cityHash64(number, i))),
+                range(if(number &lt; 4096, 64, 1)))) AS payload
+        FROM numbers(266240) ORDER BY k, payload
+        SETTINGS max_block_size = 4096, max_bytes_before_external_sort = 65536,
+            max_bytes_ratio_before_external_sort = 0
+    </query>
+
+    <!-- Sixty-four files fit the default fan-in limit even with an additional in-memory tail. -->
+    <query>
+        SELECT cityHash64(number) AS k FROM numbers(1048592) ORDER BY k
+        SETTINGS max_block_size = 16384, max_bytes_before_external_sort = 65536,
+            max_bytes_ratio_before_external_sort = 0
+    </query>
+    <query>
+        SELECT count() FROM
+        (SELECT DISTINCT if(number &lt; 1048576, number, 1048576 + number % 16) AS k
+         FROM numbers(1064960))
+        SETTINGS max_block_size = 16384, max_bytes_before_external_distinct = 65536,
+            max_bytes_ratio_before_external_distinct = 0, allow_preliminary_distinct_abandoning = 0,
+            optimize_distinct_in_order = 0
+    </query>
+
+    <!-- Large suppression files and compressible ordinary files favor merging the ordinary group first.
+         The explicit spill threshold produces more files than the default fan-in limit. -->
+    <query>
+        SELECT count()
+        FROM
+        (
+            SELECT DISTINCT if(number &lt; 131072,
+                arrayStringConcat(arrayMap(i -> reinterpretAsFixedString(cityHash64(number, i)), range(64))),
+                concat(repeat('x', 512), toString(number))) AS k
+            FROM numbers(16000000)
+        )
+        SETTINGS max_block_size = 4096, max_bytes_before_external_distinct = 134217728,
+            max_bytes_ratio_before_external_distinct = 0, allow_preliminary_distinct_abandoning = 1,
+            optimize_distinct_in_order = 0, max_untracked_memory = 0
+    </query>
+</test>

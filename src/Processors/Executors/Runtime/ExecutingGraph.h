@@ -119,7 +119,7 @@ public:
     explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
 
     /// Traverse graph the first time to update all the childless nodes.
-    void initializeExecution(Queue & queue, Queue & async_queue);
+    void initializeExecution(Queue & queue, Queue & async_queue, Processors & removed);
 
     enum class UpdateNodeStatus
     {
@@ -130,7 +130,8 @@ public:
     /// Update `initial` processor (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue);
+    /// Return removed processors to the caller for profiling and destruction outside the graph locks.
+    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, Processors & removed);
 
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);
