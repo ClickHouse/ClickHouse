@@ -35,6 +35,7 @@
 #include <base/range.h>
 #include <base/sort.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <roaring/roaring64map.hh>
 
 
 namespace DB
@@ -692,6 +693,32 @@ static UInt64 getNextMergeTreeSetIndexId()
     return counter.fetch_add(1, std::memory_order_relaxed);
 }
 
+namespace
+{
+
+/// `Roaring64Map` keeps one 32-bit bitmap per high-32-bit bucket, so a set whose values are spread
+/// over the UInt64 range degenerates into nearly one bitmap per element, and both building it and
+/// seeking in it lose badly to a binary search over the sorted set. Measured on 10M elements: dense
+/// values build in 38 ms and answer a range check in 45 ns against 245 ns for the binary search,
+/// while values spread over the whole range build in 788 ms and answer in 10.5 us. Keep it only for
+/// the shapes where it pays. `ordered_set` is sorted, so the ends bound the span and this is O(1).
+template <typename Container>
+bool isWorthBuildingRoaring(const Container & data)
+{
+    /// A small set costs almost nothing to build either way, and keeping it on the fast path is what
+    /// makes the cross-bucket behaviour of `Roaring64Map` reachable from a test.
+    static constexpr size_t max_size_always_worth = 65536;
+    if (data.size() <= max_size_always_worth)
+        return true;
+
+    /// Above that size the bitmap only pays for itself when the values are dense.
+    static constexpr UInt64 max_average_gap = 64;
+    const UInt64 span = static_cast<UInt64>(data.back()) - static_cast<UInt64>(data.front());
+    return span / data.size() < max_average_gap;
+}
+
+}
+
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size())
     , indexes_mapping(std::move(indexes_mapping_))
@@ -740,7 +767,53 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     /// thread-local storage could pin arbitrarily large buffers after the query ends.
     cache_ranges = std::all_of(ordered_set.begin(), ordered_set.end(),
         [](const ColumnPtr & column) { return column->valuesHaveFixedSize(); });
+
+    /// Build 64-bit Roaring Bitmap for single integer key column.
+    if (tuple_size == 1 && !ordered_set[0]->empty())
+    {
+        if (const auto * col_u64 = typeid_cast<const ColumnUInt64 *>(ordered_set[0].get()))
+        {
+            const auto & data = col_u64->getData();
+            if (isWorthBuildingRoaring(data))
+            {
+                roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
+                roaring_bitmap->addMany(data.size(), data.data());
+            }
+        }
+        else if (const auto * col_u32 = typeid_cast<const ColumnUInt32 *>(ordered_set[0].get()))
+        {
+            const auto & data = col_u32->getData();
+            if (isWorthBuildingRoaring(data))
+            {
+                roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
+                for (auto val : data)
+                    roaring_bitmap->add(static_cast<uint64_t>(val));
+            }
+        }
+        else if (const auto * col_u16 = typeid_cast<const ColumnUInt16 *>(ordered_set[0].get()))
+        {
+            const auto & data = col_u16->getData();
+            if (isWorthBuildingRoaring(data))
+            {
+                roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
+                for (auto val : data)
+                    roaring_bitmap->add(static_cast<uint64_t>(val));
+            }
+        }
+        else if (const auto * col_u8 = typeid_cast<const ColumnUInt8 *>(ordered_set[0].get()))
+        {
+            const auto & data = col_u8->getData();
+            if (isWorthBuildingRoaring(data))
+            {
+                roaring_bitmap = std::make_unique<roaring::Roaring64Map>();
+                for (auto val : data)
+                    roaring_bitmap->add(static_cast<uint64_t>(val));
+            }
+        }
+    }
 }
+
+MergeTreeSetIndex::~MergeTreeSetIndex() = default;
 
 MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuffer(FieldValueRanges & scratch) const
 {
@@ -839,113 +912,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         range.right_included = new_range->right_included;
     }
 
-    /// lhs < rhs return -1
-    /// lhs == rhs return 0
-    /// lhs > rhs return 1
-    auto compare = [](const IColumn & lhs, const FieldValue & rhs, size_t row)
-    {
-        if (rhs.isNegativeInfinity())
-            return +1;
-        if (rhs.isPositiveInfinity())
-            return lhs.isNullAt(row) ? 0 : -1; // +Inf == +Inf
-        return lhs.compareAt(row, 0, *rhs.column, 1);
-    };
-
-    /// Because ordered_set is sorted lexicographically, the elements we're looking for are
-    /// consecutive. Use binary search to find the range of indices.
-
-    /// The part about left_included/right_included is a little tricky. It was initially implemented
-    /// incorrectly:
-    ///   begin = lower_bound(..., left_point, tuple_less_unaware_of_includedness);
-    ///   if (!all(ranges[..].left_included) && equals(left_point, begin))
-    ///       begin += 1;
-    /// This breaks on the following example:
-    ///   key_ranges = [(0, +inf), (-inf, +inf)]  (the 0 is not included),
-    ///   ordered_set = [[0], [0]].
-    /// The incorrect implementation would output begin == 0 and conclude that the set element is
-    /// inside the range (it isn't). The `begin += 1` won't happen because (0, 0) != (0, -inf).
-
-    auto indices = collections::range(0, size());
-    size_t begin = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
-        {
-            /// Return true if set[row] is below the key range.
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                int cmp = compare(*ordered_set[i], ranges[i].left, row);
-
-                if (cmp > 0)
-                    return false;
-                /// Note: if some range has left_included == false then the left ends of all
-                /// subsequent ranges' don't matter. (Symmetrically for right.)
-                /// It's the only way to make sense of the notion of a range of tuples where the
-                /// included/excluded flags are given per element.
-                if (cmp < 0 || (cmp == 0 && !ranges[i].left_included))
-                    return true;
-            }
-            return false;
-        }) - indices.begin();
-    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
-        {
-            /// Return false if set[row] is above the key range.
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                int cmp = compare(*ordered_set[i], ranges[i].right, row);
-
-                if (cmp > 0 || (cmp == 0 && !ranges[i].right_included))
-                    return false;
-                if (cmp < 0)
-                    return true;
-            }
-            return true;
-        }) - indices.begin();
-
-    if (begin > end)
-    {
-        /// TODO: Remove the #ifndef and always throw after
-        ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
-        ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
-        ///        nonmonotonic functions, and we end up with left > right.)
-#ifndef NDEBUG
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid binary search result in MergeTreeSetIndex");
-#else
-        return {true, true};
-#endif
-    }
-
-    bool can_be_true = begin < end;
-
-    /// A special case of 1-element KeyRange. It's useful for partition pruning.
-    bool at_most_one_element_range = true;
-    for (size_t i = 0; i < tuple_size; ++i)
-    {
-        auto & r = ranges[i];
-        if (r.left.isNormal() && r.right.isNormal())
-        {
-            if (0 != r.left.column->compareAt(0, 0, *r.right.column, 1))
-            {
-                at_most_one_element_range = false;
-                break;
-            }
-        }
-        else if ((r.left.isPositiveInfinity() && r.right.isPositiveInfinity()) || (r.left.isNegativeInfinity() && r.right.isNegativeInfinity()))
-        {
-            /// Special value equality.
-        }
-        else
-        {
-            at_most_one_element_range = false;
-            break;
-        }
-    }
-    if (at_most_one_element_range && has_all_keys)
-    {
-        /// Here we know that there is at most one element in range.
-        /// The main difference with the normal case is that we can definitely say that
-        /// condition in this range is always TRUE (can_be_false = 0) or always FALSE (can_be_true = 0).
-        return {can_be_true, !can_be_true};
-    }
-
-    return {can_be_true, true};
+    return checkInFieldValueRanges(ranges);
 }
 
 BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point) const
@@ -975,6 +942,85 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         range.right_included = new_range->right_included;
     }
 
+    return checkInFieldValueRanges(ranges);
+}
+
+BoolMask MergeTreeSetIndex::checkInFieldValueRanges(const FieldValueRanges & ranges) const
+{
+    size_t tuple_size = indexes_mapping.size();
+
+    /// Fast path for single integer key column using 64-bit Roaring Bitmap.
+    if (tuple_size == 1 && roaring_bitmap)
+    {
+        const auto & r = ranges[0];
+        if (r.left.isPositiveInfinity() || r.right.isNegativeInfinity())
+            return {false, true};
+
+        auto extract_val = [](const IColumn * col) -> std::optional<UInt64>
+        {
+            if (const auto * u64 = typeid_cast<const ColumnUInt64 *>(col)) return u64->getElement(0);
+            if (const auto * u32 = typeid_cast<const ColumnUInt32 *>(col)) return u32->getElement(0);
+            if (const auto * u16 = typeid_cast<const ColumnUInt16 *>(col)) return u16->getElement(0);
+            if (const auto * u8  = typeid_cast<const ColumnUInt8 *>(col))  return u8->getElement(0);
+            return std::nullopt;
+        };
+
+        std::optional<UInt64> left_opt = r.left.isNormal() ? extract_val(r.left.column.get()) : std::make_optional<UInt64>(0);
+        std::optional<UInt64> right_opt = r.right.isNormal() ? extract_val(r.right.column.get()) : std::make_optional<UInt64>(std::numeric_limits<UInt64>::max());
+
+        if (left_opt && right_opt)
+        {
+            /// Inverted range is empty. Fall back conservatively if function chain present.
+            if (r.left.isNormal() && r.right.isNormal() && *left_opt > *right_opt)
+            {
+                if (!indexes_mapping[0].functions.empty())
+                    return {true, true};
+                return {false, true};
+            }
+
+            UInt64 left_val = *left_opt;
+            UInt64 right_val = *right_opt;
+
+            if (r.left.isNormal() && !r.left_included)
+            {
+                if (left_val == std::numeric_limits<UInt64>::max())
+                    return {false, true};
+                ++left_val;
+            }
+
+            if (r.right.isNormal() && !r.right_included)
+            {
+                if (right_val == 0)
+                    return {false, true};
+                --right_val;
+            }
+
+            if (left_val > right_val)
+            {
+                if (!indexes_mapping[0].functions.empty())
+                    return {true, true};
+                return {false, true};
+            }
+
+            /// Only whether the intersection is non-empty matters. `rank()` is linear in the
+            /// number of containers, so a rank pair costs far more than the binary search it
+            /// replaces; seeking to the first element >= left_val is logarithmic.
+            auto it = roaring_bitmap->begin();
+            const bool can_be_true = it.move_equalorlarger(left_val) && *it <= right_val;
+
+            bool at_most_one = false;
+            if (r.left.isNormal() && r.right.isNormal())
+                at_most_one = (left_val == right_val && r.left_included && r.right_included);
+            else if ((r.left.isPositiveInfinity() && r.right.isPositiveInfinity()) || (r.left.isNegativeInfinity() && r.right.isNegativeInfinity()))
+                at_most_one = true;
+
+            if (at_most_one && has_all_keys)
+                return {can_be_true, !can_be_true};
+
+            return {can_be_true, true};
+        }
+    }
+
     /// lhs < rhs return -1
     /// lhs == rhs return 0
     /// lhs > rhs return 1
@@ -1039,8 +1085,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
     {
         /// TODO: Remove the #ifndef and always throw after
         ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
-        ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
-        ///        nonmonotonic functions, and we end up with left > right.)
+        ///       (What happens here is: the applyMonotonicFunctionsChainToRange call in checkInRange
+        ///        applies nonmonotonic functions, and we end up with left > right.)
 #ifndef NDEBUG
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid binary search result in MergeTreeSetIndex");
 #else
@@ -1054,7 +1100,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
     bool at_most_one_element_range = true;
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        auto & r = ranges[i];
+        const auto & r = ranges[i];
         if (r.left.isNormal() && r.right.isNormal())
         {
             if (0 != r.left.column->compareAt(0, 0, *r.right.column, 1))

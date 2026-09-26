@@ -1,0 +1,81 @@
+--- Basic IN subset ---
+0
+20
+40
+60
+80
+--- Point lookup via IN ---
+42	63
+--- Narrow range in set ---
+3
+--- Single element NOT IN ---
+50
+--- Transformed key: intDiv(id, 10) IN (2, 4) ---
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+--- UInt32 key column ---
+0
+10
+20
+30
+40
+--- Transformed key: toWeek(dt) and toMonth(dt) IN (...) ---
+7
+2026-01-04	1
+2026-01-07	1
+2026-01-10	1
+2026-01-19	3
+2026-01-22	3
+20
+--- Transformed key: toDayOfMonth with timezone and Nullable ---
+4
+--- Transformed key: toDayOfMonth on Nullable(DateTime) whose timezone differs from the session ---
+2026-12-05 12:00:00
+--- Transformed key: custom-week functions on DateTime whose timezone differs from the session ---
+toDayOfWeek	2026-06-07 05:00:00
+toDayOfWeek	2026-06-07 20:00:00
+toDayOfWeek IN	2026-06-07 05:00:00
+toDayOfWeek IN	2026-06-07 20:00:00
+toStartOfWeek	2026-06-07 05:00:00
+toStartOfWeek	2026-06-07 20:00:00
+toStartOfWeek	2026-06-08 05:00:00
+toYearWeek	2026-06-06 20:00:00
+toLastDayOfWeek	2026-06-06 20:00:00
+--- Transformed key: date functions with constant mode or timezone arguments ---
+toDayOfWeek(ts, 0, tz) = 1	2026-06-07 20:00:00
+toDayOfWeek(ts, 0, tz) = 1	2026-11-30 13:00:00
+toDayOfWeek(ts, 0, tz) IN (1)	2026-06-07 20:00:00
+toDayOfWeek(ts, 0, tz) IN (1)	2026-11-30 13:00:00
+Condition: true
+toDayOfMonth(ts, tz) = 1	2026-11-30 21:00:00
+toDayOfMonth(ts, tz) IN (1)	2026-11-30 21:00:00
+toDayOfWeek(ts, 1) = 6	2026-06-07 20:00:00
+toDayOfWeek(ts, 1) IN (0)	2026-06-08 05:00:00
+--- UInt64 ids on both sides of the 32-bit bucket boundary ---
+5
+4294967296
+8589934592
+4294967290
+4294967300
+0
+--- Compound key: set column is not the leading key column ---
+Granules: 11/24
+80000
