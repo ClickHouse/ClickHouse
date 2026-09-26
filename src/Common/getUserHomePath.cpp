@@ -45,8 +45,8 @@ std::string getUserHomePath()
         return drive + dir;
 
     /// MSYS2, Git Bash and Cygwin export `HOME` as a POSIX path such as `/c/Users/alice`, which a
-    /// native process would resolve as `\c\Users\alice` on the current drive. Only a path with a
-    /// drive or a UNC share names a Win32 directory.
+    /// native process would resolve relative to the root of the current drive, as a directory `c`
+    /// there. Only a path with a drive or a UNC share names a Win32 directory.
     if (auto home = getPathEnvUTF8(L"HOME"); !home.empty() && pathFromString(home).has_root_name())
         return home;
 
