@@ -445,8 +445,8 @@ public:
     }
 };
 
-/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// Handles the read-only query, metadata, and capability endpoints of the Prometheus HTTP API
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/features).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -511,6 +511,12 @@ public:
                 /// The format_query endpoint only parses and reformats the given PromQL expression,
                 /// so it doesn't need the TimeSeries table.
                 formatQuery(getOutputStream(response), params->get("query", ""));
+                return;
+            }
+
+            if (uri_path.ends_with("/features"))
+            {
+                writeFeatures(getOutputStream(response));
                 return;
             }
 
@@ -660,6 +666,32 @@ private:
         writeChar('}', out);
     }
 
+    static void writeFeatures(WriteBuffer & out)
+    {
+        /// Prometheus treats omitted capability entries as unsupported. Function and operator entries
+        /// use the same availability semantics as Prometheus' feature registry: true means the construct
+        /// is exposed, even when some argument forms have documented implementation restrictions.
+        writeString(
+            R"({"status":"success","data":{)"
+            R"("api":{"label_values_match":true,"time_range_labels":true,"time_range_series":true},)"
+            R"("promql":{"at_modifier":true,"bool":true,"by":true,"group_left":true,"group_right":true,"ignoring":true,)"
+            R"("negative_offset":true,"offset":true,"on":true,"per_query_lookback_delta":true,"subqueries":true,"without":true},)"
+            R"("promql_functions":{"abs":true,"absent":true,"absent_over_time":true,"acos":true,"acosh":true,"asin":true,"asinh":true,"atan":true,)"
+            R"("atanh":true,"avg_over_time":true,"ceil":true,"changes":true,"clamp":true,"clamp_max":true,"clamp_min":true,"cos":true,)"
+            R"("cosh":true,"count_over_time":true,"day_of_month":true,"day_of_week":true,"day_of_year":true,"days_in_month":true,"deg":true,"delta":true,)"
+            R"("deriv":true,"exp":true,"floor":true,"histogram_quantile":true,"hour":true,"idelta":true,"increase":true,"irate":true,)"
+            R"("label_join":true,"label_replace":true,"last_over_time":true,"ln":true,"log10":true,"log2":true,"max_over_time":true,"min_over_time":true,)"
+            R"("minute":true,"month":true,"pi":true,"predict_linear":true,"present_over_time":true,"quantile_over_time":true,"rad":true,"rate":true,)"
+            R"("resets":true,"round":true,"scalar":true,"sgn":true,"sin":true,"sinh":true,"sqrt":true,"sum_over_time":true,)"
+            R"("tan":true,"tanh":true,"time":true,"ts_of_max_over_time":true,"ts_of_min_over_time":true,"vector":true,"year":true},)"
+            R"("promql_operators":{"!=":true,"!~":true,"%":true,"*":true,"+":true,"-":true,"/":true,"<":true,)"
+            R"("<=":true,"==":true,"=~":true,">":true,">=":true,"@":true,"^":true,"and":true,)"
+            R"("atan2":true,"avg":true,"bottomk":true,"count":true,"count_values":true,"group":true,"limitk":true,"max":true,)"
+            R"("min":true,"or":true,"quantile":true,"stddev":true,"stdvar":true,"sum":true,"topk":true,"unless":true})"
+            R"(}})",
+            out);
+    }
+
     /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
     Int64 getMetadataLimitParam(const String & name) const
     {
@@ -753,7 +785,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata, features)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }
