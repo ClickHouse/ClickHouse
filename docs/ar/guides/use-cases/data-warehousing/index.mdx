@@ -2,7 +2,7 @@
 description: 'استخدم ClickHouse للاستعلام عن البيانات المخزنة بتنسيقات الجداول المفتوحة، مثل Apache Iceberg وDelta Lake وApache Hudi وApache Paimon، وتسريع تحليلها.'
 slug: /use-cases/data-lake
 title: 'بحيرة البيانات'
-keywords: ['بحيرة البيانات', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 'glue', 'unity', 'rest', 'OneLake', 'BigLake']
+keywords: ['بحيرة البيانات', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 'glue', 'unity', 'rest', 'OneLake', 'BigLake', 'SeaweedFS']
 doc_type: 'landing-page'
 ---
 
@@ -44,7 +44,7 @@ doc_type: 'landing-page'
   ### إتاحة الكتالوجات كقواعد بيانات
 </div>
 
-باستخدام محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، يمكن للمستخدمين ربط ClickHouse بكتالوج خارجي وإتاحته كقاعدة بيانات. وتظهر الجداول المسجّلة في الكتالوج كجداول داخل ClickHouse، مما يتيح استخدام كامل إمكانات ClickHouse SQL والدوال التحليلية بشكل شفاف. وهذا يعني أنه يمكن للمستخدمين إجراء الاستعلامات والربط والتجميع عبر الجداول التي يديرها الكتالوج كما لو كانت جداول ClickHouse أصلية، مع الاستفادة من تحسين الاستعلامات في ClickHouse، والتنفيذ المتوازي، وإمكانات القراءة.
+باستخدام محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، يمكن للمستخدمين ربط ClickHouse بكتالوج خارجي وإتاحته كقاعدة بيانات. وتظهر الجداول المسجّلة في الكتالوج كجداول داخل ClickHouse، مما يتيح استخدام كامل إمكانات ClickHouse SQL والوظائف التحليلية بشكل شفاف. وهذا يعني أنه يمكن للمستخدمين إجراء الاستعلامات والربط والتجميع عبر الجداول التي يديرها الكتالوج كما لو كانت جداول ClickHouse أصلية، مع الاستفادة من تحسين الاستعلامات في ClickHouse، والتنفيذ المتوازي، وإمكانات القراءة.
 
 تشمل الكتالوجات المدعومة ما يلي:
 
@@ -57,6 +57,7 @@ doc_type: 'landing-page'
 | Lakekeeper               | [دليل Lakekeeper Catalog](/ar/guides/use-cases/data-warehousing/lakekeeper-catalog) |
 | Project Nessie           | [دليل Nessie Catalog](/ar/guides/use-cases/data-warehousing/nessie-catalog)         |
 | Microsoft OneLake        | [دليل OneLake Catalog](/ar/guides/use-cases/data-warehousing/onelake-catalog)       |
+| SeaweedFS                | [دليل SeaweedFS Catalog](/ar/guides/use-cases/data-warehousing/seaweedfs-catalog)   |
 
 راجع دليل البدء الخاص بـ [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
 

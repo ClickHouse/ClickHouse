@@ -8,6 +8,8 @@ import sys
 class UserPrompt:
     """Provides interactive prompts for user input in terminal."""
 
+    AUTO_CONFIRM = False
+
     @staticmethod
     def _safe_input(prompt):
         try:
@@ -89,6 +91,9 @@ class UserPrompt:
         Returns:
             True for yes, False for no, None if cancelled.
         """
+        if UserPrompt.AUTO_CONFIRM:
+            print(f"\n{question} (y/n): y")
+            return True
         while True:
             choice = UserPrompt._safe_input(f"\n{question} (y/n): ")
             if choice.lower() in ("y", "yes"):

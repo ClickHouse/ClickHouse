@@ -18,10 +18,11 @@
 #include <Parsers/stripQuerySettings.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Common/re2.h>
+#include <span>
 #include <string_view>
+#include <unordered_set>
 #include <gtest/gtest.h>
 #include <Parsers/tests/gtest_common.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -145,6 +146,49 @@ TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
     }
 }
 
+/// `IAST`'s copy constructor copies `children` as-is, so a `clone()` built on `make_intrusive<T>(*this)`
+/// has to clear them before re-adding: otherwise the clone keeps pointing at the original's nodes and
+/// mutating one is visible through the other. The AST fuzzer reports that as
+/// `IAST::clone() is broken for some AST node`. See `ASTDropQuery::clone`.
+TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
+{
+    const std::vector<String> queries = {
+        "DROP TABLE db.t",
+        "DROP TABLE t1, t2, t3",
+        "DROP TABLE IF EXISTS db.t SYNC FORMAT JSONEachRow",
+        "TRUNCATE TABLE db.t",
+        "DETACH TABLE db.t PERMANENTLY",
+        "UNDROP TABLE db.t",
+        "UNDROP TABLE db.t FORMAT JSONEachRow",
+        "DESCRIBE FILESYSTEM CACHE 'cache'",
+        "DESCRIBE FILESYSTEM CACHE 'cache' FORMAT JSONEachRow",
+    };
+
+    const auto collect = [](const IAST & ast, auto & self) -> std::unordered_set<const IAST *>
+    {
+        std::unordered_set<const IAST *> nodes{&ast};
+        for (const auto & child : ast.children)
+            nodes.merge(self(*child, self));
+        return nodes;
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        ASTPtr cloned = ast->clone();
+        const auto original_nodes = collect(*ast, collect);
+        for (const auto * node : collect(*cloned, collect))
+            EXPECT_FALSE(original_nodes.contains(node)) << "clone shares a node with the original: " << query;
+
+        /// The clone must also reproduce the child order a fresh parse produces, so that a query
+        /// and its clone hash the same.
+        EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
+    }
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
@@ -211,6 +255,281 @@ TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
     EXPECT_EQ(masked.find("AKIA_PLAIN"), String::npos);
     EXPECT_EQ(masked.find("AKIA_STORAGE"), String::npos);
     EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
+{
+    /// The `NATS` engine takes its arguments as overrides of a named collection, so the credentials can
+    /// appear as engine arguments and not only in the `SETTINGS` clause. Every credential source must be
+    /// hidden in `SHOW CREATE TABLE` and in the query log, otherwise secrets leak.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, nats_password = 'plain_password', "
+        "nats_token = 'plain_token', nats_credential_file = '/plain/credential/file', "
+        "nats_credentials = 'plain_user_jwt_and_seed')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    /// formatForLogging always hides secrets.
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_token"), String::npos);
+    EXPECT_EQ(masked.find("/plain/credential/file"), String::npos);
+    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+    /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
+    EXPECT_NE(masked.find("nats1"), String::npos);
+    EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+
+    /// `NATS` accepts the same credential source in the `SETTINGS` clause. This is formatted
+    /// through `ASTSetQuery`, rather than `FunctionSecretArgumentsFinder`, and must be hidden too.
+    const String settings_query =
+        "CREATE TABLE test_nats_settings (key UInt64) ENGINE = NATS "
+        "SETTINGS nats_credentials = 'plain_settings_user_jwt_and_seed'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_user_jwt_and_seed"), String::npos);
+    EXPECT_NE(settings_masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
+{
+    /// A `nats_url` override carrying an '@' is hidden whole, the same way the `SETTINGS` clause form
+    /// is masked: libnats reads a credential that no URI masker can bound.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) "
+        "ENGINE = NATS(nats1, nats_url = 'nats://plain_user:plain_password@example.com:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_user"), String::npos);
+    EXPECT_NE(masked.find("nats_url = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineServerListPassword)
+{
+    /// A `nats_server_list` override can carry URI credentials in every list entry. Hide the list
+    /// whole, rather than risk leaking a password from an entry while preserving the host names.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, "
+        "nats_server_list = 'nats://plain_user:plain_password@example.com:4222,nats://plain_user2:plain_password2@example.org:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_NE(masked.find("nats_server_list = '[HIDDEN]'"), String::npos);
+
+    /// The `SETTINGS` clause follows the same fail-closed masking rule.
+    const String settings_query =
+        "CREATE TABLE test_nats_settings (key UInt64) ENGINE = NATS SETTINGS "
+        "nats_server_list = 'nats://plain_user:plain_settings_password@example.com:4222'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
+    EXPECT_NE(settings_masked.find("nats_server_list = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineNonLiteralArguments)
+{
+    /// A key or a `nats_url` value we cannot read as a plain literal is hidden whole (fail closed):
+    /// the key can name a secret setting, and the url pieces can embed the credentials.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, "
+        "concat('nats_', 'credentials') = 'plain_user_jwt_and_seed', "
+        "nats_url = concat('nats://plain_user:plain_password@', 'example.com:4222'))";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+    EXPECT_NE(masked.find("nats1"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEnginePositionalArguments)
+{
+    /// The engine accepts no positional arguments except the collection name in the first position,
+    /// but it rejects them only after the query has been formatted for logging. A malformed
+    /// positional argument can carry a secret, so it is hidden whole (fail closed).
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, '/plain/credential/file', "
+        "'nats://plain_user:plain_password@example.com:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("/plain/credential/file"), String::npos);
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    /// The collection name is the one legitimate positional argument and stays visible.
+    EXPECT_NE(masked.find("nats1"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskXDBCTableEnginePositionalAfterCollection)
+{
+    /// After a collection name every XDBC argument must be a named override, but the statement is
+    /// formatted for logging before validation rejects a positional one, and that positional can be
+    /// the connection string itself. The engine spelling takes more positional arguments than the
+    /// table function does, so it is asserted separately.
+    const String query =
+        "CREATE TABLE test_jdbc (key UInt64) "
+        "ENGINE = JDBC(jdbc1, 'DSN=mydb;Uid=user;Pwd=plain_password', 'mydb', 'mytable')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("Uid=user"), String::npos);
+    /// The collection name is the one legitimate positional argument and stays visible.
+    EXPECT_NE(masked.find("jdbc1"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+
+    /// A named override of the same connection string keeps its key visible, as before.
+    const String named_query =
+        "CREATE TABLE test_jdbc (key UInt64) "
+        "ENGINE = JDBC(jdbc1, datasource = 'DSN=mydb;Uid=user;Pwd=plain_named_password', "
+        "external_database = 'mydb', external_table = 'mytable')";
+
+    DB::ASTPtr named_ast = DB::parseQuery(parser, named_query, 0, 0, 0);
+    const String named_masked = named_ast->formatForLogging();
+
+    EXPECT_EQ(named_masked.find("plain_named_password"), String::npos);
+    EXPECT_NE(named_masked.find("datasource = '[HIDDEN]'"), String::npos);
+    /// The non-secret named arguments stay visible: the positional scan must not widen to them.
+    EXPECT_NE(named_masked.find("external_table = 'mytable'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskXDBCNamedArgumentsWithoutCollection)
+{
+    /// A named argument at index 0 is not a collection name, so this call is not the positional form:
+    /// the connection string can be under either alias at any index, and the statement is formatted
+    /// for logging before validation rejects it.
+    const String query =
+        "CREATE TABLE test_jdbc (key UInt64) ENGINE = JDBC(external_database = 'mydb', "
+        "datasource = 'DSN=mydb;Uid=user;Pwd=plain_password')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("Uid=user"), String::npos);
+    EXPECT_NE(masked.find("datasource = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskRabbitMQTableEngineCredentials)
+{
+    /// `RabbitMQ` also takes its settings as overrides of a named collection, so the same credentials
+    /// reach `SHOW CREATE TABLE` through the engine arguments and through the `SETTINGS` clause.
+    const String query =
+        "CREATE TABLE test_rabbitmq (key UInt64) ENGINE = RabbitMQ(rabbitmq1, "
+        "rabbitmq_password = 'plain_password', "
+        "rabbitmq_address = 'amqp://plain_user:plain_address_password@example.com:5672/vhost')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_address_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_user"), String::npos);
+    /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
+    EXPECT_NE(masked.find("rabbitmq1"), String::npos);
+    EXPECT_NE(masked.find("rabbitmq_password = '[HIDDEN]'"), String::npos);
+    EXPECT_NE(masked.find("rabbitmq_address = '[HIDDEN]'"), String::npos);
+
+    /// An address with no '@' carries no credential and stays fully visible.
+    const String control_query =
+        "CREATE TABLE test_rabbitmq (key UInt64) "
+        "ENGINE = RabbitMQ(rabbitmq1, rabbitmq_address = 'amqp://example.com:5672/vhost')";
+
+    DB::ASTPtr control_ast = DB::parseQuery(parser, control_query, 0, 0, 0);
+    EXPECT_NE(control_ast->formatForLogging().find("amqp://example.com:5672/vhost"), String::npos);
+
+    /// The `SETTINGS` clause form is masked by `RabbitMQ::SETTINGS_TO_HIDE` and must agree.
+    const String settings_query =
+        "CREATE TABLE test_rabbitmq_settings (key UInt64) ENGINE = RabbitMQ "
+        "SETTINGS rabbitmq_password = 'plain_settings_password'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
+    EXPECT_NE(settings_masked.find("rabbitmq_password = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskKafkaTableEngineCredentials)
+{
+    /// `Kafka` reads named overrides of a collection too, so `kafka_sasl_password` needs masking in the
+    /// engine arguments and not only in the `SETTINGS` clause.
+    const String query =
+        "CREATE TABLE test_kafka (key UInt64) ENGINE = Kafka(kafka1, kafka_sasl_password = 'plain_password')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_NE(masked.find("kafka1"), String::npos);
+    EXPECT_NE(masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
+
+    /// Unlike `NATS` and `RabbitMQ`, `Kafka` accepts a legacy positional form whose arguments are all
+    /// non-secret, so a positional argument must stay visible rather than fail closed.
+    const String positional_query =
+        "CREATE TABLE test_kafka (key UInt64) "
+        "ENGINE = Kafka('broker:9092', 'topic', 'group', 'JSONEachRow')";
+
+    DB::ASTPtr positional_ast = DB::parseQuery(parser, positional_query, 0, 0, 0);
+    const String positional_masked = positional_ast->formatForLogging();
+
+    EXPECT_NE(positional_masked.find("broker:9092"), String::npos);
+    EXPECT_NE(positional_masked.find("group"), String::npos);
+    EXPECT_EQ(positional_masked.find("[HIDDEN]"), String::npos);
+
+    /// The legacy positional form makes the collection name optional, so a named argument can be the
+    /// first one, and the statement is formatted for logging before it is rejected.
+    const String first_arg_query =
+        "CREATE TABLE test_kafka (key UInt64) "
+        "ENGINE = Kafka(kafka_sasl_password = 'plain_first_password', 'clickhouse')";
+
+    DB::ASTPtr first_arg_ast = DB::parseQuery(parser, first_arg_query, 0, 0, 0);
+    const String first_arg_masked = first_arg_ast->formatForLogging();
+
+    EXPECT_EQ(first_arg_masked.find("plain_first_password"), String::npos);
+    EXPECT_NE(first_arg_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
+    /// The positional argument beside it is not a secret and stays visible.
+    EXPECT_NE(first_arg_masked.find("'clickhouse'"), String::npos);
+
+    /// The `SETTINGS` clause form is masked by `Kafka::SETTINGS_TO_HIDE` and must agree.
+    const String settings_query =
+        "CREATE TABLE test_kafka_settings (key UInt64) ENGINE = Kafka "
+        "SETTINGS kafka_sasl_password = 'plain_settings_password'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
+    EXPECT_NE(settings_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
 }
 
 TEST_P(ParserTest, parseQuery)
@@ -533,6 +852,120 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' IDENTIFIED WITH plaintext_password BY 'def123'",
             "throws Only one identified with is permitted"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077-01-01' GRANTS (SELECT(id) ON db.tbl, INSERT ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077\-01\-01' GRANTS \(SELECT\(id\) ON db\.tbl, INSERT ON \*\.\*\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.*), plaintext_password BY 'def123'",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.\*\), plaintext_password BY 'def123')"
+        },
+        {
+            "ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.tbl)",
+            R"(ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 NOT IDENTIFIED GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH no_password GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS ()",
+            "throws Syntax error"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS SELECT ON db.table",
+            "throws Syntax error"
+        },
+        {
+            /// An explicit no-privileges clause is preserved (it makes a deny-all token) and does not
+            /// collapse to an unparseable `GRANTS ()`.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (USAGE ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(USAGE ON \*\.\*\))"
+        },
+        {
+            "CREATE USER user1 VALID UNTIL '2025-01-01'",
+            "CREATE USER user1 VALID UNTIL '2025-01-01'"
+        },
+        {
+            /// The `GRANTS` clause of an authentication method is parsed after its deadline clause, and the
+            /// `VALID FOR` interval is parsed as a general expression - which must not swallow the `GRANTS`
+            /// keyword and its parenthesized list as a function call.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR INTERVAL 1 DAY GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR toIntervalDay\(1\) GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            /// The expected output is matched as a regular expression, so the parentheses and the
+            /// plus sign of the interval functions are escaped below.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH",
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR",
+            "ALTER USER user1 VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// The global (user-level) clause must be formatted before the IDENTIFIED list: the parser
+            /// treats VALID UNTIL/VALID FOR as global only while no authentication method has been parsed
+            /// yet, so a clause printed after the list would re-parse as belonging to the last method.
+            /// The round-trip matters for the query text sent to the replicas of an ON CLUSTER DDL query.
+            "CREATE USER user1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'",
+            "CREATE USER user1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'"
+        },
+        {
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123'"
+        },
+        {
+            "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'",
+            "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'"
+        },
+        {
+            /// `IN` is a normal operator in expression parsing, so a trailing access-storage clause
+            /// after `VALID FOR` would be greedily consumed as part of the interval expression;
+            /// the parser must instead hand it back to the access-storage clause of the query.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN some_storage",
+            "CREATE USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH IN some_storage",
+            "CREATE USER user1 IN some_storage IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR IN some_storage",
+            "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// An access storage name can also be written as a string literal.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN 'some_storage'",
+            "CREATE USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH IN 'some_storage'",
+            "CREATE USER user1 IN some_storage IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR IN 'some_storage'",
+            "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// A compound identifier cannot be an access storage name, so it stays part of the
+            /// interval expression (and is rejected by the interval type check at execution time).
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN db.tbl",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(db.tbl\\)"
+        },
+        {
+            /// The same holds for a literal that is not a string: it cannot name an access storage.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN 123",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(123\\)"
         }
 })));
 
@@ -547,6 +980,16 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         {
             "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF'",  //for users created in older releases that sha256_password has no salt
             "^$"
+        },
+        {
+            /// `VALID FOR` is a shorthand resolved at query execution time; it must never appear in the
+            /// on-disk (attach) form, so `deserializeAccessEntity` should reject a hand-written definition.
+            "ATTACH USER user1 VALID FOR INTERVAL 1 DAY",
+            "throws VALID FOR is not allowed in ATTACH USER queries"
+        },
+        {
+            "ATTACH USER user1 IDENTIFIED WITH plaintext_password BY 'x' VALID FOR INTERVAL 1 DAY",
+            "throws VALID FOR is not allowed in ATTACH USER queries"
         }
 })));
 
@@ -1111,5 +1554,87 @@ TEST(RemoveSettingsFromQuery, StripsBlockFormingOverrides)
         const String formatted = ast->formatWithSecretsOneLine();
         EXPECT_NE(String::npos, formatted.find("max_threads")) << "dropped a non-safety setting: " << formatted;
         EXPECT_EQ(String::npos, formatted.find("min_insert_block_size_rows")) << "kept a block-forming setting: " << formatted;
+    }
+}
+
+/// `Bugfix validation (unit tests)` compiles the merge-base sources with only this PR's test files
+/// overlaid, so the test below must compile without the fix (which introduces
+/// `removeSettingsFromQueryTopLevel`). Resolve the function through ADL when it exists; without the fix,
+/// fall back to the whole-AST `removeSettingsFromQuery`, which also strips the timeouts the user wrote
+/// inside nested subqueries and thereby fails the expectations below - demonstrating the regression.
+template <typename Ast>
+auto stripTopLevelTimeoutCarriers(const Ast & ast, std::span<const std::string_view> names, int)
+    -> decltype(removeSettingsFromQueryTopLevel(ast, names))
+{
+    return removeSettingsFromQueryTopLevel(ast, names);
+}
+
+template <typename Ast>
+void stripTopLevelTimeoutCarriers(const Ast & ast, std::span<const std::string_view> names, Int64)
+{
+    removeSettingsFromQuery(ast, names);
+}
+
+/// `removeSettingsFromQueryTopLevel` strips only the top-level SETTINGS carriers of the query itself
+/// and must not descend into subqueries or table expressions. Parallel-replica INSERT SELECT uses it to
+/// drop the outer `max_execution_time` / `timeout_overflow_mode` (which would override the leaf values
+/// shipped with the context) while preserving a user-authored timeout inside a nested subquery - the
+/// documented leaf-node pattern for `max_execution_time_leaf`.
+TEST(RemoveSettingsFromQuery, TopLevelVariantSparesNestedSubqueries)
+{
+    static constexpr std::string_view leaf_timeout_settings[] = {"max_execution_time", "timeout_overflow_mode"};
+
+    /// {query, expected number of surviving `max_execution_time` occurrences (all in nested positions)}.
+    const std::vector<std::pair<String, size_t>> queries = {
+        /// Top-level SELECT clause is stripped (and pruned when it becomes empty).
+        {"SELECT sum(number) FROM numbers(100) SETTINGS max_execution_time = 100", 0},
+        /// Repeated occurrences are all stripped, not just the first.
+        {"SELECT 1 SETTINGS max_execution_time = 100, max_execution_time = 100, timeout_overflow_mode = 'break'", 0},
+        /// Both the INSERT clause and the top-level SELECT clause are stripped.
+        {"INSERT INTO t SETTINGS max_execution_time = 100 SELECT number FROM numbers(100) SETTINGS max_execution_time = 100", 0},
+        /// Every first-order SELECT of a UNION tree is stripped.
+        {"SELECT 1 SETTINGS max_execution_time = 100 UNION ALL SELECT 2 SETTINGS max_execution_time = 100", 0},
+        /// A nested subquery keeps its user-authored timeout; only the top-level clause is stripped.
+        {"SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_execution_time = 1) SETTINGS max_execution_time = 100", 1},
+        /// The same holds under an INSERT SELECT (the parallel-replica shape this variant exists for).
+        {"INSERT INTO t SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_execution_time = 1) "
+         "SETTINGS max_execution_time = 100, timeout_overflow_mode = 'break'", 1},
+        /// A subquery timeout survives even with no top-level clause at all.
+        {"INSERT INTO t SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_execution_time = 1)", 1},
+    };
+
+    for (const auto & [query, expected_nested_survivors] : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        stripTopLevelTimeoutCarriers(ast, leaf_timeout_settings, 0);
+
+        EXPECT_EQ(expected_nested_survivors, countSettingOccurrences(ast, "max_execution_time")) << "query: " << query;
+        EXPECT_EQ(0u, countSettingOccurrences(ast, "timeout_overflow_mode")) << "query: " << query;
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "empty SETTINGS left for: " << query;
+
+        /// The serialized query must re-parse (no bare `SETTINGS` keyword after pruning).
+        const String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        EXPECT_NE(nullptr, reparsed) << "did not re-parse: " << formatted;
+    }
+
+    /// Other settings in a stripped top-level clause survive, and the clause is kept.
+    {
+        const String query = "INSERT INTO t SELECT 1 SETTINGS max_execution_time = 100, max_block_size = 1";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        stripTopLevelTimeoutCarriers(ast, leaf_timeout_settings, 0);
+
+        EXPECT_EQ(0u, countSettingOccurrences(ast, "max_execution_time")) << "query: " << query;
+        /// ParserInsertQuery parks the trailing SETTINGS on both the INSERT clause and the SELECT,
+        /// so the unrelated setting survives in two carriers (and the timeout is stripped from both).
+        EXPECT_EQ(2u, countSettingOccurrences(ast, "max_block_size")) << "dropped an unrelated setting: " << query;
+        EXPECT_FALSE(hasEmptySettingsNode(ast)) << "query: " << query;
     }
 }

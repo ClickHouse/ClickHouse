@@ -50,10 +50,30 @@ bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserD
     return true;
 }
 
+bool RestoreCoordinationLocal::acquireReplicatedWorkloadEntities(const String &)
+{
+    return true;
+}
+
 bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)
 {
     std::lock_guard lock{mutex};
     return acquired_data_in_keeper_map_tables.emplace(root_zk_path).second;
+}
+
+void RestoreCoordinationLocal::addRocksDBTable(const String & rocksdb_dir, const String & election_id)
+{
+    std::lock_guard lock{mutex};
+    auto [it, inserted] = rocksdb_data_owner.emplace(rocksdb_dir, election_id);
+    if (!inserted && election_id > it->second)
+        it->second = election_id;
+}
+
+String RestoreCoordinationLocal::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    std::lock_guard lock{mutex};
+    auto it = rocksdb_data_owner.find(rocksdb_dir);
+    return it != rocksdb_data_owner.end() ? it->second : String{};
 }
 
 void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)
@@ -77,7 +97,7 @@ void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_quer
             return;
     }
 
-    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
+    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* for_restore= */ true};
     new_uuids.copyToQuery(create_query);
 
     {

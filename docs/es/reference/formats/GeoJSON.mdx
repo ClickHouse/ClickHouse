@@ -26,7 +26,7 @@ Los datos [GeoJSON](https://geojson.org/) se intercambian en un único documento
   ## Lectura de datos
 </div>
 
-Leer una `FeatureCollection` produce una fila por entidad con el siguiente esquema fijo:
+Leer una `FeatureCollection` produce una fila por característica con el siguiente esquema fijo:
 
 | Columna      | Tipo               | Descripción                                                                                                                                                                                          |
 | ------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -34,7 +34,7 @@ Leer una `FeatureCollection` produce una fila por entidad con el siguiente esque
 | `geometry`   | `Geometry`         | La geometría de la entidad, almacenada como un tipo variante `Geometry`.                                                                                                                             |
 | `properties` | `Nullable(JSON)`   | El objeto `properties` de la entidad, almacenado como una columna `JSON` semiestructurada. Un valor explícito de `"properties": null`` se conserva como `NULL&#96;.                                  |
 
-Cada geometría se almacena en el tipo `Geometry` de ClickHouse (un `Variant`). Los tipos de geometría GeoJSON admitidos son `Point`, `LineString`, `MultiLineString`, `Polygon` y `MultiPolygon`. Los otros dos tipos de geometría GeoJSON, `GeometryCollection` y `MultiPoint`, no pueden representarse con el tipo `Geometry`; leer uno en la columna `geometry` genera una excepción de forma predeterminada, aunque esto puede cambiarse para insertar `NULL` en su lugar; consulta [Manejo de tipos de geometría no admitidos](#unsupported-geometry) más abajo. De forma predeterminada, la columna `geometry` es `NULL` solo cuando la geometría de una entidad es un `null` JSON explícito; con `input_format_geojson_unsupported_geometry_handling = 'null'` también es `NULL` para un tipo de geometría no admitido.
+Cada geometría se almacena en el tipo `Geometry` de ClickHouse (un `Variant`). Los tipos de geometría GeoJSON admitidos son `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon` y `MultiPolygon`. El tipo de geometría GeoJSON restante, `GeometryCollection`, no puede representarse con el tipo `Geometry`; leer uno en la columna `geometry` genera una excepción de forma predeterminada, lo que puede cambiarse para insertar `NULL` en su lugar — consulte [Manejo de tipos de geometría no admitidos](#unsupported-geometry) más abajo. De forma predeterminada, la columna `geometry` es `NULL` únicamente cuando la geometría de una entidad es un `null` JSON explícito; con `input_format_geojson_unsupported_geometry_handling = 'null'` también es `NULL` para un tipo de geometría no admitido.
 
 Se valida la estructura del documento: el `type` de nivel superior debe ser `FeatureCollection` y cada elemento de `features` debe tener `type` `Feature`. De forma predeterminada, las coordenadas deben cumplir las invariantes de forma de GeoJSON: un `LineString` (y cada línea de un `MultiLineString`) debe tener al menos dos puntos, y un anillo de `Polygon` (y cada anillo de un `MultiPolygon`) debe estar cerrado y tener al menos cuatro puntos (consulta [Validación de geometrías](#geometry-validation)). Los documentos malformados se rechazan en lugar de cargarse silenciosamente.
 
@@ -91,7 +91,7 @@ FROM file('london.geojson', GeoJSON);
 └────┴─────────────────┴────────────┘
 ```
 
-La extensión de archivo `.geojson` se detecta automáticamente, por lo que puede omitirse el argumento de formato:
+La extensión de archivo `.geojson` se detecta automáticamente, por lo que el argumento de formato puede omitirse:
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
@@ -213,7 +213,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
   ### Manejo de tipos de geometría no admitidos
 </div>
 
-Algunos tipos de geometría GeoJSON válidos — como `GeometryCollection` y `MultiPoint` — no pueden representarse con el tipo `Geometry` de ClickHouse. Puede controlar qué ocurre cuando debe almacenarse una geometría de este tipo en la columna `geometry` mediante la configuración `input_format_geojson_unsupported_geometry_handling`. Los valores posibles son:
+Algunos tipos de geometría GeoJSON válidos — como `GeometryCollection` — no pueden representarse con el tipo `Geometry` de ClickHouse. Puede controlar qué ocurre cuando debe almacenarse una geometría de este tipo en la columna `geometry` mediante la configuración `input_format_geojson_unsupported_geometry_handling`. Los valores posibles son:
 
 * `'throw'` — lanzar una excepción (predeterminado)
 * `'null'` — insertar un valor `NULL` en la columna `geometry` y continuar el análisis
@@ -230,7 +230,7 @@ La lectura refleja solo lo que encaja en el esquema fijo, por lo que no se conse
 * La tercera coordenada (elevación) de una posición, así como cualquier coordenada posterior, se descartan; las posiciones pasan a ser `[longitud, latitud]`.
 * `bbox` y los miembros ajenos (como un `name` o `crs` de nivel superior, o miembros adicionales dentro de una `Feature`) se ignoran.
 * Un `id` numérico se almacena como texto, por lo que se pierde la distinción entre cadena y número; un `id` ausente o `null` pasa a ser `NULL`.
-* `GeometryCollection` y `MultiPoint` no pueden representarse; consulta [Tratamiento de tipos de geometría no admitidos](#unsupported-geometry).
+* `GeometryCollection` no puede representarse; consulta [manejo de tipos de geometría no admitidos](#unsupported-geometry).
 
 <div id="writing-data">
   ## Escritura de datos
@@ -252,6 +252,7 @@ La columna de tipo geometría puede ser la variante `Geometry` o un tipo geo esp
 | Tipo de ClickHouse | `"type"` de GeoJSON                      |
 | ------------------ | ---------------------------------------- |
 | `Point`            | `Point`                                  |
+| `MultiPoint`       | `MultiPoint`                             |
 | `LineString`       | `LineString`                             |
 | `MultiLineString`  | `MultiLineString`                        |
 | `Polygon`          | `Polygon`                                |

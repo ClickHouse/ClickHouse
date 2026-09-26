@@ -14,11 +14,13 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
-#include <boost/algorithm/string/join.hpp>
 #include <Common/quoteString.h>
 #include <Core/PostgreSQL/Utils.h>
 #include <base/FnTraits.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -100,34 +102,7 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
     else if (type == "bigserial")
         res = std::make_shared<DataTypeUInt64>();
     else if (type.starts_with("timestamp"))
-    {
-        /// PostgreSQL renders an explicit fractional-second precision as `timestamp(p) ...`
-        /// (`format_type` decodes it from the type modifier). Honor it, so that a self-connected
-        /// `DateTime` / `DateTime64(p)` column round-trips with its scale intact. A bare `timestamp`
-        /// (no precision specified) keeps the historical `DateTime64(6)` mapping, which covers
-        /// PostgreSQL's default microsecond precision.
-        ///
-        /// Every precision, including 0, maps to `DateTime64`: `timestamp` is a native PostgreSQL
-        /// type whose range is much wider than that of the 32-bit `DateTime`, so mapping
-        /// `timestamp(0)` to `DateTime` would narrow it for real PostgreSQL sources - a value before
-        /// 1970 or after 2106 would be clamped or truncated on read. `DateTime64(0)` has the same
-        /// second resolution without that loss; a self-connected `DateTime` column therefore comes
-        /// back as `DateTime64(0)` - a wider type holding exactly the same values.
-        UInt32 precision = 6;
-        auto open_bracket_pos = type.find('(');
-        if (open_bracket_pos != std::string::npos)
-        {
-            auto close_bracket_pos = type.find(')', open_bracket_pos);
-            if (close_bracket_pos != std::string::npos)
-            {
-                std::string precision_str = type.substr(open_bracket_pos + 1, close_bracket_pos - open_bracket_pos - 1);
-                boost::trim(precision_str);
-                precision = parse<UInt32>(precision_str);
-            }
-        }
-
-        res = std::make_shared<DataTypeDateTime64>(precision);
-    }
+        res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
         res = std::make_shared<DataTypeDate32>();
     else if (type == "uuid")
@@ -164,10 +139,7 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
                 /// PostgreSQL numeric with precision higher than Decimal256 supports (76 digits) and no
                 /// fractional part (e.g. numeric(78, 0), used to store 256-bit integers). It cannot be
                 /// represented as a ClickHouse Decimal, so use Int256. Values that do not fit into Int256
-                /// are rejected at insert time (see insertPostgreSQLValue). This mapping is fixed: PostgreSQL
-                /// `numeric` is signed, so a self-connected `UInt256` above the Int256 maximum is rejected
-                /// there (fail-closed) rather than recovered - a distinct `UInt256` mapping would collide with
-                /// this contract for real PostgreSQL sources.
+                /// are rejected at insert time (see insertPostgreSQLValue).
                 res = std::make_shared<DataTypeInt256>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
@@ -216,9 +188,17 @@ bool isTableEmpty(T & tx, const String & postgres_table)
     return result[0][0].as<bool>();
 }
 
+/// `postgres_table` is quoted and schema-qualified, ready to be pasted into a query.
+/// `postgres_table_for_messages` is the same relation as it is named in diagnostics: identifier
+/// quoting belongs in the SQL we send, not in what we show the user.
 template<typename T>
 PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
-    T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types)
+    T & tx,
+    const String & postgres_table,
+    const String & postgres_table_for_messages,
+    const String & query,
+    bool use_nulls,
+    bool only_names_and_types)
 {
     auto columns = NamesAndTypes();
     PostgreSQLTableStructure::Attributes attributes;
@@ -280,21 +260,21 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             /// If the relation is empty, then array_ndims returns NULL.
             /// ClickHouse cannot support this use case.
             if (isTableEmpty(tx, postgres_table))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL relation containing arrays cannot be empty: {}", postgres_table);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL relation containing arrays cannot be empty: {}", postgres_table_for_messages);
 
             /// All rows must contain the same number of dimensions.
             /// 1 is ok. If number of dimensions in all rows is not the same -
             /// such arrays are not able to be used as ClickHouse Array at all.
             ///
             /// For empty arrays, array_ndims([]) will return NULL.
-            auto postgres_column = doubleQuoteString(name_and_type.name);
+            auto postgres_column = doubleQuoteStringPostgreSQL(name_and_type.name);
             pqxx::result result{tx.exec(
                 fmt::format("SELECT {} IS NULL, array_ndims({}) FROM {} LIMIT 1;", postgres_column, postgres_column, postgres_table))};
 
             /// Nullable(Array) is not supported.
             auto is_null_array = result[0][0].as<bool>();
             if (is_null_array)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL array cannot be NULL: {}.{}", postgres_table, postgres_column);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL array cannot be NULL: {}.{}", postgres_table_for_messages, postgres_column);
 
             /// Cannot infer dimension of empty arrays.
             auto is_empty_array = result[0][1].is_null();
@@ -303,7 +283,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "PostgreSQL cannot infer dimensions of an empty array: {}.{}. Make sure no empty array values in the first row.",
-                    postgres_table,
+                    postgres_table_for_messages,
                     postgres_column);
             }
 
@@ -319,7 +299,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
     }
     catch (const pqxx::undefined_table &)
     {
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_for_messages);
     }
     catch (const pqxx::syntax_error & e)
     {
@@ -345,19 +325,26 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
     auto where = fmt::format("relname = {}", quoteStringPostgreSQL(postgres_table));
 
-    /// When no schema is specified, the table has to be looked up in the schema the server itself resolves
-    /// unqualified names in, because that is where the `COPY` statements of the read and write paths will
-    /// read and write the rows: `current_schema()` is the first existing schema of the search path. For
-    /// PostgreSQL with the default search path it is `public`, and a ClickHouse server (which exposes its
-    /// databases as schemas) reports the connected database, so schema discovery and the data path always
-    /// agree on the same relation.
     where += postgres_schema.empty()
-        ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())"
+        ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')"
         : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
 
     std::string columns_part;
     if (!columns.empty())
-        columns_part = fmt::format(" AND attname IN ('{}')", boost::algorithm::join(columns, "','"));
+    {
+        /// Quote each column name individually so a name containing a quote cannot break out of the
+        /// literal (a plain join with `','` left the interpolated names unescaped).
+        WriteBufferFromOwnString buffer;
+        buffer << " AND attname IN (";
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            if (i != 0)
+                buffer << ", ";
+            writeQuotedStringPostgreSQLLossless(columns[i], buffer);
+        }
+        buffer << ')';
+        columns_part = std::move(buffer.str());
+    }
 
     /// Bypassing the error of the missing column `attgenerated` in the system table `pg_attribute` for PostgreSQL versions below 12.
     /// This trick involves executing a special query to the DBMS in advance to obtain the correct line with comment /// if column has GENERATED.
@@ -376,15 +363,24 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "attnum as att_num, "
            "{} as generated " /// if column has GENERATED
            "FROM pg_attribute "
-           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) {}"
-           "AND NOT attisdropped AND attnum > 0 "
+           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}){}"
+           " AND NOT attisdropped AND attnum > 0 "
            "ORDER BY attnum ASC", generated, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
-    auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
-    table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
+    auto postgres_table_with_schema = postgres_schema.empty()
+        ? doubleQuoteStringPostgreSQL(postgres_table)
+        : doubleQuoteStringPostgreSQL(postgres_schema) + '.' + doubleQuoteStringPostgreSQL(postgres_table);
+    /// How the relation is named in diagnostics. Deliberately the spelling this function used before
+    /// the table identifier was quoted for the empty-schema branch, so that no error message
+    /// changes: the schema-qualified form has always been shown quoted, the bare one unquoted.
+    auto postgres_table_for_messages = postgres_schema.empty()
+        ? postgres_table
+        : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
+    table.physical_columns
+        = readNamesAndTypesList(tx, postgres_table_with_schema, postgres_table_for_messages, query, use_nulls, false);
 
     if (!table.physical_columns)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_with_schema);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_for_messages);
 
     for (const auto & column : table.physical_columns->columns)
     {
@@ -441,7 +437,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "AND a.attnum = ANY(i.indkey) "
                 "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary", where);
 
-        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
+        table.primary_key_columns
+            = readNamesAndTypesList(tx, postgres_table_with_schema, postgres_table_for_messages, query, use_nulls, true);
     }
 
     if (with_replica_identity_index && !table.primary_key_columns)
@@ -469,7 +466,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             (postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema))
         );
 
-        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
+        table.replica_identity_columns
+            = readNamesAndTypesList(tx, postgres_table_with_schema, postgres_table_for_messages, query, use_nulls, true);
     }
 
     return table;

@@ -5,6 +5,7 @@
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
@@ -164,7 +165,10 @@ namespace DB
         FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
             DataTypes argument_types = { arguments[0].type };
-            const DataTypePtr & from_type_not_null = removeNullable(arguments[0].type);
+            /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
+            /// otherwise `callOnBasicType` does not recognize the integer and the function throws
+            /// "must be integral" on a `LowCardinality` integer it can perfectly well convert.
+            const DataTypePtr from_type_not_null = removeNullable(recursiveRemoveLowCardinality(arguments[0].type));
 
             FunctionBasePtr base;
             auto call = [&](const auto & types) -> bool
@@ -269,12 +273,12 @@ SELECT fromModifiedJulianDayOrNull(58849);
 SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
         )",
             R"(
-┌─fromModified⋯Null(58849)─┐
-│ 2020-01-01               │
-└──────────────────────────┘
-┌─fromModified⋯l(60000000)─┐
-│ ᴺᵁᴸᴸ                     │
-└──────────────────────────┘
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
+┌─fromModifiedJulianDayOrNull(60000000)─┐
+│ ᴺᵁᴸᴸ                                  │
+└───────────────────────────────────────┘
         )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDayOrNull = {21, 1};

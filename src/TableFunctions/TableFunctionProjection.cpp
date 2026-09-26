@@ -21,6 +21,9 @@ public:
     static constexpr auto name = "mergeTreeProjection";
     std::string getName() const override { return name; }
 
+    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
+    bool canBeUsedToCreateTable() const override { return false; }
+
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
@@ -118,7 +121,7 @@ mergeTreeProjection(database, table, projection)
 | `table`      | The table name to read projection from.    |
 | `projection` | The projection to read from.               |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table object with columns provided by given projection.
 

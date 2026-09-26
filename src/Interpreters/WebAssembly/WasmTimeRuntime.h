@@ -13,7 +13,6 @@ public:
     explicit WasmTimeRuntime();
 
     std::unique_ptr<WasmModule> compileModule(std::string_view module_name, std::string_view wasm_code, FuelMode fuel_mode) const override;
-    bool requiresFuelSpecialization() const override { return true; }
     static void setLogLevel(LogsLevel level);
 
     ~WasmTimeRuntime() override;

@@ -96,7 +96,7 @@ ClickHouse Cloud 사용량 명세서는 이와 다른 청구 주기를 따르며
   ### 일반적인 청구 정보는 어디에서 찾을 수 있나요​?
 </div>
 
-자세한 내용은 [청구 개요 페이지](/ko/products/cloud/reference/billing/index)를 참조하십시오.
+자세한 내용은 [청구 개요 페이지](/ko/products/cloud/reference/billing/billing-overview)를 참조하십시오.
 
 <div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
   ### 클라우드 제공업체 마켓플레이스를 통해 청구하든 ClickHouse에 직접 결제하든 ClickHouse Cloud 가격에 차이가 있습니까?
@@ -109,6 +109,12 @@ ClickHouse Cloud 사용량 명세서는 이와 다른 청구 주기를 따르며
 </div>
 
 예. 여러 ClickHouse 조직이 동일한 cloud 마켓플레이스 청구 계정(AWS, GCP 또는 Azure)에 후불로 사용 요금이 청구되도록 구성할 수 있습니다. 다만 선불 제보는 기본적으로 조직 간에 공유되지 않습니다. 조직 간에 제보를 공유해야 하는 경우 [ClickHouse 지원팀](https://clickhouse.com/support/program)로 문의하십시오.
+
+<div id="can-i-bill-different-services-within-the-same-organization-to-different-marketplace-subscriptions">
+  ### 동일한 조직 내 서로 다른 서비스에 서로 다른 마켓플레이스 구독으로 청구할 수 있습니까?
+</div>
+
+아니요. 청구는 조직 수준에서 설정되므로 단일 ClickHouse Cloud 조직 내의 모든 서비스는 동일한 마켓플레이스 구독으로 청구됩니다. 서비스를 별도로 청구해야 한다면 청구 방식별로 별도의 조직을 생성하십시오. 하나의 ClickHouse Cloud 콘솔 사용자 계정에서 여러 조직을 관리할 수 있으며, 각 조직은 자체 청구 구성을 가질 수 있습니다.
 
 <div id="automatically-move-to-PAYG-when-running-out-of-credit">
   ### ClickHouse 조직이 클라우드 마켓플레이스 사용 약정 계약을 통해 청구되는 경우, 제보를 모두 사용하면 자동으로 PAYG 청구로 전환됩니까?

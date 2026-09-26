@@ -1,0 +1,65 @@
+--- local: a table name over NAME_MAX is an unknown table ---
+UNKNOWN_TABLE
+--- local: control, a short unknown table name ---
+UNKNOWN_TABLE
+--- local: a dictionary name over NAME_MAX is not found ---
+BAD_ARGUMENTS
+dictionary-not-found
+--- local: control, a short unknown dictionary name ---
+BAD_ARGUMENTS
+dictionary-not-found
+--- local: EXISTS TABLE over NAME_MAX answers 0 ---
+0
+--- server: a table name over NAME_MAX is an unknown table ---
+UNKNOWN_TABLE
+--- server: EXISTS TABLE over NAME_MAX answers 0 ---
+0
+--- server: a real file in the database still resolves ---
+2
+--- server: a directory is not a table ---
+UNKNOWN_TABLE
+--- server: a dictionary name over NAME_MAX is not found ---
+BAD_ARGUMENTS
+dictionary-not-found
+--- server: a globbed name over NAME_MAX resolves and is cached ---
+2
+--- server: and resolves again, through the cache probe ---
+2
+--- server: EXISTS TABLE on the cached globbed name ---
+1
+--- server: a glob under an over-long directory matches nothing ---
+CANNOT_EXTRACT_TABLE_STRUCTURE
+--- server: control, a glob under a short absent directory ---
+CANNOT_EXTRACT_TABLE_STRUCTURE
+--- server: a name over NAME_MAX with the partition wildcard is not a filesystem error ---
+CANNOT_STAT
+--- server: control, a short name with the partition wildcard ---
+CANNOT_STAT
+--- server: a name over NAME_MAX with archive syntax is not a filesystem error ---
+CANNOT_STAT
+--- server: control, a short name with archive syntax ---
+CANNOT_STAT
+--- local: a glob under an over-long directory matches nothing ---
+CANNOT_EXTRACT_TABLE_STRUCTURE
+--- local: control, a glob under a short absent directory ---
+CANNOT_EXTRACT_TABLE_STRUCTURE
+--- local: a name over NAME_MAX with archive syntax is not a filesystem error ---
+CANNOT_STAT
+--- local: control, a short name with archive syntax ---
+CANNOT_STAT
+--- local: file() on a written-out path over NAME_MAX ---
+CANNOT_STAT
+--- local: control, file() on a short absent path ---
+CANNOT_STAT
+--- local: file() over NAME_MAX with an explicit structure ---
+FILE_DOESNT_EXIST
+--- local: control, file() on a short absent path with an explicit structure ---
+FILE_DOESNT_EXIST
+--- local: archive over NAME_MAX with a member glob and an explicit structure ---
+FILE_DOESNT_EXIST
+--- local: control, a short archive with a member glob and an explicit structure ---
+FILE_DOESNT_EXIST
+--- local: archive over NAME_MAX with a named member and an explicit structure ---
+FILE_DOESNT_EXIST
+--- local: control, a short archive with a named member and an explicit structure ---
+FILE_DOESNT_EXIST

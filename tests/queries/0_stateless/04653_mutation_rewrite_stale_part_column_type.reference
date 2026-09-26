@@ -1,0 +1,37 @@
+--- materialize a projection after a type change ---
+str
+s	Nullable(String)
+--- a part detached across the type change ---
+part type before the rewrite
+b	String
+part type after the rewrite
+b	Nullable(String)
+data
+x	y	x!
+read from the projection
+x	y
+--- a stale tuple type and its serialization info ---
+part type before the rewrite
+t	Tuple(x String)
+part type after the rewrite
+t	Tuple(x String, y String)
+data
+x	('','')	x!
+--- a renamed tuple element and its serialization info ---
+part type before the rewrite
+t	Tuple(String)
+part type after the rewrite
+t	Tuple(y String)
+serialization of the merged part
+t	Default
+data
+105	105
+--- a renamed column with a stale type ---
+part type before the rewrite
+d	String
+part type after the rewrite
+d	Nullable(String)
+data
+x	y	x!
+read from the projection
+x	y
