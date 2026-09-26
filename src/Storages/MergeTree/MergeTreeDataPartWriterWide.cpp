@@ -18,6 +18,12 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/FailPoint.h>
+#include <Storages/MergeTree/MergeHelperThreads.h>
+#include <Common/ThreadPool.h>
+#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/scope_guard_safe.h>
 #include <IO/NullWriteBuffer.h>
 
 namespace DB
@@ -410,6 +416,34 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
 
     Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation, permuted_columns_cache);
 
+    /// Skip indices only read the block and write their own streams, so they can be built in another thread
+    /// while the columns are serialized. The slot is released after the thread is joined.
+    MergeHelperThreads::SlotPtr skip_indices_slot;
+    if (settings.build_skip_indexes_in_separate_thread && !skip_indices.empty())
+        skip_indices_slot = MergeHelperThreads::tryAcquire();
+    std::optional<ThreadFromGlobalPool> skip_indices_thread;
+    std::exception_ptr skip_indices_exception;
+    if (skip_indices_slot)
+    {
+        skip_indices_thread.emplace([&, thread_group = CurrentThread::getGroup()]
+        {
+            try
+            {
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
+                calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
+            }
+            catch (...)
+            {
+                skip_indices_exception = std::current_exception();
+            }
+        });
+    }
+    SCOPE_EXIT(
+    {
+        if (skip_indices_thread && skip_indices_thread->joinable())
+            skip_indices_thread->join();
+    });
+
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
     {
@@ -449,7 +483,14 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     if (settings.rewrite_primary_key)
         calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
 
-    calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
+    if (skip_indices_thread)
+    {
+        skip_indices_thread->join();
+        if (skip_indices_exception)
+            std::rethrow_exception(skip_indices_exception);
+    }
+    else
+        calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
 
     shiftCurrentMark(granules_to_write);
 }

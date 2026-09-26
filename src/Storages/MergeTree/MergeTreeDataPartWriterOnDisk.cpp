@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
+#include <Common/FailPoint.h>
+
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -45,6 +47,12 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_skip_indices_calculation_throw[];
 }
 
 MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
@@ -290,6 +298,11 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
 {
+    fiu_do_on(FailPoints::merge_tree_skip_indices_calculation_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while calculating skip indices");
+    });
+
     /// Building a skip index over many granules (e.g. an unbounded `set(0)` index on a
     /// high-cardinality column) can run for minutes. The INSERT pipeline only enforces query limits
     /// between blocks, so without a check here a KILLed INSERT keeps building the index to completion.

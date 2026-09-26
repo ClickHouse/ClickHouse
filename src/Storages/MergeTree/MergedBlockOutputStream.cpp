@@ -49,7 +49,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     WrittenOffsetSubstreams * written_offset_substreams,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    bool build_skip_indexes_in_separate_thread)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -72,6 +73,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         save_primary_index_in_memory,
         blocks_are_granules_size,
         try_adaptive_codec);
+    writer_settings.build_skip_indexes_in_separate_thread = build_skip_indexes_in_separate_thread;
 
     data_part_storage->createDirectories();
 
