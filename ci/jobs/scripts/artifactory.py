@@ -146,11 +146,12 @@ class DebianArtifactory:
         # CreateRelease runs are serialized, so a lock here was left by a killed run
         db = Path(R2MountPoint.MOUNT_POINT) / "configs/deb/db"
         lockfile, exporting = db / "lockfile", db / "exporting_version"
-        if lockfile.exists():
+        # exporting_version outlives the lock until copy succeeds, so a failed repair is retried
+        if lockfile.exists() or exporting.exists():
             left_by = exporting.read_text() if exporting.exists() else "unknown"
-            assert left_by == self.version, f"stale reprepro lock left by the export of [{left_by}]: recover that release first"
-            print(f"WARNING: removing stale reprepro lock [{lockfile}]")
-            lockfile.unlink()
+            assert left_by == self.version, f"unfinished reprepro export of [{left_by}]: recover that release first"
+            print(f"WARNING: repairing the unfinished export, removing reprepro lock [{lockfile}] if present")
+            lockfile.unlink(missing_ok=True)
             # A killed run can leave references no package owns, which stop removefilter from deleting files
             reprepro("rereference")
             # The killed run may have registered this version without its files, so includedeb would skip it
