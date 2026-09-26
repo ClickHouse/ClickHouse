@@ -1101,13 +1101,18 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
             {
                 auto insert_context = Context::createCopy(getContext());
+                /// Mirror the factory's provenance so EXPLAIN PIPELINE plans the same route the
+                /// real query would take (async INSERT ... SELECT is gated on is_initial_insert).
+                const bool is_initial_insert
+                    = insert_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
                 InterpreterInsertQuery insert(
                     ast.getExplainedQuery(),
                     insert_context,
                     /* allow_materialized */ false,
                     /* no_squash */ false,
                     /* no_destination */ false,
-                    /* async_insert */ false);
+                    /* async_insert */ false,
+                    is_initial_insert);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
                 // we do not need it anymore, it would not be executed
