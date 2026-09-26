@@ -495,6 +495,15 @@ bool StorageObjectStorage::supportsDelete() const
     return configuration->supportsDelete();
 }
 
+bool StorageObjectStorage::supportsTruncate() const
+{
+    if (!configuration->isDataLakeConfiguration())
+        return true;
+
+    configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsTruncate();
+}
+
 bool StorageObjectStorage::supportsParallelInsert() const
 {
     /// `InsertDependenciesBuilder` calls this for every non-view sink while building the
@@ -948,7 +957,7 @@ bool StorageObjectStorage::optimize(
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
+    ContextPtr context,
     TableExclusiveLockHolder & /* table_holder */)
 {
     const auto path = configuration->getRawPath();
@@ -962,8 +971,12 @@ void StorageObjectStorage::truncate(
 
     if (configuration->isDataLakeConfiguration())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Truncate is not supported for data lake engine");
+        auto data_lake_metadata = getExternalMetadata(context);
+        if (!data_lake_metadata || !data_lake_metadata->supportsTruncate())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported for this data lake engine");
+
+        data_lake_metadata->truncate(context, catalog, getStorageID());
+        return;
     }
 
     if (path.hasGlobsIgnorePlaceholders())

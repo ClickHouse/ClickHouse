@@ -207,6 +207,8 @@ static Plan getPlan(
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method);
 
+    /// continue the table's metadata version sequence
+    plan.generator.setVersion(metadata_version + 1);
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
@@ -780,29 +782,32 @@ static bool writeConsolidatedManifestFile(
     std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
     /// Cleanup for both commit conflict and exceptions; paths are tracked before writeObject so partially-created objects are removed (removeObjectIfExists tolerates missing objects).
-    auto cleanup = [&]()
+    auto cleanup = [&](bool remove_objects = true)
     {
-        for (const auto & mp : consolidated_manifest_paths)
+        if (remove_objects)
         {
+            for (const auto & mp : consolidated_manifest_paths)
+            {
+                try
+                {
+                    object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(mp)));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to remove orphaned manifest file during cleanup");
+                }
+            }
             try
             {
-                object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(mp)));
+                object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(new_snapshot.manifest_list_path)));
             }
             catch (...)
             {
-                tryLogCurrentException(log, "Failed to remove orphaned manifest file during cleanup");
+                tryLogCurrentException(log, "Failed to remove orphaned manifest list during cleanup");
             }
         }
-        try
-        {
-            object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(new_snapshot.manifest_list_path)));
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to remove orphaned manifest list during cleanup");
-        }
     };
-
+    bool commit_result_unknown = false;
     try
     {
         for (auto & [partition_key, pd] : partitions_map)
@@ -960,18 +965,21 @@ static bool writeConsolidatedManifestFile(
             {
                 auto catalog_filename = path_resolver.resolveForCatalog(generated_metadata_info.path);
                 const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+                commit_result_unknown = true;
                 if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot.snapshot))
                 {
                     LOG_INFO(log, "Metadata commit conflict detected via catalog, cleaning up temporary files");
+                    commit_result_unknown = false;
                     cleanup();
                     return false;
                 }
+                commit_result_unknown = false;
             }
         }
     }
     catch (...)
     {
-        cleanup();
+        cleanup(/*remove_objects =*/!commit_result_unknown);
         throw;
     }
 
@@ -1018,6 +1026,12 @@ bool overwriteIsPositionDeleteOnly(const SnapshotSummaryUpdateOverwrite & update
 namespace
 {
 
+[[nodiscard]] bool isEmptySnapshot(const Plan & plan, const IcebergHistoryRecord & rec)
+{
+    auto it = plan.manifest_list_to_manifest_files.find(rec.manifest_list_path);
+    return it == plan.manifest_list_to_manifest_files.end() || it->second.empty();
+}
+
 /// Current experimental compact implementation expects snapshots to be either appends or overwrites which has only position deletes
 /// Lets force this invariant
 void checkIfIcebergHistorySupported(const IcebergHistory & history)
@@ -1060,12 +1074,83 @@ static void writeMetadataFiles(
 
     std::unordered_map<Int64, UInt64> snapshot_id_to_records_count;
 
+    /// Original (pre-rewrite) parent links of every retained snapshot, used to step over the
+    /// snapshots this rewrite drops when re-pointing an empty snapshot's parent below.
+    std::unordered_map<Int64, Int64> original_parent_of;
+    for (const auto & history_record : plan.history)
+        original_parent_of[history_record.snapshot_id] = history_record.parent_id;
+
+    /// Resolve `parent_id` to the nearest ancestor this rewrite actually emits.
+    /// Snapshots that are not appends are dropped from the regenerated metadata, so keeping a
+    /// dropped snapshot as `parent-snapshot-id` leaves a link that resolves to nothing:
+    /// `MetadataGenerator::getParentSnapshot` returns null, which silently zeroes the rewritten
+    /// truncate's `deleted-*` counters, and ancestor walks such as `expire_snapshots` stop at the
+    /// break, so older snapshots on the branch can be expired while still inside the retention
+    /// policy. The only non-append snapshots compaction accepts are position-delete-only ones,
+    /// and those change neither `total-records` nor `total-data-files`, so the nearest emitted
+    /// ancestor carries exactly the totals the truncate has to charge itself against.
+    /// Returns -1 when the chain reaches a root: that is the "no parent snapshot" sentinel the
+    /// write paths emit (`IcebergWrites.cpp`, `IcebergMetadata::truncate`) and the one
+    /// `MetadataGenerator` reads back, since it treats any negative id as "absent". Normalising
+    /// to 0 instead would write a `parent-snapshot-id` of 0, which reads as a link to a snapshot
+    /// that does not exist rather than as a root.
+    auto resolve_emitted_parent = [&](Int64 parent_id) -> Int64
+    {
+        /// Each hop moves strictly up the chain, so the retained history length bounds the walk;
+        /// exceeding it means the parent links form a cycle and the metadata is corrupt.
+        for (size_t hops = 0; hops <= plan.history.size(); ++hops)
+        {
+            /// A root uses either -1 or 0 as a sentinel or, when `parent-snapshot-id` is
+            /// Snapshot ids are positive (`MetadataGenerator` draws from [1, max]), so neither collides
+            /// with a real id.
+            if (parent_id <= 0)
+                return -1;
+            if (auto it = snapshot_id_to_snapshot.find(parent_id); it != snapshot_id_to_snapshot.end() && it->second)
+                return parent_id;
+            auto next = original_parent_of.find(parent_id);
+            /// The ancestor was expired from the table before OPTIMIZE ran, so the chain ends here.
+            if (next == original_parent_of.end())
+                return -1;
+            parent_id = next->second;
+        }
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cycle in the Iceberg snapshot parent chain while resolving the parent of an empty snapshot");
+    };
+
     for (const auto & history_record : plan.history)
     {
         auto append = tryGetAppendUpdate(history_record);
         if (!append)
         {
-            new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
+            /// Empty snapshots (e.g. TRUNCATE) leave the table empty at this point in history.
+            /// The original id and timestamp are preserved so later snapshots' `parent-snapshot-id`
+            /// still resolves and history / time-travel stays intact after compaction. The parent is
+            /// re-pointed at the nearest ancestor this rewrite emits, since the immediate parent may
+            /// itself be a snapshot compaction drops (see `resolve_emitted_parent`).
+            if (isEmptySnapshot(plan, history_record))
+            {
+                auto new_snapshot = metadata_generator.generateNextMetadata(
+                    plan.generator,
+                    generated_metadata_info.path,
+                    resolve_emitted_parent(history_record.parent_id),
+                    /*added_files=*/0,
+                    /*added_records=*/0,
+                    /*added_files_size=*/0,
+                    /*num_partitions=*/0,
+                    /*added_delete_files=*/0,
+                    /*num_deleted_rows=*/0,
+                    history_record.snapshot_id,
+                    history_record.made_current_at.value,
+                    MetadataGenerator::SnapshotOperation::Delete);
+
+                new_snapshots.push_back(new_snapshot);
+                snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
+            }
+            else
+            {
+                new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
+            }
             continue;
         }
 
@@ -1076,7 +1161,7 @@ static void writeMetadataFiles(
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
             generated_metadata_info.path,
-            history_record.parent_id,
+            resolve_emitted_parent(history_record.parent_id),
             append->added_files,
             total_records_count,
             append->added_files_size,
@@ -1271,7 +1356,32 @@ static void writeMetadataFiles(
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
         if (auto append = tryGetAppendUpdate(plan.history[i]); !append)
+        {
+            /// Empty snapshots (e.g. TRUNCATE) are preserved by the snapshot-generation loop
+            /// as an empty snapshot so later snapshots' `parent-snapshot-id` still resolves
+            if (isEmptySnapshot(plan, plan.history[i]) && new_snapshots[i].snapshot)
+            {
+                auto buffer_empty_manifest_list = object_storage->writeObject(
+                    StoredObject(path_resolver.resolve(new_snapshots[i].manifest_list_path)),
+                    WriteMode::Rewrite,
+                    std::nullopt,
+                    DBMS_DEFAULT_BUFFER_SIZE,
+                    context->getWriteSettings());
+                generateManifestList(
+                    path_resolver,
+                    metadata_object,
+                    object_storage,
+                    context,
+                    {},
+                    new_snapshots[i].snapshot,
+                    {},
+                    *buffer_empty_manifest_list,
+                    Iceberg::FileContentType::DATA,
+                    false);
+                buffer_empty_manifest_list->finalize();
+            }
             continue;
+        }
 
         auto initial_manifest_list_name = plan.history[i].manifest_list_path;
         auto initial_manifest_entries = plan.manifest_list_to_manifest_files[initial_manifest_list_name];
