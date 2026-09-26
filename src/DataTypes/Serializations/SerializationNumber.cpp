@@ -159,7 +159,7 @@ bool SerializationNumber<T>::tryDeserializeText(IColumn & column, ReadBuffer & i
     T x{};
 
     /// `tryReadIntText`'s own overflow check is skipped for the big-int widths.
-    bool parsed;
+    bool parsed = false;
     if constexpr (is_integer<T> && is_arithmetic_v<T> && is_big_int_v<T>)
         parsed = settings.check_integer_text_overflow
             ? readIntTextUnsafe<T, bool, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr)
